@@ -182,7 +182,7 @@ class CTQ(Base, TimestampMixin, AuditMixin):
     
     # Relationships
     rfq: Mapped["RFQ | None"] = relationship("RFQ")
-    approved_by: Mapped["User | None"] = relationship("User")
+    approved_by: Mapped["User | None"] = relationship("User", foreign_keys=[approved_by_id])
     
     measurements: Mapped[list["CTQMeasurement"]] = relationship(
         "CTQMeasurement",
@@ -285,7 +285,7 @@ class CTQMeasurement(Base, TimestampMixin):
     
     # Relationships
     ctq: Mapped["CTQ"] = relationship("CTQ", back_populates="measurements")
-    measured_by: Mapped["User | None"] = relationship("User")
+    measured_by: Mapped["User | None"] = relationship("User", foreign_keys=[measured_by_id])
     
     __table_args__ = (
         Index("ix_ctq_measurements_ctq_date", ctq_id, measured_at.desc()),

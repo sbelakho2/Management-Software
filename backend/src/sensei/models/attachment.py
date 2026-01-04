@@ -45,6 +45,16 @@ class AttachmentCategory(str, Enum):
     OTHER = "other"
 
 
+class AttachmentStatus(str, Enum):
+    """Status of attachment processing."""
+    
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    ERROR = "error"
+    DELETED = "deleted"
+
+
 class Attachment(Base, TimestampMixin):
     """
     File attachment with polymorphic relationship.
@@ -252,7 +262,7 @@ class AttachmentVersion(Base, TimestampMixin):
         "Attachment",
         back_populates="versions",
     )
-    created_by: Mapped["User | None"] = relationship("User")
+    created_by: Mapped["User | None"] = relationship("User", foreign_keys=[created_by_id])
     
     __table_args__ = (
         Index(

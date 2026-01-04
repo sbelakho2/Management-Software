@@ -41,6 +41,14 @@ class ObeyaCategory(str, Enum):
     ESCALATION = "escalation"
     INFORMATION = "information"
     LESSON_LEARNED = "lesson_learned"
+    METRICS = "metrics"
+    SCHEDULE = "schedule"
+    QUALITY = "quality"
+    COST = "cost"
+    SAFETY = "safety"
+    MORALE = "morale"
+    DELIVERY = "delivery"
+    STRATEGY = "strategy"
 
 
 class ObeyaStatus(str, Enum):
@@ -73,6 +81,31 @@ class ObeyaBoard(str, Enum):
     QUALITY = "quality"
     SAFETY = "safety"
     IMPROVEMENT = "improvement"
+
+
+class ObeyaItemStatus(str, Enum):
+    """Status of Obeya item."""
+    
+    ACTIVE = "active"
+    AT_RISK = "at_risk"
+    BLOCKED = "blocked"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+    CANCELLED = "cancelled"
+
+
+class ObeyaItemType(str, Enum):
+    """Type of Obeya item."""
+    
+    KPI = "kpi"
+    METRIC = "metric"
+    MILESTONE = "milestone"
+    ISSUE = "issue"
+    ACTION = "action"
+    DECISION = "decision"
+    RISK = "risk"
+    OPPORTUNITY = "opportunity"
 
 
 class ObeyaItem(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
@@ -326,7 +359,7 @@ class ObeyaComment(Base, TimestampMixin):
     
     # Relationships
     item: Mapped["ObeyaItem"] = relationship("ObeyaItem", back_populates="comments")
-    author: Mapped["User | None"] = relationship("User")
+    author: Mapped["User | None"] = relationship("User", foreign_keys=[author_id])
     parent: Mapped["ObeyaComment | None"] = relationship(
         "ObeyaComment",
         remote_side="ObeyaComment.id",
@@ -334,5 +367,5 @@ class ObeyaComment(Base, TimestampMixin):
     )
     
     __table_args__ = (
-        Index("ix_obeya_comments_item_created", item_id, created_at),
+        Index("ix_obeya_comments_item_created", "item_id", "created_at"),
     )

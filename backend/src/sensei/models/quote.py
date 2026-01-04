@@ -64,6 +64,38 @@ class ApprovalStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class LineItemType(str, Enum):
+    """Type of quote line item."""
+    
+    PRODUCT = "product"
+    SERVICE = "service"
+    TOOLING = "tooling"
+    NRE = "nre"
+    FREIGHT = "freight"
+    OTHER = "other"
+
+
+class VersionStatus(str, Enum):
+    """Status of quote version."""
+    
+    DRAFT = "draft"
+    FINAL = "final"
+    SUBMITTED = "submitted"
+    SUPERSEDED = "superseded"
+
+
+class SupplierQuoteStatus(str, Enum):
+    """Status of supplier quote."""
+    
+    PENDING = "pending"
+    REQUESTED = "requested"
+    RECEIVED = "received"
+    UNDER_REVIEW = "under_review"
+    SELECTED = "selected"
+    NOT_SELECTED = "not_selected"
+    EXPIRED = "expired"
+
+
 class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     """
     Customer quotation.
@@ -367,7 +399,7 @@ class QuoteVersion(Base, TimestampMixin):
     
     # Relationships
     quote: Mapped["Quote"] = relationship("Quote", back_populates="versions")
-    created_by: Mapped["User | None"] = relationship("User")
+    created_by: Mapped["User | None"] = relationship("User", foreign_keys=[created_by_id])
     
     __table_args__ = (
         UniqueConstraint("quote_id", "version_number", name="uq_quote_version"),

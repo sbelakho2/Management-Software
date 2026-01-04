@@ -151,6 +151,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     roles: Mapped[list["UserRole"]] = relationship(
         "UserRole",
         back_populates="user",
+        foreign_keys="UserRole.user_id",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
@@ -172,6 +173,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     notifications: Mapped[list["Notification"]] = relationship(
         "Notification",
         back_populates="user",
+        foreign_keys="Notification.user_id",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
@@ -447,7 +449,7 @@ class RefreshToken(Base, TimestampMixin):
     revoked_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     
     # Relationship
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     
     __table_args__ = (
         Index("ix_refresh_tokens_user_id_expires", user_id, expires_at),

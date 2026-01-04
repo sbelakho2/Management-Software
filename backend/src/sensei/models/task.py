@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -289,10 +290,10 @@ class TaskComment(Base, TimestampMixin):
     
     # Relationships
     task: Mapped["Task"] = relationship("Task", back_populates="comments")
-    author: Mapped["User | None"] = relationship("User")
+    author: Mapped["User | None"] = relationship("User", foreign_keys=[author_id])
     
     __table_args__ = (
-        Index("ix_task_comments_task_created", task_id, created_at),
+        Index("ix_task_comments_task_created", "task_id", "created_at"),
     )
 
 
@@ -329,6 +330,24 @@ class NotificationPriority(str, Enum):
     NORMAL = "normal"
     HIGH = "high"
     URGENT = "urgent"
+
+
+class NotificationStatus(str, Enum):
+    """Status of notification delivery."""
+    
+    PENDING = "pending"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class NotificationChannel(str, Enum):
+    """Channel for notification delivery."""
+    
+    IN_APP = "in_app"
+    EMAIL = "email"
+    PUSH = "push"
+    SMS = "sms"
 
 
 class Notification(Base, TimestampMixin):
@@ -412,8 +431,8 @@ class Notification(Base, TimestampMixin):
         nullable=True,
     )
     
-    # Metadata
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Extra data
+    extra_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     
     # Sender (for system notifications, this might be null)
     sender_id: Mapped[UUID | None] = mapped_column(
@@ -431,12 +450,12 @@ class Notification(Base, TimestampMixin):
     sender: Mapped["User | None"] = relationship("User", foreign_keys=[sender_id])
     
     __table_args__ = (
-        Index("ix_notifications_user_read", user_id, is_read),
-        Index("ix_notifications_user_created", user_id, created_at.desc()),
+        Index("ix_notifications_user_read", "user_id", "is_read"),
+        Index("ix_notifications_user_created", "user_id", "created_at"),
         Index(
             "ix_notifications_unread",
-            user_id,
-            postgresql_where=(is_read == False),  # noqa: E712
+            "user_id",
+            postgresql_where=text("is_read = false"),
         ),
     )
     

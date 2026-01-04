@@ -51,6 +51,15 @@ class A3Status(str, Enum):
     CANCELLED = "cancelled"
 
 
+class A3Priority(str, Enum):
+    """Priority level of A3 document."""
+    
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class A3SectionType(str, Enum):
     """Standard A3 sections."""
     
@@ -320,7 +329,7 @@ class A3Section(Base, TimestampMixin):
     
     # Relationships
     a3: Mapped["A3"] = relationship("A3", back_populates="sections")
-    completed_by: Mapped["User | None"] = relationship("User")
+    completed_by: Mapped["User | None"] = relationship("User", foreign_keys=[completed_by_id])
     
     __table_args__ = (
         UniqueConstraint("a3_id", "section_order", name="uq_a3_section_order"),

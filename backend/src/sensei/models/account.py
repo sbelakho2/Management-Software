@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from sensei.models.opportunity import Opportunity
     from sensei.models.quote import SupplierQuote
     from sensei.models.rfq import RFQ
+    from sensei.models.work_center import WorkCenter
 
 
 class AccountType(str, Enum):
@@ -197,6 +198,7 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     opportunities: Mapped[list["Opportunity"]] = relationship(
         "Opportunity",
         back_populates="account",
+        foreign_keys="Opportunity.account_id",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
@@ -204,6 +206,7 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     rfqs: Mapped[list["RFQ"]] = relationship(
         "RFQ",
         back_populates="account",
+        foreign_keys="RFQ.account_id",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
@@ -211,12 +214,20 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     supplier_quotes: Mapped[list["SupplierQuote"]] = relationship(
         "SupplierQuote",
         back_populates="supplier",
+        foreign_keys="SupplierQuote.supplier_id",
+        lazy="dynamic",
+    )
+    
+    # Phase 3: Work centers owned by this account
+    work_centers: Mapped[list["WorkCenter"]] = relationship(
+        "WorkCenter",
+        back_populates="account",
         lazy="dynamic",
     )
     
     __table_args__ = (
         Index("ix_accounts_type_status", account_type, status),
-        Index("ix_accounts_name_search", name, postgresql_ops={"name": "gin_trgm_ops"}),
+        Index("ix_accounts_name_search", name, postgresql_ops={"name": "gin_trgm_ops"}, postgresql_using="gin"),
         Index("ix_accounts_country_city", country, city),
     )
     

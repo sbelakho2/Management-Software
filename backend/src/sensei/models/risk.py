@@ -233,7 +233,7 @@ class Risk(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     
     # Relationships
     rfq: Mapped["RFQ | None"] = relationship("RFQ")
-    risk_owner: Mapped["User | None"] = relationship("User")
+    risk_owner: Mapped["User | None"] = relationship("User", foreign_keys=[risk_owner_id])
     
     mitigations: Mapped[list["RiskMitigation"]] = relationship(
         "RiskMitigation",
@@ -420,7 +420,7 @@ class RiskMitigation(Base, TimestampMixin, AuditMixin):
     
     # Relationships
     risk: Mapped["Risk"] = relationship("Risk", back_populates="mitigations")
-    assigned_to: Mapped["User | None"] = relationship("User")
+    assigned_to: Mapped["User | None"] = relationship("User", foreign_keys=[assigned_to_id])
     
     __table_args__ = (
         Index("ix_risk_mitigations_risk_status", risk_id, status),

@@ -36,9 +36,11 @@ class TestBaseModel:
         assert hasattr(Base, "id")
 
     def test_base_id_is_uuid(self):
-        """Base id should be a UUID type."""
-        # Check the type annotation
-        id_column = Base.__table__.c.id
+        """Base id should be a UUID type - check via a concrete model."""
+        # Base is a DeclarativeBase and doesn't have __table__ directly
+        # We need to check via a concrete model that inherits from Base
+        from sensei.models.user import User
+        id_column = User.__table__.c.id
         assert id_column is not None
         assert id_column.primary_key
 

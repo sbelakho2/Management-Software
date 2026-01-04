@@ -53,6 +53,42 @@ class CriterionCategory(str, Enum):
     QUALITY = "quality"
     STRATEGIC = "strategic"
     RISK = "risk"
+    SUPPLY_CHAIN = "supply_chain"
+
+
+class QualificationStatus(str, Enum):
+    """Status of qualification process."""
+    
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class QualificationDecision(str, Enum):
+    """Decision from qualification."""
+    
+    PENDING = "pending"
+    GO = "go"
+    NO_GO = "no_go"
+    CONDITIONAL = "conditional"
+
+
+class CriterionType(str, Enum):
+    """Type of qualification criterion."""
+    
+    SCORED = "scored"
+    PASS_FAIL = "pass_fail"
+    INFORMATIONAL = "informational"
+
+
+class ScoreValue(str, Enum):
+    """Traffic light score value."""
+    
+    GREEN = "green"
+    YELLOW = "yellow"
+    RED = "red"
+    NOT_ASSESSED = "not_assessed"
 
 
 class Qualification(Base, TimestampMixin, AuditMixin):
@@ -355,7 +391,7 @@ class QualificationScore(Base, TimestampMixin):
         "QualificationCriterion",
         back_populates="scores",
     )
-    scored_by: Mapped["User | None"] = relationship("User")
+    scored_by: Mapped["User | None"] = relationship("User", foreign_keys=[scored_by_id])
     
     __table_args__ = (
         UniqueConstraint(

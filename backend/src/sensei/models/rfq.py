@@ -392,7 +392,7 @@ class RFQQuestion(Base, TimestampMixin):
     
     # Relationships
     rfq: Mapped["RFQ"] = relationship("RFQ", back_populates="questions")
-    asked_by: Mapped["User | None"] = relationship("User")
+    asked_by: Mapped["User | None"] = relationship("User", foreign_keys=[asked_by_id])
     
     __table_args__ = (
         Index("ix_rfq_questions_rfq_status", rfq_id, status),
@@ -476,7 +476,7 @@ class RFQAttachment(Base, TimestampMixin):
     
     # Relationships
     rfq: Mapped["RFQ"] = relationship("RFQ", back_populates="attachments")
-    uploaded_by: Mapped["User | None"] = relationship("User")
+    uploaded_by: Mapped["User | None"] = relationship("User", foreign_keys=[uploaded_by_id])
     
     __table_args__ = (
         Index("ix_rfq_attachments_rfq_type", rfq_id, attachment_type),

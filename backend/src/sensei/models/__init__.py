@@ -4,7 +4,7 @@ Sensei OS Database Models.
 All SQLAlchemy ORM models for the application.
 """
 
-from sensei.models.base import Base, TimestampMixin, AuditMixin
+from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin, StatusMixin
 from sensei.models.user import User, Role, Permission, UserRole, RolePermission
 from sensei.models.account import Account, Contact, AccountContact
 from sensei.models.opportunity import Opportunity, OpportunityNote
@@ -35,11 +35,106 @@ from sensei.models.learning import (
 from sensei.models.attachment import Attachment, AttachmentVersion
 from sensei.models.audit_log import AuditLog
 
+# Phase 3: Production & TPS Execution Models
+from sensei.models.work_center import (
+    WorkCenter,
+    WorkCenterStatus,
+    Station,
+    StationType,
+    StationStatus,
+)
+from sensei.models.product import (
+    Product,
+    ProductStatus,
+    UnitOfMeasure,
+    BOMItem,
+    Routing,
+)
+from sensei.models.work_order import (
+    WorkOrder,
+    WorkOrderStatus,
+    WorkOrderPriority,
+    HoldReason,
+    WorkOrderOperation,
+    OperationStatus,
+)
+from sensei.models.standard_work import (
+    StandardWork,
+    StandardWorkStatus,
+    StandardWorkType,
+    StandardWorkVersion,
+)
+from sensei.models.training import (
+    Skill,
+    SkillCategory,
+    SkillRequirement,
+    Training,
+    TrainingType,
+    TrainingStatus,
+    TrainingParticipant,
+    EnrollmentStatus,
+    AttendanceStatus,
+    UserSkill,
+    CertificationStatus,
+)
+from sensei.models.andon import (
+    AndonEvent,
+    AndonType,
+    AndonSeverity,
+    AndonStatus,
+    EscalationLevel,
+    ResponseStatus,
+    AndonEscalation,
+    AndonRecurrencePattern,
+)
+from sensei.models.kanban import (
+    KanbanBoard,
+    BoardType,
+    KanbanCard,
+    CardType,
+    CardStatus,
+    CardPriority,
+    KanbanCardHistory,
+    KanbanMetrics,
+)
+from sensei.models.quality import (
+    NonConformance,
+    NCType,
+    NCSource,
+    NCSeverity,
+    NCStatus,
+    NCDisposition,
+    RootCauseCategory,
+    CAPA,
+    CAPAType,
+    CAPASourceType,
+    CAPAStatus,
+    CAPAPriority,
+    VerificationStatus,
+    EffectivenessStatus,
+    CAPAAction,
+    CAPAActionType,
+    CAPAActionStatus,
+    InspectionPlan,
+    InspectionType,
+    InspectionRecord,
+    InspectionResult,
+)
+from sensei.models.production import (
+    ProductionCell,
+    CellType,
+    CellStatus,
+    CellPerformance,
+    ShiftNumber,
+)
+
 __all__ = [
     # Base
     "Base",
     "TimestampMixin",
     "AuditMixin",
+    "SoftDeleteMixin",
+    "StatusMixin",
     # User & Auth
     "User",
     "Role",
@@ -93,4 +188,86 @@ __all__ = [
     "AttachmentVersion",
     # Audit
     "AuditLog",
+    # Phase 3: Work Center & Station
+    "WorkCenter",
+    "WorkCenterStatus",
+    "Station",
+    "StationType",
+    "StationStatus",
+    # Phase 3: Product & Routing
+    "Product",
+    "ProductStatus",
+    "UnitOfMeasure",
+    "BOMItem",
+    "Routing",
+    # Phase 3: Work Order
+    "WorkOrder",
+    "WorkOrderStatus",
+    "WorkOrderPriority",
+    "HoldReason",
+    "WorkOrderOperation",
+    "OperationStatus",
+    # Phase 3: Standard Work
+    "StandardWork",
+    "StandardWorkStatus",
+    "StandardWorkType",
+    "StandardWorkVersion",
+    # Phase 3: Training & Skills
+    "Skill",
+    "SkillCategory",
+    "SkillRequirement",
+    "Training",
+    "TrainingType",
+    "TrainingStatus",
+    "TrainingParticipant",
+    "EnrollmentStatus",
+    "AttendanceStatus",
+    "UserSkill",
+    "CertificationStatus",
+    # Phase 3: Andon
+    "AndonEvent",
+    "AndonType",
+    "AndonSeverity",
+    "AndonStatus",
+    "EscalationLevel",
+    "ResponseStatus",
+    "AndonEscalation",
+    "AndonRecurrencePattern",
+    # Phase 3: Kanban
+    "KanbanBoard",
+    "BoardType",
+    "KanbanCard",
+    "CardType",
+    "CardStatus",
+    "CardPriority",
+    "KanbanCardHistory",
+    "KanbanMetrics",
+    # Phase 3: Quality (NC/CAPA)
+    "NonConformance",
+    "NCType",
+    "NCSource",
+    "NCSeverity",
+    "NCStatus",
+    "NCDisposition",
+    "RootCauseCategory",
+    "CAPA",
+    "CAPAType",
+    "CAPASourceType",
+    "CAPAStatus",
+    "CAPAPriority",
+    "VerificationStatus",
+    "EffectivenessStatus",
+    "CAPAAction",
+    "CAPAActionType",
+    "CAPAActionStatus",
+    "InspectionPlan",
+    "InspectionType",
+    "InspectionRecord",
+    "InspectionResult",
+    # Phase 3: Production Cell
+    "ProductionCell",
+    "CellType",
+    "CellStatus",
+    "CellPerformance",
+    "ShiftNumber",
 ]

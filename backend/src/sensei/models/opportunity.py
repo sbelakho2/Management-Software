@@ -365,10 +365,10 @@ class OpportunityNote(Base, TimestampMixin):
         "Opportunity",
         back_populates="notes",
     )
-    created_by: Mapped["User | None"] = relationship("User")
+    created_by: Mapped["User | None"] = relationship("User", foreign_keys=[created_by_id])
     contact: Mapped["Contact | None"] = relationship("Contact")
     
     __table_args__ = (
-        Index("ix_opportunity_notes_opp_type", opportunity_id, note_type),
-        Index("ix_opportunity_notes_created", opportunity_id, created_at.desc()),
+        Index("ix_opportunity_notes_opp_type", "opportunity_id", "note_type"),
+        Index("ix_opportunity_notes_created", "opportunity_id", "created_at"),
     )

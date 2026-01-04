@@ -88,20 +88,20 @@ class AuditLog(Base):
     
     # Additional context
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     
     # For status changes
     old_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     new_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     
     # Relationship to user
-    user: Mapped["User | None"] = relationship("User")
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id])
     
     __table_args__ = (
-        Index("ix_audit_logs_entity", entity_type, entity_id),
-        Index("ix_audit_logs_user_created", user_id, created_at.desc()),
-        Index("ix_audit_logs_entity_created", entity_type, entity_id, created_at.desc()),
-        Index("ix_audit_logs_action_created", action, created_at.desc()),
+        Index("ix_audit_logs_entity", "entity_type", "entity_id"),
+        Index("ix_audit_logs_user_created", "user_id", "created_at"),
+        Index("ix_audit_logs_entity_created", "entity_type", "entity_id", "created_at"),
+        Index("ix_audit_logs_action_created", "action", "created_at"),
     )
     
     def __repr__(self) -> str:

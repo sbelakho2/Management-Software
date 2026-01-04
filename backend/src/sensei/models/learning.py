@@ -60,6 +60,8 @@ class ContentType(str, Enum):
     QUIZ = "quiz"
     EXERCISE = "exercise"
     CASE_STUDY = "case_study"
+    ARTICLE = "article"
+    SIMULATION = "simulation"
 
 
 class DifficultyLevel(str, Enum):
@@ -69,6 +71,15 @@ class DifficultyLevel(str, Enum):
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
     EXPERT = "expert"
+
+
+class LearningStatus(str, Enum):
+    """Status of learning content."""
+    
+    DRAFT = "draft"
+    REVIEW = "review"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
 
 
 class LearningModule(Base, TimestampMixin, AuditMixin):
@@ -290,6 +301,8 @@ class ProgressStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     NEEDS_REVIEW = "needs_review"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class UserLearningProgress(Base, TimestampMixin):
@@ -365,7 +378,7 @@ class UserLearningProgress(Base, TimestampMixin):
     # {"section": 2, "timestamp": 125.5} for video
     
     # Relationships
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     unit: Mapped["LearningUnit"] = relationship(
         "LearningUnit",
         back_populates="progress_records",
@@ -465,3 +478,129 @@ class LearningAssessment(Base, TimestampMixin, AuditMixin):
     def question_count(self) -> int:
         """Get number of questions."""
         return len(self.questions) if self.questions else 0
+
+
+class LearningPath(Base, TimestampMixin, AuditMixin):
+    """
+    Learning path - a structured sequence of modules.
+    
+    Represents a certification or training track.
+    """
+    
+    __tablename__ = "learning_paths"
+    
+    # Identification
+    path_code: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Classification
+    difficulty: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=DifficultyLevel.BEGINNER.value,
+    )
+    
+    # Status
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=LearningStatus.DRAFT.value,
+        index=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_certification_path: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # Duration
+    estimated_hours: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    
+    # Prerequisites (list of path codes or IDs)
+    prerequisites: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    
+    # Thumbnail
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    
+    # Tags
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    
+    __table_args__ = (
+        Index("ix_learning_paths_status", status),
+    )
+
+
+class LearningProgress(Base, TimestampMixin):
+    """
+    User's progress through a specific learning unit.
+    
+    Tracks completion, score, and time spent.
+    """
+    
+    __tablename__ = "learning_progress"
+    
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    learning_unit_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("learning_units.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    # Status
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=ProgressStatus.NOT_STARTED.value,
+        index=True,
+    )
+    
+    # Progress
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    
+    # Score tracking
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    passing_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    # Time tracking
+    time_spent_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    
+    # Attempts
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    
+    # Dates
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    
+    __table_args__ = (
+        UniqueConstraint("user_id", "learning_unit_id", name="uq_learning_progress"),
+        Index("ix_learning_progress_user_status", user_id, status),
+    )
+    
+    @property
+    def is_complete(self) -> bool:
+        """Check if progress is complete."""
+        return self.progress_percent == 100 and self.status == ProgressStatus.COMPLETED.value
+    
+    @property
+    def is_passed(self) -> bool | None:
+        """Check if assessment is passed."""
+        if self.score is None:
+            return None
+        if self.passing_score is None:
+            return None
+        return self.score >= self.passing_score
