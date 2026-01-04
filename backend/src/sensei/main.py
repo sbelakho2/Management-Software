@@ -19,6 +19,7 @@ from sensei.core.database import engine, check_database_connection
 from sensei.core.redis import redis_client, check_redis_connection
 from sensei.core.storage import storage_client, check_storage_connection
 from sensei.api.v1 import api_router
+from sensei.api.exceptions import register_exception_handlers
 from sensei.middleware.logging import StructuredLoggingMiddleware
 from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
@@ -87,6 +88,9 @@ def create_application() -> FastAPI:
     # Include API routers
     app.include_router(api_router, prefix="/api/v1")
     
+    # Register exception handlers
+    register_exception_handlers(app)
+    
     # Health check endpoint
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict:
@@ -107,24 +111,6 @@ def create_application() -> FastAPI:
                 "storage": "up" if storage_ok else "down",
             },
         }
-    
-    # Global exception handler
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Handle uncaught exceptions with structured logging."""
-        logger.exception(
-            "Unhandled exception",
-            path=request.url.path,
-            method=request.method,
-            error=str(exc),
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "error": "internal_server_error",
-                "message": "An unexpected error occurred",
-            },
-        )
     
     return app
 

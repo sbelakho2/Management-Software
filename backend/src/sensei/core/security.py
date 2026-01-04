@@ -13,24 +13,20 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 from uuid import UUID
 
+import bcrypt
 import pyotp
 import qrcode
 import qrcode.image.svg
 from io import BytesIO
 import base64
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 
 from sensei.core.config import settings
 
 
-# Password hashing context
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=settings.BCRYPT_ROUNDS,
-)
+# Bcrypt rounds for password hashing
+BCRYPT_ROUNDS = settings.BCRYPT_ROUNDS
 
 
 class TokenData(BaseModel):
@@ -79,6 +75,10 @@ def hash_password(password: str) -> str:
     """
     Hash a password using bcrypt.
     
+    Note: bcrypt has a 72-byte limit. For passwords longer than this,
+    we hash the password with SHA-256 first (base64 encoded to stay printable),
+    then pass that to bcrypt. This provides equivalent security.
+    
     Args:
         password: Plain text password to hash
         
@@ -93,7 +93,41 @@ def hash_password(password: str) -> str:
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
     
-    return pwd_context.hash(password)
+    # Encode password
+    password_bytes = password.encode("utf-8")
+    
+    # If password is longer than 72 bytes, pre-hash with SHA-256
+    # This is a common technique to handle bcrypt's 72-byte limit
+    if len(password_bytes) > 72:
+        import hashlib
+        password_bytes = base64.b64encode(
+            hashlib.sha256(password_bytes).digest()
+        )
+    
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("utf-8")
+
+
+def _prepare_password_for_bcrypt(password: str) -> bytes:
+    """
+    Prepare a password for bcrypt, handling the 72-byte limit.
+    
+    Args:
+        password: Plain text password
+        
+    Returns:
+        Bytes suitable for bcrypt (max 72 bytes)
+    """
+    password_bytes = password.encode("utf-8")
+    
+    if len(password_bytes) > 72:
+        import hashlib
+        password_bytes = base64.b64encode(
+            hashlib.sha256(password_bytes).digest()
+        )
+    
+    return password_bytes
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -111,7 +145,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
     
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        password_bytes = _prepare_password_for_bcrypt(plain_password)
+        hashed_bytes = hashed_password.encode("utf-8")
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
     except Exception:
         # Handle malformed hashes gracefully
         return False
@@ -132,7 +168,17 @@ def needs_rehash(hashed_password: str) -> bool:
     """
     if not hashed_password:
         return False
-    return pwd_context.needs_update(hashed_password)
+    
+    try:
+        # Extract the cost from the hash (format: $2b$XX$...)
+        parts = hashed_password.split("$")
+        if len(parts) < 4:
+            return True  # Invalid hash format, needs rehash
+        
+        current_rounds = int(parts[2])
+        return current_rounds < BCRYPT_ROUNDS
+    except (ValueError, IndexError):
+        return True  # If we can't parse, recommend rehash
 
 
 # =============================================================================
@@ -466,7 +512,7 @@ def hash_backup_codes(codes: list[str]) -> list[str]:
     Returns:
         List of hashed backup codes
     """
-    return [pwd_context.hash(code) for code in codes]
+    return [hash_password(code) for code in codes]
 
 
 def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, int]:

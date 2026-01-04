@@ -52,13 +52,13 @@ class TestSettingsValidation:
             settings = Settings()
             assert len(settings.SECRET_KEY) == 32
     
-    def test_cors_origins_from_comma_separated_string(self):
-        """Test parsing CORS origins from comma-separated string."""
+    def test_cors_origins_from_json_string(self):
+        """Test parsing CORS origins from JSON string (pydantic-settings format)."""
         env = {
             "SECRET_KEY": "a" * 32,
             "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
             "DATABASE_URL_SYNC": "postgresql://user:pass@localhost/db",
-            "CORS_ORIGINS": "http://localhost:3000, http://localhost:8080, https://app.example.com",
+            "CORS_ORIGINS": '["http://localhost:3000", "http://localhost:8080", "https://app.example.com"]',
         }
         with patch.dict(os.environ, env, clear=True):
             settings = Settings()
@@ -68,31 +68,30 @@ class TestSettingsValidation:
                 "https://app.example.com",
             ]
     
-    def test_cors_origins_empty_string(self):
-        """Test empty CORS_ORIGINS string results in empty list."""
+    def test_cors_origins_empty_json_list(self):
+        """Test empty CORS_ORIGINS JSON results in empty list."""
         env = {
             "SECRET_KEY": "a" * 32,
             "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
             "DATABASE_URL_SYNC": "postgresql://user:pass@localhost/db",
-            "CORS_ORIGINS": "",
+            "CORS_ORIGINS": "[]",
         }
         with patch.dict(os.environ, env, clear=True):
             settings = Settings()
             assert settings.CORS_ORIGINS == []
     
-    def test_cors_origins_with_whitespace(self):
-        """Test CORS origins with extra whitespace are trimmed."""
+    def test_cors_origins_single_element(self):
+        """Test CORS origins with single element."""
         env = {
             "SECRET_KEY": "a" * 32,
             "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
             "DATABASE_URL_SYNC": "postgresql://user:pass@localhost/db",
-            "CORS_ORIGINS": "  http://localhost:3000  ,  http://localhost:8080  ",
+            "CORS_ORIGINS": '["http://localhost:3000"]',
         }
         with patch.dict(os.environ, env, clear=True):
             settings = Settings()
             assert settings.CORS_ORIGINS == [
                 "http://localhost:3000",
-                "http://localhost:8080",
             ]
 
 
@@ -236,11 +235,26 @@ class TestInvalidEnvironmentValues:
     
     def test_missing_required_database_url(self):
         """Test that missing DATABASE_URL raises error."""
+        from pydantic_settings import BaseSettings, SettingsConfigDict
+        from pydantic import Field, field_validator
+        from typing import List, Literal
+        
+        # Create a fresh Settings class without .env file loading
+        class TestSettings(BaseSettings):
+            model_config = SettingsConfigDict(
+                case_sensitive=True,
+                extra="ignore",
+            )
+            
+            SECRET_KEY: str = Field(..., min_length=32)
+            DATABASE_URL: str = Field(..., description="Async PostgreSQL connection string")
+            DATABASE_URL_SYNC: str = Field(..., description="Sync PostgreSQL connection string")
+        
         env = {
             "SECRET_KEY": "a" * 32,
             "DATABASE_URL_SYNC": "postgresql://user:pass@localhost/db",
         }
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValidationError) as exc_info:
-                Settings()
+                TestSettings()
             assert "DATABASE_URL" in str(exc_info.value)

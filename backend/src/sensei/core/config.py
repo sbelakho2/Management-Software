@@ -88,14 +88,6 @@ class Settings(BaseSettings):
     SUPPORTED_LOCALES: List[str] = ["en", "fr"]
     DEFAULT_TIMEZONE: str = "Africa/Casablanca"
     
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: str | List[str]) -> List[str]:
-        """Parse CORS origins from comma-separated string or list."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
-    
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
