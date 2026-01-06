@@ -26,7 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sensei.models.base import AuditMixin, Base, TimestampMixin
+from sensei.models.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from sensei.models.rfq import RFQ
@@ -74,7 +74,7 @@ class MeasurementResult(str, Enum):
     NOT_MEASURED = "not_measured"
 
 
-class CTQ(Base, TimestampMixin, AuditMixin):
+class CTQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     """
     Critical to Quality characteristic.
     

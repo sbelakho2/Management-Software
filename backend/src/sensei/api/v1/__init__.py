@@ -15,6 +15,19 @@ from sensei.api.v1.endpoints import (
     work_centers,
     work_orders,
     production_cells,
+    quality,
+    andon,
+    kanban,
+    standard_work,
+    training,
+    a3,
+    ctq,
+    risk,
+    obeya,
+    tasks,
+    learning,
+    attachments,
+    audit_logs,
 )
 
 api_router = APIRouter()
@@ -27,7 +40,20 @@ api_router.include_router(contacts.router, prefix="/contacts", tags=["Contacts"]
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(rfqs.router, prefix="/rfqs", tags=["RFQs"])
 api_router.include_router(opportunities.router, prefix="/opportunities", tags=["Opportunities"])
+api_router.include_router(quality.router, prefix="/quality", tags=["Quality"])
 api_router.include_router(quotes.router, prefix="/quotes", tags=["Quotes"])
 api_router.include_router(work_centers.router, prefix="/work-centers", tags=["Work Centers"])
 api_router.include_router(work_orders.router, prefix="/work-orders", tags=["Work Orders"])
 api_router.include_router(production_cells.router, prefix="/production-cells", tags=["Production Cells"])
+api_router.include_router(andon.router, prefix="/andon", tags=["Andon"])
+api_router.include_router(kanban.router, prefix="/kanban", tags=["Kanban"])
+api_router.include_router(standard_work.router, prefix="/standard-work", tags=["Standard Work"])
+api_router.include_router(training.router, prefix="/training", tags=["Training"])
+api_router.include_router(a3.router, prefix="/a3", tags=["A3"])
+api_router.include_router(ctq.router, prefix="/ctq", tags=["CTQ"])
+api_router.include_router(risk.router, prefix="/risks", tags=["Risk"])
+api_router.include_router(obeya.router, prefix="/obeya", tags=["Obeya"])
+api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
+api_router.include_router(learning.router, prefix="/learning", tags=["Learning"])
+api_router.include_router(attachments.router, prefix="/attachments", tags=["Attachments"])
+api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
