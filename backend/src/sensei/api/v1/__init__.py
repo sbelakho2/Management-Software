@@ -28,6 +28,19 @@ from sensei.api.v1.endpoints import (
     learning,
     attachments,
     audit_logs,
+    state_machines,
+    stale_detection,
+    escalation_policy,
+    training_matrix,
+    andon_escalation,
+    notification_triggers,
+    search,
+    saved_views,
+    quote_quality,
+    lsw,
+    kpi,
+    conditions,
+    today,
 )
 
 api_router = APIRouter()
@@ -57,3 +70,16 @@ api_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 api_router.include_router(learning.router, prefix="/learning", tags=["Learning"])
 api_router.include_router(attachments.router, prefix="/attachments", tags=["Attachments"])
 api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"])
+api_router.include_router(state_machines.router, prefix="/state-machines", tags=["State Machines"])
+api_router.include_router(stale_detection.router, prefix="/stale-detection", tags=["Stale Detection"])
+api_router.include_router(escalation_policy.router, prefix="/escalation", tags=["Escalation"])
+api_router.include_router(training_matrix.router, prefix="/training-matrix", tags=["Training Matrix"])
+api_router.include_router(andon_escalation.router)
+api_router.include_router(notification_triggers.router)
+api_router.include_router(search.router)
+api_router.include_router(saved_views.router)
+api_router.include_router(quote_quality.router)
+api_router.include_router(lsw.router)
+api_router.include_router(kpi.router)
+api_router.include_router(conditions.router)
+api_router.include_router(today.router)

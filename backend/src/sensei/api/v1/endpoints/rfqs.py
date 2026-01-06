@@ -1092,3 +1092,305 @@ async def get_rfq_stats(
     }
     
     return build_response(data=stats)
+
+
+# =============================================================================
+# RFQ Completeness
+# =============================================================================
+
+
+class CompletenessResponse(BaseModel):
+    """RFQ completeness score response."""
+    
+    score: int
+    total_weight: int
+    earned_weight: int
+    missing_fields: list[dict]
+    filled_fields: list[str]
+    can_qualify: bool
+    requires_override: bool
+    override_reason: Optional[str]
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MissingInfoEmailResponse(BaseModel):
+    """Generated missing info email response."""
+    
+    email_text: str
+    missing_count: int
+    required_missing: int
+    important_missing: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QualifyRequest(BaseModel):
+    """Request to transition RFQ to qualification."""
+    
+    allow_override: bool = False
+    override_rationale: Optional[str] = None
+
+
+class QualifyResponse(BaseModel):
+    """Response for qualification transition."""
+    
+    success: bool
+    rfq_id: UUID
+    new_status: str
+    override_used: bool
+    completeness_score: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TaskGenerationResponse(BaseModel):
+    """Response for task generation."""
+    
+    tasks_generated: int
+    tasks: list[dict]
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get("/{rfq_id}/completeness", response_model=APIResponse)
+async def get_rfq_completeness(
+    rfq_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Calculate the completeness score for an RFQ.
+    
+    Returns:
+    - score: 0-100 percentage
+    - missing_fields: List of fields that are not filled
+    - can_qualify: Whether the RFQ can transition to qualification
+    - requires_override: Whether GM override is needed
+    """
+    from sensei.services.rfq_completeness import RFQCompletenessService
+    
+    result = await db.execute(
+        select(RFQ).where(
+            RFQ.id == rfq_id,
+            RFQ.deleted_at.is_(None),
+        )
+    )
+    rfq = result.scalar_one_or_none()
+    
+    if not rfq:
+        raise NotFoundError(resource="RFQ", identifier=str(rfq_id))
+    
+    service = RFQCompletenessService()
+    completeness = service.calculate_completeness(rfq)
+    
+    response_data = CompletenessResponse(
+        score=completeness.score,
+        total_weight=completeness.total_weight,
+        earned_weight=completeness.earned_weight,
+        missing_fields=[f.to_dict() for f in completeness.missing_fields],
+        filled_fields=completeness.filled_fields,
+        can_qualify=completeness.can_qualify,
+        requires_override=completeness.requires_override,
+        override_reason=completeness.override_reason,
+    )
+    
+    return build_response(data=response_data.model_dump())
+
+
+@router.get("/{rfq_id}/completeness/missing-info-email", response_model=APIResponse)
+async def generate_missing_info_email(
+    rfq_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Generate an email template requesting missing information from the customer.
+    
+    Uses the RFQ's account name and RFQ number to personalize the email.
+    """
+    from sensei.services.rfq_completeness import RFQCompletenessService, FieldCategory
+    
+    result = await db.execute(
+        select(RFQ).where(
+            RFQ.id == rfq_id,
+            RFQ.deleted_at.is_(None),
+        ).options(selectinload(RFQ.account))
+    )
+    rfq = result.scalar_one_or_none()
+    
+    if not rfq:
+        raise NotFoundError(resource="RFQ", identifier=str(rfq_id))
+    
+    service = RFQCompletenessService()
+    completeness = service.calculate_completeness(rfq)
+    
+    customer_name = rfq.account.name if rfq.account else "Customer"
+    email_text = completeness.generate_missing_info_email(customer_name, rfq.rfq_number)
+    
+    required_missing = sum(
+        1 for f in completeness.missing_fields if f.category == FieldCategory.REQUIRED
+    )
+    important_missing = sum(
+        1 for f in completeness.missing_fields if f.category == FieldCategory.IMPORTANT
+    )
+    
+    response_data = MissingInfoEmailResponse(
+        email_text=email_text,
+        missing_count=len(completeness.missing_fields),
+        required_missing=required_missing,
+        important_missing=important_missing,
+    )
+    
+    return build_response(data=response_data.model_dump())
+
+
+@router.post("/{rfq_id}/qualify", response_model=APIResponse)
+async def transition_to_qualification(
+    rfq_id: UUID,
+    request: QualifyRequest,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Attempt to transition an RFQ to 'qualifying' status.
+    
+    Validates completeness score and required fields before allowing the transition.
+    Use allow_override=True with a rationale to bypass the score requirement (GM override).
+    """
+    from sensei.services.rfq_completeness import RFQCompletenessService
+    
+    result = await db.execute(
+        select(RFQ).where(
+            RFQ.id == rfq_id,
+            RFQ.deleted_at.is_(None),
+        )
+    )
+    rfq = result.scalar_one_or_none()
+    
+    if not rfq:
+        raise NotFoundError(resource="RFQ", identifier=str(rfq_id))
+    
+    # Check if already in qualifying or later status
+    qualifying_statuses = [
+        RFQStatus.QUALIFYING.value,
+        RFQStatus.QUALIFIED.value,
+        RFQStatus.NOT_QUALIFIED.value,
+        RFQStatus.QUOTING.value,
+        RFQStatus.QUOTED.value,
+        RFQStatus.WON.value,
+        RFQStatus.LOST.value,
+    ]
+    if rfq.status in qualifying_statuses:
+        raise ConflictError(
+            message=f"RFQ is already in status '{rfq.status}' and cannot be transitioned to qualifying"
+        )
+    
+    service = RFQCompletenessService()
+    can_transition, error_message = service.can_transition_to_qualification(
+        rfq,
+        allow_override=request.allow_override,
+        override_rationale=request.override_rationale,
+    )
+    
+    if not can_transition:
+        raise ForbiddenError(
+            message=f"Cannot transition to qualification: {error_message}"
+        )
+    
+    completeness = service.calculate_completeness(rfq)
+    
+    # Update status
+    rfq.previous_status = rfq.status
+    rfq.status = RFQStatus.QUALIFYING.value
+    rfq.status_changed_at = now_utc()
+    
+    # Store override info if used
+    if request.allow_override and request.override_rationale:
+        if rfq.custom_fields is None:
+            rfq.custom_fields = {}
+        rfq.custom_fields["qualification_override"] = {
+            "used": True,
+            "rationale": request.override_rationale,
+            "override_by": str(current_user.id),
+            "override_at": now_utc().isoformat(),
+            "score_at_override": completeness.score,
+        }
+    
+    await db.commit()
+    await db.refresh(rfq)
+    
+    response_data = QualifyResponse(
+        success=True,
+        rfq_id=rfq.id,
+        new_status=rfq.status,
+        override_used=request.allow_override,
+        completeness_score=completeness.score,
+    )
+    
+    return build_updated_response(
+        data=response_data.model_dump(),
+        resource_name="RFQ",
+    )
+
+
+@router.post("/{rfq_id}/completeness/generate-tasks", response_model=APIResponse)
+async def generate_missing_info_tasks(
+    rfq_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+    assigned_to_id: Optional[UUID] = Query(None, description="User to assign tasks to"),
+):
+    """
+    Generate tasks for obtaining missing RFQ information.
+    
+    Creates tasks for required and important missing fields.
+    Tasks are returned but not persisted - use the Tasks API to create them.
+    """
+    from sensei.services.rfq_completeness import RFQCompletenessService
+    
+    result = await db.execute(
+        select(RFQ).where(
+            RFQ.id == rfq_id,
+            RFQ.deleted_at.is_(None),
+        )
+    )
+    rfq = result.scalar_one_or_none()
+    
+    if not rfq:
+        raise NotFoundError(resource="RFQ", identifier=str(rfq_id))
+    
+    service = RFQCompletenessService()
+    tasks = service.generate_missing_info_tasks(
+        rfq,
+        rfq_id=rfq_id,
+        assigned_to_id=assigned_to_id or rfq.assigned_to_id,
+    )
+    
+    response_data = TaskGenerationResponse(
+        tasks_generated=len(tasks),
+        tasks=tasks,
+    )
+    
+    return build_response(data=response_data.model_dump())
+
+
+@router.get("/completeness/field-definitions", response_model=APIResponse)
+async def get_completeness_field_definitions(
+    current_user: CurrentUser,
+):
+    """
+    Get the field definitions used for completeness scoring.
+    
+    Returns the list of fields, their weights, and categories.
+    """
+    from sensei.services.rfq_completeness import RFQCompletenessService
+    
+    service = RFQCompletenessService()
+    definitions = service.get_field_definitions()
+    
+    return build_response(data={
+        "field_count": len(definitions),
+        "qualification_threshold": service.qualification_threshold,
+        "fields": definitions,
+    })

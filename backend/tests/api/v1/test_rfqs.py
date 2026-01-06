@@ -1247,3 +1247,296 @@ class TestEdgeCases:
                 db=db,
                 current_user=mock_user,
             )
+
+
+# =============================================================================
+# RFQ Completeness Endpoint Tests
+# =============================================================================
+
+
+class TestRFQCompletenessEndpoints:
+    """Tests for RFQ completeness scoring endpoints."""
+    
+    @pytest.fixture
+    def complete_rfq(self, account_id, contact_id):
+        """Create an RFQ with all fields filled."""
+        rfq = MagicMock(spec=RFQ)
+        rfq.id = uuid4()
+        rfq.rfq_number = "RFQ-2025-00001"
+        rfq.title = "Complete Test RFQ"
+        rfq.description = "Full description"
+        rfq.status = RFQStatus.RECEIVED.value
+        rfq.account_id = account_id
+        rfq.contact_id = contact_id
+        rfq.quantity = 1000
+        rfq.due_date = datetime.now(timezone.utc) + timedelta(days=14)
+        rfq.part_number = "PN-12345"
+        rfq.part_name = "Test Widget"
+        rfq.drawing_number = "DWG-001"
+        rfq.material_spec = "Aluminum 6061-T6"
+        rfq.annual_volume = 10000
+        rfq.primary_process = "CNC Machining"
+        rfq.delivery_terms = "FOB Origin"
+        rfq.target_price = Decimal("25.00")
+        rfq.finish_requirements = "Anodize Black"
+        rfq.tolerance_requirements = "+/- 0.005"
+        rfq.quality_requirements = "ISO 9001"
+        rfq.packaging_requirements = "Individual bags"
+        rfq.delivery_location = "Plant A"
+        rfq.lead_time_required = 14
+        rfq.certifications_required = "NADCAP"
+        rfq.deleted_at = None
+        rfq.account = MagicMock(name="Test Account Inc")
+        rfq.account.name = "Test Account Inc"
+        return rfq
+    
+    @pytest.fixture
+    def incomplete_rfq(self, account_id):
+        """Create an RFQ with minimal fields."""
+        rfq = MagicMock(spec=RFQ)
+        rfq.id = uuid4()
+        rfq.rfq_number = "RFQ-2025-00002"
+        rfq.title = "Incomplete Test RFQ"
+        rfq.description = None
+        rfq.status = RFQStatus.DRAFT.value
+        rfq.account_id = account_id
+        rfq.contact_id = None
+        rfq.quantity = 100
+        rfq.due_date = datetime.now(timezone.utc) + timedelta(days=7)
+        rfq.part_number = None
+        rfq.part_name = None
+        rfq.drawing_number = None
+        rfq.material_spec = None
+        rfq.annual_volume = None
+        rfq.primary_process = None
+        rfq.delivery_terms = None
+        rfq.target_price = None
+        rfq.finish_requirements = None
+        rfq.tolerance_requirements = None
+        rfq.quality_requirements = None
+        rfq.packaging_requirements = None
+        rfq.delivery_location = None
+        rfq.lead_time_required = None
+        rfq.certifications_required = None
+        rfq.deleted_at = None
+        rfq.account = MagicMock()
+        rfq.account.name = "Incomplete Account"
+        return rfq
+    
+    @pytest.mark.asyncio
+    async def test_get_completeness_full_score(self, mock_user, complete_rfq):
+        """Should return 100% completeness for a fully filled RFQ."""
+        from sensei.api.v1.endpoints.rfqs import get_rfq_completeness
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=complete_rfq)
+        db.execute.return_value = result
+        
+        response = await get_rfq_completeness(
+            rfq_id=complete_rfq.id,
+            db=db,
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert response.data["score"] == 100
+        assert response.data["can_qualify"] is True
+        assert len(response.data["missing_fields"]) == 0
+    
+    @pytest.mark.asyncio
+    async def test_get_completeness_partial_score(self, mock_user, incomplete_rfq):
+        """Should return partial score for incomplete RFQ."""
+        from sensei.api.v1.endpoints.rfqs import get_rfq_completeness
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=incomplete_rfq)
+        db.execute.return_value = result
+        
+        response = await get_rfq_completeness(
+            rfq_id=incomplete_rfq.id,
+            db=db,
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert response.data["score"] < 100
+        assert response.data["score"] > 0  # Has some filled fields
+        assert len(response.data["missing_fields"]) > 0
+    
+    @pytest.mark.asyncio
+    async def test_get_completeness_not_found(self, mock_user):
+        """Should return 404 for non-existent RFQ."""
+        from sensei.api.v1.endpoints.rfqs import get_rfq_completeness
+        from sensei.api.exceptions import NotFoundError
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=None)
+        db.execute.return_value = result
+        
+        with pytest.raises(NotFoundError):
+            await get_rfq_completeness(
+                rfq_id=uuid4(),
+                db=db,
+                current_user=mock_user,
+            )
+    
+    @pytest.mark.asyncio
+    async def test_generate_missing_info_email(self, mock_user, incomplete_rfq):
+        """Should generate email for missing fields."""
+        from sensei.api.v1.endpoints.rfqs import generate_missing_info_email
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=incomplete_rfq)
+        db.execute.return_value = result
+        
+        response = await generate_missing_info_email(
+            rfq_id=incomplete_rfq.id,
+            db=db,
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert "email_text" in response.data
+        assert response.data["missing_count"] > 0
+    
+    @pytest.mark.asyncio
+    async def test_transition_to_qualification_success(self, mock_user, complete_rfq):
+        """Should transition to qualifying status with full completeness."""
+        from sensei.api.v1.endpoints.rfqs import transition_to_qualification, QualifyRequest
+        
+        # Set up RFQ in proper state
+        complete_rfq.status = RFQStatus.RECEIVED.value
+        complete_rfq.previous_status = None
+        complete_rfq.status_changed_at = None
+        complete_rfq.custom_fields = None
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=complete_rfq)
+        db.execute.return_value = result
+        
+        request = QualifyRequest(allow_override=False)
+        
+        response = await transition_to_qualification(
+            rfq_id=complete_rfq.id,
+            request=request,
+            db=db,
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert response.data["new_status"] == RFQStatus.QUALIFYING.value
+        db.commit.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_transition_to_qualification_blocked(self, mock_user, incomplete_rfq):
+        """Should block transition when score is too low."""
+        from sensei.api.v1.endpoints.rfqs import transition_to_qualification, QualifyRequest
+        from sensei.api.exceptions import ForbiddenError
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=incomplete_rfq)
+        db.execute.return_value = result
+        
+        request = QualifyRequest(allow_override=False)
+        
+        with pytest.raises(ForbiddenError):
+            await transition_to_qualification(
+                rfq_id=incomplete_rfq.id,
+                request=request,
+                db=db,
+                current_user=mock_user,
+            )
+    
+    @pytest.mark.asyncio
+    async def test_transition_with_override(self, mock_user, incomplete_rfq):
+        """Should allow transition with GM override."""
+        from sensei.api.v1.endpoints.rfqs import transition_to_qualification, QualifyRequest
+        
+        incomplete_rfq.status = RFQStatus.RECEIVED.value
+        incomplete_rfq.previous_status = None
+        incomplete_rfq.status_changed_at = None
+        incomplete_rfq.custom_fields = None
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=incomplete_rfq)
+        db.execute.return_value = result
+        
+        request = QualifyRequest(
+            allow_override=True,
+            override_rationale="Urgent customer request - expedited processing approved by management",
+        )
+        
+        response = await transition_to_qualification(
+            rfq_id=incomplete_rfq.id,
+            request=request,
+            db=db,
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert response.data["override_used"] is True
+    
+    @pytest.mark.asyncio
+    async def test_transition_already_qualifying(self, mock_user, complete_rfq):
+        """Should reject transition if already in qualifying status."""
+        from sensei.api.v1.endpoints.rfqs import transition_to_qualification, QualifyRequest
+        from sensei.api.exceptions import ConflictError
+        
+        complete_rfq.status = RFQStatus.QUALIFYING.value
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=complete_rfq)
+        db.execute.return_value = result
+        
+        request = QualifyRequest(allow_override=False)
+        
+        with pytest.raises(ConflictError):
+            await transition_to_qualification(
+                rfq_id=complete_rfq.id,
+                request=request,
+                db=db,
+                current_user=mock_user,
+            )
+    
+    @pytest.mark.asyncio
+    async def test_generate_missing_tasks(self, mock_user, incomplete_rfq):
+        """Should generate tasks for missing fields."""
+        from sensei.api.v1.endpoints.rfqs import generate_missing_info_tasks
+        
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=incomplete_rfq)
+        db.execute.return_value = result
+        
+        response = await generate_missing_info_tasks(
+            rfq_id=incomplete_rfq.id,
+            db=db,
+            current_user=mock_user,
+            assigned_to_id=None,
+        )
+        
+        assert response.success is True
+        assert response.data["tasks_generated"] > 0
+        assert len(response.data["tasks"]) == response.data["tasks_generated"]
+    
+    @pytest.mark.asyncio
+    async def test_get_field_definitions(self, mock_user):
+        """Should return field definitions."""
+        from sensei.api.v1.endpoints.rfqs import get_completeness_field_definitions
+        
+        response = await get_completeness_field_definitions(
+            current_user=mock_user,
+        )
+        
+        assert response.success is True
+        assert response.data["field_count"] == 21
+        assert response.data["qualification_threshold"] == 70
+        assert len(response.data["fields"]) == 21
