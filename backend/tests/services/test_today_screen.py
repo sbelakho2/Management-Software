@@ -1315,3 +1315,1305 @@ class TestEdgeCases:
         
         # Should return empty dict when no matching risks
         assert risks == {} or RiskCategory.SAFETY not in risks
+
+
+# ============================================================================
+# Shop Floor Management Tests (Phase 3)
+# ============================================================================
+
+
+# Import additional types for shop floor tests
+from sensei.services.today_screen import (
+    ShopFloorAreaType,
+    ShopFloorAlertSeverity,
+    WorkOrderAtRisk,
+    CriticalAndon,
+    StationEfficiency,
+    CellOEE,
+    KanbanAlert,
+    ExpiringCertification,
+    WIPViolation,
+    CAPAVerification,
+    ScheduledTraining,
+    ShopFloorSummary,
+)
+
+
+class TestWorkOrdersAtRisk:
+    """Tests for work orders at risk management."""
+
+    def test_add_work_order_at_risk(self, service):
+        """Test adding a work order at risk."""
+        due = date.today() + timedelta(days=3)
+        estimated = date.today() + timedelta(days=5)
+        
+        wo = service.add_work_order_at_risk(
+            work_order_number="WO-001",
+            product_name="Widget A",
+            quantity=100,
+            due_date=due,
+            estimated_completion=estimated,
+            reason="Machine breakdown",
+            work_center_id=uuid4(),
+            work_center_name="Assembly",
+        )
+        
+        assert wo.id is not None
+        assert wo.work_order_number == "WO-001"
+        assert wo.product_name == "Widget A"
+        assert wo.quantity == 100
+        assert wo.days_at_risk == 2  # 5 - 3 = 2 days late
+        assert wo.severity == ShopFloorAlertSeverity.WARNING
+
+    def test_work_order_critical_severity(self, service):
+        """Test work order gets critical severity when very late."""
+        due = date.today()
+        estimated = date.today() + timedelta(days=5)  # 5 days late
+        
+        wo = service.add_work_order_at_risk(
+            work_order_number="WO-002",
+            product_name="Widget B",
+            quantity=50,
+            due_date=due,
+            estimated_completion=estimated,
+            reason="Material shortage",
+        )
+        
+        assert wo.days_at_risk == 5
+        assert wo.severity == ShopFloorAlertSeverity.CRITICAL
+
+    def test_work_order_info_severity(self, service):
+        """Test work order gets info severity when on time."""
+        due = date.today() + timedelta(days=3)
+        estimated = due  # On time
+        
+        wo = service.add_work_order_at_risk(
+            work_order_number="WO-003",
+            product_name="Widget C",
+            quantity=25,
+            due_date=due,
+            estimated_completion=estimated,
+            reason="Tight schedule",
+        )
+        
+        assert wo.days_at_risk == 0
+        assert wo.severity == ShopFloorAlertSeverity.INFO
+
+    def test_get_work_orders_at_risk(self, service):
+        """Test retrieving work orders at risk."""
+        wc_id = uuid4()
+        
+        for i in range(3):
+            service.add_work_order_at_risk(
+                work_order_number=f"WO-{i}",
+                product_name=f"Product {i}",
+                quantity=10 * (i + 1),
+                due_date=date.today(),
+                estimated_completion=date.today() + timedelta(days=i + 1),
+                reason="Test",
+                work_center_id=wc_id,
+                work_center_name="Test Center",
+            )
+        
+        # Add one for different work center
+        service.add_work_order_at_risk(
+            work_order_number="WO-OTHER",
+            product_name="Other",
+            quantity=5,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=1),
+            reason="Test",
+            work_center_id=uuid4(),
+            work_center_name="Other Center",
+        )
+        
+        # Filter by work center
+        wos = service.get_work_orders_at_risk(work_center_id=wc_id)
+        assert len(wos) == 3
+        assert all(w.work_center_id == wc_id for w in wos)
+
+    def test_get_work_orders_at_risk_by_severity(self, service):
+        """Test filtering work orders by severity."""
+        # Add critical
+        service.add_work_order_at_risk(
+            work_order_number="WO-CRIT",
+            product_name="Critical",
+            quantity=100,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=5),
+            reason="Very late",
+        )
+        
+        # Add warning
+        service.add_work_order_at_risk(
+            work_order_number="WO-WARN",
+            product_name="Warning",
+            quantity=50,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=2),
+            reason="Slightly late",
+        )
+        
+        critical = service.get_work_orders_at_risk(severity=ShopFloorAlertSeverity.CRITICAL)
+        assert len(critical) == 1
+        assert critical[0].work_order_number == "WO-CRIT"
+
+    def test_resolve_work_order_at_risk(self, service):
+        """Test resolving a work order at risk."""
+        wo = service.add_work_order_at_risk(
+            work_order_number="WO-RESOLVE",
+            product_name="Resolve Me",
+            quantity=10,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=1),
+            reason="Test",
+        )
+        
+        assert service.resolve_work_order_at_risk(wo.id) is True
+        assert service.resolve_work_order_at_risk(wo.id) is False  # Already removed
+
+    def test_work_orders_sorted_by_severity(self, service):
+        """Test work orders are sorted by severity and days at risk."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        # Add in random order
+        svc.add_work_order_at_risk(
+            work_order_number="WO-1",
+            product_name="P1",
+            quantity=10,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=1),  # Warning
+            reason="T",
+        )
+        svc.add_work_order_at_risk(
+            work_order_number="WO-2",
+            product_name="P2",
+            quantity=10,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=10),  # Critical
+            reason="T",
+        )
+        svc.add_work_order_at_risk(
+            work_order_number="WO-3",
+            product_name="P3",
+            quantity=10,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=5),  # Critical
+            reason="T",
+        )
+        
+        wos = svc.get_work_orders_at_risk()
+        assert wos[0].work_order_number == "WO-2"  # Most critical first
+        assert wos[1].work_order_number == "WO-3"
+
+
+class TestCriticalAndons:
+    """Tests for critical Andon management."""
+
+    def test_add_critical_andon(self, service):
+        """Test adding a critical Andon."""
+        wc_id = uuid4()
+        
+        andon = service.add_critical_andon(
+            andon_type="quality",
+            title="Defect detected",
+            work_center_id=wc_id,
+            work_center_name="Assembly Line 1",
+            description="Surface defect on part",
+            station_id=uuid4(),
+            station_name="Station 3",
+        )
+        
+        assert andon.id is not None
+        assert andon.andon_type == "quality"
+        assert andon.title == "Defect detected"
+        assert andon.acknowledged is False
+        assert andon.minutes_open == 0
+        assert andon.severity == ShopFloorAlertSeverity.CRITICAL
+
+    def test_acknowledge_andon(self, service):
+        """Test acknowledging an Andon."""
+        wc_id = uuid4()
+        user_id = uuid4()
+        
+        andon = service.add_critical_andon(
+            andon_type="safety",
+            title="Safety hazard",
+            work_center_id=wc_id,
+            work_center_name="Welding",
+        )
+        
+        result = service.acknowledge_andon(
+            andon_id=andon.id,
+            acknowledged_by_id=user_id,
+            acknowledged_by_name="John Smith",
+        )
+        
+        assert result is not None
+        assert result.acknowledged is True
+        assert result.acknowledged_by_id == user_id
+        assert result.acknowledged_by_name == "John Smith"
+
+    def test_resolve_andon(self, service):
+        """Test resolving an Andon."""
+        wc_id = uuid4()
+        
+        andon = service.add_critical_andon(
+            andon_type="equipment",
+            title="Machine jam",
+            work_center_id=wc_id,
+            work_center_name="CNC",
+        )
+        
+        assert service.resolve_andon(andon.id) is True
+        assert service.resolve_andon(andon.id) is False  # Already resolved
+
+    def test_get_critical_andons(self, service):
+        """Test getting critical Andons."""
+        wc_id = uuid4()
+        
+        for i in range(3):
+            service.add_critical_andon(
+                andon_type="quality",
+                title=f"Andon {i}",
+                work_center_id=wc_id,
+                work_center_name="Test",
+            )
+        
+        andons = service.get_critical_andons(work_center_id=wc_id)
+        assert len(andons) == 3
+
+    def test_get_unacknowledged_andons_only(self, service):
+        """Test filtering for unacknowledged Andons."""
+        wc_id = uuid4()
+        
+        andon1 = service.add_critical_andon(
+            andon_type="quality",
+            title="Andon 1",
+            work_center_id=wc_id,
+            work_center_name="Test",
+        )
+        service.add_critical_andon(
+            andon_type="quality",
+            title="Andon 2",
+            work_center_id=wc_id,
+            work_center_name="Test",
+        )
+        
+        # Acknowledge one
+        service.acknowledge_andon(andon1.id, uuid4(), "User")
+        
+        unacked = service.get_critical_andons(unacknowledged_only=True)
+        assert len(unacked) == 1
+        assert unacked[0].title == "Andon 2"
+
+    def test_andon_minutes_open_updates(self, service):
+        """Test that minutes open is updated when retrieving."""
+        wc_id = uuid4()
+        
+        andon = service.add_critical_andon(
+            andon_type="material",
+            title="Material shortage",
+            work_center_id=wc_id,
+            work_center_name="Test",
+        )
+        
+        # Manually set raised_at to past
+        andon.raised_at = datetime.utcnow() - timedelta(minutes=30)
+        
+        andons = service.get_critical_andons()
+        assert andons[0].minutes_open >= 30
+
+
+class TestStationEfficiency:
+    """Tests for station efficiency tracking."""
+
+    def test_add_station_efficiency(self, service):
+        """Test adding station efficiency data."""
+        station_id = uuid4()
+        wc_id = uuid4()
+        
+        eff = service.add_station_efficiency(
+            station_id=station_id,
+            station_name="Station 1",
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            current_efficiency=85.0,
+            target_efficiency=90.0,
+            operator_id=uuid4(),
+            operator_name="Jane Doe",
+        )
+        
+        assert eff.station_id == station_id
+        assert eff.current_efficiency == 85.0
+        assert eff.target_efficiency == 90.0
+        assert eff.variance == -5.0
+        assert eff.is_below_target is True
+
+    def test_station_efficiency_above_target(self, service):
+        """Test station above target is not flagged."""
+        station_id = uuid4()
+        wc_id = uuid4()
+        
+        eff = service.add_station_efficiency(
+            station_id=station_id,
+            station_name="Good Station",
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            current_efficiency=95.0,
+            target_efficiency=90.0,
+        )
+        
+        assert eff.variance == 5.0
+        assert eff.is_below_target is False
+
+    def test_get_low_efficiency_stations(self, service):
+        """Test getting low efficiency stations."""
+        wc_id = uuid4()
+        
+        # Add low efficiency
+        service.add_station_efficiency(
+            station_id=uuid4(),
+            station_name="Low 1",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_efficiency=75.0,
+            target_efficiency=90.0,
+        )
+        service.add_station_efficiency(
+            station_id=uuid4(),
+            station_name="Low 2",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_efficiency=80.0,
+            target_efficiency=90.0,
+        )
+        
+        # Add high efficiency
+        service.add_station_efficiency(
+            station_id=uuid4(),
+            station_name="High",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_efficiency=95.0,
+            target_efficiency=90.0,
+        )
+        
+        low = service.get_low_efficiency_stations(work_center_id=wc_id)
+        assert len(low) == 2
+        # Sorted by variance (worst first)
+        assert low[0].station_name == "Low 1"
+
+    def test_get_low_efficiency_with_threshold(self, service):
+        """Test filtering by custom threshold."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        svc.add_station_efficiency(
+            station_id=uuid4(),
+            station_name="S1",
+            work_center_id=uuid4(),
+            work_center_name="Test",
+            current_efficiency=70.0,
+            target_efficiency=80.0,
+        )
+        svc.add_station_efficiency(
+            station_id=uuid4(),
+            station_name="S2",
+            work_center_id=uuid4(),
+            work_center_name="Test",
+            current_efficiency=80.0,
+            target_efficiency=80.0,
+        )
+        
+        low = svc.get_low_efficiency_stations(threshold=75.0)
+        assert len(low) == 1
+        assert low[0].station_name == "S1"
+
+
+class TestCellOEE:
+    """Tests for cell OEE tracking."""
+
+    def test_add_cell_oee(self, service):
+        """Test adding cell OEE data."""
+        cell_id = uuid4()
+        wc_id = uuid4()
+        
+        oee = service.add_cell_oee(
+            cell_id=cell_id,
+            cell_name="Cell A",
+            work_center_id=wc_id,
+            work_center_name="Machining",
+            availability=90.0,
+            performance=85.0,
+            quality=98.0,
+            target_oee=80.0,
+        )
+        
+        assert oee.cell_id == cell_id
+        assert oee.availability == 90.0
+        assert oee.performance == 85.0
+        assert oee.quality == 98.0
+        # OEE = 0.90 * 0.85 * 0.98 * 100 = 74.97
+        assert oee.current_oee == pytest.approx(74.97, rel=0.01)
+        assert oee.is_below_threshold is True
+
+    def test_cell_oee_above_threshold(self, service):
+        """Test cell above threshold is not flagged."""
+        cell_id = uuid4()
+        wc_id = uuid4()
+        
+        oee = service.add_cell_oee(
+            cell_id=cell_id,
+            cell_name="Good Cell",
+            work_center_id=wc_id,
+            work_center_name="Machining",
+            availability=95.0,
+            performance=95.0,
+            quality=99.0,
+            target_oee=80.0,
+        )
+        
+        # OEE = 0.95 * 0.95 * 0.99 * 100 = 89.35
+        assert oee.current_oee > 80.0
+        assert oee.is_below_threshold is False
+
+    def test_get_low_oee_cells(self, service):
+        """Test getting low OEE cells."""
+        wc_id = uuid4()
+        
+        service.add_cell_oee(
+            cell_id=uuid4(),
+            cell_name="Low OEE",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            availability=80.0,
+            performance=80.0,
+            quality=80.0,
+            target_oee=60.0,  # Below: 51.2%
+        )
+        service.add_cell_oee(
+            cell_id=uuid4(),
+            cell_name="High OEE",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            availability=95.0,
+            performance=95.0,
+            quality=99.0,
+            target_oee=85.0,  # Above: 89.35%
+        )
+        
+        low = service.get_low_oee_cells(work_center_id=wc_id)
+        assert len(low) == 1
+        assert low[0].cell_name == "Low OEE"
+
+    def test_get_overall_oee(self, service):
+        """Test calculating overall OEE."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        svc.add_cell_oee(
+            cell_id=uuid4(),
+            cell_name="Cell 1",
+            work_center_id=uuid4(),
+            work_center_name="Test",
+            availability=90.0,
+            performance=90.0,
+            quality=90.0,
+            target_oee=80.0,
+        )
+        svc.add_cell_oee(
+            cell_id=uuid4(),
+            cell_name="Cell 2",
+            work_center_id=uuid4(),
+            work_center_name="Test",
+            availability=80.0,
+            performance=80.0,
+            quality=80.0,
+            target_oee=80.0,
+        )
+        
+        # Cell 1: 72.9%, Cell 2: 51.2%, Average: 62.05%
+        overall = svc.get_overall_oee()
+        assert overall == pytest.approx(62.05, rel=0.01)
+
+    def test_get_overall_oee_empty(self, service):
+        """Test overall OEE with no cells."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        assert svc.get_overall_oee() == 0.0
+
+
+class TestKanbanAlerts:
+    """Tests for Kanban alert management."""
+
+    def test_add_kanban_alert(self, service):
+        """Test adding a Kanban alert."""
+        wc_id = uuid4()
+        past_date = date.today() - timedelta(days=3)
+        
+        alert = service.add_kanban_alert(
+            material_code="MAT-001",
+            material_name="Steel Plate",
+            bin_location="A-12-3",
+            work_center_id=wc_id,
+            work_center_name="Fabrication",
+            quantity_needed=50.0,
+            unit="pcs",
+            due_date=past_date,
+            supplier_name="Acme Steel",
+        )
+        
+        assert alert.id is not None
+        assert alert.material_code == "MAT-001"
+        assert alert.days_overdue == 3
+        assert alert.replenishment_status == "pending"
+
+    def test_kanban_not_overdue(self, service):
+        """Test Kanban due in future is not overdue."""
+        wc_id = uuid4()
+        future_date = date.today() + timedelta(days=2)
+        
+        alert = service.add_kanban_alert(
+            material_code="MAT-002",
+            material_name="Bolts",
+            bin_location="B-5-1",
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            quantity_needed=100.0,
+            unit="pcs",
+            due_date=future_date,
+        )
+        
+        assert alert.days_overdue == 0
+
+    def test_update_kanban_status(self, service):
+        """Test updating Kanban status."""
+        wc_id = uuid4()
+        
+        alert = service.add_kanban_alert(
+            material_code="MAT-003",
+            material_name="Nuts",
+            bin_location="B-5-2",
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            quantity_needed=200.0,
+            unit="pcs",
+            due_date=date.today(),
+        )
+        
+        result = service.update_kanban_status(alert.id, "ordered")
+        assert result is not None
+        assert result.replenishment_status == "ordered"
+
+    def test_resolve_kanban_alert(self, service):
+        """Test resolving a Kanban alert."""
+        wc_id = uuid4()
+        
+        alert = service.add_kanban_alert(
+            material_code="MAT-004",
+            material_name="Washers",
+            bin_location="B-5-3",
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            quantity_needed=500.0,
+            unit="pcs",
+            due_date=date.today(),
+        )
+        
+        assert service.resolve_kanban_alert(alert.id) is True
+        assert service.resolve_kanban_alert(alert.id) is False
+
+    def test_get_overdue_kanbans(self, service):
+        """Test getting overdue Kanbans."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        wc_id = uuid4()
+        
+        # Add overdue
+        svc.add_kanban_alert(
+            material_code="MAT-OVD",
+            material_name="Overdue",
+            bin_location="X-1",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            quantity_needed=10.0,
+            unit="pcs",
+            due_date=date.today() - timedelta(days=2),
+        )
+        
+        # Add not overdue
+        svc.add_kanban_alert(
+            material_code="MAT-OK",
+            material_name="On Time",
+            bin_location="X-2",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            quantity_needed=10.0,
+            unit="pcs",
+            due_date=date.today() + timedelta(days=2),
+        )
+        
+        overdue = svc.get_overdue_kanbans(work_center_id=wc_id)
+        assert len(overdue) == 1
+        assert overdue[0].material_code == "MAT-OVD"
+
+
+class TestExpiringCertifications:
+    """Tests for expiring certification tracking."""
+
+    def test_add_expiring_certification(self, service):
+        """Test adding an expiring certification."""
+        user_id = uuid4()
+        exp_date = date.today() + timedelta(days=15)
+        
+        cert = service.add_expiring_certification(
+            user_id=user_id,
+            user_name="John Doe",
+            certification_name="Forklift Operator",
+            certification_type="equipment",
+            expiration_date=exp_date,
+            required_for_work_centers=["Warehouse", "Shipping"],
+        )
+        
+        assert cert.id is not None
+        assert cert.certification_name == "Forklift Operator"
+        assert cert.days_until_expiry == 15
+        assert cert.is_expired is False
+
+    def test_expired_certification(self, service):
+        """Test that expired certification is flagged."""
+        user_id = uuid4()
+        exp_date = date.today() - timedelta(days=5)
+        
+        cert = service.add_expiring_certification(
+            user_id=user_id,
+            user_name="Jane Doe",
+            certification_name="Safety Training",
+            certification_type="safety",
+            expiration_date=exp_date,
+        )
+        
+        assert cert.is_expired is True
+        assert cert.days_until_expiry == -5
+
+    def test_get_expiring_certifications(self, service):
+        """Test getting expiring certifications."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        user_id = uuid4()
+        
+        # Expired
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Expired Cert",
+            certification_type="process",
+            expiration_date=date.today() - timedelta(days=5),
+        )
+        
+        # Expiring soon (within 30 days)
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Expiring Soon",
+            certification_type="equipment",
+            expiration_date=date.today() + timedelta(days=20),
+        )
+        
+        # Far future (beyond 30 days)
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Far Future",
+            certification_type="safety",
+            expiration_date=date.today() + timedelta(days=60),
+        )
+        
+        certs = svc.get_expiring_certifications(user_id=user_id, days_ahead=30)
+        assert len(certs) == 2  # Expired and Expiring Soon
+        
+        # Expired should be first
+        assert certs[0].certification_name == "Expired Cert"
+
+    def test_get_expiring_certifications_exclude_expired(self, service):
+        """Test excluding expired certifications."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        user_id = uuid4()
+        
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Expired",
+            certification_type="process",
+            expiration_date=date.today() - timedelta(days=5),
+        )
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Valid",
+            certification_type="process",
+            expiration_date=date.today() + timedelta(days=10),
+        )
+        
+        certs = svc.get_expiring_certifications(include_expired=False)
+        assert len(certs) == 1
+        assert certs[0].certification_name == "Valid"
+
+    def test_renew_certification(self, service):
+        """Test renewing a certification."""
+        user_id = uuid4()
+        
+        cert = service.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Renewed",
+            certification_type="process",
+            expiration_date=date.today() + timedelta(days=5),
+        )
+        
+        assert service.renew_certification(cert.id) is True
+        assert service.renew_certification(cert.id) is False
+
+
+class TestWIPViolations:
+    """Tests for WIP violation tracking."""
+
+    def test_add_wip_violation(self, service):
+        """Test adding a WIP violation."""
+        wc_id = uuid4()
+        
+        violation = service.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Assembly",
+            current_wip=25,
+            wip_limit=20,
+            cell_id=uuid4(),
+            cell_name="Cell A",
+        )
+        
+        assert violation.id is not None
+        assert violation.current_wip == 25
+        assert violation.wip_limit == 20
+        assert violation.violation_amount == 5
+        assert violation.duration_minutes == 0
+
+    def test_get_wip_violations(self, service):
+        """Test getting WIP violations."""
+        wc_id = uuid4()
+        
+        service.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_wip=30,
+            wip_limit=20,
+        )
+        service.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_wip=25,
+            wip_limit=20,
+        )
+        
+        violations = service.get_wip_violations(work_center_id=wc_id)
+        assert len(violations) == 2
+        # Sorted by violation amount (worst first)
+        assert violations[0].violation_amount == 10
+        assert violations[1].violation_amount == 5
+
+    def test_resolve_wip_violation(self, service):
+        """Test resolving a WIP violation."""
+        wc_id = uuid4()
+        
+        violation = service.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_wip=25,
+            wip_limit=20,
+        )
+        
+        assert service.resolve_wip_violation(violation.id) is True
+        assert service.resolve_wip_violation(violation.id) is False
+
+    def test_wip_violation_duration_updates(self, service):
+        """Test that duration is updated when retrieving."""
+        wc_id = uuid4()
+        
+        violation = service.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_wip=25,
+            wip_limit=20,
+        )
+        
+        # Manually set started_at to past
+        violation.started_at = datetime.utcnow() - timedelta(minutes=45)
+        
+        violations = service.get_wip_violations()
+        assert violations[0].duration_minutes >= 45
+
+
+class TestCAPAVerifications:
+    """Tests for CAPA verification tracking."""
+
+    def test_add_capa_verification(self, service):
+        """Test adding a CAPA verification."""
+        owner_id = uuid4()
+        due_date = date.today() + timedelta(days=3)
+        
+        capa = service.add_capa_verification(
+            capa_number="CAPA-001",
+            title="Root cause analysis for defect",
+            capa_type="corrective",
+            verification_due_date=due_date,
+            owner_id=owner_id,
+            owner_name="Quality Manager",
+            original_nc_id=uuid4(),
+            effectiveness_check=True,
+        )
+        
+        assert capa.id is not None
+        assert capa.capa_number == "CAPA-001"
+        assert capa.days_until_due == 3
+        assert capa.is_overdue is False
+        assert capa.effectiveness_check is True
+
+    def test_overdue_capa_verification(self, service):
+        """Test that overdue CAPA is flagged."""
+        owner_id = uuid4()
+        due_date = date.today() - timedelta(days=2)
+        
+        capa = service.add_capa_verification(
+            capa_number="CAPA-002",
+            title="Overdue CAPA",
+            capa_type="preventive",
+            verification_due_date=due_date,
+            owner_id=owner_id,
+            owner_name="Engineer",
+        )
+        
+        assert capa.is_overdue is True
+        assert capa.days_until_due == -2
+
+    def test_get_capa_verifications_due(self, service):
+        """Test getting CAPA verifications due."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        owner_id = uuid4()
+        
+        # Overdue
+        svc.add_capa_verification(
+            capa_number="CAPA-OVD",
+            title="Overdue",
+            capa_type="corrective",
+            verification_due_date=date.today() - timedelta(days=3),
+            owner_id=owner_id,
+            owner_name="Owner",
+        )
+        
+        # Due soon
+        svc.add_capa_verification(
+            capa_number="CAPA-SOON",
+            title="Due Soon",
+            capa_type="corrective",
+            verification_due_date=date.today() + timedelta(days=5),
+            owner_id=owner_id,
+            owner_name="Owner",
+        )
+        
+        # Due far
+        svc.add_capa_verification(
+            capa_number="CAPA-FAR",
+            title="Due Far",
+            capa_type="preventive",
+            verification_due_date=date.today() + timedelta(days=30),
+            owner_id=owner_id,
+            owner_name="Owner",
+        )
+        
+        due = svc.get_capa_verifications_due(owner_id=owner_id, days_ahead=7)
+        assert len(due) == 2
+        # Overdue first
+        assert due[0].capa_number == "CAPA-OVD"
+
+    def test_complete_capa_verification(self, service):
+        """Test completing a CAPA verification."""
+        owner_id = uuid4()
+        
+        capa = service.add_capa_verification(
+            capa_number="CAPA-COMP",
+            title="Complete Me",
+            capa_type="corrective",
+            verification_due_date=date.today() + timedelta(days=1),
+            owner_id=owner_id,
+            owner_name="Owner",
+        )
+        
+        assert service.complete_capa_verification(capa.id) is True
+        assert service.complete_capa_verification(capa.id) is False
+
+
+class TestScheduledTrainings:
+    """Tests for scheduled training management."""
+
+    def test_add_scheduled_training(self, service):
+        """Test adding a scheduled training."""
+        training = service.add_scheduled_training(
+            title="Safety Orientation",
+            training_type="initial",
+            scheduled_date=date.today(),
+            scheduled_time="09:00",
+            duration_minutes=120,
+            description="New employee safety training",
+            location="Training Room A",
+            instructor_name="Safety Officer",
+            attendee_count=5,
+            max_attendees=20,
+        )
+        
+        assert training.id is not None
+        assert training.title == "Safety Orientation"
+        assert training.duration_minutes == 120
+        assert training.attendee_count == 5
+        assert training.is_user_enrolled is False
+
+    def test_get_scheduled_trainings_today(self, service):
+        """Test getting trainings for today."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        # Today
+        svc.add_scheduled_training(
+            title="Today's Training",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="10:00",
+            duration_minutes=60,
+        )
+        
+        # Tomorrow
+        svc.add_scheduled_training(
+            title="Tomorrow's Training",
+            training_type="certification",
+            scheduled_date=date.today() + timedelta(days=1),
+            scheduled_time="14:00",
+            duration_minutes=180,
+        )
+        
+        today_trainings = svc.get_scheduled_trainings(target_date=date.today())
+        assert len(today_trainings) == 1
+        assert today_trainings[0].title == "Today's Training"
+
+    def test_get_scheduled_trainings_enrolled_only(self, service):
+        """Test filtering by enrolled trainings."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        svc.add_scheduled_training(
+            title="Enrolled",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="10:00",
+            duration_minutes=60,
+            is_user_enrolled=True,
+        )
+        svc.add_scheduled_training(
+            title="Not Enrolled",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="14:00",
+            duration_minutes=60,
+            is_user_enrolled=False,
+        )
+        
+        enrolled = svc.get_scheduled_trainings(user_enrolled_only=True)
+        assert len(enrolled) == 1
+        assert enrolled[0].title == "Enrolled"
+
+    def test_enroll_in_training(self, service):
+        """Test enrolling in a training."""
+        training = service.add_scheduled_training(
+            title="Enrollment Test",
+            training_type="certification",
+            scheduled_date=date.today() + timedelta(days=3),
+            scheduled_time="09:00",
+            duration_minutes=240,
+            attendee_count=5,
+            max_attendees=10,
+        )
+        
+        result = service.enroll_in_training(training.id)
+        assert result is not None
+        assert result.is_user_enrolled is True
+        assert result.attendee_count == 6
+
+    def test_enroll_in_full_training(self, service):
+        """Test cannot enroll in full training."""
+        training = service.add_scheduled_training(
+            title="Full Training",
+            training_type="certification",
+            scheduled_date=date.today() + timedelta(days=1),
+            scheduled_time="09:00",
+            duration_minutes=60,
+            attendee_count=10,
+            max_attendees=10,
+        )
+        
+        result = service.enroll_in_training(training.id)
+        assert result is None
+
+    def test_trainings_sorted_by_date_and_time(self, service):
+        """Test trainings are sorted by date and time."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        svc.add_scheduled_training(
+            title="Later Today",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="14:00",
+            duration_minutes=60,
+        )
+        svc.add_scheduled_training(
+            title="Tomorrow Morning",
+            training_type="refresher",
+            scheduled_date=date.today() + timedelta(days=1),
+            scheduled_time="09:00",
+            duration_minutes=60,
+        )
+        svc.add_scheduled_training(
+            title="Earlier Today",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="10:00",
+            duration_minutes=60,
+        )
+        
+        trainings = svc.get_scheduled_trainings()
+        assert trainings[0].title == "Earlier Today"
+        assert trainings[1].title == "Later Today"
+        assert trainings[2].title == "Tomorrow Morning"
+
+
+class TestShopFloorSummary:
+    """Tests for shop floor summary generation."""
+
+    def test_get_shop_floor_summary_empty(self, service):
+        """Test shop floor summary with no data."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        summary = svc.get_shop_floor_summary()
+        
+        assert isinstance(summary, ShopFloorSummary)
+        assert summary.work_orders_at_risk_count == 0
+        assert summary.unacknowledged_andon_count == 0
+        assert summary.overall_oee == 0.0
+        assert summary.expired_certification_count == 0
+        assert summary.total_wip_violation_count == 0
+        assert summary.overdue_capa_count == 0
+        assert summary.training_sessions_today == 0
+
+    def test_get_shop_floor_summary_with_data(self, service):
+        """Test shop floor summary with various data."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        wc_id = uuid4()
+        user_id = uuid4()
+        
+        # Add work order at risk
+        svc.add_work_order_at_risk(
+            work_order_number="WO-1",
+            product_name="Product",
+            quantity=100,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=5),
+            reason="Test",
+            work_center_id=wc_id,
+            work_center_name="Test",
+        )
+        
+        # Add critical Andon (unacknowledged)
+        svc.add_critical_andon(
+            andon_type="quality",
+            title="Andon 1",
+            work_center_id=wc_id,
+            work_center_name="Test",
+        )
+        
+        # Add cell OEE
+        svc.add_cell_oee(
+            cell_id=uuid4(),
+            cell_name="Cell 1",
+            work_center_id=wc_id,
+            work_center_name="Test",
+            availability=90.0,
+            performance=90.0,
+            quality=90.0,
+            target_oee=80.0,
+        )
+        
+        # Add expiring certification
+        svc.add_expiring_certification(
+            user_id=user_id,
+            user_name="User",
+            certification_name="Cert 1",
+            certification_type="process",
+            expiration_date=date.today() - timedelta(days=1),  # Expired
+        )
+        
+        # Add WIP violation
+        svc.add_wip_violation(
+            work_center_id=wc_id,
+            work_center_name="Test",
+            current_wip=25,
+            wip_limit=20,
+        )
+        
+        # Add overdue CAPA
+        svc.add_capa_verification(
+            capa_number="CAPA-1",
+            title="Test",
+            capa_type="corrective",
+            verification_due_date=date.today() - timedelta(days=1),
+            owner_id=user_id,
+            owner_name="Owner",
+        )
+        
+        # Add today's training
+        svc.add_scheduled_training(
+            title="Training 1",
+            training_type="refresher",
+            scheduled_date=date.today(),
+            scheduled_time="10:00",
+            duration_minutes=60,
+        )
+        
+        summary = svc.get_shop_floor_summary(user_id=user_id, work_center_id=wc_id)
+        
+        assert summary.work_orders_at_risk_count == 1
+        assert summary.unacknowledged_andon_count == 1
+        assert summary.overall_oee > 0
+        assert summary.expired_certification_count == 1
+        assert summary.total_wip_violation_count == 1
+        assert summary.overdue_capa_count == 1
+        assert summary.training_sessions_today == 1
+
+
+class TestTodayScreenWithShopFloor:
+    """Tests for Today screen with shop floor integration."""
+
+    def test_today_screen_includes_shop_floor(self, service, sample_user_id, sample_user_name):
+        """Test Today screen includes shop floor summary."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        # Add some shop floor data
+        svc.add_work_order_at_risk(
+            work_order_number="WO-TEST",
+            product_name="Test Product",
+            quantity=50,
+            due_date=date.today(),
+            estimated_completion=date.today() + timedelta(days=2),
+            reason="Testing",
+        )
+        
+        data = svc.get_today_screen(sample_user_id, sample_user_name)
+        
+        assert data.shop_floor is not None
+        assert isinstance(data.shop_floor, ShopFloorSummary)
+        assert data.shop_floor.work_orders_at_risk_count >= 1
+
+    def test_shop_floor_abnormalities_in_today_screen(self, service, sample_user_id):
+        """Test shop floor abnormality types work in Today screen."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        # Add shop floor abnormality
+        abn = svc.add_abnormality(
+            title="Critical Andon Unacknowledged",
+            abnormality_type=AbnormalityType.CRITICAL_ANDON,
+            entity_type="andon",
+            entity_id=uuid4(),
+            days_stale=0,
+            severity=PriorityLevel.HIGH,
+            owner_id=sample_user_id,
+            owner_name="Test User",
+            suggested_action="Acknowledge the Andon immediately",
+        )
+        
+        abnormalities = svc.get_abnormalities(user_id=sample_user_id)
+        assert len(abnormalities) == 1
+        assert abnormalities[0].abnormality_type == AbnormalityType.CRITICAL_ANDON
+
+    def test_shop_floor_commitments_in_today_screen(self, service, sample_user_id):
+        """Test shop floor commitment types work in Today screen."""
+        reset_today_screen_service()
+        svc = get_today_screen_service()
+        
+        # Add training session commitment
+        commitment = svc.add_commitment(
+            title="Safety Training Session",
+            commitment_type=CommitmentType.TRAINING_SESSION,
+            due_date=date.today(),
+            due_time="09:00",
+            owner_id=sample_user_id,
+            owner_name="Test User",
+            description="Mandatory safety refresher",
+        )
+        
+        commitments = svc.get_commitments(user_id=sample_user_id, target_date=date.today())
+        assert len(commitments) == 1
+        assert commitments[0].commitment_type == CommitmentType.TRAINING_SESSION
+
+
+class TestShopFloorEnums:
+    """Tests for shop floor enum values."""
+
+    def test_shop_floor_area_type_values(self):
+        """Test ShopFloorAreaType has expected values."""
+        assert ShopFloorAreaType.WORK_CENTER == "work_center"
+        assert ShopFloorAreaType.CELL == "cell"
+        assert ShopFloorAreaType.STATION == "station"
+        assert ShopFloorAreaType.LINE == "line"
+        assert ShopFloorAreaType.DEPARTMENT == "department"
+
+    def test_shop_floor_alert_severity_values(self):
+        """Test ShopFloorAlertSeverity has expected values."""
+        assert ShopFloorAlertSeverity.CRITICAL == "critical"
+        assert ShopFloorAlertSeverity.WARNING == "warning"
+        assert ShopFloorAlertSeverity.INFO == "info"
+
+    def test_abnormality_type_shop_floor_values(self):
+        """Test AbnormalityType includes shop floor values."""
+        # Original values
+        assert AbnormalityType.LATE_QUOTE == "late_quote"
+        assert AbnormalityType.STALLED_RFQ == "stalled_rfq"
+        
+        # Shop floor values
+        assert AbnormalityType.CRITICAL_ANDON == "critical_andon"
+        assert AbnormalityType.WORK_ORDER_AT_RISK == "work_order_at_risk"
+        assert AbnormalityType.CAPA_VERIFICATION_DUE == "capa_verification_due"
+        assert AbnormalityType.STATION_LOW_EFFICIENCY == "station_low_efficiency"
+        assert AbnormalityType.CELL_LOW_OEE == "cell_low_oee"
+        assert AbnormalityType.KANBAN_OVERDUE == "kanban_overdue"
+        assert AbnormalityType.EXPIRING_CERTIFICATION == "expiring_certification"
+        assert AbnormalityType.WIP_LIMIT_VIOLATION == "wip_limit_violation"
+        assert AbnormalityType.OPEN_NC_CRITICAL == "open_nc_critical"
+
+    def test_commitment_type_shop_floor_values(self):
+        """Test CommitmentType includes shop floor values."""
+        # Original values
+        assert CommitmentType.QUOTE_DUE == "quote_due"
+        assert CommitmentType.MEETING == "meeting"
+        
+        # Shop floor values
+        assert CommitmentType.TRAINING_SESSION == "training_session"
+        assert CommitmentType.AUDIT_SCHEDULED == "audit_scheduled"
+        assert CommitmentType.MAINTENANCE_DUE == "maintenance_due"
+        assert CommitmentType.CERTIFICATION_RENEWAL == "certification_renewal"
+        assert CommitmentType.SHIFT_HANDOFF == "shift_handoff"
+        assert CommitmentType.PRODUCTION_TARGET == "production_target"
