@@ -1,0 +1,78 @@
+{
+  "name": "SENSEI Manufacturing",
+  "short_name": "SENSEI",
+  "description": "Manufacturing ERP & Quality Management System for precision engineering shops",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#3b82f6",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.svg",
+      "sizes": "72x72",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-96x96.svg",
+      "sizes": "96x96",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-128x128.svg",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today's Tasks",
+      "short_name": "Today",
+      "description": "View your tasks for today",
+      "url": "/today"
+    },
+    {
+      "name": "New RFQ",
+      "short_name": "New RFQ",
+      "description": "Create a new request for quote",
+      "url": "/pipeline?action=new"
+    },
+    {
+      "name": "Quality",
+      "short_name": "Quality",
+      "description": "Quality management dashboard",
+      "url": "/quality"
+    },
+    {
+      "name": "Andon Board",
+      "short_name": "Andon",
+      "description": "Real-time production monitoring",
+      "url": "/andon"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
+}

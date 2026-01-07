@@ -1,0 +1,61 @@
+import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Providers } from './providers';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+});
+
+export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  title: {
+    default: 'Sensei OS',
+    template: '%s | Sensei OS',
+  },
+  description: 'Intelligent Management & Teaching System',
+  applicationName: 'Sensei OS',
+  keywords: ['management', 'manufacturing', 'lean', 'TPS', 'quality'],
+  authors: [{ name: 'Sensei OS Team' }],
+  creator: 'Sensei OS Team',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon-16x16.png',
+    apple: '/apple-touch-icon.png',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    alternateLocale: 'fr_FR',
+    title: 'Sensei OS',
+    description: 'Intelligent Management & Teaching System',
+    siteName: 'Sensei OS',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: 'white' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f172a' },
+  ],
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
