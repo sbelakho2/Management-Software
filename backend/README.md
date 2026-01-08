@@ -1,10 +1,10 @@
-# Sensei OS Backend
+# Starz Morocco Backend
 
-Intelligent Management and Teaching System for Starz Morocco.
+Intelligent Management System for Manufacturing Excellence.
 
 ## Overview
 
-The Sensei OS backend is built with FastAPI and provides:
+The Starz Morocco backend is built with FastAPI and provides:
 
 - RESTful API endpoints for all system functionality
 - SQLAlchemy 2.0 async database models

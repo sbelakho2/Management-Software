@@ -35,6 +35,31 @@ def test_settings():
 
 
 @pytest.fixture
+async def async_session():
+    """Provide a real async database session for testing."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sensei.models.base import Base
+    
+    # Use in-memory SQLite for testing
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    
+    # Create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Create session
+    async_session_maker = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    async with async_session_maker() as session:
+        yield session
+    
+    # Cleanup
+    await engine.dispose()
+
+
+@pytest.fixture
 def mock_db_session():
     """Provide a mock database session."""
     from unittest.mock import AsyncMock, MagicMock

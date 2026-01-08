@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sensei.fullname" . }}-config
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.config.environment | quote }}
+  DEBUG: {{ .Values.config.debug | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DATABASE_URL: {{ include "sensei.postgresql.url" . | quote }}
+  DATABASE_URL_SYNC: {{ include "sensei.postgresql.url" . | replace "asyncpg" "psycopg2" | quote }}
+  REDIS_URL: {{ include "sensei.redis.url" . | quote }}
+  S3_ENDPOINT: {{ include "sensei.minio.endpoint" . | quote }}
+  S3_BUCKET: {{ .Values.config.storage.bucket | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | join "," | quote }}
+  FEATURE_PHASE_2_NPI: {{ .Values.config.features.phase2Npi | quote }}
+  FEATURE_PHASE_3_PRODUCTION: {{ .Values.config.features.phase3Production | quote }}
+  FEATURE_SMART_INGESTION: {{ .Values.config.features.smartIngestion | quote }}
+  FEATURE_KNOWLEDGE_PACK: {{ .Values.config.features.knowledgePack | quote }}

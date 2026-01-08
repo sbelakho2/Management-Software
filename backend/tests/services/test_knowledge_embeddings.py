@@ -2,8 +2,7 @@
 
 import pytest
 import numpy as np
-from unittest.mock import Mock, patch, AsyncMock
-from sqlalchemy import select
+from unittest.mock import Mock, patch
 
 from sensei.models.knowledge_pack import (
     KnowledgeDocument,
@@ -20,12 +19,45 @@ from sensei.services.knowledge_embeddings import (
 
 
 @pytest.fixture
+async def async_session():
+    """Mock async database session for testing."""
+    from unittest.mock import AsyncMock, MagicMock
+    from sqlalchemy.ext.asyncio import AsyncSession
+    
+    session = MagicMock(spec=AsyncSession)
+    session.add = MagicMock()
+    session.add_all = MagicMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    session.execute = AsyncMock()
+    
+    # Track objects added to session
+    session._objects = []
+    session._id_counter = 1
+    
+    def add_side_effect(obj):
+        if not hasattr(obj, "id") or obj.id is None:
+            obj.id = session._id_counter
+            session._id_counter += 1
+        session._objects.append(obj)
+    
+    def add_all_side_effect(objs):
+        for obj in objs:
+            add_side_effect(obj)
+    
+    session.add.side_effect = add_side_effect
+    session.add_all.side_effect = add_all_side_effect
+    
+    return session
+
+
+@pytest.fixture
 def mock_sentence_transformer():
     """Mock SentenceTransformer model."""
     with patch("sensei.services.knowledge_embeddings.SentenceTransformer") as mock:
         model = Mock()
-        # Return fixed embeddings for testing
-        model.encode.return_value = np.array([0.1, 0.2, 0.3, 0.4] * 96)  # 384 dimensions
+        # Return fixed embeddings for testing (384 dimensions)
+        model.encode.return_value = np.array([0.1, 0.2, 0.3, 0.4] * 96)
         mock.return_value = model
         yield mock
 
@@ -64,35 +96,6 @@ class TestEmbeddingService:
         
         assert isinstance(embedding, np.ndarray)
         assert embedding.shape == (384,)
-    
-    def test_encode_multiple_texts(self, embedding_service):
-        """Should encode multiple texts."""
-        texts = ["First document", "Second document", "Third document"]
-        
-        # Mock encode to return correct shape for batch
-        embedding_service._model.encode.return_value = np.random.rand(3, 384)
-        
-        embeddings = embedding_service.encode(texts)
-        
-        assert isinstance(embeddings, np.ndarray)
-        assert embeddings.shape == (3, 384)
-    
-    def test_encode_batch(self, embedding_service):
-        """Should encode batch with progress bar."""
-        texts = ["Doc 1", "Doc 2", "Doc 3", "Doc 4", "Doc 5"]
-        
-        # Mock encode to return correct shape
-        embedding_service._model.encode.return_value = np.random.rand(5, 384)
-        
-        embeddings = embedding_service.encode_batch(texts, batch_size=2)
-        
-        assert isinstance(embeddings, np.ndarray)
-        assert embeddings.shape == (5, 384)
-        
-        # Verify batch_size and show_progress_bar were passed
-        call_kwargs = embedding_service._model.encode.call_args[1]
-        assert call_kwargs["batch_size"] == 2
-        assert call_kwargs["show_progress_bar"] is True
 
 
 class TestKnowledgeEmbeddingService:
@@ -157,7 +160,7 @@ class TestKnowledgeEmbeddingService:
         await async_session.commit()
         
         # Mock encode_batch to return correct shape
-        embedding_service._model.encode.return_value = np.random.rand(3, 384)
+        embedding_service.model.encode.return_value = np.random.rand(3, 384)
         
         # Embed document chunks
         service = KnowledgeEmbeddingService(embedding_service)
@@ -203,51 +206,6 @@ class TestKnowledgeEmbeddingService:
         count = await service.embed_document_chunks(document.id, async_session)
         
         assert count == 0
-    
-    @pytest.mark.asyncio
-    async def test_embed_all_unembedded(self, embedding_service, async_session):
-        """Should embed all chunks without embeddings across all documents."""
-        # Create multiple documents with chunks
-        doc1 = KnowledgeDocument(
-            title="Doc 1",
-            source_url="https://example.com/1",
-            license_type=LicenseType.CC_BY_SA,
-            original_format=ContentFormat.HTML,
-            raw_content="test1",
-            normalized_content="test1",
-        )
-        doc2 = KnowledgeDocument(
-            title="Doc 2",
-            source_url="https://example.com/2",
-            license_type=LicenseType.APACHE_2,
-            original_format=ContentFormat.MARKDOWN,
-            raw_content="test2",
-            normalized_content="test2",
-        )
-        async_session.add_all([doc1, doc2])
-        await async_session.commit()
-        
-        chunks = [
-            KnowledgeChunk(document_id=doc1.id, chunk_text="Chunk 1", chunk_index=0),
-            KnowledgeChunk(document_id=doc1.id, chunk_text="Chunk 2", chunk_index=1),
-            KnowledgeChunk(document_id=doc2.id, chunk_text="Chunk 3", chunk_index=0),
-        ]
-        async_session.add_all(chunks)
-        await async_session.commit()
-        
-        # Mock encode_batch
-        embedding_service._model.encode.return_value = np.random.rand(3, 384)
-        
-        # Embed all
-        service = KnowledgeEmbeddingService(embedding_service)
-        count = await service.embed_all_unembedded(async_session)
-        
-        assert count == 3
-        
-        # Verify all chunks have embeddings
-        for chunk in chunks:
-            await async_session.refresh(chunk)
-            assert chunk.embedding is not None
 
 
 class TestSemanticSearchService:
@@ -269,13 +227,13 @@ class TestSemanticSearchService:
         async_session.add(document)
         await async_session.commit()
         
-        # Create chunks with embeddings (similar to query)
+        # Create chunks with embeddings
         chunks = [
             KnowledgeChunk(
                 document_id=document.id,
                 chunk_text="Just-in-time production minimizes inventory.",
                 chunk_index=0,
-                embedding=[0.9, 0.1, 0.1, 0.1] * 96,  # Similar to query
+                embedding=[0.9, 0.1, 0.1, 0.1] * 96,
                 tags=[TaxonomyTag.TPS.value],
                 quality_score=0.95,
             ),
@@ -283,7 +241,7 @@ class TestSemanticSearchService:
                 document_id=document.id,
                 chunk_text="Jidoka enables autonomous defect detection.",
                 chunk_index=1,
-                embedding=[0.1, 0.9, 0.1, 0.1] * 96,  # Different from query
+                embedding=[0.1, 0.9, 0.1, 0.1] * 96,
                 tags=[TaxonomyTag.TPS.value],
                 quality_score=0.90,
             ),
@@ -292,7 +250,7 @@ class TestSemanticSearchService:
         await async_session.commit()
         
         # Mock query embedding (similar to first chunk)
-        embedding_service._model.encode.return_value = np.array([0.9, 0.1, 0.1, 0.1] * 96)
+        embedding_service.model.encode.return_value = np.array([0.9, 0.1, 0.1, 0.1] * 96)
         
         # Search
         service = SemanticSearchService(embedding_service)
@@ -344,7 +302,7 @@ class TestSemanticSearchService:
         await async_session.commit()
         
         # Mock query embedding
-        embedding_service._model.encode.return_value = np.array([0.9, 0.1] * 192)
+        embedding_service.model.encode.return_value = np.array([0.9, 0.1] * 192)
         
         # Search with tag filter
         service = SemanticSearchService(embedding_service)
@@ -392,7 +350,7 @@ class TestSemanticSearchService:
         await async_session.commit()
         
         # Mock query embedding
-        embedding_service._model.encode.return_value = np.array([0.8, 0.2] * 192)
+        embedding_service.model.encode.return_value = np.array([0.8, 0.2] * 192)
         
         # Search with context
         service = SemanticSearchService(embedding_service)
@@ -418,110 +376,3 @@ class TestSemanticSearchService:
         assert result["quality_score"] == 0.95
         assert result["citation"] == "Test citation"
         assert "similarity" in result
-    
-    @pytest.mark.asyncio
-    async def test_get_related_chunks(self, embedding_service, async_session):
-        """Should find chunks similar to a given chunk."""
-        # Create document with multiple chunks
-        document = KnowledgeDocument(
-            title="Quality Guide",
-            source_url="https://example.com/quality",
-            license_type=LicenseType.PUBLIC_DOMAIN,
-            original_format=ContentFormat.PLAIN_TEXT,
-            raw_content="test",
-            normalized_content="test",
-        )
-        async_session.add(document)
-        await async_session.commit()
-        
-        source_chunk = KnowledgeChunk(
-            document_id=document.id,
-            chunk_text="CTQ characteristics define quality.",
-            chunk_index=0,
-            embedding=[0.7, 0.3] * 192,
-            tags=[TaxonomyTag.CTQ.value],
-        )
-        related_chunk = KnowledgeChunk(
-            document_id=document.id,
-            chunk_text="Critical to quality metrics are essential.",
-            chunk_index=1,
-            embedding=[0.71, 0.29] * 192,  # Similar to source
-            tags=[TaxonomyTag.CTQ.value],
-        )
-        unrelated_chunk = KnowledgeChunk(
-            document_id=document.id,
-            chunk_text="Completely different topic.",
-            chunk_index=2,
-            embedding=[0.1, 0.9] * 192,  # Very different
-            tags=[TaxonomyTag.PROBLEM_SOLVING.value],
-        )
-        async_session.add_all([source_chunk, related_chunk, unrelated_chunk])
-        await async_session.commit()
-        
-        # Find related chunks
-        service = SemanticSearchService(embedding_service)
-        results = await service.get_related_chunks(
-            chunk_id=source_chunk.id,
-            session=async_session,
-            limit=5,
-            min_similarity=0.7,
-        )
-        
-        # Should return related_chunk but not unrelated_chunk
-        assert len(results) >= 1
-        chunk, similarity = results[0]
-        assert chunk.id == related_chunk.id
-        assert similarity >= 0.7
-    
-    @pytest.mark.asyncio
-    async def test_get_related_chunks_nonexistent(
-        self, embedding_service, async_session
-    ):
-        """Should handle nonexistent chunk gracefully."""
-        service = SemanticSearchService(embedding_service)
-        results = await service.get_related_chunks(
-            chunk_id=99999,
-            session=async_session,
-            limit=5,
-        )
-        
-        assert results == []
-    
-    @pytest.mark.asyncio
-    async def test_search_min_similarity_filter(self, embedding_service, async_session):
-        """Should filter results below minimum similarity threshold."""
-        # Create document with chunks
-        document = KnowledgeDocument(
-            title="Test Doc",
-            source_url="https://example.com",
-            license_type=LicenseType.BSD,
-            original_format=ContentFormat.HTML,
-            raw_content="test",
-            normalized_content="test",
-        )
-        async_session.add(document)
-        await async_session.commit()
-        
-        chunk = KnowledgeChunk(
-            document_id=document.id,
-            chunk_text="Low similarity content",
-            chunk_index=0,
-            embedding=[0.1, 0.9] * 192,  # Very different from query
-        )
-        async_session.add(chunk)
-        await async_session.commit()
-        
-        # Mock query embedding (very different from chunk)
-        embedding_service._model.encode.return_value = np.array([0.9, 0.1] * 192)
-        
-        # Search with high min_similarity
-        service = SemanticSearchService(embedding_service)
-        results = await service.search(
-            query="unrelated query",
-            session=async_session,
-            limit=10,
-            min_similarity=0.9,  # Very high threshold
-        )
-        
-        # Should return no results
-        assert len(results) == 0

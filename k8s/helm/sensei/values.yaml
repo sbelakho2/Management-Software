@@ -1,0 +1,346 @@
+# Default values for Sensei OS
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Replica counts
+replicaCount:
+  backend: 2
+  frontend: 2
+  worker: 1
+
+# Image configuration
+image:
+  backend:
+    repository: sensei/backend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  frontend:
+    repository: sensei/frontend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+# Service configuration
+service:
+  backend:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  frontend:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    - host: sensei.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend: backend
+        - path: /
+          pathType: Prefix
+          backend: frontend
+  tls:
+    - secretName: sensei-tls
+      hosts:
+        - sensei.example.com
+
+# Application configuration
+config:
+  environment: production
+  debug: false
+  logLevel: info
+  # Secret key - should be set via secrets
+  secretKey: ""
+  # Database URL - constructed from postgresql values
+  databaseUrl: ""
+  # Redis URL - constructed from redis values
+  redisUrl: ""
+  # CORS origins
+  corsOrigins:
+    - https://sensei.example.com
+  # Feature flags
+  features:
+    phase2Npi: true
+    phase3Production: false
+    smartIngestion: true
+    knowledgePack: true
+  # S3/MinIO configuration
+  storage:
+    endpoint: http://minio:9000
+    bucket: sensei-attachments
+    accessKey: ""
+    secretKey: ""
+
+# Resource limits
+resources:
+  backend:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  frontend:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  worker:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Autoscaling
+autoscaling:
+  backend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  frontend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+# Health checks
+healthChecks:
+  backend:
+    livenessProbe:
+      httpGet:
+        path: /api/health
+        port: 8000
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /api/health/ready
+        port: 8000
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  frontend:
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 3000
+      initialDelaySeconds: 15
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 3000
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+# PostgreSQL configuration (Bitnami chart)
+postgresql:
+  enabled: true
+  auth:
+    username: sensei
+    password: ""  # Set via secrets
+    database: sensei
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: ""
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    initdb:
+      scripts:
+        init.sql: |
+          -- Enable required extensions
+          CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+          CREATE EXTENSION IF NOT EXISTS "vector";
+  backup:
+    enabled: true
+    cronjob:
+      schedule: "0 2 * * *"
+      storage:
+        size: 10Gi
+
+# Redis configuration (Bitnami chart)
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: ""  # Set via secrets
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# MinIO (S3-compatible storage)
+minio:
+  enabled: true
+  mode: standalone
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 50Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  buckets:
+    - name: sensei-attachments
+      policy: none
+      purge: false
+  users:
+    - accessKey: sensei
+      secretKey: ""  # Set via secrets
+      policy: readwrite
+
+# Worker configuration (background tasks)
+worker:
+  enabled: true
+  replicas: 1
+  command:
+    - "python"
+    - "-m"
+    - "sensei.worker"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Persistence
+persistence:
+  uploads:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteMany
+
+# Security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+podSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Network policies
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+
+# Service accounts
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+# Persistence
+persistence:
+  uploads:
+    enabled: true
+    storageClass: ""  # Use default storage class
+    accessMode: ReadWriteMany
+    size: 10Gi
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+# Monitoring
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+  grafana:
+    enabled: false
+  prometheus:
+    enabled: false
+
+# Logging
+logging:
+  enabled: true
+  format: json
+  level: info
+
+# Backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: 30
+  storage:
+    type: s3
+    bucket: sensei-backups
+    region: us-east-1
+
+# Node affinity
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - sensei
+          topologyKey: kubernetes.io/hostname

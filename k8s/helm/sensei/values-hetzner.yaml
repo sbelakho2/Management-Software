@@ -1,0 +1,334 @@
+# Hetzner Cloud Optimized Values for Sensei
+# This configuration is optimized for Hetzner's Cloud infrastructure and pricing
+
+# Replica counts optimized for cost-effectiveness on Hetzner
+replicaCount:
+  backend: 2
+  frontend: 2
+
+# Image configuration
+image:
+  backend:
+    repository: registry.hetzner.cloud/sensei/backend
+    pullPolicy: IfNotPresent
+    tag: ""  # Defaults to chart appVersion
+  frontend:
+    repository: registry.hetzner.cloud/sensei/frontend
+    pullPolicy: IfNotPresent
+    tag: ""
+
+# Service configuration
+service:
+  backend:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  frontend:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+
+# Ingress optimized for Hetzner Load Balancer
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Hetzner Load Balancer optimizations
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+  hosts:
+    - host: sensei.yourdomain.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend: backend
+        - path: /
+          pathType: Prefix
+          backend: frontend
+  tls:
+    - secretName: sensei-tls
+      hosts:
+        - sensei.yourdomain.com
+
+# Application configuration
+config:
+  environment: production
+  debug: false
+  logLevel: info
+  
+  features:
+    phase2Npi: true
+    phase3Production: true
+    smartIngestion: true
+    knowledgePack: true
+  
+  corsOrigins: "https://sensei.yourdomain.com"
+  
+  storage:
+    type: s3
+    bucket: sensei-attachments
+    endpoint: ""  # Set to Hetzner Object Storage endpoint
+    region: eu-central
+    accessKey: ""  # Set via --set or sealed secrets
+    secretKey: ""  # Set via --set or sealed secrets
+
+# Resource allocation optimized for Hetzner CPX/CCX instances
+# Hetzner CPX21: 3 vCPU, 4GB RAM - good for small deployment
+# Hetzner CPX31: 4 vCPU, 8GB RAM - recommended for production
+# Hetzner CCX23: 4 vCPU, 16GB RAM - for high memory workloads
+resources:
+  backend:
+    requests:
+      memory: "512Mi"  # Fits well in CPX31 with room for other pods
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  
+  frontend:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  worker:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Autoscaling configuration
+autoscaling:
+  backend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6  # Conservative max for cost control
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  frontend:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+
+# Health check configuration
+healthChecks:
+  backend:
+    livenessProbe:
+      httpGet:
+        path: /api/health
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /api/health/ready
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  
+  frontend:
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 20
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+# PostgreSQL configuration optimized for Hetzner Block Storage
+postgresql:
+  enabled: true
+  auth:
+    database: sensei
+    username: sensei
+    password: ""  # Set via --set or sealed secrets
+  
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "hcloud-volumes"  # Hetzner Block Storage
+      size: 20Gi
+    
+    # Resources optimized for CPX instance
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+    
+    # PostgreSQL performance tuning for Hetzner SSD storage
+    extendedConfiguration: |
+      shared_buffers = 512MB
+      effective_cache_size = 1536MB
+      maintenance_work_mem = 256MB
+      checkpoint_completion_target = 0.9
+      wal_buffers = 16MB
+      default_statistics_target = 100
+      random_page_cost = 1.1
+      effective_io_concurrency = 200
+      work_mem = 8MB
+      min_wal_size = 1GB
+      max_wal_size = 4GB
+  
+  # Backup configuration using Hetzner Object Storage
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM UTC
+    storageClass: "hcloud-volumes"
+    size: 10Gi
+
+# Redis configuration optimized for Hetzner
+redis:
+  enabled: true
+  architecture: standalone  # Master-replica for HA
+  auth:
+    enabled: true
+    password: ""  # Set via --set or sealed secrets
+  
+  master:
+    persistence:
+      enabled: true
+      storageClass: "hcloud-volumes"
+      size: 8Gi
+    
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "250m"
+
+# MinIO configuration (optional, use Hetzner Object Storage instead for production)
+minio:
+  enabled: false  # Recommend using Hetzner Object Storage directly
+  # If enabling MinIO for development:
+  # enabled: true
+  # auth:
+  #   rootUser: admin
+  #   rootPassword: ""
+  # persistence:
+  #   storageClass: "hcloud-volumes"
+  #   size: 50Gi
+
+# Worker configuration
+worker:
+  enabled: true
+  replicas: 1
+  command:
+    - "python"
+    - "-m"
+    - "sensei.worker"
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Network policy (recommended for security)
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+
+# Pod Disruption Budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Persistence for uploads (using Hetzner Block Storage)
+persistence:
+  uploads:
+    enabled: true
+    storageClass: "hcloud-volumes"
+    accessMode: ReadWriteOnce  # RWX not available on Hetzner, use object storage
+    size: 10Gi
+
+# Node selector for Hetzner-specific node pools (optional)
+nodeSelector: {}
+  # Example: Run on specific Hetzner server type
+  # node.kubernetes.io/instance-type: cpx31
+
+# Tolerations for taints (optional)
+tolerations: []
+
+# Affinity rules for pod placement
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - sensei
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - backend
+          topologyKey: kubernetes.io/hostname
+
+# Global image pull secrets (if using private Hetzner registry)
+global:
+  imagePullSecrets: []
+    # - name: hetzner-registry-secret
+
+# Monitoring configuration (optional, for Prometheus/Grafana)
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+
+# Logging configuration
+logging:
+  enabled: true
+  format: json
+  level: info
