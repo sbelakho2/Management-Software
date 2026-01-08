@@ -803,47 +803,47 @@ export interface FieldSchema {
 /**
  * Create validation rules from field schema
  */
-export function createRulesFromSchema(schema: FieldSchema): ValidationRule[] {
-  const rules: ValidationRule[] = [];
+export function createRulesFromSchema(schema: FieldSchema): ValidationRule<unknown>[] {
+  const rules: ValidationRule<unknown>[] = [];
   
   if (schema.required) {
     rules.push(required(`${schema.label} is required`));
   }
   
   if (schema.minLength !== undefined) {
-    rules.push(minLength(schema.minLength, `${schema.label} must be at least ${schema.minLength} characters`));
+    rules.push(minLength(schema.minLength, `${schema.label} must be at least ${schema.minLength} characters`) as ValidationRule<unknown>);
   }
   
   if (schema.maxLength !== undefined) {
-    rules.push(maxLength(schema.maxLength, `${schema.label} must be no more than ${schema.maxLength} characters`));
+    rules.push(maxLength(schema.maxLength, `${schema.label} must be no more than ${schema.maxLength} characters`) as ValidationRule<unknown>);
   }
   
   if (schema.min !== undefined) {
-    rules.push(min(schema.min, `${schema.label} must be at least ${schema.min}`));
+    rules.push(min(schema.min, `${schema.label} must be at least ${schema.min}`) as ValidationRule<unknown>);
   }
   
   if (schema.max !== undefined) {
-    rules.push(max(schema.max, `${schema.label} must be no more than ${schema.max}`));
+    rules.push(max(schema.max, `${schema.label} must be no more than ${schema.max}`) as ValidationRule<unknown>);
   }
   
   if (schema.type === 'email') {
-    rules.push(email(`Please enter a valid email address`));
+    rules.push(email(`Please enter a valid email address`) as ValidationRule<unknown>);
   }
   
   if (schema.type === 'phone') {
-    rules.push(phone(`Please enter a valid phone number`));
+    rules.push(phone(`Please enter a valid phone number`) as ValidationRule<unknown>);
   }
   
   if (schema.type === 'url') {
-    rules.push(url(`Please enter a valid URL`));
+    rules.push(url(`Please enter a valid URL`) as ValidationRule<unknown>);
   }
   
   if (schema.type === 'date') {
-    rules.push(validDate(`Please enter a valid date`));
+    rules.push(validDate(`Please enter a valid date`) as ValidationRule<unknown>);
   }
   
   if (schema.pattern) {
-    rules.push(pattern(schema.pattern, `${schema.label} format is invalid`));
+    rules.push(pattern(schema.pattern, `${schema.label} format is invalid`) as ValidationRule<unknown>);
   }
   
   // Add any custom rules

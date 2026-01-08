@@ -41,6 +41,7 @@ from sensei.api.v1.endpoints import (
     kpi,
     conditions,
     today,
+    backups,
 )
 
 api_router = APIRouter()
@@ -83,3 +84,4 @@ api_router.include_router(lsw.router)
 api_router.include_router(kpi.router)
 api_router.include_router(conditions.router)
 api_router.include_router(today.router)
+api_router.include_router(backups.router, prefix="/backups", tags=["Backups"])

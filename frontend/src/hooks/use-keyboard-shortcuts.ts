@@ -987,14 +987,6 @@ export function initializeKeyboardShortcuts(handlers: Record<string, () => void 
 // Export Types and Utils
 // =============================================================================
 
-export type {
-  Shortcut,
-  ShortcutKey,
-  ShortcutSequence,
-  ShortcutOverride,
-  ShortcutsState,
-};
-
 export {
   defaultShortcuts,
   formatShortcutSequence as formatShortcut,

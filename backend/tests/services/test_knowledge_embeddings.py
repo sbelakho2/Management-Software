@@ -29,7 +29,6 @@ async def async_session():
     session.add_all = MagicMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
-    session.execute = AsyncMock()
     
     # Track objects added to session
     session._objects = []
@@ -48,13 +47,104 @@ async def async_session():
     session.add.side_effect = add_side_effect
     session.add_all.side_effect = add_all_side_effect
     
+    # Mock execute to return proper result with scalars
+    async def execute_side_effect(stmt):
+        result_mock = MagicMock()
+        scalars_mock = MagicMock()
+        
+        # Check if the query is looking for chunks with or without embeddings
+        # Inspect the actual WHERE clause compilation
+        try:
+            # Try to compile statement to understand filters
+            compiled = stmt.compile()
+            stmt_str = str(compiled)
+            # Get bind parameters
+            params = compiled.params
+        except Exception:
+            # Fallback to string representation
+            stmt_str = str(stmt)
+            params = {}
+        
+        # Debug: print statement to understand it
+        # import sys
+        # print(f"\n=== STMT DEBUG ===\n{stmt_str}\nPARAMS: {params}\n==================\n", file=sys.stderr)
+        
+        # Check what table is being queried
+        is_document_query = "knowledge_documents" in stmt_str
+        is_chunk_query = "knowledge_chunks" in stmt_str
+        
+        # Check for IS NULL / IS NOT NULL patterns in WHERE clause
+        has_is_null = "IS NULL" in stmt_str.upper()
+        has_is_not_null = "IS NOT NULL" in stmt_str.upper()
+        has_cosine = "cosine_distance" in stmt_str
+        has_overlap = "tags &&" in stmt_str
+        
+        if is_document_query:
+            # Handle document queries
+            documents = [obj for obj in session._objects if isinstance(obj, KnowledgeDocument)]
+            # Filter by ID if present in params
+            doc_id = params.get('id_1') or params.get('document_id_1')
+            if doc_id:
+                documents = [doc for doc in documents if doc.id == doc_id]
+            
+            scalars_mock.all.return_value = documents
+            result_mock.scalars.return_value = scalars_mock
+            result_mock.scalar_one_or_none.return_value = documents[0] if documents else None
+            result_mock.all.return_value = [(doc, 0.9) for doc in documents]
+            return result_mock
+        
+        # Handle chunk queries
+        if has_is_not_null or has_cosine:
+            # Query for chunks WITH embeddings (for search)
+            chunks = [
+                obj for obj in session._objects 
+                if isinstance(obj, KnowledgeChunk) and 
+                   hasattr(obj, 'embedding') and 
+                   obj.embedding is not None and 
+                   (not isinstance(obj.embedding, list) or len(obj.embedding) > 0)
+            ]
+        elif has_is_null:
+            # Query explicitly for chunks WITHOUT embeddings
+            chunks = [
+                obj for obj in session._objects
+                if isinstance(obj, KnowledgeChunk) and
+                   (not hasattr(obj, 'embedding') or 
+                    obj.embedding is None or
+                    (isinstance(obj.embedding, list) and len(obj.embedding) == 0))
+            ]
+        else:
+            # Ambiguous query - default to all chunks
+            chunks = [obj for obj in session._objects if isinstance(obj, KnowledgeChunk)]
+        
+        # Apply tag overlap filtering if present
+        if has_overlap and chunks:
+            # Extract filter tags from bind parameters
+            filter_tags = params.get('tags_1', [])
+            if filter_tags:
+                # Filter chunks that have overlapping tags
+                filtered_chunks = []
+                for chunk in chunks:
+                    if hasattr(chunk, 'tags') and chunk.tags:
+                        if any(tag in chunk.tags for tag in filter_tags):
+                            filtered_chunks.append(chunk)
+                chunks = filtered_chunks
+        
+        scalars_mock.all.return_value = chunks
+        result_mock.scalars.return_value = scalars_mock
+        
+        # For search queries, return tuples of (chunk, similarity)
+        result_mock.all.return_value = [(chunk, 0.9) for chunk in chunks]
+        return result_mock
+    
+    session.execute = AsyncMock(side_effect=execute_side_effect)
+    
     return session
 
 
 @pytest.fixture
 def mock_sentence_transformer():
     """Mock SentenceTransformer model."""
-    with patch("sensei.services.knowledge_embeddings.SentenceTransformer") as mock:
+    with patch("sentence_transformers.SentenceTransformer") as mock:
         model = Mock()
         # Return fixed embeddings for testing (384 dimensions)
         model.encode.return_value = np.array([0.1, 0.2, 0.3, 0.4] * 96)

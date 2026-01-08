@@ -158,7 +158,7 @@ export function BarcodeScanner({
       {/* Camera viewfinder */}
       <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
         <video
-          ref={videoRef}
+          ref={videoRef as React.RefObject<HTMLVideoElement>}
           className={cn(
             'h-full w-full object-cover',
             isPaused && 'opacity-50'
@@ -169,7 +169,7 @@ export function BarcodeScanner({
         />
         
         {/* Hidden canvas for processing */}
-        <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={canvasRef as React.RefObject<HTMLCanvasElement>} className="hidden" />
 
         {/* Scanning overlay */}
         {state.isScanning && !isPaused && (

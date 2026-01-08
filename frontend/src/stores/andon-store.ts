@@ -146,7 +146,7 @@ const INITIAL_METRICS: AndonMetrics = {
   totalResolved: 0,
   avgResponseTime: 0,
   avgResolutionTime: 0,
-  bySeverity: { low: 0, medium: 0, high: 0, critical: 0 },
+  bySeverity: { minor: 0, major: 0, critical: 0 },
   byType: { quality: 0, safety: 0, material: 0, equipment: 0, assistance: 0 },
   byWorkCenter: {},
 };
@@ -348,7 +348,7 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
       : 0;
 
     // Count by severity
-    const bySeverity: Record<Severity, number> = { low: 0, medium: 0, high: 0, critical: 0 };
+    const bySeverity: Record<Severity, number> = { minor: 0, major: 0, critical: 0 };
     activeEvents.forEach((e) => {
       bySeverity[e.severity]++;
     });
@@ -502,9 +502,8 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
 export function getSeverityColor(severity: Severity): string {
   const colors: Record<Severity, string> = {
     critical: '#EF4444',
-    high: '#F59E0B',
-    medium: '#3B82F6',
-    low: '#6B7280',
+    major: '#F59E0B',
+    minor: '#6B7280',
   };
   return colors[severity];
 }
@@ -512,9 +511,8 @@ export function getSeverityColor(severity: Severity): string {
 export function getSeverityLabel(severity: Severity): string {
   const labels: Record<Severity, string> = {
     critical: 'Critical',
-    high: 'High',
-    medium: 'Medium',
-    low: 'Low',
+    major: 'Major',
+    minor: 'Minor',
   };
   return labels[severity];
 }

@@ -634,7 +634,7 @@ export function AndonFilterBar({
   onSeverityChange,
 }: AndonFilterBarProps) {
   const types: (AndonType | 'all')[] = ['all', 'quality', 'safety', 'material', 'equipment', 'assistance'];
-  const severities: (Severity | 'all')[] = ['all', 'critical', 'high', 'medium', 'low'];
+  const severities: (Severity | 'all')[] = ['all', 'critical', 'major', 'minor'];
 
   return (
     <div className="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-6 py-3 dark:border-gray-700 dark:bg-gray-900">

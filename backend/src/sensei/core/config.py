@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     FEATURE_AI_SUGGESTIONS: bool = True
     FEATURE_OFFLINE_MODE: bool = False
     
+    # AI Settings
+    OPENAI_API_KEY: str | None = None
+    AI_EMBEDDING_PROVIDER: Literal["local", "openai"] = "local"
+    AI_MODEL_TEXT: str = "gpt-4o-mini"
+    AI_MODEL_EMBEDDING: str = "text-embedding-3-small"
+    
     # Localization
     DEFAULT_LOCALE: str = "en"
     SUPPORTED_LOCALES: List[str] = ["en", "fr"]

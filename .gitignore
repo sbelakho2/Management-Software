@@ -118,12 +118,29 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+*.local
+*.dev
+
+# Docker
+docker-compose.override.yml
+
+# AI/Machine Learning Models
+*.onnx
+*.weights
+*.h5
+*.pt
+*.pth
+*.bin
+model_cache/
+.cache/
 
 # Spyder project settings
 .spyderproject
