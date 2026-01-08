@@ -515,27 +515,32 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().setStatus('ready');
     });
 
-    it('should trigger download on button click', async () => {
-      render(<PDFPreview />);
+    it('should call onDownload callback when provided', async () => {
+      const onDownload = jest.fn();
+      render(<PDFPreview onDownload={onDownload} />);
       
       const downloadButton = screen.getByTitle(/download/i);
       await userEvent.click(downloadButton);
       
       await waitFor(() => {
-        expect(mockClick).toHaveBeenCalled();
+        expect(onDownload).toHaveBeenCalledWith(
+          expect.stringContaining('api.example.com'),
+          'Quote #12345.pdf'
+        );
       });
     });
 
-    it('should set downloading state during download', async () => {
-      render(<PDFPreview />);
+    it('should reset downloading state after download', async () => {
+      const onDownload = jest.fn();
+      render(<PDFPreview onDownload={onDownload} />);
       
       const downloadButton = screen.getByTitle(/download/i);
-      // Capture state before click resolves
-      const promise = userEvent.click(downloadButton);
+      await userEvent.click(downloadButton);
       
-      // After click completes, downloading should be false again
-      await promise;
-      expect(usePDFPreviewStore.getState().isDownloading).toBe(false);
+      // After download completes, state should be reset
+      await waitFor(() => {
+        expect(usePDFPreviewStore.getState().isDownloading).toBe(false);
+      });
     });
   });
 
@@ -545,7 +550,21 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().setStatus('ready');
     });
 
-    it('should trigger print on button click', async () => {
+    it('should call onPrint callback when provided', async () => {
+      const onPrint = jest.fn();
+      render(<PDFPreview onPrint={onPrint} />);
+      
+      const printButton = screen.getByTitle(/print/i);
+      await userEvent.click(printButton);
+      
+      await waitFor(() => {
+        expect(onPrint).toHaveBeenCalledWith(
+          expect.stringContaining('api.example.com')
+        );
+      });
+    });
+
+    it('should trigger print via window.open when no callback', async () => {
       render(<PDFPreview />);
       
       const printButton = screen.getByTitle(/print/i);

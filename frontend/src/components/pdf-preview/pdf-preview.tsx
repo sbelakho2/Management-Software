@@ -460,12 +460,12 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
   useEffect(() => {
     if (!containerRef.current) return;
     
-    if (isFullscreen && !document.fullscreenElement) {
+    if (isFullscreen && !window.document.fullscreenElement) {
       containerRef.current.requestFullscreen?.().catch(() => {
         // Fullscreen not supported, ignore
       });
-    } else if (!isFullscreen && document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {
+    } else if (!isFullscreen && window.document.fullscreenElement) {
+      window.document.exitFullscreen?.().catch(() => {
         // Ignore
       });
     }
@@ -496,7 +496,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
         onDownload(pdfUrl, `${document.title}.pdf`);
       } else {
         // Default download behavior
-        const a = document.createElement('a');
+        const a = window.document.createElement('a');
         a.href = pdfUrl;
         a.download = `${document.title}.pdf`;
         a.click();
