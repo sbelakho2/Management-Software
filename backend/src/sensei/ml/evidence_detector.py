@@ -10,7 +10,7 @@ Detects when A3 problem-solving reports are missing critical evidence:
 """
 
 import re
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -19,7 +19,9 @@ import joblib
 import logging
 from pathlib import Path
 
-from sensei.models.a3 import A3Report, A3Section
+if TYPE_CHECKING:
+    from sensei.models.a3 import A3, A3Section
+
 from sensei.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -55,19 +57,20 @@ class MissingEvidenceDetector:
     }
 
     def __init__(self, model_path: Optional[Path] = None):
-        self.model_path = model_path or Path(settings.ML_MODEL_PATH) / "evidence_detector"
+        default_path = getattr(settings, 'ML_MODEL_PATH', '/tmp/ml_models')
+        self.model_path = model_path or Path(default_path) / "evidence_detector"
         self.text_classifier: Optional[RandomForestClassifier] = None
         self.tfidf_vectorizer: Optional[TfidfVectorizer] = None
         
     def train(
         self,
-        labeled_reports: List[Tuple[A3Report, Dict[str, bool]]],
+        labeled_reports: List[Tuple[Any, Dict[str, bool]]],
     ) -> Dict[str, float]:
         """
         Train the missing evidence detector.
         
         Args:
-            labeled_reports: List of (A3Report, evidence_labels) where
+            labeled_reports: List of (A3, evidence_labels) where
                 evidence_labels = {
                     'has_numerical_data': bool,
                     'has_root_cause_evidence': bool,
@@ -151,8 +154,8 @@ class MissingEvidenceDetector:
     
     def detect_missing_evidence(
         self,
-        report: A3Report,
-    ) -> Dict[str, any]:
+        report: Any,
+    ) -> Dict[str, Any]:
         """
         Detect missing evidence in an A3 report.
         
@@ -232,7 +235,7 @@ class MissingEvidenceDetector:
         
         return results
     
-    def _extract_text_from_report(self, report: A3Report) -> str:
+    def _extract_text_from_report(self, report: Any) -> str:
         """Extract all text content from report."""
         texts = [
             report.title or '',
@@ -263,7 +266,7 @@ class MissingEvidenceDetector:
         
         return np.array(features)
     
-    def _check_section_completeness(self, report: A3Report) -> Dict[str, float]:
+    def _check_section_completeness(self, report: Any) -> Dict[str, float]:
         """
         Check completeness of each A3 section.
         
@@ -283,14 +286,14 @@ class MissingEvidenceDetector:
         
         return scores
     
-    def _check_numerical_evidence(self, report: A3Report) -> bool:
+    def _check_numerical_evidence(self, report: Any) -> bool:
         """Check if report contains numerical data/metrics."""
         text = self._extract_text_from_report(report)
         pattern = self.EVIDENCE_PATTERNS['numerical_data']
         matches = re.findall(pattern, text, re.IGNORECASE)
         return len(matches) >= 3  # At least 3 numeric data points
     
-    def _check_root_cause_evidence(self, report: A3Report) -> bool:
+    def _check_root_cause_evidence(self, report: Any) -> bool:
         """Check if report contains root cause analysis evidence."""
         text = report.root_cause_analysis or ''
         
@@ -303,7 +306,7 @@ class MissingEvidenceDetector:
         
         return has_methodology and has_detail
     
-    def _check_validation_evidence(self, report: A3Report) -> bool:
+    def _check_validation_evidence(self, report: Any) -> bool:
         """Check if countermeasures have validation evidence."""
         text = f"{report.countermeasures or ''} {report.followup or ''}"
         
@@ -317,7 +320,7 @@ class MissingEvidenceDetector:
         
         return has_validation or has_comparison
     
-    def _ml_predict(self, report: A3Report) -> float:
+    def _ml_predict(self, report: Any) -> float:
         """Use ML model to predict evidence completeness score."""
         text = self._extract_text_from_report(report)
         
@@ -354,7 +357,7 @@ class MissingEvidenceDetector:
 # Batch analysis pipeline
 def analyze_all_reports(
     detector: MissingEvidenceDetector,
-    reports: List[A3Report],
+    reports: List[Any],
 ) -> Dict[str, Dict]:
     """
     Analyze all A3 reports for missing evidence.

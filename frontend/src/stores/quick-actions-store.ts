@@ -56,6 +56,7 @@ export interface QuickAction {
   confirmationMessage?: string;
   disabled?: boolean;
   disabledReason?: string;
+  hidden?: boolean;
   requiredPermission?: string;
   entityTypes?: EntityType[];
 }
@@ -524,6 +525,7 @@ interface QuickActionsState {
   
   executeAction: (actionId: string, context?: ActionContext) => Promise<void>;
   cancelExecution: (executionId: string) => void;
+  performExecution: (actionId: string, action: QuickAction, context: ActionContext) => Promise<void>;
   
   showConfirmation: (actionId: string, context: ActionContext) => void;
   hideConfirmation: () => void;
@@ -780,6 +782,9 @@ export const useQuickActionsStore = create<QuickActionsState>((set, get) => ({
   getExecution: (executionId) => {
     return get().executions.find((e) => e.id === executionId);
   },
+
+  // Placeholder - will be replaced below
+  performExecution: async () => { throw new Error('Not initialized'); },
 }));
 
 // Internal helper added to store prototype

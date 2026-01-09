@@ -11,7 +11,7 @@ Suggests preventive maintenance actions based on:
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.preprocessing import StandardScaler
@@ -19,8 +19,11 @@ import joblib
 import logging
 from pathlib import Path
 
-from sensei.models.production import Equipment, MaintenanceRecord, ConditionReading
 from sensei.core.config import settings
+
+# Type hints for models that may not exist yet
+if TYPE_CHECKING:
+    from sensei.models.production import Equipment, MaintenanceRecord, ConditionReading
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +48,17 @@ class ConditionBasedMaintenancePredictor:
     }
 
     def __init__(self, model_path: Optional[Path] = None):
-        self.model_path = model_path or Path(settings.ML_MODEL_PATH) / "cbm_predictor"
+        default_path = getattr(settings, 'ML_MODEL_PATH', '/tmp/ml_models')
+        self.model_path = model_path or Path(default_path) / "cbm_predictor"
         self.failure_classifier: Optional[RandomForestClassifier] = None
         self.anomaly_detector: Optional[IsolationForest] = None
         self.scaler: Optional[StandardScaler] = None
         
     def train(
         self,
-        equipment_list: List[Equipment],
-        maintenance_records: List[MaintenanceRecord],
-        condition_readings: List[ConditionReading],
+        equipment_list: List[Any],
+        maintenance_records: List[Any],
+        condition_readings: List[Any],
     ) -> Dict[str, float]:
         """
         Train the CBM prediction models.
@@ -132,10 +136,10 @@ class ConditionBasedMaintenancePredictor:
     
     def predict_maintenance_needs(
         self,
-        equipment: Equipment,
-        recent_readings: List[ConditionReading],
-        maintenance_history: List[MaintenanceRecord],
-    ) -> Dict[str, any]:
+        equipment: Any,
+        recent_readings: List[Any],
+        maintenance_history: List[Any],
+    ) -> Dict[str, Any]:
         """
         Predict maintenance needs for equipment.
         
@@ -225,9 +229,9 @@ class ConditionBasedMaintenancePredictor:
     
     def _build_training_data(
         self,
-        equipment_list: List[Equipment],
-        maintenance_records: List[MaintenanceRecord],
-        condition_readings: List[ConditionReading],
+        equipment_list: List[Any],
+        maintenance_records: List[Any],
+        condition_readings: List[Any],
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Build training dataset from historical data.
@@ -291,9 +295,9 @@ class ConditionBasedMaintenancePredictor:
     
     def _extract_features(
         self,
-        equipment: Equipment,
-        recent_readings: List[ConditionReading],
-        maintenance_history: List[MaintenanceRecord],
+        equipment: Any,
+        recent_readings: List[Any],
+        maintenance_history: List[Any],
     ) -> np.ndarray:
         """
         Extract feature vector for ML models.
@@ -380,7 +384,7 @@ class ConditionBasedMaintenancePredictor:
     
     def _check_critical_thresholds(
         self,
-        recent_readings: List[ConditionReading],
+        recent_readings: List[Any],
     ) -> List[Dict]:
         """Check if any readings exceed critical thresholds."""
         critical_issues = []
@@ -405,9 +409,9 @@ class ConditionBasedMaintenancePredictor:
     
     def _generate_recommendations(
         self,
-        equipment: Equipment,
-        recent_readings: List[ConditionReading],
-        maintenance_history: List[MaintenanceRecord],
+        equipment: Any,
+        recent_readings: List[Any],
+        maintenance_history: List[Any],
         failure_prob: float,
         is_anomaly: bool,
     ) -> List[Dict]:
@@ -463,7 +467,7 @@ class ConditionBasedMaintenancePredictor:
     def _explain_prediction(
         self,
         features: np.ndarray,
-        recent_readings: List[ConditionReading],
+        recent_readings: List[Any],
     ) -> List[str]:
         """Generate human-readable explanations for the prediction."""
         reasons = []
@@ -489,8 +493,8 @@ class ConditionBasedMaintenancePredictor:
     def _estimate_time_to_failure(
         self,
         failure_prob: float,
-        equipment: Equipment,
-        maintenance_history: List[MaintenanceRecord],
+        equipment: Any,
+        maintenance_history: List[Any],
     ) -> Optional[int]:
         """Estimate days until likely failure."""
         if failure_prob < 0.5:
@@ -504,9 +508,9 @@ class ConditionBasedMaintenancePredictor:
     
     def _rule_based_assessment(
         self,
-        equipment: Equipment,
-        recent_readings: List[ConditionReading],
-        maintenance_history: List[MaintenanceRecord],
+        equipment: Any,
+        recent_readings: List[Any],
+        maintenance_history: List[Any],
     ) -> Dict:
         """Fallback rule-based assessment when ML models not available."""
         # Simple heuristics

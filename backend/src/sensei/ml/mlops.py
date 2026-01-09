@@ -12,7 +12,7 @@ Provides infrastructure for:
 
 import json
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
@@ -129,8 +129,9 @@ class ModelRegistry:
         if model_id not in self.registry:
             return None
         
-        metadata_dict = self.registry[model_id]
-        metadata_dict['created_at'] = datetime.fromisoformat(metadata_dict['created_at'])
+        metadata_dict = self.registry[model_id].copy()
+        if isinstance(metadata_dict['created_at'], str):
+            metadata_dict['created_at'] = datetime.fromisoformat(metadata_dict['created_at'])
         metadata_dict['status'] = ModelStatus(metadata_dict['status'])
         
         return ModelMetadata(**metadata_dict)
@@ -142,13 +143,15 @@ class ModelRegistry:
     ) -> List[ModelMetadata]:
         """List all models, optionally filtered."""
         models = []
-        for model_id, metadata_dict in self.registry.items():
-            if model_name and metadata_dict['model_name'] != model_name:
+        for model_id, orig_metadata_dict in self.registry.items():
+            if model_name and orig_metadata_dict['model_name'] != model_name:
                 continue
-            if status and metadata_dict['status'] != status.value:
+            if status and orig_metadata_dict['status'] != status.value:
                 continue
             
-            metadata_dict['created_at'] = datetime.fromisoformat(metadata_dict['created_at'])
+            metadata_dict = orig_metadata_dict.copy()
+            if isinstance(metadata_dict['created_at'], str):
+                metadata_dict['created_at'] = datetime.fromisoformat(metadata_dict['created_at'])
             metadata_dict['status'] = ModelStatus(metadata_dict['status'])
             models.append(ModelMetadata(**metadata_dict))
         
@@ -224,13 +227,19 @@ class ModelMonitor:
         latency_ms: float = 0.0,
     ) -> None:
         """Log a prediction for monitoring."""
+        # Create a hashable version of features for deduplication tracking
+        try:
+            features_hash = hash(json.dumps(input_features, sort_keys=True))
+        except (TypeError, ValueError):
+            features_hash = hash(str(input_features))
+        
         log_entry = {
             'timestamp': datetime.utcnow().isoformat(),
             'model_id': model_id,
             'prediction': str(prediction),
             'actual': str(actual) if actual else None,
             'latency_ms': latency_ms,
-            'features_hash': hash(frozenset(input_features.items())),
+            'features_hash': features_hash,
         }
         
         # Append to daily log file

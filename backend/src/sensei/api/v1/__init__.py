@@ -42,6 +42,14 @@ from sensei.api.v1.endpoints import (
     conditions,
     today,
     backups,
+    backup_scheduler,
+    exceptions,
+    gm_onboarding,
+    rfq_time_tracking,
+    quote_approval_time_tracking,
+    rbac_security_audit,
+    chaos_testing,
+    disaster_recovery_drill,
 )
 
 api_router = APIRouter()
@@ -85,3 +93,11 @@ api_router.include_router(kpi.router)
 api_router.include_router(conditions.router)
 api_router.include_router(today.router)
 api_router.include_router(backups.router, prefix="/backups", tags=["Backups"])
+api_router.include_router(backup_scheduler.router, prefix="/backup-scheduler", tags=["Backup Scheduler"])
+api_router.include_router(exceptions.router, prefix="/exceptions", tags=["Exceptions"])
+api_router.include_router(gm_onboarding.router, prefix="/gm-onboarding", tags=["GM Onboarding"])
+api_router.include_router(rfq_time_tracking.router, prefix="/rfq-time-tracking", tags=["RFQ Time Tracking"])
+api_router.include_router(quote_approval_time_tracking.router, prefix="/quote-approval", tags=["Quote Approval"])
+api_router.include_router(rbac_security_audit.router, prefix="/security-audit", tags=["Security Audit"])
+api_router.include_router(chaos_testing.router, prefix="/chaos-testing", tags=["Chaos Testing"])
+api_router.include_router(disaster_recovery_drill.router, prefix="/dr-drills", tags=["Disaster Recovery"])

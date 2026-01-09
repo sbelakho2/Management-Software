@@ -11,7 +11,7 @@ Recommends relevant training lessons to users based on:
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -20,7 +20,9 @@ import joblib
 import logging
 from pathlib import Path
 
-from sensei.models.training import Lesson, LessonCompletion, User
+if TYPE_CHECKING:
+    from sensei.models.training import Lesson, LessonCompletion, User
+
 from sensei.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,8 @@ class LessonRecommender:
     """
 
     def __init__(self, model_path: Optional[Path] = None):
-        self.model_path = model_path or Path(settings.ML_MODEL_PATH) / "lesson_recommender"
+        default_path = getattr(settings, 'ML_MODEL_PATH', '/tmp/ml_models')
+        self.model_path = model_path or Path(default_path) / "lesson_recommender"
         self.tfidf_vectorizer: Optional[TfidfVectorizer] = None
         self.scaler: Optional[StandardScaler] = None
         self.lesson_embeddings: Optional[np.ndarray] = None
@@ -43,9 +46,9 @@ class LessonRecommender:
         
     def train(
         self,
-        lessons: List[Lesson],
-        completions: List[LessonCompletion],
-        users: List[User],
+        lessons: List[Any],
+        completions: List[Any],
+        users: List[Any],
     ) -> Dict[str, float]:
         """
         Train the recommendation model.
@@ -54,9 +57,21 @@ class LessonRecommender:
         """
         logger.info(f"Training lesson recommender with {len(lessons)} lessons, {len(completions)} completions")
         
+        # Handle empty data gracefully
+        if not lessons:
+            logger.warning("No lessons provided for training. Model will be empty.")
+            self.tfidf_vectorizer = None
+            self.lesson_embeddings = np.array([])
+            self.lesson_ids = []
+            return {
+                'precision@5': 0.0,
+                'recall@5': 0.0,
+                'coverage': 0.0,
+            }
+        
         # Build lesson content embeddings (TF-IDF)
         lesson_texts = [
-            f"{lesson.title} {lesson.description} {' '.join(lesson.tags)}"
+            f"{lesson.title} {lesson.description} {' '.join(lesson.tags or [])}"
             for lesson in lessons
         ]
         
@@ -72,7 +87,10 @@ class LessonRecommender:
         user_lesson_matrix = self._build_interaction_matrix(completions, users, lessons)
         
         # Train collaborative filter (user similarity)
-        user_similarity = cosine_similarity(user_lesson_matrix)
+        if user_lesson_matrix.size > 0:
+            user_similarity = cosine_similarity(user_lesson_matrix)
+        else:
+            user_similarity = np.array([])
         
         # Save model artifacts
         self.model_path.mkdir(parents=True, exist_ok=True)
@@ -99,9 +117,9 @@ class LessonRecommender:
     
     def recommend(
         self,
-        user: User,
-        user_completions: List[LessonCompletion],
-        all_lessons: List[Lesson],
+        user: Any,
+        user_completions: List[Any],
+        all_lessons: List[Any],
         top_k: int = 10,
         exclude_completed: bool = True,
     ) -> List[Tuple[str, float, Dict[str, str]]]:
@@ -138,10 +156,10 @@ class LessonRecommender:
     
     def _score_lesson(
         self,
-        user: User,
-        lesson: Lesson,
-        user_completions: List[LessonCompletion],
-        all_lessons: List[Lesson],
+        user: Any,
+        lesson: Any,
+        user_completions: List[Any],
+        all_lessons: List[Any],
     ) -> Tuple[float, Dict[str, str]]:
         """
         Score a single lesson for a user using hybrid approach.
@@ -187,13 +205,13 @@ class LessonRecommender:
         
         return score, explanation
     
-    def _check_role_match(self, user: User, lesson: Lesson) -> bool:
+    def _check_role_match(self, user: Any, lesson: Any) -> bool:
         """Check if lesson target roles match user role."""
         if not lesson.target_roles:
             return True  # Available to all
         return user.role in lesson.target_roles
     
-    def _calculate_skills_gap(self, user: User, lesson: Lesson) -> float:
+    def _calculate_skills_gap(self, user: Any, lesson: Any) -> float:
         """
         Calculate how well lesson addresses user's skills gap.
         
@@ -220,9 +238,9 @@ class LessonRecommender:
     
     def _calculate_content_similarity(
         self,
-        lesson: Lesson,
-        user_completions: List[LessonCompletion],
-        all_lessons: List[Lesson],
+        lesson: Any,
+        user_completions: List[Any],
+        all_lessons: List[Any],
     ) -> float:
         """
         Calculate content similarity between lesson and user's completed lessons.
@@ -253,9 +271,9 @@ class LessonRecommender:
     
     def _build_interaction_matrix(
         self,
-        completions: List[LessonCompletion],
-        users: List[User],
-        lessons: List[Lesson],
+        completions: List[Any],
+        users: List[Any],
+        lessons: List[Any],
     ) -> np.ndarray:
         """Build user-lesson interaction matrix for collaborative filtering."""
         user_ids = [u.id for u in users]
@@ -281,9 +299,9 @@ class LessonRecommender:
     
     def _evaluate(
         self,
-        completions: List[LessonCompletion],
-        users: List[User],
-        lessons: List[Lesson],
+        completions: List[Any],
+        users: List[Any],
+        lessons: List[Any],
     ) -> Dict[str, float]:
         """
         Evaluate model using precision@k and recall@k.
@@ -349,9 +367,9 @@ class LessonRecommender:
 # Batch recommendation pipeline
 def generate_recommendations_for_all_users(
     recommender: LessonRecommender,
-    users: List[User],
-    completions: List[LessonCompletion],
-    lessons: List[Lesson],
+    users: List[Any],
+    completions: List[Any],
+    lessons: List[Any],
     top_k: int = 10,
 ) -> Dict[str, List[Tuple[str, float, Dict[str, str]]]]:
     """

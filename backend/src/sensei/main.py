@@ -23,6 +23,8 @@ from sensei.api.exceptions import register_exception_handlers
 from sensei.middleware.logging import StructuredLoggingMiddleware
 from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
+from sensei.services.backup_scheduler import BackupSchedulerService
+from sensei.services.database_backup import DatabaseBackupService
 
 logger = structlog.get_logger(__name__)
 
@@ -52,10 +54,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("All service dependencies connected")
     
+    # Initialize and start backup scheduler
+    try:
+        backup_service = DatabaseBackupService(storage_client=storage_client)
+        backup_scheduler = BackupSchedulerService(backup_service=backup_service)
+        backup_scheduler.start()
+        app.state.backup_scheduler = backup_scheduler
+        logger.info("Backup scheduler started successfully")
+    except Exception as e:
+        logger.error("Failed to start backup scheduler", error=str(e))
+    
     yield
     
     # Shutdown
     logger.info("Shutting down Sensei OS")
+    
+    # Stop backup scheduler
+    if hasattr(app.state, "backup_scheduler"):
+        try:
+            app.state.backup_scheduler.stop()
+            logger.info("Backup scheduler stopped")
+        except Exception as e:
+            logger.error("Error stopping backup scheduler", error=str(e))
+    
     await engine.dispose()
     await redis_client.close()
 
