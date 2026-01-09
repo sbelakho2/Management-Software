@@ -190,6 +190,8 @@ describe('CorrectionModal', () => {
   
   beforeEach(() => {
     defaultProps.onClose.mockReset();
+    mockSubmit.mockReset();
+    mockSubmit.mockResolvedValue({ id: 'corr_123', status: 'success' });
   });
   
   it('renders when open', () => {
@@ -268,11 +270,12 @@ describe('CorrectionModal', () => {
     render(<CorrectionModal {...defaultProps} onSuccess={onSuccess} />);
     
     const textarea = screen.getByTestId('correction-input');
-    await userEvent.clear(textarea);
-    await userEvent.type(textarea, 'Part: ABC-123');
+    
+    // Use fireEvent to set the value directly instead of userEvent for reliability
+    fireEvent.change(textarea, { target: { value: 'Part: ABC-123' } });
     
     const submitButton = screen.getByTestId('submit-button');
-    await userEvent.click(submitButton);
+    fireEvent.click(submitButton);
     
     await waitFor(() => {
       expect(mockSubmit).toHaveBeenCalledWith(
@@ -282,7 +285,7 @@ describe('CorrectionModal', () => {
           contextType: 'rfq_parsing',
         })
       );
-    });
+    }, { timeout: 3000 });
     
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalled();

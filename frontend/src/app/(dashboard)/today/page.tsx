@@ -380,13 +380,7 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
 
 export default function TodayPage() {
   const { user } = useAuthStore();
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  // Simulate loading
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timer);
-  }, []);
+  const [isLoading] = React.useState(false); // Will be true when fetching from API
 
   const greeting = React.useMemo(() => {
     const hour = new Date().getHours();

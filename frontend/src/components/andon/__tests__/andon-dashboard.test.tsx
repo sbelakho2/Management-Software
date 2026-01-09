@@ -611,11 +611,10 @@ describe('Andon Dashboard Components', () => {
         />
       );
 
-      // Find buttons containing these text
+      // Find buttons containing these text - severity uses 'critical', 'major', 'minor'
       expect(screen.getByRole('button', { name: 'Critical' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'High' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Medium' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Low' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Major' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Minor' })).toBeInTheDocument();
     });
 
     test('calls onTypeChange when type button is clicked', () => {

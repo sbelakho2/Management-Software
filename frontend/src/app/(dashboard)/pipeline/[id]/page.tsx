@@ -189,15 +189,9 @@ function formatFileSize(bytes: number): string {
 export default function RFQDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [rfq] = React.useState<RFQDetail>(mockRFQ);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoading] = React.useState(false); // Will be true when fetching from API
   const [noBidDialogOpen, setNoBidDialogOpen] = React.useState(false);
   const [noBidReason, setNoBidReason] = React.useState('');
-
-  // Simulate loading
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timer);
-  }, []);
 
   const isOverdue = new Date(rfq.dueDate) < new Date();
   const daysUntilDue = Math.ceil((new Date(rfq.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -225,7 +219,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" onClick={() => router.back()} aria-label="Go back">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -256,7 +250,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" aria-label="More actions">
                 <MoreHorizontal className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>

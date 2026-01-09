@@ -352,13 +352,7 @@ function PipelinePageContent() {
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  // Simulate loading
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 500);
-    return () => clearTimeout(timer);
-  }, []);
+  const [isLoading] = React.useState(false); // Will be true when fetching from API
 
   // Filter RFQs
   const filteredRFQs = React.useMemo(() => {
@@ -458,6 +452,7 @@ function PipelinePageContent() {
             size="sm"
             className="rounded-r-none"
             onClick={() => setView('list')}
+            aria-label="List view"
           >
             <List className="h-4 w-4" />
           </Button>
@@ -466,6 +461,7 @@ function PipelinePageContent() {
             size="sm"
             className="rounded-l-none"
             onClick={() => setView('kanban')}
+            aria-label="Board view"
           >
             <LayoutGrid className="h-4 w-4" />
           </Button>

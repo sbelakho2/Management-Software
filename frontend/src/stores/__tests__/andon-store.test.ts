@@ -544,16 +544,12 @@ describe('andon-store', () => {
         expect(getSeverityColor('critical')).toBe('#EF4444');
       });
 
-      test('returns correct color for high', () => {
-        expect(getSeverityColor('high')).toBe('#F59E0B');
+      test('returns correct color for major', () => {
+        expect(getSeverityColor('major')).toBe('#F59E0B');
       });
 
-      test('returns correct color for medium', () => {
-        expect(getSeverityColor('medium')).toBe('#3B82F6');
-      });
-
-      test('returns correct color for low', () => {
-        expect(getSeverityColor('low')).toBe('#6B7280');
+      test('returns correct color for minor', () => {
+        expect(getSeverityColor('minor')).toBe('#6B7280');
       });
     });
 
@@ -562,16 +558,12 @@ describe('andon-store', () => {
         expect(getSeverityLabel('critical')).toBe('Critical');
       });
 
-      test('returns correct label for high', () => {
-        expect(getSeverityLabel('high')).toBe('High');
+      test('returns correct label for major', () => {
+        expect(getSeverityLabel('major')).toBe('Major');
       });
 
-      test('returns correct label for medium', () => {
-        expect(getSeverityLabel('medium')).toBe('Medium');
-      });
-
-      test('returns correct label for low', () => {
-        expect(getSeverityLabel('low')).toBe('Low');
+      test('returns correct label for minor', () => {
+        expect(getSeverityLabel('minor')).toBe('Minor');
       });
     });
 
