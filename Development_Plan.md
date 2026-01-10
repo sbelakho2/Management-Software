@@ -2450,22 +2450,22 @@ real-time production control, quality management, standardized work, and continu
 - [x] **Customer Credit Controls**: credit limit, credit hold, and approval workflow for overrides.
 
 ### 22.3. Procure-to-Pay (AP)
-- [ ] **Purchase Requisitions**: request/approve workflow tied to budget/cost center.
-- [ ] **Purchase Orders**: PO lifecycle (draft → approved → sent → received → closed) with supplier linkage.
-- [ ] **Supplier Invoices**: capture vendor bills, attach evidence, and route for approvals.
-- [ ] **3-Way Match**: PO ↔ goods receipt ↔ supplier invoice matching with exception handling and audit trail.
-- [ ] **Payments**: payment run preparation, approval, execution tracking (manual file export or ERP integration).
+- [x] **Purchase Requisitions**: request/approve workflow tied to budget/cost center.
+- [x] **Purchase Orders**: PO lifecycle (draft → approved → sent → received → closed) with supplier linkage.
+- [x] **Supplier Invoices**: capture vendor bills, attach evidence, and route for approvals.
+- [x] **3-Way Match**: PO ↔ goods receipt ↔ supplier invoice matching with exception handling and audit trail.
+- [x] **Payments**: payment run preparation, approval, execution tracking (manual file export or ERP integration).
 
 ### 22.4. Inventory Valuation & Cost Accounting
-- [ ] **Costing Methods**: support standard cost (minimum) with option for moving average/FIFO later.
-- [ ] **WIP Valuation**: WIP rollup by Work Order using material issues + labor bookings + routing.
-- [ ] **Variance Accounting**: material/labor/overhead variances posted to GL with drill-down to drivers.
-- [ ] **COGS & Margin**: per-product/per-customer margin reporting from shipments/invoices and cost rollups.
+- [x] **Costing Methods**: support standard cost (minimum) with option for moving average/FIFO later.
+- [x] **WIP Valuation**: WIP rollup by Work Order using material issues + labor bookings + routing.
+- [x] **Variance Accounting**: material/labor/overhead variances posted to GL with drill-down to drivers.
+- [x] **COGS & Margin**: per-product/per-customer margin reporting from shipments/invoices and cost rollups.
 
 ### 22.5. Fixed Assets (Accounting)
-- [ ] **Capitalization Workflow**: convert qualifying assets from maintenance/asset register into fixed assets.
-- [ ] **Depreciation Schedules**: monthly depreciation with postings, useful life, and residual value.
-- [ ] **Asset Events**: transfer, impairment, disposal, and audit trail.
+- [x] **Capitalization Workflow**: convert qualifying assets from maintenance/asset register into fixed assets. ✅ `services/fixed_assets.py` capitalize_from_source() with GL posting option
+- [x] **Depreciation Schedules**: monthly depreciation with postings, useful life, and residual value. ✅ compute_monthly_depreciation(), post_monthly_depreciation() with straight-line, period caps
+- [x] **Asset Events**: transfer, impairment, disposal, and audit trail. ✅ transfer_asset(), impair_asset(), dispose_asset() with gain/loss, full audit + asset event history
 
 ### 22.6. HRIS Completeness (Beyond Lean HR)
 - [ ] **Leave Management**: accrual policies, holiday calendars, approvals, and payroll impact export.
@@ -2499,4 +2499,71 @@ real-time production control, quality management, standardized work, and continu
 - [ ] **E2E/RBAC Tests**: add end-to-end tests verifying unauthorized roles cannot list/view/modify sensitive objects.
 - [ ] **Data Migration**: import tools for CoA, opening balances, suppliers/customers, and initial inventory.
 
+### 22.11. Document Generation, Regional Compliance & Branding
+*Goal: Ensure all legal and operational documents are professional, compliant with local laws in Morocco and Tunisia, and carry the correct brand identity.*
+
+- [ ] **Enterprise Document Generation Engine**:
+    - [ ] **Unified Generation Service**: Implementation of a high-fidelity PDF/HTML/Excel generator capable of producing all system documents.
+    - [ ] **Full Document Coverage**: Verify generation for: **Quotes, RFQs, 8D Reports, CAPA, Audit Evidence Packs, Invoices, Credit Memos, Packing Lists, and Certificates of Conformance (COC)**.
+    - [ ] **Regional Template Routing**: Logic to automatically route to the correct regional template (MA vs TN) based on the originating site's legal entity.
+- [ ] **Morocco Regional Compliance (Starz Morocco)**:
+    - [ ] **Moroccan Invoice Template**: Integration of mandatory legal fields: **ICE** (Identifiant Commun de l'Entreprise), **IF** (Identifiant Fiscal), **RC** (Registre du Commerce), and **CNSS**.
+    - [ ] **MA Branding**: Explicit injection of `StarzMLogo.jpg` into all documents generated for the Moroccan entity.
+    - [ ] **MA Localization**: Formatting for **MAD** currency, French/Arabic language support where required by local law, and specific date/number formats.
+- [ ] **Tunisia Regional Compliance (Starz Tunisia)**:
+    - [ ] **Tunisian Invoice Template**: Integration of mandatory legal fields: **MF** (Matricule Fiscal), **RC** (Registre du Commerce), and **CD** (Code Douane).
+    - [ ] **TN Branding**: Explicit injection of `StarzLogo.png` into all documents generated for the Tunisian entity.
+    - [ ] **TN Localization**: Formatting for **TND** currency and Tunisian tax/VAT logic.
+- [ ] **Logo Asset Cleanup & Management**:
+    - [ ] **Digital Asset Optimization**: Perform cleanup of `StarzLogo.png` and `StarzMLogo.jpg` to ensure they are crisp, correctly scaled, and optimized for high-resolution PDF embedding.
+    - [ ] **Global Asset Registry**: Centralized management of logos to ensure that if a brand asset changes, it updates across all future generated documents.
+    - [ ] **Stationery Logic**: Support for digital "Letterhead" backgrounds for formal correspondence.
+- [ ] **Regulatory Document Governance**:
+    - [ ] **Immutable Document Binding**: Link generated PDFs to specific entity versions (e.g., binding an invoice to a specific shipment lot).
+    - [ ] **Electronic Signature Integration**: Support for digital sign-off on formal documents (COCs, Quality sign-offs).
+
+### 22.12. Multi-Regional Legal Logic & Compliance (MA, TN, US-WY)
+*Goal: Beyond documents, ensure the system logic natively handles tax, labor, and safety regulations for each jurisdiction.*
+
+- [ ] **United States (Wyoming) Regional Compliance**:
+    - [ ] **WY Tax Logic**: Support for Sales and Use tax calculation (State + County rates) and EIN (Federal) tracking.
+    - [ ] **WY Labor & Payroll**: Integration of Wyoming Workers' Compensation (monopolistic state fund) and Unemployment Insurance (UI) reporting.
+    - [ ] **Secretary of State (SOS) Tracking**: Automated reminders for Annual Report filings and Registered Agent maintenance.
+- [ ] **Morocco Regional Compliance (Starz Morocco)**:
+    - [ ] **MA Tax Logic**: Full TVA (VAT) engine supporting 20%, 14%, 10%, and 7% rates, and exoneration logic for offshore/FTZ entities.
+    - [ ] **MA Labor & CNSS**: Automated calculation of CNSS/AMO contributions and generation of mandatory monthly declarations.
+    - [ ] **MA Labor Law Compliance**: Support for Moroccan leave accrual (1.5 days/month) and legal working hours (44h/week).
+- [ ] **Tunisia Regional Compliance (Starz Tunisia)**:
+    - [ ] **TN Tax Logic**: TVA engine supporting 19%, 13%, and 7% rates, and withholding tax (Retenue à la Source) logic.
+    - [ ] **TN Labor & CNSS**: Integration of Tunisian CNSS contribution logic and TFP/FOPROLOS taxes.
+    - [ ] **TN Labor Law Compliance**: Support for Tunisian leave policies and "Code du Travail" requirements.
+
+### 22.13. AI Model Enrichment: TPS & Lean Knowledge Synthesis
+*Goal: Populate the Sensei Reasoning Engine with world-class Lean and TPS knowledge using free, open-source resources.*
+
+- [ ] **TPS/Lean Resource Ingestion (Free & CLI-Downloadable)**:
+    - [] All PDFs of major TPS books you can download using CLI
+    - [ ] **Toyota Global TPS Library**: Ingest the official Toyota Production System methodology from `toyota-global.com`.
+        - `curl -s https://www.toyota-global.com/company/vision_philosophy/toyota_production_system/`
+    - [ ] **MIT OCW Lean Materials**: Download and process the "Integrating the Lean Enterprise" course materials (Course 16.852J).
+        - `wget https://ocw.mit.edu/courses/16-852j-integrating-the-lean-enterprise-fall-2005/16-852j-fall-2005.zip`
+    - [ ] **NIST MEP Lean Framework**: Ingest US National Institute of Standards and Technology (NIST) Manufacturing Extension Partnership (MEP) Lean guidelines.
+        - `curl -o lean_guide.pdf https://www.nist.gov/system/files/documents/mep/Lean-Manufacturing-Guide.pdf`
+    - [ ] **Wikipedia Lean Corpus**: Ingest structured Wikipedia data for "Lean Manufacturing", "Six Sigma", "Kaizen", and "Total Quality Management".
+        - `python -m sensei.cli.knowledge ingest https://en.wikipedia.org/wiki/Lean_manufacturing --tag lean`
+    - [ ] **Scientific Management (Public Domain)**: Ingest F.W. Taylor's foundational work from Project Gutenberg.
+        - `curl -o taylor_principles.html https://www.gutenberg.org/files/6435/6435-h/6435-h.htm`
+- [ ] **CLI Enrichment Workflow**:
+    - [ ] **Step 1: Resource Acquisition**: Execute acquisition scripts to pull resources into the `knowledge_pack` staging area.
+    - [ ] **Step 2: Semantic Ingestion**: Use `python -m sensei.cli.knowledge ingest` with appropriate `--tag` for all resources, ensuring license compliance.
+    - [ ] **Step 3: Recursive Chunking**: Execute `python -m sensei.cli.knowledge process` to generate high-fidelity semantic chunks with preserved citations and taxonomy mapping.
+    - [ ] **Step 4: Vectorization (ONNX)**: Run `python -m sensei.cli.knowledge embed` to generate local CPU-optimized embeddings for the entire corpus.
+    - [ ] **Step 5: Reasoning Alignment**: Verify that the Socratic Mentor (Section 18.2) and PDCA Coaching Engine (Section 18.12) correctly reference these new sources during A3 coaching and Muda detection.
+
+Tunisia address:
+    - 3 Rue Hedi Cheker, Bizerte, Tunisia 7000
+Morocco address:
+    - Tangier Automotive City, Lot 8, Tangier, Morocco
+Wyoming address:
+    - 1621 Central Ave, Cheyenne, WY 82001, USA
 **End of Development Plan**

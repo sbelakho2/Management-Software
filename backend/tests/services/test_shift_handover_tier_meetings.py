@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -93,7 +93,7 @@ def test_payloads_can_surface_on_today_screen(svc: ShiftHandoverTierMeetingServi
     today.add_commitment(
         title=p["title"],
         commitment_type=CommitmentType.SHIFT_HANDOFF,
-        due_date=now.date(),
+        due_date=date.today(),
         description=p["description"],
         owner_id=incoming_uuid,
         owner_name="Incoming Operator",
