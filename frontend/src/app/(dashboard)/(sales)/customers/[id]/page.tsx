@@ -200,6 +200,7 @@ export default function CustomerDetailPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [customer, setCustomer] = React.useState<Customer | null>(null);
   const [showDeactivateDialog, setShowDeactivateDialog] = React.useState(false);
+  const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -257,7 +258,7 @@ export default function CustomerDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.push(`/customers/${customer.id}/edit`)}>
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

@@ -213,7 +213,7 @@ function TaskCard({ task }: { task: Task }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => router.push(`/tasks/${task.id}`)}>View Details</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push(`/tasks/${task.id}/edit`)}>Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push(`/tasks/${task.id}?mode=edit`)}>Edit</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
             </DropdownMenuContent>

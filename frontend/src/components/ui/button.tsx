@@ -24,12 +24,13 @@ const buttonVariants = cva(
           'bg-warning text-warning-foreground shadow-sm hover:bg-warning/90',
       },
       size: {
-        default: 'h-9 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-md px-8',
+        default: 'h-10 px-4 py-2',
+        sm: 'h-9 rounded-md px-3 text-xs',
+        lg: 'h-11 rounded-md px-8',
         xl: 'h-12 rounded-md px-10 text-base',
-        icon: 'h-9 w-9',
-        'icon-sm': 'h-8 w-8',
+        icon: 'h-11 w-11 min-h-[44px] min-w-[44px]',
+        'icon-sm': 'h-10 w-10 min-h-[40px] min-w-[40px]',
+        'icon-xs': 'h-8 w-8',
       },
     },
     defaultVariants: {
@@ -54,6 +55,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         disabled={disabled || loading}
+        aria-busy={loading}
         {...props}
       >
         {loading ? (
@@ -63,6 +65,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <circle
                 className="opacity-25"
@@ -78,7 +81,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            Loading...
+            <span className="sr-only">Loading, please wait...</span>
+            {children}
           </>
         ) : (
           children

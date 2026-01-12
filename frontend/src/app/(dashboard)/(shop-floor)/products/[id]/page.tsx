@@ -237,7 +237,7 @@ export default function ProductDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.push(`/products/${product.id}/edit`)}>
+          <Button variant="outline" onClick={() => setIsEditing?.(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

@@ -941,7 +941,6 @@ export function ChartExportButton({
 // Export helper functions (simplified - would use html2canvas/jsPDF in production)
 async function exportAsPNG(element: HTMLElement, filename: string) {
   // In production, use html2canvas
-  console.log(`Exporting ${filename}.png from element:`, element);
   // For now, trigger download dialog simulation
   const link = document.createElement('a');
   link.download = `${filename}.png`;
@@ -951,7 +950,6 @@ async function exportAsPNG(element: HTMLElement, filename: string) {
 
 async function exportAsPDF(element: HTMLElement, filename: string) {
   // In production, use jsPDF
-  console.log(`Exporting ${filename}.pdf from element:`, element);
   alert('PDF export initiated (would use jsPDF in production)');
 }
 

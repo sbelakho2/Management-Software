@@ -61,7 +61,12 @@ export type UserRole =
   | 'sales_engineer'
   | 'estimator'
   | 'supply_chain'
-  | 'maintenance';
+  | 'maintenance'
+  | 'warehouse'
+  | 'sales'
+  | 'purchasing'
+  | 'logistics'
+  | 'engineering';
 
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'system';

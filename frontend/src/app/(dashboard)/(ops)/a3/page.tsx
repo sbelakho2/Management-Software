@@ -503,7 +503,7 @@ export default function A3Page() {
                             <FileText className="mr-2 h-4 w-4" />
                             View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => router.push(`/a3/${a3.id}/edit`)}>
+                          <DropdownMenuItem onClick={() => router.push(`/a3/${a3.id}?mode=edit`)}>
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem>

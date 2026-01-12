@@ -189,7 +189,7 @@ function ProductRow({ product }: { product: Product }) {
               <Eye className="mr-2 h-4 w-4" />
               View
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/products/${product.id}/edit`)}>
+            <DropdownMenuItem onClick={() => router.push(`/products/${product.id}?mode=edit`)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </DropdownMenuItem>

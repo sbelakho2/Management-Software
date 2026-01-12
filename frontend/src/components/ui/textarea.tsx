@@ -4,17 +4,22 @@ import { cn } from '@/lib/utils';
 export interface TextareaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: boolean;
+  /** ID for linking to error message via aria-describedby */
+  errorId?: string;
   resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, error, resize = 'vertical', ...props }, ref) => {
+  ({ className, error, errorId, resize = 'vertical', 'aria-describedby': ariaDescribedBy, ...props }, ref) => {
     const resizeClass = {
       none: 'resize-none',
       vertical: 'resize-y',
       horizontal: 'resize-x',
       both: 'resize',
     }[resize];
+
+    // Combine error ID with any existing aria-describedby
+    const describedBy = [ariaDescribedBy, error && errorId].filter(Boolean).join(' ') || undefined;
 
     return (
       <textarea
@@ -28,6 +33,8 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           className
         )}
         ref={ref}
+        aria-invalid={error || undefined}
+        aria-describedby={describedBy}
         {...props}
       />
     );

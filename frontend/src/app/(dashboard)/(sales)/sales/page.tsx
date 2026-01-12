@@ -157,7 +157,7 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/pipeline/${rfq.id}/edit`}>
+              <Link href={`/pipeline/${rfq.id}?mode=edit`}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
               </Link>

@@ -220,8 +220,17 @@ export default function ExceptionsPage() {
   };
 
   const handleExport = () => {
-    // Export to CSV
-    console.log('Exporting exceptions...');
+    // Export to CSV - implementation would trigger download
+    const csvContent = exceptions.map(e => 
+      `${e.id},${e.title},${e.severity},${e.status},${e.category}`
+    ).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'exceptions-export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const getSeverityColor = (severity: ExceptionSeverity): string => {

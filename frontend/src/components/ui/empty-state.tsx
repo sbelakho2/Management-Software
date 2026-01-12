@@ -547,4 +547,128 @@ export const NotFoundEmptyState: React.FC<
   />
 );
 
+// Task Empty State
+export const TaskEmptyState: React.FC<EntityEmptyStateProps> = ({
+  title = 'No tasks found',
+  description = 'You\'re all caught up! Tasks assigned to you will appear here.',
+  onCreateClick,
+  createHref,
+  ...props
+}) => (
+  <EmptyState
+    icon={<ClipboardList className="h-12 w-12" />}
+    title={title}
+    description={description}
+    variant="success"
+    primaryAction={
+      (onCreateClick || createHref) ? {
+        label: 'Create Task',
+        onClick: onCreateClick,
+        href: createHref,
+      } : undefined
+    }
+    hint="Tasks help you track work items and deadlines."
+    {...props}
+  />
+);
+
+// Exception Empty State  
+export const ExceptionEmptyState: React.FC<EntityEmptyStateProps> = ({
+  title = 'No exceptions reported',
+  description = 'No quality or process exceptions at this time. Keep up the good work!',
+  onCreateClick,
+  createHref,
+  ...props
+}) => (
+  <EmptyState
+    icon={<AlertCircle className="h-12 w-12" />}
+    title={title}
+    description={description}
+    variant="success"
+    primaryAction={
+      (onCreateClick || createHref) ? {
+        label: 'Report Exception',
+        onClick: onCreateClick,
+        href: createHref,
+        variant: 'outline',
+      } : undefined
+    }
+    hint="Exceptions track quality issues and process deviations for resolution."
+    {...props}
+  />
+);
+
+// Obeya Empty State
+export const ObeyaEmptyState: React.FC<EntityEmptyStateProps> = ({
+  title = 'No obeya rooms configured',
+  description = 'Set up an obeya room to visualize key metrics and drive team alignment.',
+  onCreateClick,
+  createHref,
+  ...props
+}) => (
+  <EmptyState
+    icon={<Building2 className="h-12 w-12" />}
+    title={title}
+    description={description}
+    primaryAction={
+      (onCreateClick || createHref) ? {
+        label: 'Create Obeya Room',
+        onClick: onCreateClick,
+        href: createHref,
+      } : undefined
+    }
+    hint="Obeya (big room) is a visual management space for project alignment."
+    {...props}
+  />
+);
+
+// Project Empty State
+export const ProjectEmptyState: React.FC<EntityEmptyStateProps> = ({
+  title = 'No projects found',
+  description = 'Create a project to organize and track related work items.',
+  onCreateClick,
+  createHref,
+  ...props
+}) => (
+  <EmptyState
+    icon={<FileText className="h-12 w-12" />}
+    title={title}
+    description={description}
+    primaryAction={
+      (onCreateClick || createHref) ? {
+        label: 'Create Project',
+        onClick: onCreateClick,
+        href: createHref,
+      } : undefined
+    }
+    hint="Projects group related tasks and deliverables together."
+    {...props}
+  />
+);
+
+// Maintenance Empty State
+export const MaintenanceEmptyState: React.FC<EntityEmptyStateProps> = ({
+  title = 'No maintenance tasks scheduled',
+  description = 'Schedule preventive maintenance to keep equipment running smoothly.',
+  onCreateClick,
+  createHref,
+  ...props
+}) => (
+  <EmptyState
+    icon={<Wrench className="h-12 w-12" />}
+    title={title}
+    description={description}
+    variant="success"
+    primaryAction={
+      (onCreateClick || createHref) ? {
+        label: 'Schedule Maintenance',
+        onClick: onCreateClick,
+        href: createHref,
+      } : undefined
+    }
+    hint="Regular maintenance prevents unexpected downtime."
+    {...props}
+  />
+);
+
 export default EmptyState;

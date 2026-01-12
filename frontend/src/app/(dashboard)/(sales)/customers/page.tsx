@@ -251,7 +251,7 @@ function CustomerRow({ customer }: { customer: any }) {
               <Eye className="mr-2 h-4 w-4" />
               View
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/customers/${customer.id}/edit`)}>
+            <DropdownMenuItem onClick={() => router.push(`/customers/${customer.id}?mode=edit`)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </DropdownMenuItem>

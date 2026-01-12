@@ -237,7 +237,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
-            <Link href={`/pipeline/${rfq.id}/edit`}>
+            <Link href={`/pipeline/${rfq.id}?mode=edit`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </Link>

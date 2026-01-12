@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useUIStore, useAuthStore } from '@/stores';
 import { UserRole } from '@/types';
+import { MobileBottomNav } from './mobile-nav';
 
 interface NavItem {
   label: string;
@@ -70,11 +71,15 @@ const navSections: NavSection[] = [
       { label: 'Tasks', href: '/tasks', icon: ClipboardCheck },
       { label: 'Executive', href: '/executive', icon: Eye, roles: ['admin', 'ceo', 'gm', 'exec'] },
       { label: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin', 'ceo', 'gm', 'exec', 'ops'] },
+      { label: 'HR', href: '/hr', icon: Users, roles: ['admin', 'ceo', 'gm', 'exec', 'hr'] },
+      { label: 'IT', href: '/it', icon: Shield, roles: ['admin', 'ceo', 'gm', 'it'] },
+      { label: 'Warehouse', href: '/warehouse', icon: Package, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'warehouse', 'supply_chain'] },
+      { label: 'Auditor', href: '/auditor', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'auditor', 'quality'] },
     ]
   },
   {
     title: 'Sales & CRM',
-    roles: ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'ops'],
+    roles: ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'ops', 'sales'],
     items: [
       { label: 'Sales Overview', href: '/sales', icon: Target },
       { label: 'Pipeline', href: '/pipeline', icon: FileText },
@@ -84,7 +89,7 @@ const navSections: NavSection[] = [
   },
   {
     title: 'Operations',
-    roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'operator', 'quality', 'supply_chain', 'maintenance'],
+    roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'operator', 'quality', 'supply_chain', 'maintenance', 'warehouse', 'engineering'],
     items: [
       { label: 'Ops Overview', href: '/ops', icon: LayoutGrid },
       { label: 'Production', href: '/production', icon: Factory },
@@ -102,9 +107,9 @@ const navSections: NavSection[] = [
       { label: 'Quality', href: '/quality', icon: Shield },
       { label: 'Andon', href: '/andon', icon: AlertTriangle },
       { label: 'Maintenance', href: '/maintenance', icon: Wrench },
-      { label: 'Supply Chain', href: '/supply-chain', icon: Globe, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain'] },
+      { label: 'Supply Chain', href: '/supply-chain', icon: Globe, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain', 'warehouse', 'purchasing', 'logistics'] },
       { label: 'Training', href: '/training', icon: GraduationCap },
-      { label: 'Training Matrix', href: '/training/matrix', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor'] },
+      { label: 'Training Matrix', href: '/training/matrix', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'hr'] },
       { label: 'Finance', href: '/finance', icon: DollarSign, roles: ['admin', 'ceo', 'gm', 'exec', 'finance', 'accountant'] },
     ]
   }
@@ -151,13 +156,26 @@ export function Sidebar() {
     });
   }
 
-  if (!mounted || isHidden) return null;
+  // On desktop, respect the hidden state. On mobile, use different logic
+  const isMobileVisible = !isHidden; // On mobile, show when not hidden
+  
+  if (!mounted) return null;
+  
+  // On desktop, hide completely when isHidden
+  // On mobile, slide in/out based on state
+  const desktopHidden = isHidden;
 
   return (
     <aside
       className={cn(
         'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-card transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64'
+        // Mobile: slide in from left, always full width when visible
+        'max-md:-translate-x-full max-md:w-64',
+        isMobileVisible && 'max-md:translate-x-0',
+        // Desktop: collapse/expand normally
+        'md:translate-x-0',
+        desktopHidden && 'md:-translate-x-full',
+        isCollapsed ? 'md:w-16' : 'md:w-64'
       )}
     >
       {/* Logo */}
@@ -468,24 +486,52 @@ export function Header() {
 }
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
-  const { sidebarState } = useUIStore();
+  const { sidebarState, setSidebarState } = useUIStore();
   const isCollapsed = sidebarState === 'collapsed';
   const isHidden = sidebarState === 'hidden';
+  const isMobileMenuOpen = sidebarState === 'expanded';
+
+  // Close mobile menu on route change
+  const pathname = usePathname();
+  React.useEffect(() => {
+    // Close mobile menu when route changes (only on mobile)
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setSidebarState('hidden');
+    }
+  }, [pathname, setSidebarState]);
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Mobile overlay when sidebar is open */}
+      <div 
+        className={cn(
+          'fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity duration-300 md:hidden',
+          isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        )}
+        onClick={() => setSidebarState('hidden')}
+        aria-hidden="true"
+      />
+      
       <Sidebar />
       <div
         className={cn(
           'transition-all duration-300',
-          isHidden ? 'ml-0' : isCollapsed ? 'ml-16' : 'ml-64'
+          // On mobile (< md), no margin - sidebar overlays
+          'md:ml-16',
+          // On desktop, use sidebar state
+          !isHidden && !isCollapsed && 'md:ml-64',
+          isHidden && 'md:ml-0'
         )}
       >
         <Header />
-        <main className="p-6">
+        {/* Add bottom padding on mobile for the bottom nav */}
+        <main className="p-6 pb-24 md:pb-6">
           {children}
         </main>
       </div>
+      
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav />
     </div>
   );
 }

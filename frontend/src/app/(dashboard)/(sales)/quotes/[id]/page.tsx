@@ -255,7 +255,7 @@ export default function QuoteDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {quote.status === 'draft' && (
-            <Button variant="outline" onClick={() => router.push(`/quotes/${quote.id}/edit`)}>
+            <Button variant="outline" onClick={() => setIsEditing?.(true)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </Button>

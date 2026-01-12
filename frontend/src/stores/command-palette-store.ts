@@ -280,7 +280,7 @@ const defaultCommands: Command[] = [
     icon: 'home',
     keywords: ['home', 'main', 'overview'],
     shortcut: 'G D',
-    action: { type: 'navigate', path: '/dashboard' },
+    action: { type: 'navigate', path: '/today' },
   },
   {
     id: 'nav-rfq',
@@ -290,7 +290,7 @@ const defaultCommands: Command[] = [
     icon: 'file-text',
     keywords: ['quote', 'request', 'pipeline'],
     shortcut: 'G R',
-    action: { type: 'navigate', path: '/rfq' },
+    action: { type: 'navigate', path: '/pipeline' },
   },
   {
     id: 'nav-work-orders',
@@ -300,7 +300,7 @@ const defaultCommands: Command[] = [
     icon: 'clipboard-list',
     keywords: ['production', 'manufacturing', 'jobs'],
     shortcut: 'G W',
-    action: { type: 'navigate', path: '/work-orders' },
+    action: { type: 'navigate', path: '/production' },
   },
   {
     id: 'nav-quality',
@@ -324,13 +324,13 @@ const defaultCommands: Command[] = [
   },
   {
     id: 'nav-learning',
-    label: 'Go to Learning',
+    label: 'Go to Training',
     description: 'Training and learning content',
     category: 'navigation',
     icon: 'book-open',
-    keywords: ['training', 'education', 'tps', 'course'],
+    keywords: ['training', 'education', 'tps', 'course', 'learning'],
     shortcut: 'G L',
-    action: { type: 'navigate', path: '/learning' },
+    action: { type: 'navigate', path: '/training' },
   },
   {
     id: 'nav-settings',
@@ -444,7 +444,7 @@ const defaultCommands: Command[] = [
     category: 'help',
     icon: 'book',
     keywords: ['help', 'guide', 'manual', 'docs'],
-    action: { type: 'navigate', path: '/help' },
+    action: { type: 'open-external', url: 'https://docs.sensei-os.com' },
   },
   {
     id: 'help-support',

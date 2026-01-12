@@ -717,7 +717,7 @@ export default function CTQPage() {
                           </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <Link href={`/ctq/${ctq.id}/edit`}>
+                          <Link href={`/ctq/${ctq.id}?mode=edit`}>
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </Link>

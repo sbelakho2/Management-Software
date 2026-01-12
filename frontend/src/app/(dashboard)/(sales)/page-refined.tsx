@@ -316,7 +316,7 @@ function RFQListItem({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href={`/pipeline/${rfq.id}/edit`}>
+              <Link href={`/pipeline/${rfq.id}?mode=edit`}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
               </Link>
@@ -553,7 +553,6 @@ function PipelinePageContent() {
   }, []);
 
   const handleBulkAction = useCallback(async (action: string) => {
-    console.log(`Bulk action: ${action}`, Array.from(selectedRFQs));
     // Implement bulk actions
     if (action === 'export') {
       await exportRFQs(Array.from(selectedRFQs));

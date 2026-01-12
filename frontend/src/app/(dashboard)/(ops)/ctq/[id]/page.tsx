@@ -429,7 +429,7 @@ export default function CTQDetailPage() {
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button variant="outline" onClick={() => router.push(`/ctq/${params.id}/edit`)}>
+          <Button variant="outline" onClick={() => setIsEditing?.(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

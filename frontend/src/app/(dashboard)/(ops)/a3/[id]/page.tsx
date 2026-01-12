@@ -67,7 +67,7 @@ export default function A3DetailsPage() {
             <Download className="h-4 w-4 mr-2" />
             Export PDF
           </Button>
-          <Button onClick={() => router.push(`/a3/${params.id}/edit`)}>
+          <Button onClick={() => setIsEditing?.(true)}>
             <Edit className="h-4 w-4 mr-2" />
             Edit Report
           </Button>

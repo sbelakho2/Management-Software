@@ -8,6 +8,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PWAProvider } from '@/components/pwa/pwa-provider';
 import { MaturityProvider } from '@/components/ui/deployment-maturity';
+import { OfflineProvider, ErrorBoundary } from '@/components/ui/error-experience';
 import { useAuthStore } from '@/stores';
 
 interface ProvidersProps {
@@ -39,23 +40,27 @@ export function Providers({ children }: ProvidersProps) {
   }, [loadUser]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="system"
-        enableSystem
-        disableTransitionOnChange
-      >
-        <TooltipProvider delayDuration={0}>
-          <MaturityProvider>
-            <PWAProvider>
-              {children}
-            </PWAProvider>
-          </MaturityProvider>
-          <Toaster />
-        </TooltipProvider>
-      </ThemeProvider>
-      <ReactQueryDevtools initialIsOpen={false} />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider delayDuration={0}>
+            <MaturityProvider>
+              <OfflineProvider>
+                <PWAProvider>
+                  {children}
+                </PWAProvider>
+              </OfflineProvider>
+            </MaturityProvider>
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+        <ReactQueryDevtools initialIsOpen={false} />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
