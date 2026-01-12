@@ -30,9 +30,10 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await authApi.login({ email, password });
+          await authApi.login({ email, password });
+          const user = await authApi.getCurrentUser();
           set({
-            user: response.user,
+            user,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -48,13 +49,14 @@ export const useAuthStore = create<AuthState>()(
       register: async (email: string, password: string, fullName: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await authApi.register({
+          await authApi.register({
             email,
             password,
             full_name: fullName,
           });
+          const user = await authApi.getCurrentUser();
           set({
-            user: response.user,
+            user,
             isAuthenticated: true,
             isLoading: false,
           });

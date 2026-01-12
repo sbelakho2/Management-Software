@@ -7,6 +7,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PWAProvider } from '@/components/pwa/pwa-provider';
+import { MaturityProvider } from '@/components/ui/deployment-maturity';
 import { useAuthStore } from '@/stores';
 
 interface ProvidersProps {
@@ -46,9 +47,11 @@ export function Providers({ children }: ProvidersProps) {
         disableTransitionOnChange
       >
         <TooltipProvider delayDuration={0}>
-          <PWAProvider>
-            {children}
-          </PWAProvider>
+          <MaturityProvider>
+            <PWAProvider>
+              {children}
+            </PWAProvider>
+          </MaturityProvider>
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

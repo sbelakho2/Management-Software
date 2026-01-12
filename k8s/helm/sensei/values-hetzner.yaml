@@ -128,7 +128,7 @@ healthChecks:
   backend:
     livenessProbe:
       httpGet:
-        path: /api/health
+        path: /health
         port: http
       initialDelaySeconds: 30
       periodSeconds: 10
@@ -136,7 +136,7 @@ healthChecks:
       failureThreshold: 3
     readinessProbe:
       httpGet:
-        path: /api/health/ready
+        path: /health
         port: http
       initialDelaySeconds: 10
       periodSeconds: 5
@@ -146,7 +146,7 @@ healthChecks:
   frontend:
     livenessProbe:
       httpGet:
-        path: /health
+        path: /api/health
         port: http
       initialDelaySeconds: 20
       periodSeconds: 10
@@ -154,7 +154,7 @@ healthChecks:
       failureThreshold: 3
     readinessProbe:
       httpGet:
-        path: /health
+        path: /api/health
         port: http
       initialDelaySeconds: 5
       periodSeconds: 5
@@ -168,36 +168,35 @@ postgresql:
     database: sensei
     username: sensei
     password: ""  # Set via --set or sealed secrets
-  
-  primary:
-    persistence:
-      enabled: true
-      storageClass: "hcloud-volumes"  # Hetzner Block Storage
-      size: 20Gi
-    
-    # Resources optimized for CPX instance
-    resources:
-      requests:
-        memory: "1Gi"
-        cpu: "500m"
-      limits:
-        memory: "2Gi"
-        cpu: "1000m"
-    
-    # PostgreSQL performance tuning for Hetzner SSD storage
-    extendedConfiguration: |
-      shared_buffers = 512MB
-      effective_cache_size = 1536MB
-      maintenance_work_mem = 256MB
-      checkpoint_completion_target = 0.9
-      wal_buffers = 16MB
-      default_statistics_target = 100
-      random_page_cost = 1.1
-      effective_io_concurrency = 200
-      work_mem = 8MB
-      min_wal_size = 1GB
-      max_wal_size = 4GB
-  
+
+  persistence:
+    enabled: true
+    storageClass: "hcloud-volumes"  # Hetzner Block Storage
+    size: 20Gi
+
+  # Resources optimized for CPX instance
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  # PostgreSQL performance tuning for Hetzner SSD storage
+  extendedConfiguration: |
+    shared_buffers = 512MB
+    effective_cache_size = 1536MB
+    maintenance_work_mem = 256MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 8MB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+
   # Backup configuration using Hetzner Object Storage
   backup:
     enabled: true
@@ -212,13 +211,12 @@ redis:
   auth:
     enabled: true
     password: ""  # Set via --set or sealed secrets
-  
+
   master:
     persistence:
       enabled: true
       storageClass: "hcloud-volumes"
       size: 8Gi
-    
     resources:
       requests:
         memory: "256Mi"
@@ -226,54 +224,6 @@ redis:
       limits:
         memory: "512Mi"
         cpu: "250m"
-
-# MinIO configuration (optional, use Hetzner Object Storage instead for production)
-minio:
-  enabled: false  # Recommend using Hetzner Object Storage directly
-  # If enabling MinIO for development:
-  # enabled: true
-  # auth:
-  #   rootUser: admin
-  #   rootPassword: ""
-  # persistence:
-  #   storageClass: "hcloud-volumes"
-  #   size: 50Gi
-
-# Worker configuration
-worker:
-  enabled: true
-  replicas: 1
-  command:
-    - "python"
-    - "-m"
-    - "sensei.worker"
-
-# Security context
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
-
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-      - ALL
-  seccompProfile:
-    type: RuntimeDefault
-
-# Service account
-serviceAccount:
-  create: true
-  annotations: {}
-  name: ""
-
-# Network policy (recommended for security)
-networkPolicy:
-  enabled: true
-  policyTypes:
     - Ingress
     - Egress
 

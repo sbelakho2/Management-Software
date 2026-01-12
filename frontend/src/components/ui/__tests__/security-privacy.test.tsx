@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import {
@@ -192,7 +192,9 @@ describe('RBACProvider', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByText('Set Admin'));
+    await act(async () => {
+      await user.click(screen.getByText('Set Admin'));
+    });
     expect(screen.getByTestId('user')).toHaveTextContent('Admin User');
   });
 
@@ -326,7 +328,9 @@ describe('MaskedData', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByLabelText('Reveal sensitive data'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Reveal sensitive data'));
+    });
     expect(screen.getByText('$125,000.00')).toBeInTheDocument();
   });
 
@@ -494,7 +498,9 @@ describe('DataClassificationBanner', () => {
     render(<DataClassificationBanner level={CONFIDENTIALITY.PUBLIC} dismissible={true} />);
 
     expect(screen.getByTestId('classification-banner')).toBeInTheDocument();
-    await user.click(screen.getByLabelText('Dismiss banner'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Dismiss banner'));
+    });
     expect(screen.queryByTestId('classification-banner')).not.toBeInTheDocument();
   });
 });
@@ -557,7 +563,9 @@ describe('AuditTrail', () => {
 
     render(<AuditTrail entries={mockEntries} showFilters={true} />);
 
-    await user.selectOptions(screen.getByLabelText('Filter by action type'), 'create');
+    await act(async () => {
+      await user.selectOptions(screen.getByLabelText('Filter by action type'), 'create');
+    });
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.queryByText('Jane Smith')).not.toBeInTheDocument();
@@ -568,7 +576,9 @@ describe('AuditTrail', () => {
 
     render(<AuditTrail entries={mockEntries} />);
 
-    await user.click(screen.getByText('Show 1 change(s)'));
+    await act(async () => {
+      await user.click(screen.getByText('Show 1 change(s)'));
+    });
     expect(screen.getByText('price:')).toBeInTheDocument();
     expect(screen.getByText('100')).toBeInTheDocument();
     expect(screen.getByText('150')).toBeInTheDocument();
@@ -663,7 +673,9 @@ describe('ChangeHistoryModal', () => {
       />
     );
 
-    await user.click(screen.getByLabelText('Close modal'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Close modal'));
+    });
     expect(onClose).toHaveBeenCalled();
   });
 });
@@ -707,7 +719,9 @@ describe('SecureActionButton', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByText('Action'));
+    await act(async () => {
+      await user.click(screen.getByText('Action'));
+    });
     expect(onClick).toHaveBeenCalled();
   });
 
@@ -738,7 +752,9 @@ describe('SecureActionButton', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByText('Delete'));
+    await act(async () => {
+      await user.click(screen.getByText('Delete'));
+    });
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(screen.getByText('Are you sure?')).toBeInTheDocument();
   });
@@ -755,8 +771,12 @@ describe('SecureActionButton', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByText('Delete'));
-    await user.click(screen.getByText('Confirm'));
+    await act(async () => {
+      await user.click(screen.getByText('Delete'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Confirm'));
+    });
     expect(onClick).toHaveBeenCalled();
   });
 
@@ -771,10 +791,14 @@ describe('SecureActionButton', () => {
       </RBACProvider>
     );
 
-    await user.click(screen.getByText('Delete'));
+    await act(async () => {
+      await user.click(screen.getByText('Delete'));
+    });
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     
-    await user.click(screen.getByText('Cancel'));
+    await act(async () => {
+      await user.click(screen.getByText('Cancel'));
+    });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 });
@@ -815,7 +839,9 @@ describe('SessionSecurity', () => {
 
     render(<SessionSecurity isSecure={true} sessionExpiry={expiry} onExtendSession={onExtend} />);
 
-    await user.click(screen.getByText('Extend'));
+    await act(async () => {
+      await user.click(screen.getByText('Extend'));
+    });
     expect(onExtend).toHaveBeenCalled();
   });
 });

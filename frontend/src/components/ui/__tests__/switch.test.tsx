@@ -1,8 +1,19 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Switch } from '../switch';
 
 describe('Switch', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+
   it('should render a switch', () => {
     render(<Switch aria-label="Test switch" />);
     expect(screen.getByRole('switch')).toBeInTheDocument();
@@ -19,27 +30,36 @@ describe('Switch', () => {
   });
 
   it('should toggle on click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<Switch aria-label="Test switch" />);
     
     const switchEl = screen.getByRole('switch');
     expect(switchEl).not.toBeChecked();
     
-    await user.click(switchEl);
+    await act(async () => {
+      await user.click(switchEl);
+      jest.runOnlyPendingTimers();
+    });
     expect(switchEl).toBeChecked();
     
-    await user.click(switchEl);
+    await act(async () => {
+      await user.click(switchEl);
+      jest.runOnlyPendingTimers();
+    });
     expect(switchEl).not.toBeChecked();
   });
 
   it('should call onCheckedChange when toggled', async () => {
     const handleChange = jest.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     
     render(<Switch onCheckedChange={handleChange} aria-label="Test switch" />);
     
-    await user.click(screen.getByRole('switch'));
-    
+    await act(async () => {
+      await user.click(screen.getByRole('switch'));
+      jest.runOnlyPendingTimers();
+    });
+
     expect(handleChange).toHaveBeenCalledWith(true);
   });
 
@@ -50,11 +70,14 @@ describe('Switch', () => {
 
   it('should not toggle when disabled', async () => {
     const handleChange = jest.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     
     render(<Switch disabled onCheckedChange={handleChange} aria-label="Test switch" />);
     
-    await user.click(screen.getByRole('switch'));
+    await act(async () => {
+      await user.click(screen.getByRole('switch'));
+      jest.runOnlyPendingTimers();
+    });
     
     expect(handleChange).not.toHaveBeenCalled();
   });

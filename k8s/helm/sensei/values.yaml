@@ -117,6 +117,7 @@ resources:
     limits:
       memory: "2Gi"
       cpu: "1000m"
+      # nvidia.com/gpu: 1 # GPU for Edge AI acceleration
   frontend:
     requests:
       memory: "128Mi"
@@ -151,7 +152,7 @@ healthChecks:
   backend:
     livenessProbe:
       httpGet:
-        path: /api/health
+        path: /health
         port: 8000
       initialDelaySeconds: 30
       periodSeconds: 10
@@ -159,7 +160,7 @@ healthChecks:
       failureThreshold: 3
     readinessProbe:
       httpGet:
-        path: /api/health/ready
+        path: /health
         port: 8000
       initialDelaySeconds: 10
       periodSeconds: 5
@@ -168,13 +169,13 @@ healthChecks:
   frontend:
     livenessProbe:
       httpGet:
-        path: /health
+        path: /api/health
         port: 3000
       initialDelaySeconds: 15
       periodSeconds: 10
     readinessProbe:
       httpGet:
-        path: /health
+        path: /api/health
         port: 3000
       initialDelaySeconds: 5
       periodSeconds: 5
@@ -310,19 +311,6 @@ serviceAccount:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-# Persistence
-persistence:
-  uploads:
-    enabled: true
-    storageClass: ""  # Use default storage class
-    accessMode: ReadWriteMany
-    size: 10Gi
-
-# Service Account
-serviceAccount:
-  create: true
-  annotations: {}
-  name: ""
 # Monitoring
 monitoring:
   enabled: false

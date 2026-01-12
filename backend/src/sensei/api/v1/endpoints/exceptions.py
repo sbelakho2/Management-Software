@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api.utils import APIResponse, build_response
 from sensei.services.exceptions_aggregator import (
     ExceptionCategory,
     ExceptionItem,
@@ -226,7 +227,7 @@ class BlockRequest(BaseModel):
 
 @router.get(
     "",
-    response_model=ExceptionsListResponse,
+    response_model=APIResponse[ExceptionsListResponse],
     summary="Get all exceptions",
     description="Retrieve all exceptions with optional filtering",
 )
@@ -237,7 +238,7 @@ async def get_exceptions(
     overdue_only: bool = Query(False, description="Only show overdue items"),
     limit: int = Query(100, ge=1, le=500, description="Maximum items to return"),
     offset: int = Query(0, ge=0, description="Number of items to skip"),
-) -> ExceptionsListResponse:
+) -> APIResponse:
     """Get all exceptions with optional filters."""
     aggregator = get_exceptions_aggregator()
     
@@ -254,11 +255,12 @@ async def get_exceptions(
     has_more = len(paginated) > limit
     items = paginated[:limit]
     
-    return ExceptionsListResponse(
+    data = ExceptionsListResponse(
         items=[ExceptionResponse.from_item(item) for item in items],
         total=len(all_items) - 1 if has_more else len(all_items),
         has_more=has_more,
     )
+    return build_response(data=data)
 
 
 @router.get(

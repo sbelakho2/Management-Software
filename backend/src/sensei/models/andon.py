@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
 from sensei.core.time import utcnow_naive
+from sensei.core.enums import Severity as AndonSeverity, WorkflowStatus as AndonStatus
 
 if TYPE_CHECKING:
     from sensei.models.work_center import Station
@@ -48,25 +49,6 @@ class AndonType(enum.Enum):
     PROCESS = "process"
     INFORMATION = "information"
     SUPPORT = "support"
-
-
-class AndonSeverity(enum.Enum):
-    """Severity level of Andon (color coding)."""
-
-    YELLOW = "yellow"  # Warning - issue but can continue
-    RED = "red"  # Stop - critical issue, must stop
-    BLUE = "blue"  # Material call - need materials
-
-
-class AndonStatus(enum.Enum):
-    """Status of an Andon event."""
-
-    OPEN = "open"
-    ACKNOWLEDGED = "acknowledged"
-    IN_PROGRESS = "in_progress"
-    RESOLVED = "resolved"
-    ESCALATED = "escalated"
-    CANCELLED = "cancelled"
 
 
 class EscalationLevel(enum.Enum):

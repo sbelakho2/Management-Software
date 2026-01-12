@@ -246,6 +246,7 @@ describe('QuickActionsBar', () => {
   describe('Action Execution', () => {
     it('should call onActionExecuted on successful execution', async () => {
       const onActionExecuted = jest.fn();
+      const user = userEvent.setup();
       
       render(
         <QuickActionsBar
@@ -255,7 +256,9 @@ describe('QuickActionsBar', () => {
       );
       
       const createTaskButton = screen.getByLabelText('Create Task');
-      await userEvent.click(createTaskButton);
+      await act(async () => {
+        await user.click(createTaskButton);
+      });
       
       await waitFor(() => {
         expect(onActionExecuted).toHaveBeenCalled();
@@ -264,6 +267,7 @@ describe('QuickActionsBar', () => {
 
     it('should call onActionError on failed execution', async () => {
       const onActionError = jest.fn();
+      const user = userEvent.setup();
       
       // Register a handler that throws
       act(() => {
@@ -280,7 +284,9 @@ describe('QuickActionsBar', () => {
       );
       
       const createTaskButton = screen.getByLabelText('Create Task');
-      await userEvent.click(createTaskButton);
+      await act(async () => {
+        await user.click(createTaskButton);
+      });
       
       await waitFor(() => {
         expect(onActionError).toHaveBeenCalled();
@@ -290,6 +296,7 @@ describe('QuickActionsBar', () => {
 
   describe('Confirmation Dialog', () => {
     it('should show confirmation dialog for actions requiring confirmation', async () => {
+      const user = userEvent.setup();
       act(() => {
         useQuickActionsStore.getState().setUserPermissions(['can_delete']);
       });
@@ -298,11 +305,15 @@ describe('QuickActionsBar', () => {
       
       // Find and click delete in overflow menu
       const overflowTrigger = screen.getByTestId('overflow-menu-trigger');
-      await userEvent.click(overflowTrigger);
+      await act(async () => {
+        await user.click(overflowTrigger);
+      });
       
       // Click delete action
       const deleteItem = screen.getByText('Delete');
-      await userEvent.click(deleteItem);
+      await act(async () => {
+        await user.click(deleteItem);
+      });
       
       // Confirmation dialog should appear
       await waitFor(() => {
@@ -333,6 +344,7 @@ describe('QuickActionsBar', () => {
 
     it('should execute action on confirm', async () => {
       const onActionExecuted = jest.fn();
+      const user = userEvent.setup();
       
       act(() => {
         useQuickActionsStore.getState().setUserPermissions(['can_delete']);
@@ -347,7 +359,9 @@ describe('QuickActionsBar', () => {
       );
       
       const confirmButton = screen.getByTestId('confirm-button');
-      await userEvent.click(confirmButton);
+      await act(async () => {
+        await user.click(confirmButton);
+      });
       
       await waitFor(() => {
         expect(onActionExecuted).toHaveBeenCalled();
@@ -367,6 +381,7 @@ describe('QuickActionsBar', () => {
     });
 
     it('should toggle expanded state on click', async () => {
+      const user = userEvent.setup();
       act(() => {
         useQuickActionsStore.getState().setUserPermissions(['can_assign']);
       });
@@ -374,7 +389,9 @@ describe('QuickActionsBar', () => {
       render(<QuickActionsBar context={mockContext} position="toolbar" />);
       
       const expandButton = screen.getByLabelText('Show more actions');
-      await userEvent.click(expandButton);
+      await act(async () => {
+        await user.click(expandButton);
+      });
       
       expect(screen.getByLabelText('Show fewer actions')).toBeInTheDocument();
     });
@@ -382,10 +399,13 @@ describe('QuickActionsBar', () => {
 
   describe('Close Button (Floating)', () => {
     it('should hide bar when close button is clicked', async () => {
+      const user = userEvent.setup();
       render(<QuickActionsBar context={mockContext} position="floating" />);
       
       const closeButton = screen.getByLabelText('Close quick actions');
-      await userEvent.click(closeButton);
+      await act(async () => {
+        await user.click(closeButton);
+      });
       
       expect(useQuickActionsStore.getState().isBarVisible).toBe(false);
     });

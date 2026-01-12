@@ -248,7 +248,6 @@ export function useCamera(): {
   const takePhoto = useCallback(async (options?: CameraOptions): Promise<CameraPhoto | null> => {
     if (isNativeApp()) {
       // Would use Capacitor Camera plugin
-      console.log('Taking photo with Capacitor Camera', options);
       // Simulated response for non-native testing
       return simulateCameraCapture();
     }
@@ -412,7 +411,6 @@ export function useFileSystem(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Filesystem plugin
-        console.log('Saving file with Capacitor Filesystem', { filename, mimeType });
         return true;
       }
 
@@ -434,7 +432,6 @@ export function useFileSystem(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Filesystem plugin
-        console.log('Reading file with Capacitor Filesystem', { uri });
         return null;
       }
 
@@ -449,7 +446,6 @@ export function useFileSystem(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Filesystem plugin
-        console.log('Deleting file with Capacitor Filesystem', { uri });
         return true;
       }
       
@@ -515,7 +511,6 @@ export function usePushNotifications(): {
   const registerToken = useCallback(async (): Promise<string | null> => {
     if (isNativeApp()) {
       // Would get FCM/APNS token from Capacitor
-      console.log('Registering push token with Capacitor');
       return 'mock-device-token-for-testing';
     }
 
@@ -538,7 +533,6 @@ export function usePushNotifications(): {
 
     if (isNativeApp()) {
       // Would use Capacitor LocalNotifications plugin
-      console.log('Scheduling local notification with Capacitor', options);
       return id;
     }
 
@@ -560,7 +554,6 @@ export function usePushNotifications(): {
   const cancelLocal = useCallback(async (id: number): Promise<boolean> => {
     if (isNativeApp()) {
       // Would use Capacitor LocalNotifications plugin
-      console.log('Cancelling local notification', { id });
       return true;
     }
     return true;
@@ -598,7 +591,6 @@ export function useHaptics(): {
   const impact = useCallback((style: HapticStyle = 'medium') => {
     if (isNativeApp()) {
       // Would use Capacitor Haptics plugin
-      console.log('Haptic impact', { style });
       return;
     }
 
@@ -665,7 +657,6 @@ export function useShare(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Share plugin
-        console.log('Sharing with Capacitor Share', options);
         return true;
       }
 
@@ -711,7 +702,6 @@ export function useClipboard(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Clipboard plugin
-        console.log('Copying with Capacitor Clipboard', { text: text.substring(0, 50) });
         return true;
       }
 
@@ -737,7 +727,6 @@ export function useClipboard(): {
     try {
       if (isNativeApp()) {
         // Would use Capacitor Clipboard plugin
-        console.log('Pasting with Capacitor Clipboard');
         return null; // Would return actual content
       }
 
@@ -769,7 +758,6 @@ export function useStatusBar(): {
   const setStyle = useCallback((style: StatusBarStyle) => {
     if (isNativeApp()) {
       // Would use Capacitor StatusBar plugin
-      console.log('Setting status bar style', { style });
     }
     
     // Web: update theme-color meta tag
@@ -786,7 +774,6 @@ export function useStatusBar(): {
 
   const setBackgroundColor = useCallback((color: string) => {
     if (isNativeApp()) {
-      console.log('Setting status bar background', { color });
     }
     
     if (typeof document !== 'undefined') {
@@ -799,13 +786,11 @@ export function useStatusBar(): {
 
   const show = useCallback(() => {
     if (isNativeApp()) {
-      console.log('Showing status bar');
     }
   }, []);
 
   const hide = useCallback(() => {
     if (isNativeApp()) {
-      console.log('Hiding status bar');
     }
   }, []);
 
@@ -855,7 +840,6 @@ export function useBiometricAuth(): {
   const authenticate = useCallback(async (reason = 'Authenticate'): Promise<BiometricResult> => {
     if (isNativeApp()) {
       // Would use Capacitor biometrics plugin
-      console.log('Authenticating with biometrics', { reason });
       // Simulated success for testing
       return { verified: true, method: 'fingerprint' };
     }

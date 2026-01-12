@@ -34,15 +34,17 @@ export interface User extends BaseEntity {
   department?: string;
   job_title?: string;
   phone?: string;
-  timezone: string;
-  locale: string;
+  timezone?: string;
+  locale?: string;
   is_active: boolean;
   last_login_at?: string;
-  preferences: UserPreferences;
+  preferences?: UserPreferences;
 }
 
 export type UserRole = 
   | 'admin'
+  | 'gm'
+  | 'general_manager'
   | 'manager'
   | 'engineer'
   | 'quality_tech'

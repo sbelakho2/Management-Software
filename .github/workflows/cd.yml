@@ -1,0 +1,72 @@
+name: CD - Deploy to Kubernetes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'k8s/**'
+      - '.github/workflows/cd.yml'
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    # This would normally need environment secrets
+    # environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: false # Should be true in real scenario with registry login
+          tags: sensei-api:latest
+      
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          tags: sensei-web:latest
+      
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+      
+      - name: Lint Helm Chart
+        run: helm lint k8s/helm/sensei
+      
+      - name: Dry-run Helm Install
+        run: |
+          helm install sensei-os k8s/helm/sensei \
+            --namespace sensei-production \
+            --create-namespace \
+            --set global.imageRegistry="" \
+            --set image.backend.tag=latest \
+            --set image.frontend.tag=latest \
+            --dry-run --debug
+      
+      # In a real environment, you would use a kubeconfig secret
+      # - name: Set up Kubeconfig
+      #   uses: azure/k8s-set-context@v3
+      #   with:
+      #     method: kubeconfig
+      #     kubeconfig: ${{ secrets.KUBE_CONFIG }}
+      
+      # - name: Deploy to K8s
+      #   run: |
+      #     helm upgrade --install sensei-os k8s/helm/sensei \
+      #       --namespace sensei-production \
+      #       --create-namespace \
+      #       --set global.imageRegistry=${{ secrets.REGISTRY }} \
+      #       --set image.backend.tag=${{ github.sha }} \
+      #       --set image.frontend.tag=${{ github.sha }} \
+      #       --wait --timeout 10m0s

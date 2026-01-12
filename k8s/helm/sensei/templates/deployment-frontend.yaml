@@ -40,7 +40,7 @@ spec:
           protocol: TCP
         env:
         - name: NEXT_PUBLIC_API_URL
-          value: "https://{{ (index .Values.ingress.hosts 0).host }}/api"
+          value: "https://{{ (index .Values.ingress.hosts 0).host }}"
         livenessProbe:
           {{- toYaml .Values.healthChecks.frontend.livenessProbe | nindent 12 }}
         readinessProbe:

@@ -7,7 +7,10 @@ jest.mock('@/api', () => ({
     login: jest.fn(),
     register: jest.fn(),
     logout: jest.fn(),
-    me: jest.fn(),
+    getCurrentUser: jest.fn(),
+    isAuthenticated: jest.fn(),
+    updateProfile: jest.fn(),
+    updatePreferences: jest.fn(),
   },
 }));
 
@@ -16,11 +19,11 @@ import { authApi } from '@/api';
 const mockAuthApi = authApi as jest.Mocked<typeof authApi>;
 
 describe('useAuthStore', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset the store state before each test
     const { result } = renderHook(() => useAuthStore());
-    act(() => {
-      result.current.logout();
+    await act(async () => {
+      await result.current.logout();
     });
     jest.clearAllMocks();
   });
@@ -39,7 +42,8 @@ describe('useAuthStore', () => {
   describe('login', () => {
     it('should set loading state during login', async () => {
       const mockUser = { id: '1', email: 'test@test.com', full_name: 'Test User' };
-      mockAuthApi.login.mockResolvedValue({ user: mockUser, access_token: 'token' });
+      mockAuthApi.login.mockResolvedValue(undefined as any);
+      mockAuthApi.getCurrentUser.mockResolvedValue(mockUser as any);
       
       const { result } = renderHook(() => useAuthStore());
       
@@ -60,7 +64,8 @@ describe('useAuthStore', () => {
 
     it('should set user and isAuthenticated on successful login', async () => {
       const mockUser = { id: '1', email: 'test@test.com', full_name: 'Test User' };
-      mockAuthApi.login.mockResolvedValue({ user: mockUser, access_token: 'token' });
+      mockAuthApi.login.mockResolvedValue(undefined as any);
+      mockAuthApi.getCurrentUser.mockResolvedValue(mockUser as any);
       
       const { result } = renderHook(() => useAuthStore());
       
@@ -95,7 +100,8 @@ describe('useAuthStore', () => {
   describe('logout', () => {
     it('should clear user state on logout', async () => {
       const mockUser = { id: '1', email: 'test@test.com', full_name: 'Test User' };
-      mockAuthApi.login.mockResolvedValue({ user: mockUser, access_token: 'token' });
+      mockAuthApi.login.mockResolvedValue(undefined as any);
+      mockAuthApi.getCurrentUser.mockResolvedValue(mockUser as any);
       mockAuthApi.logout.mockResolvedValue(undefined);
       
       const { result } = renderHook(() => useAuthStore());

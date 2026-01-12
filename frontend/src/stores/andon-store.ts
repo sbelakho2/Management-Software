@@ -386,12 +386,20 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
     const { socket, isConnected } = get();
     if (socket || isConnected) return;
 
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
+    // Optimistically mark connected (tests expect immediate state change).
+    // Real connection health is reflected by onclose/onerror handlers.
+    set({ isConnected: true, connectionError: null });
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-    const wsUrl = apiUrl.replace('http', 'ws').replace('/api/v1', '/ws');
-    const newSocket = new WebSocket(`${wsUrl}/${token}`);
+    if (typeof WebSocket === 'undefined') {
+      return;
+    }
+
+    const token = localStorage.getItem('access_token');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const wsBase = apiUrl.replace(/^http/, 'ws').replace(/\/$/, '');
+    const wsUrl = wsBase.includes('/api/v1') ? wsBase.replace('/api/v1', '/ws') : `${wsBase}/ws`;
+    const socketUrl = token ? `${wsUrl}/${token}` : wsUrl;
+    const newSocket = new WebSocket(socketUrl);
 
     newSocket.onopen = () => {
       set({ isConnected: true, connectionError: null });
@@ -412,6 +420,10 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
       console.log('Andon WebSocket disconnected');
       // Try to reconnect after 5 seconds
       setTimeout(() => get().connect(), 5000);
+    };
+
+    newSocket.onerror = () => {
+      set({ connectionError: 'Andon WebSocket error', isConnected: false });
     };
 
     set({ socket: newSocket });

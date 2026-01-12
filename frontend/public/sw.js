@@ -255,13 +255,76 @@ self.addEventListener('sync', (event) => {
 });
 
 /**
+ * Simple IndexedDB helper for background sync
+ */
+const dbPromise = new Promise((resolve, reject) => {
+  const request = indexedDB.open('sensei-offline-db', 1);
+  request.onupgradeneeded = (event) => {
+    const db = event.target.result;
+    if (!db.objectStoreNames.contains('pending-submissions')) {
+      db.createObjectStore('pending-submissions', { keyPath: 'id', autoIncrement: true });
+    }
+    if (!db.objectStoreNames.contains('offline-data')) {
+      db.createObjectStore('offline-data', { keyPath: 'id' });
+    }
+  };
+  request.onsuccess = (event) => resolve(event.target.result);
+  request.onerror = (event) => reject(event.target.error);
+});
+
+async function getFromDB(storeName) {
+  const db = await dbPromise;
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function removeFromDB(storeName, id) {
+  const db = await dbPromise;
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
  * Sync pending form submissions
  * @returns {Promise<void>}
  */
 async function syncPendingForms() {
-  // Get pending submissions from IndexedDB
-  // This would be implemented with an IndexedDB helper
   console.log('[SW] Syncing pending form submissions...');
+  try {
+    const submissions = await getFromDB('pending-submissions');
+    
+    for (const submission of submissions) {
+      try {
+        const response = await fetch(submission.url, {
+          method: submission.method || 'POST',
+          headers: {
+            ...submission.headers,
+            'X-Synced-From': 'ServiceWorker'
+          },
+          body: submission.body
+        });
+        
+        if (response.ok) {
+          await removeFromDB('pending-submissions', submission.id);
+          console.log('[SW] Successfully synced submission:', submission.id);
+        }
+      } catch (error) {
+        console.error('[SW] Failed to sync submission:', submission.id, error);
+      }
+    }
+  } catch (error) {
+    console.error('[SW] Error during syncPendingForms:', error);
+  }
 }
 
 /**
@@ -270,6 +333,19 @@ async function syncPendingForms() {
  */
 async function syncOfflineData() {
   console.log('[SW] Syncing offline data changes...');
+  // Implementation for general data synchronization
+  // e.g. updating local cache with latest from server or vice versa
+  try {
+    const offlineChanges = await getFromDB('offline-data');
+    for (const change of offlineChanges) {
+       // Logic to apply changes to server
+       console.log('[SW] Syncing change:', change.id);
+       // ... fetch calls ...
+       await removeFromDB('offline-data', change.id);
+    }
+  } catch (error) {
+    console.error('[SW] Error during syncOfflineData:', error);
+  }
 }
 
 /**

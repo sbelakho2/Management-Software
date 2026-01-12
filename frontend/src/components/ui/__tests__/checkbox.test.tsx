@@ -1,8 +1,19 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Checkbox } from '../checkbox';
 
 describe('Checkbox', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+
   it('should render a checkbox', () => {
     render(<Checkbox aria-label="Test checkbox" />);
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
@@ -19,27 +30,36 @@ describe('Checkbox', () => {
   });
 
   it('should toggle on click', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<Checkbox aria-label="Test checkbox" />);
     
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
     
-    await user.click(checkbox);
+    await act(async () => {
+      await user.click(checkbox);
+      jest.runOnlyPendingTimers();
+    });
     expect(checkbox).toBeChecked();
     
-    await user.click(checkbox);
+    await act(async () => {
+      await user.click(checkbox);
+      jest.runOnlyPendingTimers();
+    });
     expect(checkbox).not.toBeChecked();
   });
 
   it('should call onCheckedChange when toggled', async () => {
     const handleChange = jest.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     
     render(<Checkbox onCheckedChange={handleChange} aria-label="Test checkbox" />);
     
-    await user.click(screen.getByRole('checkbox'));
-    
+    await act(async () => {
+      await user.click(screen.getByRole('checkbox'));
+      jest.runOnlyPendingTimers();
+    });
+
     expect(handleChange).toHaveBeenCalledWith(true);
   });
 
@@ -50,11 +70,14 @@ describe('Checkbox', () => {
 
   it('should not toggle when disabled', async () => {
     const handleChange = jest.fn();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     
     render(<Checkbox disabled onCheckedChange={handleChange} aria-label="Test checkbox" />);
     
-    await user.click(screen.getByRole('checkbox'));
+    await act(async () => {
+      await user.click(screen.getByRole('checkbox'));
+      jest.runOnlyPendingTimers();
+    });
     
     expect(handleChange).not.toHaveBeenCalled();
   });

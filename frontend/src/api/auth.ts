@@ -7,9 +7,27 @@ import type {
   UserPreferences,
 } from '@/types';
 
-export interface AuthResponse {
-  user: User;
-  tokens: AuthTokens;
+export interface TwoFactorRequiredResponse {
+  requires_2fa: true;
+  message: string;
+}
+
+type BackendTokenResponse = AuthTokens;
+
+type BackendLoginResponse = BackendTokenResponse | TwoFactorRequiredResponse;
+
+function isTwoFactorRequiredResponse(value: unknown): value is TwoFactorRequiredResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { requires_2fa?: unknown }).requires_2fa === true
+  );
+}
+
+function pickRole(user: User): User['role'] {
+  // Keep the role stable for existing UI checks (e.g. admin gating).
+  // If backend provides a different role model, map it here.
+  return user.role ?? 'viewer';
 }
 
 export interface PasswordResetRequest {
@@ -30,11 +48,16 @@ export const authApi = {
   /**
    * Login with email and password
    */
-  async login(credentials: LoginCredentials): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
-    apiClient.setToken(response.tokens.access_token);
+  async login(credentials: LoginCredentials): Promise<BackendTokenResponse> {
+    const response = await apiClient.post<BackendLoginResponse>('/auth/login', credentials);
+
+    if (isTwoFactorRequiredResponse(response)) {
+      throw new Error(response.message || 'Two-factor authentication required');
+    }
+
+    apiClient.setToken(response.access_token);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('refresh_token', response.tokens.refresh_token);
+      localStorage.setItem('refresh_token', response.refresh_token);
     }
     return response;
   },
@@ -42,11 +65,11 @@ export const authApi = {
   /**
    * Register a new user
    */
-  async register(data: RegisterData): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>('/auth/register', data);
-    apiClient.setToken(response.tokens.access_token);
+  async register(data: RegisterData): Promise<BackendTokenResponse> {
+    const response = await apiClient.post<BackendTokenResponse>('/auth/register', data);
+    apiClient.setToken(response.access_token);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('refresh_token', response.tokens.refresh_token);
+      localStorage.setItem('refresh_token', response.refresh_token);
     }
     return response;
   },
@@ -66,21 +89,27 @@ export const authApi = {
    * Get the current user's profile
    */
   async getCurrentUser(): Promise<User> {
-    return apiClient.get<User>('/auth/me');
+    const user = await apiClient.get<User>('/users/me');
+    return {
+      ...user,
+      role: pickRole(user),
+    };
   },
 
   /**
    * Update the current user's profile
    */
   async updateProfile(data: Partial<User>): Promise<User> {
-    return apiClient.patch<User>('/auth/me', data);
+    return apiClient.patch<User>('/users/me', data);
   },
 
   /**
    * Update the current user's preferences
    */
   async updatePreferences(preferences: Partial<UserPreferences>): Promise<User> {
-    return apiClient.patch<User>('/auth/me/preferences', preferences);
+    // Backend user profile update currently supports core profile fields.
+    // Persisted preferences can be mapped onto supported fields as they evolve.
+    return apiClient.patch<User>('/users/me', preferences as unknown as Partial<User>);
   },
 
   /**

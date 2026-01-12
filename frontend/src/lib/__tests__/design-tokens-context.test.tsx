@@ -232,7 +232,9 @@ describe('useTheme', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByTestId('toggle'));
+    await act(async () => {
+      await user.click(screen.getByTestId('toggle'));
+    });
     
     await waitFor(() => {
       expect(screen.getByTestId('theme')).toHaveTextContent('dark');
@@ -248,7 +250,9 @@ describe('useTheme', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByTestId('setDark'));
+    await act(async () => {
+      await user.click(screen.getByTestId('setDark'));
+    });
     
     await waitFor(() => {
       expect(screen.getByTestId('theme')).toHaveTextContent('dark');
@@ -265,7 +269,9 @@ describe('useTheme', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByTestId('setDark'));
+    await act(async () => {
+      await user.click(screen.getByTestId('setDark'));
+    });
     
     expect(localStorageMock.setItem).toHaveBeenCalledWith('sensei-theme', 'dark');
   });
@@ -308,7 +314,9 @@ describe('useDensity', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByTestId('setCompact'));
+    await act(async () => {
+      await user.click(screen.getByTestId('setCompact'));
+    });
     
     expect(screen.getByTestId('density')).toHaveTextContent('compact');
     expect(screen.getByTestId('rowHeight')).toHaveTextContent('2.25rem');
@@ -323,7 +331,9 @@ describe('useDensity', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByTestId('setCompact'));
+    await act(async () => {
+      await user.click(screen.getByTestId('setCompact'));
+    });
     
     expect(localStorageMock.setItem).toHaveBeenCalledWith('sensei-theme-density', 'compact');
   });
@@ -461,7 +471,9 @@ describe('ThemeToggle', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
     
     await waitFor(() => {
       expect(screen.getByTestId('theme')).toHaveTextContent('dark');
@@ -514,7 +526,9 @@ describe('DensityToggle', () => {
       </DesignTokensProvider>
     );
     
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
     
     expect(screen.getByTestId('density')).toHaveTextContent('compact');
   });

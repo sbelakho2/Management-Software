@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 // Types
 export type GateStatus = 'active' | 'inactive';
@@ -173,6 +174,7 @@ interface AdminState {
 }
 
 const CACHE_DURATION = 30000; // 30 seconds
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export const useAdminStore = create<AdminState>()(
   devtools(
@@ -195,7 +197,6 @@ export const useAdminStore = create<AdminState>()(
           const now = Date.now();
           const { lastFetchedAt } = get();
           
-          // Use cache if fresh
           if (lastFetchedAt && now - lastFetchedAt < CACHE_DURATION) {
             return;
           }
@@ -203,16 +204,10 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch('/api/v1/admin/gates', {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const data = await response.json();
-            
-            // Mock data for now
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const data = await apiClient.get<any>('/admin/gates');
             
             set({
+              gates: data.items || [],
               isLoading: false,
               lastFetchedAt: now,
             });
@@ -389,10 +384,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            set({ isLoading: false });
+            const data = await apiClient.get<any>('/admin/approvals');
+            set({
+              approvals: data.items || [],
+              isLoading: false,
+            });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch approvals',
@@ -487,8 +483,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            set({ isLoading: false });
+            const data = await apiClient.get<any>('/admin/templates');
+            set({
+              templates: data.items || [],
+              isLoading: false,
+            });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch templates',
@@ -588,8 +587,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            set({ isLoading: false });
+            const data = await apiClient.get<any>('/admin/roles');
+            set({
+              roles: data.items || [],
+              isLoading: false,
+            });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch roles',
@@ -633,8 +635,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            set({ isLoading: false });
+            const data = await apiClient.get<any>('/admin/learning-cadences');
+            set({
+              learningCadences: data.items || [],
+              isLoading: false,
+            });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch learning cadences',
@@ -729,8 +734,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            set({ isLoading: false });
+            const data = await apiClient.get<any>('/admin/feature-flags');
+            set({
+              featureFlags: data.items || [],
+              isLoading: false,
+            });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch feature flags',
@@ -780,26 +788,11 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            const stats: AdminStats = {
-              total_gates: get().gates.length,
-              active_gates: get().gates.filter(g => g.status === 'active').length,
-              total_approvals: get().approvals.length,
-              active_approvals: get().approvals.filter(a => a.is_active).length,
-              total_templates: get().templates.length,
-              default_templates: get().templates.filter(t => t.is_default).length,
-              total_roles: get().roles.length,
-              total_users: get().roles.reduce((sum, r) => sum + r.member_count, 0),
-              total_learning_cadences: get().learningCadences.length,
-              active_learning_cadences: get().learningCadences.filter(c => c.is_active).length,
-              total_feature_flags: get().featureFlags.length,
-              enabled_features: get().featureFlags.filter(f => f.enabled && f.category === 'feature').length,
-            };
-            
-            set({ stats, isLoading: false });
+            const data = await apiClient.get<any>('/admin/stats');
+            set({ stats: data, isLoading: false });
           } catch (error) {
             set({
-              error: error instanceof Error ? error.message : 'Failed to fetch stats',
+              error: error instanceof Error ? error.message : 'Failed to fetch admin stats',
               isLoading: false,
             });
           }

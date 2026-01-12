@@ -1,5 +1,43 @@
 import '@testing-library/jest-dom';
 
+// Mock next/link to behave like Next.js client navigation:
+// prevent default browser navigation and delegate to router.push.
+jest.mock('next/link', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const React = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { useRouter } = require('next/navigation');
+
+  function toHrefString(href: unknown): string {
+    if (typeof href === 'string') return href;
+    if (href && typeof href === 'object' && 'pathname' in href && typeof href.pathname === 'string') {
+      return href.pathname;
+    }
+    return '#';
+  }
+
+  return {
+    __esModule: true,
+    default: ({ href, onClick, children, ...rest }: any) => {
+      const router = typeof useRouter === 'function' ? useRouter() : null;
+      const hrefString = toHrefString(href);
+      return React.createElement(
+        'a',
+        {
+          href: hrefString,
+          ...rest,
+          onClick: (e: any) => {
+            e?.preventDefault?.();
+            onClick?.(e);
+            router?.push?.(hrefString);
+          },
+        },
+        children
+      );
+    },
+  };
+});
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -43,6 +81,33 @@ window.IntersectionObserver = IntersectionObserverMock;
 // Mock scrollTo
 window.scrollTo = jest.fn();
 
+// JSDOM does not implement full navigation. Some tests/components trigger
+// anchor navigation side-effects; keep clicks functional without navigating.
+const originalAnchorClick = HTMLAnchorElement.prototype.click;
+HTMLAnchorElement.prototype.click = function click(): void {
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+  event.preventDefault();
+  this.dispatchEvent(event);
+};
+
+const preventAnchorNavigation = (e: MouseEvent) => {
+  const target = e.target as Element | null;
+  const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+  if (!anchor) return;
+
+  const href = anchor.getAttribute('href');
+  if (!href || href.startsWith('#')) return;
+
+  e.preventDefault();
+};
+
+document.addEventListener('click', preventAnchorNavigation, true);
+
+afterAll(() => {
+  document.removeEventListener('click', preventAnchorNavigation, true);
+  HTMLAnchorElement.prototype.click = originalAnchorClick;
+});
+
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -57,23 +122,3 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
 }));
-
-// Suppress console errors in tests unless we specifically want to test them
-const originalError = console.error;
-beforeAll(() => {
-  console.error = (...args: unknown[]) => {
-    if (
-      typeof args[0] === 'string' &&
-      (args[0].includes('Warning: ReactDOM.render is no longer supported') ||
-        args[0].includes('Warning: An update to') ||
-        args[0].includes('Not implemented: navigation'))
-    ) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
-});
-
-afterAll(() => {
-  console.error = originalError;
-});

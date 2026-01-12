@@ -314,7 +314,9 @@ describe('ThemeProvider', () => {
       </ThemeProvider>
     );
 
-    await user.click(screen.getByText('Dark'));
+    await act(async () => {
+      await user.click(screen.getByText('Dark'));
+    });
     expect(screen.getByTestId('theme')).toHaveTextContent('dark');
   });
 
@@ -327,7 +329,9 @@ describe('ThemeProvider', () => {
       </ThemeProvider>
     );
 
-    await user.click(screen.getByText('Dark'));
+    await act(async () => {
+      await user.click(screen.getByText('Dark'));
+    });
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
@@ -340,7 +344,9 @@ describe('ThemeProvider', () => {
       </ThemeProvider>
     );
 
-    await user.click(screen.getByText('Dark'));
+    await act(async () => {
+      await user.click(screen.getByText('Dark'));
+    });
     expect(localStorage.getItem('theme-preference')).toBe('dark');
   });
 
@@ -381,10 +387,14 @@ describe('ThemeToggle', () => {
 
     expect(screen.getByText('Light')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
     expect(screen.getByText('Dark')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
     expect(screen.getByText('System')).toBeInTheDocument();
   });
 
@@ -611,7 +621,9 @@ describe('LocaleSelector', () => {
       </I18nProvider>
     );
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
     expect(screen.getByRole('listbox')).toBeInTheDocument();
   });
 
@@ -624,7 +636,9 @@ describe('LocaleSelector', () => {
       </I18nProvider>
     );
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
 
     // Check for the listbox with options
     const listbox = screen.getByRole('listbox');
@@ -654,8 +668,13 @@ describe('LocaleSelector', () => {
       </I18nProvider>
     );
 
-    await user.click(screen.getByRole('button'));
-    await user.click(screen.getByText('Français'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
+
+    await act(async () => {
+      await user.click(screen.getByText('Français'));
+    });
 
     expect(screen.getByTestId('current')).toHaveTextContent('fr-FR');
   });
@@ -810,7 +829,9 @@ describe('UnitToggle', () => {
 
     expect(screen.getByTestId('system')).toHaveTextContent('metric');
 
-    await user.click(screen.getByText('Imperial'));
+    await act(async () => {
+      await user.click(screen.getByText('Imperial'));
+    });
     expect(screen.getByTestId('system')).toHaveTextContent('imperial');
   });
 
@@ -823,7 +844,9 @@ describe('UnitToggle', () => {
       </UnitProvider>
     );
 
-    await user.click(screen.getByText('Imperial'));
+    await act(async () => {
+      await user.click(screen.getByText('Imperial'));
+    });
     expect(localStorage.getItem('unit-system')).toBe('imperial');
   });
 });
@@ -931,7 +954,9 @@ describe('TimezoneSelector', () => {
       </TimezoneProvider>
     );
 
-    await user.selectOptions(screen.getByRole('combobox'), 'America/Los_Angeles');
+    await act(async () => {
+      await user.selectOptions(screen.getByRole('combobox'), 'America/Los_Angeles');
+    });
     expect(screen.getByTestId('tz')).toHaveTextContent('America/Los_Angeles');
   });
 });

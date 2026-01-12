@@ -871,6 +871,7 @@ describe('NotFoundPage', () => {
 describe('Error Experience Integration', () => {
   it('error flow from boundary to actionable error', () => {
     const onRetry = jest.fn();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     
     const ThrowingComponent = () => {
       throw new Error('API call failed');
@@ -898,6 +899,8 @@ describe('Error Experience Integration', () => {
     
     fireEvent.click(screen.getByText('Try Again'));
     expect(onRetry).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
   });
 
   it('offline flow with queue and banner', () => {

@@ -12,11 +12,17 @@ Adds security headers to HTTP responses to protect against common attacks:
 - Cache-Control for sensitive data
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Awaitable
 from uuid import UUID, uuid4
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 
 class CSPDirective(str, Enum):
@@ -722,3 +728,30 @@ class SecureHeadersMiddleware:
             issues.append("X-Frame-Options is not set")
 
         return issues
+
+
+class SecureHeadersASGIMiddleware(BaseHTTPMiddleware):
+    """Starlette/FastAPI middleware that applies SecureHeadersMiddleware output."""
+
+    def __init__(
+        self,
+        app: Any,
+        *,
+        config: SecureHeadersMiddleware | None = None,
+    ) -> None:
+        super().__init__(app)
+        self._config = config or SecureHeadersMiddleware()
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+
+        # Apply generated headers to response
+        headers = self._config.generate_headers(path=request.url.path, method=request.method)
+        for name, value in headers.items():
+            response.headers[name] = value
+
+        return response

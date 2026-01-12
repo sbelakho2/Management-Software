@@ -32,12 +32,7 @@ class MetricCategory(Enum):
     PRODUCTIVITY = "productivity"
 
 
-class MetricStatus(Enum):
-    """Metric health status."""
-    
-    GREEN = "green"
-    YELLOW = "yellow"
-    RED = "red"
+from sensei.core.enums import MetricStatus, Severity as AlertSeverity
 
 
 class TrendDirection(Enum):
@@ -46,14 +41,6 @@ class TrendDirection(Enum):
     IMPROVING = "improving"
     STABLE = "stable"
     DECLINING = "declining"
-
-
-class AlertSeverity(Enum):
-    """Alert severity levels."""
-    
-    INFO = "info"
-    WARNING = "warning"
-    CRITICAL = "critical"
 
 
 class AlertType(Enum):

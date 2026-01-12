@@ -381,7 +381,9 @@ describe('ValidatedSelect', () => {
     );
     
     const select = screen.getByRole('combobox');
-    await user.selectOptions(select, 'b');
+    await act(async () => {
+      await user.selectOptions(select, 'b');
+    });
     
     expect(store.getValue('test-form', 'choice')).toBe('b');
   });
@@ -425,11 +427,15 @@ describe('ValidatedCheckbox', () => {
     );
     
     const checkbox = screen.getByRole('checkbox');
-    await user.click(checkbox);
+    await act(async () => {
+      await user.click(checkbox);
+    });
     
     expect(store.getValue('test-form', 'agree')).toBe(true);
     
-    await user.click(checkbox);
+    await act(async () => {
+      await user.click(checkbox);
+    });
     expect(store.getValue('test-form', 'agree')).toBe(false);
   });
   
@@ -786,17 +792,21 @@ describe('Integration', () => {
     const input = screen.getByRole('textbox');
     
     // Type invalid email
-    await user.type(input, 'invalid');
-    await user.tab(); // Blur to trigger validation
+    await act(async () => {
+      await user.type(input, 'invalid');
+      await user.tab(); // Blur to trigger validation
+    });
     
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
     });
     
     // Clear and type valid email
-    await user.clear(input);
-    await user.type(input, 'test@example.com');
-    await user.tab();
+    await act(async () => {
+      await user.clear(input);
+      await user.type(input, 'test@example.com');
+      await user.tab();
+    });
     
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();

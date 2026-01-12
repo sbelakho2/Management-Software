@@ -1,6 +1,17 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+function normalizeApiRoot(rawUrl: string): string {
+  const trimmed = rawUrl.replace(/\/+$/, '');
+  if (trimmed.endsWith('/api/v1')) {
+    return trimmed.slice(0, -'/api/v1'.length);
+  }
+  if (trimmed.endsWith('/api')) {
+    return trimmed.slice(0, -'/api'.length);
+  }
+  return trimmed;
+}
+
+const API_ROOT = normalizeApiRoot(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
 export interface ApiError {
   message: string;
@@ -31,7 +42,7 @@ class ApiClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: `${API_URL}/api/v1`,
+      baseURL: `${API_ROOT}/api/v1`,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -134,28 +145,43 @@ class ApiClient {
 
   // HTTP methods
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.get<T>(url, config);
-    return response.data;
+    const response = await this.client.get<any>(url, config);
+    if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
+      return response.data.data as T;
+    }
+    return response.data as T;
   }
 
   async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.post<T>(url, data, config);
-    return response.data;
+    const response = await this.client.post<any>(url, data, config);
+    if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
+      return response.data.data as T;
+    }
+    return response.data as T;
   }
 
   async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.put<T>(url, data, config);
-    return response.data;
+    const response = await this.client.put<any>(url, data, config);
+    if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
+      return response.data.data as T;
+    }
+    return response.data as T;
   }
 
   async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.patch<T>(url, data, config);
-    return response.data;
+    const response = await this.client.patch<any>(url, data, config);
+    if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
+      return response.data.data as T;
+    }
+    return response.data as T;
   }
 
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.delete<T>(url, config);
-    return response.data;
+    const response = await this.client.delete<any>(url, config);
+    if (response.data && typeof response.data === 'object' && 'success' in response.data && 'data' in response.data) {
+      return response.data.data as T;
+    }
+    return response.data as T;
   }
 }
 

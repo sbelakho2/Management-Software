@@ -12,13 +12,8 @@ from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-
-class ExceptionSeverity(str, Enum):
-    """Exception severity levels."""
-    CRITICAL = "critical"  # Immediate action required (< 1 hour)
-    HIGH = "high"          # Urgent (< 4 hours)
-    MEDIUM = "medium"      # Important (< 24 hours)
-    LOW = "low"            # Standard (< 1 week)
+from sensei.core.enums import Severity as ExceptionSeverity
+from sensei.core.enums import WorkflowStatus as ExceptionStatus
 
 
 class ExceptionCategory(str, Enum):
@@ -35,16 +30,6 @@ class ExceptionCategory(str, Enum):
     APPROVAL = "approval"         # Pending approvals
     COMPLIANCE = "compliance"     # Compliance issues
     BACKUP = "backup"             # Backup failures
-
-
-class ExceptionStatus(str, Enum):
-    """Exception status."""
-    OPEN = "open"
-    ACKNOWLEDGED = "acknowledged"
-    IN_PROGRESS = "in_progress"
-    ESCALATED = "escalated"
-    RESOLVED = "resolved"
-    BLOCKED = "blocked"
 
 
 @dataclass

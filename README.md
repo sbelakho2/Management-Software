@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/sbelakho2/Management-Software/workflows/CI/badge.svg)](https://github.com/sbelakho2/Management-Software/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Node 18+](https://img.shields.io/badge/node-18+-green.svg)](https://nodejs.org/)
+[![Node 20+](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
 
 Enterprise manufacturing management system built on Lean/TPS principles. Track opportunities, RFQs, quotes, production, quality, and continuous improvement—all in one platform.
 

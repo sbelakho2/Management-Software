@@ -11,11 +11,11 @@ import React, { createContext, useContext, useState, useCallback, useMemo, useEf
  * Each level unlocks progressively more features
  */
 export const MATURITY_LEVELS = {
-  LEVEL_0: 0, // Pre-deployment: Setup and configuration only
-  LEVEL_1: 1, // Basic Operations: Sales, simple workflows
-  LEVEL_2: 2, // Standard Operations: Full production, work orders
-  LEVEL_3: 3, // Advanced Operations: TPS, Andon, Kaizen
-  LEVEL_4: 4, // Full TPS: All features including executive dashboards
+  LEVEL_0: 0, // Pre-Deployment
+  LEVEL_1: 1, // Basic Operations
+  LEVEL_2: 2, // Standard Operations
+  LEVEL_3: 3, // Advanced Operations
+  LEVEL_4: 4, // Full TPS
 } as const;
 
 export type MaturityLevel = typeof MATURITY_LEVELS[keyof typeof MATURITY_LEVELS];
@@ -29,11 +29,11 @@ export const MATURITY_LEVEL_NAMES: Record<MaturityLevel, string> = {
 };
 
 export const MATURITY_LEVEL_DESCRIPTIONS: Record<MaturityLevel, string> = {
-  [MATURITY_LEVELS.LEVEL_0]: 'System configuration and setup phase',
+  [MATURITY_LEVELS.LEVEL_0]: 'Initial configuration and deployment setup',
   [MATURITY_LEVELS.LEVEL_1]: 'Basic sales and customer management',
-  [MATURITY_LEVELS.LEVEL_2]: 'Full production workflows with work orders',
-  [MATURITY_LEVELS.LEVEL_3]: 'Advanced TPS features including Andon and Kaizen',
-  [MATURITY_LEVELS.LEVEL_4]: 'Complete system with executive dashboards and analytics',
+  [MATURITY_LEVELS.LEVEL_2]: 'Standard production workflows and scheduling',
+  [MATURITY_LEVELS.LEVEL_3]: 'Advanced TPS capabilities and continuous improvement',
+  [MATURITY_LEVELS.LEVEL_4]: 'Full TPS with executive visibility and governance',
 };
 
 // =============================================================================
@@ -60,24 +60,34 @@ export const FEATURE_REQUIREMENTS: FeatureRequirement[] = [
   { id: 'customer-list', name: 'Customer List', category: 'sales', requiredLevel: 1 },
   { id: 'quote-creation', name: 'Quote Creation', category: 'sales', requiredLevel: 1 },
   { id: 'pipeline-basic', name: 'Sales Pipeline', category: 'sales', requiredLevel: 1 },
-  
-  // Level 2 - Standard Operations
-  { id: 'work-orders', name: 'Work Order Management', category: 'production', requiredLevel: 2, dataRequirements: ['site-design', 'stations'] },
-  { id: 'job-scheduling', name: 'Job Scheduling', category: 'production', requiredLevel: 2, dataRequirements: ['site-design'] },
-  { id: 'inventory', name: 'Inventory Management', category: 'production', requiredLevel: 2 },
+
+  // Level 2 - Standard Operations (production)
+  {
+    id: 'work-orders',
+    name: 'Work Order Management',
+    category: 'production',
+    requiredLevel: 2,
+    dataRequirements: ['site-design', 'stations'],
+  },
+  {
+    id: 'job-scheduling',
+    name: 'Job Scheduling',
+    category: 'production',
+    requiredLevel: 2,
+    dataRequirements: ['site-design'],
+  },
   { id: 'quality-checks', name: 'Quality Checks', category: 'production', requiredLevel: 2 },
   
-  // Level 3 - Advanced TPS
+  // Level 3 - Advanced Operations (TPS)
   { id: 'andon', name: 'Andon System', category: 'tps', requiredLevel: 3, dataRequirements: ['stations', 'operators'] },
   { id: 'kaizen', name: 'Kaizen Events', category: 'tps', requiredLevel: 3 },
-  { id: 'standard-work', name: 'Standard Work', category: 'tps', requiredLevel: 3, dataRequirements: ['site-design', 'work-orders'] },
-  { id: 'heijunka', name: 'Heijunka Board', category: 'tps', requiredLevel: 3 },
-  
-  // Level 4 - Full TPS
+  { id: 'problem-solving-a3', name: 'A3 Problem Solving', category: 'tps', requiredLevel: 3 },
+
+  // Level 4 - Full TPS (executive)
   { id: 'exec-dashboard', name: 'Executive Dashboard', category: 'executive', requiredLevel: 4 },
   { id: 'obeya', name: 'Obeya Room', category: 'executive', requiredLevel: 4 },
   { id: 'sqdcp-metrics', name: 'SQDCP Metrics', category: 'executive', requiredLevel: 4 },
-  { id: 'factory-map', name: 'Factory Digital Twin', category: 'executive', requiredLevel: 4 },
+  { id: 'governance', name: 'Governance & Audit', category: 'executive', requiredLevel: 4 },
 ];
 
 /**

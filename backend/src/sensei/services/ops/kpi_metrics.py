@@ -88,14 +88,7 @@ class KPIDirection(str, Enum):
     TARGET_IS_BEST = "target_is_best"  # Being close to target is best
 
 
-class KPIStatus(str, Enum):
-    """Status of a KPI relative to its targets."""
-    
-    ON_TARGET = "on_target"
-    WITHIN_TOLERANCE = "within_tolerance"
-    OFF_TARGET = "off_target"
-    CRITICAL = "critical"
-    NO_DATA = "no_data"
+from sensei.core.enums import MetricStatus as KPIStatus
 
 
 class AggregationType(str, Enum):

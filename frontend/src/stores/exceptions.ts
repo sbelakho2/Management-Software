@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 // Types
 export type ExceptionSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -88,6 +89,7 @@ interface ExceptionsState {
 }
 
 const CACHE_DURATION = 30000; // 30 seconds
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export const useExceptionsStore = create<ExceptionsState>()(
   devtools(
@@ -114,17 +116,11 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const params = new URLSearchParams(filters as any);
-            // const response = await fetch(`/api/v1/exceptions?${params}`, {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const data = await response.json();
-            
-            // Mock data for now
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const params = new URLSearchParams(filters as any);
+            const data = await apiClient.get<any>(`/exceptions?${params}`);
             
             set({
+              exceptions: data.items || [],
               isLoading: false,
               lastFetchedAt: now,
             });
@@ -140,15 +136,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch(`/api/v1/exceptions/${id}`, {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const exception = await response.json();
-            
-            const exception = get().exceptions.find(e => e.id === id);
-            if (!exception) throw new Error('Exception not found');
-            
+            const exception = await apiClient.get<Exception>(`/exceptions/${id}`);
             set({ isLoading: false });
             return exception;
           } catch (error) {
@@ -164,14 +152,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/exceptions/${id}/acknowledge`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   }
-            // });
+            await apiClient.post(`/exceptions/${id}/acknowledge`);
             
             set((state) => ({
               exceptions: state.exceptions.map(exc =>
@@ -192,15 +173,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/exceptions/${id}/escalate`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify({ escalate_to: escalateTo, reason })
-            // });
+            await apiClient.post(`/exceptions/${id}/escalate`, { escalate_to: escalateTo, reason });
             
             set((state) => ({
               exceptions: state.exceptions.map(exc =>
@@ -228,15 +201,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/exceptions/${id}/resolve`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify({ resolution_notes: resolutionNotes })
-            // });
+            await apiClient.post(`/exceptions/${id}/resolve`, { resolution_notes: resolutionNotes });
             
             const resolvedAt = new Date().toISOString();
             const exception = get().exceptions.find(e => e.id === id);
@@ -270,15 +235,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/exceptions/${id}/assign`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify({ owner_id: ownerId })
-            // });
+            await apiClient.post(`/exceptions/${id}/assign`, { owner_id: ownerId });
             
             set((state) => ({
               exceptions: state.exceptions.map(exc =>
@@ -299,15 +256,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/exceptions/${id}/comments`, {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify({ comment })
-            // });
+            await apiClient.post(`/exceptions/${id}/comments`, { comment });
             
             set((state) => ({
               exceptions: state.exceptions.map(exc =>
@@ -330,16 +279,8 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch(`/api/v1/exceptions/trends?days=${days}`, {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const trends = await response.json();
-            
-            // Mock data
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            set({ isLoading: false });
+            const data = await apiClient.get<any>(`/exceptions/trends?days=${days}`);
+            set({ trends: data, isLoading: false });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch trends',
@@ -352,61 +293,8 @@ export const useExceptionsStore = create<ExceptionsState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch('/api/v1/exceptions/stats', {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const stats = await response.json();
-            
-            // Calculate stats from current exceptions
-            const exceptions = get().exceptions;
-            const now = new Date();
-            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            
-            const stats: ExceptionStats = {
-              total_open: exceptions.filter(e => e.status !== 'resolved').length,
-              critical_count: exceptions.filter(e => e.severity === 'critical' && e.status !== 'resolved').length,
-              overdue_count: exceptions.filter(e => new Date(e.due_date) < now && e.status !== 'resolved').length,
-              escalated_count: exceptions.filter(e => e.status === 'escalated').length,
-              blocked_count: exceptions.filter(e => e.blocked_reason !== undefined).length,
-              avg_resolution_time_minutes: Math.floor(
-                exceptions
-                  .filter(e => e.resolution_time)
-                  .reduce((sum, e) => sum + (e.resolution_time || 0), 0) /
-                  Math.max(exceptions.filter(e => e.resolution_time).length, 1)
-              ),
-              resolved_today: exceptions.filter(
-                e => e.resolved_at && new Date(e.resolved_at) >= todayStart
-              ).length,
-              created_today: exceptions.filter(
-                e => new Date(e.created_at) >= todayStart
-              ).length,
-              by_category: {
-                andon: exceptions.filter(e => e.category === 'andon' && e.status !== 'resolved').length,
-                quote: exceptions.filter(e => e.category === 'quote' && e.status !== 'resolved').length,
-                production: exceptions.filter(e => e.category === 'production' && e.status !== 'resolved').length,
-                quality: exceptions.filter(e => e.category === 'quality' && e.status !== 'resolved').length,
-                a3: exceptions.filter(e => e.category === 'a3' && e.status !== 'resolved').length,
-                obeya: exceptions.filter(e => e.category === 'obeya' && e.status !== 'resolved').length,
-                task: exceptions.filter(e => e.category === 'task' && e.status !== 'resolved').length,
-                training: exceptions.filter(e => e.category === 'training' && e.status !== 'resolved').length,
-              },
-              by_severity: {
-                critical: exceptions.filter(e => e.severity === 'critical' && e.status !== 'resolved').length,
-                high: exceptions.filter(e => e.severity === 'high' && e.status !== 'resolved').length,
-                medium: exceptions.filter(e => e.severity === 'medium' && e.status !== 'resolved').length,
-                low: exceptions.filter(e => e.severity === 'low' && e.status !== 'resolved').length,
-              },
-              by_status: {
-                open: exceptions.filter(e => e.status === 'open').length,
-                acknowledged: exceptions.filter(e => e.status === 'acknowledged').length,
-                in_progress: exceptions.filter(e => e.status === 'in_progress').length,
-                escalated: exceptions.filter(e => e.status === 'escalated').length,
-                resolved: exceptions.filter(e => e.status === 'resolved').length,
-              },
-            };
-            
-            set({ stats, isLoading: false });
+            const data = await apiClient.get<any>('/exceptions/summary');
+            set({ stats: data, isLoading: false });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch stats',

@@ -11,6 +11,7 @@ Provides authentication flows including:
 """
 
 from typing import Annotated, Optional, Union
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -32,6 +33,9 @@ from sensei.core.auth import (
     get_auth_service,
 )
 from sensei.core.security import TokenData, TokenPair
+from sensei.core.security import hash_password
+from sensei.models.user import User, UserStatus
+from sqlalchemy import select
 
 
 router = APIRouter()
@@ -113,6 +117,39 @@ class MessageResponse(BaseModel):
 # =============================================================================
 
 
+class RegisterRequest(BaseModel):
+    """Public registration request body."""
+
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str = Field(..., min_length=1, max_length=200)
+
+
+def _split_full_name(full_name: str) -> tuple[str, str]:
+    parts = [p for p in full_name.strip().split() if p]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+async def _generate_unique_username(db: DBSession, email: str) -> str:
+    base = email.split("@", 1)[0].strip().lower() or "user"
+    # Remove problematic characters
+    safe = "".join(ch for ch in base if ch.isalnum() or ch in {"_", ".", "-"})
+    safe = safe[:30] or "user"
+
+    # Try base first, then suffixes
+    for attempt in range(0, 50):
+        candidate = safe if attempt == 0 else f"{safe}-{attempt}"
+        res = await db.execute(select(User.id).where(User.username == candidate))
+        if res.scalar_one_or_none() is None:
+            return candidate
+
+    return f"{safe}-{uuid4().hex[:8]}"
+
+
 @router.post(
     "/login",
     response_model=Union[TokenResponse, TwoFactorRequiredResponse],
@@ -162,30 +199,87 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=e.message,
         )
-    
+
     except AccountLockedError as e:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail=e.message,
         )
-    
+
     except AccountInactiveError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=e.message,
         )
-    
+
     except EmailNotVerifiedError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=e.message,
         )
-    
+
     except InvalidTwoFactorError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=e.message,
         )
+
+
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"model": TokenResponse, "description": "User registered and authenticated"},
+        400: {"description": "Invalid request"},
+    },
+)
+async def register(
+    request: RegisterRequest,
+    db: DBSession,
+    _rate_limit: AuthRateLimit,
+):
+    """Register a new user and return access/refresh tokens."""
+    email = request.email.lower().strip()
+
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+
+    first_name, last_name = _split_full_name(request.full_name)
+    username = await _generate_unique_username(db, email)
+
+    # NOTE: This registers users as ACTIVE so they can authenticate immediately.
+    # If you want email verification gating, set status=PENDING and email_verified=False,
+    # and adjust frontend to handle verification before login.
+    user = User(
+        email=email,
+        username=username,
+        password_hash=hash_password(request.password),
+        first_name=first_name or "",
+        last_name=last_name or "",
+        display_name=request.full_name.strip(),
+        status=UserStatus.ACTIVE.value,
+        email_verified=True,
+        is_superuser=False,
+    )
+
+    db.add(user)
+    await db.commit()
+
+    # Authenticate to produce tokens and update last_login
+    auth_service = get_auth_service(db)
+    tokens = await auth_service.authenticate(email=email, password=request.password)
+
+    return TokenResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_type=tokens.token_type,
+        expires_in=tokens.expires_in,
+    )
 
 
 @router.post(

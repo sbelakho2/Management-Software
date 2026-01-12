@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BarcodeScanner, ScannerModal, ScanButton } from '../barcode-scanner';
 import type { BarcodeResult } from '@/hooks/use-camera-scanner';
@@ -443,7 +443,9 @@ describe('ScanButton', () => {
     
     render(<ScanButton onScan={jest.fn()} />);
     
-    await user.click(screen.getByRole('button', { name: /scan/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /scan/i }));
+    });
     
     expect(screen.getByText('Scan Barcode')).toBeInTheDocument();
   });
@@ -455,7 +457,9 @@ describe('ScanButton', () => {
     render(<ScanButton onScan={onScan} />);
     
     // Open modal
-    await user.click(screen.getByRole('button', { name: /scan/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /scan/i }));
+    });
     
     // Modal should be visible
     expect(screen.getByText('Scan Barcode')).toBeInTheDocument();

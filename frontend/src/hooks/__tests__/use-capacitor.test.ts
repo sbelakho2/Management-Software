@@ -47,7 +47,7 @@ beforeEach(() => {
   // Setup navigator mocks safely
   Object.defineProperty(navigator, 'permissions', {
     value: {
-      query: jest.fn().mockResolvedValue({ state: 'granted' }),
+      query: jest.fn().mockResolvedValue({ state: 'prompt' }),
     },
     writable: true,
     configurable: true,

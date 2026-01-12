@@ -430,7 +430,9 @@ describe('ExportProgressIndicator', () => {
 
     render(<ExportProgressIndicator progress={progress} onCancel={onCancel} />);
 
-    await user.click(screen.getByLabelText('Cancel export'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Cancel export'));
+    });
     expect(onCancel).toHaveBeenCalled();
   });
 });
@@ -463,7 +465,9 @@ describe('ExportButton', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /export/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /export/i }));
+    });
 
     expect(screen.getByRole('menu')).toBeInTheDocument();
   });
@@ -480,7 +484,9 @@ describe('ExportButton', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /export/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /export/i }));
+    });
 
     expect(screen.getByRole('menuitem', { name: /pdf/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /excel/i })).toBeInTheDocument();
@@ -499,8 +505,12 @@ describe('ExportButton', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /export/i }));
-    await user.click(screen.getByRole('menuitem', { name: /pdf/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /export/i }));
+    });
+    await act(async () => {
+      await user.click(screen.getByRole('menuitem', { name: /pdf/i }));
+    });
 
     await waitFor(() => {
       expect(onExport).toHaveBeenCalledWith(EXPORT_FORMAT.PDF);
@@ -521,7 +531,9 @@ describe('ExportButton', () => {
     const button = screen.getByRole('button', { name: /export/i });
     expect(button).toHaveAttribute('aria-expanded', 'false');
 
-    await user.click(button);
+    await act(async () => {
+      await user.click(button);
+    });
     expect(button).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -701,7 +713,9 @@ describe('LabelPrinterDialog', () => {
       />
     );
 
-    await user.click(screen.getByLabelText('Close'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Close'));
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -717,7 +731,9 @@ describe('LabelPrinterDialog', () => {
       />
     );
 
-    await user.click(screen.getByText('Cancel'));
+    await act(async () => {
+      await user.click(screen.getByText('Cancel'));
+    });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -733,7 +749,9 @@ describe('LabelPrinterDialog', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /print 1 label/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /print 1 label/i }));
+    });
 
     await waitFor(() => {
       expect(onPrint).toHaveBeenCalled();
@@ -875,7 +893,9 @@ describe('useExport', () => {
 
     render(<ExportHookTester />);
 
-    await user.click(screen.getByText('Export'));
+    await act(async () => {
+      await user.click(screen.getByText('Export'));
+    });
 
     // Should eventually complete
     await waitFor(() => {
@@ -888,13 +908,17 @@ describe('useExport', () => {
 
     render(<ExportHookTester />);
 
-    await user.click(screen.getByText('Export'));
+    await act(async () => {
+      await user.click(screen.getByText('Export'));
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId('state')).not.toHaveTextContent('idle');
     });
 
-    await user.click(screen.getByText('Reset'));
+    await act(async () => {
+      await user.click(screen.getByText('Reset'));
+    });
 
     expect(screen.getByTestId('state')).toHaveTextContent('idle');
   });
@@ -933,8 +957,13 @@ describe('Print Export Integration', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: /export/i }));
-    await user.click(screen.getByRole('menuitem', { name: /pdf/i }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /export/i }));
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('menuitem', { name: /pdf/i }));
+    });
 
     // Should show progress indicator
     await waitFor(() => {

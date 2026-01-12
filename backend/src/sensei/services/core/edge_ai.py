@@ -189,14 +189,13 @@ class Conv1DLayer:
         
         outputs = []
         for f in range(self.num_filters):
-            filter_output = []
-            for i in range(output_len):
-                conv_sum = 0.0
-                for k in range(self.kernel_size):
-                    conv_sum += input_data[i + k] * self.weights[f][0][k]
-                conv_sum += self.biases[f]
-                # ReLU activation
-                filter_output.append(max(0.0, conv_sum))
+            weights = self.weights[f][0]
+            bias = self.biases[f]
+            # Use dot product via zip/sum for better Python performance
+            filter_output = [
+                max(0.0, sum(weights[k] * input_data[i + k] for k in range(self.kernel_size)) + bias)
+                for i in range(output_len)
+            ]
             outputs.append(filter_output)
         
         return outputs
@@ -214,10 +213,13 @@ class MaxPool1DLayer:
         """Apply max pooling."""
         outputs = []
         for channel in inputs:
-            pooled = []
-            for i in range(0, len(channel) - self.pool_size + 1, self.pool_size):
-                pool_region = channel[i:i + self.pool_size]
-                pooled.append(max(pool_region) if pool_region else 0.0)
+            if not channel:
+                outputs.append([0.0])
+                continue
+            pooled = [
+                max(channel[i:i + self.pool_size]) 
+                for i in range(0, len(channel) - self.pool_size + 1, self.pool_size)
+            ]
             outputs.append(pooled if pooled else [0.0])
         return outputs
 
@@ -253,10 +255,13 @@ class DenseLayer:
     def forward(self, inputs: list[float]) -> list[float]:
         """Apply dense layer."""
         outputs = []
+        input_len = len(inputs)
         for i in range(self.output_size):
-            weighted_sum = self.biases[i]
-            for j in range(min(len(inputs), self.input_size)):
-                weighted_sum += inputs[j] * self.weights[i][j]
+            weights = self.weights[i]
+            weighted_sum = sum(
+                inputs[j] * weights[j] 
+                for j in range(min(input_len, self.input_size))
+            ) + self.biases[i]
             
             # Apply activation
             if self.activation == "relu":
@@ -706,6 +711,15 @@ class EdgeToCoreSyncManager:
             "total_failed": 0,
             "bytes_sent": 0,
         }
+
+    def connect(self) -> bool:
+        """Establish a connection to core (simulated)."""
+        self.connection_state = ConnectionState.CONNECTED
+        return True
+
+    def disconnect(self) -> None:
+        """Disconnect from core."""
+        self.connection_state = ConnectionState.DISCONNECTED
     
     def queue_anomaly_alert(self, detection: AnomalyDetection) -> str:
         """Queue an anomaly alert for sync."""
@@ -790,7 +804,7 @@ class EdgeToCoreSyncManager:
     def _simulate_send(self, encoded_data: bytes) -> bool:
         """Simulate sending data (in production, would use actual network)."""
         # Simulate network latency and potential failures
-        if self.connection_state == ConnectionState.ERROR:
+        if self.connection_state in (ConnectionState.ERROR, ConnectionState.DISCONNECTED):
             return False
         
         # Success
@@ -874,16 +888,7 @@ class EdgeToCoreSyncManager:
             sync_duration_ms=duration_ms,
             connection_state=self.connection_state,
         )
-    
-    def connect(self) -> bool:
-        """Establish connection to core."""
-        self.connection_state = ConnectionState.CONNECTED
-        return True
-    
-    def disconnect(self) -> None:
-        """Disconnect from core."""
-        self.connection_state = ConnectionState.DISCONNECTED
-    
+
     def get_queue_status(self) -> dict[str, int]:
         """Get current queue status."""
         return {
@@ -894,6 +899,76 @@ class EdgeToCoreSyncManager:
             "low": self.message_queue.size_by_priority(SyncPriority.LOW),
             "batch": self.message_queue.size_by_priority(SyncPriority.BATCH),
         }
+
+
+# =============================================================================
+# ORCHESTRATION LAYER (USED BY API)
+# =============================================================================
+
+
+class EdgeOrchestrator:
+    """High-level orchestrator combining inference + edge-to-core sync.
+
+    This is intentionally lightweight: it provides the stable surface that the
+    API layer depends on, while delegating to the underlying engine/manager.
+    """
+
+    def __init__(
+        self,
+        machine_id: str,
+        *,
+        input_length: int = 256,
+        threshold: float = 0.7,
+        core_endpoint: str = "https://core.sensei.local",
+    ):
+        self.machine_id = machine_id
+        self.engine = PredictiveMaintenanceEngine(input_length=input_length, threshold=threshold)
+        self.sync_manager = EdgeToCoreSyncManager(device_id=machine_id, core_endpoint=core_endpoint)
+
+    def run_inference(self, reading: SensorReading) -> AnomalyDetection | None:
+        """Run inference and optionally queue messages for sync."""
+        detection = self.engine.analyze_reading(reading)
+
+        # Always queue raw sensor metadata as batch.
+        self.sync_manager.queue_sensor_data(reading, priority=SyncPriority.BATCH)
+
+        # Queue anomaly alerts for anything non-normal.
+        if detection.severity != SeverityLevel.NORMAL:
+            self.sync_manager.queue_anomaly_alert(detection)
+
+        # Keep core up-to-date with health status when available.
+        health = self.engine.get_machine_health(reading.machine_id)
+        if health:
+            self.sync_manager.queue_health_status(health)
+
+        # Respect the model threshold: callers treat None as "no detection".
+        if detection.confidence < self.engine.threshold:
+            return None
+
+        return detection
+
+    def get_machine_health(self, machine_id: str) -> MachineHealthStatus | None:
+        return self.engine.get_machine_health(machine_id)
+
+    def get_recent_anomalies(
+        self, *, machine_id: str | None = None, hours: int = 24
+    ) -> list[AnomalyDetection]:
+        return self.engine.get_recent_anomalies(machine_id=machine_id, hours=hours)
+
+    def sync_batch(self) -> SyncResult:
+        return self.sync_manager.sync_batch()
+    
+    def connect(self) -> bool:
+        """Establish connection to core."""
+        return self.sync_manager.connect()
+    
+    def disconnect(self) -> None:
+        """Disconnect from core."""
+        self.sync_manager.disconnect()
+    
+    def get_queue_status(self) -> dict[str, int]:
+        """Get current queue status."""
+        return self.sync_manager.get_queue_status()
 
 
 # =============================================================================

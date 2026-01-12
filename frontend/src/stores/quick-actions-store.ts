@@ -816,8 +816,7 @@ const performExecution = async (
     if (handler) {
       result = await handler(context);
     } else {
-      // Default behavior - log action
-      console.log(`Executing action: ${action.label}`, context);
+      // Default behavior: succeed without side effects
       result = { success: true };
     }
     

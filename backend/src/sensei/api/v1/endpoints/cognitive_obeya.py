@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from sensei.api.deps import DBSession, CurrentUser
 from sensei.api.utils import APIResponse, build_response
 from sensei.services.ops.cognitive_obeya import (
-    create_cognitive_obeya,
+    get_cognitive_obeya,
     MetricCategory,
     DepartmentType,
     AlertSeverity
@@ -27,7 +27,7 @@ async def get_obeya_dashboard(
     """
     Get Cognitive Obeya dashboard with real-time prescriptive analytics.
     """
-    obeya = create_cognitive_obeya()
+    obeya = get_cognitive_obeya()
     
     # 1. Pull real metrics from database
     # Quality: count of open NCs
@@ -89,7 +89,7 @@ async def get_metric_insights(
     user: CurrentUser
 ):
     """Get prescriptive insights for a specific metric."""
-    obeya = create_cognitive_obeya()
+    obeya = get_cognitive_obeya()
     # In production, we'd populate history here
     insights = obeya.get_metric_insights(metric_id)
     return build_response(data=insights)

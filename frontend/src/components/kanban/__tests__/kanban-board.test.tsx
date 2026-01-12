@@ -269,11 +269,14 @@ describe('KanbanToolbar', () => {
   });
 
   it('calls onFilterChange when filter button clicked', async () => {
+    const user = userEvent.setup();
     const onFilterChange = jest.fn();
     render(<KanbanToolbar onFilterChange={onFilterChange} />);
     
     const filterButton = screen.getByText('Filters');
-    await userEvent.click(filterButton);
+    await act(async () => {
+      await user.click(filterButton);
+    });
     
     expect(onFilterChange).toHaveBeenCalled();
   });
@@ -287,11 +290,14 @@ describe('KanbanToolbar', () => {
   });
 
   it('calls onViewChange when view button clicked', async () => {
+    const user = userEvent.setup();
     const onViewChange = jest.fn();
     render(<KanbanToolbar onViewChange={onViewChange} />);
     
     const listButton = screen.getByTitle('List view');
-    await userEvent.click(listButton);
+    await act(async () => {
+      await user.click(listButton);
+    });
     
     expect(onViewChange).toHaveBeenCalledWith('list');
   });
@@ -303,19 +309,25 @@ describe('KanbanToolbar', () => {
   });
 
   it('toggles compact mode when clicked', async () => {
+    const user = userEvent.setup();
     render(<KanbanToolbar />);
     
     const compactToggle = screen.getByTitle('Compact cards');
-    await userEvent.click(compactToggle);
+    await act(async () => {
+      await user.click(compactToggle);
+    });
     
     expect(mockSetConfig).toHaveBeenCalledWith({ compactMode: true });
   });
 
   it('submits search on form submit', async () => {
+    const user = userEvent.setup();
     render(<KanbanToolbar onSearch={jest.fn()} />);
     
     const input = screen.getByPlaceholderText('Search RFQs...');
-    await userEvent.type(input, 'test{enter}');
+    await act(async () => {
+      await user.type(input, 'test{enter}');
+    });
     
     expect(mockSetSearchQuery).toHaveBeenCalledWith('test');
   });

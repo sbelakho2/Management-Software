@@ -24,6 +24,7 @@ from sensei.api.exceptions import register_exception_handlers
 from sensei.middleware.logging import StructuredLoggingMiddleware
 from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
+from sensei.middleware.secure_headers import SecureHeadersASGIMiddleware, SecureHeadersMiddleware
 from sensei.services.core.backup_scheduler import BackupSchedulerService
 from sensei.services.core.database_backup import DatabaseBackupService
 from sensei.services.ops.kpi_app_services import muda_nudging_service
@@ -143,6 +144,16 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+    # Add security headers (CSP/HSTS/etc). Use a minimal API preset in production
+    # and a relaxed preset for local development/testing (Swagger UI, etc.).
+    secure_headers = SecureHeadersMiddleware()
+    if settings.ENVIRONMENT == "production":
+        secure_headers.apply_api_preset()
+    else:
+        secure_headers.apply_relaxed_preset()
+    app.add_middleware(SecureHeadersASGIMiddleware, config=secure_headers)
+
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)

@@ -464,25 +464,34 @@ describe('Micro-Interaction Components', () => {
 
     it('calls onClick on click', async () => {
       const onClick = jest.fn();
+      const user = userEvent.setup();
       render(<Pressable onClick={onClick}>Click me</Pressable>);
       
-      await userEvent.click(screen.getByText('Click me'));
+      await act(async () => {
+        await user.click(screen.getByText('Click me'));
+      });
       expect(onClick).toHaveBeenCalled();
     });
 
     it('calls onPress on click', async () => {
       const onPress = jest.fn();
+      const user = userEvent.setup();
       render(<Pressable onPress={onPress}>Click me</Pressable>);
       
-      await userEvent.click(screen.getByText('Click me'));
+      await act(async () => {
+        await user.click(screen.getByText('Click me'));
+      });
       expect(onPress).toHaveBeenCalled();
     });
 
     it('does not call handlers when disabled', async () => {
       const onClick = jest.fn();
+      const user = userEvent.setup();
       render(<Pressable onClick={onClick} disabled>Click me</Pressable>);
       
-      await userEvent.click(screen.getByText('Click me'));
+      await act(async () => {
+        await user.click(screen.getByText('Click me'));
+      });
       expect(onClick).not.toHaveBeenCalled();
     });
 
@@ -507,9 +516,13 @@ describe('Micro-Interaction Components', () => {
       const mockVibrate = jest.fn();
       Object.defineProperty(navigator, 'vibrate', { value: mockVibrate, writable: true });
 
+      const user = userEvent.setup();
+
       render(<Pressable haptic>Click me</Pressable>);
       
-      await userEvent.click(screen.getByText('Click me'));
+      await act(async () => {
+        await user.click(screen.getByText('Click me'));
+      });
       expect(mockVibrate).toHaveBeenCalled();
     });
   });
@@ -570,6 +583,7 @@ describe('Optimistic UI', () => {
   });
 
   it('adds actions', async () => {
+    const user = userEvent.setup();
     render(
       <OptimisticUIProvider>
         <TestComponent />
@@ -579,7 +593,9 @@ describe('Optimistic UI', () => {
     expect(screen.getByTestId('pending')).toHaveTextContent('none');
     expect(screen.getByTestId('count')).toHaveTextContent('0');
 
-    await userEvent.click(screen.getByText('Add Action'));
+    await act(async () => {
+      await user.click(screen.getByText('Add Action'));
+    });
 
     expect(screen.getByTestId('pending')).toHaveTextContent('pending');
     expect(screen.getByTestId('count')).toHaveTextContent('1');
@@ -961,6 +977,7 @@ describe('Motion Feedback Integration', () => {
   });
 
   it('step progress with optimistic UI', async () => {
+    const user = userEvent.setup();
     function MultiStepForm() {
       const [step, setStep] = React.useState(0);
 
@@ -981,12 +998,16 @@ describe('Motion Feedback Integration', () => {
     expect(screen.getByText('1').closest('div')).toHaveAttribute('aria-current', 'step');
 
     // Move to step 1
-    await userEvent.click(screen.getByText('Next'));
+    await act(async () => {
+      await user.click(screen.getByText('Next'));
+    });
     expect(screen.getByText('2').closest('div')).toHaveAttribute('aria-current', 'step');
     expect(screen.getAllByText('✓')).toHaveLength(1);
 
     // Move to step 2
-    await userEvent.click(screen.getByText('Next'));
+    await act(async () => {
+      await user.click(screen.getByText('Next'));
+    });
     expect(screen.getByText('3').closest('div')).toHaveAttribute('aria-current', 'step');
     expect(screen.getAllByText('✓')).toHaveLength(2);
   });
