@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.csv_export import (
+from sensei.services.utils.csv_export import (
     ColumnConfig,
     CSVExportService,
     ExportableEntityType,

@@ -3,10 +3,10 @@ Tests for CAPA Workflow Integration Service.
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.capa_workflow import (
+from sensei.services.quality.capa_workflow import (
     NCType,
     NCSeverity,
     CAPAType,
@@ -154,7 +154,7 @@ class TestNonConformance:
             title="Defective widget",
             description="Widget fails functional test",
             detected_by=uuid4(),
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(timezone.utc),
             product_id=uuid4(),
             product_name="Widget A",
             defect_code="D001",

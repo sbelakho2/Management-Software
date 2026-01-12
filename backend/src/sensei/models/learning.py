@@ -285,7 +285,6 @@ class LearningUnit(Base, TimestampMixin, AuditMixin):
     
     __table_args__ = (
         Index("ix_learning_units_module_order", module_id, unit_order),
-        Index("ix_learning_units_category", category),
         Index(
             "ix_learning_units_published",
             is_published,
@@ -527,10 +526,7 @@ class LearningPath(Base, TimestampMixin, AuditMixin):
     
     # Tags
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
-    
-    __table_args__ = (
-        Index("ix_learning_paths_status", status),
-    )
+
 
 
 class LearningProgress(Base, TimestampMixin):

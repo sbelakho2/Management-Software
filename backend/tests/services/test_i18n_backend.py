@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.i18n_backend import (
+from sensei.services.utils.i18n_backend import (
     I18nBackendService,
     Locale,
     LocaleConfig,

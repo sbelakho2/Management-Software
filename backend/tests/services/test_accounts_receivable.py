@@ -5,8 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from sensei.services.accounting_ledger import AccountingLedgerService, AccountType
-from sensei.services.accounts_receivable import (
+from sensei.services.finance.accounting_ledger import AccountingLedgerService, AccountType
+from sensei.services.finance.accounts_receivable import (
     AccountsReceivableService,
     ARConfig,
     SalesOrderLine,

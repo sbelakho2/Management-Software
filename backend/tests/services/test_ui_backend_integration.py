@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from sensei.services.ui_backend_integration import (
+from sensei.services.utils.ui_backend_integration import (
     # Enums
     ErrorCategory,
     RecoveryAction,

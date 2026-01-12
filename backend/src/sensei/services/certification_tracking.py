@@ -18,7 +18,7 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
-from sensei.services.pii_controls import (
+from sensei.services.core.pii_controls import (
     PIIControlsService,
     PIICategory,
     SensitivityLevel,

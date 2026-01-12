@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 import math
 import time
 
-from sensei.services.hybrid_search import (
+from sensei.services.ai.hybrid_search import (
     # Enums
     SearchMode,
     RerankingStrategy,

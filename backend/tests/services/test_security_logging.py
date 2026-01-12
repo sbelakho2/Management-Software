@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.security_logging import (
+from sensei.services.core.security_logging import (
     AlertStatus,
     EventCategory,
     EventSeverity,

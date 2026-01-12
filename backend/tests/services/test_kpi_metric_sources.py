@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.kpi_metric_sources import (
+from sensei.services.ops.kpi_metric_sources import (
     AggregationPeriod,
     ComputationFormula,
     DataSourceType,

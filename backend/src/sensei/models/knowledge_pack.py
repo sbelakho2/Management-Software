@@ -280,7 +280,6 @@ class IngestionLog(Base, TimestampMixin):
     )
     
     __table_args__ = (
-        Index("ix_ingestion_logs_status", "status"),
         Index("ix_ingestion_logs_created", "created_at"),
     )
     

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.xai_service import (
+from sensei.services.ai.xai_service import (
     # Enums
     ExplanationType,
     DecisionCategory,

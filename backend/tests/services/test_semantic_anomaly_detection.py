@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from sensei.services.semantic_anomaly_detection import (
+from sensei.services.ai.semantic_anomaly_detection import (
     # Enums
     AlertSensitivity,
     AnomalyType,

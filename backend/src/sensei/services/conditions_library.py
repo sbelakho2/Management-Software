@@ -18,10 +18,14 @@ Condition Categories:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ConditionCategory(str, Enum):
@@ -120,8 +124,8 @@ class ConditionTemplate:
     
     # Versioning
     version: int = 1
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
     created_by_id: UUID | None = None
     
     # Translations (for multi-language support)
@@ -161,7 +165,7 @@ class AppliedCondition:
     sort_order: int = 0
     
     # Timestamps
-    applied_at: datetime = field(default_factory=datetime.utcnow)
+    applied_at: datetime = field(default_factory=_utcnow)
     applied_by_id: UUID | None = None
 
 
@@ -175,8 +179,8 @@ class ConditionSet:
     condition_template_ids: list[UUID]
     is_default: bool = False
     is_active: bool = True
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
     created_by_id: UUID | None = None
 
 
@@ -299,7 +303,7 @@ class ConditionsLibraryService:
             template.is_active = is_active
         
         template.version += 1
-        template.updated_at = datetime.utcnow()
+        template.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         
         return template
     
@@ -553,7 +557,7 @@ class ConditionsLibraryService:
         
         condition.is_acknowledged = True
         condition.acknowledged_by_id = acknowledged_by_id
-        condition.acknowledged_at = datetime.utcnow()
+        condition.acknowledged_at = datetime.now(timezone.utc).replace(tzinfo=None)
         
         return condition
     
@@ -573,7 +577,7 @@ class ConditionsLibraryService:
         
         condition.is_resolved = True
         condition.resolved_by_id = resolved_by_id
-        condition.resolved_at = datetime.utcnow()
+        condition.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
         condition.resolution_notes = resolution_notes
         
         return condition
@@ -673,7 +677,7 @@ class ConditionsLibraryService:
         if is_active is not None:
             condition_set.is_active = is_active
         
-        condition_set.updated_at = datetime.utcnow()
+        condition_set.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         return condition_set
     
     def delete_condition_set(self, set_id: UUID) -> bool:

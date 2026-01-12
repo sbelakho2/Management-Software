@@ -10,12 +10,13 @@ Follows the standard API response schema used across v1 endpoints.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query, Header
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
@@ -54,6 +55,12 @@ from sensei.models.quality import (
     RootCauseCategory,
     VerificationStatus,
 )
+from sensei.services.core.data_lineage import get_data_lineage_service
+from sensei.services.core.common_thread import get_common_thread_service
+from sensei.services.quality.quality_certification_gate import get_quality_certification_gate
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -1028,6 +1035,7 @@ async def create_non_conformance(
     data: NonConformanceCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[NonConformanceResponse]:
     existing = await db.execute(
         select(NonConformance).where(NonConformance.nc_number == data.nc_number)
@@ -1081,6 +1089,32 @@ async def create_non_conformance(
     db.add(nc)
     await db.commit()
     await db.refresh(nc)
+
+    # Best-effort: capture lineage links (do not block NC creation).
+    try:
+        await get_data_lineage_service().capture_non_conformance_created(
+            db,
+            non_conformance_id=nc.id,
+            product_id=nc.product_id,
+            work_order_id=nc.work_order_id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="non_conformance",
+                entity_id=str(nc.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="non_conformance_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture non-conformance lineage")
 
     return build_created_response(data=nc_to_response(nc), resource_name="Non-conformance")
 
@@ -1290,6 +1324,7 @@ async def create_capa(
     data: CAPACreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[CAPAResponse]:
     existing = await db.execute(select(CAPA).where(CAPA.capa_number == data.capa_number))
     if existing.scalar_one_or_none():
@@ -1336,6 +1371,31 @@ async def create_capa(
     db.add(capa)
     await db.commit()
     await db.refresh(capa)
+
+    # Best-effort: capture lineage links (do not block CAPA creation).
+    try:
+        await get_data_lineage_service().capture_capa_created(
+            db,
+            capa_id=capa.id,
+            source_nc_id=capa.source_nc_id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="capa",
+                entity_id=str(capa.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="capa_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture CAPA lineage")
 
     return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
 
@@ -1465,6 +1525,7 @@ async def create_capa_action(
     data: CAPAActionCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[CAPAActionResponse]:
     capa = (await db.execute(select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)))).scalar_one_or_none()
     if not capa:
@@ -1486,6 +1547,31 @@ async def create_capa_action(
     db.add(action)
     await db.commit()
     await db.refresh(action)
+
+    # Best-effort: capture lineage links (do not block CAPA action creation).
+    try:
+        await get_data_lineage_service().capture_capa_action_created(
+            db,
+            capa_id=capa_id,
+            action_id=action.id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="capa_action",
+                entity_id=str(action.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="capa_action_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture CAPA action lineage")
 
     return build_created_response(data=_capa_action_to_response(action), resource_name="CAPA action")
 
@@ -1615,6 +1701,7 @@ async def create_inspection_plan(
     data: InspectionPlanCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[InspectionPlanResponse]:
     if data.code:
         existing = (await db.execute(select(InspectionPlan).where(InspectionPlan.code == data.code))).scalar_one_or_none()
@@ -1641,6 +1728,32 @@ async def create_inspection_plan(
     db.add(plan)
     await db.commit()
     await db.refresh(plan)
+
+    # Best-effort: capture lineage links (do not block inspection plan creation).
+    try:
+        await get_data_lineage_service().capture_inspection_plan_created(
+            db,
+            plan_id=plan.id,
+            product_id=plan.product_id,
+            station_id=plan.station_id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="inspection_plan",
+                entity_id=str(plan.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="inspection_plan_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture inspection plan lineage")
 
     return build_created_response(data=inspection_plan_to_response(plan), resource_name="Inspection plan")
 
@@ -1781,10 +1894,19 @@ async def create_inspection_record(
     data: InspectionRecordCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[InspectionRecordResponse]:
     plan = (await db.execute(select(InspectionPlan).where(InspectionPlan.id == data.inspection_plan_id, InspectionPlan.deleted_at.is_(None)))).scalar_one_or_none()
     if not plan:
         raise NotFoundError("Inspection plan", str(data.inspection_plan_id))
+
+    # Enforce certification requirements (mandatory skill requirements for the plan scope).
+    await get_quality_certification_gate().assert_user_can_record_inspection(
+        db,
+        user_id=getattr(current_user, "id", None),
+        station_id=getattr(plan, "station_id", None),
+        product_id=getattr(plan, "product_id", None),
+    )
 
     record = InspectionRecord(
         inspection_plan_id=data.inspection_plan_id,
@@ -1807,6 +1929,33 @@ async def create_inspection_record(
     db.add(record)
     await db.commit()
     await db.refresh(record)
+
+    # Best-effort: capture lineage links (do not block inspection record creation).
+    try:
+        await get_data_lineage_service().capture_inspection_record_created(
+            db,
+            record_id=record.id,
+            inspection_plan_id=record.inspection_plan_id,
+            work_order_id=record.work_order_id,
+            nc_id=record.nc_id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="inspection_record",
+                entity_id=str(record.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="inspection_record_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture inspection record lineage")
 
     return build_created_response(data=inspection_record_to_response(record), resource_name="Inspection record")
 

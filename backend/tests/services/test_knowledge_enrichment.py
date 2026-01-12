@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.knowledge_enrichment import (
+from sensei.services.ai.knowledge_enrichment import (
     KnowledgeEnrichmentService,
     SourceType,
     ContentFormat,

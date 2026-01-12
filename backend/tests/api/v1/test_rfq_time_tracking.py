@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
 from sensei.api.v1.endpoints import rfq_time_tracking
-from sensei.services.rfq_time_tracking import (
+from sensei.services.sales.rfq_time_tracking import (
     reset_rfq_time_tracking_service,
     get_rfq_time_tracking_service,
     TaskType,
@@ -349,7 +349,7 @@ class TestAlertEndpoints:
         """Test acknowledging an alert."""
         # Create session and add an alert manually
         service = get_rfq_time_tracking_service()
-        from sensei.services.rfq_time_tracking import TimeAlert
+        from sensei.services.sales.rfq_time_tracking import TimeAlert
         
         session_id = uuid4()
         alert_id = uuid4()

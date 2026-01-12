@@ -12,7 +12,7 @@ Tests cover:
 import pytest
 from datetime import datetime, timezone
 
-from sensei.services.smart_supplier_matchmaker import (
+from sensei.services.sales.smart_supplier_matchmaker import (
     # Enums
     MatchingCriteria,
     SupplierTier,

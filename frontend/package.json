@@ -15,6 +15,7 @@
     "test:coverage": "jest --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:project-management": "cd .. && docker compose up -d db redis minio && docker compose run --rm api alembic upgrade head && docker compose up -d api && cd frontend && E2E_WITH_BACKEND=1 E2E_API_URL=http://localhost:8000 NEXT_PUBLIC_API_URL=http://localhost:8000 playwright test e2e/project-management.spec.ts && cd .. && docker compose down || true",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

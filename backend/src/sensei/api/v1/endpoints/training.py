@@ -12,12 +12,12 @@ Implements competency management following lean manufacturing principles.
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Header
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.orm import selectinload
@@ -46,6 +46,9 @@ from sensei.models.training import (
     CertificationStatus,
 )
 
+from sensei.services.core.data_lineage import get_data_lineage_service
+from sensei.services.core.common_thread import get_common_thread_service
+
 router = APIRouter()
 
 
@@ -56,7 +59,7 @@ router = APIRouter()
 
 def _now_utc() -> datetime:
     """Get current UTC datetime (naive) for consistency with model timestamps."""
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _today() -> date:
@@ -610,6 +613,7 @@ async def create_skill_requirement(
     data: SkillRequirementCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[SkillRequirementResponse]:
     # Validate at least one target is set
     if data.station_id is None and data.product_id is None:
@@ -647,6 +651,35 @@ async def create_skill_requirement(
     db.add(requirement)
     await db.flush()
     await db.refresh(requirement)
+
+    # Persist primary write first; lineage is best-effort enrichment.
+    await db.commit()
+
+    # Best-effort: capture lineage links (do not block requirement creation).
+    try:
+        await get_data_lineage_service().capture_skill_requirement_created(
+            db,
+            requirement_id=requirement.id,
+            skill_id=requirement.skill_id,
+            station_id=requirement.station_id,
+            product_id=requirement.product_id,
+            created_by_id=current_user.id,
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="skill_requirement",
+                entity_id=str(requirement.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="skill_requirement_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
     return build_created_response(
         data=SkillRequirementResponse.model_validate(requirement),
@@ -749,6 +782,7 @@ async def create_training(
     data: TrainingCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[TrainingResponse]:
     # Check skill exists
     skill_stmt = select(Skill).where(
@@ -784,6 +818,33 @@ async def create_training(
     db.add(training)
     await db.flush()
     await db.refresh(training)
+
+    # Persist primary write first; lineage is best-effort enrichment.
+    await db.commit()
+
+    # Best-effort: capture lineage links (do not block training creation).
+    try:
+        await get_data_lineage_service().capture_training_created(
+            db,
+            training_id=training.id,
+            skill_id=training.skill_id,
+            created_by_id=current_user.id,
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="training",
+                entity_id=str(training.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="training_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
     response = TrainingResponse.model_validate(training)
     response.enrolled_count = training.enrolled_count
@@ -1078,6 +1139,7 @@ async def enroll_participant(
     data: ParticipantEnroll,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[ParticipantResponse]:
     # Check training exists
     training_stmt = select(Training).where(
@@ -1115,6 +1177,34 @@ async def enroll_participant(
     db.add(participant)
     await db.flush()
     await db.refresh(participant)
+
+    # Persist primary write first; lineage is best-effort enrichment.
+    await db.commit()
+
+    # Best-effort: capture lineage links (do not block enrollment).
+    try:
+        await get_data_lineage_service().capture_training_participant_enrolled(
+            db,
+            training_id=training_id,
+            participant_id=participant.id,
+            user_id=participant.user_id,
+            created_by_id=current_user.id,
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="training_participant",
+                entity_id=str(participant.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="training_enroll",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
     status_msg = "enrolled" if enrollment_status == EnrollmentStatus.ENROLLED else "waitlisted"
     return build_response(
@@ -1296,6 +1386,7 @@ async def create_user_skill(
     data: UserSkillCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[UserSkillResponse]:
     # Check skill exists
     skill_stmt = select(Skill).where(
@@ -1327,6 +1418,34 @@ async def create_user_skill(
     db.add(user_skill)
     await db.flush()
     await db.refresh(user_skill)
+
+    # Persist primary write first; lineage is best-effort enrichment.
+    await db.commit()
+
+    # Best-effort: capture lineage links (do not block user-skill creation).
+    try:
+        await get_data_lineage_service().capture_user_skill_created(
+            db,
+            user_skill_id=user_skill.id,
+            user_id=user_skill.user_id,
+            skill_id=user_skill.skill_id,
+            created_by_id=current_user.id,
+            reasoning_id=x_reasoning_id,
+        )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="user_skill",
+                entity_id=str(user_skill.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="user_skill_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified
@@ -1450,6 +1569,7 @@ async def certify_user_skill(
     data: UserSkillCertify,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[UserSkillResponse]:
     stmt = select(UserSkill).where(UserSkill.id == user_skill_id)
     result = await db.execute(stmt)
@@ -1469,6 +1589,24 @@ async def certify_user_skill(
     await db.flush()
     await db.refresh(user_skill)
 
+    # Persist primary write first; reasoning is best-effort enrichment.
+    await db.commit()
+
+    # Best-effort: record reasoning (lineage already links user+skill to user_skill).
+    try:
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="user_skill",
+                entity_id=str(user_skill.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="user_skill_certify",
+            )
+            await db.commit()
+    except Exception:
+        await db.rollback()
+
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified
     response.is_expired = user_skill.is_expired
@@ -1487,6 +1625,7 @@ async def revoke_certification(
     user_skill_id: int,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[UserSkillResponse]:
     stmt = select(UserSkill).where(UserSkill.id == user_skill_id)
     result = await db.execute(stmt)
@@ -1503,6 +1642,23 @@ async def revoke_certification(
     user_skill.updated_by_id = current_user.id
     await db.flush()
     await db.refresh(user_skill)
+
+    # Persist primary write first; reasoning is best-effort enrichment.
+    await db.commit()
+
+    try:
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="user_skill",
+                entity_id=str(user_skill.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=current_user.id,
+                source="user_skill_revoke",
+            )
+            await db.commit()
+    except Exception:
+        await db.rollback()
 
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified

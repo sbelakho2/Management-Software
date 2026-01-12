@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.factory_launchpad import (
+from sensei.services.core.factory_launchpad import (
     # Enums
     MaturityLevel,
     MaturityTransitionStatus,

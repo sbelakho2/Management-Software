@@ -289,7 +289,7 @@ class CTQMeasurement(Base, TimestampMixin):
     
     __table_args__ = (
         Index("ix_ctq_measurements_ctq_date", ctq_id, measured_at.desc()),
-        Index("ix_ctq_measurements_result", ctq_id, result),
+        Index("ix_ctq_measurements_ctq_result", ctq_id, result),
         Index("ix_ctq_measurements_batch", batch_number),
     )
     

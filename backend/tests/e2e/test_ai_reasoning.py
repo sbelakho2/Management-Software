@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from uuid import uuid4
 
 import pytest
 
-from sensei.services.ai_reasoning import (
+from sensei.services.ai.ai_reasoning import (
     AIReasoningService,
     AnomalyEvent,
     AnomalyType,
@@ -17,6 +18,12 @@ from sensei.services.ai_reasoning import (
     SearchChunk,
     SearchResult,
 )
+
+
+pytestmark = pytest.mark.e2e
+
+if os.getenv("RUN_AI_E2E") != "1":
+    pytest.skip("Set RUN_AI_E2E=1 to run AI reasoning e2e tests", allow_module_level=True)
 
 
 @pytest.fixture

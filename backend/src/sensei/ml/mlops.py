@@ -12,7 +12,7 @@ Provides infrastructure for:
 
 import json
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
@@ -20,6 +20,10 @@ from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ModelStatus(str, Enum):
@@ -97,7 +101,7 @@ class ModelRegistry:
         logger.info(f"Registering model: {metadata.model_name} v{metadata.version}")
         
         # Create unique model ID
-        model_id = f"{metadata.model_name}_v{metadata.version}_{int(datetime.utcnow().timestamp())}"
+        model_id = f"{metadata.model_name}_v{metadata.version}_{int(_utcnow().timestamp())}"
         metadata.model_id = model_id
         
         # Copy model artifacts to registry
@@ -234,7 +238,7 @@ class ModelMonitor:
             features_hash = hash(str(input_features))
         
         log_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': _utcnow().isoformat(),
             'model_id': model_id,
             'prediction': str(prediction),
             'actual': str(actual) if actual else None,
@@ -243,7 +247,7 @@ class ModelMonitor:
         }
         
         # Append to daily log file
-        log_file = self.monitor_path / f"predictions_{datetime.utcnow().strftime('%Y%m%d')}.jsonl"
+        log_file = self.monitor_path / f"predictions_{_utcnow().strftime('%Y%m%d')}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(log_entry) + '\n')
     
@@ -256,7 +260,7 @@ class ModelMonitor:
         # Read logs from last N days
         predictions = []
         for i in range(days):
-            date = datetime.utcnow() - timedelta(days=i)
+            date = _utcnow() - timedelta(days=i)
             log_file = self.monitor_path / f"predictions_{date.strftime('%Y%m%d')}.jsonl"
             
             if log_file.exists():
@@ -289,7 +293,7 @@ class ModelMonitor:
         }
 
 
-class TrainingPipeline:
+class MLPipeline:
     """
     Automated training pipeline for ML models.
     
@@ -300,7 +304,12 @@ class TrainingPipeline:
     - Registration
     """
 
-    def __init__(self, registry: ModelRegistry):
+    def __init__(self, registry: Optional[ModelRegistry] = None):
+        if registry is None:
+            from pathlib import Path
+            from sensei.core.config import settings
+            default_path = getattr(settings, 'ML_REGISTRY_PATH', '/tmp/ml_registry')
+            registry = ModelRegistry(Path(default_path))
         self.registry = registry
     
     def run_training(
@@ -319,7 +328,7 @@ class TrainingPipeline:
         """
         logger.info(f"Starting training pipeline for {model_name} v{version}")
         
-        start_time = datetime.utcnow()
+        start_time = _utcnow()
         
         try:
             # Initialize model
@@ -340,7 +349,7 @@ class TrainingPipeline:
             model.save(model_path)
             
             # Create metadata
-            training_duration = (datetime.utcnow() - start_time).total_seconds()
+            training_duration = (_utcnow() - start_time).total_seconds()
             metadata = ModelMetadata(
                 model_id="",  # Will be assigned by registry
                 model_name=model_name,
@@ -421,7 +430,7 @@ class ABTestManager:
             'control_model_id': control_model_id,
             'treatment_model_id': treatment_model_id,
             'traffic_split': traffic_split,
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': _utcnow().isoformat(),
             'status': 'active',
         }
         
@@ -458,7 +467,7 @@ class ABTestManager:
         """Stop an A/B test."""
         if test_name in self.tests:
             self.tests[test_name]['status'] = 'stopped'
-            self.tests[test_name]['stopped_at'] = datetime.utcnow().isoformat()
+            self.tests[test_name]['stopped_at'] = _utcnow().isoformat()
             self._save_tests()
 
 
@@ -469,7 +478,7 @@ if __name__ == "__main__":
     # Initialize MLOps components
     registry = ModelRegistry(Path("ml_models/registry"))
     monitor = ModelMonitor(Path("ml_models/monitoring"))
-    pipeline = TrainingPipeline(registry)
+    pipeline = MLPipeline(registry)
     ab_test = ABTestManager(Path("ml_models/ab_tests"))
     
     print("MLOps infrastructure initialized")

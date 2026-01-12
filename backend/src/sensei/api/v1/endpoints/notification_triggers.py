@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from sensei.services.notification_triggers import (
+from sensei.services.core.notification_triggers import (
     NotificationTriggersService,
     NotificationTriggersJobRunner,
     TriggerType,

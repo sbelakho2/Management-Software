@@ -12,11 +12,11 @@ Tests world-class ML infrastructure capabilities:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 
-from sensei.services.enhanced_ml_pipeline import (
+from sensei.services.ai.enhanced_ml_pipeline import (
     # Enums
     ModelType,
     ModelStage,
@@ -107,7 +107,7 @@ class TestFeatureVector:
         vector = FeatureVector(
             entity_id="user_123",
             features={"age": 30, "income": 50000.0, "status": "active"},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         
         assert vector.entity_id == "user_123"
@@ -118,7 +118,7 @@ class TestFeatureVector:
         vector = FeatureVector(
             entity_id="e1",
             features={"f1": 1.0, "f2": 2.0, "f3": 3.0},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         
         arr = vector.to_array(["f1", "f2", "f3"])
@@ -131,7 +131,7 @@ class TestFeatureVector:
         vector = FeatureVector(
             entity_id="e1",
             features={"f1": 1.0, "f3": 3.0},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         
         arr = vector.to_array(["f1", "f2", "f3"], fill_value=0.0)
@@ -256,7 +256,7 @@ class TestModelVersion:
             version="1.0.0",
             stage=ModelStage.STAGING,
             status=ModelStatus.ACTIVE,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         
         assert version.version == "1.0.0"
@@ -273,7 +273,7 @@ class TestModelVersion:
             version="1.0.0",
             stage=ModelStage.PRODUCTION,
             status=ModelStatus.ACTIVE,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metrics=metrics,
         )
         
@@ -283,12 +283,12 @@ class TestModelVersion:
         """Test production check."""
         prod_version = ModelVersion(
             "v1", "model", ModelType.CLASSIFICATION, "1.0",
-            ModelStage.PRODUCTION, ModelStatus.ACTIVE, datetime.utcnow()
+            ModelStage.PRODUCTION, ModelStatus.ACTIVE, datetime.now(timezone.utc)
         )
         
         staging_version = ModelVersion(
             "v2", "model", ModelType.CLASSIFICATION, "2.0",
-            ModelStage.STAGING, ModelStatus.ACTIVE, datetime.utcnow()
+            ModelStage.STAGING, ModelStatus.ACTIVE, datetime.now(timezone.utc)
         )
         
         assert prod_version.is_production is True
@@ -349,7 +349,7 @@ class TestExperiment:
             name="Hyperparameter Tuning",
             status=ExperimentStatus.RUNNING,
             parameters={"learning_rate": 0.01, "epochs": 100},
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
         )
         
         assert experiment.experiment_id == "exp_001"
@@ -362,8 +362,8 @@ class TestExperiment:
             name="Model Comparison",
             status=ExperimentStatus.COMPLETED,
             parameters={"model": "xgboost"},
-            started_at=datetime.utcnow() - timedelta(hours=2),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            completed_at=datetime.now(timezone.utc),
             metrics={"accuracy": 0.94, "f1": 0.92},
         )
         
@@ -371,8 +371,8 @@ class TestExperiment:
     
     def test_experiment_duration(self):
         """Test experiment duration calculation."""
-        start = datetime.utcnow() - timedelta(hours=2)
-        end = datetime.utcnow()
+        start = datetime.now(timezone.utc) - timedelta(hours=2)
+        end = datetime.now(timezone.utc)
         
         experiment = Experiment(
             experiment_id="exp_003",
@@ -405,7 +405,7 @@ class TestABTest:
             control_model="model_v1",
             treatment_model="model_v2",
             traffic_split={"control": 0.5, "treatment": 0.5},
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
         )
         
         assert test.traffic_split["control"] == 0.5
@@ -418,7 +418,7 @@ class TestABTest:
             control_model="baseline",
             treatment_model="new_algo",
             traffic_split={"control": 0.5, "treatment": 0.5},
-            started_at=datetime.utcnow() - timedelta(days=7),
+            started_at=datetime.now(timezone.utc) - timedelta(days=7),
             control_metrics={"conversion": 0.05, "revenue": 100.0},
             treatment_metrics={"conversion": 0.07, "revenue": 140.0},
         )
@@ -433,7 +433,7 @@ class TestABTest:
             control_model="a",
             treatment_model="b",
             traffic_split={"control": 0.5, "treatment": 0.5},
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             control_metrics={"metric": 100},
             treatment_metrics={"metric": 110},
         )
@@ -475,8 +475,8 @@ class TestFeatureStore:
         store.register_feature_group(group)
         
         vectors = [
-            FeatureVector("e1", {"f1": 1.0}, datetime.utcnow()),
-            FeatureVector("e2", {"f1": 2.0}, datetime.utcnow()),
+            FeatureVector("e1", {"f1": 1.0}, datetime.now(timezone.utc)),
+            FeatureVector("e2", {"f1": 2.0}, datetime.now(timezone.utc)),
         ]
         
         store.ingest(group.name, vectors)
@@ -496,7 +496,7 @@ class TestFeatureStore:
         store.register_feature_group(group)
         
         # Ingest features at different times
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         vectors = [
             FeatureVector("s1", {"value": 100.0}, now - timedelta(hours=2)),
@@ -530,7 +530,7 @@ class TestFeatureStore:
         
         # Ingest features
         vectors = [
-            FeatureVector(f"e{i}", {"f1": float(i), "f2": float(i * 2)}, datetime.utcnow())
+            FeatureVector(f"e{i}", {"f1": float(i), "f2": float(i * 2)}, datetime.now(timezone.utc))
             for i in range(10)
         ]
         store.ingest(group.name, vectors)
@@ -840,7 +840,7 @@ class TestModelMonitor:
         log = PredictionLog(
             model_name="classifier",
             model_version="1.0",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             features={"f1": 1.0, "f2": 2.0},
             prediction=1,
             probability=0.85,
@@ -857,7 +857,7 @@ class TestModelMonitor:
         log = PredictionLog(
             model_name="classifier",
             model_version="1.0",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             features={"f1": 1.0},
             prediction=1,
             ground_truth=0,  # Wrong prediction
@@ -877,7 +877,7 @@ class TestModelMonitor:
             log = PredictionLog(
                 model_name="model",
                 model_version="1.0",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 features={"f": float(i)},
                 prediction=i % 2,
                 ground_truth=i % 2,
@@ -899,7 +899,7 @@ class TestModelMonitor:
             log = PredictionLog(
                 model_name="model",
                 model_version="1.0",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 features={"f": 50.0},
                 prediction=0,
                 latency_ms=50.0,
@@ -910,7 +910,7 @@ class TestModelMonitor:
         anomaly_log = PredictionLog(
             model_name="model",
             model_version="1.0",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             features={"f": 1000.0},  # Unusual feature value
             prediction=1,
             latency_ms=5000.0,  # High latency
@@ -977,7 +977,7 @@ class TestEnhancedMLPipelineService:
         
         # Ingest features
         vectors = [
-            FeatureVector(f"e{i}", {"f1": float(i), "f2": float(i*2)}, datetime.utcnow())
+            FeatureVector(f"e{i}", {"f1": float(i), "f2": float(i*2)}, datetime.now(timezone.utc))
             for i in range(50)
         ]
         service.feature_store.ingest("training_features", vectors)
@@ -1215,9 +1215,7 @@ class TestEnhancedMLPipelineEdgeCases:
         
         with pytest.raises(ValueError, match="not found|not deployed"):
             import asyncio
-            asyncio.get_event_loop().run_until_complete(
-                service.predict("nonexistent", X)
-            )
+            asyncio.run(service.predict("nonexistent", X))
     
     def test_drift_with_empty_data(self):
         """Test drift detection with empty data."""
@@ -1287,7 +1285,7 @@ class TestEnhancedMLPipelinePerformance:
             FeatureVector(
                 f"e{i}",
                 {f"f{j}": float(i + j) for j in range(10)},
-                datetime.utcnow(),
+                datetime.now(timezone.utc),
             )
             for i in range(1000)
         ]

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from uuid import uuid4
 
 from sensei.api.v1.endpoints.search import router, get_service, _service
-from sensei.services.search import (
+from sensei.services.core.search import (
     FullTextSearchService,
     SearchableEntityType,
     SearchableDocument,

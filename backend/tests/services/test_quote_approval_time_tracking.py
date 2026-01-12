@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.quote_approval_time_tracking import (
+from sensei.services.sales.quote_approval_time_tracking import (
     QuoteApprovalTimeTrackingService,
     ApprovalDecision,
     ApprovalReason,

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.sensei_command import (
+from sensei.services.ops.sensei_command import (
     # Enums
     KPIType,
     RiskLevel,

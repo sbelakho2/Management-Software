@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.andon_a3_escalation import (
+from sensei.services.ops.andon_a3_escalation import (
     AndonA3EscalationService,
     RecurrencePattern,
     RecurrenceThresholds,

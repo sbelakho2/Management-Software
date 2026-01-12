@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.tps_teacher import (
+from sensei.services.ops.tps_teacher import (
     # Enums
     PDCAPhase,
     PhaseGateStatus,

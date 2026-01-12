@@ -77,7 +77,9 @@ def mock_db():
     """Create a mock database session."""
     db = MagicMock()
     db.execute = AsyncMock()
+    db.flush = AsyncMock()
     db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     db.add = MagicMock()
     db.delete = AsyncMock()
@@ -671,6 +673,40 @@ class TestReleaseWorkOrder:
         
         assert response.success is True
         assert sample_work_order.status == WorkOrderStatus.RELEASED
+
+    @pytest.mark.asyncio
+    async def test_release_work_order_includes_jidoka_suggestions(self, mock_db, mock_user, sample_work_order):
+        sample_work_order.status = WorkOrderStatus.DRAFT
+        mock_db.execute = AsyncMock(return_value=MagicMock(
+            scalar_one_or_none=MagicMock(return_value=sample_work_order)
+        ))
+
+        with patch(
+            "sensei.api.v1.endpoints.work_orders.JidokaErrorProofingService.suggest_for_work_order_release",
+            new=AsyncMock(
+                return_value=[
+                    MagicMock(
+                        title="Add go/no-go or automated measurement checks",
+                        rationale="Recent non-conformances indicate spec/measurement escapes.",
+                        actions=["Add a go/no-go gauge"],
+                        related_non_conformance_ids=[101],
+                        confidence=0.5,
+                    )
+                ]
+            ),
+        ):
+            response = await release_work_order(
+                work_order_id=1,
+                data=WorkOrderRelease(),
+                db=mock_db,
+                current_user=mock_user,
+            )
+
+        assert response.success is True
+        assert response.data is not None
+        assert response.data.jidoka_suggestions is not None
+        assert len(response.data.jidoka_suggestions) == 1
+        assert response.data.jidoka_suggestions[0].related_non_conformance_ids == [101]
 
     @pytest.mark.asyncio
     async def test_release_work_order_not_draft(self, mock_db, mock_user, sample_work_order):

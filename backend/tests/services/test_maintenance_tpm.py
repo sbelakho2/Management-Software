@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sensei.services.maintenance_tpm import (
+from sensei.services.maintenance.maintenance_tpm import (
     # Enums
     AssetType,
     AssetStatus,

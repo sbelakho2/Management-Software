@@ -97,6 +97,10 @@ class ModelEvaluator:
             EvaluationResults
         """
         logger.info("Evaluating classifier...")
+
+        labels = np.unique(np.concatenate([np.asarray(y_true), np.asarray(y_pred)]))
+        if labels.size == 1 and bool(labels[0] in (0, 1) or labels.dtype == bool):
+            labels = np.array([0, 1])
         
         # Standard metrics
         accuracy = accuracy_score(y_true, y_pred)
@@ -113,10 +117,10 @@ class ModelEvaluator:
                 pass
         
         # Confusion matrix
-        cm = confusion_matrix(y_true, y_pred)
+        cm = confusion_matrix(y_true, y_pred, labels=labels)
         
         # Classification report
-        report = classification_report(y_true, y_pred)
+        report = classification_report(y_true, y_pred, labels=labels, zero_division=0)
         
         # Calibration
         calibration_score = None
@@ -236,8 +240,8 @@ class ModelEvaluator:
             demographic_parity = abs(positive_rate_0 - positive_rate_1)
             
             # Equalized odds (FPR and TPR difference)
-            cm_0 = confusion_matrix(y_true[mask_0], y_pred[mask_0])
-            cm_1 = confusion_matrix(y_true[mask_1], y_pred[mask_1])
+            cm_0 = confusion_matrix(y_true[mask_0], y_pred[mask_0], labels=[0, 1])
+            cm_1 = confusion_matrix(y_true[mask_1], y_pred[mask_1], labels=[0, 1])
             
             if cm_0.shape == (2, 2) and cm_1.shape == (2, 2):
                 fpr_0 = cm_0[0, 1] / (cm_0[0, 0] + cm_0[0, 1]) if (cm_0[0, 0] + cm_0[0, 1]) > 0 else 0

@@ -19,7 +19,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.sensei_nudges import (
+from sensei.services.ops.sensei_nudges import (
     FormContext,
     Nudge,
     NudgeCategory,

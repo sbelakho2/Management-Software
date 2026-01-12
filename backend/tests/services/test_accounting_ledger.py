@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from sensei.services.accounting_ledger import (
+from sensei.services.finance.accounting_ledger import (
     AccountingLedgerService,
     AccountType,
     JournalLine,

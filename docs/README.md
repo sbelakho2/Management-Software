@@ -8,6 +8,7 @@ Complete documentation for developers, administrators, and end users.
 
 - **[Getting Started](./development/getting-started.md)** - Set up your development environment
 - **[Architecture Overview](./architecture/README.md)** - System design and architecture
+- **[System Description](./architecture/SYSTEM_DESCRIPTION.md)** - Core modules and principles
 - **[API Reference](./api/README.md)** - Complete API documentation
 - **[Testing Guide](./testing/e2e-testing.md)** - Write and run tests
 
@@ -93,10 +94,12 @@ Comprehensive testing documentation.
 
 User and administrator guides.
 
-- User Guide - End-user documentation (coming soon)
-- Admin Guide - System administration (coming soon)
+- [User Guide](./guides/user-guide.md) - End-user documentation
+- [Admin Guide](./guides/admin-guide.md) - System administration
 - Authentication Guide - OAuth, SSO (coming soon)
-- Backup & Recovery - Data protection (coming soon)
+- [Database Maintenance](./maintenance/DATABASE.md) - Partitioning, backups
+- [ML Systems Maintenance](./maintenance/ML_SYSTEMS.md) - Pipeline, retraining
+- [Security Operations](./maintenance/SECURITY.md) - Secrets, SSO, 2FA
 - Monitoring Guide - Prometheus setup (coming soon)
 
 ## 🎯 By Role
@@ -130,9 +133,10 @@ User and administrator guides.
 ### System Administrator
 
 1. [Deployment Guide](./deployment/DEPLOYMENT.md) - Installation
-2. Admin Guide - Configuration (coming soon)
-3. Backup & Recovery - Data protection (coming soon)
-4. [Monitoring](./architecture/README.md#monitoring--observability) - System health
+2. [Admin Guide](./guides/admin-guide.md) - Configuration
+3. [Database Maintenance](./maintenance/DATABASE.md) - Data protection
+4. [Security Operations](./maintenance/SECURITY.md) - Access control
+5. [Monitoring](./architecture/README.md#monitoring--observability) - System health
 
 ## 📝 Documentation Standards
 

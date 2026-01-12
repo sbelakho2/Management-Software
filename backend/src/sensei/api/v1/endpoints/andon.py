@@ -10,7 +10,7 @@ Implements the Stop-Call-Wait workflow following TPS principles.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -51,7 +51,7 @@ router = APIRouter()
 
 def _now_utc() -> datetime:
     """Get current UTC datetime (naive) for consistency with model timestamps."""
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================

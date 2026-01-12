@@ -10,10 +10,10 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.pdf_generation import (
+from sensei.services.utils.pdf_generation import (
     PDFGenerationService,
     PDFDocumentType,
     PDFLanguage,
@@ -35,6 +35,10 @@ from sensei.services.pdf_generation import (
     get_pdf_generation_service,
     reset_pdf_generation_service,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class TestPDFDocumentType:
@@ -1041,7 +1045,7 @@ class TestPDFExpiration(TestPDFGenerationService):
         pdf = service.generate_quote_pdf(sample_quote_data, user_id)
         
         assert pdf.expires_at is not None
-        assert pdf.expires_at > datetime.utcnow()
+        assert pdf.expires_at > _utcnow()
     
     def test_get_expired_pdf_updates_status(self, service, sample_quote_data):
         """Test that getting an expired PDF updates its status."""
@@ -1049,7 +1053,7 @@ class TestPDFExpiration(TestPDFGenerationService):
         pdf = service.generate_quote_pdf(sample_quote_data, user_id)
         
         # Manually expire the PDF
-        pdf.expires_at = datetime.utcnow() - timedelta(days=1)
+        pdf.expires_at = _utcnow() - timedelta(days=1)
         
         retrieved = service.get_generated_pdf(pdf.id)
         
@@ -1061,7 +1065,7 @@ class TestPDFExpiration(TestPDFGenerationService):
         pdf = service.generate_quote_pdf(sample_quote_data, user_id)
         
         # Manually expire the PDF
-        pdf.expires_at = datetime.utcnow() - timedelta(days=1)
+        pdf.expires_at = _utcnow() - timedelta(days=1)
         
         pdfs = service.list_generated_pdfs()
         
@@ -1073,7 +1077,7 @@ class TestPDFExpiration(TestPDFGenerationService):
         pdf = service.generate_quote_pdf(sample_quote_data, user_id)
         
         # Manually expire the PDF
-        pdf.expires_at = datetime.utcnow() - timedelta(days=1)
+        pdf.expires_at = _utcnow() - timedelta(days=1)
         
         pdfs = service.list_generated_pdfs(include_expired=True)
         
@@ -1091,7 +1095,7 @@ class TestPDFExpiration(TestPDFGenerationService):
         pdf2 = service.generate_quote_pdf(sample_quote_data, user_id)
         
         # Expire one of them
-        pdf1.expires_at = datetime.utcnow() - timedelta(days=1)
+        pdf1.expires_at = _utcnow() - timedelta(days=1)
         
         # Cleanup
         removed_count = service.cleanup_expired_pdfs()

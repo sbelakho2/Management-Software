@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 
+from sensei.core.time import utcnow_naive
+
 from sensei.models.training import (
     Skill,
     SkillCategory,
@@ -295,9 +297,9 @@ class TestTrainingParticipantModel:
             attendance_status=AttendanceStatus.ATTENDED,
             score=Decimal("92.5"),
             passed=True,
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow_naive(),
             certificate_number="CERT-2024-0001",
-            certificate_issued_at=datetime.utcnow(),
+            certificate_issued_at=utcnow_naive(),
             notes="Excellent participation",
         )
 

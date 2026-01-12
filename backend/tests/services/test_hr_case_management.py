@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.hr_case_management import (
+from sensei.services.hr.hr_case_management import (
     ActionType,
     CasePriority,
     CaseStatus,
@@ -506,7 +506,7 @@ class TestRetention:
 
         # Manually set retention to past date for testing
         expired = svc._cases[case.id]
-        from sensei.services.hr_case_management import HRCase
+        from sensei.services.hr.hr_case_management import HRCase
 
         past_retention = HRCase(
             id=expired.id,

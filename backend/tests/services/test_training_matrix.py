@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.training_matrix import (
+from sensei.services.hr.training_matrix import (
     TrainingMatrixService,
     TrainingMatrixResult,
     GapAnalysisResult,

@@ -14,7 +14,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 import math
 
-from sensei.services.predictive_win_loss import (
+from sensei.services.sales.predictive_win_loss import (
     # Enums
     PredictionOutcome,
     FeatureCategory,

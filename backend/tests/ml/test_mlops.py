@@ -12,7 +12,7 @@ Tests the ML operations infrastructure including:
 import pytest
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 import tempfile
 
@@ -21,9 +21,13 @@ from sensei.ml.mlops import (
     ModelMetadata,
     ModelRegistry,
     ModelMonitor,
-    TrainingPipeline,
+    MLPipeline,
     ABTestManager,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================
@@ -45,7 +49,7 @@ def sample_model_metadata():
         model_name="lesson_recommender",
         version="1.0.0",
         status=ModelStatus.REGISTERED,
-        created_at=datetime.utcnow(),
+        created_at=_utcnow(),
         trained_by="test_pipeline",
         training_duration_seconds=120.5,
         training_samples=1000,
@@ -476,16 +480,16 @@ class TestABTestManager:
 
 
 # =============================================================================
-# Test: TrainingPipeline
+# Test: MLPipeline
 # =============================================================================
 
-class TestTrainingPipeline:
-    """Test TrainingPipeline for automated training."""
+class TestMLPipeline:
+    """Test MLPipeline for automated training."""
     
     def test_init_with_registry(self, temp_registry_path):
         """Test initializing pipeline with registry."""
         registry = ModelRegistry(temp_registry_path / "registry")
-        pipeline = TrainingPipeline(registry)
+        pipeline = MLPipeline(registry)
         
         assert pipeline.registry == registry
 
@@ -560,7 +564,7 @@ class TestMLOpsEdgeCases:
             model_name="minimal",
             version="0.0.1",
             status=ModelStatus.REGISTERED,
-            created_at=datetime.utcnow(),
+            created_at=_utcnow(),
             trained_by="test",
             training_duration_seconds=1.0,
             training_samples=1,

@@ -609,6 +609,61 @@ class TestA3Sections:
         assert response.message == "A3 section updated successfully"
 
     @pytest.mark.asyncio
+    async def test_update_section_reasoning_gate_warns_and_persists_metadata(
+        self,
+        mock_db: AsyncMock,
+        mock_user: MagicMock,
+    ):
+        a3_id = uuid4()
+        section_id = uuid4()
+        section = create_mock_section(
+            section_id=section_id,
+            a3_id=a3_id,
+            section_type=A3SectionType.ROOT_CAUSE.value,
+            structured_content={},
+        )
+        mock_db.execute.return_value = make_result(scalar_one_or_none=section)
+
+        data = SectionUpdate(content="Operator error caused the defect")
+
+        async def mock_refresh(obj, *args):
+            obj.content = data.content
+        mock_db.refresh = mock_refresh
+
+        response = await update_section(a3_id, section_id, data, mock_db, mock_user)
+
+        assert response.success is True
+        assert response.message == "A3 section updated successfully (with reasoning warnings)"
+        assert response.data.structured_content is not None
+        assert "_reasoning_gate" in response.data.structured_content
+        assert response.data.structured_content["_reasoning_gate"]["status"] == "warning"
+
+    @pytest.mark.asyncio
+    async def test_update_section_reasoning_gate_blocks_inventory_countermeasure(
+        self,
+        mock_db: AsyncMock,
+        mock_user: MagicMock,
+    ):
+        a3_id = uuid4()
+        section_id = uuid4()
+        section = create_mock_section(
+            section_id=section_id,
+            a3_id=a3_id,
+            section_type=A3SectionType.COUNTERMEASURES.value,
+            structured_content={},
+        )
+        mock_db.execute.return_value = make_result(scalar_one_or_none=section)
+
+        data = SectionUpdate(content="Add buffer stock and increase inventory")
+
+        with pytest.raises(ConflictError) as exc:
+            await update_section(a3_id, section_id, data, mock_db, mock_user)
+
+        assert "TPS reasoning gates" in str(exc.value)
+        assert exc.value.details is not None
+        assert exc.value.details.get("status") == "block"
+
+    @pytest.mark.asyncio
     async def test_complete_section(self, mock_db: AsyncMock, mock_user: MagicMock):
         """Test completing a section."""
         a3_id = uuid4()

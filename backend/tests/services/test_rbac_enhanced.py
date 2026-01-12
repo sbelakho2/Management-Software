@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from sensei.services.rbac_enhanced import (
+from sensei.services.core.rbac_enhanced import (
     EnhancedRBACService,
     Module,
     Permission,

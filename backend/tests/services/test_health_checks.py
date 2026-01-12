@@ -6,12 +6,12 @@ and auto-scaling recommendations.
 """
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from sensei.services.health_checks import (
+from sensei.services.core.health_checks import (
     DependencyHealth,
     DependencyType,
     HealthCheckService,
@@ -19,6 +19,10 @@ from sensei.services.health_checks import (
     ResourceMetrics,
     ScalingRecommendation,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @pytest.fixture
@@ -123,7 +127,7 @@ class TestHealthCheckService:
             dependency_type=DependencyType.DATABASE,
             status=HealthStatus.UNHEALTHY,
             latency_ms=1000.0,
-            last_check=datetime.utcnow(),
+            last_check=_utcnow(),
             error_message="Connection failed"
         )
         
@@ -141,7 +145,7 @@ class TestHealthCheckService:
     def test_is_started_timeout(self, service):
         """Test startup probe timeout"""
         # Simulate startup taking too long
-        service.startup_time = datetime.utcnow() - timedelta(seconds=65)
+        service.startup_time = _utcnow() - timedelta(seconds=65)
         
         # Should auto-complete after timeout
         assert service.is_started() is True
@@ -258,7 +262,7 @@ class TestHealthCheckService:
         for health in results:
             assert health.status == HealthStatus.HEALTHY
     
-    @patch('sensei.services.health_checks.psutil')
+    @patch('sensei.services.core.health_checks.psutil')
     def test_get_resource_metrics(self, mock_psutil, service):
         """Test getting resource metrics"""
         # Mock psutil responses
@@ -298,7 +302,7 @@ class TestHealthCheckService:
             disk_used_gb=25.0,
             disk_available_gb=25.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendation = service.get_scaling_recommendation(metrics)
@@ -318,7 +322,7 @@ class TestHealthCheckService:
             disk_used_gb=25.0,
             disk_available_gb=25.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+              timestamp=_utcnow()
         )
         
         recommendation = service.get_scaling_recommendation(metrics)
@@ -339,7 +343,7 @@ class TestHealthCheckService:
             disk_used_gb=25.0,
             disk_available_gb=25.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+              timestamp=_utcnow()
         )
         
         recommendation = service.get_scaling_recommendation(metrics)
@@ -359,7 +363,7 @@ class TestHealthCheckService:
             disk_used_gb=25.0,
             disk_available_gb=25.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+              timestamp=_utcnow()
         )
         
         recommendation = service.get_scaling_recommendation(metrics)
@@ -381,7 +385,7 @@ class TestHealthCheckService:
             disk_used_gb=25.0,
             disk_available_gb=25.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendation = service.get_scaling_recommendation(metrics)
@@ -403,7 +407,7 @@ class TestHealthCheckService:
                 disk_used_gb=30.0,
                 disk_available_gb=20.0,
                 network_connections=15,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             )
             
             summary = full_service.get_health_summary()
@@ -444,7 +448,7 @@ class TestHealthCheckService:
                 disk_used_gb=30.0,
                 disk_available_gb=20.0,
                 network_connections=15,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             )
             
             summary = full_service.get_health_summary()
@@ -470,7 +474,7 @@ class TestResourceMetrics:
             disk_used_gb=50.0,
             disk_available_gb=20.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         assert metrics.cpu_percent == 45.5
@@ -493,7 +497,7 @@ class TestScalingRecommendation:
             disk_used_gb=50.0,
             disk_available_gb=20.0,
             network_connections=10,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendation = ScalingRecommendation(
@@ -521,7 +525,7 @@ class TestDependencyHealth:
             dependency_type=DependencyType.DATABASE,
             status=HealthStatus.HEALTHY,
             latency_ms=25.5,
-            last_check=datetime.utcnow(),
+                last_check=_utcnow(),
             error_message=None,
             metadata={"connections": 10}
         )

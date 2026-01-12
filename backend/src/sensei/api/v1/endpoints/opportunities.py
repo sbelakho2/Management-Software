@@ -8,6 +8,7 @@ Provides full CRUD and workflow operations for Sales Opportunities:
 - RFQ and Quote linking
 """
 
+import inspect
 from datetime import datetime, date, timezone
 from decimal import Decimal
 from typing import Optional
@@ -502,7 +503,9 @@ async def create_opportunity(
     # Calculate weighted amount
     opp.calculate_weighted_amount()
     
-    db.add(opp)
+    maybe_awaitable = db.add(opp)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.commit()
     await db.refresh(opp)
     
@@ -674,7 +677,9 @@ async def change_opportunity_stage(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        db.add(note)
+        maybe_awaitable = db.add(note)
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
     
     await db.commit()
     await db.refresh(opp)
@@ -725,7 +730,9 @@ async def close_opportunity_won(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        db.add(note)
+        maybe_awaitable = db.add(note)
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
     
     await db.commit()
     await db.refresh(opp)
@@ -783,7 +790,9 @@ async def close_opportunity_lost(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    db.add(note)
+    maybe_awaitable = db.add(note)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     
     await db.commit()
     await db.refresh(opp)
@@ -842,7 +851,9 @@ async def reopen_opportunity(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    db.add(note)
+    maybe_awaitable = db.add(note)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     
     await db.commit()
     await db.refresh(opp)
@@ -928,7 +939,9 @@ async def add_opportunity_note(
         created_by_id=current_user.id,
     )
     
-    db.add(note)
+    maybe_awaitable = db.add(note)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.commit()
     await db.refresh(note)
     

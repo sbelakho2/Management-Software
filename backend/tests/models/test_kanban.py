@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 
+from sensei.core.time import utcnow_naive
+
 from sensei.models.kanban import (
     KanbanBoard,
     BoardType,
@@ -270,7 +272,7 @@ class TestKanbanCardModel:
             board_id=1,
             column_name="Done",
             status=CardStatus.COMPLETED,
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow_naive(),
         )
 
         active = KanbanCard(
@@ -319,7 +321,7 @@ class TestKanbanCardModel:
 
     def test_card_lead_time_days(self):
         """Test lead_time_days property."""
-        now = datetime.utcnow()
+        now = utcnow_naive()
         card = KanbanCard(
             card_number="CARD-LEAD",
             title="Lead time",
@@ -346,7 +348,7 @@ class TestKanbanCardModel:
 
     def test_card_cycle_time_days(self):
         """Test cycle_time_days property."""
-        now = datetime.utcnow()
+        now = utcnow_naive()
         card = KanbanCard(
             card_number="CARD-CYCLE",
             title="Cycle time",
@@ -362,7 +364,7 @@ class TestKanbanCardModel:
 
     def test_card_age_days(self):
         """Test age_days property."""
-        now = datetime.utcnow()
+        now = utcnow_naive()
         card = KanbanCard(
             card_number="CARD-AGE",
             title="Age test",

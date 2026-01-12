@@ -9,10 +9,14 @@ Handles automated workflows for incomplete RFQs:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from enum import Enum
 from typing import Optional, Any
 from uuid import UUID, uuid4
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class MissingFieldCategory(str, Enum):
@@ -98,7 +102,7 @@ class IdentifiedMissingField:
     help_text: Optional[str]
     is_blocking: bool
     requires_attachment: bool
-    identified_at: datetime = field(default_factory=datetime.utcnow)
+    identified_at: datetime = field(default_factory=_utcnow)
     resolved_at: Optional[datetime] = None
     resolved_value: Optional[str] = None
     resolved_by: Optional[UUID] = None
@@ -143,7 +147,7 @@ class GeneratedTask:
     due_date: date
     priority: MissingFieldPriority
     status: TaskStatus
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
     completed_at: Optional[datetime] = None
     completed_by: Optional[UUID] = None
     notes: Optional[str] = None
@@ -162,8 +166,8 @@ class EmailTemplate:
     language: str = "en"
     is_default: bool = False
     is_active: bool = True
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass
@@ -216,7 +220,7 @@ class AnalysisResult:
     by_category: dict[str, list[IdentifiedMissingField]]
     by_priority: dict[str, list[IdentifiedMissingField]]
     can_transition: bool
-    analyzed_at: datetime = field(default_factory=datetime.utcnow)
+    analyzed_at: datetime = field(default_factory=_utcnow)
 
 
 @dataclass
@@ -842,17 +846,17 @@ Cordialement,
         )
         
         # Calculate expiry
-        expires_at = datetime.utcnow() + timedelta(days=self.config.request_expiry_days)
+        expires_at = _utcnow() + timedelta(days=self.config.request_expiry_days)
         
         # Calculate first reminder
         next_reminder_at = None
         if self.config.auto_send_reminders:
             if self.config.default_reminder_frequency == ReminderFrequency.DAILY:
-                next_reminder_at = datetime.utcnow() + timedelta(days=1)
+                next_reminder_at = _utcnow() + timedelta(days=1)
             elif self.config.default_reminder_frequency == ReminderFrequency.EVERY_OTHER_DAY:
-                next_reminder_at = datetime.utcnow() + timedelta(days=2)
+                next_reminder_at = _utcnow() + timedelta(days=2)
             elif self.config.default_reminder_frequency == ReminderFrequency.WEEKLY:
-                next_reminder_at = datetime.utcnow() + timedelta(days=7)
+                next_reminder_at = _utcnow() + timedelta(days=7)
         
         request = InfoRequest(
             id=uuid4(),
@@ -865,7 +869,7 @@ Cordialement,
             missing_fields=missing_fields,
             status=InfoRequestStatus.DRAFT,
             created_by=created_by,
-            created_at=datetime.utcnow(),
+            created_at=_utcnow(),
             expires_at=expires_at,
             reminder_frequency=self.config.default_reminder_frequency,
             next_reminder_at=next_reminder_at,
@@ -907,7 +911,7 @@ Cordialement,
             return None
         
         request.status = InfoRequestStatus.SENT
-        request.sent_at = datetime.utcnow()
+        request.sent_at = _utcnow()
         return request
     
     def mark_request_acknowledged(self, request_id: UUID) -> Optional[InfoRequest]:
@@ -917,7 +921,7 @@ Cordialement,
             return None
         
         request.status = InfoRequestStatus.ACKNOWLEDGED
-        request.acknowledged_at = datetime.utcnow()
+        request.acknowledged_at = _utcnow()
         return request
     
     def mark_request_completed(
@@ -931,13 +935,13 @@ Cordialement,
             return None
         
         request.status = InfoRequestStatus.COMPLETED
-        request.completed_at = datetime.utcnow()
+        request.completed_at = _utcnow()
         
         # Update resolved fields
         if resolved_fields:
             for mf in request.missing_fields:
                 if mf.id in resolved_fields:
-                    mf.resolved_at = datetime.utcnow()
+                    mf.resolved_at = _utcnow()
                     mf.resolved_value = resolved_fields[mf.id]
         
         return request
@@ -964,17 +968,17 @@ Cordialement,
         else:
             # Schedule next reminder
             if request.reminder_frequency == ReminderFrequency.DAILY:
-                request.next_reminder_at = datetime.utcnow() + timedelta(days=1)
+                request.next_reminder_at = _utcnow() + timedelta(days=1)
             elif request.reminder_frequency == ReminderFrequency.EVERY_OTHER_DAY:
-                request.next_reminder_at = datetime.utcnow() + timedelta(days=2)
+                request.next_reminder_at = _utcnow() + timedelta(days=2)
             elif request.reminder_frequency == ReminderFrequency.WEEKLY:
-                request.next_reminder_at = datetime.utcnow() + timedelta(days=7)
+                request.next_reminder_at = _utcnow() + timedelta(days=7)
         
         return request
     
     def get_requests_needing_reminders(self) -> list[InfoRequest]:
         """Get all requests that need reminders sent."""
-        now = datetime.utcnow()
+        now = _utcnow()
         return [
             r for r in self._info_requests.values()
             if r.status == InfoRequestStatus.SENT
@@ -985,7 +989,7 @@ Cordialement,
     
     def get_expired_requests(self) -> list[InfoRequest]:
         """Get all expired requests."""
-        now = datetime.utcnow()
+        now = _utcnow()
         return [
             r for r in self._info_requests.values()
             if r.status in (InfoRequestStatus.SENT, InfoRequestStatus.ACKNOWLEDGED)
@@ -1078,7 +1082,7 @@ Cordialement,
             return None
         
         task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.utcnow()
+        task.completed_at = _utcnow()
         task.completed_by = completed_by
         if notes:
             task.notes = notes

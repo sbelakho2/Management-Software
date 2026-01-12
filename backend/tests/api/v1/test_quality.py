@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -72,6 +72,7 @@ from sensei.models.quality import (
     RootCauseCategory,
     VerificationStatus,
 )
+from sensei.models.training import CertificationStatus, SkillRequirement, UserSkill
 
 
 _UNSET = object()
@@ -104,7 +105,9 @@ def make_db():
     db = MagicMock()
     db.execute = AsyncMock()
     db.add = MagicMock()
+    db.flush = AsyncMock()
     db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     db.delete = AsyncMock()
     return db
@@ -145,15 +148,15 @@ async def test_non_conformance_crud_and_list_filters():
         title="Bad part",
         description="Found defect",
         detected_by_id=current_user.id,
-        detected_at=datetime.utcnow(),
+        detected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         containment_verified=False,
         cost_impact=Decimal("0"),
         scrap_cost=Decimal("0"),
         rework_cost=Decimal("0"),
         rework_hours=Decimal("0"),
         customer_notified=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     def capture_add(obj: Any):
@@ -212,15 +215,15 @@ async def test_non_conformance_crud_and_list_filters():
         title="Bad part",
         description="Found defect",
         detected_by_id=current_user.id,
-        detected_at=datetime.utcnow(),
+        detected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         containment_verified=False,
         cost_impact=Decimal("0"),
         scrap_cost=Decimal("0"),
         rework_cost=Decimal("0"),
         rework_hours=Decimal("0"),
         customer_notified=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
         deleted_at=None,
     )
     db.execute.return_value = make_result(scalar_one_or_none=nc)
@@ -246,7 +249,7 @@ async def test_non_conformance_crud_and_list_filters():
     assert resp.success is True
 
     # Restore
-    nc.deleted_at = datetime.utcnow()
+    nc.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.execute.return_value = make_result(scalar_one_or_none=nc)
     resp = await restore_non_conformance(123, db, current_user)
     assert resp.data.id == 123
@@ -313,12 +316,12 @@ async def test_capa_crud_actions_and_lists():
         description="Need action",
         status=CAPAStatus.OPEN,
         owner_id=owner_id,
-        opened_at=datetime.utcnow(),
+        opened_at=datetime.now(timezone.utc).replace(tzinfo=None),
         due_date=date.today() + timedelta(days=14),
         verification_status=VerificationStatus.PENDING,
         effectiveness_status=EffectivenessStatus.PENDING,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     def capture_add(obj: Any):
@@ -378,8 +381,8 @@ async def test_capa_crud_actions_and_lists():
         due_date=date.today() + timedelta(days=7),
         status=CAPAActionStatus.OPEN,
         verified=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.execute.side_effect = [
         make_result(scalar_one_or_none=10),
@@ -395,8 +398,8 @@ async def test_capa_crud_actions_and_lists():
 
     def capture_add_action(obj: Any):
         obj.id = 6
-        obj.created_at = datetime.utcnow()
-        obj.updated_at = datetime.utcnow()
+        obj.created_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        obj.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         obj.status = CAPAActionStatus.OPEN
         obj.verified = False
 
@@ -469,7 +472,7 @@ async def test_capa_crud_actions_and_lists():
     resp = await delete_capa(10, db, current_user)
     assert resp.success is True
 
-    capa.deleted_at = datetime.utcnow()
+    capa.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     capa.actions = []
     db.execute.return_value = make_result(scalar_one_or_none=capa)
     resp = await restore_capa(10, db, current_user)
@@ -505,8 +508,8 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
         checkpoints_json=[{"name": "c1", "critical": True}],
         is_active=True,
         revision=1,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     def capture_add_plan(obj: Any):
@@ -555,7 +558,7 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
     resp = await delete_inspection_plan(77, db, current_user)
     assert resp.success is True
 
-    plan.deleted_at = datetime.utcnow()
+    plan.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.execute.return_value = make_result(scalar_one_or_none=plan)
     resp = await restore_inspection_plan(77, db, current_user)
     assert resp.data.id == 77
@@ -601,12 +604,12 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
         inspection_plan_id=77,
         sample_size=5,
         inspected_by_id=current_user.id,
-        inspected_at=datetime.utcnow(),
+        inspected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         overall_result=InspectionResult.PASS,
         measurements_json=[],
         defects_found=0,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
     def capture_add_record(obj: Any):
@@ -664,3 +667,63 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
     db.execute.return_value = make_result(scalar_one_or_none=record)
     resp = await delete_inspection_record(501, db, current_user)
     assert resp.success is True
+
+
+@pytest.mark.asyncio
+async def test_inspection_record_requires_certified_skills_when_plan_scoped() -> None:
+    db = make_db()
+    current_user = type("User", (), {"id": uuid4()})()
+
+    # Plan is scoped to a station, so mandatory skill requirements apply.
+    plan = InspectionPlan(
+        id=77,
+        name="Plan",
+        code="IP-001",
+        station_id=10,
+        inspection_type=InspectionType.IN_PROCESS,
+        checkpoints_json=[],
+        is_active=True,
+        revision=1,
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+
+    # One mandatory required skill.
+    req = SkillRequirement(
+        id=1,
+        skill_id=123,
+        station_id=10,
+        product_id=None,
+        minimum_proficiency_level=2,
+        is_mandatory=True,
+    )
+
+    # User has the skill but is NOT certified.
+    user_skill = UserSkill(
+        id=1,
+        user_id=current_user.id,
+        skill_id=123,
+        proficiency_level=3,
+        certification_status=CertificationStatus.NOT_CERTIFIED,
+    )
+
+    db.execute.side_effect = [
+        make_result(scalar_one_or_none=plan),
+        make_result(scalars_all=[req]),
+        make_result(scalars_all=[user_skill]),
+    ]
+
+    with pytest.raises(ConflictError) as exc:
+        await create_inspection_record(
+            InspectionRecordCreate(
+                inspection_plan_id=77,
+                sample_size=5,
+                overall_result=InspectionResult.PASS,
+                measurements_json=[],
+            ),
+            db,
+            current_user,
+        )
+
+    assert "not certified" in str(exc.value).lower()
+    db.add.assert_not_called()

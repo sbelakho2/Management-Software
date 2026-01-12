@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from sensei.services.data_quality import (
+from sensei.services.core.data_quality import (
     DataQualityService,
     Severity,
     ValidationError,

@@ -10,12 +10,13 @@ import hashlib
 import json
 import tempfile
 from datetime import datetime, timedelta
+from datetime import timezone
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
-from sensei.services.database_backup import (
+from sensei.services.core.database_backup import (
     BackupMetadata,
     BackupSchedule,
     BackupStatus,
@@ -138,7 +139,7 @@ class TestDatabaseBackupService:
         assert output_file.exists()
         assert output_file.read_text() == original_content
     
-    @patch('sensei.services.database_backup.subprocess.run')
+    @patch('sensei.services.core.database_backup.subprocess.run')
     def test_create_backup_success(self, mock_subprocess, service, temp_backup_dir):
         """Test successful backup creation"""
         # Mock successful pg_dump that creates the backup file
@@ -165,7 +166,7 @@ class TestDatabaseBackupService:
         assert metadata.checksum != ""
         assert len(service.backups) == 1
     
-    @patch('sensei.services.database_backup.subprocess.run')
+    @patch('sensei.services.core.database_backup.subprocess.run')
     def test_create_backup_pg_dump_failure(self, mock_subprocess, service):
         """Test backup creation when pg_dump fails"""
         # Mock failed pg_dump
@@ -189,7 +190,7 @@ class TestDatabaseBackupService:
         metadata = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -207,7 +208,7 @@ class TestDatabaseBackupService:
         metadata = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -228,7 +229,7 @@ class TestDatabaseBackupService:
         metadata = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -247,7 +248,7 @@ class TestDatabaseBackupService:
         old_backup = BackupMetadata(
             backup_id="old123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow() - timedelta(days=40),
+            timestamp=datetime.now(timezone.utc) - timedelta(days=40),
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -260,7 +261,7 @@ class TestDatabaseBackupService:
         recent_backup = BackupMetadata(
             backup_id="recent123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow() - timedelta(days=10),
+            timestamp=datetime.now(timezone.utc) - timedelta(days=10),
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -298,7 +299,7 @@ class TestDatabaseBackupService:
         backup = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow() - timedelta(hours=12),  # 12 hours ago
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=12),  # 12 hours ago
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -321,7 +322,7 @@ class TestDatabaseBackupService:
         backup = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow() - timedelta(hours=50),  # 50 hours ago
+            timestamp=datetime.now(timezone.utc) - timedelta(hours=50),  # 50 hours ago
             database_name="testdb",
             size_bytes=1000,
             compressed_size_bytes=500,
@@ -352,8 +353,8 @@ class TestDatabaseBackupService:
         restore_test = RestoreTest(
             test_id="test123",
             backup_id="backup123",
-            start_time=datetime.utcnow() - timedelta(minutes=20),
-            end_time=datetime.utcnow() - timedelta(minutes=5),
+            start_time=datetime.now(timezone.utc) - timedelta(minutes=20),
+            end_time=datetime.now(timezone.utc) - timedelta(minutes=5),
             status=RestoreStatus.SUCCESS,
             rto_seconds=900,  # 15 minutes
             verification_passed=True
@@ -372,8 +373,8 @@ class TestDatabaseBackupService:
         restore_test = RestoreTest(
             test_id="test123",
             backup_id="backup123",
-            start_time=datetime.utcnow() - timedelta(minutes=50),
-            end_time=datetime.utcnow() - timedelta(minutes=5),
+            start_time=datetime.now(timezone.utc) - timedelta(minutes=50),
+            end_time=datetime.now(timezone.utc) - timedelta(minutes=5),
             status=RestoreStatus.SUCCESS,
             rto_seconds=2700,  # 45 minutes (exceeds 30 minute target)
             verification_passed=True
@@ -393,7 +394,7 @@ class TestDatabaseBackupService:
         backup1 = BackupMetadata(
             backup_id="b1",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1024 * 1024 * 10,  # 10MB
             compressed_size_bytes=1024 * 1024 * 5,  # 5MB
@@ -406,7 +407,7 @@ class TestDatabaseBackupService:
         backup2 = BackupMetadata(
             backup_id="b2",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1024 * 1024 * 8,  # 8MB
             compressed_size_bytes=1024 * 1024 * 4,  # 4MB
@@ -438,7 +439,7 @@ class TestBackupMetadata:
         metadata = BackupMetadata(
             backup_id="test123",
             strategy=BackupStrategy.FULL,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             database_name="testdb",
             size_bytes=1024 * 1024,
             compressed_size_bytes=512 * 1024,
@@ -459,7 +460,7 @@ class TestRestoreTest:
     
     def test_restore_test_creation(self):
         """Test creating restore test"""
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         end = start + timedelta(minutes=15)
         
         test = RestoreTest(
@@ -491,8 +492,8 @@ class TestBackupSchedule:
             frequency="daily",
             retention_days=30,
             enabled=True,
-            last_run=datetime.utcnow() - timedelta(days=1),
-            next_run=datetime.utcnow() + timedelta(days=1)
+            last_run=datetime.now(timezone.utc) - timedelta(days=1),
+            next_run=datetime.now(timezone.utc) + timedelta(days=1)
         )
         
         assert schedule.name == "Daily Full Backup"

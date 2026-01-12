@@ -141,7 +141,7 @@ class UnprocessableEntityError(SenseiException):
     ):
         super().__init__(
             message=message,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             error_code="UNPROCESSABLE_ENTITY",
             details=details,
         )
@@ -191,7 +191,7 @@ class BusinessRuleViolationError(SenseiException):
     ):
         super().__init__(
             message=message,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             error_code=f"BUSINESS_RULE_VIOLATION:{rule}",
             details=details,
         )
@@ -214,7 +214,7 @@ class StateTransitionError(SenseiException):
         
         super().__init__(
             message=message,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             error_code="INVALID_STATE_TRANSITION",
             details={
                 "from_state": from_state,
@@ -368,7 +368,7 @@ async def validation_exception_handler(
     )
     
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=ValidationErrorResponse(
             message="Validation error",
             errors=errors,
@@ -401,7 +401,7 @@ async def pydantic_validation_handler(
     )
     
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content=ValidationErrorResponse(
             message="Validation error",
             errors=errors,

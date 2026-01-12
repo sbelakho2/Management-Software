@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.services.disaster_recovery_drill import reset_dr_drill_service
+from sensei.services.core.disaster_recovery_drill import reset_dr_drill_service
 
 
 @pytest.fixture

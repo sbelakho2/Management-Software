@@ -1,6 +1,6 @@
 """Tests for Standard Work API endpoints."""
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -94,7 +94,7 @@ def current_user():
 @pytest.mark.asyncio
 async def test_standard_work_crud(db, current_user):
     """Test standard work CRUD operations."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
     
     # Create a standard work object for captures
@@ -249,7 +249,7 @@ async def test_standard_work_crud(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_list(db, current_user):
     """Test list standard works with filters."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
     
     mock_sw1 = MagicMock(spec=StandardWork)
@@ -388,7 +388,7 @@ async def test_standard_work_list(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_workflow(db, current_user):
     """Test standard work document workflow operations."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     
     # Create a mock document in draft status
     mock_sw = MagicMock(spec=StandardWork)
@@ -611,7 +611,7 @@ async def test_standard_work_workflow(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_content(db, current_user):
     """Test content update operations."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     
     mock_sw = MagicMock(spec=StandardWork)
     mock_sw.id = 1
@@ -700,7 +700,7 @@ async def test_standard_work_content(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_versions(db, current_user):
     """Test version history endpoints."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     user_id = uuid4()
     
     mock_sw = MagicMock(spec=StandardWork)
@@ -765,7 +765,7 @@ async def test_standard_work_versions(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_queries(db, current_user):
     """Test query endpoints (by document number, station, product, etc.)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
     
     mock_sw = MagicMock(spec=StandardWork)
@@ -896,7 +896,7 @@ async def test_standard_work_queries(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_edge_cases(db, current_user):
     """Test edge cases and error conditions."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     
     # Test submit not found
     db.execute.return_value = make_result(scalar_one_or_none=None)
@@ -927,7 +927,7 @@ async def test_standard_work_edge_cases(db, current_user):
 @pytest.mark.asyncio
 async def test_standard_work_document_types(db, current_user):
     """Test all document types can be created."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     
     for doc_type in StandardWorkType:
         sw = None

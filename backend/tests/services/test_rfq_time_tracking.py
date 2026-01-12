@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.rfq_time_tracking import (
+from sensei.services.sales.rfq_time_tracking import (
     RFQTimeTrackingService,
     TaskType,
     TaskSessionStatus,
@@ -635,7 +635,7 @@ class TestRFQTimeTrackingServiceMonitoring:
     def test_acknowledge_alert(self, service, sample_rfq_id, sample_user_id):
         """Test acknowledging an alert."""
         # Create an alert manually for testing
-        from sensei.services.rfq_time_tracking import TimeAlert
+        from sensei.services.sales.rfq_time_tracking import TimeAlert
         
         alert = TimeAlert(
             id=uuid4(),
@@ -666,7 +666,7 @@ class TestRFQTimeTrackingServiceMonitoring:
         )
         
         # Add test alert
-        from sensei.services.rfq_time_tracking import TimeAlert
+        from sensei.services.sales.rfq_time_tracking import TimeAlert
         
         alert = TimeAlert(
             id=uuid4(),
@@ -694,7 +694,7 @@ class TestRFQTimeTrackingServiceMonitoring:
             user_id=sample_user_id,
         )
         
-        from sensei.services.rfq_time_tracking import TimeAlert
+        from sensei.services.sales.rfq_time_tracking import TimeAlert
         
         alert = TimeAlert(
             id=uuid4(),

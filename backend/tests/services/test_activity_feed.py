@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.activity_feed import (
+from sensei.services.core.activity_feed import (
     Activity,
     ActivityFeedService,
     ActivityPriority,

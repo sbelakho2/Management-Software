@@ -1,6 +1,6 @@
 """Comprehensive tests for Andon API endpoints."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -99,7 +99,7 @@ async def test_andon_event_crud_and_workflow():
     """Test Andon event CRUD operations and workflow transitions."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Create an Andon event
     event = AndonEvent(
@@ -295,7 +295,7 @@ async def test_andon_escalation_workflow():
     db = make_db()
     current_user = make_user()
     escalated_user_id = uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     event = AndonEvent(
         id=1,
@@ -420,7 +420,7 @@ async def test_andon_recurrence_patterns():
     """Test Andon recurrence pattern CRUD and tracking."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     pattern = AndonRecurrencePattern(
         id=1,
@@ -544,7 +544,7 @@ async def test_andon_list_filters_comprehensive():
     """Test all list filter combinations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     event = AndonEvent(
         id=1,
@@ -617,7 +617,7 @@ async def test_andon_event_computed_properties():
     """Test computed properties on AndonEvent response."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     reported = now - timedelta(minutes=30)
 
     event = AndonEvent(
@@ -657,8 +657,8 @@ async def test_andon_escalation_response_time():
     """Test escalation response time calculation."""
     db = make_db()
     current_user = make_user()
-    escalated_at = datetime.utcnow() - timedelta(minutes=20)
-    responded_at = datetime.utcnow() - timedelta(minutes=5)
+    escalated_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=20)
+    responded_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=5)
 
     escalation = AndonEscalation(
         id=1,

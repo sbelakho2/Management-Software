@@ -13,7 +13,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 import math
 
-from sensei.services.predictive_utility_forecasting import (
+from sensei.services.supply_chain.predictive_utility_forecasting import (
     # Enums
     ResourceType,
     ForecastHorizon,

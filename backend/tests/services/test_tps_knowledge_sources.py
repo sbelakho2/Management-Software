@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from urllib.parse import urlparse
 
-from sensei.services.tps_knowledge_sources import (
+from sensei.services.ops.tps_knowledge_sources import (
     COMPREHENSIVE_TPS_SOURCES,
     KnowledgeSource,
     LicenseType,

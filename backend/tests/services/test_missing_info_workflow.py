@@ -3,7 +3,7 @@ Tests for Missing Info Workflow Service.
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from uuid import uuid4
 
 from sensei.services.missing_info_workflow import (
@@ -24,6 +24,10 @@ from sensei.services.missing_info_workflow import (
     get_missing_info_workflow_service,
     reset_missing_info_workflow_service,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ============================================================================
@@ -968,7 +972,7 @@ class TestReminders:
         
         # Mark as sent and set past reminder time
         service.mark_request_sent(request.id)
-        request.next_reminder_at = datetime.utcnow() - timedelta(hours=1)
+        request.next_reminder_at = _utcnow() - timedelta(hours=1)
         
         needing_reminders = service.get_requests_needing_reminders()
         
@@ -996,7 +1000,7 @@ class TestExpiration:
         
         # Mark as sent and set past expiry
         service.mark_request_sent(request.id)
-        request.expires_at = datetime.utcnow() - timedelta(days=1)
+        request.expires_at = _utcnow() - timedelta(days=1)
         
         expired = service.get_expired_requests()
         
@@ -1015,7 +1019,7 @@ class TestExpiration:
         
         # Mark as sent and set past expiry
         service.mark_request_sent(request.id)
-        request.expires_at = datetime.utcnow() - timedelta(days=1)
+        request.expires_at = _utcnow() - timedelta(days=1)
         
         count = service.expire_requests()
         
@@ -1358,7 +1362,7 @@ class TestEdgeCases:
         
         # Next reminder should be ~1 day from now
         assert request.next_reminder_at is not None
-        delta = request.next_reminder_at - datetime.utcnow()
+        delta = request.next_reminder_at - _utcnow()
         assert delta.days >= 0 and delta.days <= 1
     
     def test_reminder_frequency_weekly(self, service, sample_rfq_data):
@@ -1377,5 +1381,5 @@ class TestEdgeCases:
         
         # Next reminder should be ~7 days from now
         assert request.next_reminder_at is not None
-        delta = request.next_reminder_at - datetime.utcnow()
+        delta = request.next_reminder_at - _utcnow()
         assert delta.days >= 6 and delta.days <= 7

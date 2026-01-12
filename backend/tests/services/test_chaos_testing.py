@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from sensei.services.chaos_testing import (
+from sensei.services.utils.chaos_testing import (
     ChaosTestingService,
     CircuitState,
     ComponentType,

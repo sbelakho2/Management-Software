@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.persona_management import (
+from sensei.services.core.persona_management import (
     AuditEventType,
     Persona,
     PersonaManagementService,

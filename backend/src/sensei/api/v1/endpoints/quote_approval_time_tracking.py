@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.quote_approval_time_tracking import (
+from sensei.services.sales.quote_approval_time_tracking import (
     QuoteApprovalTimeTrackingService,
     ApprovalDecision,
     ApprovalReason,

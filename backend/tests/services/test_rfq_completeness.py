@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
-from sensei.services.rfq_completeness import (
+from sensei.services.sales.rfq_completeness import (
     RFQCompletenessService,
     CompletenessResult,
     MissingField,

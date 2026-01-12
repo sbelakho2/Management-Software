@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.audit_evidence import (
+from sensei.services.quality.audit_evidence import (
     AuditEvidenceService,
     AuditPackage,
     EvidenceRecord,

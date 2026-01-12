@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.mrp_lite import (
+from sensei.services.production.mrp_lite import (
     MRPService,
     RequirementType,
     SuggestionStatus,

@@ -66,16 +66,15 @@ class TestAuditMixin:
 
     def test_mixin_has_created_by_id(self):
         """AuditMixin should define created_by_id."""
-        # Check the declared_attr is defined
-        assert hasattr(AuditMixin, "created_by_id")
+        assert "created_by_id" in AuditMixin.__dict__
 
     def test_mixin_has_updated_by_id(self):
         """AuditMixin should define updated_by_id."""
-        assert hasattr(AuditMixin, "updated_by_id")
+        assert "updated_by_id" in AuditMixin.__dict__
 
     def test_mixin_has_owner_id(self):
         """AuditMixin should define owner_id."""
-        assert hasattr(AuditMixin, "owner_id")
+        assert "owner_id" in AuditMixin.__dict__
 
 
 class TestSoftDeleteMixin:
@@ -87,7 +86,7 @@ class TestSoftDeleteMixin:
 
     def test_mixin_has_deleted_by_id(self):
         """SoftDeleteMixin should define deleted_by_id."""
-        assert hasattr(SoftDeleteMixin, "deleted_by_id")
+        assert "deleted_by_id" in SoftDeleteMixin.__dict__
 
     def test_is_deleted_property_false_when_deleted_at_none(self):
         """is_deleted should return False when deleted_at is None."""

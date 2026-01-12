@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.rfq_time_tracking import (
+from sensei.services.sales.rfq_time_tracking import (
     RFQTimeTrackingService,
     TaskType,
     TaskSessionStatus,

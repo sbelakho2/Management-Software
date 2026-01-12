@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sensei.services.infrastructure_resilience import (
+from sensei.services.core.infrastructure_resilience import (
     BackupRestoreResult,
     DeepHealthReport,
     FileIntegrityResult,

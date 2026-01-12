@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 
-from sensei.services.accounting_ledger import AccountingLedgerService, AccountType
-from sensei.services.cost_accounting import CostAccountingService, CostAccountingConfig
+from sensei.services.finance.accounting_ledger import AccountingLedgerService, AccountType
+from sensei.services.finance.cost_accounting import CostAccountingService, CostAccountingConfig
 
 
 FINANCE = {"finance"}
@@ -133,7 +133,9 @@ def test_completion_posts_variances_to_gl_and_creates_fg_inventory():
     ledger = AccountingLedgerService()
     _setup_minimal_coa(ledger)
 
-    svc = CostAccountingService(config=CostAccountingConfig(base_currency="EUR"), ledger=ledger)
+    fixed_now = lambda: datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+    svc = CostAccountingService(config=CostAccountingConfig(base_currency="EUR"), ledger=ledger, now_fn=fixed_now)
 
     svc.set_standard_cost(
         actor_id="u1",

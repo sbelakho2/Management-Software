@@ -12,7 +12,7 @@ Recommends relevant training lessons to users based on:
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 from sensei.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class LessonRecommender:
@@ -194,7 +198,7 @@ class LessonRecommender:
             explanation['mandatory'] = "Compliance training required"
         
         # Boost for recently added lessons
-        if lesson.created_at and (datetime.utcnow() - lesson.created_at) < timedelta(days=30):
+        if lesson.created_at and (_utcnow() - lesson.created_at) < timedelta(days=30):
             score += 0.05
             explanation['new'] = "Recently added content"
         

@@ -79,6 +79,7 @@ interface AndonStoreState {
   // Alerts
   unacknowledgedCount: number;
   criticalCount: number;
+  socket: WebSocket | null;
 }
 
 interface AndonStoreActions {
@@ -173,6 +174,7 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
   filterSeverity: 'all',
   unacknowledgedCount: 0,
   criticalCount: 0,
+  socket: null,
 
   // Event actions
   addEvent: (event) => {
@@ -381,11 +383,46 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
 
   // Connection actions
   connect: () => {
-    set({ isConnected: true, connectionError: null });
+    const { socket, isConnected } = get();
+    if (socket || isConnected) return;
+
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    const wsUrl = apiUrl.replace('http', 'ws').replace('/api/v1', '/ws');
+    const newSocket = new WebSocket(`${wsUrl}/${token}`);
+
+    newSocket.onopen = () => {
+      set({ isConnected: true, connectionError: null });
+      console.log('Andon WebSocket connected');
+    };
+
+    newSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        get().handleMessage(data as WebSocketMessage);
+      } catch (e) {
+        console.error('Error parsing Andon WebSocket message:', e);
+      }
+    };
+
+    newSocket.onclose = () => {
+      set({ isConnected: false, socket: null });
+      console.log('Andon WebSocket disconnected');
+      // Try to reconnect after 5 seconds
+      setTimeout(() => get().connect(), 5000);
+    };
+
+    set({ socket: newSocket });
   },
 
   disconnect: () => {
-    set({ isConnected: false });
+    const { socket } = get();
+    if (socket) {
+      socket.close();
+    }
+    set({ socket: null, isConnected: false });
   },
 
   handleMessage: (message) => {

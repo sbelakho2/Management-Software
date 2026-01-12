@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.rbac_security_audit import (
+from sensei.services.core.rbac_security_audit import (
     RBACSecurityAuditService,
     AuditSeverity,
     AuditCategory,

@@ -11,11 +11,15 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sensei.api.v1.endpoints.training import (
     router,
@@ -81,6 +85,8 @@ def mock_db():
     db.add = MagicMock()
     db.delete = AsyncMock()
     db.flush = AsyncMock()
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     db.refresh = AsyncMock()
     return db
 
@@ -156,8 +162,8 @@ class TestSkillCRUD:
 
         async def refresh_skill(obj):
             obj.id = 1
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
             obj.deleted_at = None
             obj.proficiency_levels = sample_skill_data["proficiency_levels"]
 
@@ -204,8 +210,8 @@ class TestSkillCRUD:
         skill.recertification_interval_days = 365
         skill.initial_training_hours = Decimal("8.0")
         skill.recertification_hours = Decimal("2.0")
-        skill.created_at = datetime.utcnow()
-        skill.updated_at = datetime.utcnow()
+        skill.created_at = _utcnow()
+        skill.updated_at = _utcnow()
         skill.is_deleted = False
         skill.level_count = 3
 
@@ -249,8 +255,8 @@ class TestSkillCRUD:
         skill.recertification_interval_days = 180
         skill.initial_training_hours = Decimal("4.0")
         skill.recertification_hours = Decimal("1.0")
-        skill.created_at = datetime.utcnow()
-        skill.updated_at = datetime.utcnow()
+        skill.created_at = _utcnow()
+        skill.updated_at = _utcnow()
         skill.is_deleted = False
         skill.level_count = 3
 
@@ -297,8 +303,8 @@ class TestSkillCRUD:
         skill.recertification_interval_days = 365
         skill.initial_training_hours = Decimal("8.0")
         skill.recertification_hours = Decimal("2.0")
-        skill.created_at = datetime.utcnow()
-        skill.updated_at = datetime.utcnow()
+        skill.created_at = _utcnow()
+        skill.updated_at = _utcnow()
         skill.is_deleted = False
         skill.level_count = 2
 
@@ -368,8 +374,8 @@ class TestSkillRequirements:
 
         async def refresh_req(obj):
             obj.id = 1
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
 
         mock_db.refresh.side_effect = refresh_req
 
@@ -405,8 +411,8 @@ class TestSkillRequirements:
         req.minimum_proficiency_level = 2
         req.is_mandatory = True
         req.notes = None
-        req.created_at = datetime.utcnow()
-        req.updated_at = datetime.utcnow()
+        req.created_at = _utcnow()
+        req.updated_at = _utcnow()
 
         count_result = MagicMock()
         count_result.scalar_one.return_value = 1
@@ -469,8 +475,8 @@ class TestTrainingCRUD:
 
         async def refresh_training(obj):
             obj.id = 1
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
             obj.deleted_at = None
             obj.status = TrainingStatus.SCHEDULED
             obj.participants = []
@@ -511,8 +517,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 0
@@ -570,8 +576,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 3
@@ -627,8 +633,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 0
@@ -672,8 +678,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 5
@@ -716,8 +722,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 5
@@ -760,8 +766,8 @@ class TestTrainingCRUD:
         training.materials_url = None
         training.syllabus = None
         training.notes = None
-        training.created_at = datetime.utcnow()
-        training.updated_at = datetime.utcnow()
+        training.created_at = _utcnow()
+        training.updated_at = _utcnow()
         training.is_deleted = False
         training.participants = []
         training.enrolled_count = 0
@@ -845,8 +851,8 @@ class TestTrainingParticipants:
             obj.certificate_issued_at = None
             obj.notes = None
             obj.manager_notes = None
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
 
         mock_db.refresh.side_effect = refresh_participant
 
@@ -900,8 +906,8 @@ class TestTrainingParticipants:
             obj.certificate_issued_at = None
             obj.notes = None
             obj.manager_notes = None
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
 
         mock_db.refresh.side_effect = refresh_participant
 
@@ -928,8 +934,8 @@ class TestTrainingParticipants:
         participant.certificate_issued_at = None
         participant.notes = None
         participant.manager_notes = None
-        participant.created_at = datetime.utcnow()
-        participant.updated_at = datetime.utcnow()
+        participant.created_at = _utcnow()
+        participant.updated_at = _utcnow()
 
         count_result = MagicMock()
         count_result.scalar_one.return_value = 1
@@ -963,8 +969,8 @@ class TestTrainingParticipants:
         participant.certificate_issued_at = None
         participant.notes = None
         participant.manager_notes = None
-        participant.created_at = datetime.utcnow()
-        participant.updated_at = datetime.utcnow()
+        participant.created_at = _utcnow()
+        participant.updated_at = _utcnow()
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = participant
@@ -1022,8 +1028,8 @@ class TestUserSkills:
             obj.certificate_number = None
             obj.assessment_scores = None
             obj.notes = None
-            obj.created_at = datetime.utcnow()
-            obj.updated_at = datetime.utcnow()
+            obj.created_at = _utcnow()
+            obj.updated_at = _utcnow()
             # Note: is_certified, is_expired, days_until_expiration, 
             # needs_recertification_soon are computed properties
 
@@ -1053,8 +1059,8 @@ class TestUserSkills:
         user_skill.certificate_number = "CERT-001"
         user_skill.assessment_scores = None
         user_skill.notes = None
-        user_skill.created_at = datetime.utcnow()
-        user_skill.updated_at = datetime.utcnow()
+        user_skill.created_at = _utcnow()
+        user_skill.updated_at = _utcnow()
         user_skill.is_certified = True
         user_skill.is_expired = False
         user_skill.days_until_expiration = 335
@@ -1101,8 +1107,8 @@ class TestUserSkills:
         user_skill.certificate_number = None
         user_skill.assessment_scores = None
         user_skill.notes = None
-        user_skill.created_at = datetime.utcnow()
-        user_skill.updated_at = datetime.utcnow()
+        user_skill.created_at = _utcnow()
+        user_skill.updated_at = _utcnow()
         user_skill.is_certified = False
         user_skill.is_expired = False
         user_skill.days_until_expiration = None
@@ -1144,8 +1150,8 @@ class TestUserSkills:
         user_skill.certificate_number = "CERT-001"
         user_skill.assessment_scores = None
         user_skill.notes = None
-        user_skill.created_at = datetime.utcnow()
-        user_skill.updated_at = datetime.utcnow()
+        user_skill.created_at = _utcnow()
+        user_skill.updated_at = _utcnow()
         user_skill.is_certified = True
         user_skill.is_expired = False
         user_skill.days_until_expiration = 335

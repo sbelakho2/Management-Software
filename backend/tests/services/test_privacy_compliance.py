@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.privacy_compliance import (
+from sensei.services.core.privacy_compliance import (
     PrivacyComplianceService,
     AttendanceEventType,
     DataCategory,

@@ -13,7 +13,9 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 import random
 
-from sensei.services.reasoning_engine import (
+from sensei.core.time import utcnow_naive
+
+from sensei.services.ai.reasoning_engine import (
     # Enums
     A3Phase,
     LeanWasteCategory,
@@ -168,7 +170,7 @@ class TestKPIMetric:
             name="productivity",
             value=100.0,
             unit="units/hour",
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow_naive(),
         )
         
         assert kpi.name == "productivity"
@@ -182,14 +184,14 @@ class TestKPIMetric:
             name="quality",
             value=98.0,
             unit="%",
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow_naive(),
             target=95.0,
         )
         kpi_off = KPIMetric(
             name="quality",
             value=90.0,
             unit="%",
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow_naive(),
             target=95.0,
         )
         
@@ -202,7 +204,7 @@ class TestKPIMetric:
             name="productivity",
             value=100.0,
             unit="units/hour",
-            timestamp=datetime.utcnow(),
+            timestamp=utcnow_naive(),
         )
         
         assert kpi.is_on_target is True
@@ -229,7 +231,7 @@ class TestA3Report:
             title="Test A3",
             problem_statement="Test problem",
             owner="Test Owner",
-            created_at=datetime.utcnow(),
+            created_at=utcnow_naive(),
         )
         
         assert a3.root_causes == []
@@ -259,7 +261,7 @@ class TestA3PatternAnalyzer:
             title="Open A3",
             problem_statement="Problem",
             owner="Owner",
-            created_at=datetime.utcnow(),
+            created_at=utcnow_naive(),
             status="open",
         )
         
@@ -284,13 +286,13 @@ class TestA3PatternAnalyzer:
             title="Zero KPI Test",
             problem_statement="Problem",
             owner="Owner",
-            created_at=datetime.utcnow(),
+            created_at=utcnow_naive(),
             status="closed",
             kpis_before=[
-                KPIMetric(name="new_metric", value=0.0, unit="count", timestamp=datetime.utcnow())
+                KPIMetric(name="new_metric", value=0.0, unit="count", timestamp=utcnow_naive())
             ],
             kpis_after=[
-                KPIMetric(name="new_metric", value=10.0, unit="count", timestamp=datetime.utcnow())
+                KPIMetric(name="new_metric", value=10.0, unit="count", timestamp=utcnow_naive())
             ],
         )
         
@@ -307,7 +309,7 @@ class TestA3PatternAnalyzer:
             title="Another A3",
             problem_statement="Problem",
             owner="Owner",
-            created_at=datetime.utcnow(),
+            created_at=utcnow_naive(),
             status="closed",
             countermeasures=[
                 Countermeasure(
@@ -318,10 +320,10 @@ class TestA3PatternAnalyzer:
                 )
             ],
             kpis_before=[
-                KPIMetric(name="on_time_delivery", value=80.0, unit="%", timestamp=datetime.utcnow())
+                KPIMetric(name="on_time_delivery", value=80.0, unit="%", timestamp=utcnow_naive())
             ],
             kpis_after=[
-                KPIMetric(name="on_time_delivery", value=90.0, unit="%", timestamp=datetime.utcnow())
+                KPIMetric(name="on_time_delivery", value=90.0, unit="%", timestamp=utcnow_naive())
             ],
         )
         pattern_analyzer.add_closed_a3(a3_2)
@@ -342,7 +344,7 @@ class TestA3PatternAnalyzer:
                 title=f"A3 #{i}",
                 problem_statement="Problem",
                 owner="Owner",
-                created_at=datetime.utcnow(),
+                created_at=utcnow_naive(),
                 status="closed",
                 countermeasures=[
                     Countermeasure(
@@ -353,10 +355,10 @@ class TestA3PatternAnalyzer:
                     )
                 ],
                 kpis_before=[
-                    KPIMetric(name="efficiency", value=70.0, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="efficiency", value=70.0, unit="%", timestamp=utcnow_naive())
                 ],
                 kpis_after=[
-                    KPIMetric(name="efficiency", value=85.0, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="efficiency", value=85.0, unit="%", timestamp=utcnow_naive())
                 ],
             )
             pattern_analyzer.add_closed_a3(a3)
@@ -829,7 +831,7 @@ class TestSenseiReasoningEngine:
                 title=f"Historical A3 {i}",
                 problem_statement="Problem",
                 owner="Owner",
-                created_at=datetime.utcnow(),
+                created_at=utcnow_naive(),
                 status="closed",
                 countermeasures=[
                     Countermeasure(
@@ -840,10 +842,10 @@ class TestSenseiReasoningEngine:
                     )
                 ],
                 kpis_before=[
-                    KPIMetric(name="productivity", value=80.0, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="productivity", value=80.0, unit="%", timestamp=utcnow_naive())
                 ],
                 kpis_after=[
-                    KPIMetric(name="productivity", value=95.0, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="productivity", value=95.0, unit="%", timestamp=utcnow_naive())
                 ],
             )
             reasoning_engine.register_closed_a3(a3)
@@ -1076,7 +1078,7 @@ class TestIntegration:
                 title=f"Historical A3 {i}",
                 problem_statement="Delivery delays",
                 owner="Owner",
-                created_at=datetime.utcnow(),
+                created_at=utcnow_naive(),
                 status="closed",
                 root_causes=["No visual management"],
                 countermeasures=[
@@ -1088,10 +1090,10 @@ class TestIntegration:
                     )
                 ],
                 kpis_before=[
-                    KPIMetric(name="otd", value=85.0, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="otd", value=85.0, unit="%", timestamp=utcnow_naive())
                 ],
                 kpis_after=[
-                    KPIMetric(name="otd", value=95.0 + i, unit="%", timestamp=datetime.utcnow())
+                    KPIMetric(name="otd", value=95.0 + i, unit="%", timestamp=utcnow_naive())
                 ],
                 waste_categories=[LeanWasteCategory.MURA],
             )

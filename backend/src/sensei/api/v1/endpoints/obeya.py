@@ -10,6 +10,7 @@ Provides comprehensive API for managing Obeya visual management boards:
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -247,7 +248,9 @@ async def create_obeya_item(
         owner_id=data.assigned_to_id or current_user.id,
     )
 
-    db.add(item)
+    maybe_awaitable = db.add(item)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(item)
 
@@ -763,7 +766,9 @@ async def add_comment(
         attachments=data.attachments,
     )
 
-    db.add(comment)
+    maybe_awaitable = db.add(comment)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(comment)
 

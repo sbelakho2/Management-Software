@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sensei.services.uiux_verification import (
+from sensei.services.utils.uiux_verification import (
     AccessibilityIssue,
     AccessibilityLevel,
     AuditReport,

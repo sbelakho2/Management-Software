@@ -9,11 +9,15 @@ Covers:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 import time
 
-from sensei.services.nlp_command_palette import (
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+from sensei.services.ai.nlp_command_palette import (
     # Enums
     ActionType,
     EntityType,
@@ -71,8 +75,8 @@ def sample_session():
     return ConversationSession(
         session_id="session_001",
         user_id="user_001",
-        created_at=datetime.utcnow(),
-        last_activity=datetime.utcnow(),
+        created_at=_utcnow(),
+        last_activity=_utcnow(),
     )
 
 
@@ -387,8 +391,8 @@ class TestConversationSession:
         session = ConversationSession(
             session_id="test",
             user_id="user",
-            created_at=datetime.utcnow() - timedelta(seconds=100),
-            last_activity=datetime.utcnow() - timedelta(seconds=100),
+            created_at=_utcnow() - timedelta(seconds=100),
+            last_activity=_utcnow() - timedelta(seconds=100),
         )
         
         assert session.is_expired(ttl_seconds=60) is True

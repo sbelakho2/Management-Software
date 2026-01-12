@@ -3,11 +3,11 @@ Tests for AI CTQ Summarization Service.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from sensei.services.ai_ctq_summarization import (
+from sensei.services.ai.ai_ctq_summarization import (
     # Enums
     SummaryType,
     AnalysisPeriod,
@@ -151,7 +151,7 @@ class TestMeasurementData:
         measurement = MeasurementData(
             id=uuid4(),
             value=Decimal("10.05"),
-            measured_at=datetime.utcnow(),
+            measured_at=datetime.now(timezone.utc),
             result="pass",
         )
         
@@ -163,7 +163,7 @@ class TestMeasurementData:
         measurement = MeasurementData(
             id=uuid4(),
             value=Decimal("10.0"),
-            measured_at=datetime.utcnow(),
+            measured_at=datetime.now(timezone.utc),
             result="pass",
         )
         
@@ -178,7 +178,7 @@ class TestMeasurementData:
         measurement = MeasurementData(
             id=uuid4(),
             value=Decimal("10.05"),
-            measured_at=datetime.utcnow(),
+            measured_at=datetime.now(timezone.utc),
             result="fail",
             batch_number="BATCH-001",
             serial_number="SN-123",
@@ -383,7 +383,7 @@ class TestStatisticalAnalysis:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             )
         ]
@@ -397,11 +397,11 @@ class TestStatisticalAnalysis:
     def test_multiple_measurements(self, service, spec):
         """Test with multiple measurements."""
         measurements = [
-            MeasurementData(id=uuid4(), value=Decimal("10.0"), measured_at=datetime.utcnow(), result="pass"),
-            MeasurementData(id=uuid4(), value=Decimal("10.02"), measured_at=datetime.utcnow(), result="pass"),
-            MeasurementData(id=uuid4(), value=Decimal("9.98"), measured_at=datetime.utcnow(), result="pass"),
-            MeasurementData(id=uuid4(), value=Decimal("10.01"), measured_at=datetime.utcnow(), result="pass"),
-            MeasurementData(id=uuid4(), value=Decimal("9.99"), measured_at=datetime.utcnow(), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("10.0"), measured_at=datetime.now(timezone.utc), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("10.02"), measured_at=datetime.now(timezone.utc), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("9.98"), measured_at=datetime.now(timezone.utc), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("10.01"), measured_at=datetime.now(timezone.utc), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("9.99"), measured_at=datetime.now(timezone.utc), result="pass"),
         ]
         
         stats = service.calculate_statistics(measurements, spec)
@@ -415,10 +415,10 @@ class TestStatisticalAnalysis:
     def test_pass_fail_counting(self, service, spec):
         """Test pass/fail counting."""
         measurements = [
-            MeasurementData(id=uuid4(), value=Decimal("10.0"), measured_at=datetime.utcnow(), result="pass"),
-            MeasurementData(id=uuid4(), value=Decimal("10.2"), measured_at=datetime.utcnow(), result="fail"),
-            MeasurementData(id=uuid4(), value=Decimal("10.05"), measured_at=datetime.utcnow(), result="marginal"),
-            MeasurementData(id=uuid4(), value=Decimal("10.01"), measured_at=datetime.utcnow(), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("10.0"), measured_at=datetime.now(timezone.utc), result="pass"),
+            MeasurementData(id=uuid4(), value=Decimal("10.2"), measured_at=datetime.now(timezone.utc), result="fail"),
+            MeasurementData(id=uuid4(), value=Decimal("10.05"), measured_at=datetime.now(timezone.utc), result="marginal"),
+            MeasurementData(id=uuid4(), value=Decimal("10.01"), measured_at=datetime.now(timezone.utc), result="pass"),
         ]
         
         stats = service.calculate_statistics(measurements, spec)
@@ -437,7 +437,7 @@ class TestStatisticalAnalysis:
             measurements.append(MeasurementData(
                 id=uuid4(),
                 value=value,
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             ))
         
@@ -513,7 +513,7 @@ class TestTrendAnalysis:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             )
         ]
@@ -525,7 +525,7 @@ class TestTrendAnalysis:
     
     def test_stable_trend(self, service, spec):
         """Test detection of stable trend."""
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         measurements = []
         
         # Create stable data
@@ -544,7 +544,7 @@ class TestTrendAnalysis:
     
     def test_volatility_calculation(self, service, spec):
         """Test volatility calculation."""
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         measurements = []
         
         # Create volatile data
@@ -563,7 +563,7 @@ class TestTrendAnalysis:
     
     def test_mean_shift_calculation(self, service, spec):
         """Test mean shift calculation."""
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         measurements = []
         
         # First half at 10.0, second half at 10.05
@@ -845,7 +845,7 @@ class TestSummaryGeneration:
     @pytest.fixture
     def measurements(self):
         """Create test measurements."""
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         measurements = []
         
         for i in range(50):
@@ -902,7 +902,7 @@ class TestSummaryGeneration:
     
     def test_period_filtering(self, service, spec):
         """Test measurements are filtered by period."""
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         
         # Create measurements over 60 days
         measurements = []
@@ -924,8 +924,8 @@ class TestSummaryGeneration:
     
     def test_custom_period(self, service, spec, measurements):
         """Test custom period."""
-        custom_start = datetime.utcnow() - timedelta(days=20)
-        custom_end = datetime.utcnow() - timedelta(days=10)
+        custom_start = datetime.now(timezone.utc) - timedelta(days=20)
+        custom_end = datetime.now(timezone.utc) - timedelta(days=10)
         
         summary = service.generate_summary(
             spec=spec,
@@ -992,7 +992,7 @@ class TestExecutiveSummary:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(50)
@@ -1009,7 +1009,7 @@ class TestExecutiveSummary:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             )
         ]
@@ -1052,7 +1052,7 @@ class TestMultiCTQSummary:
     def measurements_by_ctq(self, specs):
         """Create measurements for each CTQ."""
         measurements = {}
-        base_time = datetime.utcnow()
+        base_time = datetime.now(timezone.utc)
         
         for i, spec in enumerate(specs):
             measurements[spec.id] = [
@@ -1153,7 +1153,7 @@ class TestRetrieval:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(20)
@@ -1172,7 +1172,7 @@ class TestRetrieval:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             )
         ]
@@ -1188,7 +1188,7 @@ class TestRetrieval:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow(),
+                measured_at=datetime.now(timezone.utc),
                 result="pass",
             )
         ]
@@ -1224,7 +1224,7 @@ class TestPeriodComparison:
     
     def test_compare_periods(self, service, spec):
         """Test period comparison."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Create measurements for two periods
         measurements = []
@@ -1259,7 +1259,7 @@ class TestPeriodComparison:
     
     def test_comparison_assessment(self, service, spec):
         """Test comparison assessment."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         measurements = []
         
@@ -1324,7 +1324,7 @@ class TestEdgeCases:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(50)
@@ -1341,7 +1341,7 @@ class TestEdgeCases:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.5"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="fail",
             )
             for i in range(50)
@@ -1361,7 +1361,7 @@ class TestEdgeCases:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(50)
@@ -1387,7 +1387,7 @@ class TestEdgeCases:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("10.0"),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(20)
@@ -1416,7 +1416,7 @@ class TestEdgeCases:
             MeasurementData(
                 id=uuid4(),
                 value=Decimal("-5.0") + Decimal(str((i % 5 - 2) * 0.5)),
-                measured_at=datetime.utcnow() - timedelta(days=i),
+                measured_at=datetime.now(timezone.utc) - timedelta(days=i),
                 result="pass",
             )
             for i in range(30)

@@ -13,6 +13,9 @@ Complete guide to using Starz Morocco Manufacturing Management System.
 - [Obeya Room](#obeya-room)
 - [A3 Problem Solving](#a3-problem-solving)
 - [Training & Skills](#training--skills)
+- [Maintenance (TPM)](#maintenance-tpm)
+- [Supply Chain Intelligence](#supply-chain-intelligence)
+- [Advanced Analytics](#advanced-analytics)
 - [Today Screen](#today-screen)
 - [Settings & Profile](#settings--profile)
 
@@ -488,6 +491,41 @@ System automatically identifies:
 - Automatic renewal reminders
 - Upload certification documents
 - Maintain compliance
+
+## 🔧 Maintenance (TPM)
+
+Total Productive Maintenance for shop floor assets.
+
+### Asset Health
+- View real-time health scores for all machines.
+- Monitor sensor readings (vibration, temperature, etc.).
+- AI-driven failure prediction (Condition-Based Maintenance).
+
+### Work Orders
+- Schedule preventive maintenance (PM) tasks.
+- Create emergency repair work orders.
+- Link maintenance actions to specific assets and downtime.
+
+## 🌐 Supply Chain Intelligence
+
+Manage global risk and supplier performance.
+
+### Disruption Simulation
+- Run "what-if" scenarios for global logistics disruptions.
+- Visualize impact on production schedules and customer deliveries.
+
+### Supplier Performance
+- Track on-time delivery (OTD) and quality metrics for all suppliers.
+- Automated supplier scorecards.
+
+## 📈 Advanced Analytics
+
+ML-driven insights for data-backed decision making.
+
+### Key Features
+- **Win-Loss Prediction**: AI analysis of why deals are won or lost.
+- **Resource Leveling**: Prescriptive advice on rebalancing personnel and assets.
+- **Trend Analysis**: Long-term tracking of KPIs across all departments.
 
 ## 📅 Today Screen
 

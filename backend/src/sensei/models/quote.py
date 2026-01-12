@@ -349,6 +349,21 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             return False
         from datetime import timezone as tz
         return datetime.now(tz.utc) > self.valid_until
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if quote is currently valid (not past valid_until)."""
+        override = getattr(self, "_is_valid_override", None)
+        if override is not None:
+            return bool(override)
+        if self.valid_until is None:
+            return True
+        from datetime import timezone as tz
+        return datetime.now(tz.utc) <= self.valid_until
+
+    @is_valid.setter
+    def is_valid(self, value: bool) -> None:
+        self._is_valid_override = bool(value)
     
     @property
     def is_open(self) -> bool:

@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch, AsyncMock
 import time
 import asyncio
 
-from sensei.services.virtual_assistant import (
+from sensei.services.ai.virtual_assistant import (
     # Enums
     SLAStatus,
     ItemType,

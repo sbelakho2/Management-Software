@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sensei.services.lot_serial_traceability import (
+from sensei.services.production.lot_serial_traceability import (
     # Enums
     LotStatus,
     SerialStatus,

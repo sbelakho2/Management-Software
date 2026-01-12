@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.business_continuity import (
+from sensei.services.core.business_continuity import (
     BusinessContinuityService,
     ConflictResolutionStrategy,
     EventPriority,

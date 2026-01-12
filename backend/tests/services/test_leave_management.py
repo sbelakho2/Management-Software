@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.leave_management import (
+from sensei.services.hr.leave_management import (
     AccrualFrequency,
     LeaveManagementService,
     LeaveRequestStatus,

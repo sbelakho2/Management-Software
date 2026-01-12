@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.industrial_ux import (
+from sensei.services.utils.industrial_ux import (
     IndustrialUXService,
     ScanResultType,
     SyncQueueStatus,

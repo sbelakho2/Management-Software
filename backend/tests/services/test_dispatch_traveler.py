@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.dispatch_traveler import (
+from sensei.services.production.dispatch_traveler import (
     DispatchTravelerService,
     OperationStatus,
     CheckpointType,

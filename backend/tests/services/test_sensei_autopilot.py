@@ -14,7 +14,7 @@ Tests cover:
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from sensei.services.sensei_autopilot import (
+from sensei.services.ops.sensei_autopilot import (
     # Enums
     HealthStatus,
     ServiceType,

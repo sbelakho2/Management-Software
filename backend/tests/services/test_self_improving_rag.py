@@ -12,10 +12,10 @@ Tests cover:
 
 import pytest
 import math
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sensei.services.self_improving_rag import (
+from sensei.services.ai.self_improving_rag import (
     # Enums
     ChunkUtilityStatus,
     DocumentQuality,
@@ -40,6 +40,10 @@ from sensei.services.self_improving_rag import (
 )
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -51,7 +55,7 @@ def chunk_metadata():
         chunk_id="chunk_001",
         document_id="doc_001",
         content_hash="abc123",
-        created_at=datetime.utcnow(),
+        created_at=_utcnow(),
     )
 
 
@@ -134,7 +138,7 @@ class TestChunkMetadata:
             chunk_id="c1",
             document_id="d1",
             content_hash="hash",
-            created_at=datetime.utcnow(),
+            created_at=_utcnow(),
         )
         assert chunk.last_retrieved_at is None
         assert chunk.metadata == {}
@@ -259,7 +263,7 @@ class TestChunkUtilityTracker:
                 chunk_id=f"chunk_{i}",
                 document_id="doc_001",
                 content_hash=f"hash_{i}",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
                 utility_score=0.1 * (i + 1),  # 0.1, 0.2, 0.3, 0.4, 0.5
             )
             utility_tracker.register_chunk(chunk)
@@ -274,7 +278,7 @@ class TestChunkUtilityTracker:
                 chunk_id=f"chunk_{i}",
                 document_id="doc_001",
                 content_hash=f"hash_{i}",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             )
             utility_tracker.register_chunk(chunk)
         
@@ -298,7 +302,7 @@ class TestChunkUtilityTracker:
                 chunk_id=f"low_chunk_{i}",
                 document_id="low_doc",
                 content_hash=f"hash_{i}",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
                 utility_score=0.2,
             )
             utility_tracker.register_chunk(chunk)
@@ -309,7 +313,7 @@ class TestChunkUtilityTracker:
                 chunk_id=f"high_chunk_{i}",
                 document_id="high_doc",
                 content_hash=f"hash_{i}",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
                 utility_score=0.9,
             )
             utility_tracker.register_chunk(chunk)

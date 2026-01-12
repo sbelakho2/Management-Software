@@ -231,7 +231,6 @@ class A3(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     __table_args__ = (
         Index("ix_a3s_type_status", a3_type, status),
         Index("ix_a3s_author_status", author_id, status),
-        Index("ix_a3s_department", department),
         Index(
             "ix_a3s_open",
             status,

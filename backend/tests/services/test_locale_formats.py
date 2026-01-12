@@ -7,7 +7,7 @@ import pytest
 from datetime import datetime, timezone, date, time, timedelta
 from decimal import Decimal
 
-from sensei.services.locale_formats import (
+from sensei.services.utils.locale_formats import (
     LocaleFormatsService,
     LocaleConfig,
     LocaleFormatResult,

@@ -2,12 +2,12 @@
 Tests for Digest & Snapshot Export Service.
 """
 
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
-from sensei.services.digest_export import (
+from sensei.services.utils.digest_export import (
     # Enums
     DigestType,
     DigestFrequency,
@@ -794,7 +794,7 @@ class TestDigestExportServiceSchedule:
         )
         
         # Manually set next_run to past
-        config.schedule.next_run_at = datetime.utcnow() - timedelta(hours=1)
+        config.schedule.next_run_at = datetime.now(timezone.utc) - timedelta(hours=1)
         
         pending = service.get_pending_jobs()
         
@@ -1105,7 +1105,7 @@ class TestDigestExportServiceRetrieval:
         digest = service.generate_today_digest(content)
         
         # Set to expired
-        digest.expires_at = datetime.utcnow() - timedelta(days=1)
+        digest.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
         
         count = service.cleanup_expired_digests()
         
@@ -1128,7 +1128,7 @@ class TestDigestExportServiceJobs:
     def test_create_job(self, service: DigestExportService) -> None:
         """Should create job."""
         config_id = uuid4()
-        scheduled_at = datetime.utcnow() + timedelta(hours=1)
+        scheduled_at = datetime.now(timezone.utc) + timedelta(hours=1)
         
         job = service.create_job(config_id, scheduled_at)
         
@@ -1138,7 +1138,7 @@ class TestDigestExportServiceJobs:
     
     def test_start_job(self, service: DigestExportService) -> None:
         """Should start job."""
-        job = service.create_job(uuid4(), datetime.utcnow())
+        job = service.create_job(uuid4(), datetime.now(timezone.utc))
         
         started = service.start_job(job.id)
         
@@ -1148,7 +1148,7 @@ class TestDigestExportServiceJobs:
     
     def test_complete_job(self, service: DigestExportService) -> None:
         """Should complete job."""
-        job = service.create_job(uuid4(), datetime.utcnow())
+        job = service.create_job(uuid4(), datetime.now(timezone.utc))
         service.start_job(job.id)
         
         digest_id = uuid4()
@@ -1161,7 +1161,7 @@ class TestDigestExportServiceJobs:
     
     def test_fail_job_with_retry(self, service: DigestExportService) -> None:
         """Should fail job with retry."""
-        job = service.create_job(uuid4(), datetime.utcnow())
+        job = service.create_job(uuid4(), datetime.now(timezone.utc))
         service.start_job(job.id)
         
         failed = service.fail_job(job.id, "Network error")
@@ -1173,7 +1173,7 @@ class TestDigestExportServiceJobs:
     
     def test_fail_job_max_retries(self, service: DigestExportService) -> None:
         """Should mark as failed after max retries."""
-        job = service.create_job(uuid4(), datetime.utcnow())
+        job = service.create_job(uuid4(), datetime.now(timezone.utc))
         
         # Exhaust retries
         for _ in range(3):
@@ -1185,8 +1185,8 @@ class TestDigestExportServiceJobs:
     def test_list_jobs(self, service: DigestExportService) -> None:
         """Should list jobs."""
         config_id = uuid4()
-        service.create_job(config_id, datetime.utcnow())
-        service.create_job(config_id, datetime.utcnow() + timedelta(hours=1))
+        service.create_job(config_id, datetime.now(timezone.utc))
+        service.create_job(config_id, datetime.now(timezone.utc) + timedelta(hours=1))
         
         jobs = service.list_jobs(config_id=config_id)
         
@@ -1400,7 +1400,7 @@ class TestDigestExportIntegration:
         )
         
         # 2. Create job
-        job = service.create_job(config.id, datetime.utcnow())
+        job = service.create_job(config.id, datetime.now(timezone.utc))
         
         # 3. Start job
         service.start_job(job.id)

@@ -1,6 +1,7 @@
 """Tests for knowledge embeddings and semantic search."""
 
 import pytest
+import pytest_asyncio
 import numpy as np
 from unittest.mock import Mock, patch
 
@@ -11,14 +12,14 @@ from sensei.models.knowledge_pack import (
     ContentFormat,
     TaxonomyTag,
 )
-from sensei.services.knowledge_embeddings import (
+from sensei.services.ai.knowledge_embeddings import (
     EmbeddingService,
     KnowledgeEmbeddingService,
     SemanticSearchService,
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_session():
     """Mock async database session for testing."""
     from unittest.mock import AsyncMock, MagicMock

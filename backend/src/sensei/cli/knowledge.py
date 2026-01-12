@@ -29,8 +29,8 @@ from sensei.models.knowledge_pack import (
     IngestionLog,
     LicenseType,
 )
-from sensei.services.knowledge_ingestion import KnowledgePackIngestionService
-from sensei.services.knowledge_embeddings import (
+from sensei.services.ai.knowledge_ingestion import KnowledgePackIngestionService
+from sensei.services.ai.knowledge_embeddings import (
     EmbeddingService,
     KnowledgeEmbeddingService,
     SemanticSearchService,

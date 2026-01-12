@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-from sensei.services.quote_quality import (
+from sensei.services.sales.quote_quality import (
     QuoteQualityService,
     QuoteData,
     QualityCheckResult,

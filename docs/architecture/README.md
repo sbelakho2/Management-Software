@@ -4,12 +4,13 @@
 
 Starz Morocco is a modern manufacturing management system built with a microservices-inspired architecture, featuring:
 
-- **Backend**: FastAPI (Python) - RESTful API server
-- **Frontend**: Next.js (React/TypeScript) - Server-side rendered web application
-- **Database**: PostgreSQL 15 with pgvector - Relational database with vector search
-- **Cache**: Redis 7 - In-memory cache and job queue
-- **Storage**: MinIO/S3 - Object storage for attachments
-- **Orchestration**: Kubernetes with Helm - Container orchestration
+- **Backend**: FastAPI (Python) - RESTful API server with Celery/Redis background task offloading
+- **Frontend**: Next.js (React/TypeScript) - Server-side rendered web application with logically grouped domain routes
+- **Database**: PostgreSQL 16 with pgvector - Relational database with vector search and native table partitioning
+- **Cache**: Redis 7 - In-memory cache and Celery task broker
+- **ML/AI**: ONNX Runtime, local-first inference, and custom ML pipeline with Celery offloading
+- **Storage**: MinIO/S3 - Object storage for attachments and model weights
+- **Orchestration**: Kubernetes with Helm and ExternalSecrets for enterprise-grade security
 
 ## System Architecture
 
@@ -44,13 +45,13 @@ See [technology-stack.md](./1.1-technology-stack.md) for detailed breakdown.
 - **ORM**: SQLAlchemy 2.0 (async)
 - **Migrations**: Alembic
 - **Validation**: Pydantic v2
-- **Authentication**: JWT (python-jose)
+- **Authentication**: JWT (python-jose), SAML 2.0 (SSO)
 - **File Storage**: boto3 (S3-compatible)
-- **Task Queue**: Redis + Celery (future)
+- **Task Queue**: Redis + Celery (Production-ready)
 - **OCR**: PaddleOCR, Tesseract, EasyOCR
-- **AI**: OpenAI GPT-4o-mini
-- **ML**: sentence-transformers, PyTorch
-- **Testing**: pytest, pytest-asyncio, httpx
+- **AI**: ONNX Runtime (local-first), OpenAI GPT-4o-mini
+- **ML**: sentence-transformers, PyTorch, custom ML pipeline with automated retraining
+- **Testing**: pytest, pytest-asyncio, httpx, Playwright (E2E)
 
 ### Frontend Stack
 
@@ -373,21 +374,21 @@ Format (JSON):
 
 ## Future Enhancements
 
-### Phase 2
+### Phase 2 (In Progress / Completed)
 
-- [ ] **Microservices**: Split monolith into services (auth, orders, inventory)
+- [x] **Microservices**: Regrouped monolith into domain packages for modularity
 - [ ] **Event Sourcing**: Event-driven architecture with Kafka
 - [ ] **CQRS**: Separate read/write models
 - [ ] **GraphQL**: Alternative to REST API
-- [ ] **Websockets**: Real-time updates
+- [x] **Websockets**: Real-time updates for Obeya and Andon dashboards
 
-### Phase 3
+### Phase 3 (In Progress / Completed)
 
 - [ ] **Multi-tenancy**: Separate schemas per customer
 - [ ] **Multi-region**: Geographic distribution
 - [ ] **Edge Computing**: CloudFlare Workers for static content
-- [ ] **ML Pipeline**: Automated model training and deployment
-- [ ] **Advanced Analytics**: Data warehouse and BI tools
+- [x] **ML Pipeline**: Automated model training and Celery offloading
+- [x] **Advanced Analytics**: Live metric cockpits and ML-driven insights
 
 ## References
 

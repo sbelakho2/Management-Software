@@ -47,14 +47,24 @@ class RoleType(str, Enum):
     """Predefined role types."""
     
     ADMIN = "admin"
+    CEO = "ceo"
     GM = "gm"
+    FINANCE = "finance"
+    ACCOUNTANT = "accountant"
+    HR = "hr"
+    OPS = "ops"
+    QUALITY = "quality"
+    AUDITOR = "auditor"
+    IT = "it"
+    SUPERVISOR = "supervisor"
+    TEAM_LEAD = "team_lead"
+    OPERATOR = "operator"
+    VIEWER = "viewer"
+    # Legacy/Extended mapping
     SALES_ENGINEER = "sales_engineer"
     ESTIMATOR = "estimator"
-    QUALITY = "quality"
     SUPPLY_CHAIN = "supply_chain"
-    OPS = "ops"
     EXEC = "exec"
-    VIEWER = "viewer"
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin):

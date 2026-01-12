@@ -10,8 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.kpi_metrics import (
-    KPIService,
+from sensei.services.ops.kpi_metrics import (
     KPIDefinition,
     KPIValue,
     KPIDashboard,
@@ -28,10 +27,14 @@ from sensei.services.kpi_metrics import (
     get_default_dashboard_ids,
 )
 
+from sensei.services.ops.kpi_app_services import (
+    kpi_service as _service,
+    muda_lesson_engine as _muda_lesson_engine,
+    muda_nudging_service as _muda_nudging_service,
+)
+
 router = APIRouter(prefix="/kpi", tags=["KPI Metrics"])
 
-# Global service instance
-_service = KPIService()
 
 
 # --------------------------------------------------------------------------
@@ -226,6 +229,37 @@ class DashboardDataResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# Muda-aware contextual nudges
+# --------------------------------------------------------------------------
+
+
+class MudaNudgesRequest(BaseModel):
+    """Request to generate muda-aware micro-lesson nudges."""
+
+    recipient_id: str = Field(..., min_length=1, max_length=100)
+    dimensions: dict[str, str] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    include_knowledge: bool = True
+
+
+class MudaNudgeResponse(BaseModel):
+    """A generated micro-lesson nudge."""
+
+    trigger: str
+    recipient_id: str
+    trigger_context: dict[str, Any]
+
+    delivery_id: str | None
+    lesson_id: str | None
+    lesson_title: str | None
+    lesson_summary: str | None
+    lesson_category: str | None
+
+    recommended_documents: list[dict[str, Any]]
+    generated_at: datetime
+
+
+# --------------------------------------------------------------------------
 # Helper Functions
 # --------------------------------------------------------------------------
 
@@ -258,6 +292,41 @@ def _definition_to_response(d: KPIDefinition) -> KPIDefinitionResponse:
         is_active=d.is_active,
         tags=d.tags,
     )
+
+
+@router.post(
+    "/muda-nudges",
+    response_model=list[MudaNudgeResponse],
+    summary="Generate muda-aware micro-lesson nudges",
+)
+def generate_muda_nudges(request: MudaNudgesRequest) -> list[MudaNudgeResponse]:
+    """Generate contextual micro-lesson nudges from KPI variance.
+
+    Uses latest KPI values from the in-memory KPI store and optional overrides.
+    """
+
+    nudges = _muda_nudging_service.generate_nudges(
+        recipient_id=request.recipient_id,
+        dimensions=request.dimensions or None,
+        overrides=request.overrides or None,
+        include_knowledge=request.include_knowledge,
+    )
+
+    return [
+        MudaNudgeResponse(
+            trigger=nudge.trigger.value,
+            recipient_id=nudge.recipient_id,
+            trigger_context=nudge.trigger_context,
+            delivery_id=nudge.delivery_id,
+            lesson_id=nudge.lesson_id,
+            lesson_title=nudge.lesson_title,
+            lesson_summary=nudge.lesson_summary,
+            lesson_category=nudge.lesson_category,
+            recommended_documents=nudge.recommended_documents,
+            generated_at=nudge.generated_at,
+        )
+        for nudge in nudges
+    ]
 
 
 def _value_to_response(v: KPIValue) -> KPIValueResponse:

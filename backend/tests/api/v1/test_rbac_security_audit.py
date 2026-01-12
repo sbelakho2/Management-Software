@@ -12,7 +12,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.services.rbac_security_audit import reset_rbac_security_audit_service
+from sensei.services.core.rbac_security_audit import reset_rbac_security_audit_service
 
 
 @pytest.fixture

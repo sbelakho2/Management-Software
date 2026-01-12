@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.data_hygiene_nudges import (
+from sensei.services.core.data_hygiene_nudges import (
     DataHygieneNudgesService,
     EntityHygieneScore,
     EntityType,

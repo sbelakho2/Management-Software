@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from sensei.services.setup_wizard import (
+from sensei.services.core.setup_wizard import (
     SetupWizardService,
     WizardStatus,
     WizardStep,

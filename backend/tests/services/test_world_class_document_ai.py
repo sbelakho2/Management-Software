@@ -18,7 +18,7 @@ import asyncio
 import pytest
 from datetime import datetime
 
-from sensei.services.world_class_document_ai import (
+from sensei.services.ai.world_class_document_ai import (
     # Enums
     DocumentCategory,
     ElementType,
@@ -52,7 +52,7 @@ from sensei.services.world_class_document_ai import (
 # Helper for running async functions in tests
 def run_async(coro):
     """Run async coroutine in sync context."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # =============================================================================

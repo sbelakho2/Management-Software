@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.data_retention import (
+from sensei.services.core.data_retention import (
     DataRetentionService,
     EntityType,
     LegalHold,

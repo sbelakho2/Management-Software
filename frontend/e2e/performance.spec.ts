@@ -3,6 +3,8 @@
  * 
  * Comprehensive performance testing to ensure load times < 2 seconds
  * for all critical pages and components.
+ * 
+ * Note: These tests require real backend (set E2E_WITH_BACKEND=1).
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -11,6 +13,36 @@ import { test, expect, Page } from '@playwright/test';
 const LOAD_TIME_TARGET_MS = 2000;
 const INTERACTION_TARGET_MS = 200;
 const SEARCH_TARGET_MS = 500;
+
+// Helper function to authenticate via bootstrap API
+async function setupAuth(page: Page, email: string) {
+  const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000';
+  
+  if (process.env.E2E_WITH_BACKEND) {
+    const bootstrap = await page.request.post(`${apiUrl}/api/v1/dev/bootstrap-user`, {
+      data: {
+        email,
+        password: 'ChangeMe123!',
+        first_name: 'E2E',
+        last_name: 'Perf',
+      },
+    });
+    
+    if (bootstrap.ok()) {
+      const tokens = await bootstrap.json();
+      
+      await page.addInitScript((t) => {
+        localStorage.setItem('access_token', t.access_token);
+        localStorage.setItem('refresh_token', t.refresh_token);
+      }, tokens);
+    }
+  } else {
+    // Fallback to mock auth for non-backend tests
+    await page.addInitScript(() => {
+      localStorage.setItem('auth_token', 'test-token');
+    });
+  }
+}
 
 interface PerformanceMetrics {
   pageLoadTime: number;
@@ -85,16 +117,7 @@ const CRITICAL_PAGES = [
 
 test.describe('Page Load Performance', () => {
   test.beforeEach(async ({ page }) => {
-    // Mock authentication
-    await page.addInitScript(() => {
-      localStorage.setItem('auth_token', 'test-token');
-      localStorage.setItem('user', JSON.stringify({
-        id: 'user-1',
-        email: 'gm@test.com',
-        name: 'General Manager',
-        role: 'gm'
-      }));
-    });
+    await setupAuth(page, 'e2e.perf.pageload@example.com');
   });
 
   test('should load all critical pages in under 2 seconds', async ({ page }) => {
@@ -182,15 +205,7 @@ test.describe('Page Load Performance', () => {
 
 test.describe('Interaction Performance', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('auth_token', 'test-token');
-      localStorage.setItem('user', JSON.stringify({
-        id: 'user-1',
-        email: 'gm@test.com',
-        name: 'General Manager',
-        role: 'gm'
-      }));
-    });
+    await setupAuth(page, 'e2e.perf.interaction@example.com');
   });
 
   test('should respond to clicks within 200ms', async ({ page }) => {
@@ -246,15 +261,7 @@ test.describe('Interaction Performance', () => {
 
 test.describe('Search Performance', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('auth_token', 'test-token');
-      localStorage.setItem('user', JSON.stringify({
-        id: 'user-1',
-        email: 'gm@test.com',
-        name: 'General Manager',
-        role: 'gm'
-      }));
-    });
+    await setupAuth(page, 'e2e.perf.search@example.com');
   });
 
   test('should return search results within 500ms', async ({ page }) => {
@@ -307,15 +314,7 @@ test.describe('Search Performance', () => {
 
 test.describe('Data Loading Performance', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('auth_token', 'test-token');
-      localStorage.setItem('user', JSON.stringify({
-        id: 'user-1',
-        email: 'gm@test.com',
-        name: 'General Manager',
-        role: 'gm'
-      }));
-    });
+    await setupAuth(page, 'e2e.perf.dataloading@example.com');
   });
 
   test('should show loading states immediately', async ({ page }) => {

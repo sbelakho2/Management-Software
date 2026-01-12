@@ -15,7 +15,7 @@ import mimetypes
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from io import BytesIO
 from typing import Any, Callable, TYPE_CHECKING
@@ -25,6 +25,10 @@ if TYPE_CHECKING:
     from sensei.models.rfq import RFQ
     from sensei.models.opportunity import Opportunity
     from sensei.models.account import Account, Contact
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================
@@ -162,7 +166,7 @@ class DocumentMetadata:
     size_bytes: int
     checksum: str
     page_count: int = 1
-    ingestion_timestamp: datetime = field(default_factory=datetime.utcnow)
+    ingestion_timestamp: datetime = field(default_factory=_utcnow)
     source_email_id: str | None = None
     source_email_subject: str | None = None
     source_email_from: str | None = None
@@ -218,7 +222,7 @@ class EmailContent:
     cc_addresses: list[str] = field(default_factory=list)
     body_text: str = ""
     body_html: str = ""
-    received_date: datetime = field(default_factory=datetime.utcnow)
+    received_date: datetime = field(default_factory=_utcnow)
     attachments: list[EmailAttachment] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
 
@@ -248,7 +252,7 @@ class IngestionJob:
     warnings: list[str] = field(default_factory=list)
     processing_started_at: datetime | None = None
     processing_completed_at: datetime | None = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=_utcnow)
     created_by: str | None = None
     review_notes: str | None = None
     
@@ -1174,7 +1178,7 @@ class SmartIngestionService:
             job = self.create_job()
         
         job.status = IngestionStatus.PROCESSING
-        job.processing_started_at = datetime.utcnow()
+        job.processing_started_at = _utcnow()
         
         try:
             # Detect document type
@@ -1225,7 +1229,7 @@ class SmartIngestionService:
             job.status = IngestionStatus.FAILED
             job.errors.append(str(e))
         finally:
-            job.processing_completed_at = datetime.utcnow()
+            job.processing_completed_at = _utcnow()
         
         return job
     
@@ -1253,7 +1257,7 @@ class SmartIngestionService:
             job = self.create_job()
         
         job.status = IngestionStatus.PROCESSING
-        job.processing_started_at = datetime.utcnow()
+        job.processing_started_at = _utcnow()
         job.email_content = email
         
         try:
@@ -1306,7 +1310,7 @@ class SmartIngestionService:
             job.status = IngestionStatus.FAILED
             job.errors.append(str(e))
         finally:
-            job.processing_completed_at = datetime.utcnow()
+            job.processing_completed_at = _utcnow()
         
         return job
     
@@ -1638,7 +1642,7 @@ class SmartIngestionService:
                 status=RFQStatus.RECEIVED.value,
                 priority=RFQPriority.MEDIUM.value,
                 source=RFQSource.EMAIL.value,
-                received_date=datetime.utcnow(),
+                received_date=_utcnow(),
                 due_date=due_date,
                 part_number=part_number,
                 part_name=part_description,

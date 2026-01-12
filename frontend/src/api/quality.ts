@@ -422,6 +422,12 @@ export const capaApi = {
   },
 };
 
+export const qualityApi = {
+  inspectionApi,
+  ncrApi,
+  capaApi,
+};
+
 export interface CAPAStats {
   total: number;
   by_type: Record<CAPAType, number>;

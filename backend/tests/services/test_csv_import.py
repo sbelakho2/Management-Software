@@ -13,7 +13,7 @@ import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sensei.services.csv_import import (
+from sensei.services.utils.csv_import import (
     CSVImportService,
     ImportConfig,
     ImportEntityType,

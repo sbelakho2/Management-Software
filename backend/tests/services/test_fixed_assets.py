@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.fixed_assets import (
+from sensei.services.finance.fixed_assets import (
     AssetEventType,
     DepreciationMethod,
     FixedAssetStatus,
@@ -43,7 +43,7 @@ def svc_with_gl(accounting_ledger):
 @pytest.fixture
 def accounting_ledger():
     """Minimal in-memory accounting ledger for GL tests."""
-    from sensei.services.accounting_ledger import AccountingLedgerService, AccountType
+    from sensei.services.finance.accounting_ledger import AccountingLedgerService, AccountType
 
     ledger = AccountingLedgerService()
 

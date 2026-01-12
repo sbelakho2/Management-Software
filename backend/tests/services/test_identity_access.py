@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.identity_access import (
+from sensei.services.core.identity_access import (
     AccessDecision,
     ConditionalAccessPolicy,
     DevicePosture,

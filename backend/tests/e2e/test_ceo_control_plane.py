@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.ceo_control_plane import (
+from sensei.services.ops.ceo_control_plane import (
     CEOControlPlaneService,
     EmployeeRiskAssessment,
     MetricType,

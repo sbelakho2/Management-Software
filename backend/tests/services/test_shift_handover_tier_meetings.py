@@ -7,17 +7,17 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.shift_handover_tier_meetings import (
+from sensei.services.production.shift_handover_tier_meetings import (
     ShiftHandoverTierMeetingService,
     HandoverSeverity,
     TierLevel,
 )
 
-from sensei.services.shift_handover_tier_meetings import (  # noqa: E402
+from sensei.services.production.shift_handover_tier_meetings import (  # noqa: E402
     AgendaItemType,
 )
 
-from sensei.services.today_screen import (  # noqa: E402
+from sensei.services.ops.today_screen import (  # noqa: E402
     get_today_screen_service,
     reset_today_screen_service,
     CommitmentType,

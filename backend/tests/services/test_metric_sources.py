@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
-from sensei.services.metric_sources import (
+from sensei.services.ops.metric_sources import (
     MetricSourcesService,
     MetricSourceDefinition,
     FieldMapping,

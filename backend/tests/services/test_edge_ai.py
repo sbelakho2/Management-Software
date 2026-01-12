@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.edge_ai import (
+from sensei.services.core.edge_ai import (
     # Enums
     AnomalyType,
     SeverityLevel,

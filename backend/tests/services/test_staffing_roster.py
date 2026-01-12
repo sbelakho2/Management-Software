@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.staffing_roster import (
+from sensei.services.hr.staffing_roster import (
     StaffingRosterService,
     ShiftType,
     AbsenceType,

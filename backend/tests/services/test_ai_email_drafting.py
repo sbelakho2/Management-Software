@@ -15,10 +15,10 @@ Comprehensive tests covering:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
-from sensei.services.ai_email_drafting import (
+from sensei.services.ai.ai_email_drafting import (
     # Enums
     EmailTone,
     EmailPurpose,
@@ -95,7 +95,7 @@ def sample_context(sample_recipient):
             "Delivery location missing",
         ],
         reference_number="RFQ-2024-001",
-        deadline=datetime.utcnow() + timedelta(days=7),
+        deadline=datetime.now(timezone.utc) + timedelta(days=7),
         tone=EmailTone.PROFESSIONAL,
         language=Language.ENGLISH,
         include_signature=True,
@@ -1117,7 +1117,7 @@ class TestMissingInfoEmailGeneration:
     
     def test_with_deadline(self, service, sample_recipient):
         """Test missing info email with deadline."""
-        deadline = datetime.utcnow() + timedelta(days=5)
+        deadline = datetime.now(timezone.utc) + timedelta(days=5)
         
         draft = service.generate_missing_info_email(
             recipient=sample_recipient,
@@ -1154,7 +1154,7 @@ class TestQuoteFollowupGeneration:
     
     def test_basic_generation(self, service, sample_recipient):
         """Test basic quote followup generation."""
-        quote_date = datetime.utcnow() - timedelta(days=7)
+        quote_date = datetime.now(timezone.utc) - timedelta(days=7)
         
         draft = service.generate_quote_followup(
             recipient=sample_recipient,
@@ -1170,7 +1170,7 @@ class TestQuoteFollowupGeneration:
     
     def test_days_ago_calculation(self, service, sample_recipient):
         """Test days ago is calculated correctly."""
-        quote_date = datetime.utcnow() - timedelta(days=5)
+        quote_date = datetime.now(timezone.utc) - timedelta(days=5)
         
         draft = service.generate_quote_followup(
             recipient=sample_recipient,
@@ -1189,7 +1189,7 @@ class TestQuoteFollowupGeneration:
         draft = service.generate_quote_followup(
             recipient=sample_recipient,
             quote_number="Q-456",
-            quote_date=datetime.utcnow() - timedelta(days=3),
+            quote_date=datetime.now(timezone.utc) - timedelta(days=3),
             key_points=["Special discount available", "Limited time offer"],
             sender_name="Sales",
             sender_email="sales@co.com",
@@ -1563,7 +1563,7 @@ class TestDataClasses:
             draft_id=uuid4(),
             action="generated",
             actor_id=uuid4(),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         assert history.details is None
         assert history.before_text is None

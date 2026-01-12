@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from sensei.services.disaster_recovery_drill import (
+from sensei.services.core.disaster_recovery_drill import (
     BackupInfo,
     ComplianceLevel,
     DisasterRecoveryDrillService,

@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.pii_controls import (
+from sensei.services.core.pii_controls import (
     ConsentStatus,
     ConsentType,
     MaskingType,

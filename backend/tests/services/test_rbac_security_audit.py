@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.rbac_security_audit import (
+from sensei.services.core.rbac_security_audit import (
     RBACSecurityAuditService,
     AuditSeverity,
     AuditCategory,

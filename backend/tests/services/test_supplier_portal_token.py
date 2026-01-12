@@ -3,10 +3,10 @@ Tests for Supplier Portal Token Service.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.supplier_portal_token import (
+from sensei.services.supply_chain.supplier_portal_token import (
     TokenType,
     TokenStatus,
     AccessLevel,
@@ -26,6 +26,10 @@ from sensei.services.supplier_portal_token import (
     get_supplier_portal_token_service,
     reset_supplier_portal_token_service,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ============================================================================
@@ -281,7 +285,7 @@ class TestTokenGeneration:
             expiry_days=7,
         )
         
-        expected_expiry = datetime.utcnow() + timedelta(days=7)
+        expected_expiry = _utcnow() + timedelta(days=7)
         # Allow 1 minute tolerance
         assert abs((result.expires_at - expected_expiry).total_seconds()) < 60
     
@@ -536,7 +540,7 @@ class TestTokenValidation:
         )
         
         # Manually set expiry to past
-        result.token.expires_at = datetime.utcnow() - timedelta(hours=1)
+        result.token.expires_at = _utcnow() - timedelta(hours=1)
         
         validation = service.validate_token(result.plain_token)
         
@@ -782,7 +786,7 @@ class TestTokenManagement:
         
         reactivated = service.reactivate_token(result.token.id, extend_expiry_days=30)
         
-        expected_expiry = datetime.utcnow() + timedelta(days=30)
+        expected_expiry = _utcnow() + timedelta(days=30)
         assert abs((reactivated.expires_at - expected_expiry).total_seconds()) < 60
     
     def test_extend_token_expiry(self, service, supplier_id, user_id):
@@ -812,7 +816,7 @@ class TestTokenManagement:
         )
         
         # Set expiry to past
-        result.token.expires_at = datetime.utcnow() - timedelta(days=1)
+        result.token.expires_at = _utcnow() - timedelta(days=1)
         
         count = service.expire_old_tokens()
         

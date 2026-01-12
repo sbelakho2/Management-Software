@@ -16,7 +16,9 @@ import pytest
 from datetime import datetime, timedelta, date
 from uuid import uuid4, UUID
 
-from sensei.services.today_screen import (
+from sensei.core.time import utcnow_naive
+
+from sensei.services.ops.today_screen import (
     TodayScreenService,
     TodayScreenData,
     Priority,
@@ -1323,7 +1325,7 @@ class TestEdgeCases:
 
 
 # Import additional types for shop floor tests
-from sensei.services.today_screen import (
+from sensei.services.ops.today_screen import (
     ShopFloorAreaType,
     ShopFloorAlertSeverity,
     WorkOrderAtRisk,
@@ -1620,7 +1622,7 @@ class TestCriticalAndons:
         )
         
         # Manually set raised_at to past
-        andon.raised_at = datetime.utcnow() - timedelta(minutes=30)
+        andon.raised_at = utcnow_naive() - timedelta(minutes=30)
         
         andons = service.get_critical_andons()
         assert andons[0].minutes_open >= 30
@@ -2150,7 +2152,7 @@ class TestWIPViolations:
         )
         
         # Manually set started_at to past
-        violation.started_at = datetime.utcnow() - timedelta(minutes=45)
+        violation.started_at = utcnow_naive() - timedelta(minutes=45)
         
         violations = service.get_wip_violations()
         assert violations[0].duration_minutes >= 45

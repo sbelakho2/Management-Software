@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
-from sensei.services.label_printing import (
+from sensei.services.production.label_printing import (
     # Enums
     LabelSize,
     BarcodeType,

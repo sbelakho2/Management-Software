@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.change_control import (
+from sensei.services.quality.change_control import (
     ChangeControlService,
     ChangeRequest,
     ChangeApproval,

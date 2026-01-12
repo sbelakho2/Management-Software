@@ -26,6 +26,22 @@ from sensei.models.risk import Risk, RiskMitigation
 from sensei.models.obeya import ObeyaItem, ObeyaComment
 from sensei.models.a3 import A3, A3Section
 from sensei.models.task import Task, TaskComment, Notification
+from sensei.models.project_management import (
+    Project,
+    ProjectMember,
+    Epic,
+    UserStory,
+    Subtask,
+    StoryComment,
+    StoryHistory,
+    Sprint,
+    Issue,
+    IssueComment,
+    Milestone,
+    WikiPage,
+    ProjectActivity,
+    BoardView,
+)
 from sensei.models.learning import (
     LearningUnit,
     LearningModule,
@@ -34,6 +50,8 @@ from sensei.models.learning import (
 )
 from sensei.models.attachment import Attachment, AttachmentVersion
 from sensei.models.audit_log import AuditLog
+from sensei.models.data_lineage import DataLineageLink
+from sensei.models.reasoning_trace import ReasoningTrace
 
 # Phase 3: Production & TPS Execution Models
 from sensei.models.work_center import (
@@ -127,6 +145,7 @@ from sensei.models.production import (
     CellPerformance,
     ShiftNumber,
 )
+from sensei.models.maintenance import ConditionReading, MaintenanceRecord
 
 __all__ = [
     # Base
@@ -188,6 +207,7 @@ __all__ = [
     "AttachmentVersion",
     # Audit
     "AuditLog",
+    "DataLineageLink",
     # Phase 3: Work Center & Station
     "WorkCenter",
     "WorkCenterStatus",
@@ -270,4 +290,7 @@ __all__ = [
     "CellStatus",
     "CellPerformance",
     "ShiftNumber",
+    # Maintenance
+    "ConditionReading",
+    "MaintenanceRecord",
 ]

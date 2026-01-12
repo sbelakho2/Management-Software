@@ -71,6 +71,8 @@ def mock_user():
 def mock_db():
     """Create a mock database session."""
     db = AsyncMock()
+    # AsyncSession.add() is sync; keep it sync to avoid un-awaited coroutine warnings.
+    db.add = MagicMock()
     return db
 
 

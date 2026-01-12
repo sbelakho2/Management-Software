@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.ai_qualification_advisory import (
+from sensei.services.ai.ai_qualification_advisory import (
     # Enums
     AdvisoryType,
     DecisionRecommendation,

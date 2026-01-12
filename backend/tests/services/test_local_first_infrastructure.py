@@ -12,7 +12,7 @@ from typing import Dict, Any
 import pytest
 import numpy as np
 
-from sensei.services.local_first_infrastructure import (
+from sensei.services.core.local_first_infrastructure import (
     # Enums
     ModelPrecision,
     ModelSize,

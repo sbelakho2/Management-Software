@@ -11,7 +11,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 
-from sensei.services.ai_content_drafting import (
+from sensei.services.ai.ai_content_drafting import (
     AIDraftingService,
     get_ai_drafting_service,
     reset_ai_drafting_service,

@@ -12,10 +12,14 @@ Comprehensive tests covering:
 
 import asyncio
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from sensei.services.job_idempotency import (
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+from sensei.services.utils.job_idempotency import (
     JobIdempotencyService,
     IdempotencyKey,
     JobLock,
@@ -122,7 +126,7 @@ class TestIdempotencyKey:
             ttl_hours=48
         )
         
-        expected_expiry = datetime.utcnow() + timedelta(hours=48)
+        expected_expiry = _utcnow() + timedelta(hours=48)
         assert abs((key.expires_at - expected_expiry).total_seconds()) < 5
     
     def test_from_explicit_key(self):
@@ -151,7 +155,7 @@ class TestIdempotencyKey:
             "test",
             ttl_hours=0
         )
-        key.expires_at = datetime.utcnow() - timedelta(hours=1)
+        key.expires_at = _utcnow() - timedelta(hours=1)
         
         assert key.is_expired() is True
     
@@ -198,7 +202,7 @@ class TestJobLock:
             ttl_seconds=600
         )
         
-        expected_expiry = datetime.utcnow() + timedelta(seconds=600)
+        expected_expiry = _utcnow() + timedelta(seconds=600)
         assert abs((lock.expires_at - expected_expiry).total_seconds()) < 5
     
     def test_is_expired_false(self):
@@ -216,7 +220,7 @@ class TestJobLock:
             job_key="test-key",
             ttl_seconds=0
         )
-        lock.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        lock.expires_at = _utcnow() - timedelta(seconds=1)
         
         assert lock.is_expired() is True
     
@@ -432,7 +436,7 @@ class TestJobRecord:
             job_type=JobType.PDF_GENERATION
         )
         job.mark_started()
-        job.started_at = datetime.utcnow() - timedelta(seconds=10)
+        job.started_at = _utcnow() - timedelta(seconds=10)
         job.mark_completed()
         
         duration = job.duration_seconds()
@@ -663,7 +667,7 @@ class TestJobIdempotencyService:
             "test",
             ttl_hours=0
         )
-        key.expires_at = datetime.utcnow() - timedelta(hours=1)
+        key.expires_at = _utcnow() - timedelta(hours=1)
         
         assert service.validate_key(key) is False
     
@@ -848,7 +852,7 @@ class TestJobIdempotencyService:
     def test_acquire_lock_after_expiry(self, service):
         """Test acquiring lock after previous expired."""
         lock1 = service.acquire_lock("job-key-123", "owner-1", ttl_seconds=0)
-        lock1.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        lock1.expires_at = _utcnow() - timedelta(seconds=1)
         
         lock2 = service.acquire_lock("job-key-123", "owner-2")
         
@@ -886,7 +890,7 @@ class TestJobIdempotencyService:
     def test_check_lock_expired(self, service):
         """Test checking expired lock."""
         lock = service.acquire_lock("job-key-123", "owner-1", ttl_seconds=0)
-        lock.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        lock.expires_at = _utcnow() - timedelta(seconds=1)
         
         result = service.check_lock("job-key-123")
         
@@ -901,7 +905,7 @@ class TestJobIdempotencyService:
         assert extended is True
         
         lock = service.check_lock("job-key-123")
-        assert lock.expires_at > datetime.utcnow() + timedelta(seconds=200)
+        assert lock.expires_at > _utcnow() + timedelta(seconds=200)
     
     def test_extend_lock_wrong_owner(self, service):
         """Test extending lock with wrong owner."""
@@ -950,7 +954,7 @@ class TestJobIdempotencyService:
         
         # Manually expire
         cache_key = f"result:{key.key}"
-        service._results[cache_key]["expires_at"] = datetime.utcnow() - timedelta(hours=1)
+        service._results[cache_key]["expires_at"] = _utcnow() - timedelta(hours=1)
         
         result = service.get_cached_result(key.key)
         
@@ -1167,7 +1171,7 @@ class TestJobIdempotencyService:
         key = service.generate_idempotency_key(JobType.PDF_GENERATION, "1")
         job = service.register_job(key)
         job.mark_completed()
-        job.result_expires_at = datetime.utcnow() - timedelta(hours=1)
+        job.result_expires_at = _utcnow() - timedelta(hours=1)
         
         cleaned = service.cleanup_expired()
         
@@ -1177,7 +1181,7 @@ class TestJobIdempotencyService:
     def test_cleanup_expired_locks(self, service):
         """Test cleaning up expired locks."""
         lock = service.acquire_lock("job-key", "owner", ttl_seconds=0)
-        lock.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        lock.expires_at = _utcnow() - timedelta(seconds=1)
         
         cleaned = service.cleanup_expired()
         
@@ -1289,7 +1293,7 @@ class TestJobIdempotencyIntegration:
             await asyncio.sleep(0.01)  # Simulate work
             return {
                 "pdf_url": f"https://storage.example.com/quotes/{entity_id}.pdf",
-                "generated_at": datetime.utcnow().isoformat()
+                "generated_at": _utcnow().isoformat()
             }
         
         # First generation
@@ -1340,7 +1344,7 @@ class TestJobIdempotencyIntegration:
         attempts = []
         
         async def flaky_webhook():
-            attempts.append(datetime.utcnow())
+            attempts.append(_utcnow())
             if len(attempts) < 3:
                 raise ConnectionError("Service unavailable")
             return {"status": "delivered"}

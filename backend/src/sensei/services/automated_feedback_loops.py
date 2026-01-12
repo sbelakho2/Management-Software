@@ -16,7 +16,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Callable
 import heapq
@@ -126,7 +126,7 @@ class Correction:
     user_info: UserInfo
     model_version: ModelVersion
     metadata: CorrectionMetadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     status: CorrectionStatus = CorrectionStatus.PENDING
     embedding: Optional[List[float]] = None
     similarity_hash: Optional[str] = None
@@ -408,7 +408,7 @@ class ConflictResolver:
                 corrections=corrections,
                 resolved_value=corrections[0].user_correction,
                 resolution_strategy=strategy or self.default_strategy,
-                resolved_at=datetime.utcnow(),
+                resolved_at=datetime.now(timezone.utc),
             )
         
         strategy = strategy or self.default_strategy
@@ -420,7 +420,7 @@ class ConflictResolver:
             corrections=corrections,
             resolved_value=resolved_value,
             resolution_strategy=strategy,
-            resolved_at=datetime.utcnow(),
+            resolved_at=datetime.now(timezone.utc),
         )
     
     def _resolve_last_wins(self, corrections: List[Correction]) -> str:
@@ -647,7 +647,7 @@ class CorrectionVersionManager:
         """Mark a model version as deprecated."""
         key = f"{model_id}:{version}"
         if key in self._model_versions:
-            self._model_versions[key].deprecated_at = deprecation_date or datetime.utcnow()
+            self._model_versions[key].deprecated_at = deprecation_date or datetime.now(timezone.utc)
             
             # Notify callbacks
             for callback in self._deprecation_callbacks:
@@ -677,7 +677,7 @@ class CorrectionVersionManager:
             return True
         
         # Check age
-        age = datetime.utcnow() - correction.created_at
+        age = datetime.now(timezone.utc) - correction.created_at
         if age > timedelta(days=self.staleness_threshold_days):
             return True
         
@@ -785,7 +785,7 @@ class FeedbackLoopManager:
             raise ValueError("No current model set. Call set_current_model first.")
         
         self._correction_count += 1
-        correction_id = f"corr_{self._correction_count}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        correction_id = f"corr_{self._correction_count}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
         
         correction = Correction(
             id=correction_id,

@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
-from sensei.services.search import (
+from sensei.services.core.search import (
     FullTextSearchService,
     SearchableEntityType,
     SearchSortField,

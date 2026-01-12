@@ -9,12 +9,12 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from sensei.api.deps import get_current_active_user, get_db, require_role
 from sensei.models.user import User, RoleType
-from sensei.services.database_backup import (
+from sensei.services.core.database_backup import (
     BackupMetadata,
     BackupSchedule,
     BackupStatus,
@@ -31,6 +31,8 @@ router = APIRouter()
 # Response Models
 class BackupResponse(BaseModel):
     """Backup metadata response"""
+
+    model_config = ConfigDict(from_attributes=True)
     backup_id: str
     strategy: str
     timestamp: datetime
@@ -43,12 +45,12 @@ class BackupResponse(BaseModel):
     file_path: str
     error_message: Optional[str] = None
     
-    class Config:
-        from_attributes = True
 
 
 class RestoreTestResponse(BaseModel):
     """Restore test result response"""
+
+    model_config = ConfigDict(from_attributes=True)
     test_id: str
     backup_id: str
     start_time: datetime
@@ -59,8 +61,6 @@ class RestoreTestResponse(BaseModel):
     error_message: Optional[str] = None
     test_database: Optional[str] = None
     
-    class Config:
-        from_attributes = True
 
 
 class BackupSummaryResponse(BaseModel):

@@ -5,13 +5,13 @@ Contains business logic services that orchestrate complex operations
 across models and APIs.
 """
 
-from sensei.services.rfq_completeness import (
+from sensei.services.sales.rfq_completeness import (
     RFQCompletenessService,
     CompletenessResult,
     MissingField,
     FieldCategory,
 )
-from sensei.services.state_machine import (
+from sensei.services.core.state_machine import (
     StateMachine,
     StateMachineRegistry,
     GateEnforcer,
@@ -46,7 +46,7 @@ from sensei.services.escalation_policy import (
     EscalationStatus,
     EscalationPriority,
 )
-from sensei.services.training_matrix import (
+from sensei.services.hr.training_matrix import (
     TrainingMatrixService,
     TrainingMatrixResult,
     GapAnalysisResult,
@@ -59,7 +59,7 @@ from sensei.services.training_matrix import (
     GapSeverity,
     ExpirationUrgency,
 )
-from sensei.services.andon_a3_escalation import (
+from sensei.services.ops.andon_a3_escalation import (
     AndonA3EscalationService,
     AndonA3EscalationJobRunner,
     RecurrencePattern,
@@ -70,7 +70,7 @@ from sensei.services.andon_a3_escalation import (
     A3EscalationReason,
     A3EscalationStatus,
 )
-from sensei.services.notification_triggers import (
+from sensei.services.core.notification_triggers import (
     NotificationTriggersService,
     NotificationTriggersJobRunner,
     TriggerType,
@@ -84,7 +84,7 @@ from sensei.services.notification_triggers import (
     NotificationPriority,
     SnoozeStatus,
 )
-from sensei.services.search import (
+from sensei.services.core.search import (
     FullTextSearchService,
     SearchableEntityType,
     SearchSortField,
@@ -117,7 +117,7 @@ from sensei.services.saved_views import (
     build_sort_field,
     build_column_config,
 )
-from sensei.services.quote_quality import (
+from sensei.services.sales.quote_quality import (
     QuoteQualityService,
     QuoteData,
     QualityCheckResult,
@@ -130,7 +130,7 @@ from sensei.services.quote_quality import (
     get_blocking_issues,
     get_warnings,
 )
-from sensei.services.lsw_scheduling import (
+from sensei.services.production.lsw_scheduling import (
     LSWSchedulingService,
     LSWChecklistTemplate,
     LSWChecklistInstance,
@@ -144,7 +144,7 @@ from sensei.services.lsw_scheduling import (
     build_lsw_template,
     get_default_template_ids,
 )
-from sensei.services.kpi_metrics import (
+from sensei.services.ops.kpi_metrics import (
     KPIService,
     KPIDefinition,
     KPIValue,
@@ -177,7 +177,7 @@ from sensei.services.conditions_library import (
     get_default_template_codes,
     get_default_condition_set_ids,
 )
-from sensei.services.today_screen import (
+from sensei.services.ops.today_screen import (
     TodayScreenService,
     TodayScreenData,
     Priority,
@@ -195,7 +195,7 @@ from sensei.services.today_screen import (
     get_today_screen_service,
     reset_today_screen_service,
 )
-from sensei.services.pdf_generation import (
+from sensei.services.utils.pdf_generation import (
     PDFGenerationService,
     PDFDocumentType,
     PDFLanguage,
@@ -237,7 +237,7 @@ from sensei.services.missing_info_workflow import (
     get_missing_info_workflow_service,
     reset_missing_info_workflow_service,
 )
-from sensei.services.supplier_portal_token import (
+from sensei.services.supply_chain.supplier_portal_token import (
     SupplierPortalTokenService,
     TokenType,
     TokenStatus,
@@ -257,7 +257,7 @@ from sensei.services.supplier_portal_token import (
     get_supplier_portal_token_service,
     reset_supplier_portal_token_service,
 )
-from sensei.services.capa_workflow import (
+from sensei.services.quality.capa_workflow import (
     CAPAWorkflowIntegrationService,
     NCType,
     NCSeverity,
@@ -281,7 +281,7 @@ from sensei.services.capa_workflow import (
     get_capa_workflow_service,
     reset_capa_workflow_service,
 )
-from sensei.services.audit_trail_timeline import (
+from sensei.services.quality.audit_trail_timeline import (
     AuditTrailTimelineService,
     ChangeType,
     EntityType as AuditEntityType,

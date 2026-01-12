@@ -3,10 +3,10 @@ Tests for Audit Trail Timeline Service.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.audit_trail_timeline import (
+from sensei.services.quality.audit_trail_timeline import (
     ChangeType,
     EntityType,
     FieldType,
@@ -218,7 +218,7 @@ class TestAuditEntry:
             entity_type=EntityType.RFQ,
             entity_name="RFQ-2024-001",
             change_type=ChangeType.CREATE,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(timezone.utc),
             changed_by=uuid4(),
             changed_by_name="John Doe",
         )
@@ -234,7 +234,7 @@ class TestAuditEntry:
             entity_type=EntityType.RFQ,
             entity_name="RFQ-2024-001",
             change_type=ChangeType.STATUS_CHANGE,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(timezone.utc),
             changed_by=uuid4(),
             changed_by_name="John Doe",
             changes=[
@@ -266,7 +266,7 @@ class TestAuditEntry:
             entity_type=EntityType.RFQ,
             entity_name="RFQ-2024-001",
             change_type=ChangeType.LINK_ADD,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(timezone.utc),
             changed_by=uuid4(),
             changed_by_name="John Doe",
             related_entities=[related],
@@ -1105,7 +1105,7 @@ class TestCleanup:
         )
         
         # Manually age the entry
-        service._entries[entry.id].changed_at = datetime.utcnow() - timedelta(days=400)
+        service._entries[entry.id].changed_at = datetime.now(timezone.utc) - timedelta(days=400)
         
         removed = service.cleanup_old_entries(older_than_days=365)
         

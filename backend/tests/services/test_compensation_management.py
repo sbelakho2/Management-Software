@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.compensation_management import (
+from sensei.services.hr.compensation_management import (
     ChangeReason,
     ChangeStatus,
     CompensationManagementService,

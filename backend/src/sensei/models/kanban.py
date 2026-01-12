@@ -6,7 +6,7 @@ and pull system signals.
 """
 
 import enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, Any
 from uuid import UUID as PyUUID
@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
+from sensei.core.time import utcnow_naive
 
 if TYPE_CHECKING:
     from sensei.models.work_center import WorkCenter
@@ -397,7 +398,7 @@ class KanbanCard(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         if self.completed_at:
             delta = self.completed_at - self.created_at
         else:
-            delta = datetime.utcnow() - self.created_at
+            delta = datetime.now(timezone.utc).replace(tzinfo=None) - self.created_at
         return delta.days
 
     @property
@@ -406,10 +407,10 @@ class KanbanCard(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         # Get last column change from history
         for h in self.history:
             if h.field_name == "column_name":
-                delta = datetime.utcnow() - h.changed_at
+                delta = datetime.now(timezone.utc).replace(tzinfo=None) - h.changed_at
                 return delta.total_seconds() / 3600
         # If no history, use creation time
-        delta = datetime.utcnow() - self.created_at
+        delta = datetime.now(timezone.utc).replace(tzinfo=None) - self.created_at
         return delta.total_seconds() / 3600
 
 
@@ -434,7 +435,7 @@ class KanbanCardHistory(Base, TimestampMixin):
     old_value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     new_value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     changed_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, index=True
+        DateTime, nullable=False, default=utcnow_naive, index=True
     )
     changed_by_id: Mapped[PyUUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False

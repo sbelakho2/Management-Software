@@ -15,7 +15,7 @@ import pytest
 import time
 from uuid import uuid4
 
-from sensei.services.search import (
+from sensei.services.core.search import (
     FullTextSearchService,
     SearchableDocument,
     SearchableEntityType,

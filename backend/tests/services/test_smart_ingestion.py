@@ -15,7 +15,7 @@ Tests:
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from uuid import uuid4
@@ -54,6 +54,10 @@ from sensei.services.smart_ingestion import (
     EntityBuilder,
     SmartIngestionService,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================
@@ -741,8 +745,8 @@ def test_smart_ingestion_service_get_stats():
     # Create various jobs
     job1 = service.create_job()
     job1.status = IngestionStatus.COMPLETED
-    job1.processing_started_at = datetime.utcnow()
-    job1.processing_completed_at = datetime.utcnow() + timedelta(seconds=5)
+    job1.processing_started_at = _utcnow()
+    job1.processing_completed_at = _utcnow() + timedelta(seconds=5)
     
     job2 = service.create_job()
     job2.status = IngestionStatus.FAILED
@@ -811,7 +815,7 @@ def test_ingestion_job_properties():
     job = IngestionJob(
         id=str(uuid4()),
         status=IngestionStatus.PROCESSING,
-        processing_started_at=datetime.utcnow(),
+        processing_started_at=_utcnow(),
     )
     
     # No duration yet

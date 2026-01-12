@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sensei.services.andon_a3_escalation import (
+from sensei.services.ops.andon_a3_escalation import (
     AndonA3EscalationService,
     AndonA3EscalationJobRunner,
     RecurrencePattern,

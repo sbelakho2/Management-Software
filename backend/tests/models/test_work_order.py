@@ -2,7 +2,7 @@
 Tests for Work Order models.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -42,7 +42,7 @@ class TestWorkOrderModel:
 
     def test_work_order_creation_full(self):
         """Test work order creation with all fields."""
-        scheduled_start = datetime.utcnow()
+        scheduled_start = datetime.now(timezone.utc).replace(tzinfo=None)
         scheduled_end = scheduled_start + timedelta(days=5)
 
         work_order = WorkOrder(
@@ -152,7 +152,7 @@ class TestWorkOrderModel:
 
     def test_work_order_is_late(self):
         """Test late detection."""
-        past_date = datetime.utcnow() - timedelta(days=1)
+        past_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
 
         work_order_late = WorkOrder(
             work_order_number="WO-LATE",
@@ -261,7 +261,7 @@ class TestWorkOrderOperationModel:
 
     def test_operation_creation_full(self):
         """Test operation creation with all fields."""
-        started = datetime.utcnow()
+        started = datetime.now(timezone.utc).replace(tzinfo=None)
         completed = started + timedelta(hours=2)
 
         operation = WorkOrderOperation(
@@ -492,7 +492,7 @@ class TestWorkOrderEdgeCases:
 
     def test_operation_elapsed_time(self):
         """Test operation elapsed time calculation."""
-        started = datetime.utcnow() - timedelta(hours=1)
+        started = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
 
         operation = WorkOrderOperation(
             work_order_id=1,
@@ -509,8 +509,8 @@ class TestWorkOrderEdgeCases:
 
     def test_operation_elapsed_time_completed(self):
         """Test elapsed time for completed operation."""
-        started = datetime.utcnow() - timedelta(hours=2)
-        completed = datetime.utcnow() - timedelta(hours=1)
+        started = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+        completed = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
 
         operation = WorkOrderOperation(
             work_order_id=1,

@@ -17,7 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.today_screen import (
+from sensei.services.ops.today_screen import (
     TodayScreenService,
     TodayScreenData,
     Priority,

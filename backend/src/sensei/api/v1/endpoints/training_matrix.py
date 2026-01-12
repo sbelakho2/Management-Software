@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 
-from sensei.services.training_matrix import (
+from sensei.services.hr.training_matrix import (
     TrainingMatrixService,
     TrainingMatrixResult,
     GapAnalysisResult,
@@ -590,7 +590,7 @@ def get_urgency_levels() -> list[dict[str, str]]:
 
 def _convert_matrix_result(result: TrainingMatrixResult) -> TrainingMatrixResponse:
     """Convert service result to API response."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     rows = []
     for row in result.rows:
@@ -645,7 +645,7 @@ def _convert_matrix_result(result: TrainingMatrixResult) -> TrainingMatrixRespon
         total_gaps=result.total_gaps,
         critical_gaps=result.critical_gaps,
         expiring_certifications=result.expiring_certifications,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     )
 
 
@@ -655,7 +655,7 @@ def _convert_gap_result(
     severity: str | None = None,
 ) -> GapAnalysisResponse:
     """Convert gap analysis result to API response."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     gaps = result.gaps
     
@@ -691,7 +691,7 @@ def _convert_gap_result(
         by_severity=result.by_severity,
         by_skill=result.by_skill,
         by_station=result.by_station,
-        analyzed_at=datetime.utcnow().isoformat(),
+        analyzed_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     )
 
 
@@ -700,7 +700,7 @@ def _convert_expiration_result(
     urgency: str | None = None,
 ) -> ExpirationAlertResponse:
     """Convert expiration alert result to API response."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     
     alerts = result.alerts
     
@@ -745,5 +745,5 @@ def _convert_expiration_result(
         total_alerts=len(alert_schemas),
         by_urgency=result.by_urgency,
         suggested_tasks=task_schemas,
-        checked_at=datetime.utcnow().isoformat(),
+        checked_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     )

@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from sensei.core.time import utcnow_naive
+
 
 # =============================================================================
 # Generic Type Variables
@@ -270,7 +272,7 @@ class HealthStatus(BaseModel):
         default_factory=dict,
         description="Status of dependent services",
     )
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utcnow_naive)
 
 
 class ServiceStatus(BaseModel):

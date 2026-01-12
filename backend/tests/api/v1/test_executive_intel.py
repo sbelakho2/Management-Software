@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+import json
+
+from sensei.api.v1.endpoints.executive_intel import analyze_employee_risk, export_strategic_report
+from sensei.api.v1.endpoints.executive_intel import EmployeeRiskRequest
+
+import pytest
+
+from sensei.api.exceptions import BadRequestError
+from sensei.api.v1.endpoints.executive_intel import NL2SQLRequest, nl2sql_query
+
+
+def make_db(*, scalar_value: int = 0):
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar = MagicMock(return_value=scalar_value)
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+@pytest.mark.asyncio
+async def test_nl2sql_open_non_conformances_counts() -> None:
+    db = make_db(scalar_value=7)
+    current_user = type("User", (), {"id": "u-1"})()
+
+    resp = await nl2sql_query(NL2SQLRequest(question="How many open non conformances are there?"), db, current_user)
+    assert resp.success is True
+    assert resp.data.result["open_non_conformances"] == 7
+
+
+@pytest.mark.asyncio
+async def test_nl2sql_rejects_unsupported_question() -> None:
+    db = make_db(scalar_value=0)
+    current_user = type("User", (), {"id": "u-1"})()
+
+    with pytest.raises(BadRequestError):
+        await nl2sql_query(NL2SQLRequest(question="Show me all customers"), db, current_user)
+
+
+class _StubUser:
+    def __init__(self, *, is_superuser: bool = True):
+        self.is_superuser = is_superuser
+
+
+@pytest.mark.asyncio
+async def test_employee_risk_analysis_returns_assessment():
+    db = MagicMock()
+    user = _StubUser(is_superuser=True)
+
+    payload = EmployeeRiskRequest(
+        employee_name="Alice Example",
+        department="Operations",
+        tenure_months=3,
+        overtime_hours_weekly=20,
+        skip_rate=0.25,
+        peer_comparison=1.4,
+    )
+
+    resp = await analyze_employee_risk(payload=payload, db=db, current_user=user)
+    assert resp.success is True
+    assert resp.data is not None
+    assert resp.data.employee_name == "Alice Example"
+    assert resp.data.retention_risk in {"low", "medium", "high", "critical"}
+    assert resp.data.burnout_risk in {"low", "medium", "high", "critical"}
+    assert isinstance(resp.data.risk_factors, list)
+
+
+@pytest.mark.asyncio
+async def test_strategic_report_export_downloads_json():
+    db = MagicMock()
+    user = _StubUser(is_superuser=True)
+
+    # Two count queries: open NCs, open CAPAs
+    exec_result_1 = MagicMock()
+    exec_result_1.scalar.return_value = 2
+    exec_result_2 = MagicMock()
+    exec_result_2.scalar.return_value = 5
+    db.execute = AsyncMock(side_effect=[exec_result_1, exec_result_2])
+
+    resp = await export_strategic_report(db=db, current_user=user)
+    assert resp.media_type == "application/json"
+    assert "attachment" in resp.headers.get("Content-Disposition", "")
+
+    payload = json.loads(resp.body.decode("utf-8"))
+    assert payload["kpis"]["open_non_conformances"] == 2
+    assert payload["kpis"]["open_capas"] == 5

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.productionization import (
+from sensei.services.production.productionization import (
     ProductionizationService,
     EntityType,
     ImportStatus,

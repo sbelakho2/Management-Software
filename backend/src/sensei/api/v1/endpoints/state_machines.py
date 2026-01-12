@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sensei.api.deps import CurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
-from sensei.services.state_machine import (
+from sensei.services.core.state_machine import (
     GateEnforcer,
     StateMachineRegistry,
 )

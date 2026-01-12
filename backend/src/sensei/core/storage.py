@@ -6,7 +6,7 @@ S3-compatible object storage for file attachments and exports.
 
 from io import BytesIO
 from typing import Optional, BinaryIO
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 
 import boto3
@@ -67,7 +67,7 @@ def generate_file_key(
     version: Optional[int] = None
 ) -> str:
     """Generate a unique storage key for a file."""
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     version_suffix = f"_v{version}" if version else ""
     safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
     return f"{entity_type}/{entity_id}/{timestamp}{version_suffix}_{safe_filename}"
@@ -95,7 +95,7 @@ def upload_file(
     
     upload_metadata = {
         "sha256": file_hash,
-        "uploaded_at": datetime.utcnow().isoformat(),
+        "uploaded_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     }
     if metadata:
         upload_metadata.update(metadata)

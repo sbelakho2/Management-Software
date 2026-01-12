@@ -17,6 +17,8 @@ from uuid import uuid4
 from datetime import datetime
 from enum import Enum
 
+from sensei.core.time import utcnow_naive
+
 
 class Role(str, Enum):
     """User roles in the system."""
@@ -220,14 +222,14 @@ class TestRBACVerification:
         """Test audit logging captures security-relevant events."""
         # Define security events that must be logged
         security_events = {
-            "login_success": {"user_id": str(uuid4()), "timestamp": datetime.utcnow(), "ip_address": "192.168.1.100"},
-            "login_failure": {"username": "test@example.com", "timestamp": datetime.utcnow(), "ip_address": "192.168.1.100", "reason": "invalid_password"},
-            "permission_denied": {"user_id": str(uuid4()), "permission": Permission.ACCOUNT_DELETE.value, "resource": "account:123", "timestamp": datetime.utcnow()},
-            "role_changed": {"user_id": str(uuid4()), "old_role": Role.ENGINEER.value, "new_role": Role.MANAGER.value, "changed_by": str(uuid4()), "timestamp": datetime.utcnow()},
-            "password_changed": {"user_id": str(uuid4()), "timestamp": datetime.utcnow()},
-            "mfa_enabled": {"user_id": str(uuid4()), "timestamp": datetime.utcnow()},
-            "mfa_disabled": {"user_id": str(uuid4()), "timestamp": datetime.utcnow()},
-            "session_expired": {"user_id": str(uuid4()), "timestamp": datetime.utcnow()},
+            "login_success": {"user_id": str(uuid4()), "timestamp": utcnow_naive(), "ip_address": "192.168.1.100"},
+            "login_failure": {"username": "test@example.com", "timestamp": utcnow_naive(), "ip_address": "192.168.1.100", "reason": "invalid_password"},
+            "permission_denied": {"user_id": str(uuid4()), "permission": Permission.ACCOUNT_DELETE.value, "resource": "account:123", "timestamp": utcnow_naive()},
+            "role_changed": {"user_id": str(uuid4()), "old_role": Role.ENGINEER.value, "new_role": Role.MANAGER.value, "changed_by": str(uuid4()), "timestamp": utcnow_naive()},
+            "password_changed": {"user_id": str(uuid4()), "timestamp": utcnow_naive()},
+            "mfa_enabled": {"user_id": str(uuid4()), "timestamp": utcnow_naive()},
+            "mfa_disabled": {"user_id": str(uuid4()), "timestamp": utcnow_naive()},
+            "session_expired": {"user_id": str(uuid4()), "timestamp": utcnow_naive()},
         }
         
         # Verify: All security events are defined

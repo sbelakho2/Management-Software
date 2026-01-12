@@ -14,7 +14,7 @@ from sensei.models.knowledge_pack import (
     KnowledgeDocument,
     KnowledgeChunk,
 )
-from sensei.services.knowledge_ingestion import (
+from sensei.services.ai.knowledge_ingestion import (
     LicenseVerifier,
     ContentFetcher,
     ContentNormalizer,
@@ -353,7 +353,7 @@ class TestTaxonomyTagger:
 class TestKnowledgePackIngestionService:
     """Test main ingestion service."""
     
-    @patch('sensei.services.knowledge_ingestion.ContentFetcher')
+    @patch('sensei.services.ai.knowledge_ingestion.ContentFetcher')
     def test_ingest_url_with_valid_license(self, mock_fetcher_class):
         """Should successfully ingest URL with valid license."""
         # Setup mocks
@@ -381,7 +381,7 @@ class TestKnowledgePackIngestionService:
         assert "tps" in document.tags
         assert "success" in message.lower()
     
-    @patch('sensei.services.knowledge_ingestion.ContentFetcher')
+    @patch('sensei.services.ai.knowledge_ingestion.ContentFetcher')
     def test_ingest_url_with_invalid_license(self, mock_fetcher_class):
         """Should reject URL without valid license."""
         mock_fetcher = Mock()
@@ -483,7 +483,7 @@ class TestKnowledgePackIngestionService:
 class TestIntegration:
     """Integration tests for complete ingestion workflow."""
     
-    @patch('sensei.services.knowledge_ingestion.ContentFetcher')
+    @patch('sensei.services.ai.knowledge_ingestion.ContentFetcher')
     def test_full_ingestion_workflow(self, mock_fetcher_class):
         """Should complete full ingestion and processing workflow."""
         # Setup

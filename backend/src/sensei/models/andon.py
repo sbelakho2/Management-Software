@@ -6,7 +6,7 @@ triggering the Stop-Call-Wait workflow.
 """
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID as PyUUID
@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
+from sensei.core.time import utcnow_naive
 
 if TYPE_CHECKING:
     from sensei.models.work_center import Station
@@ -149,7 +150,7 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     reported_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow_naive
     )
 
     # Acknowledgement
@@ -274,7 +275,7 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def elapsed_time_minutes(self) -> int:
         """Calculate elapsed time from report to now."""
-        end = self.resolved_at or datetime.utcnow()
+        end = self.resolved_at or datetime.now(timezone.utc).replace(tzinfo=None)
         delta = end - self.reported_at
         return int(delta.total_seconds() / 60)
 
@@ -316,7 +317,7 @@ class AndonEscalation(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     escalated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow_naive
     )
 
     # Response tracking

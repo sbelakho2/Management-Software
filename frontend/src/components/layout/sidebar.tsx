@@ -10,10 +10,15 @@ import {
   Users,
   Package,
   Factory,
+  FolderKanban,
   ClipboardCheck,
   AlertTriangle,
   LayoutGrid,
+  Eye,
   GraduationCap,
+  Wrench,
+  Globe,
+  Shield,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -51,7 +56,11 @@ const mainNavItems: NavItem[] = [
   { label: 'Quality', href: '/quality', icon: ClipboardCheck },
   { label: 'Andon', href: '/andon', icon: AlertTriangle },
   { label: 'Obeya', href: '/obeya', icon: LayoutGrid },
+  { label: 'Executive', href: '/executive', icon: Eye },
   { label: 'Training', href: '/training', icon: GraduationCap },
+  { label: 'Project Management', href: '/project-management', icon: FolderKanban },
+  { label: 'Maintenance', href: '/maintenance', icon: Wrench },
+  { label: 'Supply Chain', href: '/supply-chain', icon: Globe },
 ];
 
 const bottomNavItems: NavItem[] = [
@@ -65,6 +74,11 @@ export function Sidebar() {
 
   const isCollapsed = sidebarState === 'collapsed';
   const isHidden = sidebarState === 'hidden';
+
+  const navItems = [...mainNavItems];
+  if (user?.role === 'admin') {
+    navItems.push({ label: 'Admin', href: '/admin', icon: Shield });
+  }
 
   if (isHidden) return null;
 
@@ -119,7 +133,7 @@ export function Sidebar() {
       {/* Main Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
         <ul className="space-y-1">
-          {mainNavItems.map((item) => {
+          {navItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
               <li key={item.href}>

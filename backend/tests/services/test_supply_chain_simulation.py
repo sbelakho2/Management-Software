@@ -12,7 +12,7 @@ Tests cover:
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from sensei.services.supply_chain_simulation import (
+from sensei.services.supply_chain.supply_chain_simulation import (
     # Enums
     DisruptionType,
     ImpactSeverity,

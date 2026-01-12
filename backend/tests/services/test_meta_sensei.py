@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from sensei.services.meta_sensei import (
+from sensei.services.ai.meta_sensei import (
     # Enums
     TemplateType,
     DeduplicationStrategy,

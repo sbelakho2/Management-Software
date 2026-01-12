@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from sensei.services.jit_lean_learning import (
+from sensei.services.ops.jit_lean_learning import (
     # Enums
     LessonCategory,
     TriggerType,

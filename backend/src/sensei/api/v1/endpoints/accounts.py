@@ -13,7 +13,7 @@ from typing import Annotated, Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -230,6 +230,8 @@ class AccountUpdate(BaseModel):
 
 class AccountResponse(BaseModel):
     """Account response."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     name: str
@@ -299,12 +301,12 @@ class AccountResponse(BaseModel):
     is_customer: bool
     is_supplier: bool
     
-    class Config:
-        from_attributes = True
 
 
 class AccountListResponse(BaseModel):
     """Simplified account for list views."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     name: str
@@ -319,8 +321,6 @@ class AccountListResponse(BaseModel):
     email: Optional[str]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class AccountStatsResponse(BaseModel):

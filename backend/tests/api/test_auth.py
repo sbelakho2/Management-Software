@@ -695,7 +695,7 @@ class TestRequestValidation:
                 json={"password": "SecurePass123!"},
             )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
@@ -717,7 +717,7 @@ class TestRequestValidation:
                 json={"email": "test@example.com"},
             )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
@@ -739,4 +739,4 @@ class TestRequestValidation:
                 json={},
             )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

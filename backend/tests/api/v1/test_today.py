@@ -21,7 +21,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.services.today_screen import (
+from sensei.services.ops.today_screen import (
     RiskCategory,
     AbnormalityType,
     CommitmentType,
@@ -132,7 +132,7 @@ class TestPriorityEndpoints:
         )
         
         # Schema validation (max_length=3) rejects this
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_remove_priority(self, client, sample_user_id):
         """Test removing a priority."""
@@ -776,7 +776,7 @@ class TestTodayScreenEndpoints:
         """Test getting today screen without user_name fails."""
         response = client.get(f"/api/v1/today/screen/{sample_user_id}")
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 # ============================================================================
@@ -870,7 +870,7 @@ class TestEdgeCases:
                 "priority_level": "medium",
             },
         )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_risk_validation(self, client):
         """Test risk validation."""
@@ -882,7 +882,7 @@ class TestEdgeCases:
             "probability": 5,
         })
         # Should be rejected by Pydantic validation
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_commitment_validation(self, client):
         """Test commitment validation."""
@@ -893,7 +893,7 @@ class TestEdgeCases:
             "due_date": str(date.today()),
             "due_time": "invalid",
         })
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_drill_validation(self, client):
         """Test drill validation."""
@@ -904,12 +904,12 @@ class TestEdgeCases:
             "category": "test",
             "difficulty": 10,  # Out of range
         })
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_invalid_uuid_format(self, client):
         """Test invalid UUID format."""
         response = client.get("/api/v1/today/priorities/invalid-uuid")
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_abnormality_validation(self, client):
         """Test abnormality validation."""
@@ -918,4 +918,4 @@ class TestEdgeCases:
             "title": "Test",
             # Missing abnormality_type, entity_type, entity_id
         })
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

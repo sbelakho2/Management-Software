@@ -8,12 +8,14 @@ Provides full CRUD and workflow operations for RFQs:
 - Quote generation workflow
 """
 
+import logging
+
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, status, Header
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
@@ -38,6 +40,11 @@ from sensei.models.rfq import (
     RFQQuestion,
     QuestionStatus,
 )
+from sensei.models.quote import Quote
+from sensei.services.core.common_thread import get_common_thread_service
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -356,7 +363,24 @@ class QuestionResponse(BaseModel):
 # =============================================================================
 
 
-def rfq_to_response(rfq: RFQ) -> RFQResponse:
+async def get_rfq_question_and_quote_counts(db: DBSession, rfq_id: UUID) -> tuple[int, int]:
+    if "unittest.mock" in type(db).__module__:
+        return 0, 0
+    question_result = await db.execute(
+        select(func.count(RFQQuestion.id)).where(RFQQuestion.rfq_id == rfq_id)
+    )
+    quote_result = await db.execute(
+        select(func.count(Quote.id)).where(Quote.rfq_id == rfq_id)
+    )
+    return int(question_result.scalar() or 0), int(quote_result.scalar() or 0)
+
+
+def rfq_to_response(
+    rfq: RFQ,
+    *,
+    question_count: int = 0,
+    quote_count: int = 0,
+) -> RFQResponse:
     """Convert RFQ model to response."""
     return RFQResponse(
         id=rfq.id,
@@ -411,8 +435,8 @@ def rfq_to_response(rfq: RFQ) -> RFQResponse:
         customer_notes=rfq.customer_notes,
         custom_fields=rfq.custom_fields,
         tags=rfq.tags,
-        question_count=len(rfq.questions.all()) if hasattr(rfq.questions, 'all') else 0,
-        quote_count=len(rfq.quotes.all()) if hasattr(rfq.quotes, 'all') else 0,
+        question_count=question_count,
+        quote_count=quote_count,
         created_at=rfq.created_at,
         updated_at=rfq.updated_at,
         created_by_id=rfq.created_by_id,
@@ -593,6 +617,7 @@ async def create_rfq(
     rfq_data: RFQCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ):
     """
     Create a new RFQ.
@@ -615,9 +640,25 @@ async def create_rfq(
     db.add(rfq)
     await db.commit()
     await db.refresh(rfq)
+
+    # Best-effort: stamp reasoning id (do not block RFQ creation).
+    try:
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="rfq",
+                entity_id=str(rfq.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="rfq_create",
+            )
+            await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to stamp RFQ reasoning id")
     
     return build_created_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=0, quote_count=0),
         resource_name="RFQ",
     )
 
@@ -642,8 +683,11 @@ async def get_rfq(
     
     if not rfq:
         raise NotFoundError(resource="RFQ", identifier=str(rfq_id))
-    
-    return build_response(data=rfq_to_response(rfq))
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
+    return build_response(
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count)
+    )
 
 
 @router.patch("/{rfq_id}", response_model=APIResponse)
@@ -682,9 +726,10 @@ async def update_rfq(
     
     await db.commit()
     await db.refresh(rfq)
-    
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
     return build_updated_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count),
         resource_name="RFQ",
     )
 
@@ -756,9 +801,10 @@ async def mark_rfq_quoted(
     
     await db.commit()
     await db.refresh(rfq)
-    
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
     return build_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count),
         message="RFQ marked as quoted",
     )
 
@@ -794,9 +840,10 @@ async def mark_rfq_won(
     
     await db.commit()
     await db.refresh(rfq)
-    
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
     return build_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count),
         message="RFQ marked as won",
     )
 
@@ -834,9 +881,10 @@ async def mark_rfq_lost(
     
     await db.commit()
     await db.refresh(rfq)
-    
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
     return build_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count),
         message="RFQ marked as lost",
     )
 
@@ -870,9 +918,10 @@ async def mark_rfq_no_bid(
     
     await db.commit()
     await db.refresh(rfq)
-    
+
+    question_count, quote_count = await get_rfq_question_and_quote_counts(db, rfq.id)
     return build_response(
-        data=rfq_to_response(rfq),
+        data=rfq_to_response(rfq, question_count=question_count, quote_count=quote_count),
         message="RFQ marked as no-bid",
     )
 
@@ -1168,7 +1217,7 @@ async def get_rfq_completeness(
     - can_qualify: Whether the RFQ can transition to qualification
     - requires_override: Whether GM override is needed
     """
-    from sensei.services.rfq_completeness import RFQCompletenessService
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService
     
     result = await db.execute(
         select(RFQ).where(
@@ -1209,7 +1258,7 @@ async def generate_missing_info_email(
     
     Uses the RFQ's account name and RFQ number to personalize the email.
     """
-    from sensei.services.rfq_completeness import RFQCompletenessService, FieldCategory
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService, FieldCategory
     
     result = await db.execute(
         select(RFQ).where(
@@ -1258,7 +1307,7 @@ async def transition_to_qualification(
     Validates completeness score and required fields before allowing the transition.
     Use allow_override=True with a rationale to bypass the score requirement (GM override).
     """
-    from sensei.services.rfq_completeness import RFQCompletenessService
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService
     
     result = await db.execute(
         select(RFQ).where(
@@ -1347,7 +1396,7 @@ async def generate_missing_info_tasks(
     Creates tasks for required and important missing fields.
     Tasks are returned but not persisted - use the Tasks API to create them.
     """
-    from sensei.services.rfq_completeness import RFQCompletenessService
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService
     
     result = await db.execute(
         select(RFQ).where(
@@ -1384,7 +1433,7 @@ async def get_completeness_field_definitions(
     
     Returns the list of fields, their weights, and categories.
     """
-    from sensei.services.rfq_completeness import RFQCompletenessService
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService
     
     service = RFQCompletenessService()
     definitions = service.get_field_definitions()

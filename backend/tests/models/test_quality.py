@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 
+from sensei.core.time import utcnow_naive
+
 from sensei.models.quality import (
     NonConformance,
     NCType,
@@ -253,7 +255,7 @@ class TestNonConformanceModel:
             title="Age test",
             description="Test",
             detected_by_id=1,
-            detected_at=datetime.utcnow() - timedelta(days=10),
+            detected_at=utcnow_naive() - timedelta(days=10),
         )
 
         assert nc.age_days == 10
@@ -447,7 +449,7 @@ class TestCAPAModel:
             description="Test",
             owner_id=1,
             due_date=date.today() + timedelta(days=30),
-            opened_at=datetime.utcnow() - timedelta(days=15),
+            opened_at=utcnow_naive() - timedelta(days=15),
         )
 
         assert capa.age_days == 15
@@ -498,11 +500,11 @@ class TestCAPAActionModel:
             owner_id=5,
             due_date=date.today() + timedelta(days=1),
             status=CAPAActionStatus.COMPLETED,
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow_naive(),
             completion_evidence="All material quarantined in area Q1",
             verified=True,
             verified_by_id=10,
-            verified_at=datetime.utcnow(),
+            verified_at=utcnow_naive(),
         )
 
         assert action.action_type == CAPAActionType.CONTAINMENT

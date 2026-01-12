@@ -7,7 +7,7 @@ Tests the hybrid ML/rule-based system for predicting equipment maintenance needs
 import pytest
 import numpy as np
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from unittest.mock import patch
 import tempfile
@@ -15,6 +15,10 @@ import tempfile
 from sensei.ml.cbm_predictor import (
     ConditionBasedMaintenancePredictor,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================
@@ -34,7 +38,7 @@ class MockEquipment:
     ):
         self.id = equipment_id
         self.name = name
-        self.installation_date = installation_date or datetime.utcnow() - timedelta(days=365)
+        self.installation_date = installation_date or _utcnow() - timedelta(days=365)
         self.total_operating_hours = total_operating_hours or 5000
         self.total_cycles = total_cycles or 100000
 
@@ -50,7 +54,7 @@ class MockMaintenanceRecord:
         description: str = "Regular maintenance",
     ):
         self.equipment_id = equipment_id
-        self.date = date or datetime.utcnow() - timedelta(days=30)
+        self.date = date or _utcnow() - timedelta(days=30)
         self.maintenance_type = maintenance_type
         self.description = description
 
@@ -70,7 +74,7 @@ class MockConditionReading:
         operating_hours: float = None,
     ):
         self.equipment_id = equipment_id
-        self.timestamp = timestamp or datetime.utcnow()
+        self.timestamp = timestamp or _utcnow()
         self.temperature = temperature
         self.vibration = vibration
         self.pressure = pressure
@@ -89,7 +93,7 @@ def healthy_equipment():
     return MockEquipment(
         equipment_id="EQ-001",
         name="CNC Machine 1",
-        installation_date=datetime.utcnow() - timedelta(days=365),
+        installation_date=_utcnow() - timedelta(days=365),
         total_operating_hours=5000,
         total_cycles=100000,
     )
@@ -101,7 +105,7 @@ def aging_equipment():
     return MockEquipment(
         equipment_id="EQ-002",
         name="Old Press Machine",
-        installation_date=datetime.utcnow() - timedelta(days=365*5),
+        installation_date=_utcnow() - timedelta(days=365*5),
         total_operating_hours=50000,
         total_cycles=1000000,
     )
@@ -110,7 +114,7 @@ def aging_equipment():
 @pytest.fixture
 def normal_readings(healthy_equipment):
     """Create normal condition readings."""
-    base_time = datetime.utcnow()
+    base_time = _utcnow()
     return [
         MockConditionReading(
             equipment_id=healthy_equipment.id,
@@ -129,7 +133,7 @@ def normal_readings(healthy_equipment):
 @pytest.fixture
 def critical_readings(healthy_equipment):
     """Create readings with critical values."""
-    base_time = datetime.utcnow()
+    base_time = _utcnow()
     return [
         MockConditionReading(
             equipment_id=healthy_equipment.id,
@@ -148,7 +152,7 @@ def critical_readings(healthy_equipment):
 @pytest.fixture
 def degrading_readings(healthy_equipment):
     """Create readings showing degradation trend."""
-    base_time = datetime.utcnow()
+    base_time = _utcnow()
     readings = []
     for i in range(10):
         # Trend: temperature and vibration increasing over time
@@ -171,17 +175,17 @@ def maintenance_history(healthy_equipment):
     return [
         MockMaintenanceRecord(
             equipment_id=healthy_equipment.id,
-            date=datetime.utcnow() - timedelta(days=90),
+            date=_utcnow() - timedelta(days=90),
             maintenance_type="preventive",
         ),
         MockMaintenanceRecord(
             equipment_id=healthy_equipment.id,
-            date=datetime.utcnow() - timedelta(days=60),
+            date=_utcnow() - timedelta(days=60),
             maintenance_type="preventive",
         ),
         MockMaintenanceRecord(
             equipment_id=healthy_equipment.id,
-            date=datetime.utcnow() - timedelta(days=30),
+            date=_utcnow() - timedelta(days=30),
             maintenance_type="preventive",
         ),
     ]
@@ -492,7 +496,7 @@ class TestCBMEdgeCases:
         """Test prediction for new equipment with no history."""
         new_equipment = MockEquipment(
             equipment_id="EQ-NEW",
-            installation_date=datetime.utcnow() - timedelta(days=1),
+            installation_date=_utcnow() - timedelta(days=1),
             total_operating_hours=10,
             total_cycles=100,
         )
@@ -517,7 +521,7 @@ class TestCBMEdgeCases:
         """Test prediction for very old equipment."""
         old_equipment = MockEquipment(
             equipment_id="EQ-OLD",
-            installation_date=datetime.utcnow() - timedelta(days=365*20),
+            installation_date=_utcnow() - timedelta(days=365*20),
             total_operating_hours=200000,
             total_cycles=5000000,
         )

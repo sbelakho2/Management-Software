@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, date, time, timedelta
 from uuid import uuid4
 
-from sensei.services.lsw_scheduling import (
+from sensei.services.production.lsw_scheduling import (
     LSWSchedulingService,
     LSWChecklistTemplate,
     LSWChecklistInstance,

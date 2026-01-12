@@ -85,6 +85,29 @@ config:
     accessKey: ""
     secretKey: ""
 
+# External Secrets Operator integration
+externalSecrets:
+  enabled: false
+  refreshInterval: "1h"
+  secretStoreName: "vault-backend"
+  secretStoreKind: "ClusterSecretStore"
+  data:
+    SECRET_KEY:
+      remoteKey: "sensei/prod/secrets"
+      remoteProperty: "SECRET_KEY"
+    POSTGRES_PASSWORD:
+      remoteKey: "sensei/prod/db"
+      remoteProperty: "password"
+    REDIS_PASSWORD:
+      remoteKey: "sensei/prod/redis"
+      remoteProperty: "password"
+    S3_ACCESS_KEY:
+      remoteKey: "sensei/prod/storage"
+      remoteProperty: "access_key"
+    S3_SECRET_KEY:
+      remoteKey: "sensei/prod/storage"
+      remoteProperty: "secret_key"
+
 # Resource limits
 resources:
   backend:

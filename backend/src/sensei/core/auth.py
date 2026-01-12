@@ -695,6 +695,30 @@ class AuthService:
 # =============================================================================
 
 
+async def get_current_user_from_token(token: str) -> Optional[User]:
+    """
+    Get current user from a JWT token.
+    Useful for WebSockets where token is passed in URL.
+    """
+    from sensei.core.security import decode_token
+    from sensei.core.database import async_session_factory
+    from sqlalchemy import select
+    
+    try:
+        token_data = decode_token(token, "access")
+        user_id = UUID(token_data.sub)
+        
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(
+                    User.id == user_id,
+                    User.deleted_at.is_(None),
+                )
+            )
+            return result.scalar_one_or_none()
+    except Exception:
+        return None
+
 def get_auth_service(db: AsyncSession) -> AuthService:
     """Get an AuthService instance."""
     return AuthService(db)

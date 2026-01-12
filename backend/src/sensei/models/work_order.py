@@ -6,7 +6,7 @@ and progress tracking.
 """
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID as PyUUID
@@ -254,7 +254,7 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             WorkOrderStatus.CANCELLED,
             WorkOrderStatus.CLOSED,
         ]:
-            return datetime.utcnow() > self.scheduled_end
+            return datetime.now(timezone.utc).replace(tzinfo=None) > self.scheduled_end
         return False
 
     @property
@@ -382,7 +382,7 @@ class WorkOrderOperation(Base, TimestampMixin, AuditMixin):
         """Calculate elapsed time from start to now or completion."""
         if not self.started_at:
             return None
-        end = self.completed_at or datetime.utcnow()
+        end = self.completed_at or datetime.now(timezone.utc).replace(tzinfo=None)
         return int((end - self.started_at).total_seconds())
 
     @property

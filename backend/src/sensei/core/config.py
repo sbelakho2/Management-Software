@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_MAX_CONNECTIONS: int = 50
     
+    # Celery
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    CELERY_TASK_ALWAYS_EAGER: bool = False
+    
     # S3-Compatible Storage
     S3_ENDPOINT: str = "http://localhost:9000"
     S3_ACCESS_KEY: str = ""
@@ -82,6 +87,11 @@ class Settings(BaseSettings):
     FEATURE_PHASE_3_PRODUCTION: bool = False
     FEATURE_AI_SUGGESTIONS: bool = True
     FEATURE_OFFLINE_MODE: bool = False
+
+    # Background Workers (disabled by default)
+    MUDA_NUDGING_WORKER_ENABLED: bool = False
+    MUDA_NUDGING_WORKER_INTERVAL_SECONDS: int = 300
+    MUDA_NUDGING_WORKER_RECIPIENT_IDS: str = ""  # comma-separated
     
     # AI Settings
     OPENAI_API_KEY: str | None = None

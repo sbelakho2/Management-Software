@@ -11,11 +11,15 @@ Designed to be called periodically and integrated with notifications.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Callable, Coroutine
 from uuid import UUID
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class EscalationTargetType(str, Enum):
@@ -199,7 +203,7 @@ class EscalationResult:
     total_evaluated: int = 0
     items_escalated: int = 0
     items: list[EscalationItem] = field(default_factory=list)
-    evaluated_at: datetime = field(default_factory=datetime.utcnow)
+    evaluated_at: datetime = field(default_factory=_utcnow)
     errors: list[str] = field(default_factory=list)
 
 
@@ -470,7 +474,7 @@ class EscalationPolicyService:
         Returns:
             EscalationResult with items needing escalation
         """
-        ref_time = reference_time or datetime.utcnow()
+        ref_time = reference_time or _utcnow()
         result = EscalationResult(
             policy_name="approval_aging",
             target_type=EscalationTargetType.QUOTE_APPROVAL,
@@ -667,7 +671,7 @@ class EscalationPolicyService:
         Returns:
             EscalationResult with items needing escalation
         """
-        ref_time = reference_time or datetime.utcnow()
+        ref_time = reference_time or _utcnow()
         result = EscalationResult(
             policy_name="high_severity_risk",
             target_type=EscalationTargetType.RISK,
@@ -764,7 +768,7 @@ class EscalationPolicyService:
         Returns:
             EscalationResult with overdue risks
         """
-        ref_time = reference_time or datetime.utcnow()
+        ref_time = reference_time or _utcnow()
         result = EscalationResult(
             policy_name="risk_overdue",
             target_type=EscalationTargetType.RISK,
@@ -878,7 +882,7 @@ class EscalationPolicyService:
         Returns:
             EscalationResult with SLA-breaching Andons
         """
-        ref_time = reference_time or datetime.utcnow()
+        ref_time = reference_time or _utcnow()
         result = EscalationResult(
             policy_name="andon_sla_breach",
             target_type=EscalationTargetType.ANDON,
@@ -1193,7 +1197,7 @@ class EscalationJobRunner:
             all_errors.extend(r.errors)
         
         return {
-            "scan_time": (reference_time or datetime.utcnow()).isoformat(),
+            "scan_time": (reference_time or _utcnow()).isoformat(),
             "total_evaluated": total_evaluated,
             "total_escalated": total_escalated,
             "by_policy": {

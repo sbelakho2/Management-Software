@@ -15,7 +15,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 
-from sensei.services.document_intelligence import (
+from sensei.services.ai.document_intelligence import (
     # Enums
     DocumentType,
     ElementType,

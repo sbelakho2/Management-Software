@@ -12,7 +12,7 @@ Suggests preventive maintenance actions based on:
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.preprocessing import StandardScaler
 import joblib
@@ -26,6 +26,10 @@ if TYPE_CHECKING:
     from sensei.models.production import Equipment, MaintenanceRecord, ConditionReading
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ConditionBasedMaintenancePredictor:
@@ -59,11 +63,9 @@ class ConditionBasedMaintenancePredictor:
         equipment_list: List[Any],
         maintenance_records: List[Any],
         condition_readings: List[Any],
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """
-        Train the CBM prediction models.
-        
-        Returns metrics: accuracy, precision, recall, f1
+        Train the CBM prediction models synchronously.
         """
         logger.info(f"Training CBM predictor with {len(equipment_list)} equipment")
         
@@ -123,6 +125,37 @@ class ConditionBasedMaintenancePredictor:
         
         logger.info(f"CBM model trained. F1: {metrics['f1_mean']:.3f} ± {metrics['f1_std']:.3f}")
         return metrics
+
+    def train_async(
+        self,
+        equipment_list: List[Any],
+        maintenance_records: List[Any],
+        condition_readings: List[Any],
+    ) -> str:
+        """
+        Offload training to Celery.
+        """
+        from sensei.tasks.ml_tasks import run_model_training
+        
+        # We need to serialize data or pass references if Celery can access DB
+        # For now, we'll pass the data directly (assuming it's not too large for Redis)
+        # In production, we'd pass query parameters or IDs.
+        
+        task = run_model_training.delay(
+            model_name="cbm_predictor",
+            model_class_path="sensei.ml.cbm_predictor.ConditionBasedMaintenancePredictor",
+            train_data={
+                "equipment": equipment_list,
+                "records": maintenance_records,
+                "readings": condition_readings
+            },
+            eval_data=None,
+            hyperparameters={
+                "n_estimators": 200,
+                "max_depth": 15
+            }
+        )
+        return task.id
     
     def load(self) -> None:
         """Load trained models from disk."""
@@ -355,7 +388,7 @@ class ConditionBasedMaintenancePredictor:
             features.extend([0] * 6)
         
         # 3. Equipment characteristics (3 features)
-        now = datetime.utcnow()
+        now = _utcnow()
         equipment_age_days = (now - equipment.installation_date).days if equipment.installation_date else 0
         features.extend([
             equipment_age_days,
@@ -453,7 +486,7 @@ class ConditionBasedMaintenancePredictor:
         
         # Check time since last maintenance
         if maintenance_history:
-            days_since = (datetime.utcnow() - maintenance_history[-1].date).days
+            days_since = (_utcnow() - maintenance_history[-1].date).days
             if days_since >= 90:
                 recommendations.append({
                     'priority': 'low',
@@ -528,7 +561,7 @@ class ConditionBasedMaintenancePredictor:
             reasons.append("High vibration")
         
         if maintenance_history:
-            days_since = (datetime.utcnow() - maintenance_history[-1].date).days
+            days_since = (_utcnow() - maintenance_history[-1].date).days
             if days_since > 180:
                 risk_score += 0.2
                 reasons.append("Overdue for maintenance")

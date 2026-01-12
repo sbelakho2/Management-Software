@@ -5,6 +5,8 @@ from fastapi import APIRouter
 from sensei.api.v1.endpoints import (
     health,
     auth,
+    dev_bootstrap,
+    dev_e2e,
     users,
     accounts,
     contacts,
@@ -50,12 +52,24 @@ from sensei.api.v1.endpoints import (
     rbac_security_audit,
     chaos_testing,
     disaster_recovery_drill,
+    project_management,
+    data_lineage,
+    context_bus,
+    common_thread,
+    executive_intel,
+    cognitive_obeya,
+    maintenance,
+    supply_chain,
+    analytics,
+    websockets,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(health.router, prefix="/health", tags=["Health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(dev_bootstrap.router, prefix="/dev", tags=["Dev"])
+api_router.include_router(dev_e2e.router, prefix="/dev", tags=["Dev"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(accounts.router, prefix="/accounts", tags=["Accounts"])
 api_router.include_router(contacts.router, prefix="/contacts", tags=["Contacts"])
@@ -101,3 +115,13 @@ api_router.include_router(quote_approval_time_tracking.router, prefix="/quote-ap
 api_router.include_router(rbac_security_audit.router, prefix="/security-audit", tags=["Security Audit"])
 api_router.include_router(chaos_testing.router, prefix="/chaos-testing", tags=["Chaos Testing"])
 api_router.include_router(disaster_recovery_drill.router, prefix="/dr-drills", tags=["Disaster Recovery"])
+api_router.include_router(project_management.router, prefix="/project-management", tags=["Project Management"])
+api_router.include_router(context_bus.router, prefix="/context", tags=["Context"])
+api_router.include_router(data_lineage.router, prefix="/data-lineage", tags=["Data Lineage"])
+api_router.include_router(common_thread.router, prefix="/common-thread", tags=["Common Thread"])
+api_router.include_router(executive_intel.router, prefix="/executive", tags=["Executive"])
+api_router.include_router(cognitive_obeya.router, prefix="/cognitive-obeya", tags=["Cognitive Obeya"])
+api_router.include_router(maintenance.router, prefix="/maintenance", tags=["Maintenance"])
+api_router.include_router(supply_chain.router, prefix="/supply-chain", tags=["Supply Chain"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+api_router.include_router(websockets.router, tags=["WebSockets"])

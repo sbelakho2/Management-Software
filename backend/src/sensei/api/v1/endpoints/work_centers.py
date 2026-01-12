@@ -14,7 +14,7 @@ from typing import Annotated, Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -119,6 +119,8 @@ class WorkCenterUpdate(BaseModel):
 
 class WorkCenterResponse(BaseModel):
     """Work center response."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     name: str
@@ -141,12 +143,12 @@ class WorkCenterResponse(BaseModel):
     created_by_id: Optional[UUID]
     updated_by_id: Optional[UUID]
     
-    class Config:
-        from_attributes = True
 
 
 class WorkCenterListResponse(BaseModel):
     """Simplified work center for list views."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     name: str
@@ -158,8 +160,6 @@ class WorkCenterListResponse(BaseModel):
     is_operational: bool
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class StationBase(BaseModel):
@@ -239,6 +239,8 @@ class StationUpdate(BaseModel):
 
 class StationResponse(BaseModel):
     """Station response."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     name: str
@@ -266,12 +268,12 @@ class StationResponse(BaseModel):
     created_by_id: Optional[UUID]
     updated_by_id: Optional[UUID]
     
-    class Config:
-        from_attributes = True
 
 
 class StationListResponse(BaseModel):
     """Simplified station for list views."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     name: str
@@ -285,8 +287,6 @@ class StationListResponse(BaseModel):
     work_center_id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class WorkCenterStatsResponse(BaseModel):

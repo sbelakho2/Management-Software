@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.template_cloning import (
+from sensei.services.core.template_cloning import (
     CloneableEntityType,
     CloneHistory,
     CloneMode,

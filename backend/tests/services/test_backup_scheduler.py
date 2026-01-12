@@ -6,14 +6,14 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 
-from sensei.services.backup_scheduler import (
+from sensei.services.core.backup_scheduler import (
     BackupSchedulerService,
     BackupSchedule,
     ScheduleType,
     ScheduleStatus,
     ScheduleExecution,
 )
-from sensei.services.database_backup import (
+from sensei.services.core.database_backup import (
     BackupStrategy,
     BackupStatus,
     BackupMetadata,

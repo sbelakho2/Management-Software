@@ -9,7 +9,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.services.chaos_testing import reset_chaos_testing_service
+from sensei.services.utils.chaos_testing import reset_chaos_testing_service
 
 
 @pytest.fixture

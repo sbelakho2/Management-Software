@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.spc_scrap_rework import (
+from sensei.services.production.spc_scrap_rework import (
     SPCScrapReworkService,
     ControlChartType,
     ViolationType,

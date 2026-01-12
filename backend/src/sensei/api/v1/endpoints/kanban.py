@@ -12,7 +12,7 @@ and pull system principles.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -53,7 +53,7 @@ router = APIRouter()
 
 def _now_utc() -> datetime:
     """Get current UTC datetime (naive) for consistency with model timestamps."""
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # =============================================================================

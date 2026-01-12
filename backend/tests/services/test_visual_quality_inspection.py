@@ -11,11 +11,11 @@ Tests world-class visual defect detection capabilities:
 
 import asyncio
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 
-from sensei.services.visual_quality_inspection import (
+from sensei.services.ai.visual_quality_inspection import (
     # Enums
     DefectCategory,
     DefectSeverity,
@@ -40,6 +40,10 @@ from sensei.services.visual_quality_inspection import (
     ContinuousLearningManager,
     VisualQualityInspectionService,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def run_async(coro):
@@ -253,7 +257,7 @@ class TestInspectionResult:
         pass_result = InspectionResult(
             inspection_id="i1",
             image_id="img1",
-            timestamp=datetime.utcnow(),
+            timestamp=_utcnow(),
             decision=InspectionDecision.PASS,
             decision_confidence=0.95,
         )
@@ -261,7 +265,7 @@ class TestInspectionResult:
         fail_result = InspectionResult(
             inspection_id="i2",
             image_id="img2",
-            timestamp=datetime.utcnow(),
+            timestamp=_utcnow(),
             decision=InspectionDecision.FAIL,
             decision_confidence=0.9,
         )
@@ -281,7 +285,7 @@ class TestInspectionResult:
         result = InspectionResult(
             inspection_id="i1",
             image_id="img1",
-            timestamp=datetime.utcnow(),
+            timestamp=_utcnow(),
             decision=InspectionDecision.FAIL,
             decision_confidence=0.9,
             defects=defects,
@@ -303,10 +307,10 @@ class TestInspectionBatch:
     def test_pass_rate_calculation(self):
         """Test pass rate calculation."""
         results = [
-            InspectionResult("i1", "img1", datetime.utcnow(), InspectionDecision.PASS, 0.9),
-            InspectionResult("i2", "img2", datetime.utcnow(), InspectionDecision.PASS, 0.9),
-            InspectionResult("i3", "img3", datetime.utcnow(), InspectionDecision.FAIL, 0.9),
-            InspectionResult("i4", "img4", datetime.utcnow(), InspectionDecision.PASS, 0.9),
+            InspectionResult("i1", "img1", _utcnow(), InspectionDecision.PASS, 0.9),
+            InspectionResult("i2", "img2", _utcnow(), InspectionDecision.PASS, 0.9),
+            InspectionResult("i3", "img3", _utcnow(), InspectionDecision.FAIL, 0.9),
+            InspectionResult("i4", "img4", _utcnow(), InspectionDecision.PASS, 0.9),
         ]
         
         batch = InspectionBatch(
@@ -581,7 +585,7 @@ class TestContinuousLearningManager:
         
         feedback = FeedbackRecord(
             inspection_id="i1",
-            timestamp=datetime.utcnow(),
+            timestamp=_utcnow(),
             original_decision=InspectionDecision.PASS,
             corrected_decision=InspectionDecision.FAIL,
             false_negative_boxes=[(BoundingBox(0, 0, 50, 50), "crack")],
@@ -599,7 +603,7 @@ class TestContinuousLearningManager:
         for i in range(10):
             feedback = FeedbackRecord(
                 inspection_id=f"i{i}",
-                timestamp=datetime.utcnow(),
+                timestamp=_utcnow(),
                 original_decision=InspectionDecision.PASS,
                 false_positive_ids=["d1"],
             )
@@ -617,7 +621,7 @@ class TestContinuousLearningManager:
         for i in range(5):
             feedback = FeedbackRecord(
                 inspection_id=f"i{i}",
-                timestamp=datetime.utcnow(),
+                timestamp=_utcnow(),
                 original_decision=InspectionDecision.PASS,
             )
             manager.record_feedback(feedback)

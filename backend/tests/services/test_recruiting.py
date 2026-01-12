@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.recruiting import (
+from sensei.services.hr.recruiting import (
     CandidateStatus,
     InterviewResult,
     InterviewType,

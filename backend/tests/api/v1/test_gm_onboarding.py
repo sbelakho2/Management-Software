@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from sensei.api.v1.endpoints import gm_onboarding as gm_onboarding_api
-from sensei.services.gm_onboarding import (
+from sensei.services.ops.gm_onboarding import (
     GMOnboardingService,
     OnboardingStatus,
 )

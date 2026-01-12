@@ -5,7 +5,7 @@ Tests for KPI Definitions & Metrics Service.
 import pytest
 from datetime import date, datetime, timedelta
 
-from sensei.services.kpi_metrics import (
+from sensei.services.ops.kpi_metrics import (
     KPIService,
     KPIDefinition,
     KPIValue,

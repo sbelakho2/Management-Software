@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
-from sensei.services.notification_triggers import (
+from sensei.services.core.notification_triggers import (
     NotificationTriggersService,
     NotificationTriggersJobRunner,
     TriggerType,

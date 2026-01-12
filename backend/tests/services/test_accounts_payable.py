@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 
-from sensei.services.accounting_ledger import AccountingLedgerService, AccountType
-from sensei.services.accounts_payable import (
+from sensei.services.finance.accounting_ledger import AccountingLedgerService, AccountType
+from sensei.services.finance.accounts_payable import (
     AccountsPayableService,
     APConfig,
     PRLine,
@@ -159,7 +159,9 @@ def test_invoice_post_and_payment_run_post_to_gl():
     ledger = AccountingLedgerService()
     _setup_minimal_coa(ledger)
 
-    ap = AccountsPayableService(config=APConfig(base_currency="EUR"), ledger=ledger)
+    fixed_now = lambda: datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+    ap = AccountsPayableService(config=APConfig(base_currency="EUR"), ledger=ledger, now_fn=fixed_now)
 
     pr = ap.create_requisition(
         actor_id="buyer1",

@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from sensei.services.chaos_testing import (
+from sensei.services.utils.chaos_testing import (
     CircuitState,
     ComponentType,
     DegradationLevel,

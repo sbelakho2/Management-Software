@@ -176,7 +176,7 @@ class Attachment(Base, TimestampMixin):
     
     __table_args__ = (
         Index("ix_attachments_entity", entity_type, entity_id),
-        Index("ix_attachments_category", entity_type, entity_id, category),
+        Index("ix_attachments_entity_category", entity_type, entity_id, category),
         Index(
             "ix_attachments_active",
             entity_type,

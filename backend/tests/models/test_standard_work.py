@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 
+from sensei.core.time import utcnow_naive
+
 from sensei.models.standard_work import (
     StandardWork,
     StandardWorkType,
@@ -45,7 +47,7 @@ class TestStandardWorkModel:
             version=3,
             revision_code="C",
             approved_by_id=2,
-            approved_at=datetime.utcnow(),
+            approved_at=utcnow_naive(),
             effective_date=date.today(),
             product_id=5,
             station_id=10,

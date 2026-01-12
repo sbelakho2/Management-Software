@@ -2,7 +2,7 @@
 Tests for Andon System models.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -159,8 +159,8 @@ class TestAndonEventModel:
 
     def test_andon_response_time(self):
         """Test response time calculation."""
-        reported = datetime.utcnow() - timedelta(minutes=10)
-        acknowledged = datetime.utcnow()
+        reported = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)
+        acknowledged = datetime.now(timezone.utc).replace(tzinfo=None)
 
         event = AndonEvent(
             event_number="AND-RESP",
@@ -193,8 +193,8 @@ class TestAndonEventModel:
 
     def test_andon_resolution_time(self):
         """Test resolution time calculation."""
-        reported = datetime.utcnow() - timedelta(hours=2)
-        resolved = datetime.utcnow()
+        reported = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+        resolved = datetime.now(timezone.utc).replace(tzinfo=None)
 
         event = AndonEvent(
             event_number="AND-RES",
@@ -214,7 +214,7 @@ class TestAndonEventModel:
 
     def test_andon_elapsed_time(self):
         """Test elapsed time calculation."""
-        reported = datetime.utcnow() - timedelta(minutes=30)
+        reported = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30)
 
         event = AndonEvent(
             event_number="AND-ELAPSED",
@@ -284,8 +284,8 @@ class TestAndonEscalationModel:
 
     def test_escalation_response_time(self):
         """Test response time calculation."""
-        escalated = datetime.utcnow() - timedelta(minutes=15)
-        responded = datetime.utcnow()
+        escalated = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
+        responded = datetime.now(timezone.utc).replace(tzinfo=None)
 
         escalation = AndonEscalation(
             andon_event_id=1,
@@ -341,7 +341,7 @@ class TestAndonRecurrencePatternModel:
 
     def test_recurrence_pattern_creation(self):
         """Test recurrence pattern creation."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         pattern = AndonRecurrencePattern(
             station_id=1,
@@ -361,7 +361,7 @@ class TestAndonRecurrencePatternModel:
 
     def test_recurrence_should_escalate(self):
         """Test should_escalate property."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # At threshold, not yet escalated
         pattern_escalate = AndonRecurrencePattern(
@@ -405,7 +405,7 @@ class TestAndonRecurrencePatternModel:
 
     def test_recurrence_pattern_repr(self):
         """Test string representation."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         pattern = AndonRecurrencePattern(
             station_id=1,
@@ -512,9 +512,9 @@ class TestAndonEdgeCases:
 
     def test_andon_full_lifecycle(self):
         """Test Andon through full lifecycle."""
-        reported = datetime.utcnow() - timedelta(hours=1)
+        reported = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
         acknowledged = reported + timedelta(minutes=5)
-        resolved = datetime.utcnow()
+        resolved = datetime.now(timezone.utc).replace(tzinfo=None)
 
         event = AndonEvent(
             event_number="AND-LIFECYCLE",

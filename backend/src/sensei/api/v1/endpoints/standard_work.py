@@ -10,7 +10,7 @@ Implements standard work document control following lean manufacturing principle
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -46,7 +46,7 @@ router = APIRouter()
 
 def _now_utc() -> datetime:
     """Get current UTC datetime (naive) for consistency with model timestamps."""
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _today() -> date:

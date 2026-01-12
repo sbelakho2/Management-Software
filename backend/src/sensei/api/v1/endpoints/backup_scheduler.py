@@ -12,13 +12,13 @@ from datetime import datetime
 
 from sensei.api.deps import require_role
 from sensei.models.user import RoleType
-from sensei.services.backup_scheduler import (
+from sensei.services.core.backup_scheduler import (
     BackupSchedulerService,
     BackupSchedule,
     ScheduleType,
     ScheduleExecution,
 )
-from sensei.services.database_backup import BackupStrategy
+from sensei.services.core.database_backup import BackupStrategy
 
 
 router = APIRouter()

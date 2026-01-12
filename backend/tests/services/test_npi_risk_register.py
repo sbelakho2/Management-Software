@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.npi_risk_register import (
+from sensei.services.quality.npi_risk_register import (
     HeatMapCell,
     MitigationAction,
     MitigationStatus,

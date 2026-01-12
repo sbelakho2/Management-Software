@@ -6,14 +6,14 @@ caching, and pagination optimization.
 """
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session
 
-from sensei.services.query_optimization import (
+from sensei.services.core.query_optimization import (
     IndexRecommendation,
     PerformanceThreshold,
     QueryAnalysis,
@@ -21,6 +21,10 @@ from sensei.services.query_optimization import (
     QueryOptimizationService,
     QueryType,
 )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @pytest.fixture
@@ -52,7 +56,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=150.5,
             row_count=10,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         assert metrics.query_hash == "abc123"
@@ -69,7 +73,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=30.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         assert metrics.threshold_level == PerformanceThreshold.EXCELLENT
     
@@ -81,7 +85,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=150.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         assert metrics.threshold_level == PerformanceThreshold.GOOD
     
@@ -93,7 +97,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=800.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         assert metrics.threshold_level == PerformanceThreshold.ACCEPTABLE
     
@@ -105,7 +109,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=1500.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         assert metrics.threshold_level == PerformanceThreshold.SLOW
     
@@ -117,7 +121,7 @@ class TestQueryMetrics:
             query_type=QueryType.SELECT,
             execution_time_ms=2500.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         assert metrics.threshold_level == PerformanceThreshold.CRITICAL
 
@@ -243,8 +247,8 @@ class TestQueryOptimizationService:
         key1 = service.get_cache_key("SELECT * FROM users", {})
         key2 = service.get_cache_key("SELECT * FROM accounts", {})
         
-        service.query_cache[key1] = ([1], datetime.utcnow() + timedelta(hours=1))
-        service.query_cache[key2] = ([2], datetime.utcnow() + timedelta(hours=1))
+        service.query_cache[key1] = ([1], _utcnow() + timedelta(hours=1))
+        service.query_cache[key2] = ([2], _utcnow() + timedelta(hours=1))
         
         # This is a simple test - in practice, pattern matching would be more sophisticated
         service.clear_cache(pattern=key1)
@@ -268,7 +272,7 @@ class TestQueryOptimizationService:
                     query_type=QueryType.SELECT,
                     execution_time_ms=100.0,
                     row_count=10,
-                    timestamp=datetime.utcnow()
+                    timestamp=_utcnow()
                 )
             )
         
@@ -289,7 +293,7 @@ class TestQueryOptimizationService:
                     query_type=QueryType.SELECT,
                     execution_time_ms=exec_time,
                     row_count=1,
-                    timestamp=datetime.utcnow()
+                    timestamp=_utcnow()
                 )
             )
         
@@ -313,7 +317,7 @@ class TestQueryOptimizationService:
             query_type=QueryType.SELECT,
             execution_time_ms=1200.0,
             row_count=1,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendations = service._generate_recommendations(metric)
@@ -329,7 +333,7 @@ class TestQueryOptimizationService:
             query_type=QueryType.SEARCH,
             execution_time_ms=1800.0,
             row_count=50,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendations = service._generate_recommendations(metric)
@@ -345,7 +349,7 @@ class TestQueryOptimizationService:
             query_type=QueryType.SELECT,
             execution_time_ms=1100.0,
             row_count=1000,
-            timestamp=datetime.utcnow()
+            timestamp=_utcnow()
         )
         
         recommendations = service._generate_recommendations(metric)
@@ -369,7 +373,7 @@ class TestQueryOptimizationService:
                     query_type=QueryType.SELECT,
                     execution_time_ms=exec_time,
                     row_count=1,
-                    timestamp=datetime.utcnow()
+                    timestamp=_utcnow()
                 )
             )
         
@@ -400,7 +404,7 @@ class TestQueryOptimizationService:
                 query_type=QueryType.SELECT,
                 execution_time_ms=50,
                 row_count=1,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             ),
             QueryMetrics(
                 query_hash="q2",
@@ -408,7 +412,7 @@ class TestQueryOptimizationService:
                 query_type=QueryType.SELECT,
                 execution_time_ms=150,
                 row_count=1,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             ),
             QueryMetrics(
                 query_hash="q3",
@@ -416,7 +420,7 @@ class TestQueryOptimizationService:
                 query_type=QueryType.INSERT,
                 execution_time_ms=1600,  # Slow query
                 row_count=1,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             ),
             QueryMetrics(
                 query_hash="q4",
@@ -424,7 +428,7 @@ class TestQueryOptimizationService:
                 query_type=QueryType.SEARCH,
                 execution_time_ms=800,
                 row_count=10,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             ),
         ])
         
@@ -449,7 +453,7 @@ class TestQueryOptimizationService:
                 query_type=QueryType.SELECT,
                 execution_time_ms=100,
                 row_count=1,
-                timestamp=datetime.utcnow()
+                timestamp=_utcnow()
             )
         ])
         

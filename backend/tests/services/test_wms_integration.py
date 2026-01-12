@@ -14,7 +14,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
-from sensei.services.wms_integration import (
+from sensei.services.production.wms_integration import (
     # Enums
     LocationType,
     InventoryStatus,

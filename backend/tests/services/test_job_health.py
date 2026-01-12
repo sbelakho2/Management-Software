@@ -7,7 +7,7 @@ health checking, and metrics.
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from sensei.services.job_health import (
+from sensei.services.utils.job_health import (
     JobHealthService,
     JobDefinition,
     JobExecution,

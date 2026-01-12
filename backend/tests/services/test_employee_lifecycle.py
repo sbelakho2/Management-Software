@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.employee_lifecycle import (
+from sensei.services.hr.employee_lifecycle import (
     EmployeeLifecycleService,
     ChecklistType,
     ChecklistStatus,

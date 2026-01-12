@@ -10,6 +10,7 @@ Provides comprehensive API for managing learning content and progress:
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -42,9 +43,60 @@ from sensei.models.learning import (
     LearningStatus,
     ProgressStatus,
 )
+from sensei.services.ai.reasoning_engine import A3Phase, MentorPersona
+from sensei.services.ai.socratic_pedagogy_rag import SocraticPedagogyRAG
 
 
 router = APIRouter()
+
+
+# =============================================================================
+# Socratic Pedagogy RAG
+# =============================================================================
+
+
+class SocraticRAGRequest(BaseModel):
+    """Request for retrieval-augmented Socratic coaching."""
+
+    query: str = Field(..., min_length=1, max_length=2000)
+    phase: A3Phase = Field(default=A3Phase.CURRENT_STATE)
+    persona: MentorPersona | None = Field(default=None)
+    category: LearningCategory | None = Field(default=None)
+    difficulty: DifficultyLevel | None = Field(default=None)
+    max_sources: int = Field(default=5, ge=1, le=10)
+    max_prompts: int = Field(default=3, ge=1, le=5)
+
+
+class SocraticRAGSource(BaseModel):
+    """A retrieved learning unit reference."""
+
+    unit_id: UUID
+    code: str
+    title: str
+    category: str
+    difficulty: str
+    relevance_score: float
+
+
+class SocraticRAGPrompt(BaseModel):
+    """A Socratic prompt derived from the reasoning engine."""
+
+    id: str
+    prompt_type: str
+    question: str
+    context: str
+    phase: str
+    persona: str
+    priority: int
+    follow_up_prompts: list[str]
+
+
+class SocraticRAGResponse(BaseModel):
+    """Response for Socratic pedagogy RAG coaching."""
+
+    query: str
+    sources: list[SocraticRAGSource]
+    prompts: list[SocraticRAGPrompt]
 
 
 # =============================================================================
@@ -372,7 +424,9 @@ async def create_module(
         created_by_id=current_user.id,
     )
 
-    db.add(module)
+    maybe_awaitable = db.add(module)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(module)
 
@@ -622,7 +676,9 @@ async def create_unit(
         created_by_id=current_user.id,
     )
 
-    db.add(unit)
+    maybe_awaitable = db.add(unit)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(unit)
 
@@ -953,7 +1009,9 @@ async def start_unit(
         last_accessed_at=datetime.now(timezone.utc),
     )
 
-    db.add(progress)
+    maybe_awaitable = db.add(progress)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(progress)
 
@@ -1084,7 +1142,9 @@ async def create_assessment(
         created_by_id=current_user.id,
     )
 
-    db.add(assessment)
+    maybe_awaitable = db.add(assessment)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(assessment)
 
@@ -1217,7 +1277,9 @@ async def create_path(
         created_by_id=current_user.id,
     )
 
-    db.add(path)
+    maybe_awaitable = db.add(path)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.flush()
     await db.refresh(path)
 
@@ -1362,3 +1424,72 @@ async def delete_path(
     await db.flush()
 
     return build_deleted_response(resource_name="Learning path")
+
+
+@router.post(
+    "/socratic-rag",
+    response_model=APIResponse[SocraticRAGResponse],
+    summary="Socratic RAG coaching",
+    description=(
+        "Retrieve relevant published learning units and generate Socratic prompts "
+        "to guide the user toward evidence-based thinking."
+    ),
+)
+async def socratic_rag(
+    data: SocraticRAGRequest,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SocraticRAGResponse]:
+    # Retrieve candidate units (published only).
+    stmt = select(LearningUnit).where(LearningUnit.is_published == True)  # noqa: E712
+    if data.category:
+        stmt = stmt.where(LearningUnit.category == data.category.value)
+    if data.difficulty:
+        stmt = stmt.where(LearningUnit.difficulty == data.difficulty.value)
+
+    result = await db.execute(stmt)
+    units = result.scalars().all()
+
+    coach = SocraticPedagogyRAG()
+    retrieved, prompts = coach.coach(
+        query=data.query,
+        units=units,
+        phase=data.phase,
+        persona=data.persona,
+        max_sources=data.max_sources,
+        max_prompts=data.max_prompts,
+    )
+
+    sources = [
+        SocraticRAGSource(
+            unit_id=item.unit.id,
+            code=item.unit.code,
+            title=item.unit.title,
+            category=item.unit.category,
+            difficulty=item.unit.difficulty,
+            relevance_score=item.relevance_score,
+        )
+        for item in retrieved
+    ]
+
+    prompt_models = [
+        SocraticRAGPrompt(
+            id=p.id,
+            prompt_type=p.prompt_type.value,
+            question=p.question,
+            context=p.context,
+            phase=p.phase.value,
+            persona=p.persona.value,
+            priority=p.priority,
+            follow_up_prompts=list(p.follow_up_prompts),
+        )
+        for p in prompts
+    ]
+
+    return build_response(
+        SocraticRAGResponse(
+            query=data.query,
+            sources=sources,
+            prompts=prompt_models,
+        )
+    )

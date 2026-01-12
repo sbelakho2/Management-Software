@@ -13,7 +13,7 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -173,6 +173,8 @@ class ContactUpdate(BaseModel):
 
 class ContactResponse(BaseModel):
     """Contact response."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     first_name: str
@@ -232,12 +234,12 @@ class ContactResponse(BaseModel):
     created_by_id: Optional[UUID]
     updated_by_id: Optional[UUID]
     
-    class Config:
-        from_attributes = True
 
 
 class ContactListResponse(BaseModel):
     """Simplified contact for list views."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     first_name: str
@@ -249,8 +251,6 @@ class ContactListResponse(BaseModel):
     job_title: Optional[str]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class AccountContactRequest(BaseModel):
@@ -273,6 +273,8 @@ class AccountContactRequest(BaseModel):
 
 class AccountContactResponse(BaseModel):
     """Account-contact relationship response."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     account_id: UUID
@@ -286,12 +288,12 @@ class AccountContactResponse(BaseModel):
     notes: Optional[str]
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class ContactAccountInfo(BaseModel):
     """Contact with associated account info."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: UUID
     first_name: str
@@ -305,8 +307,6 @@ class ContactAccountInfo(BaseModel):
     account_id: UUID
     account_name: str
     
-    class Config:
-        from_attributes = True
 
 
 # =============================================================================

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 
+import { QuoteStatus } from '@/types';
+
 interface QuoteLineItem {
   id: string;
   partNumber: string;
@@ -19,7 +21,7 @@ interface Quote {
   rfqId: string;
   customerId: string;
   customerName: string;
-  status: 'draft' | 'pending' | 'sent' | 'accepted' | 'rejected' | 'expired';
+  status: QuoteStatus;
   validUntil: string;
   createdAt: string;
   updatedAt: string;
@@ -100,7 +102,7 @@ export const useQuoteStore = create<QuoteState>()(
             const quotes: Quote[] = data.items || [];
 
             const totalValue = quotes.reduce((sum, q) => sum + q.total, 0);
-            const pendingQuotes = quotes.filter(q => q.status === 'pending' || q.status === 'sent');
+            const pendingQuotes = quotes.filter(q => q.status === 'pending_approval' || q.status === 'sent');
             const sentQuotes = quotes.filter(q => q.status === 'sent');
             const acceptedQuotes = quotes.filter(q => q.status === 'accepted');
 

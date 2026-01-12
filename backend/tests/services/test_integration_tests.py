@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sensei.services.integration_tests import (
+from sensei.services.utils.integration_tests import (
     IntegrationTestService,
     IntegrationTest,
     TestStep,

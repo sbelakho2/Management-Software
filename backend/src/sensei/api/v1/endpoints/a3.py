@@ -37,6 +37,11 @@ from sensei.models.a3 import (
     A3SectionType,
     A3_SECTION_TEMPLATES,
 )
+from sensei.services.ops.a3_reasoning_gates import (
+    GateSeverity,
+    build_gate_payload,
+    evaluate_a3_section_update,
+)
 
 router = APIRouter()
 
@@ -884,13 +889,41 @@ async def update_section(
     for field, value in update_data.items():
         setattr(section, field, value)
 
+    issues = evaluate_a3_section_update(
+        section_type=section.section_type,
+        content=section.content,
+        structured_content=section.structured_content,
+    )
+    if issues:
+        gate_payload = build_gate_payload(issues)
+
+        # Persist warnings so the UI can surface them.
+        # NOTE: A3Section.structured_content is JSONB, so we can safely attach metadata.
+        structured = section.structured_content
+        if structured is None:
+            structured = {}
+        if not isinstance(structured, dict):
+            structured = {"_value": structured}
+        structured["_reasoning_gate"] = gate_payload
+        section.structured_content = structured
+
+        if any(i.severity == GateSeverity.BLOCK for i in issues):
+            raise ConflictError(
+                "A3 section update blocked by TPS reasoning gates",
+                details=gate_payload,
+            )
+
     section.version += 1
     await db.flush()
     await db.refresh(section)
 
-    return build_updated_response(
+    response_message = "A3 section updated successfully"
+    if issues:
+        response_message = "A3 section updated successfully (with reasoning warnings)"
+
+    return build_response(
         A3SectionResponse.model_validate(section),
-        "A3 section"
+        response_message,
     )
 
 

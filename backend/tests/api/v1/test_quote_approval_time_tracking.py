@@ -12,7 +12,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.services.quote_approval_time_tracking import reset_quote_approval_service
+from sensei.services.sales.quote_approval_time_tracking import reset_quote_approval_service
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ class TestStartApprovalSession:
             },
         )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestGetSession:

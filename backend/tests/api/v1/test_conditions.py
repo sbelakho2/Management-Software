@@ -14,6 +14,7 @@ Tests cover:
 """
 
 import pytest
+import pytest_asyncio
 from uuid import uuid4
 
 from fastapi import status
@@ -31,7 +32,7 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     """Create async test client."""
     transport = ASGITransport(app=app)

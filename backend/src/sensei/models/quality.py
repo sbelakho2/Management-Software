@@ -6,7 +6,7 @@ management with 8D reporting integration.
 """
 
 import enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, Any
 from uuid import UUID as PyUUID
@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
+from sensei.core.time import utcnow_naive
 
 if TYPE_CHECKING:
     from sensei.models.work_center import Station
@@ -271,7 +272,7 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     detected_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow_naive
     )
 
     # Status
@@ -414,7 +415,7 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def age_days(self) -> int:
         """Calculate age of NC in days."""
-        end = self.closed_at or datetime.utcnow()
+        end = self.closed_at or datetime.now(timezone.utc).replace(tzinfo=None)
         delta = end - self.detected_at
         return delta.days
 
@@ -463,7 +464,7 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     opened_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     target_close_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -592,7 +593,7 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def age_days(self) -> int:
         """Calculate age of CAPA in days."""
-        end = self.closed_at or datetime.utcnow()
+        end = self.closed_at or datetime.now(timezone.utc).replace(tzinfo=None)
         delta = end - self.opened_at
         return delta.days
 
@@ -852,7 +853,7 @@ class InspectionRecord(Base, TimestampMixin, AuditMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     inspected_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=utcnow_naive
     )
 
     # Results

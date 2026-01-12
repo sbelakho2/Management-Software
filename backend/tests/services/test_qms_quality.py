@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.qms_quality import (
+from sensei.services.quality.qms_quality import (
     # Enums
     QMSDocumentType,
     QMSDocumentStatus,

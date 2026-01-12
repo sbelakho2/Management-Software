@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from fastapi.testclient import TestClient
 
 from sensei.main import app
-from sensei.api.v1.endpoints.kpi import _service
+from sensei.api.v1.endpoints.kpi import _service, _muda_lesson_engine
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def reset_service():
     original_definitions = _service._definitions.copy()
     original_values = {k: list(v) for k, v in _service._values.items()}
     original_dashboards = _service._dashboards.copy()
+    original_deliveries = list(_muda_lesson_engine.deliveries)
     
     yield
     
@@ -30,6 +31,7 @@ def reset_service():
     _service._definitions = original_definitions
     _service._values = original_values
     _service._dashboards = original_dashboards
+    _muda_lesson_engine.deliveries = original_deliveries
 
 
 # --------------------------------------------------------------------------
@@ -751,3 +753,71 @@ class TestIntegration:
             assert response.status_code == 200
             data = response.json()
             assert len(data["kpis"]) > 0
+
+
+# --------------------------------------------------------------------------
+# Muda-aware nudges
+# --------------------------------------------------------------------------
+
+
+class TestMudaNudges:
+    """Tests for muda-aware contextual nudges endpoint."""
+
+    def test_generate_nudges_no_data(self, client: TestClient):
+        response = client.post(
+            "/api/v1/kpi/muda-nudges",
+            json={"recipient_id": "op_1"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_generate_nudges_from_low_fpy(self, client: TestClient):
+        # FPY 94% => defect_rate_pct 6% => HIGH_DEFECT_RATE
+        r1 = client.post(
+            "/api/v1/kpi/values",
+            json={
+                "kpi_id": "first-pass-yield",
+                "value": 94.0,
+            },
+        )
+        assert r1.status_code == 201
+
+        response = client.post(
+            "/api/v1/kpi/muda-nudges",
+            json={
+                "recipient_id": "op_1",
+                "include_knowledge": True,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["trigger"] == "high_defect_rate"
+        assert data[0]["lesson_id"] is not None
+        assert "Poka-Yoke" in (data[0]["lesson_title"] or "")
+        assert isinstance(data[0]["recommended_documents"], list)
+
+    def test_generate_multiple_nudges(self, client: TestClient):
+        r1 = client.post(
+            "/api/v1/kpi/values",
+            json={"kpi_id": "first-pass-yield", "value": 94.0},
+        )
+        assert r1.status_code == 201
+
+        r2 = client.post(
+            "/api/v1/kpi/values",
+            json={"kpi_id": "oee", "value": 50.0},
+        )
+        assert r2.status_code == 201
+
+        response = client.post(
+            "/api/v1/kpi/muda-nudges",
+            json={"recipient_id": "op_1"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        triggers = [n["trigger"] for n in data]
+        assert "high_defect_rate" in triggers
+        assert "low_oee" in triggers

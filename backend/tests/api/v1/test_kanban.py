@@ -1,6 +1,6 @@
 """Tests for Kanban API endpoints."""
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -110,7 +110,7 @@ async def test_kanban_board_crud():
     """Test Kanban board CRUD operations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Create a mock board
     board = MagicMock(spec=KanbanBoard)
@@ -241,7 +241,7 @@ async def test_kanban_card_crud():
     """Test Kanban card CRUD operations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     user_id = uuid4()
 
     # Mock board
@@ -435,7 +435,7 @@ async def test_kanban_card_workflow():
     """Test Kanban card workflow operations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Mock board
     board = MagicMock(spec=KanbanBoard)
@@ -634,7 +634,7 @@ async def test_kanban_card_history():
     """Test Kanban card history operations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     user_id = uuid4()
 
     # Mock card
@@ -679,7 +679,7 @@ async def test_kanban_board_metrics():
     """Test Kanban board metrics operations."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
 
     # Mock board
@@ -742,7 +742,7 @@ async def test_kanban_board_stats():
     """Test Kanban board stats endpoint."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
 
     # Create mock cards with different statuses
@@ -872,7 +872,7 @@ async def test_kanban_card_computed_properties():
     """Test card computed properties in response."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
 
     # Mock card with all computed properties
@@ -929,7 +929,7 @@ async def test_kanban_card_move_to_done_completes():
     """Test that moving card to done column sets completion."""
     db = make_db()
     current_user = make_user()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Mock board
     board = MagicMock(spec=KanbanBoard)

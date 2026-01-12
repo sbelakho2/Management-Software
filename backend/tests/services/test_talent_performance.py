@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from sensei.services.talent_performance import (
+from sensei.services.hr.talent_performance import (
     A3ContributionType,
     PraiseType,
     ReviewCycleType,

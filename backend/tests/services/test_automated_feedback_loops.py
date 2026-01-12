@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from sensei.services.automated_feedback_loops import (
@@ -50,7 +50,7 @@ def model_version():
     return ModelVersion(
         model_id="gpt-4",
         version="1.0.0",
-        released_at=datetime.utcnow(),
+        released_at=datetime.now(timezone.utc),
     )
 
 
@@ -230,7 +230,7 @@ class TestCorrection:
             "correction_type": "text_edit",
             "confidence_score": 0.9,
             "context_type": "email_draft",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "active",
         }
         correction = Correction.from_dict(data, user_info, model_version)
@@ -626,21 +626,21 @@ class TestCorrectionVersionManager:
         self, version_manager, sample_correction, model_version
     ):
         """Test staleness check for deprecated model."""
-        sample_correction.model_version.deprecated_at = datetime.utcnow()
+        sample_correction.model_version.deprecated_at = datetime.now(timezone.utc)
         assert version_manager.is_correction_stale(sample_correction, model_version)
     
     def test_is_correction_stale_old_correction(
         self, version_manager, sample_correction, model_version
     ):
         """Test staleness check for old correction."""
-        sample_correction.created_at = datetime.utcnow() - timedelta(days=60)
+        sample_correction.created_at = datetime.now(timezone.utc) - timedelta(days=60)
         assert version_manager.is_correction_stale(sample_correction, model_version)
     
     def test_is_correction_stale_different_model(
         self, version_manager, sample_correction
     ):
         """Test staleness for different model."""
-        different_model = ModelVersion("claude", "3.0", datetime.utcnow())
+        different_model = ModelVersion("claude", "3.0", datetime.now(timezone.utc))
         assert version_manager.is_correction_stale(sample_correction, different_model)
     
     def test_is_correction_fresh(self, version_manager, sample_correction, model_version):
@@ -770,7 +770,7 @@ class TestFeedbackLoopManager:
         
         # Modify created_at to be old
         stored = await feedback_manager.store.get_correction(correction.id)
-        stored.created_at = datetime.utcnow() - timedelta(days=60)
+        stored.created_at = datetime.now(timezone.utc) - timedelta(days=60)
         
         cleaned = await feedback_manager.cleanup_stale_corrections()
         assert cleaned >= 1
@@ -926,7 +926,7 @@ class TestIntegration:
             conflict_strategy=ConflictResolutionStrategy.MAJORITY_VOTE,
             max_few_shot=3,
         )
-        model = ModelVersion("test-model", "1.0.0", datetime.utcnow())
+        model = ModelVersion("test-model", "1.0.0", datetime.now(timezone.utc))
         manager.set_current_model(model)
         
         user = UserInfo("u1", "testuser")
@@ -961,7 +961,7 @@ class TestIntegration:
         manager = create_feedback_loop_manager(
             conflict_strategy=ConflictResolutionStrategy.EXPERT_PRIORITY
         )
-        model = ModelVersion("test-model", "1.0.0", datetime.utcnow())
+        model = ModelVersion("test-model", "1.0.0", datetime.now(timezone.utc))
         manager.set_current_model(model)
         
         regular_user = UserInfo("u1", "user", is_expert=False)
@@ -997,7 +997,7 @@ class TestIntegration:
         manager = create_feedback_loop_manager(staleness_days=30)
         
         old_model = ModelVersion("gpt-4", "1.0.0", datetime(2023, 1, 1))
-        new_model = ModelVersion("gpt-4", "2.0.0", datetime.utcnow())
+        new_model = ModelVersion("gpt-4", "2.0.0", datetime.now(timezone.utc))
         
         manager.set_current_model(old_model)
         

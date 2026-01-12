@@ -11,7 +11,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from sensei.services.gm_onboarding import (
+from sensei.services.ops.gm_onboarding import (
     GMOnboardingService,
     OnboardingProgress,
     OnboardingStatus,

@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.ai_learning_recommendations import (
+from sensei.services.ai.ai_learning_recommendations import (
     # Enums
     RecommendationType,
     RecommendationPriority,

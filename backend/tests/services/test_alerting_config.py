@@ -7,7 +7,7 @@ and alert management.
 import pytest
 from datetime import datetime, timezone, timedelta
 
-from sensei.services.alerting_config import (
+from sensei.services.core.alerting_config import (
     AlertingConfigService,
     AlertRule,
     Alert,

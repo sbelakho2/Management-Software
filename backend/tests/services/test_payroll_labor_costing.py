@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from sensei.services.payroll_labor_costing import (
+from sensei.services.finance.payroll_labor_costing import (
     AttendanceEventType,
     PayrollLaborCostingService,
     TimecardStatus,

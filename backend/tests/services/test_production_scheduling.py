@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from sensei.services.production_scheduling import (
+from sensei.services.production.production_scheduling import (
     ProductionSchedulingService,
     WorkOrderTask,
     TaskPriority,

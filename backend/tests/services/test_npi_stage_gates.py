@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.npi_stage_gates import (
+from sensei.services.quality.npi_stage_gates import (
     ArtifactStatus,
     ArtifactType,
     GateDecision,

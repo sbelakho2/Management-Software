@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from sensei.services.cognitive_obeya import (
+from sensei.services.ops.cognitive_obeya import (
     # Enums
     MetricCategory,
     MetricStatus,

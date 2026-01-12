@@ -1,16 +1,17 @@
-"""
-Work Orders API endpoints.
+"""Work Orders API endpoints.
 
 Provides CRUD operations for work orders and their operations,
 supporting production scheduling and tracking.
 """
 
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, Query, Header
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,6 +29,13 @@ from sensei.models.work_order import (
     OperationStatus,
     HoldReason,
 )
+from sensei.models.quote import Quote
+from sensei.services.core.common_thread import get_common_thread_service
+from sensei.services.production.jidoka_error_proofing import JidokaErrorProofingService
+from sensei.services.core.data_lineage import get_data_lineage_service
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -46,6 +54,7 @@ class WorkOrderCreate(BaseModel):
     
     work_order_number: str = Field(..., min_length=1, max_length=50)
     external_reference: Optional[str] = Field(None, max_length=100)
+    quote_id: Optional[UUID] = None
     product_id: int = Field(..., gt=0)
     quantity_ordered: Decimal = Field(..., gt=0)
     priority: Optional[str] = Field(None)
@@ -77,7 +86,6 @@ class WorkOrderCreate(BaseModel):
         if v not in valid:
             raise ValueError(f"Invalid status. Must be one of: {valid}")
         return v
-
 
 class WorkOrderUpdate(BaseModel):
     """Schema for updating a work order."""
@@ -141,6 +149,8 @@ class WorkOrderRelease(BaseModel):
 
 class WorkOrderOperationResponse(BaseModel):
     """Response schema for work order operations."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     work_order_id: int
@@ -167,12 +177,12 @@ class WorkOrderOperationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class WorkOrderResponse(BaseModel):
     """Response schema for work orders."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     work_order_number: str
@@ -202,6 +212,7 @@ class WorkOrderResponse(BaseModel):
     batch_id: Optional[str]
     notes: Optional[str]
     production_notes: Optional[str]
+    jidoka_suggestions: Optional[list["JidokaSuggestionResponse"]] = None
     is_late: bool
     is_on_hold: bool
     operation_count: int
@@ -210,12 +221,22 @@ class WorkOrderResponse(BaseModel):
     created_by_id: Optional[str]
     updated_by_id: Optional[str]
     
-    class Config:
-        from_attributes = True
+
+
+class JidokaSuggestionResponse(BaseModel):
+    """Deterministic poka-yoke suggestions derived from NCR/NC patterns."""
+
+    title: str
+    rationale: str
+    actions: list[str]
+    related_non_conformance_ids: list[int]
+    confidence: float
 
 
 class WorkOrderListResponse(BaseModel):
     """Response schema for work order list items."""
+
+    model_config = ConfigDict(from_attributes=True)
     
     id: int
     work_order_number: str
@@ -233,8 +254,6 @@ class WorkOrderListResponse(BaseModel):
     is_on_hold: bool
     created_at: datetime
     
-    class Config:
-        from_attributes = True
 
 
 class WorkOrderStatsResponse(BaseModel):
@@ -525,6 +544,7 @@ async def create_work_order(
     data: WorkOrderCreate,
     db: DBSession,
     current_user: CurrentUser,
+    x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[WorkOrderResponse]:
     """
     Create a new work order.
@@ -565,6 +585,48 @@ async def create_work_order(
     db.add(work_order)
     await db.commit()
     await db.refresh(work_order)
+
+    # Best-effort: capture lineage links + bind common thread + stamp reasoning (do not block work order creation).
+    try:
+        await get_data_lineage_service().capture_work_order_created(
+            db,
+            work_order_id=work_order.id,
+            product_id=work_order.product_id,
+            created_by_id=getattr(current_user, "id", None),
+            reasoning_id=x_reasoning_id,
+        )
+
+        # Optional: bind to Quote (and implicitly RFQ if quote has rfq_id)
+        if data.quote_id is not None:
+            rfq_id: str | None = None
+            q = await db.get(Quote, data.quote_id)
+            if q is not None and q.rfq_id is not None:
+                rfq_id = str(q.rfq_id)
+
+            await get_common_thread_service().bind(
+                db,
+                rfq_id=rfq_id,
+                quote_id=str(data.quote_id),
+                work_order_id=str(work_order.id),
+                created_by_id=getattr(current_user, "id", None),
+                reasoning_id=x_reasoning_id,
+                source="work_order_create",
+            )
+
+        if x_reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="work_order",
+                entity_id=str(work_order.id),
+                reasoning_id=x_reasoning_id,
+                created_by_id=getattr(current_user, "id", None),
+                source="work_order_create",
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture work order lineage/common-thread")
     
     # Initialize operations list for response
     work_order.operations = []
@@ -840,9 +902,31 @@ async def release_work_order(
     
     await db.commit()
     await db.refresh(work_order)
-    
+
+    response_data = work_order_to_response(work_order)
+    try:
+        svc = JidokaErrorProofingService()
+        suggestions = await svc.suggest_for_work_order_release(db, work_order_id=work_order.id)
+        response_data = response_data.model_copy(
+            update={
+                "jidoka_suggestions": [
+                    JidokaSuggestionResponse(
+                        title=s.title,
+                        rationale=s.rationale,
+                        actions=s.actions,
+                        related_non_conformance_ids=s.related_non_conformance_ids,
+                        confidence=s.confidence,
+                    )
+                    for s in suggestions
+                ]
+            }
+        )
+    except Exception:
+        # Jidoka suggestions should never block release.
+        pass
+
     return build_updated_response(
-        data=work_order_to_response(work_order),
+        data=response_data,
         resource_name="Work order",
     )
 

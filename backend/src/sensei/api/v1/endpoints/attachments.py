@@ -10,6 +10,7 @@ Provides file attachment management with:
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Annotated
@@ -279,7 +280,9 @@ async def create_attachment(
         tags=parsed_tags,
     )
 
-    db.add(attachment)
+    maybe_awaitable = db.add(attachment)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.commit()
     await db.refresh(attachment)
 
@@ -332,7 +335,9 @@ async def create_attachment_metadata(
         custom_metadata=data.custom_metadata,
     )
 
-    db.add(attachment)
+    maybe_awaitable = db.add(attachment)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
     await db.commit()
     await db.refresh(attachment)
 
@@ -583,7 +588,9 @@ async def create_version(
         revision=attachment.revision,
         is_current=False,
     )
-    db.add(version)
+    maybe_awaitable = db.add(version)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
 
     # Read new file
     file_content = await file.read()
@@ -721,7 +728,9 @@ async def restore_version(
         change_reason=f"Before restoring to version {version_number}",
         is_current=False,
     )
-    db.add(current_version)
+    maybe_awaitable = db.add(current_version)
+    if inspect.isawaitable(maybe_awaitable):
+        await maybe_awaitable
 
     # Restore attachment from version
     attachment.filename = version.filename

@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sensei.services.access_review import (
+from sensei.services.core.access_review import (
     AccessReviewService,
     ReviewCampaign,
     UserAccess,

@@ -6,7 +6,41 @@ Shared fixtures and configuration for all tests.
 
 import os
 import pytest
+import pytest_asyncio
 from unittest.mock import patch
+import sqlite3
+import uuid
+
+# SQLAlchemy model suite uses PostgreSQL JSONB types in many models.
+# Our tests use in-memory SQLite for fast integration testing; SQLite can't
+# compile JSONB by default, so we provide a compilation rule for the test run.
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PGUUID
+from sqlalchemy.ext.compiler import compiles
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):  # noqa: ANN001
+    return "JSON"
+
+
+@compiles(ARRAY, "sqlite")
+def _compile_array_sqlite(type_, compiler, **kw):  # noqa: ANN001
+    # Store arrays as JSON in SQLite tests.
+    return "JSON"
+
+
+@compiles(PGUUID, "sqlite")
+def _compile_uuid_sqlite(type_, compiler, **kw):  # noqa: ANN001
+    # Ensure UUID columns get TEXT affinity under SQLite.
+    # If emitted as "UUID", SQLite assigns NUMERIC affinity which can coerce
+    # UUID strings into integers (breaking SQLAlchemy's UUID processing).
+    return "CHAR(36)"
+
+
+# SQLite doesn't know how to bind uuid.UUID objects by default.
+# Without an adapter, UUIDs can end up stored as ints (uuid.UUID.int), which then
+# breaks SQLAlchemy's UUID result processing.
+sqlite3.register_adapter(uuid.UUID, lambda u: str(u))
 
 # Set test environment variables before importing settings
 os.environ.setdefault("SECRET_KEY", "test_secret_key_that_is_at_least_32_chars")
@@ -34,7 +68,7 @@ def test_settings():
     )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_session():
     """Provide a real async database session for testing."""
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession

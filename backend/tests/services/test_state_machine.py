@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Optional
 from uuid import uuid4
 
-from sensei.services.state_machine import (
+from sensei.services.core.state_machine import (
     StateMachine,
     StateMachineRegistry,
     GateEnforcer,

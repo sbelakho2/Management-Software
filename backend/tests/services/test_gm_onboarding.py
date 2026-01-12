@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sensei.services.gm_onboarding import (
+from sensei.services.ops.gm_onboarding import (
     GMDashboardTourSpot,
     GMFirstAction,
     GMKeyMetric,

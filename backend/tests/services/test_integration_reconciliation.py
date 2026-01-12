@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from sensei.services.integration_reconciliation import (
+from sensei.services.finance.integration_reconciliation import (
     IntegrationReconciliationService,
     SyncDirection,
     SyncStatus,

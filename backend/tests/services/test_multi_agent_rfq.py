@@ -13,7 +13,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-from sensei.services.multi_agent_rfq import (
+from sensei.services.sales.multi_agent_rfq import (
     # Enums
     AgentType,
     AnalysisCategory,

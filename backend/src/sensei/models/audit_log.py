@@ -7,9 +7,9 @@ Implements:
 
 from datetime import datetime
 from enum import Enum
-from uuid import UUID
+from uuid import UUID as PyUUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,17 +47,19 @@ class AuditLog(Base):
     
     __tablename__ = "audit_logs"
     
+    # In partitioned tables, the partition key must be part of the primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Timestamp (not using TimestampMixin as we don't need updated_at)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
-        nullable=False,
+        primary_key=True,
         index=True,
     )
     
     # What was changed
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    entity_id: Mapped[UUID] = mapped_column(
+    entity_id: Mapped[PyUUID] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=False,
         index=True,
@@ -67,7 +69,7 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     
     # Who performed the action
-    user_id: Mapped[UUID | None] = mapped_column(
+    user_id: Mapped[PyUUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -102,6 +104,7 @@ class AuditLog(Base):
         Index("ix_audit_logs_user_created", "user_id", "created_at"),
         Index("ix_audit_logs_entity_created", "entity_type", "entity_id", "created_at"),
         Index("ix_audit_logs_action_created", "action", "created_at"),
+        {"postgresql_partition_by": "RANGE (created_at)"},
     )
     
     def __repr__(self) -> str:
@@ -114,9 +117,9 @@ class AuditLog(Base):
     def create_log(
         cls,
         entity_type: str,
-        entity_id: UUID,
+        entity_id: PyUUID,
         action: str,
-        user_id: UUID | None = None,
+        user_id: PyUUID | None = None,
         user_email: str | None = None,
         old_values: dict | None = None,
         new_values: dict | None = None,

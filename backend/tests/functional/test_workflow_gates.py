@@ -14,8 +14,10 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from sensei.services.data_quality import DataQualityService
-from sensei.services.state_machine import StateMachine, TransitionError, TransitionResult
+from sensei.core.time import utcnow_naive
+
+from sensei.services.core.data_quality import DataQualityService
+from sensei.services.core.state_machine import StateMachine, TransitionError, TransitionResult
 
 
 @pytest.fixture
@@ -349,7 +351,7 @@ class TestQuoteVersionImmutability:
             "quote_id": str(uuid4()),
             "version": 1,
             "unit_price": 100.0,
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow_naive(),
             "immutable": False
         }
         quote_versions.append(v1)
@@ -359,7 +361,7 @@ class TestQuoteVersionImmutability:
             "quote_id": v1["quote_id"],
             "version": 2,
             "unit_price": 95.0,
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow_naive(),
             "immutable": False
         }
         quote_versions.append(v2)
@@ -369,7 +371,7 @@ class TestQuoteVersionImmutability:
             "quote_id": v1["quote_id"],
             "version": 3,
             "unit_price": 95.0,
-            "created_at": datetime.utcnow(),
+            "created_at": utcnow_naive(),
             "status": "approved",
             "immutable": True
         }

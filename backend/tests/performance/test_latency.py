@@ -14,7 +14,7 @@ import time
 from uuid import uuid4
 from datetime import date, timedelta
 
-from sensei.services.today_screen import (
+from sensei.services.ops.today_screen import (
     get_today_screen_service,
     reset_today_screen_service,
     PriorityLevel,

@@ -7,10 +7,14 @@ Tests the hybrid recommendation system for training lessons.
 import pytest
 import numpy as np
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from unittest.mock import MagicMock, patch
 import tempfile
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from sensei.ml.lesson_recommender import (
     LessonRecommender,
@@ -47,7 +51,7 @@ class MockLesson:
         self.is_mandatory = is_mandatory
         self.compliance_required = compliance_required
         self.average_rating = average_rating
-        self.created_at = created_at or datetime.utcnow() - timedelta(days=60)
+        self.created_at = created_at or _utcnow() - timedelta(days=60)
 
 
 class MockLessonCompletion:
@@ -139,7 +143,7 @@ def sample_lessons():
             tags=["CNC", "machine", "operation"],
             target_roles=["operator"],
             skills_taught=["CNC_operation"],
-            created_at=datetime.utcnow() - timedelta(days=10),  # Recently added
+            created_at=_utcnow() - timedelta(days=10),  # Recently added
         ),
     ]
 

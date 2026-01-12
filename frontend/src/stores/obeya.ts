@@ -129,14 +129,18 @@ interface ObeyaState {
   items: ObeyaItem[];
   stats: ObeyaStats;
   sqdcpMetrics: SQDCPMetrics | null;
+  cognitiveInsights: any | null;
   selectedBoard: ObeyaBoard;
   isLoading: boolean;
   error: string | null;
   lastFetchedAt: number | null;
+  socket: WebSocket | null;
+  isConnected: boolean;
 
   fetchItems: (board?: ObeyaBoard) => Promise<void>;
   fetchItemById: (id: string) => Promise<ObeyaItem | null>;
   fetchSQDCPMetrics: () => Promise<void>;
+  fetchCognitiveInsights: () => Promise<void>;
   createItem: (item: Partial<ObeyaItem>) => Promise<ObeyaItem>;
   updateItem: (id: string, updates: Partial<ObeyaItem>) => Promise<ObeyaItem>;
   deleteItem: (id: string) => Promise<void>;
@@ -147,6 +151,8 @@ interface ObeyaState {
   resolveItem: (id: string, resolution: string) => Promise<void>;
   setSelectedBoard: (board: ObeyaBoard) => void;
   clearError: () => void;
+  connect: () => void;
+  disconnect: () => void;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -203,6 +209,57 @@ export const useObeyaStore = create<ObeyaState>()(
         isLoading: false,
         error: null,
         lastFetchedAt: null,
+        socket: null,
+        isConnected: false,
+
+        connect: () => {
+          const { socket, isConnected } = get();
+          if (socket || isConnected) return;
+
+          const token = localStorage.getItem('access_token');
+          if (!token) return;
+
+          const wsUrl = API_BASE_URL.replace('http', 'ws').replace('/api/v1', '/ws');
+          const newSocket = new WebSocket(`${wsUrl}/${token}`);
+
+          newSocket.onopen = () => {
+            set({ isConnected: true });
+            console.log('Obeya WebSocket connected');
+          };
+
+          newSocket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.type === 'metric_update') {
+                // Refresh metrics when they change
+                get().fetchSQDCPMetrics();
+                get().fetchCognitiveInsights();
+              }
+              if (data.type === 'silo_alert') {
+                get().fetchCognitiveInsights();
+              }
+            } catch (e) {
+              console.error('Error parsing Obeya WebSocket message:', e);
+            }
+          };
+
+          newSocket.onclose = () => {
+            set({ isConnected: false, socket: null });
+            console.log('Obeya WebSocket disconnected');
+            // Try to reconnect after 5 seconds
+            setTimeout(() => get().connect(), 5000);
+          };
+
+          set({ socket: newSocket });
+        },
+
+        disconnect: () => {
+          const { socket } = get();
+          if (socket) {
+            socket.close();
+          }
+          set({ socket: null, isConnected: false });
+        },
 
         fetchItems: async (board?: ObeyaBoard) => {
           const { lastFetchedAt, selectedBoard } = get();
@@ -320,6 +377,29 @@ export const useObeyaStore = create<ObeyaState>()(
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch SQDCP metrics',
+              isLoading: false,
+            });
+          }
+        },
+
+        fetchCognitiveInsights: async () => {
+          set({ isLoading: true, error: null });
+          try {
+            const response = await fetch(`${API_BASE_URL}/cognitive-obeya/dashboard`, {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to fetch Cognitive insights: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            set({ cognitiveInsights: data.data, isLoading: false });
+          } catch (error) {
+            set({
+              error: error instanceof Error ? error.message : 'Failed to fetch Cognitive insights',
               isLoading: false,
             });
           }
@@ -599,6 +679,7 @@ export const useObeyaStore = create<ObeyaState>()(
           items: state.items,
           stats: state.stats,
           sqdcpMetrics: state.sqdcpMetrics,
+          cognitiveInsights: state.cognitiveInsights,
           selectedBoard: state.selectedBoard,
           lastFetchedAt: state.lastFetchedAt,
         }),

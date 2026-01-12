@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from sensei.services.search import (
+from sensei.services.core.search import (
     FullTextSearchService,
     SearchableEntityType,
     SearchSortField,
