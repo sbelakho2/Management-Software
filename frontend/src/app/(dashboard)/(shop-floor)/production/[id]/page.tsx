@@ -1,0 +1,245 @@
+'use client';
+
+import * as React from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import {
+  ArrowLeft,
+  Settings,
+  MoreHorizontal,
+  Play,
+  Pause,
+  CheckCircle,
+  AlertTriangle,
+  Clock,
+  Calendar,
+  Users,
+  Package,
+  FileText,
+  History,
+  Activity,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { useProductionStore } from '@/stores/production';
+import { cn, formatDate, formatCurrency } from '@/lib/utils';
+
+export default function WorkOrderDetailsPage() {
+  const router = useRouter();
+  const params = useParams();
+  const { workOrders, fetchWorkOrders } = useProductionStore();
+  
+  const workOrder = React.useMemo(() =>
+    workOrders.find(wo => String(wo.id) === String(params?.id)),
+    [workOrders, params?.id]
+  );
+
+  React.useEffect(() => {
+    if (workOrders.length === 0) {
+      fetchWorkOrders();
+    }
+  }, [workOrders.length, fetchWorkOrders]);
+
+  if (!workOrder) {
+    return (
+      <div className="flex items-center justify-center h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const statusConfig = {
+    planned: { label: 'Planned', color: 'bg-blue-100 text-blue-800', icon: Calendar },
+    in_progress: { label: 'In Progress', color: 'bg-green-100 text-green-800', icon: Play },
+    on_hold: { label: 'On Hold', color: 'bg-yellow-100 text-yellow-800', icon: Pause },
+    completed: { label: 'Completed', color: 'bg-slate-100 text-slate-800', icon: CheckCircle },
+    cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800', icon: AlertTriangle },
+    released: { label: 'Released', color: 'bg-indigo-100 text-indigo-800', icon: Calendar },
+  };
+
+  const StatusIcon = statusConfig[workOrder.status as keyof typeof statusConfig]?.icon || Clock;
+
+  const canStart = ['planned', 'released', 'on_hold'].includes(workOrder.status);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{workOrder.work_order_number}</h1>
+              <Badge className={statusConfig[workOrder.status as keyof typeof statusConfig]?.color}>
+                {statusConfig[workOrder.status as keyof typeof statusConfig]?.label}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground">{(workOrder as any).product?.name || 'Unknown Product'}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {canStart ? (
+            <Button className="bg-green-600 hover:bg-green-700">
+              <Play className="h-4 w-4 mr-2" />
+              Start Work
+            </Button>
+          ) : (
+            <Button variant="outline">
+              <Pause className="h-4 w-4 mr-2" />
+              Pause
+            </Button>
+          )}
+          <Button variant="outline">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Production Progress</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Overall Completion</span>
+                  <span className="font-medium">0%</span>
+                </div>
+                <Progress value={0} className="h-2" />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="p-3 border rounded-lg bg-muted/30">
+                  <div className="text-sm text-muted-foreground mb-1">Target Quantity</div>
+                  <div className="text-2xl font-bold">{(workOrder as any).quantity}</div>
+                </div>
+                <div className="p-3 border rounded-lg bg-muted/30">
+                  <div className="text-sm text-muted-foreground mb-1">Completed</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {(workOrder as any).quantity_completed}
+                  </div>
+                </div>
+                <div className="p-3 border rounded-lg bg-muted/30">
+                  <div className="text-sm text-muted-foreground mb-1">Scrap</div>
+                  <div className="text-2xl font-bold text-red-600">0</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Tabs defaultValue="operations">
+            <TabsList>
+              <TabsTrigger value="operations">Operations</TabsTrigger>
+              <TabsTrigger value="bom">BOM / Parts</TabsTrigger>
+              <TabsTrigger value="quality">Quality Checks</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+            <TabsContent value="operations" className="mt-4">
+              <Card>
+                <CardContent className="p-0">
+                  <div className="divide-y">
+                    {/* Mock operations since they aren't in the base store model yet */}
+                    {[
+                      { id: '1', name: 'Material Preparation', station: 'ST-01', status: 'completed', time: '2h 15m' },
+                      { id: '2', name: 'CNC Machining', station: 'CNC-04', status: 'in_progress', time: '1h 45m' },
+                      { id: '3', name: 'Surface Grinding', station: 'GR-02', status: 'pending', time: '0m' },
+                      { id: '4', name: 'Final Inspection', station: 'QC-01', status: 'pending', time: '0m' },
+                    ].map((op) => (
+                      <div key={op.id} className="p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold",
+                            op.status === 'completed' ? "bg-green-100 text-green-700" :
+                            op.status === 'in_progress' ? "bg-blue-100 text-blue-700 animate-pulse" :
+                            "bg-muted text-muted-foreground"
+                          )}>
+                            {op.id}
+                          </div>
+                          <div>
+                            <div className="font-medium">{op.name}</div>
+                            <div className="text-xs text-muted-foreground">Station: {op.station}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-sm text-muted-foreground">{op.time}</div>
+                          <Badge variant={op.status === 'completed' ? 'success' : op.status === 'in_progress' ? 'default' : 'secondary' as any}>
+                            {op.status.replace('_', ' ')}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+            <TabsContent value="bom" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium">Required Materials</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                    <p>Bill of Materials information will be loaded here.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Schedule</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Start Date</span>
+                <span className="font-medium">{workOrder.scheduled_start ? formatDate(workOrder.scheduled_start) : '-'}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">End Date</span>
+                <span className="font-medium">{workOrder.scheduled_end ? formatDate(workOrder.scheduled_end) : '-'}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Lead Time</span>
+                <span className="font-medium">5 Days</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Assigned Resources</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Operations Team A</div>
+                  <div className="text-xs text-muted-foreground">3 Operators assigned</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Standard Work</div>
+                  <div className="text-xs text-muted-foreground">SW-WO-2024-V2</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
