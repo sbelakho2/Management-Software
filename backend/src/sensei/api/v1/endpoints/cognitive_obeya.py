@@ -64,7 +64,7 @@ async def get_obeya_dashboard(
             department=DepartmentType.SALES,
             event_type="rfq_backlog",
             description=f"Sales has {rfq_count} draft RFQs pending",
-            severity=AlertSeverity.WARNING
+            severity=AlertSeverity.MEDIUM
         )
 
     # 3. Trigger analysis

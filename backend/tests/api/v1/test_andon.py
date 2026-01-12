@@ -145,7 +145,7 @@ async def test_andon_event_crud_and_workflow():
         AndonEventCreate(
             event_number="AND-2026-0001",
             andon_type="quality",
-            severity="red",
+            severity="critical",
             station_id=10,
             product_id=5,
             work_order_id=100,
@@ -157,7 +157,7 @@ async def test_andon_event_crud_and_workflow():
         current_user,
     )
     assert resp.data.event_number == "AND-2026-0001"
-    assert resp.data.severity == "red"
+    assert resp.data.severity == "critical"
     assert resp.data.andon_type == "quality"
 
     db.add.side_effect = None
@@ -170,7 +170,7 @@ async def test_andon_event_crud_and_workflow():
             AndonEventCreate(
                 event_number="AND-2026-0001",
                 andon_type="quality",
-                severity="yellow",
+                severity="high",
                 station_id=10,
                 symptom="Another issue",
             ),
@@ -210,7 +210,7 @@ async def test_andon_event_crud_and_workflow():
         page=1,
         page_size=20,
         station_id=10,
-        severity="red",
+        severity="critical",
         is_open=True,
         search="weld",
     )

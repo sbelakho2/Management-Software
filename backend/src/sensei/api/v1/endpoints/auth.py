@@ -35,6 +35,7 @@ from sensei.core.auth import (
 from sensei.core.security import TokenData, TokenPair
 from sensei.core.security import hash_password
 from sensei.models.user import User, UserStatus
+from sensei.services.core.email_service import get_email_service
 from sqlalchemy import select
 
 
@@ -397,15 +398,17 @@ async def request_password_reset(
     Request a password reset email.
     
     Always returns success to prevent user enumeration.
-    In production, this would send an email with the reset link.
+    Sends email with reset link if user exists and email is enabled.
     """
     auth_service = get_auth_service(db)
+    email_service = get_email_service()
     
-    # Token is returned for development; in production, send via email
+    # Generate reset token
     token = await auth_service.request_password_reset(request.email)
     
-    # TODO: Send email with reset link
-    # In development, we might log the token
+    # Send email if token was generated (user exists)
+    if token:
+        await email_service.send_password_reset(request.email, token)
     
     return MessageResponse(
         message="If an account with that email exists, a password reset link has been sent"

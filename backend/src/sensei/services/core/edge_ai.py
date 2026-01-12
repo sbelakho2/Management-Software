@@ -372,6 +372,9 @@ class EdgeCNN1D:
 class PredictiveMaintenanceEngine:
     """
     Predictive maintenance engine using 1D-CNN for anomaly detection.
+    
+    Uses ONNX Runtime for high-performance CPU inference when available,
+    with automatic fallback to pure-Python implementation.
     """
     
     CLASS_LABELS = ["normal", "warning", "critical", "emergency"]
@@ -380,8 +383,12 @@ class PredictiveMaintenanceEngine:
         self,
         input_length: int = 256,
         threshold: float = 0.7,
+        use_onnx: bool = True,
     ):
         self.threshold = threshold
+        self.input_length = input_length
+        self._use_onnx = use_onnx
+        self._onnx_model = None
         
         # Build default CNN config
         self.config = CNNModelConfig(
@@ -394,9 +401,62 @@ class PredictiveMaintenanceEngine:
             threshold=threshold,
         )
         
+        # Always create pure-Python model as fallback (and for backwards compatibility)
         self.model = EdgeCNN1D(self.config)
+        
+        # Try ONNX for faster inference
+        if use_onnx:
+            self._init_onnx_model()
+        
         self.anomaly_history: list[AnomalyDetection] = []
         self.machine_health: dict[str, MachineHealthStatus] = {}
+    
+    def _init_onnx_model(self) -> None:
+        """Initialize ONNX model if available."""
+        try:
+            from sensei.services.core.onnx_edge_inference import (
+                ONNXEdgeConfig,
+                ONNXEdgeInference,
+            )
+            from pathlib import Path
+            import os
+            
+            cache_dir = Path(os.getenv("SENSEI_ONNX_CACHE_DIR", ".cache/sensei/onnx"))
+            config = ONNXEdgeConfig(
+                model_name="edge_anomaly_detector",
+                cache_dir=cache_dir,
+                input_length=self.input_length,
+                num_classes=4,
+                quantize_int8=True,
+                warmup_on_init=True,
+            )
+            
+            self._onnx_model = ONNXEdgeInference(config)
+            if self._onnx_model.is_ready():
+                import logging
+                logging.getLogger(__name__).info(
+                    f"Using ONNX inference (onnx={self._onnx_model.is_using_onnx()})"
+                )
+            else:
+                self._onnx_model = None
+                
+        except ImportError:
+            self._onnx_model = None
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"ONNX init failed: {e}")
+            self._onnx_model = None
+    
+    def _classify(self, signal: list[float]) -> tuple[int, float]:
+        """Classify signal using ONNX or pure-Python model."""
+        if self._onnx_model is not None:
+            class_idx, confidence, _ = self._onnx_model.classify(signal)
+            return class_idx, confidence
+        elif self.model is not None:
+            return self.model.classify(signal)
+        else:
+            # Fallback: return normal with low confidence
+            return 0, 0.25
     
     def _extract_features(self, reading: SensorReading) -> dict[str, float]:
         """Extract features from sensor reading."""
@@ -435,8 +495,8 @@ class PredictiveMaintenanceEngine:
         # Extract features
         features = self._extract_features(reading)
         
-        # Run CNN inference
-        class_idx, confidence = self.model.classify(reading.values)
+        # Run CNN inference (uses ONNX or pure-Python)
+        class_idx, confidence = self._classify(reading.values)
         
         # Map to severity
         severity = SeverityLevel(self.CLASS_LABELS[class_idx])
@@ -972,8 +1032,19 @@ class EdgeOrchestrator:
 
 
 # =============================================================================
-# FACTORY FUNCTIONS
+# SINGLETON & FACTORY FUNCTIONS
 # =============================================================================
+
+
+_edge_orchestrator: EdgeOrchestrator | None = None
+
+
+def get_edge_orchestrator(machine_id: str = "default_machine") -> EdgeOrchestrator:
+    """Get the Edge Orchestrator singleton."""
+    global _edge_orchestrator
+    if _edge_orchestrator is None:
+        _edge_orchestrator = EdgeOrchestrator(machine_id=machine_id)
+    return _edge_orchestrator
 
 
 def create_predictive_maintenance_engine(

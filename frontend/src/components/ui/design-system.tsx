@@ -794,7 +794,7 @@ export function buildInteractionClasses(
   const classes: string[] = [];
 
   if (hover && patternDef.hover) classes.push(patternDef.hover);
-  if (active && patternDef.active) classes.push(patternDef.active);
+  if (active && 'active' in patternDef) classes.push((patternDef as any).active);
   if (focus && patternDef.focus) classes.push(patternDef.focus);
   if (disabled && 'disabled' in patternDef) classes.push(patternDef.disabled);
   if (transition && patternDef.transition) classes.push(patternDef.transition);

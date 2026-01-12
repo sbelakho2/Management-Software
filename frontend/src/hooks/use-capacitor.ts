@@ -247,9 +247,31 @@ export function useCamera(): {
 
   const takePhoto = useCallback(async (options?: CameraOptions): Promise<CameraPhoto | null> => {
     if (isNativeApp()) {
-      // Would use Capacitor Camera plugin
-      // Simulated response for non-native testing
-      return simulateCameraCapture();
+      try {
+        // Dynamically import Capacitor Camera plugin
+        const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+        
+        const photo = await Camera.getPhoto({
+          quality: options?.quality ?? 90,
+          allowEditing: options?.allowEditing ?? false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          saveToGallery: options?.saveToGallery ?? false,
+          width: options?.width,
+          height: options?.height,
+          correctOrientation: options?.correctOrientation ?? true,
+        });
+        
+        return {
+          dataUrl: photo.dataUrl || '',
+          format: photo.format === 'png' ? 'png' : 'jpeg',
+          webPath: photo.webPath,
+        };
+      } catch (error) {
+        // User cancelled or error occurred
+        console.error('Camera error:', error);
+        return null;
+      }
     }
 
     // Web fallback - use file input
@@ -317,15 +339,6 @@ export function useCamera(): {
     pickPhoto,
     hasPermission,
     requestPermission,
-  };
-}
-
-// Helper for testing
-function simulateCameraCapture(): CameraPhoto {
-  // Return a placeholder image for testing
-  return {
-    dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-    format: 'png',
   };
 }
 
@@ -410,7 +423,15 @@ export function useFileSystem(): {
   const saveFile = useCallback(async (filename: string, data: string, mimeType = 'text/plain'): Promise<boolean> => {
     try {
       if (isNativeApp()) {
-        // Would use Capacitor Filesystem plugin
+        // Dynamically import Capacitor Filesystem plugin
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        
+        await Filesystem.writeFile({
+          path: filename,
+          data: data,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+        });
         return true;
       }
 
@@ -431,8 +452,16 @@ export function useFileSystem(): {
   const readFile = useCallback(async (uri: string): Promise<string | null> => {
     try {
       if (isNativeApp()) {
-        // Would use Capacitor Filesystem plugin
-        return null;
+        // Dynamically import Capacitor Filesystem plugin
+        const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');
+        
+        const result = await Filesystem.readFile({
+          path: uri,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+        });
+        
+        return typeof result.data === 'string' ? result.data : null;
       }
 
       const response = await fetch(uri);
@@ -445,7 +474,13 @@ export function useFileSystem(): {
   const deleteFile = useCallback(async (uri: string): Promise<boolean> => {
     try {
       if (isNativeApp()) {
-        // Would use Capacitor Filesystem plugin
+        // Dynamically import Capacitor Filesystem plugin
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        
+        await Filesystem.deleteFile({
+          path: uri,
+          directory: Directory.Documents,
+        });
         return true;
       }
       
@@ -510,8 +545,36 @@ export function usePushNotifications(): {
 
   const registerToken = useCallback(async (): Promise<string | null> => {
     if (isNativeApp()) {
-      // Would get FCM/APNS token from Capacitor
-      return 'mock-device-token-for-testing';
+      try {
+        // Dynamically import Capacitor PushNotifications plugin
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        
+        // Request permission first
+        const permResult = await PushNotifications.requestPermissions();
+        if (permResult.receive !== 'granted') {
+          return null;
+        }
+        
+        // Register for push notifications
+        await PushNotifications.register();
+        
+        // Get the FCM/APNS token
+        return new Promise((resolve) => {
+          PushNotifications.addListener('registration', (token) => {
+            resolve(token.value);
+          });
+          
+          PushNotifications.addListener('registrationError', () => {
+            resolve(null);
+          });
+          
+          // Timeout after 10 seconds
+          setTimeout(() => resolve(null), 10000);
+        });
+      } catch {
+        // Capacitor plugin not available, return null
+        return null;
+      }
     }
 
     // Web push requires service worker setup
@@ -839,12 +902,58 @@ export function useBiometricAuth(): {
 
   const authenticate = useCallback(async (reason = 'Authenticate'): Promise<BiometricResult> => {
     if (isNativeApp()) {
-      // Would use Capacitor biometrics plugin
-      // Simulated success for testing
-      return { verified: true, method: 'fingerprint' };
+      try {
+        // Dynamically import Capacitor BiometricAuth plugin
+        const { NativeBiometric } = await import('capacitor-native-biometric');
+        
+        // Check if biometric auth is available
+        const result = await NativeBiometric.isAvailable();
+        if (!result.isAvailable) {
+          return { verified: false, error: 'Biometric authentication not available' };
+        }
+        
+        // Perform authentication
+        await NativeBiometric.verifyIdentity({
+          reason,
+          title: 'Authentication Required',
+          subtitle: reason,
+          description: 'Please authenticate to continue',
+        });
+        
+        // If we get here, auth succeeded
+        return { 
+          verified: true, 
+          method: result.biometryType === 1 ? 'fingerprint' : 'face' 
+        };
+      } catch (error) {
+        // Authentication failed or was cancelled
+        return { 
+          verified: false, 
+          error: error instanceof Error ? error.message : 'Authentication failed' 
+        };
+      }
     }
 
-    // Web: would use WebAuthn
+    // Web: use WebAuthn for biometric authentication
+    if ('PublicKeyCredential' in window) {
+      try {
+        const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        if (!available) {
+          return { verified: false, error: 'Platform authenticator not available' };
+        }
+        
+        // Create a challenge for WebAuthn
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        
+        // Note: Full WebAuthn implementation requires server-side credential storage
+        // This is a client-side check only
+        return { verified: false, error: 'WebAuthn requires server-side setup' };
+      } catch (error) {
+        return { verified: false, error: 'WebAuthn not available' };
+      }
+    }
+    
     return { verified: false, error: 'Not available on web' };
   }, []);
 

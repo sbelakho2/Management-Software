@@ -4,6 +4,9 @@ Segment Views Service.
 Provides workspace segmentation - saved list filters by module and user
 with sharing, collaboration, and real-time filter updates.
 
+For production use, see segment_views_db.py which provides
+database-backed persistence with SQLAlchemy.
+
 Features:
 - Saved filter sets per module (RFQ, Quote, Opportunity, etc.)
 - Personal, team, and shared segments
@@ -19,37 +22,18 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-
-class SegmentModule(str, Enum):
-    """Modules that support segmentation."""
-
-    RFQ = "rfq"
-    QUOTE = "quote"
-    OPPORTUNITY = "opportunity"
-    QUALIFICATION = "qualification"
-    WORK_ORDER = "work_order"
-    KANBAN = "kanban"
-    ANDON = "andon"
-    A3 = "a3"
-    CAPA = "capa"
-    TRAINING = "training"
-    AUDIT = "audit"
-    PRODUCT = "product"
-    CUSTOMER = "customer"
-
-
-class SegmentVisibility(str, Enum):
-    """Segment visibility levels."""
-
-    PRIVATE = "private"
-    TEAM = "team"
-    DEPARTMENT = "department"
-    ORGANIZATION = "organization"
+# Re-export models/enums from the model module
+from sensei.models.segment import (
+    Segment,
+    SegmentShare,
+    SegmentUsage,
+    SegmentModule,
+    SegmentVisibility,
+)
 
 
 class FilterOperator(str, Enum):
     """Filter operators for criteria."""
-
     EQUALS = "equals"
     NOT_EQUALS = "not_equals"
     CONTAINS = "contains"
@@ -73,7 +57,6 @@ class FilterOperator(str, Enum):
 
 class LogicalOperator(str, Enum):
     """Logical operators for combining criteria."""
-
     AND = "and"
     OR = "or"
 
@@ -81,7 +64,6 @@ class LogicalOperator(str, Enum):
 @dataclass
 class FilterCriterion:
     """A single filter criterion."""
-
     field: str
     operator: FilterOperator
     value: Any
@@ -91,7 +73,6 @@ class FilterCriterion:
 @dataclass
 class FilterGroup:
     """A group of filter criteria with a logical operator."""
-
     criteria: list[FilterCriterion]
     operator: LogicalOperator = LogicalOperator.AND
 
@@ -99,15 +80,13 @@ class FilterGroup:
 @dataclass
 class SegmentSort:
     """Sorting configuration for a segment."""
-
     field: str
-    direction: str = "asc"  # asc or desc
+    direction: str = "asc"
 
 
 @dataclass
 class SegmentColumn:
     """Column configuration for segment display."""
-
     field: str
     label: str
     width: int | None = None
@@ -116,9 +95,8 @@ class SegmentColumn:
 
 
 @dataclass
-class Segment:
-    """A saved segment (filter set)."""
-
+class LegacySegment:
+    """Legacy segment dataclass for backward compatibility."""
     id: UUID
     name: str
     description: str
@@ -132,7 +110,7 @@ class Segment:
     icon: str | None
     is_default: bool
     is_pinned: bool
-    is_smart: bool  # Dynamic criteria
+    is_smart: bool
     created_at: datetime
     updated_at: datetime
     use_count: int = 0
@@ -143,9 +121,8 @@ class Segment:
 
 
 @dataclass
-class SegmentShare:
-    """A segment share record."""
-
+class LegacySegmentShare:
+    """Legacy segment share record."""
     id: UUID
     segment_id: UUID
     shared_by: UUID
@@ -155,9 +132,8 @@ class SegmentShare:
 
 
 @dataclass
-class SegmentUsage:
+class LegacySegmentUsage:
     """Usage analytics for a segment."""
-
     segment_id: UUID
     user_id: UUID
     used_at: datetime
@@ -167,7 +143,6 @@ class SegmentUsage:
 @dataclass
 class SegmentApplyResult:
     """Result of applying a segment to data."""
-
     segment_id: UUID
     module: SegmentModule
     applied_criteria: list[FilterCriterion]
@@ -176,15 +151,16 @@ class SegmentApplyResult:
 
 
 class SegmentViewsService:
-    """Service for managing segment views (saved filters)."""
+    """In-memory segment views service for testing and development.
+    
+    For production, use the database-backed service from segment_views_db.py.
+    """
 
     def __init__(self) -> None:
         """Initialize the segment views service."""
-        self._segments: dict[UUID, Segment] = {}
-        self._shares: dict[UUID, SegmentShare] = {}
-        self._usage: list[SegmentUsage] = []
-
-        # Load default segments
+        self._segments: dict[UUID, LegacySegment] = {}
+        self._shares: dict[UUID, LegacySegmentShare] = {}
+        self._usage: list[LegacySegmentUsage] = []
         self._initialize_default_segments()
 
     def _initialize_default_segments(self) -> None:
@@ -521,11 +497,10 @@ class SegmentViewsService:
         color: str | None = None,
         icon: str | None = None,
         is_smart: bool = False,
-    ) -> Segment:
+    ) -> LegacySegment:
         """Create a default segment."""
         now = datetime.now(timezone.utc)
-
-        segment = Segment(
+        segment = LegacySegment(
             id=uuid4(),
             name=name,
             description=description,
@@ -543,7 +518,6 @@ class SegmentViewsService:
             created_at=now,
             updated_at=now,
         )
-
         self._segments[segment.id] = segment
         return segment
 
@@ -563,11 +537,10 @@ class SegmentViewsService:
         is_smart: bool = False,
         team_id: UUID | None = None,
         department_id: UUID | None = None,
-    ) -> Segment:
+    ) -> LegacySegment:
         """Create a new segment."""
         now = datetime.now(timezone.utc)
-
-        segment = Segment(
+        segment = LegacySegment(
             id=uuid4(),
             name=name,
             description=description,
@@ -587,17 +560,16 @@ class SegmentViewsService:
             team_id=team_id,
             department_id=department_id,
         )
-
         self._segments[segment.id] = segment
         return segment
 
-    def get_segment(self, segment_id: UUID) -> Segment | None:
+    def get_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Get a segment by ID."""
         return self._segments.get(segment_id)
 
     def get_segment_by_name(
         self, name: str, module: SegmentModule, owner_id: UUID | None = None
-    ) -> Segment | None:
+    ) -> LegacySegment | None:
         """Get a segment by name and module."""
         for segment in self._segments.values():
             if segment.name == name and segment.module == module:
@@ -614,46 +586,30 @@ class SegmentViewsService:
         include_defaults: bool = True,
         pinned_only: bool = False,
         smart_only: bool = False,
-    ) -> list[Segment]:
+    ) -> list[LegacySegment]:
         """Get segments with optional filtering."""
         segments = []
-
         for segment in self._segments.values():
-            # Filter by module
             if module and segment.module != module:
                 continue
-
-            # Filter by visibility
             if visibility and segment.visibility != visibility:
                 continue
-
-            # Filter defaults
             if not include_defaults and segment.is_default:
                 continue
-
-            # Filter by owner or shared
             if owner_id:
                 is_owner = segment.owner_id == owner_id
                 is_shared = owner_id in segment.shared_with
-
                 if not is_owner and not (include_shared and is_shared):
-                    # Check organization/department visibility
                     if segment.visibility not in [
                         SegmentVisibility.ORGANIZATION,
                         SegmentVisibility.DEPARTMENT,
                     ]:
                         continue
-
-            # Filter pinned
             if pinned_only and not segment.is_pinned:
                 continue
-
-            # Filter smart
             if smart_only and not segment.is_smart:
                 continue
-
             segments.append(segment)
-
         return segments
 
     def update_segment(
@@ -669,12 +625,11 @@ class SegmentViewsService:
         icon: str | None = None,
         is_pinned: bool | None = None,
         is_smart: bool | None = None,
-    ) -> Segment | None:
+    ) -> LegacySegment | None:
         """Update a segment."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
         if name is not None:
             segment.name = name
         if description is not None:
@@ -695,21 +650,17 @@ class SegmentViewsService:
             segment.is_pinned = is_pinned
         if is_smart is not None:
             segment.is_smart = is_smart
-
         segment.updated_at = datetime.now(timezone.utc)
-
         return segment
 
     def delete_segment(self, segment_id: UUID) -> bool:
         """Delete a segment."""
         if segment_id in self._segments:
-            # Remove shares
             shares_to_remove = [
                 s_id for s_id, s in self._shares.items() if s.segment_id == segment_id
             ]
             for share_id in shares_to_remove:
                 del self._shares[share_id]
-
             del self._segments[segment_id]
             return True
         return False
@@ -719,12 +670,11 @@ class SegmentViewsService:
         segment_id: UUID,
         new_name: str,
         new_owner_id: UUID,
-    ) -> Segment | None:
+    ) -> LegacySegment | None:
         """Duplicate a segment for a user."""
         original = self._segments.get(segment_id)
         if not original:
             return None
-
         return self.create_segment(
             name=new_name,
             description=original.description,
@@ -745,20 +695,16 @@ class SegmentViewsService:
         shared_by: UUID,
         shared_with: UUID,
         can_edit: bool = False,
-    ) -> SegmentShare | None:
+    ) -> LegacySegmentShare | None:
         """Share a segment with another user."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
-        # Check if already shared
         for share in self._shares.values():
             if share.segment_id == segment_id and share.shared_with == shared_with:
-                # Update existing share
                 share.can_edit = can_edit
                 return share
-
-        share = SegmentShare(
+        share = LegacySegmentShare(
             id=uuid4(),
             segment_id=segment_id,
             shared_by=shared_by,
@@ -766,10 +712,8 @@ class SegmentViewsService:
             can_edit=can_edit,
             created_at=datetime.now(timezone.utc),
         )
-
         self._shares[share.id] = share
         segment.shared_with.append(shared_with)
-
         return share
 
     def unshare_segment(self, segment_id: UUID, user_id: UUID) -> bool:
@@ -777,35 +721,29 @@ class SegmentViewsService:
         segment = self._segments.get(segment_id)
         if not segment:
             return False
-
-        # Find and remove share
         share_to_remove = None
         for share_id, share in self._shares.items():
             if share.segment_id == segment_id and share.shared_with == user_id:
                 share_to_remove = share_id
                 break
-
         if share_to_remove:
             del self._shares[share_to_remove]
             if user_id in segment.shared_with:
                 segment.shared_with.remove(user_id)
             return True
-
         return False
 
     def get_shares(
         self, segment_id: UUID | None = None, user_id: UUID | None = None
-    ) -> list[SegmentShare]:
+    ) -> list[LegacySegmentShare]:
         """Get shares for a segment or user."""
         shares = []
-
         for share in self._shares.values():
             if segment_id and share.segment_id != segment_id:
                 continue
             if user_id and share.shared_with != user_id:
                 continue
             shares.append(share)
-
         return shares
 
     def set_default_segment(
@@ -815,18 +753,15 @@ class SegmentViewsService:
         segment = self._segments.get(segment_id)
         if not segment or segment.module != module:
             return False
-
-        # Clear other defaults for this user/module
         for s in self._segments.values():
             if s.module == module and s.owner_id == user_id and s.is_default:
                 s.is_default = False
-
         segment.is_default = True
         return True
 
     def get_default_segment(
         self, user_id: UUID, module: SegmentModule
-    ) -> Segment | None:
+    ) -> LegacySegment | None:
         """Get the default segment for a user/module."""
         for segment in self._segments.values():
             if (
@@ -837,7 +772,7 @@ class SegmentViewsService:
                 return segment
         return None
 
-    def pin_segment(self, segment_id: UUID) -> Segment | None:
+    def pin_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Pin a segment for quick access."""
         segment = self._segments.get(segment_id)
         if segment:
@@ -845,7 +780,7 @@ class SegmentViewsService:
             segment.updated_at = datetime.now(timezone.utc)
         return segment
 
-    def unpin_segment(self, segment_id: UUID) -> Segment | None:
+    def unpin_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Unpin a segment."""
         segment = self._segments.get(segment_id)
         if segment:
@@ -855,27 +790,21 @@ class SegmentViewsService:
 
     def record_usage(
         self, segment_id: UUID, user_id: UUID, result_count: int
-    ) -> SegmentUsage | None:
+    ) -> LegacySegmentUsage | None:
         """Record usage of a segment."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
         now = datetime.now(timezone.utc)
-
-        usage = SegmentUsage(
+        usage = LegacySegmentUsage(
             segment_id=segment_id,
             user_id=user_id,
             used_at=now,
             result_count=result_count,
         )
-
         self._usage.append(usage)
-
-        # Update segment stats
         segment.use_count += 1
         segment.last_used_at = now
-
         return usage
 
     def get_usage_stats(
@@ -883,25 +812,21 @@ class SegmentViewsService:
         segment_id: UUID | None = None,
         user_id: UUID | None = None,
         limit: int = 100,
-    ) -> list[SegmentUsage]:
+    ) -> list[LegacySegmentUsage]:
         """Get usage statistics."""
         usages = []
-
         for usage in self._usage:
             if segment_id and usage.segment_id != segment_id:
                 continue
             if user_id and usage.user_id != user_id:
                 continue
             usages.append(usage)
-
-        # Sort by most recent
         usages.sort(key=lambda u: u.used_at, reverse=True)
-
         return usages[:limit]
 
     def get_popular_segments(
         self, module: SegmentModule | None = None, limit: int = 10
-    ) -> list[Segment]:
+    ) -> list[LegacySegment]:
         """Get most popular segments by usage."""
         segments = self.get_segments(module=module)
         segments.sort(key=lambda s: s.use_count, reverse=True)
@@ -909,28 +834,21 @@ class SegmentViewsService:
 
     def get_recent_segments(
         self, user_id: UUID, module: SegmentModule | None = None, limit: int = 5
-    ) -> list[Segment]:
+    ) -> list[LegacySegment]:
         """Get recently used segments for a user."""
-        # Get recent usage for user
         user_usage = [u for u in self._usage if u.user_id == user_id]
         user_usage.sort(key=lambda u: u.used_at, reverse=True)
-
-        # Get unique segments in order
         seen: set[UUID] = set()
         segments = []
-
         for usage in user_usage:
             if usage.segment_id in seen:
                 continue
-
             segment = self._segments.get(usage.segment_id)
             if segment and (module is None or segment.module == module):
                 segments.append(segment)
                 seen.add(usage.segment_id)
-
                 if len(segments) >= limit:
                     break
-
         return segments
 
     def apply_segment(
@@ -938,9 +856,7 @@ class SegmentViewsService:
     ) -> SegmentApplyResult:
         """Apply a segment's filters to data and return matching items."""
         import time
-
         start_time = time.time()
-
         segment = self._segments.get(segment_id)
         if not segment:
             return SegmentApplyResult(
@@ -950,17 +866,11 @@ class SegmentViewsService:
                 result_count=0,
                 execution_time_ms=0.0,
             )
-
-        # Collect all criteria
         all_criteria: list[FilterCriterion] = []
         for group in segment.filter_groups:
             all_criteria.extend(group.criteria)
-
-        # Apply filters
         filtered_data = self._apply_filters(data, segment.filter_groups)
-
         execution_time = (time.time() - start_time) * 1000
-
         return SegmentApplyResult(
             segment_id=segment_id,
             module=segment.module,
@@ -975,47 +885,31 @@ class SegmentViewsService:
         """Apply filter groups to data."""
         if not filter_groups:
             return data
-
         result = []
-
         for item in data:
-            # Item must match all groups (groups are ANDed together)
             matches_all_groups = True
-
             for group in filter_groups:
                 group_match = self._evaluate_group(item, group)
                 if not group_match:
                     matches_all_groups = False
                     break
-
             if matches_all_groups:
                 result.append(item)
-
         return result
 
-    def _evaluate_group(
-        self, item: dict[str, Any], group: FilterGroup
-    ) -> bool:
+    def _evaluate_group(self, item: dict[str, Any], group: FilterGroup) -> bool:
         """Evaluate a filter group against an item."""
         if not group.criteria:
             return True
-
         if group.operator == LogicalOperator.AND:
-            return all(
-                self._evaluate_criterion(item, c) for c in group.criteria
-            )
-        else:  # OR
-            return any(
-                self._evaluate_criterion(item, c) for c in group.criteria
-            )
+            return all(self._evaluate_criterion(item, c) for c in group.criteria)
+        else:
+            return any(self._evaluate_criterion(item, c) for c in group.criteria)
 
-    def _evaluate_criterion(
-        self, item: dict[str, Any], criterion: FilterCriterion
-    ) -> bool:
+    def _evaluate_criterion(self, item: dict[str, Any], criterion: FilterCriterion) -> bool:
         """Evaluate a single criterion against an item."""
         value = item.get(criterion.field)
         target = criterion.value
-
         match criterion.operator:
             case FilterOperator.EQUALS:
                 return value == target
@@ -1049,63 +943,44 @@ class SegmentViewsService:
                 if isinstance(target, list) and len(target) == 2:
                     return target[0] <= value <= target[1] if value is not None else False
                 return False
-            case FilterOperator.DATE_BEFORE | FilterOperator.DATE_AFTER | FilterOperator.DATE_BETWEEN | FilterOperator.RELATIVE_DATE:
-                # Date operations require parsing - simplified for now
-                return True
             case _:
-                return False
+                return True
 
     def add_criterion_to_segment(
-        self,
-        segment_id: UUID,
-        group_index: int,
-        criterion: FilterCriterion,
-    ) -> Segment | None:
+        self, segment_id: UUID, group_index: int, criterion: FilterCriterion
+    ) -> LegacySegment | None:
         """Add a criterion to a filter group."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
         if 0 <= group_index < len(segment.filter_groups):
             segment.filter_groups[group_index].criteria.append(criterion)
             segment.updated_at = datetime.now(timezone.utc)
-
         return segment
 
     def remove_criterion_from_segment(
-        self,
-        segment_id: UUID,
-        group_index: int,
-        criterion_index: int,
-    ) -> Segment | None:
+        self, segment_id: UUID, group_index: int, criterion_index: int
+    ) -> LegacySegment | None:
         """Remove a criterion from a filter group."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
         if 0 <= group_index < len(segment.filter_groups):
             group = segment.filter_groups[group_index]
             if 0 <= criterion_index < len(group.criteria):
                 group.criteria.pop(criterion_index)
                 segment.updated_at = datetime.now(timezone.utc)
-
         return segment
 
     def add_filter_group(
-        self,
-        segment_id: UUID,
-        operator: LogicalOperator = LogicalOperator.AND,
-    ) -> Segment | None:
+        self, segment_id: UUID, operator: LogicalOperator = LogicalOperator.AND
+    ) -> LegacySegment | None:
         """Add a new filter group to a segment."""
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
-        segment.filter_groups.append(
-            FilterGroup(criteria=[], operator=operator)
-        )
+        segment.filter_groups.append(FilterGroup(criteria=[], operator=operator))
         segment.updated_at = datetime.now(timezone.utc)
-
         return segment
 
     def export_segment(self, segment_id: UUID) -> dict[str, Any] | None:
@@ -1113,7 +988,6 @@ class SegmentViewsService:
         segment = self._segments.get(segment_id)
         if not segment:
             return None
-
         return {
             "name": segment.name,
             "description": segment.description,
@@ -1144,22 +1018,14 @@ class SegmentViewsService:
                 }
                 for col in segment.columns
             ],
-            "sort": {
-                "field": segment.sort.field,
-                "direction": segment.sort.direction,
-            }
-            if segment.sort
-            else None,
+            "sort": {"field": segment.sort.field, "direction": segment.sort.direction}
+            if segment.sort else None,
             "color": segment.color,
             "icon": segment.icon,
             "is_smart": segment.is_smart,
         }
 
-    def import_segment(
-        self,
-        data: dict[str, Any],
-        owner_id: UUID,
-    ) -> Segment | None:
+    def import_segment(self, data: dict[str, Any], owner_id: UUID) -> LegacySegment | None:
         """Import a segment from exported data."""
         try:
             filter_groups = []
@@ -1180,7 +1046,6 @@ class SegmentViewsService:
                         operator=LogicalOperator(group_data.get("operator", "and")),
                     )
                 )
-
             columns = []
             for col in data.get("columns", []):
                 columns.append(
@@ -1192,23 +1057,19 @@ class SegmentViewsService:
                         order=col.get("order", 0),
                     )
                 )
-
             sort = None
             if data.get("sort"):
                 sort = SegmentSort(
                     field=data["sort"]["field"],
                     direction=data["sort"].get("direction", "asc"),
                 )
-
             return self.create_segment(
                 name=data["name"],
                 description=data.get("description", ""),
                 module=SegmentModule(data["module"]),
                 owner_id=owner_id,
                 filter_groups=filter_groups,
-                visibility=SegmentVisibility(
-                    data.get("visibility", "private")
-                ),
+                visibility=SegmentVisibility(data.get("visibility", "private")),
                 columns=columns,
                 sort=sort,
                 color=data.get("color"),
@@ -1223,25 +1084,48 @@ class SegmentViewsService:
         by_module: dict[str, int] = {}
         by_visibility: dict[str, int] = {}
         total_usage = 0
-
         for segment in self._segments.values():
             module = segment.module.value
             visibility = segment.visibility.value
-
             by_module[module] = by_module.get(module, 0) + 1
             by_visibility[visibility] = by_visibility.get(visibility, 0) + 1
             total_usage += segment.use_count
-
         return {
             "total_segments": len(self._segments),
-            "default_segments": len(
-                [s for s in self._segments.values() if s.is_default]
-            ),
-            "smart_segments": len(
-                [s for s in self._segments.values() if s.is_smart]
-            ),
+            "default_segments": len([s for s in self._segments.values() if s.is_default]),
+            "smart_segments": len([s for s in self._segments.values() if s.is_smart]),
             "by_module": by_module,
             "by_visibility": by_visibility,
             "total_shares": len(self._shares),
             "total_usage": total_usage,
         }
+
+
+# Re-export database-backed service for production use
+from sensei.services.segment_views_db import (
+    SegmentViewsService as DBSegmentViewsService,
+    get_segment_views_service,
+)
+
+
+__all__ = [
+    # In-memory service (for testing)
+    "SegmentViewsService",
+    # DB-backed service (for production)
+    "DBSegmentViewsService",
+    "get_segment_views_service",
+    # Data classes
+    "FilterCriterion",
+    "FilterGroup",
+    "FilterOperator",
+    "LogicalOperator",
+    "SegmentSort",
+    "SegmentColumn",
+    "SegmentApplyResult",
+    # Models
+    "Segment",
+    "SegmentShare",
+    "SegmentUsage",
+    "SegmentModule",
+    "SegmentVisibility",
+]

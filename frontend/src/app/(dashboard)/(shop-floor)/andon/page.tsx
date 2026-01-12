@@ -21,10 +21,12 @@ import {
   MoreHorizontal,
   PhoneCall,
   MessageSquare,
+  TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge, BadgeProps } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn, formatDate } from '@/lib/utils';
-import { useAndonStore } from '@/stores/andon-store';
+import { useAndonStore, formatElapsedTime } from '@/stores/andon-store';
 import type { AndonEvent, AndonStatus, Severity, WorkCenter } from '@/types';
 
 export default function AndonBoardPage() {
@@ -107,6 +109,14 @@ export default function AndonBoardPage() {
             title={soundEnabled ? 'Mute alerts' : 'Enable alert sounds'}
           >
             {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => router.push('/andon/analytics')}
+          >
+            <TrendingUp className="h-4 w-4" />
+            Analytics
           </Button>
           <Button 
             variant="ghost" 

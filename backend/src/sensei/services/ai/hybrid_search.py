@@ -504,8 +504,10 @@ class ONNXCrossEncoder(CrossEncoderReranker):
     """
     ONNX-based cross-encoder re-ranker.
     
-    In production, this would load an ONNX model like BGE-Reranker-v2-m3.
-    For testing, we use a mock implementation.
+    Uses the production ONNX cross-encoder from onnx_cross_encoder module
+    for high-quality relevance scoring on CPU.
+    
+    Falls back to TF-IDF scoring if ONNX runtime is unavailable.
     """
     
     def __init__(
@@ -516,52 +518,103 @@ class ONNXCrossEncoder(CrossEncoderReranker):
         self.model_path = model_path
         self.cache = RerankCache(cache_ttl)
         self._model_loaded = False
+        self._encoder = None
+        self._fallback = None
         
-        # Mock: In production, load ONNX model
-        # self._session = ort.InferenceSession(model_path)
+        # Try to load the ONNX cross-encoder
+        self._init_encoder()
+    
+    def _init_encoder(self) -> None:
+        """Initialize the ONNX cross-encoder or fallback."""
+        try:
+            from sensei.services.ai.onnx_cross_encoder import (
+                CrossEncoderConfig,
+                ONNXCrossEncoder as RealONNXCrossEncoder,
+                TFIDFScorer,
+            )
+            from pathlib import Path
+            import os
+            
+            # Configure with cache TTL
+            cache_dir = Path(os.getenv("SENSEI_ONNX_CACHE_DIR", ".cache/sensei/onnx"))
+            config = CrossEncoderConfig(
+                model_id=os.getenv(
+                    "SENSEI_ONNX_RERANKER_MODEL",
+                    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+                ),
+                cache_dir=cache_dir,
+                quantize_int8=True,
+                cache_ttl_seconds=self.cache.ttl if hasattr(self.cache, 'ttl') else DEFAULT_RERANK_CACHE_TTL,
+            )
+            
+            self._encoder = RealONNXCrossEncoder(config)
+            self._model_loaded = True
+            logger.info("Initialized ONNX cross-encoder for re-ranking")
+            
+        except ImportError as e:
+            logger.warning(f"Could not import ONNX cross-encoder, using TF-IDF fallback: {e}")
+            self._init_fallback()
+        except Exception as e:
+            logger.warning(f"Failed to initialize ONNX cross-encoder, using fallback: {e}")
+            self._init_fallback()
+    
+    def _init_fallback(self) -> None:
+        """Initialize TF-IDF fallback scorer."""
+        try:
+            from sensei.services.ai.onnx_cross_encoder import TFIDFScorer
+            self._fallback = TFIDFScorer()
+        except ImportError:
+            # Inline fallback if import fails
+            self._fallback = _InlineTFIDFScorer()
     
     def load_model(self) -> bool:
         """Load the ONNX model."""
-        if self.model_path:
-            # In production: Load actual ONNX model
-            # self._session = ort.InferenceSession(self.model_path)
-            self._model_loaded = True
+        if self._encoder is not None:
             return True
-        return False
+        self._init_encoder()
+        return self._model_loaded
     
     def score_pair(self, query: str, context: str) -> float:
         """
         Score a query-context pair.
         
         Returns a relevance score between 0 and 1.
+        Uses ONNX model if available, otherwise TF-IDF fallback.
         """
         # Check cache first
         cached = self.cache.get(query, context)
         if cached is not None:
             return cached
         
-        # Mock scoring (in production, run through ONNX model)
-        score = self._mock_score(query, context)
+        # Score using ONNX or fallback
+        if self._encoder is not None:
+            score = self._encoder.score_pair(query, context)
+        elif self._fallback is not None:
+            score = self._fallback.score(query, context)
+        else:
+            score = self._heuristic_score(query, context)
         
         # Cache the result
         self.cache.set(query, context, score)
         
         return score
     
-    def _mock_score(self, query: str, context: str) -> float:
+    def _heuristic_score(self, query: str, context: str) -> float:
         """
-        Mock scoring function.
-        
-        In production, this would run the ONNX model.
-        Here we use term overlap + length heuristics.
+        Simple heuristic scoring as last-resort fallback.
         """
         query_terms = set(query.lower().split())
-        context_terms = set(context.lower().split())
+        context_lower = context.lower()
         
         if not query_terms:
             return 0.0
         
+        # Exact phrase match bonus
+        if query.lower() in context_lower:
+            return 0.9
+        
         # Term overlap
+        context_terms = set(context_lower.split())
         overlap = len(query_terms & context_terms)
         overlap_score = overlap / len(query_terms)
         
@@ -580,15 +633,72 @@ class ONNXCrossEncoder(CrossEncoderReranker):
         top_k: int = 10,
     ) -> List[SearchResult]:
         """Re-rank search results using cross-encoder scoring."""
-        # Score each result
-        for result in results:
-            result.rerank_score = self.score_pair(query, result.chunk.content)
-            result.final_score = result.rerank_score
+        if not results:
+            return []
+        
+        # Use batch scoring if ONNX encoder available
+        if self._encoder is not None:
+            contents = [r.chunk.content for r in results]
+            scores = self._encoder.score_pairs_batch(query, contents)
+            
+            for result, score in zip(results, scores):
+                result.rerank_score = score
+                result.final_score = score
+        else:
+            # Score individually
+            for result in results:
+                result.rerank_score = self.score_pair(query, result.chunk.content)
+                result.final_score = result.rerank_score
         
         # Sort by rerank score
         results.sort(key=lambda r: r.final_score, reverse=True)
         
         return results[:top_k]
+
+
+class _InlineTFIDFScorer:
+    """Inline TF-IDF fallback when import fails."""
+    
+    def score(self, query: str, context: str) -> float:
+        """Simple TF-IDF-like scoring."""
+        import re as _re
+        
+        def tokenize(text: str) -> List[str]:
+            text = text.lower()
+            terms = _re.findall(r'[a-z0-9]+', text)
+            stopwords = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'of', 
+                        'to', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'and', 
+                        'but', 'or', 'it', 'its', 'this', 'that'}
+            return [t for t in terms if t not in stopwords and len(t) > 1]
+        
+        query_terms = set(tokenize(query))
+        context_terms = tokenize(context)
+        
+        if not query_terms or not context_terms:
+            return 0.0
+        
+        # Term frequency in context
+        tf = {}
+        for term in context_terms:
+            tf[term] = tf.get(term, 0) + 1
+        
+        # BM25-like score
+        k1 = 1.2
+        score = 0.0
+        for term in query_terms:
+            if term in tf:
+                freq = tf[term]
+                score += (freq * (k1 + 1)) / (freq + k1)
+        
+        # Normalize
+        max_possible = len(query_terms) * (k1 + 1)
+        normalized = score / max_possible if max_possible > 0 else 0.0
+        
+        # Exact phrase match bonus
+        if query.lower() in context.lower():
+            normalized = min(1.0, normalized + 0.2)
+        
+        return min(1.0, max(0.0, normalized))
 
 
 # =============================================================================
@@ -629,10 +739,51 @@ class KeywordSearcher(ABC):
 
 
 class InMemorySemanticSearcher(SemanticSearcher):
-    """In-memory semantic searcher for testing."""
+    """
+    In-memory semantic searcher.
     
-    def __init__(self):
+    Uses ONNX embedder for production-quality embeddings when available,
+    with a fallback to deterministic hash-based embeddings for testing.
+    """
+    
+    def __init__(self, embedder: Optional[Any] = None):
+        """
+        Initialize the searcher.
+        
+        Args:
+            embedder: Optional embedder with embed_text method
+        """
         self._chunks: Dict[str, Tuple[Chunk, List[float]]] = {}
+        self._embedder = embedder
+        self._embedder_initialized = False
+    
+    def _get_embedder(self):
+        """Lazily initialize the embedder."""
+        if self._embedder is not None:
+            return self._embedder
+        
+        if self._embedder_initialized:
+            return None
+        
+        self._embedder_initialized = True
+        
+        try:
+            from sensei.services.ai.onnx_text_embeddings import (
+                ONNXTextEmbedder,
+                EmbeddingConfig,
+            )
+            from pathlib import Path
+            
+            config = EmbeddingConfig(
+                model_id="sentence-transformers/all-MiniLM-L6-v2",
+                cache_dir=Path.home() / ".cache" / "sensei" / "embeddings",
+                quantize_int8=True,
+                max_length=256,
+            )
+            self._embedder = ONNXTextEmbedder(config)
+            return self._embedder
+        except Exception:
+            return None
     
     def add_chunk(self, chunk: Chunk, embedding: List[float]) -> None:
         """Add a chunk with its embedding."""
@@ -640,14 +791,27 @@ class InMemorySemanticSearcher(SemanticSearcher):
         chunk.embedding = embedding
     
     def embed_query(self, query: str) -> List[float]:
-        """Generate a mock embedding for a query."""
-        # Simple mock: use character codes
+        """Generate embedding for a query using the ONNX embedder."""
+        embedder = self._get_embedder()
+        
+        if embedder is not None:
+            try:
+                return embedder.embed_text(query)
+            except Exception:
+                pass
+        
+        # Fallback: deterministic hash-based embedding
+        import hashlib
+        h = hashlib.sha256(query.encode()).hexdigest()
+        
         embedding = []
-        for i in range(384):
-            if i < len(query):
-                embedding.append(ord(query[i]) / 256.0)
-            else:
-                embedding.append(0.0)
+        for i in range(0, 64, 2):
+            embedding.append((int(h[i:i+2], 16) - 128) / 128.0)
+        
+        # Extend to 384 dimensions
+        while len(embedding) < 384:
+            idx = len(embedding) % 32
+            embedding.append(embedding[idx] * 0.5)
         
         # Normalize
         norm = math.sqrt(sum(x * x for x in embedding)) or 1.0

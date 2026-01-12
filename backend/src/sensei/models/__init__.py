@@ -146,6 +146,21 @@ from sensei.models.production import (
     ShiftNumber,
 )
 from sensei.models.maintenance import ConditionReading, MaintenanceRecord
+from sensei.models.ot_network import (
+    NetworkZone,
+    ZoneViolation,
+    EdgeCertificate,
+    ZoneType,
+    CertificateStatus,
+    ZoneViolationSeverity,
+)
+from sensei.models.segment import (
+    Segment,
+    SegmentShare,
+    SegmentUsage,
+    SegmentModule,
+    SegmentVisibility,
+)
 
 __all__ = [
     # Base
@@ -293,4 +308,17 @@ __all__ = [
     # Maintenance
     "ConditionReading",
     "MaintenanceRecord",
+    # OT Network Safety
+    "NetworkZone",
+    "ZoneViolation",
+    "EdgeCertificate",
+    "ZoneType",
+    "CertificateStatus",
+    "ZoneViolationSeverity",
+    # Segment Views
+    "Segment",
+    "SegmentShare",
+    "SegmentUsage",
+    "SegmentModule",
+    "SegmentVisibility",
 ]

@@ -770,38 +770,109 @@ class DocumentProcessor(ABC):
 
 
 class SimpleDocumentProcessor(DocumentProcessor):
-    """Simple document processor for testing."""
+    """
+    Simple document processor that uses the ONNX embedder for production-ready embeddings.
     
-    def __init__(self, chunk_size: int = 500):
+    Falls back to a deterministic hash-based embedding only if the ONNX embedder
+    is not available (e.g., model not downloaded yet).
+    """
+    
+    def __init__(self, chunk_size: int = 500, embedder: Optional[Any] = None):
+        """
+        Initialize the document processor.
+        
+        Args:
+            chunk_size: Size of text chunks
+            embedder: Optional embedder with embed_text method. If None, will try to
+                      load the ONNX embedder.
+        """
         self.chunk_size = chunk_size
+        self._embedder = embedder
+        self._embedder_initialized = False
+    
+    def _get_embedder(self):
+        """Lazily initialize the embedder."""
+        if self._embedder is not None:
+            return self._embedder
+        
+        if self._embedder_initialized:
+            return None
+        
+        self._embedder_initialized = True
+        
+        try:
+            from sensei.services.ai.onnx_text_embeddings import (
+                ONNXTextEmbedder,
+                EmbeddingConfig,
+            )
+            from pathlib import Path
+            
+            config = EmbeddingConfig(
+                model_id="sentence-transformers/all-MiniLM-L6-v2",
+                cache_dir=Path.home() / ".cache" / "sensei" / "embeddings",
+                quantize_int8=True,
+                max_length=256,
+            )
+            self._embedder = ONNXTextEmbedder(config)
+            logger.info("Initialized ONNX text embedder for document processing")
+            return self._embedder
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize ONNX embedder, using fallback: {e}"
+            )
+            return None
     
     async def process_document(
         self,
         document_id: str,
         content: bytes,
     ) -> List[Tuple[str, str, List[float]]]:
-        """Process document into chunks."""
+        """Process document into chunks with embeddings."""
         text = content.decode("utf-8", errors="ignore")
         chunks = []
+        
+        embedder = self._get_embedder()
         
         for i in range(0, len(text), self.chunk_size):
             chunk_text = text[i:i + self.chunk_size]
             chunk_id = f"{document_id}_chunk_{i // self.chunk_size}"
             
-            # Simple mock embedding (normalized random-ish vector)
-            embedding = self._mock_embedding(chunk_text)
+            if embedder is not None:
+                # Use real embedder
+                try:
+                    embedding = embedder.embed_text(chunk_text)
+                except Exception as e:
+                    logger.warning(f"Embedding failed for chunk {chunk_id}: {e}")
+                    embedding = self._fallback_embedding(chunk_text)
+            else:
+                # Fallback: deterministic hash-based embedding
+                embedding = self._fallback_embedding(chunk_text)
             
             chunks.append((chunk_id, chunk_text, embedding))
         
         return chunks
     
-    def _mock_embedding(self, text: str) -> List[float]:
-        """Generate a mock embedding for testing."""
-        # Use hash to generate deterministic pseudo-random values
-        h = hashlib.md5(text.encode()).hexdigest()
-        values = [int(h[i:i+2], 16) / 255.0 for i in range(0, 32, 2)]
+    def _fallback_embedding(self, text: str) -> List[float]:
+        """
+        Generate a deterministic fallback embedding based on text hash.
         
-        # Normalize
+        This is NOT suitable for production semantic search but provides
+        a consistent vector for testing and development.
+        """
+        # Use SHA-256 for better distribution
+        h = hashlib.sha256(text.encode()).hexdigest()
+        
+        # Generate 384-dimensional vector to match MiniLM
+        values = []
+        for i in range(0, 64, 2):
+            values.append((int(h[i:i+2], 16) - 128) / 128.0)
+        
+        # Extend to 384 dimensions by cycling
+        while len(values) < 384:
+            idx = len(values) % 32
+            values.append(values[idx] * 0.5)
+        
+        # Normalize to unit vector
         norm = math.sqrt(sum(v * v for v in values))
         if norm > 0:
             values = [v / norm for v in values]

@@ -3,12 +3,13 @@
 import * as React from 'react';
 import Link from 'next/link';
 
-import { Calendar, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Calendar, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/stores';
+import { useTodayStore } from '@/stores/today';
 
 type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -66,109 +67,131 @@ function priorityBadgeVariant(priority: PriorityLevel): 'default' | 'secondary' 
 
 export default function TodayPage() {
 	const { user } = useAuthStore();
+	const { data: todayData, loading, error, fetchTodayScreen } = useTodayStore();
 
 	const firstName = user?.full_name?.split(' ')[0] || 'there';
+	
+	// Fetch data on mount
+	React.useEffect(() => {
+		if (user?.id && user?.full_name) {
+			fetchTodayScreen(user.id, user.full_name);
+		}
+	}, [user?.id, user?.full_name, fetchTodayScreen]);
 
-	const priorities: PriorityItem[] = [
-		{
-			id: 'p1',
-			title: 'Close RFQ blockers for today',
-			priority: 'urgent',
-			href: '/pipeline/priority',
-		},
-		{
-			id: 'p2',
-			title: 'Confirm production schedule risks',
-			priority: 'high',
-			href: '/tasks/production-schedule',
-		},
-		{
-			id: 'p3',
-			title: 'Review top quality abnormalities',
-			priority: 'medium',
-			href: '/tasks/quality-abnormalities',
-		},
-	];
+	// Convert API priorities to our format
+	const mappedPriorities: PriorityItem[] = React.useMemo(() => {
+		if (todayData?.top_priorities?.length) {
+			return todayData.top_priorities.map((p: any, idx: number) => ({
+				id: p.id || `p${idx}`,
+				title: p.title || p.name,
+				priority: (p.priority || 'medium') as PriorityLevel,
+				href: p.href || p.link || '/pipeline',
+			}));
+		}
+		// Fallback priorities if API returns empty
+		return getPriorities();
+	}, [todayData, user?.role]);
 
-	const tasks: TaskItem[] = [
-		{
-			id: 't1',
-			title: 'Approve quote draft for customer',
-			dueLabel: 'Due today',
-			href: '/tasks/quote-approval',
-		},
-		{
-			id: 't2',
-			title: 'Daily Gemba walk notes',
-			dueLabel: 'Due in 2 hours',
-			href: '/tasks/gemba',
-		},
-	];
+	const tasks: TaskItem[] = React.useMemo(() => {
+		if (todayData?.todays_commitments?.length) {
+			return todayData.todays_commitments.slice(0, 5).map((t: any, idx: number) => ({
+				id: t.id || `t${idx}`,
+				title: t.title || t.description,
+				dueLabel: t.due_label || t.deadline || 'Today',
+				href: t.href || '/tasks',
+			}));
+		}
+		return [];
+	}, [todayData]);
 
-	const activity: ActivityItem[] = [
-		{
-			id: 'a1',
-			text: 'RFQ moved to Quoting by John',
-			when: '2 hours ago',
-			href: '/pipeline',
-		},
-		{
-			id: 'a2',
-			text: 'New NCR created by QA',
-			when: '4 days ago',
-			href: '/quality',
-		},
-	];
+	const kpis: KpiItem[] = React.useMemo(() => {
+		if (todayData?.quick_metrics?.length) {
+			return todayData.quick_metrics.map((m: any, idx: number) => ({
+				id: m.id || `k${idx}`,
+				title: m.title || m.label,
+				value: m.value ?? 0,
+				trendLabel: m.trend_label || m.trend || '',
+				href: m.href || '/analytics',
+			}));
+		}
+		return [];
+	}, [todayData]);
 
-	const rfqs: RFQItem[] = [
-		{
-			id: 'r1',
-			title: 'Machined bracket assembly',
-			customer: 'ACME',
-			priority: 'high',
-			status: 'reviewing',
-			href: '/pipeline/r1',
-		},
-		{
-			id: 'r2',
-			title: 'Welded frame revision',
-			customer: 'Globex',
-			priority: 'urgent',
-			status: 'new',
-			href: '/pipeline/r2',
-		},
-	];
+	// Show loading state
+	if (loading) {
+		return (
+			<div className="flex items-center justify-center min-h-[400px]">
+				<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
 
-	const kpis: KpiItem[] = [
-		{
-			id: 'k1',
-			title: 'Open RFQs',
-			value: 12,
-			trendLabel: 'Up 4 from last week',
-			href: '/pipeline',
-		},
-		{
-			id: 'k2',
-			title: 'Pending Quotes',
-			value: 5,
-			trendLabel: 'Down 4 from last week',
-			href: '/pipeline',
-		},
-		{
-			id: 'k3',
-			title: 'Late Tasks',
-			value: 10,
-			trendLabel: 'Same as last week',
-			href: '/tasks',
-		},
-		{
-			id: 'k4',
-			title: 'Active Abnormalities',
-			value: 4,
-			trendLabel: 'Up 4 from last week',
-			href: '/quality',
-		},
-	];
+	// Show error state
+	if (error) {
+		return (
+			<div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+				<AlertCircle className="h-12 w-12 text-destructive" />
+				<p className="text-muted-foreground">Failed to load today&apos;s data</p>
+				<Button onClick={() => user && fetchTodayScreen(user.id, user.full_name || '')}>
+					Try Again
+				</Button>
+			</div>
+		);
+	}
+
+	const getPriorities = (): PriorityItem[] => {
+		const common = [
+			{ id: 'p1', title: 'Close RFQ blockers for today', priority: 'urgent' as PriorityLevel, href: '/pipeline' },
+		];
+
+		if (user?.role === 'admin' || user?.role === 'ceo' || user?.role === 'gm' || user?.role === 'exec') {
+			return [
+				...common,
+				{ id: 'p2', title: 'Review monthly strategic targets', priority: 'high' as PriorityLevel, href: '/executive' },
+				{ id: 'p3', title: 'Analyze critical exceptions', priority: 'high' as PriorityLevel, href: '/exceptions' },
+			];
+		}
+
+		if (user?.role === 'ops' || user?.role === 'supervisor') {
+			return [
+				...common,
+				{ id: 'p2', title: 'Confirm production schedule risks', priority: 'high' as PriorityLevel, href: '/production' },
+				{ id: 'p3', title: 'Review top quality abnormalities', priority: 'medium' as PriorityLevel, href: '/quality' },
+			];
+		}
+
+		return common;
+	};
+
+	const priorities = getPriorities();
+
+	const activity: ActivityItem[] = React.useMemo(() => {
+		// Activity would come from todayData.recent_activity if available
+		if (todayData?.abnormalities?.length) {
+			return todayData.abnormalities.slice(0, 3).map((a: any, idx: number) => ({
+				id: a.id || `a${idx}`,
+				text: a.description || a.title,
+				when: a.when || a.created_at || 'Recently',
+				href: a.href || '/quality',
+			}));
+		}
+		return [];
+	}, [todayData]);
+
+	const rfqs: RFQItem[] = React.useMemo(() => {
+		// RFQs would come from todayData.top_risks.rfq if available
+		if (todayData?.top_risks?.rfq?.length) {
+			return todayData.top_risks.rfq.slice(0, 3).map((r: any, idx: number) => ({
+				id: r.id || `r${idx}`,
+				title: r.title || r.name,
+				customer: r.customer || r.customer_name || 'Unknown',
+				priority: (r.priority || 'medium') as PriorityLevel,
+				status: r.status || 'new',
+				href: r.href || `/pipeline/${r.id}`,
+			}));
+		}
+		return [];
+	}, [todayData]);
 
 	return (
 		<div className="space-y-6">

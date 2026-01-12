@@ -237,22 +237,22 @@ export default function ProductsPage() {
     fetchProducts();
   }, [fetchProducts]);
 
-  const mappedProducts: Product[] = React.useMemo(() => {
+  const mappedProducts = React.useMemo(() => {
     return products.map(p => ({
+      ...p,
       id: p.id.toString(),
       partNumber: p.part_number,
-      name: p.name,
-      description: p.full_part_number,
-      category: p.product_family || 'Uncategorized',
+      description: (p as any).full_part_number || (p as any).description,
+      category: (p as any).product_family || (p as any).category?.name || 'Uncategorized',
       status: p.status as 'active' | 'inactive' | 'discontinued',
-      unit_of_measure: 'pcs',
-      standardCost: p.standard_cost || 0,
-      listPrice: (p.standard_cost || 0) * 1.5,
-      inventoryQty: 100, // Simulated or would come from inventory API
-      reorderPoint: 20,
+      unitOfMeasure: (p as any).unit_of_measure || 'ea',
+      standardCost: (p as any).standard_cost || (p as any).cost || 0,
+      listPrice: (p as any).list_price || ((p as any).cost || 0) * 1.5,
+      inventoryQty: (p as any).inventoryQty || 100,
+      reorderPoint: (p as any).reorder_point || 20,
       leadTimeDays: p.lead_time_days,
-      totalSold: 0,
-      revenue: 0,
+      totalSold: (p as any).totalSold || 0,
+      revenue: (p as any).revenue || 0,
     }));
   }, [products]);
 
@@ -308,7 +308,7 @@ export default function ProductsPage() {
       </div>
 
       {/* Stats */}
-      <ProductStats products={mockProducts} />
+      <ProductStats products={mappedProducts} />
 
       {/* Filters */}
       <Card>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 type ObeyaCategory = 
   | 'issue' | 'action' | 'risk' | 'decision' | 'milestone' 
@@ -273,17 +274,7 @@ export const useObeyaStore = create<ObeyaState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items?board=${targetBoard}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch Obeya items: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>(`/obeya/items?board=${targetBoard}`);
             const items: ObeyaItem[] = data.items || [];
 
             // Calculate stats
@@ -331,17 +322,7 @@ export const useObeyaStore = create<ObeyaState>()(
         fetchItemById: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch Obeya item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.get<ObeyaItem>(`/obeya/items/${id}`);
 
             set(state => ({
               items: state.items.map(i => i.id === id ? item : i),
@@ -361,17 +342,7 @@ export const useObeyaStore = create<ObeyaState>()(
         fetchSQDCPMetrics: async () => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/sqdcp-metrics`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch SQDCP metrics: ${response.statusText}`);
-            }
-
-            const metrics: SQDCPMetrics = await response.json();
+            const metrics = await apiClient.get<SQDCPMetrics>('/obeya/sqdcp-metrics');
 
             set({ sqdcpMetrics: metrics, isLoading: false });
           } catch (error) {
@@ -385,18 +356,8 @@ export const useObeyaStore = create<ObeyaState>()(
         fetchCognitiveInsights: async () => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/cognitive-obeya/dashboard`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch Cognitive insights: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            set({ cognitiveInsights: data.data, isLoading: false });
+            const data = await apiClient.get<any>('/cognitive-obeya/dashboard');
+            set({ cognitiveInsights: data, isLoading: false });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch Cognitive insights',
@@ -408,20 +369,7 @@ export const useObeyaStore = create<ObeyaState>()(
         createItem: async (itemData: Partial<ObeyaItem>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(itemData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create Obeya item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.post<ObeyaItem>('/obeya/items', itemData);
 
             set(state => ({
               items: [item, ...state.items],
@@ -445,20 +393,7 @@ export const useObeyaStore = create<ObeyaState>()(
         updateItem: async (id: string, updates: Partial<ObeyaItem>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(updates),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to update Obeya item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.patch<ObeyaItem>(`/obeya/items/${id}`, updates);
 
             set(state => ({
               items: state.items.map(i => i.id === id ? item : i),
@@ -478,16 +413,7 @@ export const useObeyaStore = create<ObeyaState>()(
         deleteItem: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete Obeya item: ${response.statusText}`);
-            }
+            await apiClient.delete(`/obeya/items/${id}`);
 
             set(state => ({
               items: state.items.filter(i => i.id !== id),
@@ -509,20 +435,7 @@ export const useObeyaStore = create<ObeyaState>()(
         moveItem: async (id: string, column: string, position: number) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}/move`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ column, position }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to move Obeya item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.patch<ObeyaItem>(`/obeya/items/${id}/move`, { column, position });
 
             set(state => ({
               items: state.items.map(i => i.id === id ? item : i),
@@ -540,20 +453,7 @@ export const useObeyaStore = create<ObeyaState>()(
         addComment: async (itemId: string, commentData: Partial<ObeyaComment>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${itemId}/comments`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(commentData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to add comment: ${response.statusText}`);
-            }
-
-            const comment: ObeyaComment = await response.json();
+            const comment = await apiClient.post<ObeyaComment>(`/obeya/items/${itemId}/comments`, commentData);
 
             // Update item comment count
             set(state => ({
@@ -578,17 +478,7 @@ export const useObeyaStore = create<ObeyaState>()(
         fetchComments: async (itemId: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${itemId}/comments`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch comments: ${response.statusText}`);
-            }
-
-            const comments: ObeyaComment[] = await response.json();
+            const comments = await apiClient.get<ObeyaComment[]>(`/obeya/items/${itemId}/comments`);
             set({ isLoading: false });
             return comments;
           } catch (error) {
@@ -603,20 +493,7 @@ export const useObeyaStore = create<ObeyaState>()(
         escalateItem: async (id: string, reason: string, escalatedToId: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}/escalate`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ reason, escalated_to_id: escalatedToId }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to escalate item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.post<ObeyaItem>(`/obeya/items/${id}/escalate`, { reason, escalated_to_id: escalatedToId });
 
             set(state => ({
               items: state.items.map(i => i.id === id ? item : i),
@@ -638,20 +515,7 @@ export const useObeyaStore = create<ObeyaState>()(
         resolveItem: async (id: string, resolution: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/obeya/items/${id}/resolve`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ resolution }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to resolve item: ${response.statusText}`);
-            }
-
-            const item: ObeyaItem = await response.json();
+            const item = await apiClient.post<ObeyaItem>(`/obeya/items/${id}/resolve`, { resolution });
 
             set(state => ({
               items: state.items.map(i => i.id === id ? item : i),

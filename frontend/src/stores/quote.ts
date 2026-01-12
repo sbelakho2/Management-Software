@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 interface QuoteLineItem {
   id: string;
@@ -79,17 +80,7 @@ export const useQuoteStore = create<QuoteState>()(
         fetchQuotes: async () => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch quotes: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>('/quotes');
             set({ quotes: data.items || [], isLoading: false });
           } catch (error) {
             console.error('Error fetching quotes:', error);
@@ -102,17 +93,7 @@ export const useQuoteStore = create<QuoteState>()(
 
         fetchQuoteById: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch quote: ${response.statusText}`);
-            }
-
-            const quote: Quote = await response.json();
+            const quote = await apiClient.get<Quote>(`/quotes/${id}`);
 
             // Update in store
             set(state => ({
@@ -130,20 +111,7 @@ export const useQuoteStore = create<QuoteState>()(
         saveQuote: async (data: QuoteFormData) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ ...data, status: 'draft' }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to save quote: ${response.statusText}`);
-            }
-
-            const newQuote: Quote = await response.json();
+            const newQuote = await apiClient.post<Quote>('/quotes', { ...data, status: 'draft' });
 
             set(state => ({
               quotes: [newQuote, ...state.quotes],
@@ -164,20 +132,7 @@ export const useQuoteStore = create<QuoteState>()(
         submitQuote: async (data: QuoteFormData) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ ...data, status: 'pending_approval' }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to submit quote: ${response.statusText}`);
-            }
-
-            const newQuote: Quote = await response.json();
+            const newQuote = await apiClient.post<Quote>('/quotes', { ...data, status: 'pending_approval' });
 
             set(state => ({
               quotes: [newQuote, ...state.quotes],
@@ -202,49 +157,32 @@ export const useQuoteStore = create<QuoteState>()(
           }
 
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              method: 'PUT',
+            const updatedQuote = await apiClient.put<Quote>(`/quotes/${id}`, updates, {
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                // @ts-ignore
                 'If-Match': `"${currentQuote.version}"`, // Optimistic locking
               },
-              body: JSON.stringify(updates),
             });
-
-            if (!response.ok) {
-              if (response.status === 409) {
-                throw new Error('Quote was modified by another user. Please refresh and try again.');
-              }
-              throw new Error(`Failed to update quote: ${response.statusText}`);
-            }
-
-            const updatedQuote: Quote = await response.json();
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? updatedQuote : q),
             }));
 
             return updatedQuote;
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error updating quote:', error);
-            set({ error: error instanceof Error ? error.message : 'Failed to update quote' });
+            if (error.code === '409' || error.message?.includes('409')) {
+               set({ error: 'Quote was modified by another user. Please refresh and try again.' });
+            } else {
+               set({ error: error.message || 'Failed to update quote' });
+            }
             throw error;
           }
         },
 
         deleteQuote: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete quote: ${response.statusText}`);
-            }
+            await apiClient.delete(`/quotes/${id}`);
 
             set(state => ({
               quotes: state.quotes.filter(q => q.id !== id),
@@ -258,20 +196,7 @@ export const useQuoteStore = create<QuoteState>()(
 
         approveQuote: async (id: string, rationale: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}/approve`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ rationale }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to approve quote: ${response.statusText}`);
-            }
-
-            const approvedQuote: Quote = await response.json();
+            const approvedQuote = await apiClient.post<Quote>(`/quotes/${id}/approve`, { rationale });
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? approvedQuote : q),
@@ -285,20 +210,7 @@ export const useQuoteStore = create<QuoteState>()(
 
         rejectQuote: async (id: string, reason: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}/reject`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ reason }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to reject quote: ${response.statusText}`);
-            }
-
-            const rejectedQuote: Quote = await response.json();
+            const rejectedQuote = await apiClient.post<Quote>(`/quotes/${id}/reject`, { reason });
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? rejectedQuote : q),

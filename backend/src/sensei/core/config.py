@@ -99,6 +99,20 @@ class Settings(BaseSettings):
     AI_MODEL_TEXT: str = "gpt-4o-mini"
     AI_MODEL_EMBEDDING: str = "text-embedding-3-small"
     
+    # Email Settings
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@sensei-os.com"
+    SMTP_FROM_NAME: str = "Sensei OS"
+    SMTP_TLS: bool = True
+    SMTP_SSL: bool = False
+    EMAIL_ENABLED: bool = False
+    
+    # Frontend URL for email links
+    FRONTEND_URL: str = "http://localhost:3000"
+    
     # Localization
     DEFAULT_LOCALE: str = "en"
     SUPPORTED_LOCALES: List[str] = ["en", "fr"]

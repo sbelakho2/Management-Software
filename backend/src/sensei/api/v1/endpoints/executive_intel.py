@@ -13,11 +13,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 
-from fastapi import APIRouter
+from typing import Any, Annotated
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import BadRequestError
 from sensei.api.schemas import APIResponse
@@ -25,8 +27,10 @@ from sensei.api.utils import build_response
 from sensei.models.quality import CAPA, CAPAStatus, NCStatus, NonConformance
 from sensei.services.ops.ceo_control_plane import CEOControlPlaneService
 
-
 router = APIRouter()
+
+# Role requirements
+AllowExec = deps.require_role("admin", "ceo", "gm", "exec")
 
 
 class NL2SQLRequest(BaseModel):
@@ -87,6 +91,7 @@ def _normalize(q: str) -> str:
 
 @router.post("/nl2sql", response_model=APIResponse[NL2SQLResponse])
 async def nl2sql_query(
+    _: AllowExec,
     payload: NL2SQLRequest,
     db: DBSession,
     current_user: CurrentUser,
@@ -133,6 +138,7 @@ async def nl2sql_query(
 
 @router.post("/employee-risk/analyze", response_model=APIResponse[EmployeeRiskResponse])
 async def analyze_employee_risk(
+    _: AllowExec,
     payload: EmployeeRiskRequest,
     db: DBSession,
     current_user: CurrentUser,
@@ -172,6 +178,7 @@ async def analyze_employee_risk(
 
 @router.get("/strategic-report/export")
 async def export_strategic_report(
+    _: AllowExec,
     db: DBSession,
     current_user: CurrentUser,
 ) -> Response:

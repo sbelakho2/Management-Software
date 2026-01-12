@@ -101,11 +101,23 @@ class TestEnums:
 
     def test_source_entity_types_complete(self) -> None:
         """Verify all expected entity types exist."""
+        # SourceEntityType is EntityType from core.enums, with all system entities
         expected = {
-            "rfq", "quote", "quote_version", "opportunity", "qualification",
-            "work_order", "non_conformance", "capa", "andon_event",
-            "inspection_record", "training", "user_skill", "a3", "task",
-            "lsw_item", "kanban_card", "production_cell", "obeya_item",
+            # Sales & CRM
+            "account", "contact", "opportunity", "rfq", "quote", 
+            "quote_version", "qualification",
+            # Production
+            "production", "work_order", "work_center", "station",
+            "production_cell", "kanban_card",
+            # Quality & Andon
+            "andon", "andon_event", "quality", "non_conformance", "capa",
+            "inspection_plan", "inspection_record",
+            # Management & People
+            "a3", "obeya", "obeya_item", "task", "training",
+            "user_skill", "lsw_item",
+            # System
+            "user", "role", "permission", "audit_log", "backup",
+            "attachment", "feature_flag", "approval", "compliance",
         }
         actual = {e.value for e in SourceEntityType}
         assert actual == expected

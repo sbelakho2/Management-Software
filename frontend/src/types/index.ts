@@ -31,6 +31,7 @@ export interface User extends BaseEntity {
   full_name: string;
   avatar_url?: string;
   role: UserRole;
+  roles: UserRole[];
   department?: string;
   job_title?: string;
   phone?: string;
@@ -43,14 +44,24 @@ export interface User extends BaseEntity {
 
 export type UserRole = 
   | 'admin'
+  | 'ceo'
   | 'gm'
-  | 'general_manager'
-  | 'manager'
-  | 'engineer'
-  | 'quality_tech'
-  | 'production_lead'
-  | 'sales_rep'
-  | 'viewer';
+  | 'exec'
+  | 'finance'
+  | 'accountant'
+  | 'hr'
+  | 'ops'
+  | 'quality'
+  | 'auditor'
+  | 'it'
+  | 'supervisor'
+  | 'team_lead'
+  | 'operator'
+  | 'viewer'
+  | 'sales_engineer'
+  | 'estimator'
+  | 'supply_chain'
+  | 'maintenance';
 
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'system';
@@ -302,7 +313,7 @@ export interface BOMItem extends BaseEntity {
 export interface WorkOrder extends AuditableEntity {
   work_order_number: string;
   product_id: UUID;
-  product: Product;
+  product?: Product;
   quantity: number;
   quantity_completed: number;
   quantity_scrapped: number;

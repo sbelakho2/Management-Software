@@ -11,28 +11,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
-
-class SourceEntityType(Enum):
-    """Entity types that can be metric sources."""
-
-    RFQ = "rfq"
-    QUOTE = "quote"
-    QUOTE_VERSION = "quote_version"
-    OPPORTUNITY = "opportunity"
-    QUALIFICATION = "qualification"
-    WORK_ORDER = "work_order"
-    NON_CONFORMANCE = "non_conformance"
-    CAPA = "capa"
-    ANDON_EVENT = "andon_event"
-    INSPECTION_RECORD = "inspection_record"
-    TRAINING = "training"
-    USER_SKILL = "user_skill"
-    A3 = "a3"
-    TASK = "task"
-    LSW_ITEM = "lsw_item"
-    KANBAN_CARD = "kanban_card"
-    PRODUCTION_CELL = "production_cell"
-    OBEYA_ITEM = "obeya_item"
+from sensei.core.enums import EntityType as SourceEntityType
 
 
 class EventType(Enum):

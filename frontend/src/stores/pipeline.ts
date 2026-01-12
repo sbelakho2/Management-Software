@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 import type { RFQStatus, Priority } from '@/types';
 
 interface RFQItem {
@@ -89,17 +90,7 @@ export const usePipelineStore = create<PipelineState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch RFQs: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>('/rfqs');
             
             // Calculate stats
             const rfqs: RFQItem[] = data.items || [];
@@ -142,17 +133,7 @@ export const usePipelineStore = create<PipelineState>()(
         // Fetch single RFQ
         fetchRFQById: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch RFQ: ${response.statusText}`);
-            }
-
-            const rfq: RFQItem = await response.json();
+            const rfq = await apiClient.get<RFQItem>(`/rfqs/${id}`);
 
             // Update in store
             set(state => ({
@@ -170,20 +151,7 @@ export const usePipelineStore = create<PipelineState>()(
         // Create RFQ
         createRFQ: async (rfqData: Partial<RFQItem>) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(rfqData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create RFQ: ${response.statusText}`);
-            }
-
-            const newRFQ: RFQItem = await response.json();
+            const newRFQ = await apiClient.post<RFQItem>('/rfqs', rfqData);
 
             // Add to store
             set(state => ({
@@ -211,24 +179,11 @@ export const usePipelineStore = create<PipelineState>()(
           }
 
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs/${id}`, {
-              method: 'PUT',
+            const updatedRFQ = await apiClient.put<RFQItem>(`/rfqs/${id}`, updates, {
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
                 'If-Match': `"${currentRFQ.version}"`, // Optimistic locking
               },
-              body: JSON.stringify(updates),
             });
-
-            if (!response.ok) {
-              if (response.status === 409) {
-                throw new Error('RFQ was modified by another user. Please refresh and try again.');
-              }
-              throw new Error(`Failed to update RFQ: ${response.statusText}`);
-            }
-
-            const updatedRFQ: RFQItem = await response.json();
 
             // Update in store
             set(state => ({
@@ -236,9 +191,13 @@ export const usePipelineStore = create<PipelineState>()(
             }));
 
             return updatedRFQ;
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error updating RFQ:', error);
-            set({ error: error instanceof Error ? error.message : 'Failed to update RFQ' });
+            if (error.code === '409' || error.message?.includes('409')) {
+               set({ error: 'RFQ was modified by another user. Please refresh and try again.' });
+            } else {
+               set({ error: error.message || 'Failed to update RFQ' });
+            }
             throw error;
           }
         },
@@ -246,16 +205,7 @@ export const usePipelineStore = create<PipelineState>()(
         // Delete RFQ
         deleteRFQ: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete RFQ: ${response.statusText}`);
-            }
+            await apiClient.delete(`/rfqs/${id}`);
 
             // Remove from store
             set(state => ({
@@ -275,18 +225,7 @@ export const usePipelineStore = create<PipelineState>()(
         // Bulk delete RFQs
         bulkDeleteRFQs: async (ids: string[]) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/rfqs/bulk-delete`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ ids }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to bulk delete RFQs: ${response.statusText}`);
-            }
+            await apiClient.post('/rfqs/bulk-delete', { ids });
 
             // Remove from store
             set(state => ({

@@ -39,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { useQualityStore } from '@/stores';
 import {
   QualityInspection,
@@ -55,32 +56,37 @@ import {
 
 type TabType = 'inspections' | 'ncrs' | 'capas';
 
-const inspectionStatusConfig = {
+const inspectionStatusConfig: Record<string, any> = {
   pending: { label: 'Pending', variant: 'secondary' as const, icon: Clock },
   in_progress: { label: 'In Progress', variant: 'warning' as const, icon: Clock },
+  completed: { label: 'Completed', variant: 'success' as const, icon: CheckCircle },
+  cancelled: { label: 'Cancelled', variant: 'danger' as const, icon: XCircle },
   passed: { label: 'Passed', variant: 'success' as const, icon: CheckCircle },
   failed: { label: 'Failed', variant: 'danger' as const, icon: XCircle },
-  conditional: { label: 'Conditional', variant: 'warning' as const, icon: AlertCircle },
 };
 
-const ncrStatusConfig = {
+const ncrStatusConfig: Record<string, any> = {
   open: { label: 'Open', variant: 'warning' as const },
   investigating: { label: 'Investigating', variant: 'default' as const },
-  disposition: { label: 'Disposition', variant: 'secondary' as const },
+  pending_disposition: { label: 'Disposition', variant: 'secondary' as const },
   closed: { label: 'Closed', variant: 'success' as const },
+  disposition: { label: 'Disposition', variant: 'secondary' as const },
 };
 
-const severityConfig = {
+const severityConfig: Record<string, any> = {
   critical: { label: 'Critical', variant: 'danger' as const },
   major: { label: 'Major', variant: 'warning' as const },
   minor: { label: 'Minor', variant: 'secondary' as const },
 };
 
-const capaStatusConfig = {
+const capaStatusConfig: Record<string, any> = {
   open: { label: 'Open', variant: 'warning' as const },
+  in_progress: { label: 'In Progress', variant: 'default' as const },
+  pending_verification: { label: 'Verifying', variant: 'secondary' as const },
+  verified: { label: 'Verified', variant: 'success' as const },
+  closed: { label: 'Closed', variant: 'success' as const },
   implementing: { label: 'Implementing', variant: 'default' as const },
   verifying: { label: 'Verifying', variant: 'secondary' as const },
-  closed: { label: 'Closed', variant: 'success' as const },
 };
 
 const priorityConfig = {
@@ -90,6 +96,8 @@ const priorityConfig = {
 };
 
 function QualityStats() {
+  const { totalInspections, totalNcrs, totalCapas } = useQualityStore();
+
   return (
     <div className="grid gap-4 md:grid-cols-4">
       <Card>
@@ -99,8 +107,8 @@ function QualityStats() {
               <ClipboardCheck className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">5</p>
-              <p className="text-sm text-muted-foreground">Pending Inspections</p>
+              <p className="text-2xl font-bold">{totalInspections}</p>
+              <p className="text-sm text-muted-foreground">Active Inspections</p>
             </div>
           </div>
         </CardContent>
@@ -112,7 +120,7 @@ function QualityStats() {
               <AlertTriangle className="h-5 w-5 text-danger" />
             </div>
             <div>
-              <p className="text-2xl font-bold">3</p>
+              <p className="text-2xl font-bold">{totalNcrs}</p>
               <p className="text-sm text-muted-foreground">Open NCRs</p>
             </div>
           </div>
@@ -125,7 +133,7 @@ function QualityStats() {
               <Shield className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">4</p>
+              <p className="text-2xl font-bold">{totalCapas}</p>
               <p className="text-sm text-muted-foreground">Active CAPAs</p>
             </div>
           </div>
@@ -150,13 +158,18 @@ function QualityStats() {
 
 function InspectionsTab() {
   const router = useRouter();
+  const { inspections, fetchInspections, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
 
-  const filteredInspections = mockInspections.filter((insp) => {
+  React.useEffect(() => {
+    fetchInspections();
+  }, [fetchInspections]);
+
+  const filteredInspections = inspections.filter((insp) => {
     const matchesSearch = searchQuery === '' ||
-      insp.inspectionNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      insp.productName.toLowerCase().includes(searchQuery.toLowerCase());
+      insp.inspection_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      insp.product?.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || insp.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -216,18 +229,18 @@ function InspectionsTab() {
                       className="border-b hover:bg-muted/50 cursor-pointer"
                       onClick={() => router.push(`/quality/inspections/${insp.id}`)}
                     >
-                      <td className="py-3 px-4 font-medium">{insp.inspectionNumber}</td>
-                      <td className="py-3 px-4 text-muted-foreground">{insp.workOrderNumber}</td>
-                      <td className="py-3 px-4">{insp.productName}</td>
+                      <td className="py-3 px-4 font-medium">{insp.inspection_number}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{insp.work_order?.work_order_number || '—'}</td>
+                      <td className="py-3 px-4">{insp.product?.name || '—'}</td>
                       <td className="py-3 px-4 capitalize">{insp.type.replace('_', ' ')}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={config.variant} className="gap-1">
+                        <Badge variant={config?.variant || 'secondary'} className="gap-1">
                           <StatusIcon className="h-3 w-3" />
-                          {config.label}
+                          {config?.label || insp.status}
                         </Badge>
                       </td>
-                      <td className="py-3 px-4">{formatDate(new Date(insp.scheduledAt))}</td>
-                      <td className="py-3 px-4 text-muted-foreground">{insp.inspector || '—'}</td>
+                      <td className="py-3 px-4">{new Date(insp.inspection_date).toLocaleDateString()}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{insp.inspector?.full_name || '—'}</td>
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -261,14 +274,19 @@ function InspectionsTab() {
 
 function NCRsTab() {
   const router = useRouter();
+  const { ncrs, fetchNCRs, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [severityFilter, setSeverityFilter] = React.useState<string>('all');
 
-  const filteredNCRs = mockNCRs.filter((ncr) => {
+  React.useEffect(() => {
+    fetchNCRs();
+  }, [fetchNCRs]);
+
+  const filteredNCRs = ncrs.filter((ncr) => {
     const matchesSearch = searchQuery === '' ||
-      ncr.ncrNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ncr.title.toLowerCase().includes(searchQuery.toLowerCase());
+      ncr.ncr_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ncr.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || ncr.status === statusFilter;
     const matchesSeverity = severityFilter === 'all' || ncr.severity === severityFilter;
     return matchesSearch && matchesStatus && matchesSeverity;
@@ -340,17 +358,17 @@ function NCRsTab() {
                       className="border-b hover:bg-muted/50 cursor-pointer"
                       onClick={() => router.push(`/quality/ncrs/${ncr.id}`)}
                     >
-                      <td className="py-3 px-4 font-medium">{ncr.ncrNumber}</td>
-                      <td className="py-3 px-4">{ncr.title}</td>
+                      <td className="py-3 px-4 font-medium">{ncr.ncr_number}</td>
+                      <td className="py-3 px-4 truncate max-w-[200px]">{ncr.description}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={severityCfg.variant}>{severityCfg.label}</Badge>
+                        <Badge variant={severityCfg?.variant || 'secondary'}>{severityCfg?.label || ncr.severity}</Badge>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.label || ncr.status}</Badge>
                       </td>
-                      <td className="py-3 px-4 text-muted-foreground">{ncr.source}</td>
-                      <td className="py-3 px-4 text-right">{ncr.affectedQuantity}</td>
-                      <td className="py-3 px-4">{formatRelativeTime(ncr.createdAt)}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{ncr.product?.name || '—'}</td>
+                      <td className="py-3 px-4 text-right">{ncr.quantity_affected}</td>
+                      <td className="py-3 px-4">{new Date(ncr.created_at).toLocaleDateString()}</td>
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -384,13 +402,18 @@ function NCRsTab() {
 
 function CAPAsTab() {
   const router = useRouter();
+  const { capas, fetchCAPAs, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [typeFilter, setTypeFilter] = React.useState<string>('all');
 
-  const filteredCAPAs = mockCAPAs.filter((capa) => {
+  React.useEffect(() => {
+    fetchCAPAs();
+  }, [fetchCAPAs]);
+
+  const filteredCAPAs = capas.filter((capa) => {
     const matchesSearch = searchQuery === '' ||
-      capa.capaNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      capa.capa_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
       capa.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || capa.status === statusFilter;
     const matchesType = typeFilter === 'all' || capa.type === typeFilter;
@@ -455,26 +478,25 @@ function CAPAsTab() {
               <tbody>
                 {filteredCAPAs.map((capa) => {
                   const statusCfg = capaStatusConfig[capa.status];
-                  const priorityCfg = priorityConfig[capa.priority];
-                  const isOverdue = new Date(capa.dueDate) < new Date() && capa.status !== 'closed';
+                  const isOverdue = new Date(capa.due_date) < new Date() && capa.status !== 'closed';
                   return (
                     <tr 
                       key={capa.id}
                       className="border-b hover:bg-muted/50 cursor-pointer"
                       onClick={() => router.push(`/quality/capas/${capa.id}`)}
                     >
-                      <td className="py-3 px-4 font-medium">{capa.capaNumber}</td>
+                      <td className="py-3 px-4 font-medium">{capa.capa_number}</td>
                       <td className="py-3 px-4">{capa.title}</td>
                       <td className="py-3 px-4 capitalize">{capa.type}</td>
-                      <td className="py-3 px-4">
-                        <Badge variant={priorityCfg.variant}>{priorityCfg.label}</Badge>
+                      <td className="py-3 px-4 capitalize">
+                        {capa.status === 'open' ? 'High' : 'Medium'}
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.label || capa.status}</Badge>
                       </td>
-                      <td className="py-3 px-4 text-muted-foreground">{capa.sourceNCR || '—'}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{capa.ncr_id?.substring(0, 8) || '—'}</td>
                       <td className={cn('py-3 px-4', isOverdue && 'text-danger font-medium')}>
-                        {formatDate(new Date(capa.dueDate))}
+                        {new Date(capa.due_date).toLocaleDateString()}
                         {isOverdue && ' (overdue)'}
                       </td>
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
@@ -527,28 +549,34 @@ function QualityPageContent() {
           <h1 className="text-2xl font-bold">Quality Management</h1>
           <p className="text-muted-foreground">Track inspections, NCRs, and corrective actions</p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => router.push('/quality/inspections/new')}>
-              <ClipboardCheck className="mr-2 h-4 w-4" />
-              New Inspection
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/quality/ncrs/new')}>
-              <AlertTriangle className="mr-2 h-4 w-4" />
-              New NCR
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/quality/capas/new')}>
-              <Shield className="mr-2 h-4 w-4" />
-              New CAPA
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => router.push('/quality/analytics')}>
+            <TrendingUp className="mr-2 h-4 w-4" />
+            Analytics
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => router.push('/quality/inspections/new')}>
+                <ClipboardCheck className="mr-2 h-4 w-4" />
+                New Inspection
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/quality/ncrs/new')}>
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                New NCR
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/quality/capas/new')}>
+                <Shield className="mr-2 h-4 w-4" />
+                New CAPA
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Stats */}

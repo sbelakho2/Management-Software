@@ -24,8 +24,9 @@ def make_db(*, scalar_value: int = 0):
 async def test_nl2sql_open_non_conformances_counts() -> None:
     db = make_db(scalar_value=7)
     current_user = type("User", (), {"id": "u-1"})()
+    allow_exec = True  # Stub for AllowExec dependency
 
-    resp = await nl2sql_query(NL2SQLRequest(question="How many open non conformances are there?"), db, current_user)
+    resp = await nl2sql_query(allow_exec, NL2SQLRequest(question="How many open non conformances are there?"), db, current_user)
     assert resp.success is True
     assert resp.data.result["open_non_conformances"] == 7
 
@@ -34,9 +35,10 @@ async def test_nl2sql_open_non_conformances_counts() -> None:
 async def test_nl2sql_rejects_unsupported_question() -> None:
     db = make_db(scalar_value=0)
     current_user = type("User", (), {"id": "u-1"})()
+    allow_exec = True  # Stub for AllowExec dependency
 
     with pytest.raises(BadRequestError):
-        await nl2sql_query(NL2SQLRequest(question="Show me all customers"), db, current_user)
+        await nl2sql_query(allow_exec, NL2SQLRequest(question="Show me all customers"), db, current_user)
 
 
 class _StubUser:
@@ -48,6 +50,7 @@ class _StubUser:
 async def test_employee_risk_analysis_returns_assessment():
     db = MagicMock()
     user = _StubUser(is_superuser=True)
+    allow_exec = True  # Stub for AllowExec dependency
 
     payload = EmployeeRiskRequest(
         employee_name="Alice Example",
@@ -58,7 +61,7 @@ async def test_employee_risk_analysis_returns_assessment():
         peer_comparison=1.4,
     )
 
-    resp = await analyze_employee_risk(payload=payload, db=db, current_user=user)
+    resp = await analyze_employee_risk(_=allow_exec, payload=payload, db=db, current_user=user)
     assert resp.success is True
     assert resp.data is not None
     assert resp.data.employee_name == "Alice Example"
@@ -71,6 +74,7 @@ async def test_employee_risk_analysis_returns_assessment():
 async def test_strategic_report_export_downloads_json():
     db = MagicMock()
     user = _StubUser(is_superuser=True)
+    allow_exec = True  # Stub for AllowExec dependency
 
     # Two count queries: open NCs, open CAPAs
     exec_result_1 = MagicMock()
@@ -79,7 +83,7 @@ async def test_strategic_report_export_downloads_json():
     exec_result_2.scalar.return_value = 5
     db.execute = AsyncMock(side_effect=[exec_result_1, exec_result_2])
 
-    resp = await export_strategic_report(db=db, current_user=user)
+    resp = await export_strategic_report(_=allow_exec, db=db, current_user=user)
     assert resp.media_type == "application/json"
     assert "attachment" in resp.headers.get("Content-Disposition", "")
 

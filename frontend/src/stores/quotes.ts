@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 import { QuoteStatus } from '@/types';
 
@@ -88,17 +89,7 @@ export const useQuoteStore = create<QuoteState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch quotes: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>('/quotes');
             const quotes: Quote[] = data.items || [];
 
             const totalValue = quotes.reduce((sum, q) => sum + q.total, 0);
@@ -128,17 +119,7 @@ export const useQuoteStore = create<QuoteState>()(
 
         fetchQuoteById: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch quote: ${response.statusText}`);
-            }
-
-            const quote: Quote = await response.json();
+            const quote = await apiClient.get<Quote>(`/quotes/${id}`);
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? quote : q),
@@ -152,22 +133,9 @@ export const useQuoteStore = create<QuoteState>()(
           }
         },
 
-        createQuote: async (quoteData: Partial<Quote>) => {
+        createQuote: async (quoteData: Partial[Quote]) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(quoteData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create quote: ${response.statusText}`);
-            }
-
-            const newQuote: Quote = await response.json();
+            const newQuote = await apiClient.post<Quote>('/quotes', quoteData);
 
             set(state => ({
               quotes: [newQuote, ...state.quotes],
@@ -185,56 +153,38 @@ export const useQuoteStore = create<QuoteState>()(
           }
         },
 
-        updateQuote: async (id: string, updates: Partial<Quote>) => {
+        updateQuote: async (id: string, updates: Partial[Quote]) => {
           const currentQuote = get().quotes.find(q => q.id === id);
           if (!currentQuote) {
             throw new Error('Quote not found');
           }
 
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              method: 'PUT',
+            const updatedQuote = await apiClient.put<Quote>(`/quotes/${id}`, updates, {
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
                 'If-Match': `"${currentQuote.version}"`,
               },
-              body: JSON.stringify(updates),
             });
-
-            if (!response.ok) {
-              if (response.status === 409) {
-                throw new Error('Quote was modified by another user. Please refresh and try again.');
-              }
-              throw new Error(`Failed to update quote: ${response.statusText}`);
-            }
-
-            const updatedQuote: Quote = await response.json();
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? updatedQuote : q),
             }));
 
             return updatedQuote;
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error updating quote:', error);
-            set({ error: error instanceof Error ? error.message : 'Failed to update quote' });
+            if (error.code === '409' || error.message?.includes('409')) {
+               set({ error: 'Quote was modified by another user. Please refresh and try again.' });
+            } else {
+               set({ error: error.message || 'Failed to update quote' });
+            }
             throw error;
           }
         },
 
         deleteQuote: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete quote: ${response.statusText}`);
-            }
+            await apiClient.delete(`/quotes/${id}`);
 
             set(state => ({
               quotes: state.quotes.filter(q => q.id !== id),
@@ -252,6 +202,8 @@ export const useQuoteStore = create<QuoteState>()(
 
         exportQuote: async (id: string, format: 'pdf' | 'excel') => {
           try {
+            // Note: apiClient.get returns data, but for blob we might need to use axios directly or add a config
+            // For now, let's keep fetch for blob/export as it requires special handling
             const response = await fetch(`${API_BASE_URL}/quotes/${id}/export?format=${format}`, {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
@@ -280,18 +232,7 @@ export const useQuoteStore = create<QuoteState>()(
 
         sendQuote: async (id: string) => {
           try {
-            const response = await fetch(`${API_BASE_URL}/quotes/${id}/send`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to send quote: ${response.statusText}`);
-            }
-
-            const updatedQuote: Quote = await response.json();
+            const updatedQuote = await apiClient.post<Quote>(`/quotes/${id}/send`);
 
             set(state => ({
               quotes: state.quotes.map(q => q.id === id ? updatedQuote : q),

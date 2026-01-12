@@ -298,7 +298,7 @@ export default function ObeyaPage() {
                     <Users className="h-5 w-5 text-primary" />
                     Resource Rebalancing
                   </CardTitle>
-                  <Badge variant="primary" className="animate-pulse">AI Suggested</Badge>
+                  <Badge variant="default" className="animate-pulse">AI Suggested</Badge>
                 </div>
                 <CardDescription>Real-time skill gap analysis and labor leveling</CardDescription>
               </CardHeader>

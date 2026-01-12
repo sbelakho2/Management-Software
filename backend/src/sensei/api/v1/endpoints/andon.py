@@ -473,6 +473,84 @@ async def create_andon_event(
     return build_created_response(AndonEventResponse.from_model(event))
 
 
+class AndonAnalytics(BaseModel):
+    avg_response_time_minutes: float = 0.0
+    avg_resolution_time_minutes: float = 0.0
+    total_signals: int = 0
+    uptime_impact_percent: float = 0.0
+    signals_by_category: dict[str, int] = {}
+    top_problem_stations: list[dict[str, Any]] = []
+
+
+@router.get("/analytics", response_model=APIResponse[AndonAnalytics])
+async def get_andon_analytics(
+    db: DBSession,
+    current_user: CurrentUser,
+    days: int = Query(default=30, ge=1, le=365),
+) -> APIResponse[AndonAnalytics]:
+    """Get detailed Andon analytics."""
+    cutoff = _now_utc() - timedelta(days=days)
+
+    # Base query for the period
+    base_query = select(AndonEvent).where(
+        AndonEvent.reported_at >= cutoff,
+        AndonEvent.deleted_at.is_(None)
+    )
+
+    result = await db.execute(base_query)
+    events = result.scalars().all()
+
+    if not events:
+        return build_response(AndonAnalytics())
+
+    total_signals = len(events)
+
+    # Calculate response and resolution times
+    response_times = [e.response_time_minutes for e in events if e.response_time_minutes is not None]
+    resolution_times = [e.resolution_time_minutes for e in events if e.resolution_time_minutes is not None]
+
+    avg_response = sum(response_times) / len(response_times) if response_times else 0.0
+    avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else 0.0
+
+    # Signals by category
+    signals_by_category = {}
+    for e in events:
+        cat = e.andon_type.value
+        signals_by_category[cat] = signals_by_category.get(cat, 0) + 1
+
+    # Top problem stations
+    station_stats = {}
+    for e in events:
+        sid = e.station_id
+        if sid not in station_stats:
+            station_stats[sid] = {"count": 0, "downtime": 0}
+        station_stats[sid]["count"] += 1
+        station_stats[sid]["downtime"] += (e.downtime_minutes or 0)
+
+    top_stations = []
+    for sid, stats in sorted(station_stats.items(), key=lambda x: x[1]["count"], reverse=True)[:5]:
+        top_stations.append({
+            "station_id": sid,
+            "count": stats["count"],
+            "downtime_hours": round(stats["downtime"] / 60, 1)
+        })
+
+    # Uptime impact (placeholder logic)
+    # Assuming total available minutes in period = days * 24 * 60
+    total_downtime = sum(e.downtime_minutes or 0 for e in events)
+    total_available = days * 24 * 60
+    uptime_impact = (total_downtime / total_available) * 100 if total_available > 0 else 0.0
+
+    return build_response(AndonAnalytics(
+        avg_response_time_minutes=round(avg_response, 1),
+        avg_resolution_time_minutes=round(avg_resolution, 1),
+        total_signals=total_signals,
+        uptime_impact_percent=round(uptime_impact, 2),
+        signals_by_category=signals_by_category,
+        top_problem_stations=top_stations
+    ))
+
+
 @router.get("/{event_id}", response_model=APIResponse[AndonEventResponse])
 async def get_andon_event(
     event_id: int,

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 type A3Type = 'problem_solving' | 'proposal' | 'status_report' | 'strategy';
 type A3Status = 'draft' | 'in_progress' | 'review' | 'approved' | 'implemented' | 'closed' | 'cancelled';
@@ -154,17 +155,7 @@ export const useA3Store = create<A3State>()(
 
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch A3s: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>('/a3s');
             const a3s: A3[] = data.items || [];
 
             // Calculate stats
@@ -208,17 +199,7 @@ export const useA3Store = create<A3State>()(
         fetchA3ById: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.get<A3>(`/a3s/${id}`);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -238,20 +219,7 @@ export const useA3Store = create<A3State>()(
         createA3: async (a3Data: Partial<A3>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(a3Data),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.post<A3>('/a3s', a3Data);
 
             set(state => ({
               a3s: [a3, ...state.a3s],
@@ -275,20 +243,7 @@ export const useA3Store = create<A3State>()(
         updateA3: async (id: string, updates: Partial<A3>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(updates),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to update A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.patch<A3>(`/a3s/${id}`, updates);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -308,16 +263,7 @@ export const useA3Store = create<A3State>()(
         deleteA3: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete A3: ${response.statusText}`);
-            }
+            await apiClient.delete(`/a3s/${id}`);
 
             set(state => ({
               a3s: state.a3s.filter(a => a.id !== id),
@@ -339,20 +285,7 @@ export const useA3Store = create<A3State>()(
         updateSection: async (a3Id: string, sectionId: string, updates: Partial<A3Section>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${a3Id}/sections/${sectionId}`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(updates),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to update section: ${response.statusText}`);
-            }
-
-            const section: A3Section = await response.json();
+            const section = await apiClient.patch<A3Section>(`/a3s/${a3Id}/sections/${sectionId}`, updates);
 
             // Refresh A3 to get updated progress
             await get().fetchA3ById(a3Id);
@@ -375,18 +308,7 @@ export const useA3Store = create<A3State>()(
         submitForReview: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}/submit`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to submit A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.post<A3>(`/a3s/${id}/submit`);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -404,20 +326,7 @@ export const useA3Store = create<A3State>()(
         approve: async (id: string, notes?: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}/approve`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ notes }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to approve A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.post<A3>(`/a3s/${id}/approve`, { notes });
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -435,20 +344,7 @@ export const useA3Store = create<A3State>()(
         reject: async (id: string, notes: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}/reject`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify({ notes }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to reject A3: ${response.statusText}`);
-            }
-
-            const a3: A3 = await response.json();
+            const a3 = await apiClient.post<A3>(`/a3s/${id}/reject`, { notes });
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),

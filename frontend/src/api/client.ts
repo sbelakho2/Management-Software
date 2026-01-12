@@ -49,6 +49,9 @@ class ApiClient {
       timeout: 30000,
     });
 
+    // Load token immediately
+    this.loadToken();
+
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
@@ -133,7 +136,7 @@ class ApiClient {
       throw new Error('No refresh token');
     }
 
-    const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
+    const response = await axios.post(`${API_ROOT}/api/v1/auth/refresh`, {
       refresh_token: refreshToken,
     });
 

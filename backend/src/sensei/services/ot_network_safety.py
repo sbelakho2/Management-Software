@@ -4,325 +4,349 @@ Implements:
 - Network Zoning: detect connections/routes between IT/OT segments.
 - Edge Certificate Rotation: track & rotate TLS certs for edge controllers.
 
-Pure in-memory Python service following sensei services conventions.
+This module provides:
+- In-memory OTNetworkSafetyService for testing/development
+- Re-exports of database-backed DBOTNetworkSafetyService for production
 """
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
-from ipaddress import ip_network, IPv4Network, IPv6Network
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Sequence
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    pass
 
 
 class ZoneType(str, Enum):
-    IT = "it"
-    OT = "ot"
-    DMZ = "dmz"
-
-
-class CertificateStatus(str, Enum):
-    ACTIVE = "active"
-    PENDING_ROTATION = "pending_rotation"
-    REVOKED = "revoked"
-    EXPIRED = "expired"
+    """Network zone type."""
+    IT = "IT"
+    OT = "OT"
+    DMZ = "DMZ"
 
 
 class ZoneViolationSeverity(str, Enum):
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
+    """Severity of zone violations."""
     LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
-_OT_ADMIN_ROLES: set[str] = {"admin", "secops", "it", "ops", "gm"}
+class CertificateStatus(str, Enum):
+    """Certificate status."""
+    ACTIVE = "active"
+    EXPIRING = "expiring"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
 
 
-def _norm_roles(roles: Iterable[str]) -> set[str]:
-    return {r.strip().lower() for r in roles if r and r.strip()}
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-@dataclass(frozen=True)
+@dataclass
 class NetworkZone:
+    """Network zone definition."""
     id: UUID
     name: str
     zone_type: ZoneType
     cidrs: list[str]
     description: str
-    created_at: datetime
-    created_by: UUID
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: UUID | None = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class ZoneViolation:
+    """Record of a zone violation."""
     id: UUID
-    source_zone_id: UUID
-    dest_zone_id: UUID
     source_ip: str
     dest_ip: str
+    source_zone_id: UUID
+    dest_zone_id: UUID
     severity: ZoneViolationSeverity
-    detected_at: datetime
-    acknowledged: bool
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    acknowledged: bool = False
+    acknowledged_at: datetime | None = None
+    acknowledged_by: UUID | None = None
 
 
 @dataclass
 class EdgeCertificate:
+    """Certificate for edge controllers."""
     id: UUID
-    controller_id: str  # Unique controller / edge node identifier.
+    controller_id: str
     subject_cn: str
     issuer: str
     not_before: datetime
     not_after: datetime
-    status: CertificateStatus
-    created_at: datetime
-    created_by: UUID
+    status: CertificateStatus = CertificateStatus.ACTIVE
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: UUID | None = None
     rotated_at: datetime | None = None
+    rotated_by: UUID | None = None
 
 
 class OTNetworkSafetyService:
-    """In-memory OT network safety service."""
-
+    """In-memory OT Network Safety service for testing/development."""
+    
+    # Roles that can manage zones
+    ZONE_ADMIN_ROLES = ("admin", "ops", "security")
+    # Roles that can view data
+    VIEW_ROLES = ("admin", "ops", "security", "viewer")
+    
     def __init__(self) -> None:
         self._zones: dict[UUID, NetworkZone] = {}
         self._violations: dict[UUID, ZoneViolation] = {}
         self._certificates: dict[UUID, EdgeCertificate] = {}
-
-    # ---- RBAC ----
-
-    def can_admin(self, *, actor_roles: Iterable[str]) -> bool:
-        return len(_norm_roles(actor_roles).intersection(_OT_ADMIN_ROLES)) > 0
-
-    # ---- Network Zones ----
-
+    
+    def _check_zone_admin(self, actor_roles: Sequence[str]) -> None:
+        """Check if actor has zone admin role."""
+        if not any(r in self.ZONE_ADMIN_ROLES for r in actor_roles):
+            raise PermissionError("Zone admin role required")
+    
+    def _check_viewer(self, actor_roles: Sequence[str]) -> None:
+        """Check if actor has viewer role."""
+        if not any(r in self.VIEW_ROLES for r in actor_roles):
+            raise PermissionError("Viewer role required")
+    
+    def _ip_in_zone(self, ip: str, zone: NetworkZone) -> bool:
+        """Check if IP is within zone CIDRs."""
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            for cidr in zone.cidrs:
+                if ip_obj in ipaddress.ip_network(cidr, strict=False):
+                    return True
+        except ValueError:
+            pass
+        return False
+    
+    def _find_zone_for_ip(self, ip: str) -> NetworkZone | None:
+        """Find which zone an IP belongs to."""
+        for zone in self._zones.values():
+            if self._ip_in_zone(ip, zone):
+                return zone
+        return None
+    
+    # --------------------------------------------------------------------------
+    # Zone Management
+    # --------------------------------------------------------------------------
+    
     def create_zone(
         self,
-        *,
         name: str,
         zone_type: ZoneType,
         cidrs: list[str],
         description: str,
         actor_user_id: UUID,
-        actor_roles: Iterable[str],
+        actor_roles: Sequence[str],
     ) -> NetworkZone:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to manage network zones")
-
-        # Validate CIDRs.
-        for cidr in cidrs:
-            ip_network(cidr, strict=False)
-
+        """Create a network zone."""
+        self._check_zone_admin(actor_roles)
+        
         zone = NetworkZone(
             id=uuid4(),
-            name=name.strip(),
+            name=name,
             zone_type=zone_type,
-            cidrs=list(cidrs),
+            cidrs=cidrs,
             description=description,
-            created_at=_utcnow(),
             created_by=actor_user_id,
         )
         self._zones[zone.id] = zone
         return zone
-
-    def list_zones(
+    
+    def list_zones(self, actor_roles: Sequence[str]) -> list[NetworkZone]:
+        """List all network zones."""
+        self._check_viewer(actor_roles)
+        return list(self._zones.values())
+    
+    def get_zone(self, zone_id: UUID, actor_roles: Sequence[str]) -> NetworkZone | None:
+        """Get a zone by ID."""
+        self._check_viewer(actor_roles)
+        return self._zones.get(zone_id)
+    
+    def delete_zone(
         self,
-        *,
-        actor_roles: Iterable[str],
-    ) -> list[NetworkZone]:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to view network zones")
-
-        result = list(self._zones.values())
-        result.sort(key=lambda z: z.name.lower())
-        return result
-
-    def _lookup_zone_for_ip(self, ip_str: str) -> NetworkZone | None:
-        from ipaddress import ip_address
-        try:
-            addr = ip_address(ip_str)
-        except ValueError:
-            return None
-
-        for zone in self._zones.values():
-            for cidr in zone.cidrs:
-                if addr in ip_network(cidr, strict=False):
-                    return zone
-        return None
-
+        zone_id: UUID,
+        actor_roles: Sequence[str],
+    ) -> bool:
+        """Delete a zone."""
+        self._check_zone_admin(actor_roles)
+        if zone_id in self._zones:
+            del self._zones[zone_id]
+            return True
+        return False
+    
+    # --------------------------------------------------------------------------
+    # Violation Detection
+    # --------------------------------------------------------------------------
+    
     def detect_violation(
         self,
-        *,
         source_ip: str,
         dest_ip: str,
     ) -> ZoneViolation | None:
-        """Detect if traffic between IPs crosses IT/OT boundary illegally."""
-        src_zone = self._lookup_zone_for_ip(source_ip)
-        dst_zone = self._lookup_zone_for_ip(dest_ip)
-
-        if not src_zone or not dst_zone:
+        """Detect if traffic violates zone policy."""
+        source_zone = self._find_zone_for_ip(source_ip)
+        dest_zone = self._find_zone_for_ip(dest_ip)
+        
+        if not source_zone or not dest_zone:
             return None
-
-        # IT → OT or OT → IT direct is violation; DMZ bridges are OK.
-        if src_zone.zone_type == ZoneType.IT and dst_zone.zone_type == ZoneType.OT:
+        
+        if source_zone.id == dest_zone.id:
+            return None  # Same zone is OK
+        
+        # Determine severity based on zone types
+        if source_zone.zone_type == ZoneType.IT and dest_zone.zone_type == ZoneType.OT:
             severity = ZoneViolationSeverity.CRITICAL
-        elif src_zone.zone_type == ZoneType.OT and dst_zone.zone_type == ZoneType.IT:
+        elif source_zone.zone_type == ZoneType.OT and dest_zone.zone_type == ZoneType.IT:
             severity = ZoneViolationSeverity.HIGH
+        elif dest_zone.zone_type == ZoneType.DMZ or source_zone.zone_type == ZoneType.DMZ:
+            severity = ZoneViolationSeverity.MEDIUM
         else:
-            return None
-
+            severity = ZoneViolationSeverity.LOW
+        
         violation = ZoneViolation(
             id=uuid4(),
-            source_zone_id=src_zone.id,
-            dest_zone_id=dst_zone.id,
             source_ip=source_ip,
             dest_ip=dest_ip,
+            source_zone_id=source_zone.id,
+            dest_zone_id=dest_zone.id,
             severity=severity,
-            detected_at=_utcnow(),
-            acknowledged=False,
         )
         self._violations[violation.id] = violation
         return violation
-
+    
     def list_violations(
         self,
-        *,
-        actor_roles: Iterable[str],
+        actor_roles: Sequence[str],
         only_unacknowledged: bool = False,
     ) -> list[ZoneViolation]:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to view zone violations")
-
-        result = list(self._violations.values())
+        """List violations."""
+        self._check_viewer(actor_roles)
+        violations = list(self._violations.values())
         if only_unacknowledged:
-            result = [v for v in result if not v.acknowledged]
-        result.sort(key=lambda v: v.detected_at, reverse=True)
-        return result
-
+            violations = [v for v in violations if not v.acknowledged]
+        return violations
+    
     def acknowledge_violation(
         self,
         violation_id: UUID,
-        *,
-        actor_roles: Iterable[str],
-    ) -> ZoneViolation:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to acknowledge violations")
-        if violation_id not in self._violations:
-            raise KeyError("Violation not found")
-
-        old = self._violations[violation_id]
-        updated = ZoneViolation(
-            id=old.id,
-            source_zone_id=old.source_zone_id,
-            dest_zone_id=old.dest_zone_id,
-            source_ip=old.source_ip,
-            dest_ip=old.dest_ip,
-            severity=old.severity,
-            detected_at=old.detected_at,
-            acknowledged=True,
-        )
-        self._violations[violation_id] = updated
-        return updated
-
-    # ---- Edge Certificate Rotation ----
-
+        actor_roles: Sequence[str],
+        actor_user_id: UUID | None = None,
+    ) -> bool:
+        """Acknowledge a violation."""
+        self._check_zone_admin(actor_roles)
+        if violation_id in self._violations:
+            v = self._violations[violation_id]
+            v.acknowledged = True
+            v.acknowledged_at = datetime.now(timezone.utc)
+            v.acknowledged_by = actor_user_id
+            return True
+        return False
+    
+    # --------------------------------------------------------------------------
+    # Certificate Management
+    # --------------------------------------------------------------------------
+    
     def register_certificate(
         self,
-        *,
         controller_id: str,
         subject_cn: str,
         issuer: str,
         not_before: datetime,
         not_after: datetime,
         actor_user_id: UUID,
-        actor_roles: Iterable[str],
+        actor_roles: Sequence[str],
     ) -> EdgeCertificate:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to manage edge certificates")
-
-        status = CertificateStatus.ACTIVE
-        if _utcnow() > not_after:
-            status = CertificateStatus.EXPIRED
-
+        """Register an edge controller certificate."""
+        self._check_zone_admin(actor_roles)
+        
         cert = EdgeCertificate(
             id=uuid4(),
-            controller_id=controller_id.strip(),
+            controller_id=controller_id,
             subject_cn=subject_cn,
             issuer=issuer,
             not_before=not_before,
             not_after=not_after,
-            status=status,
-            created_at=_utcnow(),
             created_by=actor_user_id,
         )
         self._certificates[cert.id] = cert
         return cert
-
+    
     def list_certificates(
         self,
-        *,
-        actor_roles: Iterable[str],
-        controller_id: str | None = None,
+        actor_roles: Sequence[str],
     ) -> list[EdgeCertificate]:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to view edge certificates")
-
-        result = list(self._certificates.values())
-        if controller_id:
-            result = [c for c in result if c.controller_id == controller_id]
-        result.sort(key=lambda c: c.not_after)
-        return result
-
+        """List all certificates."""
+        self._check_viewer(actor_roles)
+        return list(self._certificates.values())
+    
     def get_expiring_certificates(
         self,
-        *,
-        actor_roles: Iterable[str],
+        actor_roles: Sequence[str],
         days_ahead: int = 30,
     ) -> list[EdgeCertificate]:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to view edge certificates")
-
-        threshold = _utcnow() + timedelta(days=days_ahead)
-        result: list[EdgeCertificate] = []
-        for cert in self._certificates.values():
-            if cert.status == CertificateStatus.ACTIVE and cert.not_after <= threshold:
-                result.append(cert)
-        result.sort(key=lambda c: c.not_after)
-        return result
-
+        """Get certificates expiring soon."""
+        self._check_viewer(actor_roles)
+        threshold = datetime.now(timezone.utc) + timedelta(days=days_ahead)
+        return [
+            c for c in self._certificates.values()
+            if c.status == CertificateStatus.ACTIVE and c.not_after <= threshold
+        ]
+    
     def rotate_certificate(
         self,
         cert_id: UUID,
-        *,
         new_not_after: datetime,
-        actor_roles: Iterable[str],
+        actor_roles: Sequence[str],
+        actor_user_id: UUID | None = None,
     ) -> EdgeCertificate:
-        if not self.can_admin(actor_roles=actor_roles):
-            raise PermissionError("Not permitted to rotate certificates")
-        if cert_id not in self._certificates:
-            raise KeyError("Certificate not found")
-
-        old = self._certificates[cert_id]
-
-        # Mark old as revoked.
-        old.status = CertificateStatus.REVOKED
-
-        # Create new certificate entry for same controller.
+        """Rotate a certificate."""
+        self._check_zone_admin(actor_roles)
+        
+        old_cert = self._certificates.get(cert_id)
+        if not old_cert:
+            raise ValueError(f"Certificate {cert_id} not found")
+        
+        # Revoke old cert
+        old_cert.status = CertificateStatus.REVOKED
+        
+        # Create new cert
         new_cert = EdgeCertificate(
             id=uuid4(),
-            controller_id=old.controller_id,
-            subject_cn=old.subject_cn,
-            issuer=old.issuer,
-            not_before=_utcnow(),
+            controller_id=old_cert.controller_id,
+            subject_cn=old_cert.subject_cn,
+            issuer=old_cert.issuer,
+            not_before=datetime.now(timezone.utc),
             not_after=new_not_after,
-            status=CertificateStatus.ACTIVE,
-            created_at=_utcnow(),
-            created_by=old.created_by,
-            rotated_at=_utcnow(),
+            created_by=actor_user_id,
+            rotated_at=datetime.now(timezone.utc),
+            rotated_by=actor_user_id,
         )
         self._certificates[new_cert.id] = new_cert
         return new_cert
+
+
+# Re-export database-backed service for production use
+from sensei.services.ot_network_safety_db import (
+    OTNetworkSafetyService as DBOTNetworkSafetyService,
+    get_ot_network_safety_service,
+)
+
+__all__ = [
+    # In-memory service (for testing)
+    "OTNetworkSafetyService",
+    # Database-backed service (for production)
+    "DBOTNetworkSafetyService",
+    "get_ot_network_safety_service",
+    # Data classes
+    "NetworkZone",
+    "ZoneViolation",
+    "EdgeCertificate",
+    # Enums
+    "ZoneType",
+    "CertificateStatus",
+    "ZoneViolationSeverity",
+]

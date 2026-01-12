@@ -567,14 +567,14 @@ export function VoiceCommandListener({
 }: VoiceCommandListenerProps) {
   const [state, setState] = useState<VoiceState>(VOICE_STATE.IDLE);
   const [lastCommand, setLastCommand] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     if (!enabled) return;
 
     // Check for browser support
     const SpeechRecognition =
-      window.SpeechRecognition || (window as Window & { webkitSpeechRecognition: typeof SpeechRecognition }).webkitSpeechRecognition;
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       onError?.(new Error('Speech recognition not supported'));

@@ -321,7 +321,9 @@ describe('ValidatedTextarea', () => {
     render(<ValidatedTextarea formId="test-form" name="notes" />);
     
     const textarea = screen.getByRole('textbox');
-    await user.type(textarea, 'Some notes');
+    await act(async () => {
+      await user.type(textarea, 'Some notes');
+    });
     
     expect(store.getValue('test-form', 'notes')).toBe('Some notes');
   });

@@ -314,7 +314,7 @@ export default function QuotesPage() {
       </div>
 
       {/* Stats */}
-      <QuoteStats quotes={mockQuotes} />
+      <QuoteStats quotes={mappedQuotes} />
 
       {/* Filters */}
       <Card>

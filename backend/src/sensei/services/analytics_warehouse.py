@@ -257,11 +257,17 @@ class AnalyticsWarehouseService:
 
     def get_exported_records(
         self,
-        snapshot_id: UUID,
+        snapshot_id: UUID | None = None,
         *,
         actor_roles: Iterable[str],
+        fact_type: FactType | None = None,
     ) -> list[ExportedRecord]:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to view exported records")
 
-        return [r for r in self._exported_records if r.snapshot_id == snapshot_id]
+        result = self._exported_records
+        if snapshot_id:
+            result = [r for r in result if r.snapshot_id == snapshot_id]
+        if fact_type:
+            result = [r for r in result if r.fact_type == fact_type]
+        return result

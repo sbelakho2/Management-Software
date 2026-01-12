@@ -100,7 +100,7 @@ class TestEnums:
     def test_alert_severity_values(self):
         """Test AlertSeverity enum values."""
         assert AlertSeverity.INFO.value == "info"
-        assert AlertSeverity.WARNING.value == "warning"
+        assert AlertSeverity.MEDIUM.value == "medium"
         assert AlertSeverity.CRITICAL.value == "critical"
     
     def test_alert_type_values(self):
@@ -204,7 +204,7 @@ class TestDataModels:
             affected_department=DepartmentType.PRODUCTION,
             source_event="RFQ delay for large order",
             predicted_impact="Production bottleneck next week",
-            severity=AlertSeverity.WARNING,
+            severity=AlertSeverity.MEDIUM,
             detected_at=datetime.now(),
         )
         assert alert.resolution_status == "open"
@@ -477,7 +477,7 @@ class TestCrossFunctionalSynergyEngine:
             DepartmentType.SALES,
             "rfq_delay",
             "Large order RFQ delayed by 3 days",
-            AlertSeverity.WARNING,
+            AlertSeverity.MEDIUM,
         )
         
         assert event_id
@@ -489,7 +489,7 @@ class TestCrossFunctionalSynergyEngine:
             DepartmentType.SALES,
             "rfq_delay",
             "Large order delayed",
-            AlertSeverity.WARNING,
+            AlertSeverity.MEDIUM,
         )
         
         alerts = synergy_engine.get_active_silo_alerts()
@@ -576,7 +576,7 @@ class TestCrossFunctionalSynergyEngine:
             DepartmentType.SALES,
             "rfq_delay",
             "Delayed order",
-            AlertSeverity.WARNING,
+            AlertSeverity.MEDIUM,
         )
         
         alerts = synergy_engine.get_active_silo_alerts()
@@ -768,7 +768,7 @@ class TestCognitiveObeya:
             DepartmentType.QUALITY,
             "hold",
             "Quality hold",
-            AlertSeverity.WARNING,
+            AlertSeverity.MEDIUM,
         )
         
         dashboard = obeya.get_obeya_dashboard()
@@ -897,7 +897,7 @@ class TestCognitiveObeyaIntegration:
             DepartmentType.SALES,
             "rfq_delay",
             "Major order confirmation delayed",
-            AlertSeverity.WARNING,
+            AlertSeverity.MEDIUM,
         )
         
         # 5. Get comprehensive dashboard

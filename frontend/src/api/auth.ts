@@ -5,6 +5,7 @@ import type {
   RegisterData,
   User,
   UserPreferences,
+  UserRole,
 } from '@/types';
 
 export interface TwoFactorRequiredResponse {
@@ -24,10 +25,10 @@ function isTwoFactorRequiredResponse(value: unknown): value is TwoFactorRequired
   );
 }
 
-function pickRole(user: User): User['role'] {
-  // Keep the role stable for existing UI checks (e.g. admin gating).
-  // If backend provides a different role model, map it here.
-  return user.role ?? 'viewer';
+function pickRole(user: any): UserRole {
+  if (user.role) return user.role as UserRole;
+  if (user.roles && user.roles.length > 0) return user.roles[0] as UserRole;
+  return 'viewer';
 }
 
 export interface PasswordResetRequest {
@@ -89,10 +90,11 @@ export const authApi = {
    * Get the current user's profile
    */
   async getCurrentUser(): Promise<User> {
-    const user = await apiClient.get<User>('/users/me');
+    const user = await apiClient.get<any>('/users/me');
     return {
       ...user,
       role: pickRole(user),
+      roles: user.roles || [],
     };
   },
 

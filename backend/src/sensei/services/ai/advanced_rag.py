@@ -1190,8 +1190,8 @@ class AdvancedRAGService:
             if self.embedding_func:
                 query_embedding = self.embedding_func(query_var)
             else:
-                # Use placeholder if no embedding function
-                query_embedding = [0.0] * self.config.embedding_dimension
+                # Try to use ONNX embedder if no embedding function provided
+                query_embedding = self._get_fallback_embedding(query_var)
             
             # Search vector store
             raw_results = self.vector_store.search(
@@ -1444,3 +1444,63 @@ Summary:"""
             enhanced_results.append(result)
         
         return enhanced_results
+    
+    def _get_fallback_embedding(self, text: str) -> list[float]:
+        """
+        Get embedding using ONNX embedder as fallback.
+        
+        Returns proper embeddings when possible, or a deterministic
+        hash-based embedding if ONNX is not available.
+        """
+        # Try to use ONNX embedder
+        if not hasattr(self, '_fallback_embedder'):
+            self._fallback_embedder = None
+            self._fallback_embedder_tried = False
+        
+        if not self._fallback_embedder_tried:
+            self._fallback_embedder_tried = True
+            try:
+                from sensei.services.ai.onnx_text_embeddings import (
+                    ONNXTextEmbedder,
+                    EmbeddingConfig,
+                )
+                from pathlib import Path
+                
+                config = EmbeddingConfig(
+                    model_id="sentence-transformers/all-MiniLM-L6-v2",
+                    cache_dir=Path.home() / ".cache" / "sensei" / "embeddings",
+                    quantize_int8=True,
+                    max_length=256,
+                )
+                self._fallback_embedder = ONNXTextEmbedder(config)
+            except Exception:
+                pass
+        
+        if self._fallback_embedder:
+            try:
+                return self._fallback_embedder.embed_text(text)
+            except Exception:
+                pass
+        
+        # Final fallback: deterministic hash-based embedding
+        import hashlib
+        import math
+        
+        h = hashlib.sha256(text.encode()).hexdigest()
+        embedding = []
+        
+        for i in range(0, 64, 2):
+            embedding.append((int(h[i:i+2], 16) - 128) / 128.0)
+        
+        # Extend to match config dimension
+        target_dim = self.config.embedding_dimension
+        while len(embedding) < target_dim:
+            idx = len(embedding) % 32
+            embedding.append(embedding[idx] * 0.5)
+        
+        # Truncate if needed
+        embedding = embedding[:target_dim]
+        
+        # Normalize
+        norm = math.sqrt(sum(v * v for v in embedding)) or 1.0
+        return [v / norm for v in embedding]

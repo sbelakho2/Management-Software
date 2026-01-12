@@ -5,11 +5,171 @@ Provides a comprehensive system for defining, calculating, and tracking
 Key Performance Indicators (KPIs) across all business domains.
 """
 
+import ast
+import operator
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
+
+
+# --------------------------------------------------------------------------
+# Safe Expression Evaluator
+# --------------------------------------------------------------------------
+
+class SafeExpressionEvaluator:
+    """
+    Safe expression evaluator for KPI formulas.
+    
+    Only allows basic arithmetic operations and numeric literals.
+    Does not allow function calls, attribute access, or other potentially
+    dangerous operations.
+    """
+    
+    # Allowed operators
+    _operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+    
+    # Allowed built-in functions (math operations only)
+    _functions = {
+        "min": min,
+        "max": max,
+        "abs": abs,
+        "round": round,
+        "sum": sum,
+    }
+    
+    @classmethod
+    def evaluate(cls, expression: str, variables: dict[str, float] | None = None) -> float:
+        """
+        Safely evaluate a mathematical expression.
+        
+        Args:
+            expression: Mathematical expression string
+            variables: Dictionary of variable names to values
+            
+        Returns:
+            Result of the expression
+            
+        Raises:
+            ValueError: If expression contains disallowed operations
+        """
+        if variables is None:
+            variables = {}
+        
+        try:
+            tree = ast.parse(expression, mode="eval")
+            return cls._eval_node(tree.body, variables)
+        except (SyntaxError, TypeError, KeyError) as e:
+            raise ValueError(f"Invalid expression: {e}") from e
+    
+    @classmethod
+    def _eval_node(cls, node: ast.AST, variables: dict[str, float]) -> float:
+        """Recursively evaluate an AST node."""
+        if isinstance(node, ast.Constant):
+            # Numeric literals
+            if isinstance(node.value, (int, float)):
+                return float(node.value)
+            raise ValueError(f"Unsupported constant type: {type(node.value)}")
+        
+        elif isinstance(node, ast.Name):
+            # Variable reference
+            if node.id in variables:
+                return variables[node.id]
+            raise ValueError(f"Unknown variable: {node.id}")
+        
+        elif isinstance(node, ast.BinOp):
+            # Binary operations (+, -, *, /, etc.)
+            op_type = type(node.op)
+            if op_type not in cls._operators:
+                raise ValueError(f"Unsupported operator: {op_type.__name__}")
+            
+            left = cls._eval_node(node.left, variables)
+            right = cls._eval_node(node.right, variables)
+            
+            # Prevent division by zero
+            if op_type in (ast.Div, ast.FloorDiv, ast.Mod) and right == 0:
+                raise ValueError("Division by zero")
+            
+            return cls._operators[op_type](left, right)
+        
+        elif isinstance(node, ast.UnaryOp):
+            # Unary operations (-, +)
+            op_type = type(node.op)
+            if op_type not in cls._operators:
+                raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
+            
+            operand = cls._eval_node(node.operand, variables)
+            return cls._operators[op_type](operand)
+        
+        elif isinstance(node, ast.Call):
+            # Function calls (only allowed functions)
+            if not isinstance(node.func, ast.Name):
+                raise ValueError("Complex function calls not allowed")
+            
+            func_name = node.func.id
+            if func_name not in cls._functions:
+                raise ValueError(f"Function not allowed: {func_name}")
+            
+            args = [cls._eval_node(arg, variables) for arg in node.args]
+            return cls._functions[func_name](*args)
+        
+        elif isinstance(node, ast.List):
+            # Lists (for min/max/sum functions)
+            return [cls._eval_node(elem, variables) for elem in node.elts]
+        
+        elif isinstance(node, ast.Tuple):
+            # Tuples (for min/max/sum functions)
+            return tuple(cls._eval_node(elem, variables) for elem in node.elts)
+        
+        elif isinstance(node, ast.IfExp):
+            # Conditional expressions (a if condition else b)
+            # Note: Only allow simple numeric comparisons
+            test = cls._eval_node(node.test, variables)
+            if test:
+                return cls._eval_node(node.body, variables)
+            return cls._eval_node(node.orelse, variables)
+        
+        elif isinstance(node, ast.Compare):
+            # Comparison operators for conditionals
+            left = cls._eval_node(node.left, variables)
+            for op, comparator in zip(node.ops, node.comparators):
+                right = cls._eval_node(comparator, variables)
+                if isinstance(op, ast.Lt):
+                    if not left < right:
+                        return False
+                elif isinstance(op, ast.LtE):
+                    if not left <= right:
+                        return False
+                elif isinstance(op, ast.Gt):
+                    if not left > right:
+                        return False
+                elif isinstance(op, ast.GtE):
+                    if not left >= right:
+                        return False
+                elif isinstance(op, ast.Eq):
+                    if not left == right:
+                        return False
+                elif isinstance(op, ast.NotEq):
+                    if not left != right:
+                        return False
+                else:
+                    raise ValueError(f"Unsupported comparison: {type(op).__name__}")
+                left = right
+            return True
+        
+        else:
+            raise ValueError(f"Unsupported expression type: {type(node).__name__}")
 
 
 # --------------------------------------------------------------------------
@@ -543,8 +703,16 @@ class KPIService:
                     dimensions,
                 )
             else:
-                # No calculation method available, return simulated value
-                value = self._simulate_value(definition)
+                # No calculation method available - this is a configuration error
+                # In production, KPIs must have either a data source, formula, or custom calculator
+                calc_time = (datetime.now() - start_time).total_seconds() * 1000
+                return KPICalculationResult(
+                    kpi_id=kpi_id,
+                    success=False,
+                    error=f"KPI '{kpi_id}' has no valid calculation method. "
+                          f"Configure a data_source, formula, or custom calculator.",
+                    calculation_time_ms=calc_time,
+                )
             
             kpi_value = KPIValue(
                 id=str(uuid4()),
@@ -600,15 +768,19 @@ class KPIService:
                 else:
                     component_values[comp_id] = 0.0
         
-        # Evaluate formula
-        # Simple formula evaluation (production would use a proper expression evaluator)
+        # Evaluate formula using safe expression evaluator
+        # Convert {component_id} placeholders to valid Python identifiers
         formula = definition.formula
+        variables: dict[str, float] = {}
         for comp_id, val in component_values.items():
-            formula = formula.replace(f"{{{comp_id}}}", str(val))
+            # Replace {comp_id} with a sanitized variable name
+            var_name = comp_id.replace("-", "_").replace(".", "_")
+            formula = formula.replace(f"{{{comp_id}}}", var_name)
+            variables[var_name] = val
         
         try:
-            return eval(formula)  # noqa: S307 - In production, use safe eval
-        except Exception:
+            return SafeExpressionEvaluator.evaluate(formula, variables)
+        except (ValueError, ZeroDivisionError):
             return 0.0
     
     def _calculate_from_data(
@@ -685,28 +857,8 @@ class KPIService:
         if calculator:
             return calculator(start_date, end_date, dimensions)
         
-        return self._simulate_value(definition)
-    
-    def _simulate_value(self, definition: KPIDefinition) -> float:
-        """Generate a simulated value for demonstration."""
-        import random
-        
-        threshold = definition.threshold
-        if threshold:
-            # Generate value around target
-            target = threshold.target
-            variance = target * 0.15  # 15% variance
-            return max(0, target + random.uniform(-variance, variance))
-        
-        # Default random values based on unit
-        if definition.unit == KPIUnit.PERCENTAGE:
-            return random.uniform(70, 98)
-        elif definition.unit in [KPIUnit.DAYS, KPIUnit.HOURS]:
-            return random.uniform(1, 30)
-        elif definition.unit == KPIUnit.PPM:
-            return random.uniform(100, 5000)
-        else:
-            return random.uniform(50, 150)
+        # Unknown custom calculator - raise error instead of simulating
+        raise ValueError(f"Unknown custom calculator: {calc_name}")
     
     def _calculate_oee(
         self,
@@ -714,13 +866,33 @@ class KPIService:
         end_date: date,
         dimensions: dict[str, str] | None,
     ) -> float:
-        """Calculate OEE (Overall Equipment Effectiveness)."""
-        # OEE = Availability × Performance × Quality
-        # Simulated for now
-        availability = 0.92
-        performance = 0.88
-        quality = 0.99
-        return availability * performance * quality * 100
+        """
+        Calculate OEE (Overall Equipment Effectiveness).
+        
+        OEE = Availability × Performance × Quality
+        
+        This requires actual equipment data from the database.
+        Configure a data_provider when calling calculate_kpi to supply
+        the equipment metrics.
+        """
+        # OEE calculation requires real equipment data
+        # Check if we have cached or pre-calculated component values
+        availability_kpi = self.get_latest_value("oee_availability", dimensions)
+        performance_kpi = self.get_latest_value("oee_performance", dimensions)
+        quality_kpi = self.get_latest_value("oee_quality", dimensions)
+        
+        if all([availability_kpi, performance_kpi, quality_kpi]):
+            availability = availability_kpi.value / 100.0
+            performance = performance_kpi.value / 100.0
+            quality = quality_kpi.value / 100.0
+            return availability * performance * quality * 100
+        
+        # No component data available - return error via exception
+        raise ValueError(
+            "OEE calculation requires oee_availability, oee_performance, and "
+            "oee_quality component KPIs to be defined and calculated first. "
+            "Please configure data sources for these component KPIs."
+        )
     
     def _calculate_quote_cycle_time(
         self,
@@ -728,9 +900,20 @@ class KPIService:
         end_date: date,
         dimensions: dict[str, str] | None,
     ) -> float:
-        """Calculate average quote cycle time in days."""
-        # Simulated - would query quote data in production
-        return 4.5
+        """
+        Calculate average quote cycle time in days.
+        
+        This requires actual quote data from the database.
+        """
+        # Check for pre-calculated values
+        cycle_times = self.get_values("quote_cycle_time_raw", start_date, end_date)
+        if cycle_times:
+            return sum(v.value for v in cycle_times) / len(cycle_times)
+        
+        raise ValueError(
+            "Quote cycle time calculation requires quote data. "
+            "Configure a data_source for the quote_cycle_time_raw KPI."
+        )
     
     def _calculate_training_compliance(
         self,
@@ -738,9 +921,20 @@ class KPIService:
         end_date: date,
         dimensions: dict[str, str] | None,
     ) -> float:
-        """Calculate training compliance percentage."""
-        # Simulated - would query training records in production
-        return 94.5
+        """
+        Calculate training compliance percentage.
+        
+        This requires actual training records from the database.
+        """
+        # Check for pre-calculated values
+        compliance_values = self.get_values("training_compliance_raw", start_date, end_date)
+        if compliance_values:
+            return sum(v.value for v in compliance_values) / len(compliance_values)
+        
+        raise ValueError(
+            "Training compliance calculation requires training records. "
+            "Configure a data_source for the training_compliance_raw KPI."
+        )
     
     # --------------------------------------------------------------------------
     # Trend Analysis

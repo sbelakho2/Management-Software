@@ -26,9 +26,17 @@ import {
   Bell,
   Command,
   Menu,
+  LogOut,
+  DollarSign,
+  BarChart3,
+  ScrollText,
+  Target,
+  AlertCircle,
+  FileSearch,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 import {
@@ -37,30 +45,69 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useUIStore, useAuthStore } from '@/stores';
+import { UserRole } from '@/types';
 
 interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
   badge?: number;
+  roles?: UserRole[];
   children?: NavItem[];
 }
 
-const mainNavItems: NavItem[] = [
-  { label: 'Today', href: '/today', icon: Home },
-  { label: 'Pipeline', href: '/pipeline', icon: FileText },
-  { label: 'Quotes', href: '/quotes', icon: Calculator },
-  { label: 'Customers', href: '/customers', icon: Users },
-  { label: 'Products', href: '/products', icon: Package },
-  { label: 'Production', href: '/production', icon: Factory },
-  { label: 'Quality', href: '/quality', icon: ClipboardCheck },
-  { label: 'Andon', href: '/andon', icon: AlertTriangle },
-  { label: 'Obeya', href: '/obeya', icon: LayoutGrid },
-  { label: 'Executive', href: '/executive', icon: Eye },
-  { label: 'Training', href: '/training', icon: GraduationCap },
-  { label: 'Project Management', href: '/project-management', icon: FolderKanban },
-  { label: 'Maintenance', href: '/maintenance', icon: Wrench },
-  { label: 'Supply Chain', href: '/supply-chain', icon: Globe },
+interface NavSection {
+  title: string;
+  items: NavItem[];
+  roles?: UserRole[];
+}
+
+const navSections: NavSection[] = [
+  {
+    title: 'Dashboards',
+    items: [
+      { label: 'Today', href: '/today', icon: Home },
+      { label: 'Tasks', href: '/tasks', icon: ClipboardCheck },
+      { label: 'Executive', href: '/executive', icon: Eye, roles: ['admin', 'ceo', 'gm', 'exec'] },
+      { label: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin', 'ceo', 'gm', 'exec', 'ops'] },
+    ]
+  },
+  {
+    title: 'Sales & CRM',
+    roles: ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'ops'],
+    items: [
+      { label: 'Sales Overview', href: '/sales', icon: Target },
+      { label: 'Pipeline', href: '/pipeline', icon: FileText },
+      { label: 'Quotes', href: '/quotes', icon: Calculator },
+      { label: 'Customers', href: '/customers', icon: Users },
+    ]
+  },
+  {
+    title: 'Operations',
+    roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'operator', 'quality', 'supply_chain', 'maintenance'],
+    items: [
+      { label: 'Ops Overview', href: '/ops', icon: LayoutGrid },
+      { label: 'Production', href: '/production', icon: Factory },
+      { label: 'Projects', href: '/projects', icon: FolderKanban },
+      { label: 'Products', href: '/products', icon: Package },
+      { label: 'Obeya', href: '/obeya', icon: LayoutGrid },
+      { label: 'A3 Reports', href: '/a3', icon: ScrollText },
+      { label: 'CTQ Tracking', href: '/ctq', icon: Target },
+      { label: 'Exceptions', href: '/exceptions', icon: AlertCircle },
+    ]
+  },
+  {
+    title: 'Quality & Support',
+    items: [
+      { label: 'Quality', href: '/quality', icon: Shield },
+      { label: 'Andon', href: '/andon', icon: AlertTriangle },
+      { label: 'Maintenance', href: '/maintenance', icon: Wrench },
+      { label: 'Supply Chain', href: '/supply-chain', icon: Globe, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain'] },
+      { label: 'Training', href: '/training', icon: GraduationCap },
+      { label: 'Training Matrix', href: '/training/matrix', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor'] },
+      { label: 'Finance', href: '/finance', icon: DollarSign, roles: ['admin', 'ceo', 'gm', 'exec', 'finance', 'accountant'] },
+    ]
+  }
 ];
 
 const bottomNavItems: NavItem[] = [
@@ -70,17 +117,41 @@ const bottomNavItems: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { sidebarState, setSidebarState, setCommandPaletteOpen } = useUIStore();
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
+  const router = useRouter();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isCollapsed = sidebarState === 'collapsed';
   const isHidden = sidebarState === 'hidden';
 
-  const navItems = [...mainNavItems];
+  const canAccess = (roles?: UserRole[]) => {
+    if (!roles || roles.length === 0) return true;
+    if (!user) return false;
+    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+    return roles.some(role => userRoles.includes(role));
+  };
+
+  const filteredSections = navSections
+    .filter(section => canAccess(section.roles))
+    .map(section => ({
+      ...section,
+      items: section.items.filter(item => canAccess(item.roles))
+    }))
+    .filter(section => section.items.length > 0);
+
   if (user?.role === 'admin') {
-    navItems.push({ label: 'Admin', href: '/admin', icon: Shield });
+    // Add Admin section at the bottom of main nav
+    filteredSections.push({
+      title: 'Administration',
+      items: [{ label: 'Admin Panel', href: '/admin', icon: Shield }]
+    });
   }
 
-  if (isHidden) return null;
+  if (!mounted || isHidden) return null;
 
   return (
     <aside
@@ -132,58 +203,67 @@ export function Sidebar() {
 
       {/* Main Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">
-        <ul className="space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
-            return (
-              <li key={item.href}>
-                {isCollapsed ? (
-                  <Tooltip delayDuration={0}>
-                    <TooltipTrigger asChild>
+        {filteredSections.map((section, idx) => (
+          <div key={section.title} className={cn('mb-4', idx === 0 && 'mt-0')}>
+            {!isCollapsed && (
+              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {section.title}
+              </h3>
+            )}
+            <ul className="space-y-1">
+              {section.items.map((item) => {
+                const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+                return (
+                  <li key={item.href}>
+                    {isCollapsed ? (
+                      <Tooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          <Link
+                            href={item.href}
+                            className={cn(
+                              'flex h-10 w-10 items-center justify-center rounded-md mx-auto',
+                              'transition-colors hover:bg-accent hover:text-accent-foreground',
+                              isActive && 'bg-accent text-accent-foreground'
+                            )}
+                          >
+                            <item.icon className="h-5 w-5" />
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {item.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-10 w-10 items-center justify-center rounded-md mx-auto',
+                          'flex h-10 items-center gap-3 rounded-md px-3',
                           'transition-colors hover:bg-accent hover:text-accent-foreground',
                           isActive && 'bg-accent text-accent-foreground'
                         )}
                       >
-                        <item.icon className="h-5 w-5" />
+                        <item.icon className="h-5 w-5 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                        {item.badge && item.badge > 0 && (
+                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                            {item.badge}
+                          </span>
+                        )}
                       </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {item.label}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      'flex h-10 items-center gap-3 rounded-md px-3',
-                      'transition-colors hover:bg-accent hover:text-accent-foreground',
-                      isActive && 'bg-accent text-accent-foreground'
                     )}
-                  >
-                    <item.icon className="h-5 w-5 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                    {item.badge && item.badge > 0 && (
-                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* Bottom Navigation */}
       <div className="border-t p-2">
-        <ul className="space-y-1">
+        <ul className="space-y-1 mb-2">
           {bottomNavItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
               <li key={item.href}>
                 {isCollapsed ? (
@@ -263,6 +343,42 @@ export function Sidebar() {
             )}
           </div>
         )}
+
+        {/* Logout */}
+        <div className="mt-1">
+          {isCollapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="flex h-10 w-10 items-center justify-center rounded-md mx-auto text-muted-foreground hover:text-danger hover:bg-danger/10"
+                  onClick={async () => {
+                    await logout();
+                    router.push('/login');
+                  }}
+                >
+                  <LogOut className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Logout
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 px-3 text-muted-foreground hover:text-danger hover:bg-danger/10"
+              onClick={async () => {
+                await logout();
+                router.push('/login');
+              }}
+            >
+              <LogOut className="h-5 w-5 shrink-0" />
+              <span>Logout</span>
+            </Button>
+          )}
+        </div>
 
         {/* Collapse Toggle */}
         <Button

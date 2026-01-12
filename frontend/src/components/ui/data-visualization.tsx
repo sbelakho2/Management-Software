@@ -1066,4 +1066,3 @@ export async function shareDashboard(config: ShareableDashboardConfig): Promise<
 // EXPORTS
 // =============================================================================
 
-export type { DataPoint, Series, ChartConfig, LegendItem, ShareableDashboardConfig };

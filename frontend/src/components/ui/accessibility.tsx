@@ -230,7 +230,7 @@ export const AriaLiveRegion = React.forwardRef<HTMLDivElement, AriaLiveRegionPro
         ref={ref}
         aria-live={politeness}
         aria-atomic={atomic}
-        aria-relevant={relevant}
+        aria-relevant={relevant as any}
         className={cn('sr-only', className)}
         {...props}
       >
@@ -260,7 +260,7 @@ export const VisuallyHidden = React.forwardRef<HTMLSpanElement, VisuallyHiddenPr
   ({ children, as: Component = 'span', className, ...props }, ref) => {
     return (
       <Component
-        ref={ref as React.Ref<HTMLSpanElement>}
+        ref={ref as any}
         className={cn('sr-only', className)}
         {...props}
       >

@@ -223,18 +223,19 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch(`/api/v1/admin/gates/${id}`, {
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
-            // const gate = await response.json();
-            
-            const gate = get().gates.find(g => g.id === id);
-            if (!gate) throw new Error('Gate not found');
+            const response = await apiClient.get<Gate>(`/admin/gates/${id}`);
+            const gate = response.data;
             
             set({ isLoading: false });
             return gate;
           } catch (error) {
+            // Fallback to local cache if API fails
+            const cachedGate = get().gates.find(g => g.id === id);
+            if (cachedGate) {
+              set({ isLoading: false });
+              return cachedGate;
+            }
+            
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch gate',
               isLoading: false,
@@ -247,23 +248,8 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch('/api/v1/admin/gates', {
-            //   method: 'POST',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify(gateData)
-            // });
-            // const newGate = await response.json();
-            
-            const newGate: Gate = {
-              ...gateData,
-              id: Math.random().toString(36).substr(2, 9),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+            const response = await apiClient.post<Gate>('/admin/gates', gateData);
+            const newGate = response.data;
             
             set((state) => ({
               gates: [...state.gates, newGate],
@@ -284,22 +270,8 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // const response = await fetch(`/api/v1/admin/gates/${id}`, {
-            //   method: 'PATCH',
-            //   headers: {
-            //     'Content-Type': 'application/json',
-            //     Authorization: `Bearer ${token}`
-            //   },
-            //   body: JSON.stringify(updates)
-            // });
-            // const updatedGate = await response.json();
-            
-            const updatedGate = {
-              ...get().gates.find(g => g.id === id)!,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            };
+            const response = await apiClient.patch<Gate>(`/admin/gates/${id}`, updates);
+            const updatedGate = response.data;
             
             set((state) => ({
               gates: state.gates.map(g => g.id === id ? updatedGate : g),
@@ -320,11 +292,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
-            // await fetch(`/api/v1/admin/gates/${id}`, {
-            //   method: 'DELETE',
-            //   headers: { Authorization: `Bearer ${token}` }
-            // });
+            await apiClient.delete(`/admin/gates/${id}`);
             
             set((state) => ({
               gates: state.gates.filter(g => g.id !== id),
@@ -351,7 +319,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            // TODO: Replace with actual API call
+            await apiClient.post('/admin/gates/reorder', { gate_ids: gateIds });
             // await fetch('/api/v1/admin/gates/reorder', {
             //   method: 'POST',
             //   headers: {

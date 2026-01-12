@@ -107,7 +107,7 @@ class TestGetExceptions:
             response = client.get("/api/v1/exceptions")
             
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert len(data["items"]) == 4
             assert data["total"] == 4
 
@@ -122,7 +122,7 @@ class TestGetExceptions:
             response = client.get("/api/v1/exceptions?category=andon")
             
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert len(data["items"]) == 1
             assert data["items"][0]["category"] == "andon"
 
@@ -137,7 +137,7 @@ class TestGetExceptions:
             response = client.get("/api/v1/exceptions?severity=critical")
             
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert len(data["items"]) == 1
             assert data["items"][0]["severity"] == "critical"
 
@@ -152,7 +152,7 @@ class TestGetExceptions:
             response = client.get("/api/v1/exceptions?overdue_only=true")
             
             assert response.status_code == 200
-            data = response.json()
+            data = response.json()["data"]
             assert len(data["items"]) == 1
             assert data["items"][0]["is_overdue"] is True
 

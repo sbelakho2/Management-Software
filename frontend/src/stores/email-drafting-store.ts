@@ -11,6 +11,10 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import axios from 'axios';
+
+// API base URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ============================================================================
 // Types & Enums
@@ -575,15 +579,54 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
     (set, get) => ({
       ...initialState,
 
-      // Draft generation
+      // Draft generation - calls backend AI service
       generateDraft: async (request: GenerationRequest): Promise<GeneratedDraft> => {
         set({ isGenerating: true, generationError: null });
 
         try {
-          // Simulate API call delay
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          // Call backend AI email drafting service
+          const response = await axios.post(`${API_BASE_URL}/api/v1/ai/email/generate`, {
+            recipient: {
+              email: request.context.recipient.email,
+              name: request.context.recipient.name,
+              title: request.context.recipient.title,
+              company: request.context.recipient.company,
+            },
+            purpose: request.context.purpose,
+            tone: request.context.tone,
+            key_points: request.context.keyPoints,
+            reference_number: request.context.referenceNumber,
+            deadline: request.context.deadline?.toISOString(),
+            attachments: request.context.attachments,
+            sender_name: request.senderName,
+            sender_title: request.senderTitle,
+            sender_email: request.senderEmail,
+            company_name: request.companyName,
+            language: request.language,
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
 
-          const draft = mockGenerateDraft(request);
+          const apiDraft = response.data;
+          
+          // Map API response to frontend draft format
+          const draft: GeneratedDraft = {
+            id: apiDraft.id || generateId(),
+            status: 'ready',
+            context: request.context,
+            subject: apiDraft.subject,
+            salutation: apiDraft.salutation,
+            body: apiDraft.body,
+            closing: apiDraft.closing,
+            signature: apiDraft.signature || `${request.senderName}\n${request.senderTitle}\n${request.companyName}`,
+            fullText: `${apiDraft.salutation}\n\n${apiDraft.body}\n\n${apiDraft.closing}\n\n${apiDraft.signature || ''}`,
+            tone: request.context.tone,
+            language: request.language,
+            generatedAt: new Date(),
+            modelVersion: apiDraft.model_version || 'v1.0',
+          };
 
           const drafts = new Map(get().drafts);
           drafts.set(draft.id, draft);
@@ -626,6 +669,23 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
 
           return draft;
         } catch (error) {
+          // If API fails, fall back to local generation for development
+          if (axios.isAxiosError(error) && (!error.response || error.response.status >= 500)) {
+            console.warn('Email API unavailable, using local generation');
+            const draft = mockGenerateDraft(request);
+            
+            const drafts = new Map(get().drafts);
+            drafts.set(draft.id, draft);
+            
+            set({
+              drafts,
+              activeDraftId: draft.id,
+              isGenerating: false,
+            });
+            
+            return draft;
+          }
+          
           set({
             isGenerating: false,
             generationError: error instanceof Error ? error.message : 'Generation failed',

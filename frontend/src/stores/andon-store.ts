@@ -3,6 +3,8 @@
 import { create } from 'zustand';
 import type { AndonEvent, AndonType, AndonStatus, Severity, WorkCenter } from '@/types';
 
+import { andonApi, type AndonAnalytics } from '@/api/andon';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -64,6 +66,10 @@ interface AndonStoreState {
   // Metrics
   metrics: AndonMetrics;
   
+  // Analytics
+  analytics: AndonAnalytics | null;
+  analyticsLoading: boolean;
+  
   // Connection state
   isConnected: boolean;
   lastHeartbeat: string | null;
@@ -98,6 +104,9 @@ interface AndonStoreActions {
   // Metrics actions
   updateMetrics: (metrics: Partial<AndonMetrics>) => void;
   recalculateMetrics: () => void;
+  
+  // Analytics actions
+  fetchAnalytics: (days?: number) => Promise<void>;
   
   // Connection actions
   connect: () => void;
@@ -164,6 +173,8 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
   resolvedEvents: [],
   workCenters: new Map(),
   metrics: { ...INITIAL_METRICS },
+  analytics: null,
+  analyticsLoading: false,
   isConnected: false,
   lastHeartbeat: null,
   connectionError: null,
@@ -379,6 +390,18 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
         byWorkCenter,
       },
     });
+  },
+
+  // Analytics actions
+  fetchAnalytics: async (days = 30) => {
+    set({ analyticsLoading: true });
+    try {
+      const analytics = await andonApi.getAnalytics(days);
+      set({ analytics, analyticsLoading: false });
+    } catch (error) {
+      console.error('Error fetching Andon analytics:', error);
+      set({ analyticsLoading: false });
+    }
   },
 
   // Connection actions

@@ -12,24 +12,7 @@ from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
-from sensei.core.enums import Severity as ExceptionSeverity
-from sensei.core.enums import WorkflowStatus as ExceptionStatus
-
-
-class ExceptionCategory(str, Enum):
-    """Exception source categories."""
-    ANDON = "andon"               # Shop floor alerts
-    QUOTE = "quote"               # Quote issues
-    PRODUCTION = "production"     # Production problems
-    QUALITY = "quality"           # Quality issues (NCRs, CAPAs)
-    A3 = "a3"                     # A3 escalations
-    OBEYA = "obeya"               # Obeya item alerts
-    TASK = "task"                 # Overdue tasks
-    TRAINING = "training"         # Training gaps
-    RFQ = "rfq"                   # RFQ issues
-    APPROVAL = "approval"         # Pending approvals
-    COMPLIANCE = "compliance"     # Compliance issues
-    BACKUP = "backup"             # Backup failures
+from sensei.core.enums import Severity as ExceptionSeverity, WorkflowStatus as ExceptionStatus, EntityType as ExceptionCategory
 
 
 @dataclass

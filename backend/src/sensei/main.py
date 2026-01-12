@@ -33,6 +33,9 @@ from sensei.services.ops.muda_nudging_scheduler import (
     MudaNudgingSchedulerService,
 )
 from sensei.services.ops.muda_nudging_worker import MudaNudgingJobRunner
+from sensei.services.ops.cognitive_obeya import get_cognitive_obeya
+from sensei.services.core.factory_launchpad import get_factory_launchpad
+from sensei.services.core.edge_ai import get_edge_orchestrator
 
 logger = structlog.get_logger(__name__)
 
@@ -95,6 +98,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("Failed to start muda nudging scheduler", error=str(e))
     
+    # Pre-initialize singletons
+    try:
+        get_cognitive_obeya()
+        get_factory_launchpad()
+        get_edge_orchestrator()
+        logger.info("Core services pre-initialized successfully")
+    except Exception as e:
+        logger.error("Failed to pre-initialize core services", error=str(e))
+
     yield
     
     # Shutdown
@@ -136,13 +148,33 @@ def create_application() -> FastAPI:
     )
     
     # Add middleware (order matters - first added is outermost)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS configuration - strict in production, relaxed in development
+    if settings.ENVIRONMENT == "production":
+        # Production: Only allow specific methods and headers
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "X-Correlation-ID",
+                "X-Request-ID",
+            ],
+            expose_headers=["X-Correlation-ID", "X-Request-ID"],
+            max_age=86400,  # Cache preflight for 24 hours
+        )
+    else:
+        # Development: Allow all for easier testing
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # Add security headers (CSP/HSTS/etc). Use a minimal API preset in production

@@ -1239,8 +1239,19 @@ class FactoryLaunchpad:
 
 
 # =============================================================================
-# FACTORY FUNCTIONS
+# SINGLETON & FACTORY FUNCTIONS
 # =============================================================================
+
+
+_factory_launchpad: FactoryLaunchpad | None = None
+
+
+def get_factory_launchpad() -> FactoryLaunchpad:
+    """Get the Factory Launchpad singleton."""
+    global _factory_launchpad
+    if _factory_launchpad is None:
+        _factory_launchpad = FactoryLaunchpad()
+    return _factory_launchpad
 
 
 def create_factory_launchpad() -> FactoryLaunchpad:

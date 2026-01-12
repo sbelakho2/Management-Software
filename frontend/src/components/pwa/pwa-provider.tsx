@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Download, RefreshCw, X, Wifi, WifiOff } from 'lucide-react';
-import { usePWA, useIsPWA } from '@/hooks/use-pwa';
+import { RefreshCw, X, Wifi, WifiOff } from 'lucide-react';
+import { usePWA } from '@/hooks/use-pwa';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -21,8 +21,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
   
   const [showOfflineToast, setShowOfflineToast] = React.useState(false);
   const [showUpdateToast, setShowUpdateToast] = React.useState(false);
-  const [showInstallPrompt, setShowInstallPrompt] = React.useState(false);
-  const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
 
   // Register service worker on mount
   React.useEffect(() => {
@@ -48,33 +46,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
       setShowUpdateToast(true);
     }
   }, [isUpdateAvailable]);
-
-  // Listen for beforeinstallprompt event
-  React.useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      // Show install prompt after a delay
-      setTimeout(() => setShowInstallPrompt(true), 30000); // 30 seconds
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    if (outcome === 'accepted') {
-      console.log('[PWA] App installed');
-    }
-    
-    setDeferredPrompt(null);
-    setShowInstallPrompt(false);
-  };
 
   const handleUpdate = () => {
     skipWaiting();
@@ -121,32 +92,6 @@ export function PWAProvider({ children }: { children: React.ReactNode }) {
           <Button size="sm" onClick={handleUpdate}>
             Update Now
           </Button>
-        </div>
-      </Toast>
-
-      {/* Install Prompt */}
-      <Toast
-        show={showInstallPrompt && !!deferredPrompt}
-        onClose={() => setShowInstallPrompt(false)}
-        variant="default"
-        persistent
-      >
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Download className="h-5 w-5" />
-            <div>
-              <p className="font-medium">Install SENSEI</p>
-              <p className="text-sm text-muted-foreground">Get the app for a better experience</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setShowInstallPrompt(false)}>
-              Later
-            </Button>
-            <Button size="sm" onClick={handleInstall}>
-              Install
-            </Button>
-          </div>
         </div>
       </Toast>
     </>
@@ -203,40 +148,4 @@ function Toast({ show, onClose, children, variant = 'default', persistent = fals
       </div>
     </div>
   );
-}
-
-/**
- * Hook to detect if app should show install prompt
- */
-export function useInstallPrompt() {
-  const isPWA = useIsPWA();
-  const [canInstall, setCanInstall] = React.useState(false);
-  const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
-
-  React.useEffect(() => {
-    if (isPWA) return; // Already installed
-
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setCanInstall(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, [isPWA]);
-
-  const install = async () => {
-    if (!deferredPrompt) return false;
-
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    setDeferredPrompt(null);
-    setCanInstall(false);
-    
-    return outcome === 'accepted';
-  };
-
-  return { canInstall, install, isPWA };
 }

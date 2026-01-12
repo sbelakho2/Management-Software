@@ -17,6 +17,10 @@ class Severity(str, Enum):
     LOW = "low"            # Minor issue
     INFO = "info"          # Informational only
     
+    # Compatibility aliases (mapping to semantic levels)
+    MAJOR = "high"
+    MINOR = "low"
+    
     # Color-coded aliases for Andon compatibility
     RED = "critical"
     YELLOW = "high"
@@ -66,3 +70,53 @@ class ComparisonOperator(str, Enum):
     NOT_IN = "not_in"
     CONTAINS = "contains"
     IS_NULL = "is_null"
+
+
+class EntityType(str, Enum):
+    """System-wide entity types for linking, metrics, and exceptions."""
+    
+    # Sales & CRM
+    ACCOUNT = "account"
+    CONTACT = "contact"
+    OPPORTUNITY = "opportunity"
+    RFQ = "rfq"
+    QUOTE = "quote"
+    QUOTE_VERSION = "quote_version"
+    QUALIFICATION = "qualification"
+    
+    # Production
+    PRODUCTION = "production"
+    WORK_ORDER = "work_order"
+    WORK_CENTER = "work_center"
+    STATION = "station"
+    PRODUCTION_CELL = "production_cell"
+    KANBAN_CARD = "kanban_card"
+    
+    # Quality & Andon
+    ANDON = "andon"
+    ANDON_EVENT = "andon_event"
+    QUALITY = "quality"
+    NON_CONFORMANCE = "non_conformance"
+    CAPA = "capa"
+    INSPECTION_PLAN = "inspection_plan"
+    INSPECTION_RECORD = "inspection_record"
+    
+    # Management & People
+    A3 = "a3"
+    OBEYA = "obeya"
+    OBEYA_ITEM = "obeya_item"
+    TASK = "task"
+    TRAINING = "training"
+    USER_SKILL = "user_skill"
+    LSW_ITEM = "lsw_item"
+    
+    # System
+    USER = "user"
+    ROLE = "role"
+    PERMISSION = "permission"
+    AUDIT_LOG = "audit_log"
+    BACKUP = "backup"
+    ATTACHMENT = "attachment"
+    FEATURE_FLAG = "feature_flag"
+    APPROVAL = "approval"
+    COMPLIANCE = "compliance"

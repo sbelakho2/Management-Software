@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { apiClient } from '@/api/client';
 
 type CTQCategory = 'dimensional' | 'surface' | 'material' | 'mechanical' | 'electrical' | 'visual' | 'functional' | 'environmental' | 'other';
 type CTQPriority = 'critical' | 'major' | 'minor';
@@ -104,17 +105,7 @@ export const useCTQStore = create<CTQState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch CTQs: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+            const data = await apiClient.get<any>('/ctqs');
             const ctqs: CTQ[] = data.items || [];
 
             // Calculate stats
@@ -158,17 +149,7 @@ export const useCTQStore = create<CTQState>()(
         fetchCTQById: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs/${id}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch CTQ: ${response.statusText}`);
-            }
-
-            const ctq: CTQ = await response.json();
+            const ctq = await apiClient.get<CTQ>(`/ctqs/${id}`);
             
             // Update store
             set(state => ({
@@ -189,20 +170,7 @@ export const useCTQStore = create<CTQState>()(
         createCTQ: async (ctqData: Partial<CTQ>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(ctqData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to create CTQ: ${response.statusText}`);
-            }
-
-            const ctq: CTQ = await response.json();
+            const ctq = await apiClient.post<CTQ>('/ctqs', ctqData);
 
             set(state => ({
               ctqs: [ctq, ...state.ctqs],
@@ -229,24 +197,11 @@ export const useCTQStore = create<CTQState>()(
         updateCTQ: async (id: string, updates: Partial<CTQ>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs/${id}`, {
-              method: 'PATCH',
+            const ctq = await apiClient.patch<CTQ>(`/ctqs/${id}`, updates, {
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
                 'If-Match': get().ctqs.find(c => c.id === id)?.updated_at || '',
               },
-              body: JSON.stringify(updates),
             });
-
-            if (!response.ok) {
-              if (response.status === 409) {
-                throw new Error('CTQ was modified by another user. Please refresh and try again.');
-              }
-              throw new Error(`Failed to update CTQ: ${response.statusText}`);
-            }
-
-            const ctq: CTQ = await response.json();
 
             set(state => ({
               ctqs: state.ctqs.map(c => c.id === id ? ctq : c),
@@ -254,11 +209,12 @@ export const useCTQStore = create<CTQState>()(
             }));
 
             return ctq;
-          } catch (error) {
-            set({
-              error: error instanceof Error ? error.message : 'Failed to update CTQ',
-              isLoading: false,
-            });
+          } catch (error: any) {
+            if (error.code === '409' || error.message?.includes('409')) {
+               set({ error: 'CTQ was modified by another user. Please refresh and try again.' });
+            } else {
+               set({ error: error.message || 'Failed to update CTQ' });
+            }
             throw error;
           }
         },
@@ -266,16 +222,7 @@ export const useCTQStore = create<CTQState>()(
         deleteCTQ: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs/${id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to delete CTQ: ${response.statusText}`);
-            }
+            await apiClient.delete(`/ctqs/${id}`);
 
             const deletedCTQ = get().ctqs.find(c => c.id === id);
 
@@ -302,20 +249,7 @@ export const useCTQStore = create<CTQState>()(
         addMeasurement: async (ctqId: string, measurementData: Partial<CTQMeasurement>) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs/${ctqId}/measurements`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-              body: JSON.stringify(measurementData),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to add measurement: ${response.statusText}`);
-            }
-
-            const measurement: CTQMeasurement = await response.json();
+            const measurement = await apiClient.post<CTQMeasurement>(`/ctqs/${ctqId}/measurements`, measurementData);
 
             // Fetch updated CTQ to get recalculated stats
             await get().fetchCTQById(ctqId);

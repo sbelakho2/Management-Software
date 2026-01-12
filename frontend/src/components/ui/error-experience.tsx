@@ -910,6 +910,9 @@ export class ErrorBoundary extends React.Component<
       }
       
       if (this.props.fallback) {
+        if (typeof this.props.fallback === 'function') {
+          return (this.props.fallback as any)(this.state.error, () => this.setState({ hasError: false, error: null }));
+        }
         return this.props.fallback;
       }
 
