@@ -44,15 +44,15 @@ import type { QuoteStatus } from '@/types';
 
 interface Quote {
   id: string;
-  quoteNumber: string;
-  rfqNumber: string;
-  customerName: string;
+  quote_number: string;
+  rfq_number: string;
+  customer_name: string;
   status: 'draft' | 'pending_approval' | 'approved' | 'sent' | 'accepted' | 'rejected' | 'expired';
-  totalAmount: number;
+  total_amount: number;
   margin: number;
-  validUntil: string;
-  createdAt: string;
-  createdBy: {
+  valid_until: string;
+  created_at: string;
+  created_by: {
     name: string;
     avatar?: string;
   };
@@ -75,7 +75,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
     const pending = quotes.filter((q) => q.status === 'pending_approval').length;
     const sent = quotes.filter((q) => q.status === 'sent').length;
     const totalValue = quotes.filter((q) => ['sent', 'pending_approval'].includes(q.status))
-      .reduce((sum, q) => sum + q.totalAmount, 0);
+      .reduce((sum, q) => sum + q.total_amount, 0);
     const avgMargin = quotes.length > 0
       ? quotes.reduce((sum, q) => sum + q.margin, 0) / quotes.length
       : 0;

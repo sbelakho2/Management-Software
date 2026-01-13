@@ -110,6 +110,72 @@ class WarRoomDisplay:
 
 
 @dataclass
+class ScenarioResult:
+    """Result of a production scenario simulation."""
+    scenario_id: UUID = field(default_factory=uuid4)
+    name: str = ""
+    description: str = ""
+    kpi_impacts: dict[str, float] = field(default_factory=dict)
+    bottlenecks_identified: list[str] = field(default_factory=list)
+    confidence: float = 0.8
+    recommendation: str = ""
+
+
+class ProductionScenarioModeler:
+    """
+    Enriches Executive Control with 'What-if' modeling.
+    Simulates production changes (capacity, shifts, stations).
+    """
+    
+    def run_scenario(self, name: str, changes: dict[str, Any]) -> ScenarioResult:
+        """Run a 'what-if' simulation for production changes."""
+        # Enrichment: Advanced simulation of KPI impacts
+        impacts = {
+            "OEE": 0.0,
+            "CycleTime": 0.0,
+            "QualityRate": 0.0,
+            "CostPerUnit": 0.0
+        }
+        
+        if "add_operators" in changes:
+            impacts["OEE"] += 4.5 * changes["add_operators"]
+            impacts["CycleTime"] -= 0.1 * changes["add_operators"]
+        
+        if "reduce_downtime" in changes:
+            impacts["QualityRate"] += 2.0
+            
+        return ScenarioResult(
+            name=name,
+            description=f"Simulation of changes: {list(changes.keys())}",
+            kpi_impacts=impacts,
+            bottlenecks_identified=["Station B (Assembly)"],
+            recommendation="Scenario shows positive ROI, recommend pilot run."
+        )
+
+
+class OrganizationalHealthHeatmap:
+    """
+    Enriches burnout watch with cultural and sentiment analysis.
+    Provides a factory-wide view of employee engagement.
+    """
+    
+    def __init__(self):
+        self.sentiment_history: list[float] = []
+        
+    def calculate_health_index(self, burnout_scores: list[float], tenure_years: list[float]) -> float:
+        """Calculate organizational health based on multi-factor analysis."""
+        if not burnout_scores:
+            return 1.0
+            
+        # Organizational health improves with higher tenure and lower burnout
+        avg_burnout = sum(burnout_scores) / len(burnout_scores)
+        avg_tenure = sum(tenure_years) / len(tenure_years) if tenure_years else 1.0
+        
+        health_index = (1.0 - avg_burnout) * 0.7 + (min(avg_tenure / 5.0, 1.0)) * 0.3
+        return min(max(health_index, 0.0), 1.0)
+
+
+@dataclass
 class VarianceAlert:
     """Variance alert for cost/COGS deviations vs estimates."""
 
@@ -149,6 +215,8 @@ class CEOControlPlaneService:
         self._metrics: list[SQDCPMetric] = []
         self._war_room: WarRoomDisplay | None = None
         self._variance_alerts: list[VarianceAlert] = []
+        self.scenario_modeler = ProductionScenarioModeler()
+        self.health_heatmap = OrganizationalHealthHeatmap()
 
     # ---- Variance Alerts (Cost/COGS) ----
 

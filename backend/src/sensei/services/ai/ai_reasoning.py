@@ -122,6 +122,29 @@ class AIReasoningService:
         self._embeddings: list[np.ndarray] = []
         
         self._embedder = embedder or ONNXTextEmbedder(ONNXTextEmbedder.default_config())
+        
+        # Registry integration for readiness tracking
+        self._registry = None
+        try:
+            from sensei.services.ai.onnx_model_init import get_model_registry
+            self._registry = get_model_registry()
+        except ImportError:
+            pass
+
+    def is_ready(self) -> bool:
+        """Check if service and underlying models are ready."""
+        if not self._embedder.is_ready():
+            return False
+        
+        if self._registry:
+            status = self._registry.get_health_status()
+            # Reasoning depends on embeddings and reranker
+            models = status.get("models", {})
+            emb_ok = models.get("embeddings", {}).get("is_valid", False)
+            rerank_ok = models.get("reranker", {}).get("is_valid", False)
+            return emb_ok and rerank_ok
+            
+        return True
 
     def _check_role(self, role: str) -> None:
         if role.lower() not in self.ALLOWED_ROLES:

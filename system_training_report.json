@@ -1,0 +1,90 @@
+{
+  "total_domains": 4,
+  "processed_urls": 10,
+  "failed_urls": 0,
+  "ingested_chunks": 21,
+  "details": [
+    {
+      "domain": "TPS_CORE",
+      "title": "Toyota Production System - Foundation",
+      "status": "success",
+      "chunks": 3,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "TPS_CORE",
+      "title": "Just-In-Time (JIT) Manufacturing",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "TPS_CORE",
+      "title": "Jidoka - Autonomation with a Human Touch",
+      "status": "success",
+      "chunks": 3,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "PROBLEM_SOLVING",
+      "title": "PDCA (Plan-Do-Check-Act) Cycle",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "PROBLEM_SOLVING",
+      "title": "8D Problem Solving Methodology",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "PROBLEM_SOLVING",
+      "title": "A3 Thinking and Reporting",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "PROBLEM_SOLVING",
+      "title": "5 Whys Root Cause Analysis",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "QUALITY_MANAGEMENT",
+      "title": "Statistical Process Control (SPC)",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "QUALITY_MANAGEMENT",
+      "title": "Total Quality Management (TQM)",
+      "status": "success",
+      "chunks": 2,
+      "source": "fallback",
+      "indexed": true
+    },
+    {
+      "domain": "LEAN_WASTE",
+      "title": "Muda, Mura, Muri - The Three Types of Waste",
+      "status": "success",
+      "chunks": 1,
+      "source": "fallback",
+      "indexed": true
+    }
+  ],
+  "status": "completed",
+  "timestamp": "2026-01-13T17:02:57.329643"
+}

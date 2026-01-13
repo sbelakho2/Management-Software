@@ -1,35 +1,7 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { apiClient } from '@/api/client';
-import type { RFQStatus, Priority } from '@/types';
-
-interface RFQItem {
-  id: string;
-  rfqNumber: string;
-  customerName: string;
-  customerId: string;
-  title: string;
-  description?: string;
-  dueDate: string;
-  receivedDate: string;
-  estimatedValue?: number;
-  priority: Priority;
-  status: RFQStatus;
-  account?: {
-    name: string;
-    id?: string;
-  };
-  assignee?: {
-    id: string;
-    name: string;
-    avatar?: string;
-  };
-  tags: string[];
-  version: number;
-  attachmentCount: number;
-  commentCount: number;
-  lastActivityAt: string;
-}
+import type { RFQ, RFQStatus, Priority, PaginatedResponse } from '@/types';
 
 interface PipelineStats {
   totalRFQs: number;
@@ -42,7 +14,7 @@ interface PipelineStats {
 
 interface PipelineState {
   // State
-  rfqs: RFQItem[];
+  rfqs: RFQ[];
   stats: PipelineStats;
   isLoading: boolean;
   error: string | null;
@@ -50,9 +22,9 @@ interface PipelineState {
 
   // Actions
   fetchRFQs: () => Promise<void>;
-  fetchRFQById: (id: string) => Promise<RFQItem | null>;
-  createRFQ: (rfq: Partial<RFQItem>) => Promise<RFQItem>;
-  updateRFQ: (id: string, updates: Partial<RFQItem>) => Promise<RFQItem>;
+  fetchRFQById: (id: string) => Promise<RFQ | null>;
+  createRFQ: (rfq: Partial<RFQ>) => Promise<RFQ>;
+  updateRFQ: (id: string, updates: Partial<RFQ>) => Promise<RFQ>;
   deleteRFQ: (id: string) => Promise<void>;
   bulkDeleteRFQs: (ids: string[]) => Promise<void>;
   exportRFQs: (ids?: string[]) => Promise<void>;
@@ -93,22 +65,23 @@ export const usePipelineStore = create<PipelineState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const data = await apiClient.get<any>('/rfqs');
+            const data = await apiClient.get<PaginatedResponse<RFQ>>('/rfqs');
             
             // Calculate stats
-            const rfqs: RFQItem[] = data.items || [];
+            const rfqs: RFQ[] = data.items || [];
             const activeStatuses: RFQStatus[] = ['new', 'reviewing', 'quoting', 'submitted'];
             const activeRFQs = rfqs.filter(rfq => activeStatuses.includes(rfq.status));
-            const totalValue = rfqs.reduce((sum, rfq) => sum + (rfq.estimatedValue || 0), 0);
-            const overdueCount = rfqs.filter(rfq => new Date(rfq.dueDate) < new Date()).length;
+            const totalValue = rfqs.reduce((sum, rfq) => sum + (rfq.estimated_value || 0), 0);
+            const overdueCount = rfqs.filter(rfq => new Date(rfq.due_date) < new Date()).length;
             const wonRFQs = rfqs.filter(rfq => rfq.status === 'won').length;
             const totalSubmitted = rfqs.filter(rfq => rfq.status === 'submitted').length;
             
-            // Calculate avg response time (mock for now)
+            // Calculate avg response time (mock for now or from backend if available)
+            // Backend RFQ response has received_date
             const avgResponseTime = rfqs.reduce((sum, rfq) => {
-              const received = new Date(rfq.receivedDate).getTime();
-              const lastActivity = new Date(rfq.lastActivityAt).getTime();
-              return sum + (lastActivity - received);
+              const received = new Date(rfq.received_date).getTime();
+              const updated = new Date(rfq.updated_at).getTime();
+              return sum + (updated - received);
             }, 0) / (rfqs.length || 1) / (1000 * 60 * 60); // Convert to hours
 
             set({
@@ -136,7 +109,7 @@ export const usePipelineStore = create<PipelineState>()(
         // Fetch single RFQ
         fetchRFQById: async (id: string) => {
           try {
-            const rfq = await apiClient.get<RFQItem>(`/rfqs/${id}`);
+            const rfq = await apiClient.get<RFQ>(`/rfqs/${id}`);
 
             // Update in store
             set(state => ({
@@ -152,9 +125,9 @@ export const usePipelineStore = create<PipelineState>()(
         },
 
         // Create RFQ
-        createRFQ: async (rfqData: Partial<RFQItem>) => {
+        createRFQ: async (rfqData: Partial<RFQ>) => {
           try {
-            const newRFQ = await apiClient.post<RFQItem>('/rfqs', rfqData);
+            const newRFQ = await apiClient.post<RFQ>('/rfqs', rfqData);
 
             // Add to store
             set(state => ({
@@ -175,18 +148,9 @@ export const usePipelineStore = create<PipelineState>()(
         },
 
         // Update RFQ
-        updateRFQ: async (id: string, updates: Partial<RFQItem>) => {
-          const currentRFQ = get().rfqs.find(r => r.id === id);
-          if (!currentRFQ) {
-            throw new Error('RFQ not found');
-          }
-
+        updateRFQ: async (id: string, updates: Partial<RFQ>) => {
           try {
-            const updatedRFQ = await apiClient.put<RFQItem>(`/rfqs/${id}`, updates, {
-              headers: {
-                'If-Match': `"${currentRFQ.version}"`, // Optimistic locking
-              },
-            });
+            const updatedRFQ = await apiClient.patch<RFQ>(`/rfqs/${id}`, updates);
 
             // Update in store
             set(state => ({

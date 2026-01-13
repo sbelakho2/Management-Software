@@ -35,26 +35,26 @@ import type { Priority } from '@/types';
 
 interface RFQLineItem {
   id: string;
-  partNumber: string;
+  part_number: string;
   description: string;
   quantity: number;
-  unitOfMeasure: string;
-  targetPrice?: number;
+  unit_of_measure: string;
+  target_price?: number;
   notes?: string;
 }
 
 interface RFQFormData {
-  customerId: string;
+  customer_id: string;
   title: string;
   description: string;
   priority: Priority;
-  dueDate: string;
-  receivedDate: string;
-  estimatedValue: number;
+  due_date: string;
+  received_date: string;
+  estimated_value: number;
   currency: string;
   notes: string;
   tags: string[];
-  lineItems: RFQLineItem[];
+  line_items: RFQLineItem[];
 }
 
 export default function NewRFQPage() {
@@ -64,23 +64,23 @@ export default function NewRFQPage() {
   
   const [isSaving, setIsSaving] = React.useState(false);
   const [formData, setFormData] = React.useState<RFQFormData>({
-    customerId: '',
+    customer_id: '',
     title: '',
     description: '',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    receivedDate: new Date().toISOString().split('T')[0],
-    estimatedValue: 0,
+    due_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    received_date: new Date().toISOString().split('T')[0],
+    estimated_value: 0,
     currency: 'USD',
     notes: '',
     tags: [],
-    lineItems: [
+    line_items: [
       {
         id: generateId(),
-        partNumber: '',
+        part_number: '',
         description: '',
         quantity: 1,
-        unitOfMeasure: 'pcs',
+        unit_of_measure: 'pcs',
       },
     ],
   });
@@ -88,14 +88,14 @@ export default function NewRFQPage() {
   const handleAddLineItem = () => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: [
-        ...prev.lineItems,
+      line_items: [
+        ...prev.line_items,
         {
           id: generateId(),
-          partNumber: '',
+          part_number: '',
           description: '',
           quantity: 1,
-          unitOfMeasure: 'pcs',
+          unit_of_measure: 'pcs',
         },
       ],
     }));
@@ -104,21 +104,21 @@ export default function NewRFQPage() {
   const handleRemoveLineItem = (id: string) => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: prev.lineItems.filter((item) => item.id !== id),
+      line_items: prev.line_items.filter((item) => item.id !== id),
     }));
   };
 
   const handleUpdateLineItem = (id: string, updates: Partial<RFQLineItem>) => {
     setFormData((prev) => ({
       ...prev,
-      lineItems: prev.lineItems.map((item) =>
+      line_items: prev.line_items.map((item) =>
         item.id === id ? { ...item, ...updates } : item
       ),
     }));
   };
 
   const handleSave = async () => {
-    if (!formData.title || !formData.customerId) {
+    if (!formData.title || !formData.customer_id) {
       toast({
         variant: 'destructive',
         title: 'Required Fields Missing',
@@ -194,8 +194,8 @@ export default function NewRFQPage() {
                   <Label htmlFor="customer">Customer</Label>
                   <Input
                     id="customer"
-                    value={formData.customerId}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, customerId: e.target.value }))}
+                    value={formData.customer_id}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, customer_id: e.target.value }))}
                     placeholder="Search customers..."
                     className="mt-1.5"
                   />
@@ -245,14 +245,14 @@ export default function NewRFQPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {formData.lineItems.map((item, index) => (
+                {formData.line_items.map((item, index) => (
                   <div key={item.id} className="grid gap-4 border rounded-lg p-4 relative bg-muted/30">
                     <Button
                       variant="ghost"
                       size="icon"
                       className="absolute top-2 right-2 h-8 w-8 text-muted-foreground hover:text-destructive"
                       onClick={() => handleRemoveLineItem(item.id)}
-                      disabled={formData.lineItems.length === 1}
+                      disabled={formData.line_items.length === 1}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -260,8 +260,8 @@ export default function NewRFQPage() {
                       <div className="sm:col-span-1">
                         <Label>Part Number</Label>
                         <Input
-                          value={item.partNumber}
-                          onChange={(e) => handleUpdateLineItem(item.id, { partNumber: e.target.value })}
+                          value={item.part_number}
+                          onChange={(e) => handleUpdateLineItem(item.id, { part_number: e.target.value })}
                           placeholder="PN-123"
                           className="mt-1"
                         />
@@ -289,8 +289,8 @@ export default function NewRFQPage() {
                       <div>
                         <Label>Unit of Measure</Label>
                         <Input
-                          value={item.unitOfMeasure}
-                          onChange={(e) => handleUpdateLineItem(item.id, { unitOfMeasure: e.target.value })}
+                          value={item.unit_of_measure}
+                          onChange={(e) => handleUpdateLineItem(item.id, { unit_of_measure: e.target.value })}
                           placeholder="pcs, kg, etc."
                           className="mt-1"
                         />
@@ -301,8 +301,8 @@ export default function NewRFQPage() {
                           <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             type="number"
-                            value={item.targetPrice || ''}
-                            onChange={(e) => handleUpdateLineItem(item.id, { targetPrice: Number(e.target.value) })}
+                            value={item.target_price || ''}
+                            onChange={(e) => handleUpdateLineItem(item.id, { target_price: Number(e.target.value) })}
                             className="pl-9"
                           />
                         </div>
@@ -328,8 +328,8 @@ export default function NewRFQPage() {
                   <Input
                     id="receivedDate"
                     type="date"
-                    value={formData.receivedDate}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, receivedDate: e.target.value }))}
+                    value={formData.received_date}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value }))}
                     className="pl-9"
                   />
                 </div>
@@ -341,8 +341,8 @@ export default function NewRFQPage() {
                   <Input
                     id="dueDate"
                     type="date"
-                    value={formData.dueDate}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, dueDate: e.target.value }))}
+                    value={formData.due_date}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, due_date: e.target.value }))}
                     className="pl-9"
                   />
                 </div>
@@ -354,8 +354,8 @@ export default function NewRFQPage() {
                   <Input
                     id="estimatedValue"
                     type="number"
-                    value={formData.estimatedValue}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, estimatedValue: Number(e.target.value) }))}
+                    value={formData.estimated_value}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, estimated_value: Number(e.target.value) }))}
                     className="pl-9"
                   />
                 </div>

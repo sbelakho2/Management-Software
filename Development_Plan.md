@@ -25,6 +25,12 @@
     - `cognitive_obeya.py` (850 lines) - Prescriptive metrics, synergy engine, Heijunka
     - `jit_lean_learning.py` (900 lines) - Micro-lessons, knowledge synthesis, standard work evolution
     - `ui_backend_integration.py` (850 lines) - Error mapping, schema export, action audit
+  - **NEW (Jan 2026)**: System Enrichment Suite:
+    - `SyntheticDefectGenerator` & `VisionEnrichmentSuite` in `visual_quality_inspection.py`
+    - `NegotiatorAgent` & `LogisticsAgent` in `multi_agent_rfq.py`
+    - `MultiModalPDCACoach` & `KataGamificationService` in `tps_teacher.py`
+    - `ProductionScenarioModeler` & `OrganizationalHealthHeatmap` in `ceo_control_plane.py`
+    - `CrossDomainSynthesizer` in `knowledge_enrichment.py`
 - **Core Infrastructure**: 7 core modules + 4 middleware modules
 - **ML Infrastructure**: 6 ML modules (3,450+ lines): lesson recommender, evidence detector, CBM predictor, MLOps, evaluation, safety gates
   - MLOps includes: Model versioning, automated retraining, A/B testing

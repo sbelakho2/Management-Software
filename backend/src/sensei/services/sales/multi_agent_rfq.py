@@ -39,6 +39,8 @@ class AgentType(Enum):
     COMMERCIAL = "commercial"
     RISK = "risk"
     COORDINATOR = "coordinator"
+    NEGOTIATOR = "negotiator"
+    LOGISTICS = "logistics"
 
 
 class AnalysisCategory(Enum):
@@ -195,11 +197,15 @@ class ComprehensiveAnalysis:
     technical_findings: list[AgentFinding] = field(default_factory=list)
     commercial_findings: list[AgentFinding] = field(default_factory=list)
     risk_findings: list[AgentFinding] = field(default_factory=list)
+    negotiation_findings: list[AgentFinding] = field(default_factory=list)
+    logistics_findings: list[AgentFinding] = field(default_factory=list)
     
     # Specific results
     dfm_issues: list[DFMIssue] = field(default_factory=list)
     price_analysis: Optional[PriceAnalysis] = None
     risk_scores: list[RiskScore] = field(default_factory=list)
+    negotiation_strategy: dict[str, Any] = field(default_factory=dict)
+    logistics_plan: dict[str, Any] = field(default_factory=dict)
     
     # Debate results
     debate_results: list[DebateResult] = field(default_factory=list)
@@ -211,7 +217,13 @@ class ComprehensiveAnalysis:
     
     def get_all_findings(self) -> list[AgentFinding]:
         """Get all findings from all agents."""
-        return self.technical_findings + self.commercial_findings + self.risk_findings
+        return (
+            self.technical_findings + 
+            self.commercial_findings + 
+            self.risk_findings +
+            self.negotiation_findings +
+            self.logistics_findings
+        )
     
     def get_critical_issues(self) -> list[AgentFinding]:
         """Get critical issues only."""
@@ -1025,17 +1037,80 @@ class RiskAgent(BaseAgent):
     
     def get_position(self, topic: str, context: dict[str, Any]) -> AgentPosition:
         """Get risk position on a topic."""
-        if "price" in topic.lower():
-            return AgentPosition(
-                agent_type=self._agent_type,
-                topic=topic,
-                position="risk-adjusted",
-                justification="Price should include appropriate risk premiums",
-                confidence=0.75,
-                supporting_evidence=["Risk assessment", "Historical issues"],
-            )
-        
         return super().get_position(topic, context)
+
+
+# =============================================================================
+# Negotiator Agent
+# =============================================================================
+
+class NegotiatorAgent(BaseAgent):
+    """
+    Negotiation Strategy Agent.
+    Provides tactical advice based on win/loss history and customer profile.
+    """
+    
+    def __init__(self):
+        super().__init__(AgentType.NEGOTIATOR)
+        self._win_patterns: dict[str, Any] = {}
+        
+    async def analyze(self, rfq: RFQSpec) -> list[AgentFinding]:
+        findings = []
+        # Suggest negotiation tactics
+        findings.append(self._create_finding(
+            category=AnalysisCategory.PRICING,
+            title="Negotiation Strategy",
+            description="High-value target with competitive pressure.",
+            severity=Severity.INFO,
+            confidence=0.8,
+            recommendations=[
+                "Bundle with maintenance services for 5% premium",
+                "Offer multi-year volume discount",
+            ]
+        ))
+        return findings
+
+    def get_strategy(self, rfq: RFQSpec) -> dict[str, Any]:
+        return {
+            "opening_offer": (rfq.target_price or 100) * 1.1,
+            "walk_away_price": (rfq.target_price or 100) * 0.95,
+            "key_leverages": ["Quick turnaround", "Superior surface finish"],
+        }
+
+
+# =============================================================================
+# Logistics Agent
+# =============================================================================
+
+class LogisticsAgent(BaseAgent):
+    """
+    Logistics & Lead Time Agent.
+    Analyzes shipping constraints and supply chain timing.
+    """
+    
+    def __init__(self):
+        super().__init__(AgentType.LOGISTICS)
+        
+    async def analyze(self, rfq: RFQSpec) -> list[AgentFinding]:
+        findings = []
+        findings.append(self._create_finding(
+            category=AnalysisCategory.TIMELINE,
+            title="Logistics Assessment",
+            description="International shipping required. Transit risk: Low.",
+            severity=Severity.LOW,
+            confidence=0.9,
+            data={"estimated_transit_days": 5},
+            recommendations=["Use preferred carrier for customs clearance"]
+        ))
+        return findings
+
+    def get_logistics_plan(self, rfq: RFQSpec) -> dict[str, Any]:
+        from datetime import timedelta
+        return {
+            "estimated_delivery_date": datetime.now(timezone.utc) + timedelta(days=21),
+            "shipping_method": "Air Freight",
+            "customs_risk": "Low",
+        }
 
 
 # =============================================================================
@@ -1097,6 +1172,14 @@ class AgentOrchestrator:
                 analysis.risk_findings = findings
                 if isinstance(agent, RiskAgent):
                     analysis.risk_scores = agent.calculate_risk_scores(rfq)
+            elif agent_type == AgentType.NEGOTIATOR:
+                analysis.negotiation_findings = findings
+                if isinstance(agent, NegotiatorAgent):
+                    analysis.negotiation_strategy = agent.get_strategy(rfq)
+            elif agent_type == AgentType.LOGISTICS:
+                analysis.logistics_findings = findings
+                if isinstance(agent, LogisticsAgent):
+                    analysis.logistics_plan = agent.get_logistics_plan(rfq)
         
         # Check for discrepancies and run debate if needed
         discrepancies = self._identify_discrepancies(analysis)

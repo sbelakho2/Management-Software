@@ -64,6 +64,7 @@ from sensei.api.v1.endpoints import (
     websockets,
     factory_launchpad,
     edge_ai,
+    ai_health,
 )
 
 api_router = APIRouter()
@@ -129,3 +130,4 @@ api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytic
 api_router.include_router(websockets.router, tags=["WebSockets"])
 api_router.include_router(factory_launchpad.router, prefix="/launchpad", tags=["Factory Launchpad"])
 api_router.include_router(edge_ai.router, prefix="/edge-ai", tags=["Edge AI"])
+api_router.include_router(ai_health.router, prefix="/ai", tags=["AI Readiness"])

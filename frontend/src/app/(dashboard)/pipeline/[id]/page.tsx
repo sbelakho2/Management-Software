@@ -49,7 +49,7 @@ import type { RFQStatus, Priority } from '@/types';
 // Types
 interface RFQDetail {
   id: string;
-  rfqNumber: string;
+  rfq_number: string;
   customer: {
     id: string;
     name: string;
@@ -58,9 +58,9 @@ interface RFQDetail {
   };
   title: string;
   description?: string;
-  dueDate: string;
-  receivedDate: string;
-  estimatedValue?: number;
+  due_date: string;
+  received_date: string;
+  estimated_value?: number;
   currency: string;
   priority: Priority;
   status: RFQStatus;
@@ -72,32 +72,32 @@ interface RFQDetail {
   };
   tags: string[];
   notes?: string;
-  lineItems: LineItem[];
+  line_items: LineItem[];
   quotes: QuoteSummary[];
   timeline: TimelineItem[];
   attachments: Attachment[];
-  createdAt: string;
-  updatedAt: string;
-  createdBy: { id: string; name: string };
+  created_at: string;
+  updated_at: string;
+  created_by: { id: string; name: string };
 }
 
 interface LineItem {
   id: string;
-  partNumber: string;
+  part_number: string;
   description: string;
   quantity: number;
-  unitOfMeasure: string;
-  targetPrice?: number;
+  unit_of_measure: string;
+  target_price?: number;
   notes?: string;
 }
 
 interface QuoteSummary {
   id: string;
-  quoteNumber: string;
+  quote_number: string;
   version: number;
   status: string;
-  totalAmount: number;
-  createdAt: string;
+  total_amount: number;
+  created_at: string;
 }
 
 interface TimelineItem {
@@ -111,14 +111,14 @@ interface TimelineItem {
 interface Attachment {
   id: string;
   filename: string;
-  fileSize: number;
-  uploadedAt: string;
+  file_size: number;
+  uploaded_at: string;
 }
 
 // Mock data
 const mockRFQ: RFQDetail = {
   id: '1',
-  rfqNumber: 'RFQ-2024-0089',
+  rfq_number: 'RFQ-2024-0089',
   customer: {
     id: 'c1',
     name: 'Global Manufacturing Inc.',
@@ -127,9 +127,9 @@ const mockRFQ: RFQDetail = {
   },
   title: 'Custom precision parts - 500 units',
   description: 'High-precision machined parts for aerospace application. Parts must meet AS9100 quality standards. Material: 6061-T6 Aluminum. Tolerances: +/- 0.001".',
-  dueDate: new Date(Date.now() + 172800000).toISOString(),
-  receivedDate: new Date(Date.now() - 86400000).toISOString(),
-  estimatedValue: 45000,
+  due_date: new Date(Date.now() + 172800000).toISOString(),
+  received_date: new Date(Date.now() - 86400000).toISOString(),
+  estimated_value: 45000,
   currency: 'USD',
   priority: 'high',
   status: 'reviewing',
@@ -140,13 +140,13 @@ const mockRFQ: RFQDetail = {
   },
   tags: ['aerospace', 'precision', 'aluminum'],
   notes: 'Customer mentioned potential for repeat orders if quality is satisfactory.',
-  lineItems: [
-    { id: '1', partNumber: 'AER-001', description: 'Precision bracket - Type A', quantity: 200, unitOfMeasure: 'pcs', targetPrice: 45 },
-    { id: '2', partNumber: 'AER-002', description: 'Precision bracket - Type B', quantity: 200, unitOfMeasure: 'pcs', targetPrice: 55 },
-    { id: '3', partNumber: 'AER-003', description: 'Mounting plate assembly', quantity: 100, unitOfMeasure: 'pcs', targetPrice: 125 },
+  line_items: [
+    { id: '1', part_number: 'AER-001', description: 'Precision bracket - Type A', quantity: 200, unit_of_measure: 'pcs', target_price: 45 },
+    { id: '2', part_number: 'AER-002', description: 'Precision bracket - Type B', quantity: 200, unit_of_measure: 'pcs', target_price: 55 },
+    { id: '3', part_number: 'AER-003', description: 'Mounting plate assembly', quantity: 100, unit_of_measure: 'pcs', target_price: 125 },
   ],
   quotes: [
-    { id: 'q1', quoteNumber: 'Q-2024-0112', version: 1, status: 'draft', totalAmount: 47500, createdAt: new Date(Date.now() - 3600000).toISOString() },
+    { id: 'q1', quote_number: 'Q-2024-0112', version: 1, status: 'draft', total_amount: 47500, created_at: new Date(Date.now() - 3600000).toISOString() },
   ],
   timeline: [
     { id: 't1', type: 'status_change', description: 'Status changed from New to Reviewing', timestamp: new Date(Date.now() - 7200000).toISOString(), user: { name: 'John Smith' } },
@@ -154,12 +154,12 @@ const mockRFQ: RFQDetail = {
     { id: 't3', type: 'created', description: 'RFQ created', timestamp: new Date(Date.now() - 86400000).toISOString(), user: { name: 'System' } },
   ],
   attachments: [
-    { id: 'a1', filename: 'drawing_v2.pdf', fileSize: 2457600, uploadedAt: new Date(Date.now() - 86400000).toISOString() },
-    { id: 'a2', filename: 'specifications.xlsx', fileSize: 45056, uploadedAt: new Date(Date.now() - 86400000).toISOString() },
+    { id: 'a1', filename: 'drawing_v2.pdf', file_size: 2457600, uploaded_at: new Date(Date.now() - 86400000).toISOString() },
+    { id: 'a2', filename: 'specifications.xlsx', file_size: 45056, uploaded_at: new Date(Date.now() - 86400000).toISOString() },
   ],
-  createdAt: new Date(Date.now() - 86400000).toISOString(),
-  updatedAt: new Date(Date.now() - 3600000).toISOString(),
-  createdBy: { id: 'u0', name: 'System Import' },
+  created_at: new Date(Date.now() - 86400000).toISOString(),
+  updated_at: new Date(Date.now() - 3600000).toISOString(),
+  created_by: { id: 'u0', name: 'System Import' },
 };
 
 const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
@@ -193,8 +193,8 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
   const [noBidDialogOpen, setNoBidDialogOpen] = React.useState(false);
   const [noBidReason, setNoBidReason] = React.useState('');
 
-  const isOverdue = new Date(rfq.dueDate) < new Date();
-  const daysUntilDue = Math.ceil((new Date(rfq.dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const isOverdue = new Date(rfq.due_date) < new Date();
+  const daysUntilDue = Math.ceil((new Date(rfq.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
   if (isLoading) {
     return (
@@ -224,7 +224,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{rfq.rfqNumber}</h1>
+              <h1 className="text-2xl font-bold">{rfq.rfq_number}</h1>
               <Badge className={statusConfig[rfq.status].color}>
                 {statusConfig[rfq.status].label}
               </Badge>
@@ -302,7 +302,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Due Date</p>
                     <p className={cn('font-medium', isOverdue && 'text-danger')}>
-                      {formatDate(new Date(rfq.dueDate))}
+                      {formatDate(new Date(rfq.due_date))}
                       {isOverdue ? ' (Overdue)' : ` (${daysUntilDue} days)`}
                     </p>
                   </div>
@@ -311,7 +311,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                   <Clock className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Received</p>
-                    <p className="font-medium">{formatDate(new Date(rfq.receivedDate))}</p>
+                    <p className="font-medium">{formatDate(new Date(rfq.received_date))}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -319,7 +319,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Estimated Value</p>
                     <p className="font-medium">
-                      {rfq.estimatedValue ? formatCurrency(rfq.estimatedValue) : 'Not specified'}
+                      {rfq.estimated_value ? formatCurrency(rfq.estimated_value) : 'Not specified'}
                     </p>
                   </div>
                 </div>
@@ -352,7 +352,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           <Card>
             <CardHeader>
               <CardTitle>Line Items</CardTitle>
-              <CardDescription>{rfq.lineItems.length} items</CardDescription>
+              <CardDescription>{rfq.line_items.length} items</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -367,14 +367,14 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rfq.lineItems.map((item) => (
+                    {rfq.line_items.map((item) => (
                       <tr key={item.id} className="border-b">
-                        <td className="py-2 px-3 font-medium">{item.partNumber}</td>
+                        <td className="py-2 px-3 font-medium">{item.part_number}</td>
                         <td className="py-2 px-3">{item.description}</td>
                         <td className="py-2 px-3 text-right">{item.quantity}</td>
-                        <td className="py-2 px-3">{item.unitOfMeasure}</td>
+                        <td className="py-2 px-3">{item.unit_of_measure}</td>
                         <td className="py-2 px-3 text-right">
-                          {item.targetPrice ? formatCurrency(item.targetPrice) : '-'}
+                          {item.target_price ? formatCurrency(item.target_price) : '-'}
                         </td>
                       </tr>
                     ))}
@@ -409,13 +409,13 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                     <Link key={quote.id} href={`/quotes/${quote.id}`}>
                       <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
                         <div>
-                          <p className="font-medium">{quote.quoteNumber}</p>
+                          <p className="font-medium">{quote.quote_number}</p>
                           <p className="text-sm text-muted-foreground">
-                            Version {quote.version} • {formatRelativeTime(new Date(quote.createdAt))}
+                            Version {quote.version} • {formatRelativeTime(new Date(quote.created_at))}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium">{formatCurrency(quote.totalAmount)}</p>
+                          <p className="font-medium">{formatCurrency(quote.total_amount)}</p>
                           <Badge variant="secondary">{quote.status}</Badge>
                         </div>
                       </div>
@@ -479,7 +479,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                         <span className="text-sm truncate">{file.filename}</span>
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {formatFileSize(file.fileSize)}
+                        {formatFileSize(file.file_size)}
                       </span>
                     </div>
                   ))}

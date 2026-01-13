@@ -82,15 +82,26 @@ class ONNXTextEmbedder:
         import onnxruntime as ort
         import torch
         from transformers import AutoModel, AutoTokenizer
+        from sensei.services.ai.onnx_model_init import get_model_registry
 
         self._config.cache_dir.mkdir(parents=True, exist_ok=True)
         model_slug = self._config.model_id.replace("/", "__")
         onnx_path = self._config.cache_dir / f"{model_slug}.onnx"
         quant_path = self._config.cache_dir / f"{model_slug}.int8.onnx"
 
-        tokenizer = AutoTokenizer.from_pretrained(self._config.model_id)
-
+        # Use registry to verify path if possible
+        registry = get_model_registry()
+        model_paths = registry.get_model_paths()
         target_path = quant_path if self._config.quantize_int8 else onnx_path
+        
+        # Override target if registry has a specific path for 'embeddings'
+        if "embeddings" in model_paths:
+            reg_path = model_paths["embeddings"]
+            if reg_path.name == target_path.name:
+                target_path = reg_path
+
+        tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)
+
         if not target_path.exists():
             # Export base ONNX if missing
             if not onnx_path.exists():
@@ -176,3 +187,14 @@ class ONNXTextEmbedder:
 
     def embed_text(self, text: str) -> list[float]:
         return self.embed_texts([text])[0]
+
+
+# Singleton
+_onnx_embedder: ONNXTextEmbedder | None = None
+
+
+def get_onnx_embedder() -> ONNXTextEmbedder:
+    global _onnx_embedder
+    if _onnx_embedder is None:
+        _onnx_embedder = ONNXTextEmbedder(ONNXTextEmbedder.default_config())
+    return _onnx_embedder

@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { RFQ, RFQStatus, UUID, Priority } from '@/types';
+import { rfqApi } from '@/api/rfq';
 
 /**
  * Kanban column definition
@@ -287,8 +288,14 @@ export const useKanbanStore = create<KanbanState>()(
 
         set({ cards: newCards, columnCards: newColumnCards });
 
-        // TODO: API call to persist status change
-        // await api.updateRFQStatus(cardId, toColumn, insertIndex);
+        try {
+          await rfqApi.update(cardId, { status: toColumn });
+        } catch (error) {
+          console.error('Failed to persist status change:', error);
+          // Rollback state on failure
+          set({ cards, columnCards });
+          throw error;
+        }
       },
 
       reorderCard: (cardId: UUID, column: RFQStatus, newPosition: number) => {

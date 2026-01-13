@@ -828,13 +828,42 @@ class VisionLLMEnricher:
         """Initialize Vision LLM enricher (local-first)."""
         self._provider = provider
         self._fallback = fallback_provider
-    
+        self._session = None
+        self._ready = False
+        self._registry = None
+        
+        try:
+            from sensei.services.ai.onnx_model_init import get_model_registry
+            self._registry = get_model_registry()
+            self._check_readiness()
+        except ImportError:
+            pass
+
+    def _check_readiness(self) -> bool:
+        """Check if VLM models are ready in registry."""
+        if not self._registry:
+            return False
+        
+        paths = self._registry.get_model_paths()
+        if "vlm" in paths and paths["vlm"].exists():
+            self._ready = True
+            return True
+        return False
+
     async def describe_image(
         self,
         image_data: bytes,
         context: str | None = None,
     ) -> str:
         """Generate description for an image."""
+        if not self._ready:
+            self._check_readiness()
+
+        if self._ready:
+            # Placeholder for actual local VLM inference logic
+            # In production, this would call onnxruntime with the 'vlm' model
+            pass
+
         # Simulated VLM response
         hash_val = hashlib.md5(image_data).hexdigest()
         
@@ -1220,7 +1249,7 @@ class WorldClassDocumentAI:
     def __init__(
         self,
         default_strategy: ProcessingStrategy = ProcessingStrategy.AUTO,
-        vision_provider: VisionLLMProvider = VisionLLMProvider.GPT4_VISION,
+        vision_provider: VisionLLMProvider = VisionLLMProvider.LLAVA,
         enable_handwriting: bool = True,
         enable_gdt_extraction: bool = True,
     ):

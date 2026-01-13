@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -29,6 +30,13 @@ MIN_OPSET_VERSION = 11
 MAX_OPSET_VERSION = 20
 # Default opset version for exports
 DEFAULT_OPSET_VERSION = 17
+
+
+class ModelTier(str, Enum):
+    """Model tier based on resource requirements."""
+    LIGHTWEIGHT = "lightweight"  # < 100MB
+    BALANCED = "balanced"      # 100-500MB
+    HEAVY = "heavy"            # > 500MB
 
 
 @dataclass
@@ -245,24 +253,48 @@ class ONNXModelRegistry:
         """Get all expected model paths."""
         paths = {}
         
-        # Text embeddings
+        # 1. Text embeddings (Sentence Transformers)
         embedding_model = os.getenv(
             "SENSEI_ONNX_EMBEDDING_MODEL",
             "sentence-transformers__all-MiniLM-L6-v2"
         )
         paths["embeddings"] = self.cache_dir / f"{embedding_model}.int8.onnx"
         
-        # Cross-encoder reranker
+        # 2. Cross-encoder reranker
         reranker_model = os.getenv(
             "SENSEI_ONNX_RERANKER_MODEL",
             "cross-encoder__ms-marco-MiniLM-L-6-v2"
         ).replace("/", "__")
         paths["reranker"] = self.cache_dir / f"{reranker_model}_reranker.int8.onnx"
         
-        # Edge anomaly detector
+        # 3. Vision-Language Model (VLM - e.g. LLaVA or Moondream)
+        vlm_model = os.getenv(
+            "SENSEI_ONNX_VLM_MODEL",
+            "llava-v1.6-7b"
+        ).replace("/", "__")
+        paths["vlm"] = self.cache_dir / f"{vlm_model}.int8.onnx"
+
+        # 4. Document Layout (LayoutLMv3-style)
+        paths["layout"] = self.cache_dir / "layoutlmv3-base-finetuned-funsd.onnx"
+
+        # 5. Table Transformer
+        paths["table_extraction"] = self.cache_dir / "table-transformer-structure-recognition.onnx"
+
+        # 6. Edge anomaly detector
         paths["edge_anomaly"] = self.cache_dir / "edge_anomaly_detector.int8.onnx"
         
         return paths
+
+    def validate_file_integrity(self, path: Path) -> tuple[bool, str]:
+        """Validate file size and existence."""
+        if not path.exists():
+            return False, "File not found"
+        
+        size_mb = path.stat().st_size / (1024 * 1024)
+        if size_mb < 5:  # Minimum reasonable size for an ONNX model
+            return False, f"File size too small ({size_mb:.1f}MB)"
+        
+        return True, ""
     
     def validate_all(self) -> ModelRegistryStatus:
         """Validate all registered models."""
@@ -276,11 +308,21 @@ class ONNXModelRegistry:
         )
         
         for name, path in paths.items():
-            result = self.validator.validate_model(
-                model_path=path,
-                model_name=name,
-                run_warmup=self.auto_warmup,
-            )
+            # Check integrity first
+            ok, err = self.validate_file_integrity(path)
+            if not ok:
+                result = ModelValidationResult(
+                    model_name=name,
+                    is_valid=False,
+                    error_message=err,
+                    warnings=["Integrity check failed"]
+                )
+            else:
+                result = self.validator.validate_model(
+                    model_path=path,
+                    model_name=name,
+                    run_warmup=self.auto_warmup,
+                )
             
             self._validation_results[name] = result
             status.validation_results.append(result)

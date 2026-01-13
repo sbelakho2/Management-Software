@@ -22,6 +22,7 @@ import io
 import logging
 import uuid
 import os
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -199,6 +200,10 @@ class DetectedDefect:
     # Review flags
     needs_review: bool = False
     is_false_positive: bool = False
+    is_synthetic: bool = False
+    
+    # Metadata for enrichment
+    metadata: dict[str, Any] = field(default_factory=dict)
     
     @property
     def is_critical(self) -> bool:
@@ -267,6 +272,9 @@ class InspectionResult:
     needs_human_review: bool = False
     review_reason: str = ""
     
+    # Metadata for enrichment
+    metadata: dict[str, Any] = field(default_factory=dict)
+    
     @property
     def is_pass(self) -> bool:
         return self.decision == InspectionDecision.PASS
@@ -305,6 +313,117 @@ class InspectionBatch:
     def yield_rate(self) -> float:
         """First-pass yield (excludes rework)."""
         return self.pass_rate
+
+
+class SyntheticDefectGenerator:
+    """
+    Generates synthetic defects on good images for training.
+    Uses masks, texture overlay, and geometric transforms to simulate defects.
+    """
+    
+    def generate(
+        self, 
+        base_image: np.ndarray, 
+        defect_type: DefectCategory = DefectCategory.SURFACE,
+        severity: DefectSeverity = DefectSeverity.MAJOR,
+        count: int = 1
+    ) -> tuple[np.ndarray, list[DetectedDefect]]:
+        """
+        Inject synthetic defects into a clean image.
+        Returns the augmented image and the list of injected defects.
+        """
+        img = base_image.copy()
+        h, w = img.shape[:2]
+        defects = []
+        
+        for _ in range(count):
+            # Random location
+            x = random.randint(int(w * 0.1), int(w * 0.8))
+            y = random.randint(int(h * 0.1), int(h * 0.8))
+            size = random.randint(10, 50)
+            
+            bbox = BoundingBox(x, y, size, size)
+            
+            if defect_type == DefectCategory.SURFACE:
+                # Draw a scratch-like line
+                color = (50, 50, 50) if len(img.shape) == 3 else 50
+                try:
+                    import cv2
+                    cv2.line(img, (x, y), (x + size, y + size), color, 2)
+                except ImportError:
+                    img[y:y+2, x:x+size] = 50 # Fallback simple line
+            
+            elif defect_type == DefectCategory.CONTAMINATION:
+                # Draw a spot
+                try:
+                    import cv2
+                    cv2.circle(img, (x + size//2, y + size//2), size//3, (20, 20, 100), -1)
+                except ImportError:
+                    img[y:y+size//2, x:x+size//2] = 20
+            
+            defects.append(DetectedDefect(
+                defect_id=f"syn_{uuid.uuid4().hex[:6]}",
+                category=defect_type,
+                severity=severity,
+                confidence=1.0,
+                bbox=bbox,
+                defect_type="synthetic",
+                defect_name=f"Synthetic {defect_type.value}",
+                is_synthetic=True
+            ))
+            
+        return img, defects
+
+
+class VisionEnrichmentSuite:
+    """
+    Suite of advanced vision features for manufacturing enrichment.
+    """
+    
+    def __init__(self):
+        self.generator = SyntheticDefectGenerator()
+        
+    def enrich_inspection(
+        self, 
+        result: InspectionResult, 
+        standard_work_context: dict[str, Any] | None = None
+    ) -> InspectionResult:
+        """
+        Apply advanced enrichment to an inspection result.
+        - Cross-references with Standard Work
+        - Adds prescriptive recommendations
+        - Enhances explainability metadata
+        """
+        if standard_work_context:
+            result.metadata["standard_work_id"] = standard_work_context.get("id")
+            # If standard work specifies critical zones, verify them
+            critical_zones = standard_work_context.get("critical_zones", [])
+            for zone in critical_zones:
+                # Simple logic: if a defect is in a critical zone, escalate severity
+                for defect in result.defects:
+                    if self._is_in_zone(defect.bbox, zone):
+                        defect.severity = DefectSeverity.CRITICAL
+                        defect.metadata["enriched_reason"] = "In critical zone defined by Standard Work"
+        
+        # Add prescriptive fix recommendations
+        for defect in result.defects:
+            defect.metadata["recommendations"] = self._get_recommendations(defect)
+            
+        return result
+
+    def _is_in_zone(self, bbox: BoundingBox, zone: dict[str, Any]) -> bool:
+        # Simple overlap check
+        zx, zy, zw, zh = zone['x'], zone['y'], zone['w'], zone['h']
+        return not (bbox.x > zx + zw or bbox.x + bbox.width < zx or 
+                   bbox.y > zy + zh or bbox.y + bbox.height < zy)
+
+    def _get_recommendations(self, defect: DetectedDefect) -> list[str]:
+        recs = {
+            DefectCategory.SURFACE: ["Check tool alignment", "Inspect previous station for debris"],
+            DefectCategory.CONTAMINATION: ["Clean inspection surface", "Verify air filtration at station"],
+            DefectCategory.DIMENSIONAL: ["Recalibrate station sensors", "Check material thermal expansion"],
+        }
+        return recs.get(defect.category, ["Standard investigation required"])
 
 
 @dataclass
@@ -1124,6 +1243,7 @@ class VisualQualityInspectionService:
         )
         self.scoring_engine = QualityScoringEngine()
         self.learning_manager = ContinuousLearningManager()
+        self.enricher = VisionEnrichmentSuite()
         
         # Cache
         self._models_loaded = False
@@ -1161,6 +1281,7 @@ class VisualQualityInspectionService:
         self,
         image: np.ndarray,
         image_id: str | None = None,
+        standard_work_context: dict[str, Any] | None = None,
     ) -> InspectionResult:
         """
         Inspect a single image for defects.
@@ -1269,6 +1390,9 @@ class VisualQualityInspectionService:
             needs_human_review=needs_review,
             review_reason=reason if needs_review else "",
         )
+        
+        # ENRICHMENT: Apply advanced context-aware enrichment
+        result = self.enricher.enrich_inspection(result, standard_work_context)
         
         logger.info(
             f"Inspection {inspection_id}: {decision.value}, "

@@ -1019,6 +1019,21 @@ class VisionLLMEnricher:
         self.api_key = None
         self._client = None
         self._available = True
+        self._registry = None
+        
+        try:
+            from sensei.services.ai.onnx_model_init import get_model_registry
+            self._registry = get_model_registry()
+        except ImportError:
+            pass
+
+    def is_ready(self) -> bool:
+        """Check if models are ready in registry."""
+        if not self._registry:
+            return True # Fallback to simulation
+        
+        paths = self._registry.get_model_paths()
+        return "vlm" in paths and paths["vlm"].exists()
     
     def _get_client(self):
         """No remote client for local provider."""

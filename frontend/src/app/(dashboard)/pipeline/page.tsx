@@ -16,6 +16,8 @@ import {
   Download
 } from 'lucide-react';
 import { usePipelineStore } from '@/stores/pipeline';
+import { useKanbanStore } from '@/stores/kanban-store';
+import { KanbanBoard } from '@/components/kanban/kanban-board';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -86,9 +88,9 @@ export default function PipelinePage() {
       if (priorityFilter !== 'all' && rfq.priority !== priorityFilter) return false;
       if (!q) return true;
       return (
-        rfq.rfqNumber.toLowerCase().includes(q) ||
-        rfq.account?.name?.toLowerCase().includes(q) ||
-        rfq.assignee?.name?.toLowerCase().includes(q) ||
+        rfq.rfq_number.toLowerCase().includes(q) ||
+        rfq.customer?.name?.toLowerCase().includes(q) ||
+        rfq.assigned_user?.full_name?.toLowerCase().includes(q) ||
         rfq.title?.toLowerCase().includes(q)
       );
     });
@@ -267,44 +269,14 @@ export default function PipelinePage() {
       </div>
 
       {view === 'board' ? (
-        <div className="grid gap-4 md:grid-cols-4 overflow-x-auto pb-4">
-          {STAGES.map((stage) => {
-            const stageRfqs = filtered.filter((r) => r.status === stage.id);
-            return (
-              <div key={stage.id} className="flex flex-col gap-3 min-w-[250px]">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">{stage.label}</h2>
-                  <Badge variant="outline">{stageRfqs.length}</Badge>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {stageRfqs.map((rfq) => (
-                    <Card key={rfq.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push(`/rfqs/${rfq.id}`)}>
-                      <CardContent className="p-3 space-y-2">
-                        <div className="flex justify-between items-start">
-                          <span className="text-xs font-mono text-muted-foreground">{rfq.rfqNumber}</span>
-                          <Badge variant={getPriorityColor(rfq.priority) as any} className="text-[10px] h-4 px-1 capitalize">
-                            {rfq.priority}
-                          </Badge>
-                        </div>
-                        <h3 className="font-medium text-sm line-clamp-1">{rfq.account?.name || 'Unknown Customer'}</h3>
-                        {rfq.title && <p className="text-xs text-muted-foreground line-clamp-2">{rfq.title}</p>}
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-sm font-semibold">{formatCurrency(rfq.estimatedValue || 0)}</span>
-                          <span className="text-[10px] text-muted-foreground">{formatDate(rfq.dueDate)}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  {stageRfqs.length === 0 && (
-                    <div className="border border-dashed rounded-lg p-8 flex items-center justify-center text-xs text-muted-foreground italic">
-                      Empty
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <KanbanBoard 
+          rfqs={filtered} 
+          onCardClick={(rfq) => router.push(`/rfqs/${rfq.id}`)}
+          onCardMove={async (cardId, fromStatus, toStatus) => {
+            // Update pipeline store when move happens in Kanban
+            await setRFQStatus(cardId, toStatus);
+          }}
+        />
       ) : (
         <Card>
           <Table>
@@ -326,19 +298,19 @@ export default function PipelinePage() {
                   className="cursor-pointer" 
                   onClick={() => router.push(`/rfqs/${rfq.id}`)}
                 >
-                  <TableCell className="font-mono">{rfq.rfqNumber}</TableCell>
-                  <TableCell className="font-medium">{rfq.account?.name || 'N/A'}</TableCell>
+                  <TableCell className="font-mono">{rfq.rfq_number}</TableCell>
+                  <TableCell className="font-medium">{rfq.customer?.name || 'N/A'}</TableCell>
                   <TableCell>{getStatusBadge(rfq.status)}</TableCell>
                   <TableCell>
                     <Badge variant={getPriorityColor(rfq.priority) as any} className="capitalize">
                       {rfq.priority}
                     </Badge>
                   </TableCell>
-                  <TableCell>{formatCurrency(rfq.estimatedValue || 0)}</TableCell>
+                  <TableCell>{formatCurrency(rfq.estimated_value || 0)}</TableCell>
                   <TableCell className={cn(
-                    new Date(rfq.dueDate) < new Date() && rfq.status !== 'won' && rfq.status !== 'lost' && "text-destructive font-medium"
+                    new Date(rfq.due_date) < new Date() && rfq.status !== 'won' && rfq.status !== 'lost' && "text-destructive font-medium"
                   )}>
-                    {formatDate(rfq.dueDate)}
+                    {formatDate(rfq.due_date)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
