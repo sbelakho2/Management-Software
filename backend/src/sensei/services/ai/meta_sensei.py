@@ -856,6 +856,15 @@ class OnDeviceCodeAuditor:
         (r"time\.sleep\s*\(\s*0\s*\)", "Unnecessary sleep(0)", CodeIssueSeverity.INFO),
         (r"\.append\([^)]+\)\s*\n\s*.*\.append\(", "Multiple appends (consider extend)", CodeIssueSeverity.LOW),
     ]
+
+    FRONTEND_PATTERNS = [
+        (r":\s*any\b", "Unsafe 'any' type in TypeScript", CodeIssueSeverity.MEDIUM),
+        (r"style=\{\{", "Avoid hardcoded inline styles; prefer Tailwind utility classes", CodeIssueSeverity.LOW),
+        (r"\.props\.props", "Potential prop drilling deep detection", CodeIssueSeverity.MEDIUM),
+        (r"useEffect\(\(\) => \{", "Heavy useEffect usage - verify dependency array and side effects", CodeIssueSeverity.INFO),
+        (r"dangerouslySetInnerHTML", "XSS risk: dangerouslySetInnerHTML usage", CodeIssueSeverity.CRITICAL),
+        (r"console\.log\(", "Cleanup console logs in production code", CodeIssueSeverity.LOW),
+    ]
     
     def __init__(self, source_dir: str):
         self.source_dir = Path(source_dir)
@@ -901,12 +910,30 @@ class OnDeviceCodeAuditor:
                         code_snippet=snippet.strip()[:100],
                     ))
             
-            # Complexity analysis via AST
-            try:
-                tree = ast.parse(content)
-                issues.extend(self._analyze_complexity(file_path, tree))
-            except SyntaxError:
-                pass
+            # Frontend patterns (TS/TSX only)
+            if file_path.suffix in [".ts", ".tsx"]:
+                for pattern, message, severity in self.FRONTEND_PATTERNS:
+                    for match in re.finditer(pattern, content):
+                        line_num = content[:match.start()].count("\n") + 1
+                        snippet = lines[line_num - 1] if line_num <= len(lines) else ""
+                        
+                        issues.append(CodeIssue(
+                            issue_id=f"FE_{file_path.stem}_{line_num}",
+                            file_path=str(file_path),
+                            line_number=line_num,
+                            issue_type=CodeIssueType.STYLE,
+                            severity=severity,
+                            message=message,
+                            code_snippet=snippet.strip()[:100],
+                        ))
+            
+            # Complexity analysis via AST (Python only)
+            if file_path.suffix == ".py":
+                try:
+                    tree = ast.parse(content)
+                    issues.extend(self._analyze_complexity(file_path, tree))
+                except SyntaxError:
+                    pass
         
         except Exception:
             pass
@@ -965,15 +992,18 @@ class OnDeviceCodeAuditor:
         return max_depth
     
     def audit(self) -> list[CodeIssue]:
-        """Run full code audit."""
+        """Run full code audit on Python and TypeScript files."""
         self.issues = []
         
         if not self.source_dir.exists():
             return []
         
-        for py_file in self.source_dir.rglob("*.py"):
-            if "__pycache__" not in str(py_file):
-                self.issues.extend(self._analyze_file(py_file))
+        for ext in ["*.py", "*.ts", "*.tsx"]:
+            for code_file in self.source_dir.rglob(ext):
+                # Skip caches, node_modules, and build artifacts
+                if any(x in str(code_file) for x in ["__pycache__", "node_modules", ".next", "dist", "build"]):
+                    continue
+                self.issues.extend(self._analyze_file(code_file))
         
         # Sort by severity
         severity_order = {

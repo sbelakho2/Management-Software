@@ -1159,19 +1159,17 @@ class DynamicContextSizer:
     Dynamic context sizer based on model limits and query complexity.
     """
     
-    # Model token limits
+    # Local model token limits (on-device)
     MODEL_LIMITS = {
-        "gpt-3.5-turbo": 4096,
-        "gpt-3.5-turbo-16k": 16384,
-        "gpt-4": 8192,
-        "gpt-4-32k": 32768,
-        "claude-3-sonnet": 200000,
-        "claude-3-opus": 200000,
+        "local-llm-small": 8192,
+        "local-llm-large": 32768,
+        "mistral-7b": 32768,
+        "llama-3-8b": 128000,
     }
     
     def __init__(
         self,
-        default_model: str = "gpt-4",
+        default_model: str = "llama-3-8b",
         system_prompt_tokens: int = 500,
         response_reserve_tokens: int = 1000,
     ):

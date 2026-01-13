@@ -29,28 +29,21 @@ class EmbeddingService:
     
     def __init__(
         self, 
-        provider: str = settings.AI_EMBEDDING_PROVIDER,
+        provider: str = "local",
         model_name: Optional[str] = None
     ):
         """
         Initialize embedding service.
         
         Args:
-            provider: 'local' or 'openai'
+            provider: Always 'local' (on-device)
             model_name: Specific model name (optional)
         """
-        self.provider = provider
-        
-        if provider == "openai":
-            self.model_name = model_name or settings.AI_MODEL_EMBEDDING
-            self.embedding_dim = 1536  # Standard for OpenAI small/large models (can be truncated)
-            self._client = None
-            logger.info(f"Initialized EmbeddingService with OpenAI model: {self.model_name}")
-        else:
-            self.model_name = model_name or "all-MiniLM-L6-v2"
-            self._model = None
-            self.embedding_dim = self._get_model_dimension(self.model_name)
-            logger.info(f"Initialized EmbeddingService with local model: {self.model_name} (CPU)")
+        self.provider = "local"
+        self.model_name = model_name or "all-MiniLM-L6-v2"
+        self._model = None
+        self.embedding_dim = self._get_model_dimension(self.model_name)
+        logger.info(f"Initialized EmbeddingService with local model: {self.model_name} (CPU)")
     
     @staticmethod
     def _get_model_dimension(model_name: str) -> int:
@@ -67,69 +60,32 @@ class EmbeddingService:
     
     @property
     def model(self) -> Any:
-        """Lazy load local model or OpenAI client."""
-        if self.provider == "openai":
-            if self._client is None:
-                from openai import OpenAI
-                if not settings.OPENAI_API_KEY:
-                    logger.warning("OPENAI_API_KEY not set. OpenAI embeddings will fail.")
-                self._client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            return self._client
-        else:
-            if self._model is None:
-                # Use CPU-optimized settings
-                import os
-                os.environ["TOKENIZERS_PARALLELISM"] = "false"
-                from sentence_transformers import SentenceTransformer
-                logger.info(f"Loading sentence-transformers model to CPU: {self.model_name}")
-                # Explicitly use CPU to avoid GPU-heavy workloads
-                # In production on Hetzner, we prefer ONNX if available, 
-                # but for now we ensure standard CPU execution
-                self._model = SentenceTransformer(self.model_name, device="cpu")
-            return self._model
+        """Lazy load local model."""
+        if self._model is None:
+            # Use CPU-optimized settings
+            import os
+            os.environ["TOKENIZERS_PARALLELISM"] = "false"
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Loading sentence-transformers model to CPU: {self.model_name}")
+            self._model = SentenceTransformer(self.model_name, device="cpu")
+        return self._model
     
     def encode(self, text: str | list[str]) -> np.ndarray:
         """
         Generate embedding(s) for text.
         """
-        if self.provider == "openai":
-            if isinstance(text, str):
-                response = self.model.embeddings.create(
-                    input=text,
-                    model=self.model_name
-                )
-                return np.array(response.data[0].embedding)
-            else:
-                response = self.model.embeddings.create(
-                    input=text,
-                    model=self.model_name
-                )
-                return np.array([item.embedding for item in response.data])
-        else:
-            return self.model.encode(text, convert_to_numpy=True)
+        return self.model.encode(text, convert_to_numpy=True)
     
     def encode_batch(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
         """
         Generate embeddings for batch of texts.
         """
-        if self.provider == "openai":
-            # OpenAI handles large batches well, but we can still chunk if needed
-            all_embeddings = []
-            for i in range(0, len(texts), 100):  # OpenAI limit is higher but 100 is safe
-                batch = texts[i : i + 100]
-                response = self.model.embeddings.create(
-                    input=batch,
-                    model=self.model_name
-                )
-                all_embeddings.extend([item.embedding for item in response.data])
-            return np.array(all_embeddings)
-        else:
-            return self.model.encode(
-                texts,
-                batch_size=batch_size,
-                convert_to_numpy=True,
-                show_progress_bar=True,
-            )
+        return self.model.encode(
+            texts,
+            batch_size=batch_size,
+            convert_to_numpy=True,
+            show_progress_bar=True,
+        )
 
 
 class KnowledgeEmbeddingService:

@@ -52,6 +52,8 @@ class NetworkZone:
     name: str
     zone_type: ZoneType
     cidrs: list[str]
+    mac_addresses: list[str] = field(default_factory=list)
+    allowed_protocols: list[str] = field(default_factory=list)
     description: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: UUID | None = None
@@ -186,37 +188,67 @@ class OTNetworkSafetyService:
         self,
         source_ip: str,
         dest_ip: str,
+        source_mac: str | None = None,
+        dest_mac: str | None = None,
+        protocol: str | None = None,
     ) -> ZoneViolation | None:
-        """Detect if traffic violates zone policy."""
+        """Detect and record a zone violation with multi-factor identification."""
         source_zone = self._find_zone_for_ip(source_ip)
+        if not source_zone and source_mac:
+            source_zone = self._find_zone_for_mac(source_mac)
+
         dest_zone = self._find_zone_for_ip(dest_ip)
-        
+        if not dest_zone and dest_mac:
+            dest_zone = self._find_zone_for_mac(dest_mac)
+
         if not source_zone or not dest_zone:
             return None
-        
+
+        # Same zone is always allowed.
         if source_zone.id == dest_zone.id:
-            return None  # Same zone is OK
-        
-        # Determine severity based on zone types
+            return None
+
+        # Cross-zone rules.
+        violation_severity: ZoneViolationSeverity | None = None
+
+        # IT to OT is critical.
         if source_zone.zone_type == ZoneType.IT and dest_zone.zone_type == ZoneType.OT:
-            severity = ZoneViolationSeverity.CRITICAL
+            violation_severity = ZoneViolationSeverity.CRITICAL
+            # Allow specific OT protocols even if zones differ (e.g., jump host)
+            if protocol and protocol.upper() in [p.upper() for p in dest_zone.allowed_protocols]:
+                violation_severity = None
+
+        # OT to IT is highly suspicious (exfiltration risk).
         elif source_zone.zone_type == ZoneType.OT and dest_zone.zone_type == ZoneType.IT:
-            severity = ZoneViolationSeverity.HIGH
+            violation_severity = ZoneViolationSeverity.HIGH
+
+        # Any cross-zone without DMZ.
         elif dest_zone.zone_type == ZoneType.DMZ or source_zone.zone_type == ZoneType.DMZ:
-            severity = ZoneViolationSeverity.MEDIUM
+            violation_severity = ZoneViolationSeverity.MEDIUM
         else:
-            severity = ZoneViolationSeverity.LOW
-        
+            violation_severity = ZoneViolationSeverity.LOW
+
+        if not violation_severity:
+            return None
+
         violation = ZoneViolation(
             id=uuid4(),
             source_ip=source_ip,
             dest_ip=dest_ip,
             source_zone_id=source_zone.id,
             dest_zone_id=dest_zone.id,
-            severity=severity,
+            severity=violation_severity,
         )
+
         self._violations[violation.id] = violation
         return violation
+
+    def _find_zone_for_mac(self, mac: str) -> NetworkZone | None:
+        """Find zone containing a MAC address."""
+        for zone in self._zones.values():
+            if mac.upper() in [m.upper() for m in zone.mac_addresses]:
+                return zone
+        return None
     
     def list_violations(
         self,

@@ -100,11 +100,11 @@ class Settings(BaseSettings):
     MUDA_THRESHOLD_INVENTORY_DAYS: float = 5.0
     MUDA_THRESHOLD_IDLE_TIME_PCT: float = 20.0
 
-    # AI Settings
-    OPENAI_API_KEY: str | None = None
-    AI_EMBEDDING_PROVIDER: Literal["local", "openai"] = "local"
-    AI_MODEL_TEXT: str = "gpt-4o-mini"
-    AI_MODEL_EMBEDDING: str = "text-embedding-3-small"
+    # AI Settings (On-Device Only)
+    AI_EMBEDDING_PROVIDER: Literal["local"] = "local"
+    AI_MODEL_TEXT: str = "llama-3-8b"
+    AI_MODEL_EMBEDDING: str = "all-MiniLM-L6-v2"
+    AI_MODEL_VLM: str = "llava-v1.6-7b"
     
     # Email Settings
     SMTP_HOST: str = ""

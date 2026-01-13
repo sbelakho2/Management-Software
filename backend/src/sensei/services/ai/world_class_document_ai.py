@@ -84,13 +84,11 @@ class ProcessingStrategy(str, Enum):
 
 
 class VisionLLMProvider(str, Enum):
-    """Vision LLM providers."""
-    GPT4_VISION = "gpt4_vision"
-    CLAUDE_VISION = "claude_vision"
-    GEMINI_PRO_VISION = "gemini_pro_vision"
+    """Vision LLM providers (On-device only)."""
     LLAVA = "llava"
     MOONDREAM = "moondream"
     QWEN_VL = "qwen_vl"
+    LOCAL_ONNX = "local_onnx"
 
 
 class GDTSymbol(str, Enum):
@@ -824,10 +822,10 @@ class VisionLLMEnricher:
     
     def __init__(
         self,
-        provider: VisionLLMProvider = VisionLLMProvider.GPT4_VISION,
-        fallback_provider: VisionLLMProvider | None = VisionLLMProvider.LLAVA,
+        provider: VisionLLMProvider = VisionLLMProvider.LLAVA,
+        fallback_provider: VisionLLMProvider | None = VisionLLMProvider.MOONDREAM,
     ):
-        """Initialize Vision LLM enricher."""
+        """Initialize Vision LLM enricher (local-first)."""
         self._provider = provider
         self._fallback = fallback_provider
     

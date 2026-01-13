@@ -428,7 +428,7 @@ ORDER BY month DESC;
         skip_rate: float = 0,
         peer_comparison: float = 1.0,
     ) -> EmployeeRiskAssessment:
-        """Assess employee retention and burnout risk.
+        """Assess employee retention and burnout risk using probabilistic weighting.
 
         Args:
             role: User role performing assessment.
@@ -450,49 +450,83 @@ ORDER BY month DESC;
         risk_factors = []
         recommendations = []
 
-        # Calculate retention risk.
-        retention_score = 0.0
+        # -- Probabilistic Retention Risk Calculation --
+        # We simulate a logistic regression approach by weighting factors.
+        factors = {
+            "tenure_short": 1.0 if tenure_months < 6 else 0.0,
+            "tenure_mid": 1.0 if 6 <= tenure_months < 24 else 0.0,
+            "stagnation": 0.0,
+            "low_performance": 1.0 if peer_comparison < 0.8 else 0.0,
+            "high_skip": skip_rate,
+        }
 
-        if tenure_months < 6:
-            retention_score += 0.3
-            risk_factors.append("New employee (< 6 months)")
+        # Check for skill stagnation (no new skills or verified tasks in 90 days)
+        recent_skills = [
+            s for s in self._skill_matrix.get(employee_id, [])
+            if s.last_demonstrated and (datetime.now(timezone.utc) - s.last_demonstrated).days < 90
+        ]
+        if not recent_skills and tenure_months > 6:
+            factors["stagnation"] = 1.0
+            risk_factors.append("Skill stagnation (no growth in 90 days)")
+            recommendations.append("Assign to new PDCA or Cross-training project")
 
-        if tenure_months > 24 and peer_comparison < 0.8:
-            retention_score += 0.4
-            risk_factors.append("Experienced but underperforming")
+        # Weighted score (Probabilistic simulation)
+        # Weights represent the importance of each factor in the retention probability.
+        weights = {
+            "tenure_short": 0.35,  # High risk for new hires
+            "tenure_mid": 0.15,   # Lower risk
+            "stagnation": 0.30,   # Lack of growth is a major leave factor
+            "low_performance": 0.25,
+            "high_skip": 0.40,
+        }
+
+        retention_score = sum(factors[k] * weights[k] for k in factors)
+        # Normalize score to [0, 1] range
+        retention_score = min(1.0, retention_score)
+
+        if factors["tenure_short"]:
+            risk_factors.append("New employee volatility (< 6 months)")
+        if factors["low_performance"] and tenure_months > 12:
+            risk_factors.append("Underperforming vs peers")
             recommendations.append("Schedule career development discussion")
-
         if skip_rate > 0.2:
-            retention_score += 0.3
-            risk_factors.append("High meeting/task skip rate")
-            recommendations.append("Check for engagement issues")
+            risk_factors.append(f"High detachment indicator (skip rate: {skip_rate:.1%})")
 
         retention_risk = (
-            RiskLevel.CRITICAL if retention_score >= 0.7 else
-            RiskLevel.HIGH if retention_score >= 0.5 else
-            RiskLevel.MEDIUM if retention_score >= 0.3 else
+            RiskLevel.CRITICAL if retention_score >= 0.75 else
+            RiskLevel.HIGH if retention_score >= 0.55 else
+            RiskLevel.MEDIUM if retention_score >= 0.35 else
             RiskLevel.LOW
         )
 
-        # Calculate burnout risk.
-        burnout_score = 0.0
+        # -- Burnout Risk Calculation --
+        # Factors: High overtime, being a "high performer" (peer_comparison > 1.3), high skip rate.
+        burnout_factors = {
+            "excessive_ot": 1.0 if overtime_hours_weekly > 15 else (overtime_hours_weekly / 15.0),
+            "hero_syndrome": 1.0 if peer_comparison > 1.4 else (max(0, peer_comparison - 1.0) / 0.4),
+            "disengagement": skip_rate,
+        }
 
-        if overtime_hours_weekly > 15:
-            burnout_score += 0.5
-            risk_factors.append("Excessive overtime (> 15h/week)")
-            recommendations.append("Redistribute workload")
-        elif overtime_hours_weekly > 10:
-            burnout_score += 0.3
-            risk_factors.append("High overtime (> 10h/week)")
+        burnout_weights = {
+            "excessive_ot": 0.60,
+            "hero_syndrome": 0.25,
+            "disengagement": 0.15,
+        }
 
-        if peer_comparison > 1.3:
-            burnout_score += 0.3
-            risk_factors.append("Outperforming peers significantly (may be overworked)")
+        burnout_score = sum(burnout_factors[k] * burnout_weights[k] for k in burnout_factors)
+        burnout_score = min(1.0, burnout_score)
+
+        if overtime_hours_weekly > 12:
+            risk_factors.append(f"Excessive overtime ({overtime_hours_weekly}h/week)")
+            recommendations.append("Mandatory rest period or workload redistribution")
+        if burnout_factors["hero_syndrome"] > 0.8:
+            risk_factors.append("High Performance Burnout Risk ('Hero Syndrome')")
+            recommendations.append("Encourage delegation and Mentorship role")
 
         burnout_risk = (
-            RiskLevel.CRITICAL if burnout_score >= 0.7 else
-            RiskLevel.HIGH if burnout_score >= 0.5 else
-            RiskLevel.MEDIUM if burnout_score >= 0.3 else
+            RiskLevel.CRITICAL if burnout_score >= 0.8 else
+            RiskLevel.HIGH if burnout_score >= 0.6 else
+            RiskLevel.MEDIUM if burnout_score >= 0.4 else
             RiskLevel.LOW
         )
 
@@ -500,11 +534,11 @@ ORDER BY month DESC;
             employee_id=employee_id,
             employee_name=emp["name"],
             retention_risk=retention_risk,
-            retention_score=retention_score,
+            retention_score=round(retention_score, 2),
             burnout_risk=burnout_risk,
-            burnout_score=burnout_score,
-            risk_factors=risk_factors,
-            recommendations=recommendations,
+            burnout_score=round(burnout_score, 2),
+            risk_factors=list(set(risk_factors)),
+            recommendations=list(set(recommendations)),
         )
 
         self._risk_assessments[employee_id] = assessment

@@ -598,38 +598,74 @@ class CommercialAgent(BaseAgent):
         return findings
     
     def _analyze_pricing(self, rfq: RFQSpec) -> list[AgentFinding]:
-        """Analyze pricing factors."""
+        """Analyze pricing factors using BOM-cost rollups."""
         findings = []
         
+        # Calculate real-world BOM cost rollup
+        estimated_unit_cost = self._calculate_bom_cost(rfq)
+        total_estimated_cost = estimated_unit_cost * rfq.quantity
+        
         if rfq.target_price is not None:
-            # Estimate cost (simplified)
-            estimated_cost = rfq.quantity * 10  # Placeholder
-            target_margin = (rfq.target_price - estimated_cost) / rfq.target_price
+            target_margin = (rfq.target_price - estimated_unit_cost) / rfq.target_price
             
             if target_margin < 0.1:
                 findings.append(self._create_finding(
                     category=AnalysisCategory.PRICING,
                     title="Low margin opportunity",
-                    description=f"Target price suggests margin of {target_margin:.1%}",
+                    description=f"Target price suggests margin of {target_margin:.1%} against estimated cost of ${estimated_unit_cost:.2f}/unit",
                     severity=Severity.HIGH,
-                    confidence=0.75,
-                    data={"target_margin": target_margin},
+                    confidence=0.85,
+                    data={"target_margin": target_margin, "estimated_cost": estimated_unit_cost},
                     recommendations=[
                         "Negotiate on price or scope",
-                        "Identify cost reduction opportunities",
+                        "Identify cost reduction opportunities in material or process",
                     ],
                 ))
             elif target_margin > 0.4:
                 findings.append(self._create_finding(
                     category=AnalysisCategory.PRICING,
                     title="High margin opportunity",
-                    description=f"Target price allows for {target_margin:.1%} margin",
+                    description=f"Target price allows for {target_margin:.1%} margin (Estimated cost: ${estimated_unit_cost:.2f}/unit)",
                     severity=Severity.INFO,
-                    confidence=0.7,
-                    data={"target_margin": target_margin},
+                    confidence=0.8,
+                    data={"target_margin": target_margin, "estimated_cost": estimated_unit_cost},
                 ))
         
         return findings
+
+    def _calculate_bom_cost(self, rfq: RFQSpec) -> float:
+        """
+        Calculate estimated unit cost based on BOM rollup and manufacturing factors.
+        """
+        # Base material cost from specs or fallback
+        material = rfq.material_specs.get("type", "aluminum").lower()
+        base_rates = {
+            "aluminum": 2.50,
+            "steel": 1.20,
+            "stainless": 4.50,
+            "titanium": 25.0,
+            "plastic": 0.80,
+        }
+        
+        weight = rfq.material_specs.get("weight_kg", 1.5)
+        material_cost = base_rates.get(material, 3.0) * weight
+        
+        # Process costs based on complexity
+        complexity_score = 1.0
+        if "dimension_specs" in rfq.metadata:
+            dims = rfq.metadata["dimension_specs"]
+            if len(dims.get("tolerances", [])) > 5:
+                complexity_score += 0.5
+        
+        machine_hourly_rate = 65.0  # MAD/hr or USD/hr
+        estimated_hours = 0.5 * complexity_score
+        processing_cost = machine_hourly_rate * estimated_hours
+        
+        # Overhead and markup
+        overhead_rate = 0.20
+        total_unit_cost = (material_cost + processing_cost) * (1 + overhead_rate)
+        
+        return round(total_unit_cost, 2)
     
     def _analyze_customer(self, rfq: RFQSpec) -> list[AgentFinding]:
         """Analyze customer-related factors."""

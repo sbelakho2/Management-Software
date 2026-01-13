@@ -255,12 +255,10 @@ class DraftHistory:
 
 @dataclass
 class AIProviderConfig:
-    """Configuration for AI provider."""
+    """Configuration for AI provider (Local only)."""
     
-    provider: str  # "openai", "anthropic", "azure_openai"
-    model: str
-    api_key: str
-    endpoint: Optional[str] = None
+    provider: str = "local"
+    model: str = "local-llm"
     temperature: float = 0.7
     max_tokens: int = 1000
     top_p: float = 0.9
