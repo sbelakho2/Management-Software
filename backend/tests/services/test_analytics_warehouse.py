@@ -6,8 +6,9 @@ from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.services.analytics_warehouse import (
+from sensei.services.ops.analytics_warehouse import (
     AnalyticsWarehouseService,
     DailySnapshot,
     DimensionSchema,
@@ -29,39 +30,45 @@ ANALYST_ROLES = ("analyst",)
 VIEWER_ROLES = ("viewer",)
 
 
+@pytest.mark.asyncio
 class TestDailySnapshots:
-    def test_create_snapshot_requires_role(self, svc: AnalyticsWarehouseService) -> None:
+    async def test_create_snapshot_requires_role(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
         with pytest.raises(PermissionError):
-            svc.create_snapshot(
+            await svc.create_snapshot(
+                async_session,
                 snapshot_date=date.today(),
                 actor_user_id=uuid4(),
                 actor_roles=VIEWER_ROLES,
             )
 
-        snapshot = svc.create_snapshot(
+        snapshot = await svc.create_snapshot(
+            async_session,
             snapshot_date=date.today(),
             actor_user_id=uuid4(),
             actor_roles=BI_ROLES,
         )
         assert isinstance(snapshot, DailySnapshot)
-        assert snapshot.status == SnapshotStatus.PENDING
+        assert snapshot.status == SnapshotStatus.PENDING.value
 
-    def test_snapshot_idempotency(self, svc: AnalyticsWarehouseService) -> None:
+    async def test_snapshot_idempotency(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
         today = date.today()
-        s1 = svc.create_snapshot(
+        s1 = await svc.create_snapshot(
+            async_session,
             snapshot_date=today,
             actor_user_id=uuid4(),
             actor_roles=ADMIN_ROLES,
         )
-        s2 = svc.create_snapshot(
+        s2 = await svc.create_snapshot(
+            async_session,
             snapshot_date=today,
             actor_user_id=uuid4(),
             actor_roles=ADMIN_ROLES,
         )
         assert s1.id == s2.id
 
-    def test_run_snapshot_exports_records(self, svc: AnalyticsWarehouseService) -> None:
-        snapshot = svc.create_snapshot(
+    async def test_run_snapshot_exports_records(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
+        snapshot = await svc.create_snapshot(
+            async_session,
             snapshot_date=date.today(),
             actor_user_id=uuid4(),
             actor_roles=ADMIN_ROLES,
@@ -72,17 +79,19 @@ class TestDailySnapshots:
             {"_fact_type": FactType.ANDON_EVENT, "event_id": "A-001", "duration": 15},
         ]
 
-        completed = svc.run_snapshot(snapshot.id, actor_roles=ADMIN_ROLES, records=records)
-        assert completed.status == SnapshotStatus.COMPLETED
+        completed = await svc.run_snapshot(async_session, snapshot.id, actor_roles=ADMIN_ROLES, records=records)
+        assert completed.status == SnapshotStatus.COMPLETED.value
         assert completed.record_count == 2
 
-        exported = svc.get_exported_records(snapshot.id, actor_roles=ADMIN_ROLES)
+        exported = await svc.get_exported_records(async_session, snapshot.id, actor_roles=ADMIN_ROLES)
         assert len(exported) == 2
 
 
+@pytest.mark.asyncio
 class TestDimensionalModeling:
-    def test_register_dimension(self, svc: AnalyticsWarehouseService) -> None:
-        dim = svc.register_dimension(
+    async def test_register_dimension(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
+        dim = await svc.register_dimension(
+            async_session,
             name="Time",
             dim_type=DimensionType.TIME,
             key_column="date_key",
@@ -91,13 +100,14 @@ class TestDimensionalModeling:
         )
 
         assert isinstance(dim, DimensionSchema)
-        assert dim.dim_type == DimensionType.TIME
+        assert dim.dim_type == DimensionType.TIME.value
 
-        dims = svc.list_dimensions(actor_roles=ADMIN_ROLES)
+        dims = await svc.list_dimensions(async_session, actor_roles=ADMIN_ROLES)
         assert len(dims) == 1
 
-    def test_register_fact(self, svc: AnalyticsWarehouseService) -> None:
-        fact = svc.register_fact(
+    async def test_register_fact(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
+        fact = await svc.register_fact(
+            async_session,
             name="Work Order Operations",
             fact_type=FactType.WORK_ORDER,
             dimension_keys=["date_key", "part_key", "station_key"],
@@ -106,14 +116,15 @@ class TestDimensionalModeling:
         )
 
         assert isinstance(fact, FactSchema)
-        assert fact.fact_type == FactType.WORK_ORDER
+        assert fact.fact_type == FactType.WORK_ORDER.value
 
-        facts = svc.list_facts(actor_roles=ADMIN_ROLES)
+        facts = await svc.list_facts(async_session, actor_roles=ADMIN_ROLES)
         assert len(facts) == 1
 
-    def test_dimension_requires_role(self, svc: AnalyticsWarehouseService) -> None:
+    async def test_dimension_requires_role(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
         with pytest.raises(PermissionError):
-            svc.register_dimension(
+            await svc.register_dimension(
+                async_session,
                 name="Part",
                 dim_type=DimensionType.PART,
                 key_column="part_key",
@@ -122,25 +133,28 @@ class TestDimensionalModeling:
             )
 
 
+@pytest.mark.asyncio
 class TestSnapshotListing:
-    def test_list_by_status(self, svc: AnalyticsWarehouseService) -> None:
-        s1 = svc.create_snapshot(
+    async def test_list_by_status(self, svc: AnalyticsWarehouseService, async_session: AsyncSession) -> None:
+        s1 = await svc.create_snapshot(
+            async_session,
             snapshot_date=date.today() - timedelta(days=1),
             actor_user_id=uuid4(),
             actor_roles=ADMIN_ROLES,
         )
-        svc.run_snapshot(s1.id, actor_roles=ADMIN_ROLES, records=[{"x": 1}])
+        await svc.run_snapshot(async_session, s1.id, actor_roles=ADMIN_ROLES, records=[{"x": 1}])
 
-        s2 = svc.create_snapshot(
+        s2 = await svc.create_snapshot(
+            async_session,
             snapshot_date=date.today(),
             actor_user_id=uuid4(),
             actor_roles=ADMIN_ROLES,
         )
 
-        pending = svc.list_snapshots(actor_roles=ADMIN_ROLES, status=SnapshotStatus.PENDING)
+        pending = await svc.list_snapshots(async_session, actor_roles=ADMIN_ROLES, status=SnapshotStatus.PENDING)
         assert len(pending) == 1
         assert pending[0].id == s2.id
 
-        completed = svc.list_snapshots(actor_roles=ADMIN_ROLES, status=SnapshotStatus.COMPLETED)
+        completed = await svc.list_snapshots(async_session, actor_roles=ADMIN_ROLES, status=SnapshotStatus.COMPLETED)
         assert len(completed) == 1
         assert completed[0].id == s1.id

@@ -133,7 +133,7 @@ export const useQuoteStore = create<QuoteState>()(
           }
         },
 
-        createQuote: async (quoteData: Partial[Quote]) => {
+        createQuote: async (quoteData: Partial<Quote>) => {
           try {
             const newQuote = await apiClient.post<Quote>('/quotes', quoteData);
 
@@ -153,7 +153,7 @@ export const useQuoteStore = create<QuoteState>()(
           }
         },
 
-        updateQuote: async (id: string, updates: Partial[Quote]) => {
+        updateQuote: async (id: string, updates: Partial<Quote>) => {
           const currentQuote = get().quotes.find(q => q.id === id);
           if (!currentQuote) {
             throw new Error('Quote not found');

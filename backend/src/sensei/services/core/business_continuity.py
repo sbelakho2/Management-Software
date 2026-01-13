@@ -15,7 +15,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Iterable
-from uuid import UUID, uuid4
+from sqlalchemy import select, and_, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sensei.models.business_continuity import (
+    QueuedEvent as QueuedEventModel,
+    CriticalityRule as CriticalityRuleModel,
+    RTORPOConfig as RTORPOConfigModel,
+    RestoreRehearsal as RestoreRehearsalModel,
+)
 
 
 class EventPriority(str, Enum):
@@ -108,13 +115,7 @@ class RestoreRehearsal:
 
 
 class BusinessContinuityService:
-    """In-memory business continuity and DR service."""
-
-    def __init__(self) -> None:
-        self._event_queue: dict[UUID, QueuedEvent] = {}
-        self._criticality_rules: dict[str, CriticalityRule] = {}  # Keyed by entity_type.
-        self._rto_rpo_config: RTORPOConfig | None = None
-        self._rehearsals: dict[UUID, RestoreRehearsal] = {}
+    """Production business continuity and DR service using SQLAlchemy."""
 
     # ---- RBAC ----
 
@@ -123,8 +124,9 @@ class BusinessContinuityService:
 
     # ---- Store-and-Forward Queue ----
 
-    def queue_event(
+    async def queue_event(
         self,
+        db: AsyncSession,
         *,
         device_id: str,
         entity_type: str,
@@ -133,155 +135,192 @@ class BusinessContinuityService:
         priority: EventPriority,
         payload: dict[str, Any],
         client_timestamp: datetime,
-    ) -> QueuedEvent:
+    ) -> QueuedEventModel:
         """Queue an event from an offline device."""
-        event = QueuedEvent(
+        event = QueuedEventModel(
             id=uuid4(),
             device_id=device_id,
             entity_type=entity_type,
-            entity_id=entity_id,
+            entity_id=str(entity_id) if entity_id else None,
             operation=operation,
-            priority=priority,
+            priority=priority.value,
             payload=payload,
             client_timestamp=client_timestamp,
-            status=QueuedEventStatus.QUEUED,
-            queued_at=_utcnow(),
+            status=QueuedEventStatus.QUEUED.value,
         )
-        self._event_queue[event.id] = event
+        db.add(event)
+        await db.flush()
         return event
 
-    def get_pending_events(
+    async def get_pending_events(
         self,
+        db: AsyncSession,
         *,
         device_id: str | None = None,
         priority: EventPriority | None = None,
-    ) -> list[QueuedEvent]:
-        result = [
-            e for e in self._event_queue.values()
-            if e.status == QueuedEventStatus.QUEUED
-        ]
+    ) -> list[QueuedEventModel]:
+        stmt = select(QueuedEventModel).where(QueuedEventModel.status == QueuedEventStatus.QUEUED.value)
         if device_id:
-            result = [e for e in result if e.device_id == device_id]
+            stmt = stmt.where(QueuedEventModel.device_id == device_id)
         if priority:
-            result = [e for e in result if e.priority == priority]
+            stmt = stmt.where(QueuedEventModel.priority == priority.value)
 
         # Sort by priority (critical first), then by client timestamp.
-        priority_order = {
-            EventPriority.CRITICAL: 0,
-            EventPriority.HIGH: 1,
-            EventPriority.NORMAL: 2,
-            EventPriority.LOW: 3,
-        }
-        result.sort(key=lambda e: (priority_order[e.priority], e.client_timestamp))
-        return result
+        # Note: priority values are strings, so we might need a mapping in SQL if we wanted ORDER BY priority
+        # But for simulation matching, we'll fetch and sort in memory if needed or just use multiple queries.
+        # Let's use simple ORDER BY if priority was numeric, but it's string.
+        
+        result = await db.execute(stmt)
+        events = list(result.scalars().all())
 
-    def mark_synced(self, event_id: UUID) -> QueuedEvent:
-        if event_id not in self._event_queue:
+        priority_order = {
+            EventPriority.CRITICAL.value: 0,
+            EventPriority.HIGH.value: 1,
+            EventPriority.NORMAL.value: 2,
+            EventPriority.LOW.value: 3,
+        }
+        events.sort(key=lambda e: (priority_order.get(e.priority, 9), e.client_timestamp))
+        return events
+
+    async def mark_synced(self, db: AsyncSession, event_id: UUID) -> QueuedEventModel:
+        stmt = select(QueuedEventModel).where(QueuedEventModel.id == event_id)
+        result = await db.execute(stmt)
+        event = result.scalar_one_or_none()
+        if not event:
             raise KeyError("Event not found")
 
-        event = self._event_queue[event_id]
-        event.status = QueuedEventStatus.SYNCED
+        event.status = QueuedEventStatus.SYNCED.value
         event.synced_at = _utcnow()
+        await db.flush()
         return event
 
-    def mark_conflict(
+    async def mark_conflict(
         self,
+        db: AsyncSession,
         event_id: UUID,
         *,
         conflict_details: dict[str, Any],
-    ) -> QueuedEvent:
-        if event_id not in self._event_queue:
+    ) -> QueuedEventModel:
+        stmt = select(QueuedEventModel).where(QueuedEventModel.id == event_id)
+        result = await db.execute(stmt)
+        event = result.scalar_one_or_none()
+        if not event:
             raise KeyError("Event not found")
 
-        event = self._event_queue[event_id]
-        event.status = QueuedEventStatus.CONFLICT
+        event.status = QueuedEventStatus.CONFLICT.value
         event.conflict_details = conflict_details
 
         # Apply resolution strategy from rules.
-        rule = self._criticality_rules.get(event.entity_type)
+        rule_stmt = select(CriticalityRuleModel).where(CriticalityRuleModel.entity_type == event.entity_type)
+        rule_result = await db.execute(rule_stmt)
+        rule = rule_result.scalar_one_or_none()
+        
         if rule:
             event.resolution_strategy = rule.resolution_strategy
         else:
-            event.resolution_strategy = ConflictResolutionStrategy.MANUAL_REVIEW
+            event.resolution_strategy = ConflictResolutionStrategy.MANUAL_REVIEW.value
 
+        await db.flush()
         return event
 
-    def resolve_conflict(
+    async def resolve_conflict(
         self,
+        db: AsyncSession,
         event_id: UUID,
         *,
         resolution: ConflictResolutionStrategy,
         actor_roles: Iterable[str],
-    ) -> QueuedEvent:
+    ) -> QueuedEventModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to resolve conflicts")
-        if event_id not in self._event_queue:
+        
+        stmt = select(QueuedEventModel).where(QueuedEventModel.id == event_id)
+        result = await db.execute(stmt)
+        event = result.scalar_one_or_none()
+        if not event:
             raise KeyError("Event not found")
 
-        event = self._event_queue[event_id]
-        event.resolution_strategy = resolution
-        event.status = QueuedEventStatus.RESOLVED
+        event.resolution_strategy = resolution.value
+        event.status = QueuedEventStatus.RESOLVED.value
+        await db.flush()
         return event
 
-    def get_conflicts(self) -> list[QueuedEvent]:
-        return [
-            e for e in self._event_queue.values()
-            if e.status == QueuedEventStatus.CONFLICT
-        ]
+    async def get_conflicts(self, db: AsyncSession) -> list[QueuedEventModel]:
+        stmt = select(QueuedEventModel).where(QueuedEventModel.status == QueuedEventStatus.CONFLICT.value)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     # ---- Criticality Rules ----
 
-    def set_criticality_rule(
+    async def set_criticality_rule(
         self,
+        db: AsyncSession,
         *,
         entity_type: str,
         resolution_strategy: ConflictResolutionStrategy,
         actor_roles: Iterable[str],
-    ) -> CriticalityRule:
+    ) -> CriticalityRuleModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to set criticality rules")
 
-        rule = CriticalityRule(
-            id=uuid4(),
-            entity_type=entity_type,
-            resolution_strategy=resolution_strategy,
-        )
-        self._criticality_rules[entity_type] = rule
+        stmt = select(CriticalityRuleModel).where(CriticalityRuleModel.entity_type == entity_type)
+        result = await db.execute(stmt)
+        rule = result.scalar_one_or_none()
+        
+        if not rule:
+            rule = CriticalityRuleModel(
+                id=uuid4(),
+                entity_type=entity_type,
+            )
+            db.add(rule)
+        
+        rule.resolution_strategy = resolution_strategy.value
+        await db.flush()
         return rule
 
-    def get_criticality_rule(self, entity_type: str) -> CriticalityRule | None:
-        return self._criticality_rules.get(entity_type)
+    async def get_criticality_rule(self, db: AsyncSession, entity_type: str) -> CriticalityRuleModel | None:
+        stmt = select(CriticalityRuleModel).where(CriticalityRuleModel.entity_type == entity_type)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     # ---- RTO/RPO Validation ----
 
-    def set_rto_rpo_targets(
+    async def set_rto_rpo_targets(
         self,
+        db: AsyncSession,
         *,
         rto_minutes: int,
         rpo_minutes: int,
         actor_user_id: UUID,
         actor_roles: Iterable[str],
-    ) -> RTORPOConfig:
+    ) -> RTORPOConfigModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to set RTO/RPO targets")
 
-        config = RTORPOConfig(
-            id=uuid4(),
-            rto_minutes=rto_minutes,
-            rpo_minutes=rpo_minutes,
-            last_validated_at=None,
-            validation_passed=None,
-            created_at=_utcnow(),
-            updated_by=actor_user_id,
-        )
-        self._rto_rpo_config = config
+        # Get latest or create
+        stmt = select(RTORPOConfigModel).order_by(RTORPOConfigModel.created_at.desc())
+        result = await db.execute(stmt)
+        config = result.scalars().first()
+        
+        if not config:
+            config = RTORPOConfigModel(id=uuid4())
+            db.add(config)
+            
+        config.rto_minutes = rto_minutes
+        config.rpo_minutes = rpo_minutes
+        config.updated_by_id = actor_user_id
+        
+        await db.flush()
         return config
 
-    def get_rto_rpo_config(self) -> RTORPOConfig | None:
-        return self._rto_rpo_config
+    async def get_rto_rpo_config(self, db: AsyncSession) -> RTORPOConfigModel | None:
+        stmt = select(RTORPOConfigModel).order_by(RTORPOConfigModel.created_at.desc())
+        result = await db.execute(stmt)
+        return result.scalars().first()
 
-    def validate_rto_rpo(
+    async def validate_rto_rpo(
         self,
+        db: AsyncSession,
         *,
         achieved_rto_minutes: int,
         achieved_rpo_minutes: int,
@@ -289,16 +328,18 @@ class BusinessContinuityService:
     ) -> dict[str, Any]:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to validate RTO/RPO")
-        if not self._rto_rpo_config:
+        
+        config = await self.get_rto_rpo_config(db)
+        if not config:
             raise ValueError("RTO/RPO targets not configured")
 
-        config = self._rto_rpo_config
         rto_passed = achieved_rto_minutes <= config.rto_minutes
         rpo_passed = achieved_rpo_minutes <= config.rpo_minutes
         overall_passed = rto_passed and rpo_passed
 
         config.last_validated_at = _utcnow()
         config.validation_passed = overall_passed
+        await db.flush()
 
         return {
             "rto_target": config.rto_minutes,
@@ -312,86 +353,95 @@ class BusinessContinuityService:
 
     # ---- Restore Rehearsal ----
 
-    def schedule_rehearsal(
+    async def schedule_rehearsal(
         self,
+        db: AsyncSession,
         *,
         scheduled_at: datetime,
         actor_user_id: UUID,
         actor_roles: Iterable[str],
-    ) -> RestoreRehearsal:
+    ) -> RestoreRehearsalModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to schedule rehearsals")
 
-        rehearsal = RestoreRehearsal(
+        rehearsal = RestoreRehearsalModel(
             id=uuid4(),
             scheduled_at=scheduled_at,
-            started_at=None,
-            completed_at=None,
-            status=RehearsalStatus.SCHEDULED,
-            rto_achieved_minutes=None,
-            rpo_achieved_minutes=None,
-            notes=None,
-            created_by=actor_user_id,
+            status=RehearsalStatus.SCHEDULED.value,
+            created_by_id=actor_user_id,
         )
-        self._rehearsals[rehearsal.id] = rehearsal
+        db.add(rehearsal)
+        await db.flush()
         return rehearsal
 
-    def start_rehearsal(
+    async def start_rehearsal(
         self,
+        db: AsyncSession,
         rehearsal_id: UUID,
         *,
         actor_roles: Iterable[str],
-    ) -> RestoreRehearsal:
+    ) -> RestoreRehearsalModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to start rehearsals")
-        if rehearsal_id not in self._rehearsals:
+        
+        stmt = select(RestoreRehearsalModel).where(RestoreRehearsalModel.id == rehearsal_id)
+        result = await db.execute(stmt)
+        rehearsal = result.scalar_one_or_none()
+        if not rehearsal:
             raise KeyError("Rehearsal not found")
 
-        rehearsal = self._rehearsals[rehearsal_id]
-        rehearsal.status = RehearsalStatus.RUNNING
+        rehearsal.status = RehearsalStatus.RUNNING.value
         rehearsal.started_at = _utcnow()
+        await db.flush()
         return rehearsal
 
-    def complete_rehearsal(
+    async def complete_rehearsal(
         self,
+        db: AsyncSession,
         rehearsal_id: UUID,
         *,
         rto_achieved_minutes: int,
         rpo_achieved_minutes: int,
         notes: str | None,
         actor_roles: Iterable[str],
-    ) -> RestoreRehearsal:
+    ) -> RestoreRehearsalModel:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to complete rehearsals")
-        if rehearsal_id not in self._rehearsals:
+        
+        stmt = select(RestoreRehearsalModel).where(RestoreRehearsalModel.id == rehearsal_id)
+        result = await db.execute(stmt)
+        rehearsal = result.scalar_one_or_none()
+        if not rehearsal:
             raise KeyError("Rehearsal not found")
 
-        rehearsal = self._rehearsals[rehearsal_id]
         rehearsal.completed_at = _utcnow()
         rehearsal.rto_achieved_minutes = rto_achieved_minutes
         rehearsal.rpo_achieved_minutes = rpo_achieved_minutes
         rehearsal.notes = notes
 
         # Determine pass/fail based on current config.
-        if self._rto_rpo_config:
+        config = await self.get_rto_rpo_config(db)
+        if config:
             passed = (
-                rto_achieved_minutes <= self._rto_rpo_config.rto_minutes
-                and rpo_achieved_minutes <= self._rto_rpo_config.rpo_minutes
+                rto_achieved_minutes <= config.rto_minutes
+                and rpo_achieved_minutes <= config.rpo_minutes
             )
-            rehearsal.status = RehearsalStatus.PASSED if passed else RehearsalStatus.FAILED
+            rehearsal.status = RehearsalStatus.PASSED.value if passed else RehearsalStatus.FAILED.value
         else:
-            rehearsal.status = RehearsalStatus.PASSED
+            rehearsal.status = RehearsalStatus.PASSED.value
 
+        await db.flush()
         return rehearsal
 
-    def list_rehearsals(
+    async def list_rehearsals(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
-    ) -> list[RestoreRehearsal]:
+    ) -> list[RestoreRehearsalModel]:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to view rehearsals")
 
-        result = list(self._rehearsals.values())
-        result.sort(key=lambda r: r.scheduled_at, reverse=True)
-        return result
+        stmt = select(RestoreRehearsalModel).order_by(RestoreRehearsalModel.scheduled_at.desc())
+        result = await db.execute(stmt)
+        return list(result.scalars().all())

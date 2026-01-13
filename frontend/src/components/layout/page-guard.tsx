@@ -58,42 +58,17 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
   const hasAccess = requiredRoles.length === 0 || 
     userRoles.some(role => requiredRoles.includes(role));
 
+  useEffect(() => {
+    // No redirects, just silent hiding as requested
+  }, [hasAccess, isAuthenticated, isLoading, pathname]);
+
   if (!hasAccess) {
     if (fallback) {
       return <>{fallback}</>;
     }
 
-    return (
-      <div className="flex h-[50vh] items-center justify-center p-4">
-        <Card className="max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-              <ShieldAlert className="h-6 w-6 text-destructive" />
-            </div>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You don&apos;t have permission to access this page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground text-center">
-              This page requires one of the following roles:{' '}
-              <span className="font-medium">
-                {requiredRoles.join(', ') || 'authorized user'}
-              </span>
-            </p>
-            <div className="flex justify-center gap-2 mt-4">
-              <Button variant="outline" onClick={() => router.back()}>
-                Go Back
-              </Button>
-              <Button onClick={() => router.push('/today')}>
-                Go to Dashboard
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    // Return null to "remove from view" instead of showing error or redirecting
+    return null;
   }
 
   return <>{children}</>;

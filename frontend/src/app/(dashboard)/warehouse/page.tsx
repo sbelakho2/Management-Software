@@ -20,6 +20,9 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { hasPageAccess } from '@/lib/page-access';
+import { useAuthStore } from '@/stores';
+import { UserRole } from '@/types';
 
 // Demo data - in production, this would come from API
 const inventoryStats = {
@@ -92,6 +95,12 @@ function StatCard({
 
 export default function WarehouseDashboard() {
   const [isLoading, setIsLoading] = React.useState(true);
+  const { user } = useAuthStore();
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
   React.useEffect(() => {
     // Simulate loading
@@ -120,26 +129,32 @@ export default function WarehouseDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Warehouse Dashboard</h1>
-          <p className="text-muted-foreground">
-            Monitor inventory, track movements, and manage stock levels
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Logistics & Inventory
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Monitor global stock levels, track material flow, and manage supply chain velocity
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Sync Inventory
-          </Button>
-          <Button asChild>
-            <Link href="/supply-chain">
-              <Package className="h-4 w-4 mr-2" />
-              View Inventory
-            </Link>
-          </Button>
+        <div className="flex items-center gap-3">
+          {hasPageAccess('/warehouse/sync', userRoles) && (
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Sync Real-time Stock
+            </Button>
+          )}
+          {hasPageAccess('/supply-chain', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+              <Link href="/supply-chain">
+                <Package className="h-4 w-4 mr-2" />
+                Inventory Command
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -246,12 +261,14 @@ export default function WarehouseDashboard() {
                 </div>
               ))}
             </div>
-            <Button variant="outline" className="w-full mt-4" asChild>
-              <Link href="/supply-chain?filter=low-stock">
-                <ClipboardList className="h-4 w-4 mr-2" />
-                View All Low Stock Items
-              </Link>
-            </Button>
+            {hasPageAccess('/supply-chain', userRoles) && (
+              <Button variant="outline" className="w-full mt-4" asChild>
+                <Link href="/supply-chain?filter=low-stock">
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  View All Low Stock Items
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -69,10 +69,10 @@ const priorityConfig = {
 function ProductionStats() {
   const { stats } = useProductionStore();
   
-  const inProgress = stats?.by_status?.in_progress || 0;
-  const onHold = stats?.by_status?.on_hold || 0;
-  const dueSoon = stats?.due_soon || 0;
-  const onTimeRate = stats?.on_time_rate || 0;
+  const inProgress = stats?.in_progress || 0;
+  const onHold = stats?.on_hold || 0;
+  const overdue = stats?.overdue || 0;
+  const efficiency = stats?.efficiency_rate || 0;
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
@@ -111,8 +111,8 @@ function ProductionStats() {
               <Clock className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{dueSoon}</p>
-              <p className="text-sm text-muted-foreground">Due This Week</p>
+              <p className="text-2xl font-bold">{overdue}</p>
+              <p className="text-sm text-muted-foreground">Overdue</p>
             </div>
           </div>
         </CardContent>
@@ -124,8 +124,8 @@ function ProductionStats() {
               <TrendingUp className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{onTimeRate}%</p>
-              <p className="text-sm text-muted-foreground">On-Time Rate</p>
+              <p className="text-2xl font-bold">{efficiency}%</p>
+              <p className="text-sm text-muted-foreground">Efficiency</p>
             </div>
           </div>
         </CardContent>

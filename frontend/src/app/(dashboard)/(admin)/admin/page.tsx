@@ -22,6 +22,15 @@ import {
   Target,
   History,
 } from 'lucide-react';
+import { format } from 'date-fns';
+
+const formatDate = (dateString: string) => {
+  try {
+    return format(new Date(dateString), 'MMM d, yyyy HH:mm');
+  } catch {
+    return dateString;
+  }
+};
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -100,6 +109,7 @@ export default function AdminPage() {
     roles,
     learningCadences,
     featureFlags,
+    auditLogs,
     isLoading,
     fetchGates,
     fetchApprovals,
@@ -107,6 +117,7 @@ export default function AdminPage() {
     fetchRoles,
     fetchLearningCadences,
     fetchFeatureFlags,
+    fetchAuditLogs,
     toggleGateStatus,
     toggleApprovalStatus,
     toggleLearningCadenceStatus,
@@ -122,6 +133,7 @@ export default function AdminPage() {
     fetchRoles();
     fetchLearningCadences();
     fetchFeatureFlags();
+    fetchAuditLogs();
   }, []);
 
   // Lineage State
@@ -988,25 +1000,29 @@ export default function AdminPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[
-                    { ts: '2026-01-12 10:45:22', user: 'admin@starzm.com', action: 'LOGIN', entity: 'User', changes: 'Successful login', ip: '192.168.1.45' },
-                    { ts: '2026-01-12 09:30:15', user: 'j.doe@starzm.com', action: 'UPDATE', entity: 'Quote', changes: 'Status changed: draft -> pending', ip: '192.168.1.12' },
-                    { ts: '2026-01-12 08:15:00', user: 'system', action: 'BACKUP', entity: 'Database', changes: 'Automated daily backup completed', ip: '127.0.0.1' },
-                    { ts: '2026-01-11 17:40:10', user: 's.chen@starzm.com', action: 'CREATE', entity: 'NonConformance', changes: 'NCR-2026-0012 created', ip: '192.168.1.88' },
-                  ].map((log, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="text-xs font-mono">{log.ts}</TableCell>
-                      <TableCell>{log.user}</TableCell>
+                  {auditLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell className="text-xs font-mono">{formatDate(log.created_at)}</TableCell>
+                      <TableCell>{log.user_email}</TableCell>
                       <TableCell>
                         <Badge variant={log.action === 'CREATE' ? 'default' : log.action === 'UPDATE' ? 'outline' : 'secondary'}>
                           {log.action}
                         </Badge>
                       </TableCell>
-                      <TableCell>{log.entity}</TableCell>
-                      <TableCell className="text-sm">{log.changes}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{log.ip}</TableCell>
+                      <TableCell>{log.entity_type}</TableCell>
+                      <TableCell className="text-sm">
+                        {typeof log.extra_data === 'string' ? log.extra_data : JSON.stringify(log.extra_data)}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{log.ip_address || 'N/A'}</TableCell>
                     </TableRow>
                   ))}
+                  {auditLogs.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        No audit logs found.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

@@ -36,6 +36,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAnalyticsStore } from '@/stores';
 import { cn } from '@/lib/utils';
+import { PageGuard } from '@/components/layout/page-guard';
+import { ANALYTICS_ROLES } from '@/lib/page-access';
 
 // Types
 interface MLInsight {
@@ -61,21 +63,12 @@ interface PerformanceTrend {
   prediction_30d: number;
 }
 
-const ALLOWED_ROLES = ['admin', 'ceo', 'gm', 'exec', 'ops', 'finance', 'quality'];
-
 export default function AnalyticsPage() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
-  const router = useRouter();
   const [selectedPeriod, setSelectedPeriod] = React.useState('7d');
   const [activeTab, setActiveTab] = React.useState('overview');
+  const { isAuthenticated } = useAuthStore();
   
-  const { insights, trends, health, loading: analyticsLoading, fetchInsights, fetchTrends, fetchHealth } = useAnalyticsStore();
-
-  React.useEffect(() => {
-    if (!authLoading && isAuthenticated && user && !ALLOWED_ROLES.includes(user.role)) {
-      router.push('/today');
-    }
-  }, [user, isAuthenticated, authLoading, router]);
+  const { insights, trends, health, fetchInsights, fetchTrends, fetchHealth, loading: analyticsLoading } = useAnalyticsStore();
 
   React.useEffect(() => {
     if (isAuthenticated) {
@@ -84,18 +77,6 @@ export default function AnalyticsPage() {
       fetchHealth();
     }
   }, [fetchInsights, fetchTrends, fetchHealth, isAuthenticated]);
-
-  if (authLoading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated || (user && !ALLOWED_ROLES.includes(user.role))) {
-    return null;
-  }
 
   const getInsightIcon = (type: MLInsight['type']) => {
     const icons = {
@@ -121,84 +102,95 @@ export default function AnalyticsPage() {
     ...data
   })) : [];
 
+  const oeeTrend = trends.find(t => t.metric.toLowerCase().includes('oee'));
+  const currentOEE = oeeTrend ? oeeTrend.current_value : 84.2;
+  const systemHealth = health?.overall_health_score !== undefined ? (health.overall_health_score * 100).toFixed(1) : "99.9";
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Shield className="h-8 w-8 text-primary" />
-            North Star Control Plane
+    <div className="space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
+            <Shield className="h-10 w-10 text-primary" />
+            North Star Intelligence
           </h1>
-          <p className="text-muted-foreground">
-            Unified organizational intelligence and strategic health indicators
+          <p className="text-muted-foreground font-medium">
+            Unified organizational intelligence and strategic cross-gate analytics
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-40 h-11 rounded-xl bg-background/50 border-border/50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="24h">24 Hours</SelectItem>
-              <SelectItem value="7d">7 Days</SelectItem>
-              <SelectItem value="30d">30 Days</SelectItem>
-              <SelectItem value="90d">90 Days</SelectItem>
+              <SelectItem value="24h">Last 24 Hours</SelectItem>
+              <SelectItem value="7d">Last 7 Days</SelectItem>
+              <SelectItem value="30d">Last 30 Days</SelectItem>
+              <SelectItem value="90d">Last 90 Days</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="gap-2">
-            <Download className="h-4 w-4" />
-            Export Report
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
+            <Download className="h-4 w-4 mr-2" />
+            Export Intel
           </Button>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="bg-primary/5 border-primary/20">
+        <Card className="bg-primary/5 border-primary/20 hover:shadow-glow-primary transition-all">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Organizational OEE</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Organizational OEE</CardTitle>
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">84.2%</div>
-            <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-              <TrendingUp className="h-3 w-3" />
-              +2.1% from last week
+            <div className="text-3xl font-bold tracking-tight">{currentOEE}%</div>
+            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
+              {oeeTrend ? (
+                <>
+                  {oeeTrend.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {oeeTrend.change_percent > 0 ? '+' : ''}{oeeTrend.change_percent.toFixed(1)}% Alpha
+                </>
+              ) : "+2.1% Alpha"}
             </div>
-            <Progress value={84.2} className="h-1.5 mt-3" />
+            <Progress value={currentOEE} className="h-1.5 mt-4" />
           </CardContent>
         </Card>
 
-        <Card className="bg-primary/5 border-primary/20">
+        <Card className="bg-success/5 border-success/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Strategic Risk Level</CardTitle>
-            <Shield className="h-4 w-4 text-primary" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-success/60">Strategic Risk</CardTitle>
+            <Shield className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Low</div>
-            <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-              Stable trend
+            <div className="text-3xl font-bold tracking-tight text-success">LOW</div>
+            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
+              Stable Gradient
             </div>
-            <div className="flex gap-1 mt-3">
-              <div className="h-1.5 flex-1 rounded-full bg-green-500" />
+            <div className="flex gap-1 mt-4">
+              <div className="h-1.5 flex-1 rounded-full bg-success shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
               <div className="h-1.5 flex-1 rounded-full bg-muted" />
               <div className="h-1.5 flex-1 rounded-full bg-muted" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-primary/5 border-primary/20">
+        <Card className="bg-primary/5 border-primary/20 overflow-hidden relative group">
+          <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-110 transition-transform">
+             <Brain className="h-24 w-24 text-primary" />
+          </div>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">ML Insights</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">AI Insights</CardTitle>
             <Brain className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{insights.length}</div>
-            <div className="flex items-center gap-1 text-xs text-amber-600 mt-1">
-              {insights.filter(i => i.impact === 'high').length} high impact
+            <div className="text-3xl font-bold tracking-tight">{insights.length}</div>
+            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-warning mt-1">
+              {insights.filter(i => i.impact === 'high').length} High Impact
             </div>
-            <div className="mt-3 flex -space-x-2">
+            <div className="mt-4 flex -space-x-2">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-6 w-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[10px] font-bold">
+                <div key={i} className="h-6 w-6 rounded-full bg-primary/20 border-2 border-background flex items-center justify-center text-[10px] font-bold text-primary">
                   AI
                 </div>
               ))}
@@ -208,161 +200,169 @@ export default function AnalyticsPage() {
 
         <Card className="bg-primary/5 border-primary/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">System Health</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Health Index</CardTitle>
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">99.9%</div>
-            <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
-              All services operational
+            <div className="text-3xl font-bold tracking-tight">{systemHealth}%</div>
+            <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
+              {parseFloat(systemHealth) > 90 ? "OPTIMAL VELOCITY" : "DEGRADED"}
             </div>
-            <div className="mt-3 flex gap-0.5 h-6 items-end">
-              {[4, 6, 5, 8, 7, 9, 8, 10, 9, 10].map((h, i) => (
-                <div key={i} className="flex-1 bg-green-500 rounded-t-sm" style={{ height: `${h * 10}%` }} />
+            <div className="mt-4 flex gap-0.5 h-6 items-end">
+              {(health?.health_history || [4, 6, 5, 8, 7, 9, 8, 10, 9, 10]).map((h: number, i: number) => (
+                <div key={i} className="flex-1 bg-primary/40 rounded-t-sm hover:bg-primary transition-colors cursor-help" style={{ height: `${h * 10}%` }} />
               ))}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="insights">ML Insights</TabsTrigger>
-          <TabsTrigger value="trends">Predictive Trends</TabsTrigger>
-          <TabsTrigger value="models">Model Performance</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="bg-muted/50 p-1 rounded-xl h-12 border border-border/10 w-fit">
+          <TabsTrigger value="overview" className="rounded-lg px-6 h-10 data-[state=active]:shadow-premium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">Overview</TabsTrigger>
+          <TabsTrigger value="insights" className="rounded-lg px-6 h-10 data-[state=active]:shadow-premium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">ML Insights</TabsTrigger>
+          <TabsTrigger value="trends" className="rounded-lg px-6 h-10 data-[state=active]:shadow-premium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">Predictive Trends</TabsTrigger>
+          <TabsTrigger value="models" className="rounded-lg px-6 h-10 data-[state=active]:shadow-premium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">Model Health</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <Card>
+        <TabsContent value="overview" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <Card className="premium-glass">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-primary" />
-                Priority ML Insights
-              </CardTitle>
-              <CardDescription>AI-generated insights requiring attention</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-primary fill-primary" />
+                    Strategic Intelligence Feed
+                  </CardTitle>
+                  <CardDescription>AI-generated directives requiring immediate command attention</CardDescription>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               {analyticsLoading ? (
-                <div className="py-12 text-center text-muted-foreground">Loading AI insights...</div>
+                <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="font-bold uppercase tracking-widest text-xs">Sensei AI is reasoning...</p>
+                </div>
               ) : insights.length > 0 ? (
                 insights
                   .filter(i => i.impact === 'high')
                   .map((insight) => {
                     const Icon = getInsightIcon(insight.type);
                     return (
-                      <Card key={insight.id} className="border-l-4 border-l-primary">
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="p-2 bg-primary/10 rounded-lg">
-                              <Icon className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <h4 className="font-semibold">{insight.title}</h4>
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    {insight.description}
-                                  </p>
-                                </div>
-                                <Badge className={getImpactColor(insight.impact)}>
-                                  {insight.impact}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <Eye className="h-3 w-3" />
-                                  Confidence: {(insight.confidence * 100).toFixed(0)}%
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Brain className="h-3 w-3" />
-                                  {insight.model_name}
-                                </div>
-                                <Badge variant="outline">{insight.category}</Badge>
-                              </div>
-                              {insight.action_items && (
-                                <div className="mt-3 p-3 bg-muted rounded-lg">
-                                  <div className="text-xs font-medium mb-2">Recommended Actions:</div>
-                                  <ul className="text-xs space-y-1">
-                                    {insight.action_items.map((action, idx) => (
-                                      <li key={idx} className="flex items-start gap-2">
-                                        <CheckCircle2 className="h-3 w-3 mt-0.5 text-primary" />
-                                        {action}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
+                      <div key={insight.id} className="p-5 rounded-2xl bg-muted/30 border border-border/10 hover:bg-muted/50 transition-all group">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-primary/10 rounded-xl text-primary shadow-sm">
+                            <Icon className="h-6 w-6" />
                           </div>
-                        </CardContent>
-                      </Card>
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h4 className="font-bold text-lg group-hover:text-primary transition-colors">{insight.title}</h4>
+                                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                                  {insight.description}
+                                </p>
+                              </div>
+                              <Badge className={cn("rounded-md font-bold uppercase tracking-widest text-[10px] px-2 py-0.5", getImpactColor(insight.impact))}>
+                                {insight.impact} IMPACT
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                              <div className="flex items-center gap-1">
+                                <Eye className="h-3 w-3" />
+                                Confidence: {(insight.confidence * 100).toFixed(0)}%
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Brain className="h-3 w-3" />
+                                {insight.model_name}
+                              </div>
+                              <Badge variant="outline" className="text-[9px] rounded-md">{insight.category}</Badge>
+                            </div>
+                            {insight.action_items && (
+                              <div className="mt-4 p-4 bg-background/50 rounded-xl border border-border/20">
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-primary mb-3">Sensei Recommended Actions:</div>
+                                <ul className="space-y-2">
+                                  {insight.action_items.map((action, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 text-sm font-medium">
+                                      <CheckCircle2 className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                                      {action}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })
               ) : (
-                <div className="py-12 text-center text-muted-foreground">No priority insights at this time.</div>
+                <div className="py-20 text-center text-muted-foreground font-medium italic">No priority insights at this time. Organizational performance is within optimal parameters.</div>
               )}
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Key Metric Trends</CardTitle>
-                <CardDescription>Current vs predicted values</CardDescription>
+                <CardTitle className="text-xl">Predictive Metric Gradients</CardTitle>
+                <CardDescription>Current trajectory vs AI forecasted outcome</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {trends.slice(0, 2).map((trend) => (
-                  <div key={trend.metric}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">{trend.metric}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl font-bold">{trend.current_value}%</span>
-                        <Badge variant={trend.trend === 'up' ? 'default' : trend.trend === 'down' ? 'destructive' : 'secondary'}>
-                          {trend.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : trend.trend === 'down' ? <TrendingDown className="h-3 w-3" /> : null}
+              <CardContent className="space-y-6">
+                {trends.slice(0, 3).map((trend) => (
+                  <div key={trend.metric} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">{trend.metric}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl font-bold">{trend.current_value}%</span>
+                        <Badge 
+                          variant={trend.trend === 'up' ? 'default' : trend.trend === 'down' ? 'destructive' : 'secondary'}
+                          className="rounded-md font-bold text-[10px] uppercase tracking-wider"
+                        >
+                          {trend.trend === 'up' ? <TrendingUp className="h-3 w-3 mr-1" /> : trend.trend === 'down' ? <TrendingDown className="h-3 w-3 mr-1" /> : null}
                           {Math.abs(trend.change_percent).toFixed(1)}%
                         </Badge>
                       </div>
                     </div>
-                    <div className="flex gap-2 text-xs text-muted-foreground">
-                      <div>7d: {trend.prediction_7d}%</div>
-                      <div>30d: {trend.prediction_7d}%</div>
-                    </div>
                     <Progress 
-                      value={(trend.current_value / 100) * 100} 
-                      className="h-2 mt-2"
+                      value={trend.current_value} 
+                      className="h-2 rounded-full"
                     />
+                    <div className="flex justify-between text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                      <span>Historical Average</span>
+                      <span className="text-primary/60 italic">Forecast (7d): {trend.prediction_7d}%</span>
+                    </div>
                   </div>
                 ))}
-                {trends.length === 0 && <div className="text-center text-muted-foreground py-8">No trend data available.</div>}
+                {trends.length === 0 && <div className="text-center text-muted-foreground py-12 font-medium italic">Establishing data baseline...</div>}
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="premium-glass">
               <CardHeader>
-                <CardTitle>Model Health Status</CardTitle>
-                <CardDescription>Real-time model monitoring</CardDescription>
+                <CardTitle className="text-xl">Autonomous Model Health</CardTitle>
+                <CardDescription>Real-time monitoring of inference reliability</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
                 {models.map((model) => (
-                  <div key={model.model_name} className="flex items-center justify-between">
+                  <div key={model.model_name} className="p-3 rounded-xl bg-muted/20 border border-border/10 flex items-center justify-between">
                     <div className="flex-1">
-                      <div className="text-sm font-medium capitalize">{model.model_name.replace('_', ' ')}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{model.metric || 'Accuracy'}: {((model.accuracy || 0) * 100).toFixed(1)}%</span>
+                      <div className="text-sm font-bold capitalize tracking-tight">{model.model_name.replace('_', ' ')} Intelligence</div>
+                      <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">
+                        <span className="text-primary/70">Accuracy: {((model.accuracy || 0) * 100).toFixed(1)}%</span>
                         <span>•</span>
-                        <span>{model.predictions_today || 0} predictions</span>
+                        <span>{model.predictions_today || 0} Inferences Today</span>
                       </div>
                     </div>
                     <Badge
                       variant={model.status === 'healthy' ? 'default' : model.status === 'warning' ? 'secondary' : 'destructive'}
-                      className="capitalize"
+                      className="rounded-md text-[9px] font-bold uppercase tracking-widest px-2"
                     >
-                      {model.status || 'healthy'}
+                      {model.status || 'OPTIMAL'}
                     </Badge>
                   </div>
                 ))}
-                {models.length === 0 && <div className="text-center text-muted-foreground py-8">No model health data available.</div>}
+                {models.length === 0 && <div className="text-center text-muted-foreground py-12 font-medium italic">Warming up ML compute clusters...</div>}
               </CardContent>
             </Card>
           </div>

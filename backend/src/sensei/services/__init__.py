@@ -299,6 +299,25 @@ from sensei.services.quality.audit_trail_timeline import (
     get_audit_trail_service,
     reset_audit_trail_service,
 )
+from sensei.services.production.productionization import (
+    ProductionizationService,
+    EntityType as MigrationEntityType,
+    ImportStatus,
+    ValidationResult as MigrationValidationResult,
+)
+from sensei.services.ops.analytics_warehouse import (
+    AnalyticsWarehouseService,
+    SnapshotStatus,
+    DimensionType,
+    FactType,
+)
+from sensei.services.core.business_continuity import (
+    BusinessContinuityService,
+    EventPriority,
+    ConflictResolutionStrategy,
+    QueuedEventStatus,
+    RehearsalStatus,
+)
 
 __all__ = [
     # RFQ Completeness
@@ -576,4 +595,20 @@ __all__ = [
     "DiffResult",
     "get_audit_trail_service",
     "reset_audit_trail_service",
+    # Productionization
+    "ProductionizationService",
+    "MigrationEntityType",
+    "ImportStatus",
+    "MigrationValidationResult",
+    # Analytics Warehouse
+    "AnalyticsWarehouseService",
+    "SnapshotStatus",
+    "DimensionType",
+    "FactType",
+    # Business Continuity
+    "BusinessContinuityService",
+    "EventPriority",
+    "ConflictResolutionStrategy",
+    "QueuedEventStatus",
+    "RehearsalStatus",
 ]

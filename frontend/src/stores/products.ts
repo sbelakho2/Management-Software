@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { productApi, Product, ProductDetail, ProductListParams } from '@/api/products';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface ProductState {
   products: Product[];
@@ -27,12 +28,12 @@ export const useProductStore = create<ProductState>((set, get) => ({
     try {
       const response = await productApi.listProducts(params);
       set({ 
-        products: response.data.data, 
-        totalProducts: response.data.total,
+        products: response.data, 
+        totalProducts: response.meta?.total || response.data.length,
         loading: false 
       });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
     }
   },
 
@@ -40,9 +41,9 @@ export const useProductStore = create<ProductState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await productApi.getProduct(id);
-      set({ currentProduct: response.data.data, loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ currentProduct: response.data, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
     }
   },
 
@@ -52,8 +53,8 @@ export const useProductStore = create<ProductState>((set, get) => ({
       await productApi.createProduct(data);
       await get().fetchProducts();
       set({ loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
       throw error;
     }
   },
@@ -67,8 +68,8 @@ export const useProductStore = create<ProductState>((set, get) => ({
         await get().fetchProduct(id);
       }
       set({ loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
       throw error;
     }
   },
@@ -79,8 +80,8 @@ export const useProductStore = create<ProductState>((set, get) => ({
       await productApi.deleteProduct(id);
       await get().fetchProducts();
       set({ loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
       throw error;
     }
   },

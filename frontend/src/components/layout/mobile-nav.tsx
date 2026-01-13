@@ -4,30 +4,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Home,
-  ClipboardCheck,
-  LayoutGrid,
-  Target,
   Menu,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
 import type { UserRole } from '@/types';
-
-interface MobileNavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-  roles?: UserRole[];
-}
-
-const mobileNavItems: MobileNavItem[] = [
-  { label: 'Home', href: '/today', icon: Home },
-  { label: 'Tasks', href: '/tasks', icon: ClipboardCheck },
-  { label: 'Ops', href: '/ops', icon: LayoutGrid },
-  { label: 'Sales', href: '/sales', icon: Target },
-];
+import { hasPageAccess } from '@/lib/page-access';
+import { NAV_SECTIONS, type NavItem } from '@/lib/navigation';
 
 /**
  * MobileBottomNav - Fixed bottom navigation for mobile devices
@@ -40,14 +24,33 @@ export function MobileBottomNav() {
   const { user } = useAuthStore();
   const { setSidebarState } = useUIStore();
 
-  const canAccess = React.useCallback((roles?: UserRole[]) => {
-    if (!roles || roles.length === 0) return true;
-    if (!user) return false;
-    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
-    return roles.some(role => userRoles.includes(role));
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
   }, [user]);
 
-  const filteredItems = mobileNavItems.filter(item => canAccess(item.roles));
+  // Extract a few key items for the bottom nav
+  const mobileNavItems = React.useMemo(() => {
+    const items: NavItem[] = [];
+    
+    // Always include Today if accessible
+    const today = NAV_SECTIONS[0].items.find(i => i.href === '/today');
+    if (today && hasPageAccess(today.href, userRoles)) items.push(today);
+    
+    // Include Tasks if accessible
+    const tasks = NAV_SECTIONS[0].items.find(i => i.href === '/tasks');
+    if (tasks && hasPageAccess(tasks.href, userRoles)) items.push(tasks);
+    
+    // Include Ops Overview if accessible
+    const ops = NAV_SECTIONS[2].items.find(i => i.href === '/ops');
+    if (ops && hasPageAccess(ops.href, userRoles)) items.push(ops);
+    
+    // Include Sales Overview if accessible
+    const sales = NAV_SECTIONS[1].items.find(i => i.href === '/sales');
+    if (sales && hasPageAccess(sales.href, userRoles)) items.push(sales);
+    
+    return items.slice(0, 4);
+  }, [userRoles]);
 
   // Don't show on auth pages
   if (pathname?.startsWith('/login') || pathname?.startsWith('/register') || pathname?.startsWith('/forgot')) {
@@ -60,7 +63,7 @@ export function MobileBottomNav() {
       role="navigation"
       aria-label="Mobile navigation"
     >
-      {filteredItems.map((item) => {
+      {mobileNavItems.map((item) => {
         const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
         return (
           <Link

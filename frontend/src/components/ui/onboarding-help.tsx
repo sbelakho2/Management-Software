@@ -330,26 +330,37 @@ export function TourOverlay(): React.ReactElement | null {
   const spotlightStyle = getSpotlightStyle(targetElement, step.spotlightPadding);
   const tooltipStyle = getTooltipStyle(targetElement, step.position || TOUR_POSITION.BOTTOM);
 
+  const getClipPath = useCallback(() => {
+    if (!targetElement) return undefined;
+    
+    const l = spotlightStyle.left;
+    const t = spotlightStyle.top;
+    const w = spotlightStyle.width;
+    const h = spotlightStyle.height;
+    
+    // Create a cutout by drawing a polygon that covers the whole screen
+    // then cuts into the middle and back out.
+    return `polygon(
+      0% 0%,
+      0% 100%,
+      ${l}px 100%,
+      ${l}px ${t}px,
+      ${Number(l) + Number(w)}px ${t}px,
+      ${Number(l) + Number(w)}px ${Number(t) + Number(h)}px,
+      ${l}px ${Number(t) + Number(h)}px,
+      ${l}px 100%,
+      100% 100%,
+      100% 0%
+    )`;
+  }, [targetElement, spotlightStyle]);
+
   return (
     <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-label="Product tour">
       {/* Overlay with spotlight cutout */}
       <div
         className="absolute inset-0 bg-black/50"
         style={{
-          clipPath: targetElement
-            ? `polygon(
-                0% 0%,
-                0% 100%,
-                ${spotlightStyle.left}px 100%,
-                ${spotlightStyle.left}px ${spotlightStyle.top}px,
-                ${Number(spotlightStyle.left) + Number(spotlightStyle.width)}px ${spotlightStyle.top}px,
-                ${Number(spotlightStyle.left) + Number(spotlightStyle.width)}px ${Number(spotlightStyle.top) + Number(spotlightStyle.height)}px,
-                ${spotlightStyle.left}px ${Number(spotlightStyle.top) + Number(spotlightStyle.height)}px,
-                ${spotlightStyle.left}px 100%,
-                100% 100%,
-                100% 0%
-              )`
-            : undefined,
+          clipPath: getClipPath() as any,
         }}
         onClick={endTour}
         aria-hidden="true"

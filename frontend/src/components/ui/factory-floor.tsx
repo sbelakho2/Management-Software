@@ -108,6 +108,37 @@ interface VoiceCommand {
   timestamp: Date;
 }
 
+// Speech Recognition Types for browsers that support it
+interface SpeechRecognitionEvent extends Event {
+  results: {
+    length: number;
+    [key: number]: {
+      length: number;
+      [key: number]: {
+        transcript: string;
+        confidence: number;
+      };
+    };
+  };
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
 // =============================================================================
 // SHOP FLOOR CONTEXT
 // =============================================================================

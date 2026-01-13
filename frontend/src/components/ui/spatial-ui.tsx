@@ -320,7 +320,7 @@ export function FactoryFloorMap({
         />
         {pathPoints.map((point, i) => (
           <circle
-            key={i}
+            key={orderPath.steps[i].cellId}
             cx={point.x}
             cy={point.y}
             r={8}
@@ -575,7 +575,7 @@ export function GembaPathVisualizer({ path, onClose, className = '' }: GembaPath
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-4 p-3 bg-muted rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 p-3 bg-muted rounded-lg">
         <div className="text-center">
           <div className="text-2xl font-bold text-primary">
             {path.totalProcessTime} min
@@ -920,8 +920,8 @@ export function KPIPanel({ kpis, columns = 4, className = '' }: KPIPanelProps) {
       className={`grid gap-4 ${className}`}
       style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}
     >
-      {kpis.map((kpi, index) => (
-        <div key={index} className="p-3 bg-muted/50 rounded-lg">
+      {kpis.map((kpi) => (
+        <div key={kpi.label} className="p-3 bg-muted/50 rounded-lg">
           <div className="text-xs text-muted-foreground mb-1">{kpi.label}</div>
           <div className={`text-2xl font-bold ${getStatusColor(kpi.status)}`}>
             {kpi.value}

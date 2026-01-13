@@ -426,7 +426,6 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
 
     newSocket.onopen = () => {
       set({ isConnected: true, connectionError: null });
-      console.log('Andon WebSocket connected');
     };
 
     newSocket.onmessage = (event) => {
@@ -440,7 +439,6 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
 
     newSocket.onclose = () => {
       set({ isConnected: false, socket: null });
-      console.log('Andon WebSocket disconnected');
       // Try to reconnect after 5 seconds
       setTimeout(() => get().connect(), 5000);
     };

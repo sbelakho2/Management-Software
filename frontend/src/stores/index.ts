@@ -15,3 +15,4 @@ export { useProductionStore } from './production';
 export { useTodayStore } from './today';
 export { useCustomersStore } from './customers';
 export { useTasksStore } from './tasks';
+export { useTrainingStore } from './training';

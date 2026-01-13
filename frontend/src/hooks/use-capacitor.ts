@@ -248,7 +248,6 @@ export function useCamera(): {
   const takePhoto = useCallback(async (options?: CameraOptions): Promise<CameraPhoto | null> => {
     if (isNativeApp()) {
       try {
-        // Dynamically import Capacitor Camera plugin
         const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
         
         const photo = await Camera.getPhoto({
@@ -600,7 +599,7 @@ export function usePushNotifications(): {
     }
 
     // Web fallback - show immediately or schedule
-    if (hasPermission && options.schedule?.at) {
+    if (hasPermission && options.schedule && 'at' in options.schedule) {
       const delay = options.schedule.at.getTime() - Date.now();
       if (delay > 0) {
         setTimeout(() => {
@@ -723,8 +722,8 @@ export function useShare(): {
         return true;
       }
 
-      if ('share' in navigator) {
-        await navigator.share({
+      if (typeof navigator !== 'undefined' && 'share' in navigator) {
+        await (navigator as Navigator).share({
           title: options.title,
           text: options.text,
           url: options.url,
@@ -733,8 +732,8 @@ export function useShare(): {
       }
 
       // Fallback: copy to clipboard
-      if (options.url && 'clipboard' in navigator) {
-        await navigator.clipboard.writeText(options.url);
+      if (options.url && typeof navigator !== 'undefined' && (navigator as Navigator).clipboard) {
+        await (navigator as Navigator).clipboard.writeText(options.url);
         return true;
       }
 
@@ -907,13 +906,13 @@ export function useBiometricAuth(): {
         const { NativeBiometric } = await import('capacitor-native-biometric');
         
         // Check if biometric auth is available
-        const result = await NativeBiometric.isAvailable();
+        const result = await NativeBiometric.isAvailable() as unknown as { isAvailable: boolean; biometryType?: number };
         if (!result.isAvailable) {
           return { verified: false, error: 'Biometric authentication not available' };
         }
         
         // Perform authentication
-        await NativeBiometric.verifyIdentity({
+        await (NativeBiometric as any).verifyIdentity({
           reason,
           title: 'Authentication Required',
           subtitle: reason,

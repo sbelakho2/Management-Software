@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import * as React from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -46,6 +47,10 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useA3Store } from '@/stores/a3';
+import { useAuthStore } from '@/stores';
+import { hasPageAccess } from '@/lib/page-access';
+import { UserRole } from '@/types';
 
 type A3Type = 'problem_solving' | 'proposal' | 'status_report' | 'strategy';
 type A3Status = 'draft' | 'in_progress' | 'review' | 'approved' | 'implemented' | 'closed' | 'cancelled';
@@ -103,22 +108,15 @@ const typeConfig: Record<A3Type, { label: string; color: string }> = {
 export default function A3Page() {
   const router = useRouter();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(true);
-  const [a3s, setA3s] = useState<A3[]>([]);
-  const [stats, setStats] = useState<A3Stats>({
-    total: 0,
-    by_status: {
-      draft: 0,
-      in_progress: 0,
-      review: 0,
-      approved: 0,
-      implemented: 0,
-      closed: 0,
-      cancelled: 0,
-    },
-    overdue_count: 0,
-    approval_pending: 0,
-  });
+  const { user } = useAuthStore();
+  
+  const { 
+    a3s, 
+    stats, 
+    isLoading, 
+    fetchA3s, 
+    deleteA3 
+  } = useA3Store();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -129,142 +127,17 @@ export default function A3Page() {
     fetchA3s();
   }, []);
 
-  const fetchA3s = async () => {
-    setIsLoading(true);
-    try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/a3s');
-      // const data = await response.json();
-
-      // Mock data
-      setTimeout(() => {
-        const mockA3s: A3[] = [
-          {
-            id: '1',
-            a3_number: 'A3-2024-0023',
-            title: 'Reduce Setup Time for CNC Machines',
-            a3_type: 'problem_solving',
-            status: 'in_progress',
-            author_name: 'John Smith',
-            sponsor_name: 'Sarah Johnson',
-            coach_name: 'Mike Williams',
-            target_completion_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
-            progress_percentage: 65,
-            priority: 'high',
-            department: 'Manufacturing',
-            tags: ['lean', 'setup-reduction', 'smed'],
-            created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            updated_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            a3_number: 'A3-2024-0024',
-            title: 'Surface Finish Defect Root Cause Analysis',
-            a3_type: 'problem_solving',
-            status: 'review',
-            author_name: 'Sarah Chen',
-            sponsor_name: 'Mike Williams',
-            target_completion_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-            progress_percentage: 95,
-            priority: 'critical',
-            department: 'Quality',
-            tags: ['quality', 'defects', 'root-cause'],
-            created_at: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-            updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            a3_number: 'A3-2024-0025',
-            title: 'New MRP System Implementation Proposal',
-            a3_type: 'proposal',
-            status: 'approved',
-            author_name: 'Maria Garcia',
-            sponsor_name: 'John Smith',
-            target_completion_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-            progress_percentage: 100,
-            priority: 'medium',
-            department: 'IT',
-            tags: ['systems', 'erp', 'improvement'],
-            created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-            updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '4',
-            a3_number: 'A3-2024-0026',
-            title: 'Q1 2024 Strategic Objectives',
-            a3_type: 'strategy',
-            status: 'implemented',
-            author_name: 'David Lee',
-            sponsor_name: 'CEO',
-            target_completion_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-            progress_percentage: 100,
-            priority: 'high',
-            department: 'Management',
-            tags: ['strategy', 'objectives', 'planning'],
-            created_at: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-            updated_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '5',
-            a3_number: 'A3-2024-0027',
-            title: 'Inventory Accuracy Improvement',
-            a3_type: 'problem_solving',
-            status: 'draft',
-            author_name: 'Emily Brown',
-            target_completion_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            progress_percentage: 15,
-            priority: 'medium',
-            department: 'Operations',
-            tags: ['inventory', 'accuracy', 'cycle-count'],
-            created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-            updated_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-          },
-        ];
-
-        setA3s(mockA3s);
-
-        // Calculate stats
-        const stats: A3Stats = {
-          total: mockA3s.length,
-          by_status: mockA3s.reduce((acc, a3) => {
-            acc[a3.status] = (acc[a3.status] || 0) + 1;
-            return acc;
-          }, {} as Record<A3Status, number>),
-          overdue_count: mockA3s.filter(a3 => {
-            if (!a3.target_completion_date) return false;
-            if (['closed', 'cancelled'].includes(a3.status)) return false;
-            return new Date(a3.target_completion_date) < new Date();
-          }).length,
-          approval_pending: mockA3s.filter(a3 => a3.status === 'review').length,
-        };
-
-        setStats(stats);
-        setIsLoading(false);
-      }, 500);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch A3 reports',
-        variant: 'destructive',
-      });
-      setIsLoading(false);
-    }
-  };
-
   const handleDelete = async (id: string) => {
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/a3s/${id}`, { method: 'DELETE' });
-
+      await deleteA3(id);
       toast({
         title: 'Success',
-        description: 'A3 deleted successfully',
+        description: 'A3 report deleted successfully',
       });
-      fetchA3s();
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to delete A3',
+        description: 'Failed to delete A3 report',
         variant: 'destructive',
       });
     }
@@ -298,6 +171,11 @@ export default function A3Page() {
     return new Date(a3.target_completion_date) < new Date();
   };
 
+  const userRoles = useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -308,17 +186,25 @@ export default function A3Page() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">A3 Reports</h1>
-          <p className="text-muted-foreground mt-1">Structured problem solving and continuous improvement</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            A3 Strategic Resolutions
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Structured problem solving and cross-functional continuous improvement
+          </p>
         </div>
-        <Button onClick={() => router.push('/a3/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New A3
-        </Button>
+        <div className="flex items-center gap-3">
+          {hasPageAccess('/a3/new', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/a3/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Resolution
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}

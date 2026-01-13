@@ -92,6 +92,18 @@ export interface FeatureFlag {
   updated_at: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  created_at: string;
+  user_email: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  request_id: string;
+  ip_address?: string;
+  extra_data?: any;
+}
+
 export interface AdminStats {
   total_gates: number;
   active_gates: number;
@@ -115,6 +127,7 @@ interface AdminState {
   roles: Role[];
   learningCadences: LearningCadence[];
   featureFlags: FeatureFlag[];
+  auditLogs: AuditLogEntry[];
   stats: AdminStats | null;
   
   // Loading & Error States
@@ -166,6 +179,9 @@ interface AdminState {
   toggleFeatureFlag: (id: string) => Promise<void>;
   updateRolloutPercentage: (id: string, percentage: number) => Promise<void>;
   
+  // Actions - Audit Logs
+  fetchAuditLogs: () => Promise<void>;
+
   // Actions - Stats
   fetchStats: () => Promise<void>;
   
@@ -187,6 +203,7 @@ export const useAdminStore = create<AdminState>()(
         roles: [],
         learningCadences: [],
         featureFlags: [],
+        auditLogs: [],
         stats: null,
         isLoading: false,
         error: null,
@@ -223,8 +240,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const response = await apiClient.get<Gate>(`/admin/gates/${id}`);
-            const gate = response.data;
+            const gate = await apiClient.get<Gate>(`/admin/gates/${id}`);
             
             set({ isLoading: false });
             return gate;
@@ -248,8 +264,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const response = await apiClient.post<Gate>('/admin/gates', gateData);
-            const newGate = response.data;
+            const newGate = await apiClient.post<Gate>('/admin/gates', gateData);
             
             set((state) => ({
               gates: [...state.gates, newGate],
@@ -270,8 +285,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const response = await apiClient.patch<Gate>(`/admin/gates/${id}`, updates);
-            const updatedGate = response.data;
+            const updatedGate = await apiClient.patch<Gate>(`/admin/gates/${id}`, updates);
             
             set((state) => ({
               gates: state.gates.map(g => g.id === id ? updatedGate : g),
@@ -749,6 +763,20 @@ export const useAdminStore = create<AdminState>()(
         
         updateRolloutPercentage: async (id: string, percentage: number) => {
           await get().updateFeatureFlag(id, { rollout_percentage: percentage });
+        },
+        
+        // Audit Logs Actions
+        fetchAuditLogs: async () => {
+          set({ isLoading: true, error: null });
+          try {
+            const data = await apiClient.get<any>('/audit-logs');
+            set({ auditLogs: data.items || [], isLoading: false });
+          } catch (error) {
+            set({
+              error: error instanceof Error ? error.message : 'Failed to fetch audit logs',
+              isLoading: false,
+            });
+          }
         },
         
         // Stats Actions

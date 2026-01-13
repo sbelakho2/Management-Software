@@ -17,7 +17,8 @@ export type CommandAction =
   | { type: 'callback'; handler: () => void | Promise<void> }
   | { type: 'open-modal'; modalId: string; data?: Record<string, unknown> }
   | { type: 'toggle'; settingKey: string }
-  | { type: 'search'; searchType: string };
+  | { type: 'search'; searchType: string }
+  | { type: 'open-external'; url: string };
 
 export interface Command {
   id: string;

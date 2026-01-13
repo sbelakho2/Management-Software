@@ -146,6 +146,21 @@ from sensei.models.production import (
     ShiftNumber,
 )
 from sensei.models.maintenance import ConditionReading, MaintenanceRecord
+from sensei.models.finance import GLAccount, OpeningBalance
+from sensei.models.inventory import InventoryLevel
+from sensei.models.migration import ImportBatch
+from sensei.models.analytics import (
+    DailySnapshot,
+    DimensionSchema as AnalyticsDimensionSchema,
+    FactSchema as AnalyticsFactSchema,
+    ExportedRecord as AnalyticsExportedRecord,
+)
+from sensei.models.business_continuity import (
+    QueuedEvent,
+    CriticalityRule,
+    RTORPOConfig,
+    RestoreRehearsal,
+)
 from sensei.models.ot_network import (
     NetworkZone,
     ZoneViolation,
@@ -308,6 +323,23 @@ __all__ = [
     # Maintenance
     "ConditionReading",
     "MaintenanceRecord",
+    # Finance
+    "GLAccount",
+    "OpeningBalance",
+    # Inventory
+    "InventoryLevel",
+    # Migration
+    "ImportBatch",
+    # Analytics
+    "DailySnapshot",
+    "AnalyticsDimensionSchema",
+    "AnalyticsFactSchema",
+    "AnalyticsExportedRecord",
+    # Business Continuity
+    "QueuedEvent",
+    "CriticalityRule",
+    "RTORPOConfig",
+    "RestoreRehearsal",
     # OT Network Safety
     "NetworkZone",
     "ZoneViolation",

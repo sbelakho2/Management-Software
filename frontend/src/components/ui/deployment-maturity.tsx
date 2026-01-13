@@ -805,8 +805,8 @@ export function MaturityDashboard({ className = '' }: MaturityDashboardProps) {
           </div>
           {lastLevelUpResult.errors && (
             <ul className="mt-2 space-y-1">
-              {lastLevelUpResult.errors.map((error, i) => (
-                <li key={i} className="text-sm text-destructive">
+              {lastLevelUpResult.errors.map((error) => (
+                <li key={error} className="text-sm text-destructive">
                   • {error}
                 </li>
               ))}

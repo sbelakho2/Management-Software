@@ -1022,5 +1022,3 @@ export function useExport() {
 // =============================================================================
 // EXPORTS
 // =============================================================================
-
-export type { ExportConfig, ExportProgress, LabelConfig, LabelField };

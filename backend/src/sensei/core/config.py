@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     MUDA_NUDGING_WORKER_INTERVAL_SECONDS: int = 300
     MUDA_NUDGING_WORKER_RECIPIENT_IDS: str = ""  # comma-separated
     
+    # Muda Nudging Thresholds
+    MUDA_THRESHOLD_DEFECT_RATE_PCT: float = 3.0
+    MUDA_THRESHOLD_OEE_PCT: float = 65.0
+    MUDA_THRESHOLD_CHANGEOVER_MINUTES: float = 30.0
+    MUDA_THRESHOLD_INVENTORY_DAYS: float = 5.0
+    MUDA_THRESHOLD_IDLE_TIME_PCT: float = 20.0
+
     # AI Settings
     OPENAI_API_KEY: str | None = None
     AI_EMBEDDING_PROVIDER: Literal["local", "openai"] = "local"

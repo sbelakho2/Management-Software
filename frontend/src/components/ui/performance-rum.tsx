@@ -1032,7 +1032,8 @@ export function ResourceBudgetDashboard({ className = '' }: ResourceBudgetDashbo
 
 export interface TrackedButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   trackingName?: string;
-  variant?: 'default' | 'primary' | 'secondary' | 'destructive';
+  variant?: 'default' | 'primary' | 'secondary' | 'destructive' | 'ghost' | 'outline';
+  size?: 'default' | 'sm' | 'lg' | 'icon';
 }
 
 export function TrackedButton({
@@ -1040,6 +1041,7 @@ export function TrackedButton({
   onClick,
   trackingName,
   variant = 'default',
+  size = 'default',
   className = '',
   ...props
 }: TrackedButtonProps) {
@@ -1064,13 +1066,22 @@ export function TrackedButton({
     primary: 'bg-primary text-primary-foreground hover:opacity-90',
     secondary: 'bg-secondary text-secondary-foreground hover:opacity-90',
     destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
+    ghost: 'hover:bg-accent/80 hover:text-accent-foreground',
+    outline: 'border border-input bg-background/50 shadow-sm hover:bg-accent hover:text-accent-foreground',
+  };
+
+  const sizeClasses = {
+    default: 'px-4 py-2',
+    sm: 'px-3 py-1.5 text-sm',
+    lg: 'px-6 py-3 text-lg',
+    icon: 'p-2',
   };
 
   return (
     <button
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      className={`px-4 py-2 rounded-md font-medium transition-all ${variantClasses[variant]} ${className}`}
+      className={`rounded-md font-medium transition-all ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       {...props}
     >
       {children}

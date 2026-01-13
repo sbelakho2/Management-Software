@@ -45,27 +45,29 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Sign in to your account
+        <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          Welcome back
         </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          Welcome back to Sensei OS
+        <p className="mt-2 text-sm text-muted-foreground font-medium">
+          Enter your credentials to access the command center
         </p>
       </div>
 
       {(error || localError) && (
-        <Alert variant="destructive">
-          <AlertDescription>{error || localError}</AlertDescription>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300">
+          <AlertDescription className="font-medium">{error || localError}</AlertDescription>
         </Alert>
       )}
 
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="email">Email address</Label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+            Email address
+          </Label>
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -74,7 +76,7 @@ export default function LoginPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-10"
+              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -84,16 +86,18 @@ export default function LoginPage() {
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+              Password
+            </Label>
             <Link
               href="/forgot-password"
-              className="text-sm font-medium text-primary hover:text-primary/80"
+              className="text-xs font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest"
             >
-              Forgot password?
+              Forgot?
             </Link>
           </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -102,22 +106,21 @@ export default function LoginPage() {
               placeholder="••••••••"
               autoComplete="current-password"
               required
-              className="pl-10 pr-10"
+              className="pl-10 pr-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
             <button
               type="button"
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-md"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground/40 hover:text-primary transition-colors"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
-              aria-pressed={showPassword}
             >
               {showPassword ? (
-                <EyeOff className="h-4 w-4" aria-hidden="true" />
+                <EyeOff className="h-4 w-4" />
               ) : (
-                <Eye className="h-4 w-4" aria-hidden="true" />
+                <Eye className="h-4 w-4" />
               )}
             </button>
           </div>
@@ -125,27 +128,21 @@ export default function LoginPage() {
 
         <Button
           type="submit"
-          className="w-full"
-          disabled={isLoading}
+          className="w-full h-12 text-base rounded-xl premium-shimmer"
+          loading={isLoading}
+          size="xl"
         >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Signing in...
-            </>
-          ) : (
-            'Sign in'
-          )}
+          {isLoading ? 'Authenticating...' : 'Sign In'}
         </Button>
       </form>
 
-      <div className="relative mt-6">
+      <div className="relative">
         <div className="absolute inset-0 flex items-center" aria-hidden="true">
-          <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
+          <div className="w-full border-t border-border/30"></div>
         </div>
-        <div className="relative flex justify-center text-sm">
-          <span className="bg-white dark:bg-slate-900 px-2 text-slate-500">
-            Don't have an account?
+        <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] font-bold">
+          <span className="bg-transparent px-4 text-muted-foreground/40">
+            Secure Access
           </span>
         </div>
       </div>
@@ -153,9 +150,10 @@ export default function LoginPage() {
       <div className="text-center">
         <Link
           href="/register"
-          className="font-medium text-primary hover:text-primary/80"
+          className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
         >
-          Request access from your administrator
+          <span>Need access?</span>
+          <span className="text-primary group-hover:translate-x-1 transition-transform">Contact Administrator &rarr;</span>
         </Link>
       </div>
     </div>

@@ -14,6 +14,7 @@ import {
   Users,
   Package,
   AlertTriangle,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -24,6 +25,8 @@ import { Skeleton, SkeletonCard } from '@/components/ui/skeleton';
 import { cn, formatDate, formatCurrency, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
 import { useTodayStore } from '@/stores/today';
+import { hasPageAccess } from '@/lib/page-access';
+import { UserRole } from '@/types';
 
 // Types
 interface KPICardData {
@@ -77,163 +80,6 @@ interface RFQSummary {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: string;
 }
-
-// Mock data - would come from API
-const mockKPIs: KPICardData[] = [
-  {
-    id: '1',
-    label: 'Open RFQs',
-    value: 12,
-    change: 3,
-    changeLabel: 'from last week',
-    trend: 'up',
-    trendIsGood: true,
-    icon: FileText,
-    href: '/pipeline',
-  },
-  {
-    id: '2',
-    label: 'Pending Quotes',
-    value: 8,
-    change: -2,
-    changeLabel: 'from last week',
-    trend: 'down',
-    trendIsGood: true,
-    icon: FileText,
-    href: '/quotes?status=pending',
-  },
-  {
-    id: '3',
-    label: 'Active Customers',
-    value: 47,
-    change: 5,
-    changeLabel: 'new this month',
-    trend: 'up',
-    trendIsGood: true,
-    icon: Users,
-    href: '/customers',
-  },
-  {
-    id: '4',
-    label: 'Open NCRs',
-    value: 3,
-    change: 1,
-    changeLabel: 'from yesterday',
-    trend: 'up',
-    trendIsGood: false,
-    icon: AlertTriangle,
-    href: '/quality/ncrs',
-  },
-];
-
-const mockTasks: TaskItem[] = [
-  {
-    id: '1',
-    title: 'Review quote for Acme Corp',
-    dueDate: new Date().toISOString(),
-    priority: 'high',
-    status: 'todo',
-    linkedEntity: {
-      type: 'Quote',
-      title: 'Q-2024-0045',
-      href: '/quotes/q-2024-0045',
-    },
-  },
-  {
-    id: '2',
-    title: 'Complete NCR root cause analysis',
-    dueDate: new Date(Date.now() + 86400000).toISOString(),
-    priority: 'urgent',
-    status: 'in_progress',
-    linkedEntity: {
-      type: 'NCR',
-      title: 'NCR-2024-0012',
-      href: '/quality/ncrs/ncr-2024-0012',
-    },
-  },
-  {
-    id: '3',
-    title: 'Update product specifications',
-    dueDate: new Date(Date.now() + 172800000).toISOString(),
-    priority: 'medium',
-    status: 'todo',
-  },
-  {
-    id: '4',
-    title: 'Prepare training materials',
-    dueDate: new Date(Date.now() + 259200000).toISOString(),
-    priority: 'low',
-    status: 'todo',
-  },
-];
-
-const mockActivity: ActivityItem[] = [
-  {
-    id: '1',
-    type: 'quote_created',
-    description: 'Created quote Q-2024-0046 for TechStart Inc',
-    timestamp: new Date(Date.now() - 1800000).toISOString(),
-    user: { name: 'John Smith' },
-    link: '/quotes/q-2024-0046',
-  },
-  {
-    id: '2',
-    type: 'rfq_received',
-    description: 'New RFQ received from Global Manufacturing',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    user: { name: 'System' },
-    link: '/pipeline/rfq-2024-0089',
-  },
-  {
-    id: '3',
-    type: 'ncr_closed',
-    description: 'NCR-2024-0011 closed after corrective action',
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-    user: { name: 'Jane Doe' },
-    link: '/quality/ncrs/ncr-2024-0011',
-  },
-  {
-    id: '4',
-    type: 'quote_approved',
-    description: 'Quote Q-2024-0044 approved by management',
-    timestamp: new Date(Date.now() - 14400000).toISOString(),
-    user: { name: 'Mike Johnson' },
-    link: '/quotes/q-2024-0044',
-  },
-];
-
-const mockRFQs: RFQSummary[] = [
-  {
-    id: '1',
-    rfqNumber: 'RFQ-2024-0089',
-    customerName: 'Global Manufacturing',
-    title: 'Custom precision parts - 500 units',
-    dueDate: new Date(Date.now() + 172800000).toISOString(),
-    estimatedValue: 45000,
-    priority: 'high',
-    status: 'new',
-  },
-  {
-    id: '2',
-    rfqNumber: 'RFQ-2024-0088',
-    customerName: 'TechStart Inc',
-    title: 'Prototype assembly service',
-    dueDate: new Date(Date.now() + 432000000).toISOString(),
-    estimatedValue: 12500,
-    priority: 'medium',
-    status: 'reviewing',
-  },
-  {
-    id: '3',
-    rfqNumber: 'RFQ-2024-0087',
-    customerName: 'Acme Corp',
-    title: 'Annual maintenance contract',
-    dueDate: new Date(Date.now() + 86400000).toISOString(),
-    estimatedValue: 85000,
-    priority: 'urgent',
-    status: 'quoting',
-  },
-];
 
 // Components
 function KPICard({ data }: { data: KPICardData }) {
@@ -383,6 +229,11 @@ export default function TodayPage() {
   const { user } = useAuthStore();
   const { data, loading, fetchTodayScreen } = useTodayStore();
 
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
+
   React.useEffect(() => {
     if (user) {
       fetchTodayScreen(user.id, user.full_name);
@@ -408,50 +259,59 @@ export default function TodayPage() {
     );
   }
 
-  // Map backend metrics to KPICardData
-  const kpis: KPICardData[] = (data?.quick_metrics || []).map((m: any) => ({
-    id: m.id,
-    label: m.name,
-    value: m.value,
-    change: m.trend_value,
-    trend: m.trend as any,
-    trendIsGood: m.status === 'success' || m.status === 'on_track',
-    icon: m.name.includes('RFQ') ? FileText : m.name.includes('NCR') ? AlertTriangle : Package,
-    href: m.link,
-  }));
+  // Map backend metrics to KPICardData and filter based on role
+  const kpis: KPICardData[] = (data?.quick_metrics || [])
+    .map((m: any) => ({
+      id: m.id,
+      label: m.name,
+      value: m.value,
+      change: m.trend_value,
+      trend: m.trend as any,
+      trendIsGood: m.status === 'success' || m.status === 'on_track',
+      icon: m.name.includes('RFQ') ? FileText : m.name.includes('NCR') ? AlertTriangle : Package,
+      href: m.link,
+    }))
+    .filter((k: KPICardData) => !k.href || hasPageAccess(k.href, userRoles));
 
-  // Map backend priorities to TaskItem
-  const tasks: TaskItem[] = (data?.top_priorities || []).map((p: any) => ({
-    id: p.id,
-    title: p.title,
-    dueDate: p.due_date,
-    priority: p.priority_level.toLowerCase() as any,
-    status: 'todo',
-    linkedEntity: {
-      type: p.entity_type,
-      title: p.entity_id.substring(0, 8),
-      href: `/${p.entity_type}/${p.entity_id}`,
-    },
-  }));
+  // Map backend priorities to TaskItem and filter
+  const tasks: TaskItem[] = (data?.top_priorities || [])
+    .map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      dueDate: p.due_date,
+      priority: p.priority_level.toLowerCase() as 'low' | 'medium' | 'high' | 'urgent',
+      status: 'todo' as const,
+      linkedEntity: {
+        type: p.entity_type,
+        title: p.entity_id.substring(0, 8),
+        href: `/${p.entity_type}/${p.entity_id}`,
+      },
+    }))
+    .filter((t: TaskItem) => !t.linkedEntity?.href || hasPageAccess(t.linkedEntity.href, userRoles));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">
-            {greeting}, {user?.full_name?.split(' ')[0] || 'there'}!
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Operations Command
           </h1>
-          <p className="text-muted-foreground">
-            <Calendar className="inline-block h-4 w-4 mr-1" />
-            {formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })}
+          <p className="text-muted-foreground font-medium flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            {formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })} • Real-time Production Pulse
           </p>
         </div>
-        <Button asChild>
-          <Link href="/pipeline/new">
-            Create RFQ
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          {hasPageAccess('/pipeline/new', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+              <Link href="/pipeline/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Create RFQ
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}

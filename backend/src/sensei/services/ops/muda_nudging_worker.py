@@ -63,8 +63,7 @@ class MudaNudgingJobRunner:
             on_deliver: Callback invoked for newly generated (non-cached) nudges.
             bucket_date: Time bucket for idempotency (defaults to today).
         """
-
-        generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        generated_at = datetime.now(timezone.utc)
         bucket = bucket_date or generated_at.date()
 
         delivered_count = 0

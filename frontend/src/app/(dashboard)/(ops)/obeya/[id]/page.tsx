@@ -20,11 +20,11 @@ import {
   Link as LinkIcon,
   Paperclip,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TrackedButton as Button } from '@/components/ui/performance-rum';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -37,6 +37,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { useObeyaStore } from '@/stores/obeya';
 
 type ObeyaCategory = 
   | 'issue' | 'action' | 'risk' | 'decision' | 'milestone' 
@@ -128,182 +129,119 @@ const priorityBadgeVariant: Record<ObeyaPriority, 'default' | 'secondary' | 'war
 export default function ObeyaItemDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { id } = params;
   const { toast } = useToast();
+  
+  const { 
+    fetchItemById, 
+    fetchComments, 
+    addComment, 
+    updateItem, 
+    deleteItem,
+    isLoading: storeLoading
+  } = useObeyaStore();
+
   const [isLoading, setIsLoading] = useState(true);
   const [item, setItem] = useState<ObeyaItem | null>(null);
   const [comments, setComments] = useState<ObeyaComment[]>([]);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCommentDialog, setShowCommentDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [isAddingComment, setIsAddingComment] = useState(false);
   const [commentText, setCommentText] = useState('');
 
   useEffect(() => {
-    fetchItem();
-    fetchComments();
-  }, [params.id]);
+    if (id) {
+      loadData();
+    }
+  }, [id]);
 
-  const fetchItem = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/v1/obeya/items/${params.id}`);
-      // const data = await response.json();
-      // setItem(data);
-
-      // Mock data
-      setTimeout(() => {
-        setItem({
-          id: params.id as string,
-          board: 'daily',
-          column: 'in_progress',
-          position: 1,
-          title: 'CMM inspection program update for bracket tolerances',
-          description: 'Need to update the CMM inspection program to accommodate new tolerance requirements from engineering change order ECO-2024-089. Current program does not properly measure the revised mounting hole positions.',
-          category: 'action',
-          status: 'in_progress',
-          priority: 'high',
-          color: 'yellow',
-          assigned_to_id: 'user-1',
-          assigned_to_name: 'John Smith',
-          due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          target_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          days_open: 5,
-          days_overdue: 0,
-          is_escalated: false,
-          tags: ['CMM', 'inspection', 'tolerance', 'ECO'],
-          meeting_date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          meeting_type: 'daily',
-          notes: 'Discussed with engineering team. Need to coordinate with quality manager before implementation.',
-          comments_count: 3,
-          attachments: [
-            { id: 'att-1', name: 'ECO-2024-089.pdf', size: 245678 },
-            { id: 'att-2', name: 'current_inspection_program.txt', size: 12345 },
-          ],
-          links: [
-            { id: 'link-1', url: 'https://example.com/eco/2024-089', title: 'ECO-2024-089 Details' },
-          ],
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-          created_by_id: 'user-1',
-          created_by_name: 'John Smith',
-        });
-        setIsLoading(false);
-      }, 500);
+      const [fetchedItem, fetchedComments] = await Promise.all([
+        fetchItemById(id as string),
+        fetchComments(id as string)
+      ]);
+      
+      if (fetchedItem) {
+        setItem(fetchedItem as any);
+      }
+      setComments(fetchedComments as any);
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to fetch Obeya item details',
+        description: 'Failed to load Obeya item data',
         variant: 'destructive',
       });
+    } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchComments = async () => {
-    try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/v1/obeya/items/${params.id}/comments`);
-      // const data = await response.json();
-      // setComments(data);
-
-      // Mock data
-      setTimeout(() => {
-        setComments([
-          {
-            id: 'c1',
-            item_id: params.id as string,
-            author_id: 'user-1',
-            author_name: 'John Smith',
-            content: 'Started working on this. Will have initial draft ready by EOD tomorrow.',
-            is_status_change: true,
-            old_status: 'new',
-            new_status: 'in_progress',
-            is_pinned: false,
-            is_edited: false,
-            created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: 'c2',
-            item_id: params.id as string,
-            author_id: 'user-2',
-            author_name: 'Sarah Johnson',
-            content: 'Please make sure to review the latest ECO revision before updating the program. There were some changes to the tolerance stack-up analysis.',
-            is_status_change: false,
-            is_pinned: true,
-            is_edited: false,
-            created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: 'c3',
-            item_id: params.id as string,
-            author_id: 'user-1',
-            author_name: 'John Smith',
-            content: 'Good catch @Sarah. I will coordinate with engineering to get the final rev before I finalize the program.',
-            is_status_change: false,
-            is_pinned: false,
-            is_edited: false,
-            mentions: ['user-2'],
-            created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-        ]);
-      }, 300);
-    } catch (error) {
-      console.error('Failed to fetch comments:', error);
     }
   };
 
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/obeya/items/${params.id}`, { method: 'DELETE' });
-
-      setTimeout(() => {
-        toast({
-          title: 'Success',
-          description: 'Obeya item deleted successfully',
-        });
-        router.push('/obeya');
-      }, 500);
+      await deleteItem(id as string);
+      toast({
+        title: 'Success',
+        description: 'Item deleted successfully',
+      });
+      router.push('/obeya');
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to delete Obeya item',
+        description: 'Failed to delete item',
         variant: 'destructive',
       });
+    } finally {
       setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
   const handleAddComment = async () => {
     if (!commentText.trim()) return;
-
+    
     setIsAddingComment(true);
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/obeya/items/${params.id}/comments`, {
-      //   method: 'POST',
-      //   body: JSON.stringify({ content: commentText }),
-      // });
-
-      setTimeout(() => {
-        toast({
-          title: 'Success',
-          description: 'Comment added successfully',
-        });
-        setShowCommentDialog(false);
-        setCommentText('');
-        fetchComments();
-        setIsAddingComment(false);
-      }, 500);
+      const newComment = await addComment(id as string, { content: commentText });
+      setComments([newComment as any, ...comments]);
+      setCommentText('');
+      setShowCommentDialog(false);
+      toast({
+        title: 'Success',
+        description: 'Comment added',
+      });
     } catch (error) {
       toast({
         title: 'Error',
         description: 'Failed to add comment',
         variant: 'destructive',
       });
+    } finally {
       setIsAddingComment(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: ObeyaStatus) => {
+    try {
+      const updatedItem = await updateItem(id as string, { status: newStatus });
+      setItem(updatedItem as any);
+      toast({
+        title: 'Status Updated',
+        description: `Item status changed to ${newStatus}`,
+      });
+      // Refresh comments to show status change if tracked
+      const fetchedComments = await fetchComments(id as string);
+      setComments(fetchedComments as any);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update status',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -397,7 +335,7 @@ export default function ObeyaItemDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsEditing?.(true)}>
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

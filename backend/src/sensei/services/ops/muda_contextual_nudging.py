@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from sensei.core.config import settings
 from sensei.services.ops.jit_lean_learning import (
     KnowledgeRetrievalEngine,
     MicroLessonEngine,
@@ -107,15 +108,15 @@ class MudaAwareContextualNudgingService:
             triggers.append(TriggerType.QUALITY_ISSUE)
 
         # Rate/threshold based anomalies.
-        if snapshot.get("defect_rate_pct", 0) > 3:
+        if snapshot.get("defect_rate_pct", 0) > settings.MUDA_THRESHOLD_DEFECT_RATE_PCT:
             triggers.append(TriggerType.HIGH_DEFECT_RATE)
-        if snapshot.get("oee_pct", 100) < 65:
+        if snapshot.get("oee_pct", 100) < settings.MUDA_THRESHOLD_OEE_PCT:
             triggers.append(TriggerType.LOW_OEE)
-        if snapshot.get("changeover_time_minutes", 0) > 30:
+        if snapshot.get("changeover_time_minutes", 0) > settings.MUDA_THRESHOLD_CHANGEOVER_MINUTES:
             triggers.append(TriggerType.HIGH_CHANGEOVER_TIME)
-        if snapshot.get("inventory_days", 0) > 5:
+        if snapshot.get("inventory_days", 0) > settings.MUDA_THRESHOLD_INVENTORY_DAYS:
             triggers.append(TriggerType.HIGH_INVENTORY)
-        if snapshot.get("idle_time_pct", 0) > 20:
+        if snapshot.get("idle_time_pct", 0) > settings.MUDA_THRESHOLD_IDLE_TIME_PCT:
             triggers.append(TriggerType.WAITING_WASTE)
 
         # Deduplicate while preserving order.
@@ -139,7 +140,7 @@ class MudaAwareContextualNudgingService:
         triggers = self.evaluate_triggers(snapshot)
 
         nudges: list[MudaNudge] = []
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = datetime.now(timezone.utc)
 
         for trigger in triggers:
             nudges.append(
@@ -177,7 +178,7 @@ class MudaAwareContextualNudgingService:
             query = self._knowledge_query_for_trigger(trigger, trigger_context)
             recommended_documents = self._recommend_knowledge(query)
 
-        now = generated_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        now = generated_at or datetime.now(timezone.utc)
         return MudaNudge(
             trigger=trigger,
             recipient_id=recipient_id,

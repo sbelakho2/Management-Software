@@ -589,7 +589,7 @@ export function WorkCenterStatusCard({
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-1 xs:grid-cols-2 gap-2 text-sm">
           <div>
             <span className="text-gray-500 dark:text-gray-400">Efficiency</span>
             <p className={cn('font-semibold', workCenter.efficiency >= 90 ? 'text-green-600' : 'text-red-600')}>

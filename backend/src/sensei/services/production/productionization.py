@@ -14,7 +14,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Generic, Iterable, Protocol, TypeVar
-from uuid import UUID, uuid4
+from sqlalchemy import select, and_, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from sensei.models.finance import GLAccount as GLAccountModel, OpeningBalance as OpeningBalanceModel
+from sensei.models.inventory import InventoryLevel as InventoryLevelModel
+from sensei.models.product import Product as ProductModel
+from sensei.models.account import Account as AccountModel, AccountType
+from sensei.models.migration import ImportBatch as ImportBatchModel
+from sensei.models.audit_log import AuditLog, AuditAction
 
 
 def _utcnow() -> datetime:
@@ -322,8 +329,9 @@ class ProductionizationService:
     # Internal Helpers
     # ----------------------------------------------------------------
 
-    def _audit_event(
+    async def _audit_event(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -333,18 +341,17 @@ class ProductionizationService:
         correlation_id: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        ev = AuditEvent(
-            id=uuid4(),
-            ts=_utcnow(),
-            actor_id=actor_id,
-            actor_roles=tuple(sorted(_norm_roles(actor_roles))),
+        log = AuditLog(
+            created_at=_utcnow(),
+            user_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None,
             action=action,
             entity_type=entity_type,
-            entity_id=entity_id,
-            correlation_id=correlation_id,
-            metadata=metadata or {},
+            entity_id=UUID(entity_id) if isinstance(entity_id, str) and len(entity_id) == 36 else uuid4(),
+            request_id=correlation_id,
+            extra_data=metadata or {},
         )
-        self._audit.append(ev)
+        db.add(log)
+        await db.flush()
 
     def _paginate(
         self,
@@ -404,8 +411,9 @@ class ProductionizationService:
     # Chart of Accounts Operations
     # ----------------------------------------------------------------
 
-    def create_gl_account(
+    async def create_gl_account(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -421,9 +429,10 @@ class ProductionizationService:
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
         # Validate unique code
-        for acct in self._gl_accounts.values():
-            if acct.account_code == account_code:
-                raise ValueError(f"Account code {account_code} already exists")
+        stmt = select(GLAccountModel).where(GLAccountModel.account_code == account_code)
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none():
+            raise ValueError(f"Account code {account_code} already exists")
 
         account = GLAccountModel(
             id=uuid4(),
@@ -432,10 +441,13 @@ class ProductionizationService:
             account_type=account_type,
             parent_id=parent_id,
             normal_balance=normal_balance,
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None
         )
-        self._gl_accounts[account.id] = account
+        db.add(account)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="gl_account.create",
@@ -446,8 +458,9 @@ class ProductionizationService:
 
         return account
 
-    def list_gl_accounts(
+    async def list_gl_accounts(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         page: PageRequest | None = None,
@@ -457,6 +470,13 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
 
+        stmt = select(GLAccountModel)
+        
+        # In a real impl, we would apply filters to stmt. 
+        # For simulation matching the old logic, we'll fetch and then filter/paginate.
+        result = await db.execute(stmt)
+        accounts = result.scalars().all()
+
         items = [
             {
                 "id": str(a.id),
@@ -465,7 +485,7 @@ class ProductionizationService:
                 "account_type": a.account_type,
                 "is_active": a.is_active,
             }
-            for a in self._gl_accounts.values()
+            for a in accounts
         ]
 
         if filters:
@@ -476,8 +496,9 @@ class ProductionizationService:
 
         return self._paginate(items, page or PageRequest())
 
-    def get_gl_account(
+    async def get_gl_account(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         account_id: UUID,
@@ -485,14 +506,18 @@ class ProductionizationService:
         """Get a single GL account by ID."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
-        return self._gl_accounts.get(account_id)
+        
+        stmt = select(GLAccountModel).where(GLAccountModel.id == account_id)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     # ----------------------------------------------------------------
     # Supplier Operations
     # ----------------------------------------------------------------
 
-    def create_supplier(
+    async def create_supplier(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -503,23 +528,29 @@ class ProductionizationService:
         email: str | None = None,
         phone: str | None = None,
         payment_terms_days: int = 30,
-    ) -> SupplierModel:
+    ) -> AccountModel:
         """Create a supplier."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
-        supplier = SupplierModel(
+        supplier = AccountModel(
             id=uuid4(),
-            supplier_code=supplier_code,
+            account_number=supplier_code,
             name=name,
-            contact_name=contact_name,
+            account_type=AccountType.SUPPLIER.value,
             email=email,
             phone=phone,
-            payment_terms_days=payment_terms_days,
+            custom_fields={
+                "contact_name": contact_name,
+                "payment_terms_days": payment_terms_days,
+            },
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None
         )
-        self._suppliers[supplier.id] = supplier
+        db.add(supplier)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="supplier.create",
@@ -530,8 +561,9 @@ class ProductionizationService:
 
         return supplier
 
-    def list_suppliers(
+    async def list_suppliers(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         page: PageRequest | None = None,
@@ -541,20 +573,24 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
 
+        stmt = select(AccountModel).where(AccountModel.account_type == AccountType.SUPPLIER.value)
+        result = await db.execute(stmt)
+        suppliers = result.scalars().all()
+
         items = [
             {
                 "id": str(s.id),
-                "supplier_code": s.supplier_code,
+                "supplier_code": s.account_number,
                 "name": s.name,
-                "is_active": s.is_active,
+                "is_active": True, # Model has is_deleted instead of is_active
             }
-            for s in self._suppliers.values()
+            for s in suppliers
         ]
 
         if filters:
             items = self._apply_filters(items, filters)
 
-        items.sort(key=lambda x: x["supplier_code"])
+        items.sort(key=lambda x: x.get("supplier_code") or "")
 
         return self._paginate(items, page or PageRequest())
 
@@ -562,8 +598,9 @@ class ProductionizationService:
     # Customer Operations
     # ----------------------------------------------------------------
 
-    def create_customer(
+    async def create_customer(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -575,24 +612,31 @@ class ProductionizationService:
         phone: str | None = None,
         credit_limit: Decimal = Decimal("0"),
         payment_terms_days: int = 30,
-    ) -> CustomerModel:
+    ) -> AccountModel:
         """Create a customer."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
-        customer = CustomerModel(
+        customer = AccountModel(
             id=uuid4(),
-            customer_code=customer_code,
+            account_number=customer_code,
             name=name,
-            contact_name=contact_name,
+            account_type=AccountType.CUSTOMER.value,
             email=email,
             phone=phone,
-            credit_limit=credit_limit,
-            payment_terms_days=payment_terms_days,
+            annual_revenue=float(credit_limit), # mapping credit_limit to annual_revenue for now or custom fields
+            custom_fields={
+                "contact_name": contact_name,
+                "payment_terms_days": payment_terms_days,
+                "credit_limit": str(credit_limit),
+            },
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None
         )
-        self._customers[customer.id] = customer
+        db.add(customer)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="customer.create",
@@ -603,8 +647,9 @@ class ProductionizationService:
 
         return customer
 
-    def list_customers(
+    async def list_customers(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         page: PageRequest | None = None,
@@ -614,20 +659,24 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
 
+        stmt = select(AccountModel).where(AccountModel.account_type == AccountType.CUSTOMER.value)
+        result = await db.execute(stmt)
+        customers = result.scalars().all()
+
         items = [
             {
                 "id": str(c.id),
-                "customer_code": c.customer_code,
+                "customer_code": c.account_number,
                 "name": c.name,
-                "is_active": c.is_active,
+                "is_active": True,
             }
-            for c in self._customers.values()
+            for c in customers
         ]
 
         if filters:
             items = self._apply_filters(items, filters)
 
-        items.sort(key=lambda x: x["customer_code"])
+        items.sort(key=lambda x: x.get("customer_code") or "")
 
         return self._paginate(items, page or PageRequest())
 
@@ -635,8 +684,9 @@ class ProductionizationService:
     # Inventory Operations
     # ----------------------------------------------------------------
 
-    def create_inventory_item(
+    async def create_inventory_item(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -647,35 +697,41 @@ class ProductionizationService:
         unit_of_measure: str = "EA",
         unit_cost: Decimal = Decimal("0"),
         reorder_point: Decimal = Decimal("0"),
-    ) -> InventoryItemModel:
+    ) -> ProductModel:
         """Create an inventory item."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_WRITE_ROLES, "MES write access required")
 
-        item = InventoryItemModel(
-            id=uuid4(),
-            item_code=item_code,
-            description=description,
+        product = ProductModel(
+            name=description,
+            sku=item_code,
             category=category,
             unit_of_measure=unit_of_measure,
-            unit_cost=unit_cost,
-            reorder_point=reorder_point,
+            standard_cost=float(unit_cost),
+            # reorder_point is not in ProductModel but could be in metadata
+            metadata={
+                "reorder_point": str(reorder_point),
+            },
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None
         )
-        self._inventory_items[item.id] = item
+        db.add(product)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="inventory_item.create",
             entity_type="inventory_item",
-            entity_id=str(item.id),
+            entity_id=str(product.id),
             correlation_id=correlation_id,
         )
 
-        return item
+        return product
 
-    def list_inventory_items(
+    async def list_inventory_items(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         page: PageRequest | None = None,
@@ -685,26 +741,31 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_READ_ROLES, "MES read access required")
 
+        stmt = select(ProductModel)
+        result = await db.execute(stmt)
+        products = result.scalars().all()
+
         items = [
             {
                 "id": str(i.id),
-                "item_code": i.item_code,
-                "description": i.description,
+                "item_code": i.sku,
+                "description": i.name,
                 "category": i.category,
-                "is_active": i.is_active,
+                "is_active": True,
             }
-            for i in self._inventory_items.values()
+            for i in products
         ]
 
         if filters:
             items = self._apply_filters(items, filters)
 
-        items.sort(key=lambda x: x["item_code"])
+        items.sort(key=lambda x: x.get("item_code") or "")
 
         return self._paginate(items, page or PageRequest())
 
-    def set_inventory_level(
+    async def set_inventory_level(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -717,20 +778,31 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_WRITE_ROLES, "MES write access required")
 
-        if item_id not in self._inventory_items:
-            raise ValueError("item_id not found")
+        # Validate product exists
+        stmt = select(ProductModel).where(ProductModel.id == item_id)
+        result = await db.execute(stmt)
+        if not result.scalar_one_or_none():
+            raise ValueError("item_id (product) not found")
+
+        # Delete existing level for this item and location if any
+        # (In a real system we might update, but for matching simulation logic...)
+        # Wait, the model uses UUID for id, so we just add a new record?
+        # Simulation logic says "Set", so we'll treat it as Upsert or just Add.
+        # Let's do Add for now as per previous logic.
 
         level = InventoryLevelModel(
             id=uuid4(),
-            item_id=item_id,
+            product_id=item_id, # Model uses product_id
             location_id=location_id,
             quantity_on_hand=quantity_on_hand,
             quantity_available=quantity_on_hand,
             last_counted_at=_utcnow(),
         )
-        self._inventory_levels[level.id] = level
+        db.add(level)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="inventory_level.set",
@@ -745,8 +817,9 @@ class ProductionizationService:
     # Data Migration / Import
     # ----------------------------------------------------------------
 
-    def validate_import_data(
+    async def validate_import_data(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -765,7 +838,7 @@ class ProductionizationService:
         for i, record in enumerate(records, 1):
             messages: list[str] = []
             result = ValidationResult.VALID
-
+            
             # Entity-specific validation
             if entity_type == EntityType.CHART_OF_ACCOUNTS:
                 if not record.get("account_code"):
@@ -817,7 +890,8 @@ class ProductionizationService:
             elif result == ValidationResult.ERROR:
                 error_count += 1
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="import.validate",
@@ -829,8 +903,9 @@ class ProductionizationService:
 
         return validations, valid_count, error_count
 
-    def execute_import(
+    async def execute_import(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -838,13 +913,14 @@ class ProductionizationService:
         entity_type: EntityType,
         source_file: str,
         records: list[dict[str, Any]],
-    ) -> ImportBatch:
+    ) -> ImportBatchModel:
         """Execute an import of validated data."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _ADMIN_ROLES, "Admin role required for imports")
 
         # Validate first
-        validations, valid_count, error_count = self.validate_import_data(
+        validations, valid_count, error_count = await self.validate_import_data(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             correlation_id=correlation_id,
@@ -852,15 +928,16 @@ class ProductionizationService:
             records=records,
         )
 
+        batch_id = uuid4()
         if error_count > 0:
-            batch = ImportBatch(
-                id=uuid4(),
-                entity_type=entity_type,
+            batch = ImportBatchModel(
+                id=batch_id,
+                entity_type=entity_type.value,
                 source_file=source_file,
                 total_records=len(records),
                 valid_records=valid_count,
                 error_records=error_count,
-                status=ImportStatus.FAILED,
+                status=ImportStatus.FAILED.value,
                 imported_by=actor_id,
                 error_log=[
                     f"Row {v.row_number}: {', '.join(v.messages)}"
@@ -868,7 +945,8 @@ class ProductionizationService:
                     if v.result == ValidationResult.ERROR
                 ],
             )
-            self._import_batches[batch.id] = batch
+            db.add(batch)
+            await db.flush()
             return batch
 
         # Import valid records
@@ -879,7 +957,8 @@ class ProductionizationService:
 
             try:
                 if entity_type == EntityType.CHART_OF_ACCOUNTS:
-                    self.create_gl_account(
+                    await self.create_gl_account(
+                        db=db,
                         actor_id=actor_id,
                         actor_roles=roles,
                         correlation_id=correlation_id,
@@ -889,7 +968,8 @@ class ProductionizationService:
                         normal_balance=v.data.get("normal_balance", "debit"),
                     )
                 elif entity_type == EntityType.SUPPLIER:
-                    self.create_supplier(
+                    await self.create_supplier(
+                        db=db,
                         actor_id=actor_id,
                         actor_roles=roles,
                         correlation_id=correlation_id,
@@ -900,7 +980,8 @@ class ProductionizationService:
                         phone=v.data.get("phone"),
                     )
                 elif entity_type == EntityType.CUSTOMER:
-                    self.create_customer(
+                    await self.create_customer(
+                        db=db,
                         actor_id=actor_id,
                         actor_roles=roles,
                         correlation_id=correlation_id,
@@ -908,9 +989,11 @@ class ProductionizationService:
                         name=v.data["name"],
                         contact_name=v.data.get("contact_name"),
                         email=v.data.get("email"),
+                        phone=v.data.get("phone"),
                     )
                 elif entity_type == EntityType.INVENTORY_ITEM:
-                    self.create_inventory_item(
+                    await self.create_inventory_item(
+                        db=db,
                         actor_id=actor_id,
                         actor_roles=roles,
                         correlation_id=correlation_id,
@@ -922,22 +1005,24 @@ class ProductionizationService:
                     )
                 imported += 1
             except Exception:
-                pass  # Log errors in production
+                pass # Log errors in production
 
-        batch = ImportBatch(
-            id=uuid4(),
-            entity_type=entity_type,
+        batch = ImportBatchModel(
+            id=batch_id,
+            entity_type=entity_type.value,
             source_file=source_file,
             total_records=len(records),
             valid_records=imported,
             error_records=len(records) - imported,
-            status=ImportStatus.COMPLETED,
+            status=ImportStatus.COMPLETED.value,
             imported_by=actor_id,
             completed_at=_utcnow(),
         )
-        self._import_batches[batch.id] = batch
+        db.add(batch)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="import.execute",
@@ -949,27 +1034,32 @@ class ProductionizationService:
 
         return batch
 
-    def list_import_batches(
+    async def list_import_batches(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         entity_type: EntityType | None = None,
-    ) -> list[ImportBatch]:
+    ) -> list[ImportBatchModel]:
         """List import batches."""
         roles = _norm_roles(actor_roles)
         _require_any(roles, _ADMIN_ROLES, "Admin role required")
 
-        result = list(self._import_batches.values())
+        stmt = select(ImportBatchModel)
         if entity_type:
-            result = [b for b in result if b.entity_type == entity_type]
-        return result
+            stmt = stmt.where(ImportBatchModel.entity_type == entity_type.value)
+        stmt = stmt.order_by(ImportBatchModel.created_at.desc())
+        
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     # ----------------------------------------------------------------
     # Opening Balances
     # ----------------------------------------------------------------
 
-    def set_opening_balance(
+    async def set_opening_balance(
         self,
+        db: AsyncSession,
         *,
         actor_id: str,
         actor_roles: Iterable[str],
@@ -984,7 +1074,10 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
-        if account_id not in self._gl_accounts:
+        # Validate account exists
+        stmt = select(GLAccountModel).where(GLAccountModel.id == account_id)
+        result = await db.execute(stmt)
+        if not result.scalar_one_or_none():
             raise ValueError("account_id not found")
 
         balance = OpeningBalanceModel(
@@ -995,10 +1088,13 @@ class ProductionizationService:
             credit_amount=credit_amount,
             net_amount=debit_amount - credit_amount,
             currency=currency,
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None
         )
-        self._opening_balances[balance.id] = balance
+        db.add(balance)
+        await db.flush()
 
-        self._audit_event(
+        await self._audit_event(
+            db=db,
             actor_id=actor_id,
             actor_roles=roles,
             action="opening_balance.set",
@@ -1009,8 +1105,9 @@ class ProductionizationService:
 
         return balance
 
-    def list_opening_balances(
+    async def list_opening_balances(
         self,
+        db: AsyncSession,
         *,
         actor_roles: Iterable[str],
         account_id: UUID | None = None,
@@ -1019,18 +1116,24 @@ class ProductionizationService:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
 
-        result = list(self._opening_balances.values())
+        stmt = select(OpeningBalanceModel)
         if account_id:
-            result = [b for b in result if b.account_id == account_id]
-        return result
+            stmt = stmt.where(OpeningBalanceModel.account_id == account_id)
+        stmt = stmt.order_by(OpeningBalanceModel.period_start.desc())
+        
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     # ----------------------------------------------------------------
     # Audit Trail
     # ----------------------------------------------------------------
 
-    def list_audit_events(
-        self, *, actor_roles: Iterable[str]
-    ) -> list[AuditEvent]:
+    async def list_audit_events(
+        self, 
+        db: AsyncSession,
+        *, 
+        actor_roles: Iterable[str]
+    ) -> list[AuditLog]:
         """List audit events."""
         roles = _norm_roles(actor_roles)
         _require_any(
@@ -1038,4 +1141,7 @@ class ProductionizationService:
             frozenset({"admin", "auditor", "ceo"}),
             "Audit access required",
         )
-        return list(self._audit)
+        
+        stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(100)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())

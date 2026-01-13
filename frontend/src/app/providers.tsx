@@ -9,6 +9,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { PWAProvider } from '@/components/pwa/pwa-provider';
 import { MaturityProvider } from '@/components/ui/deployment-maturity';
 import { OfflineProvider, ErrorBoundary } from '@/components/ui/error-experience';
+import { DesignSystemProvider } from '@/components/ui/design-system';
+import { RUMProvider } from '@/components/ui/performance-rum';
 import { useAuthStore } from '@/stores';
 
 interface ProvidersProps {
@@ -49,13 +51,17 @@ export function Providers({ children }: ProvidersProps) {
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={0}>
-            <MaturityProvider>
-              <OfflineProvider>
-                <PWAProvider>
-                  {children}
-                </PWAProvider>
-              </OfflineProvider>
-            </MaturityProvider>
+            <DesignSystemProvider>
+              <RUMProvider>
+                <MaturityProvider>
+                  <OfflineProvider>
+                    <PWAProvider>
+                      {children}
+                    </PWAProvider>
+                  </OfflineProvider>
+                </MaturityProvider>
+              </RUMProvider>
+            </DesignSystemProvider>
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>

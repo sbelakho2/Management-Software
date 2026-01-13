@@ -4,96 +4,142 @@
 
 @layer base {
   :root {
-    /* Light theme tokens */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Premium Enterprise Palette - Light */
+    --background: 210 50% 98.5%;
+    --foreground: 224 71% 4%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 224 71% 4%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83% 53.3%;
+    --popover-foreground: 224 71% 4%;
+    --primary: 226 100% 50%; /* Authoritative Indigo */
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 44%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83% 53.3%;
-    --radius: 0.5rem;
+    --border: 214.3 31.8% 91%;
+    --input: 214.3 31.8% 91%;
+    --ring: 226 100% 50%;
+    --radius: 0.8rem;
 
-    /* Status colors */
+    /* Status colors - Refined */
     --success: 142.1 76.2% 36.3%;
-    --success-foreground: 0 0% 100%;
+    --success-foreground: 355.7 100% 97.3%;
     --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning-foreground: 48 96% 8.9%;
     --danger: 0 84.2% 60.2%;
-    --danger-foreground: 0 0% 100%;
+    --danger-foreground: 210 40% 98%;
   }
 
   .dark {
-    /* Dark theme tokens */
-    --background: 222.2 84% 4.9%;
+    /* Premium Enterprise Palette - Dark - Deeper Navy */
+    --background: 224 71% 2%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 224 71% 3.5%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 224 71% 3.5%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91% 60%;
-    --primary-foreground: 222.2 84% 4.9%;
-    --secondary: 217.2 32.6% 17.5%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 222.2 47.4% 10%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+    --muted: 222.2 47.4% 10%;
+    --muted-foreground: 215 20.2% 55.1%;
+    --accent: 222.2 47.4% 10%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 50.6%;
+    --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
+    --border: 222.2 47.4% 8%;
+    --input: 222.2 47.4% 8%;
     --ring: 224.3 76.3% 48%;
-
-    --success: 142.1 70% 45%;
-    --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 0%;
-    --danger: 0 72% 51%;
-    --danger-foreground: 0 0% 100%;
   }
 }
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-border outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground min-h-screen selection:bg-primary/20 selection:text-primary antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv05" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.015em;
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(226, 100%, 50%, 0.03) 0, transparent 50%),
+      radial-gradient(at 100% 0%, hsla(142, 76%, 36%, 0.02) 0, transparent 50%);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight font-bold text-foreground/90;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full transition-colors hover:bg-muted-foreground/30;
   }
 }
 
 @layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
+  .page-fade-in {
+    @apply animate-in fade-in duration-700 ease-out;
   }
-  
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+
+  .premium-glass {
+    @apply bg-white/60 dark:bg-black/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-glass;
   }
-  
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+
+  .soft-glow {
+    @apply shadow-[0_0_20px_rgba(var(--primary),0.15)];
+  }
+
+  .subtle-shine {
+    @apply relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent before:transition-transform before:duration-1000 hover:before:translate-x-full;
+  }
+
+  .premium-shimmer {
+    @apply relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent;
   }
 }
 
 /* Focus visible styles */
 @layer components {
-  .focus-ring {
-    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  /* Enterprise Table Refinements - Premium Style */
+  table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+  th {
+    @apply px-4 py-4 font-bold text-muted-foreground/60 border-b bg-muted/5 uppercase tracking-widest text-[10px];
+  }
+  td {
+    @apply px-4 py-4 border-b border-border/20 text-foreground/80 transition-colors;
+  }
+  tr {
+    @apply transition-all duration-300 hover:bg-muted/10;
+  }
+
+  /* Premium Surfaces - Card Refinements */
+  .rounded-2xl.border.bg-card {
+    @apply shadow-premium transition-all duration-700 hover:shadow-premium-hover border-border/30 backdrop-blur-[2px] hover:-translate-y-1;
+  }
+
+  /* Premium Skeleton */
+  .skeleton {
+    @apply animate-pulse rounded bg-muted/50 premium-shimmer;
   }
 }

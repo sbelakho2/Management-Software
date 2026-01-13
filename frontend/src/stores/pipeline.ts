@@ -15,6 +15,10 @@ interface RFQItem {
   estimatedValue?: number;
   priority: Priority;
   status: RFQStatus;
+  account?: {
+    name: string;
+    id?: string;
+  };
   assignee?: {
     id: string;
     name: string;
@@ -84,7 +88,6 @@ export const usePipelineStore = create<PipelineState>()(
 
           // Cache for 30 seconds
           if (lastFetchedAt && now - lastFetchedAt < 30000) {
-            console.log('Using cached RFQs');
             return;
           }
 

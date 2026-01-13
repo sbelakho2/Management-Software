@@ -19,32 +19,65 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { useA3Store } from '@/stores/a3';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
 
 export default function A3DetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const { id } = params;
+  const { toast } = useToast();
+  
+  const { 
+    fetchA3ById, 
+    updateA3, 
+    isLoading 
+  } = useA3Store();
 
-  // Mock data for display
-  const a3 = {
-    id: params.id,
-    a3_number: 'A3-2024-001',
-    title: 'Optimization of Machining Center B Cycle Time',
-    status: 'in_progress',
-    type: 'problem_solving',
-    priority: 'high',
-    author: 'John Doe',
-    sponsor: 'Jane Smith',
-    progress: 45,
-    department: 'Manufacturing',
-    background: 'Cycle times for Center B have increased by 15% over the last 3 months due to frequent tool changes and setup delays.',
-    currentStatus: 'Average cycle time: 42 mins. Targeted cycle time: 35 mins.',
-    goals: 'Reduce setup time by 20% and tool change time by 10%.',
-    analysis: 'Root cause identified as lack of standardized setup kits and disorganized tool crib.',
-    proposedActions: [
-      { id: '1', task: 'Implement Shadow Boards', owner: 'Mike R.', status: 'completed' },
-      { id: '2', task: 'Standardize Setup Sheets', owner: 'John D.', status: 'in_progress' },
-      { id: '3', task: 'Pre-kit Tools for Shift', owner: 'Sarah L.', status: 'todo' },
-    ]
+  const [a3, setA3] = React.useState<any>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
+
+  React.useEffect(() => {
+    if (id) {
+      loadA3();
+    }
+  }, [id]);
+
+  const loadA3 = async () => {
+    try {
+      const data = await fetchA3ById(id as string);
+      if (data) {
+        setA3(data);
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to load A3 details',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (isLoading && !a3) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-3/4" />
+        <div className="grid gap-6 md:grid-cols-3">
+          <Skeleton className="h-96 md:col-span-2" />
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!a3) {
+    return <div className="py-12 text-center">A3 Report not found</div>;
+  }
+
+  // Helper to find specific sections
+  const getSectionContent = (type: string) => {
+    return a3.sections?.find((s: any) => s.section_type === type)?.content || 'No content provided.';
   };
 
   return (
@@ -59,15 +92,15 @@ export default function A3DetailsPage() {
               <h1 className="text-2xl font-bold">{a3.title}</h1>
               <Badge variant="outline">{a3.a3_number}</Badge>
             </div>
-            <p className="text-muted-foreground">Author: {a3.author} | Dept: {a3.department}</p>
+            <p className="text-muted-foreground">Author: {a3.author_name} | Dept: {a3.department || 'N/A'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => toast({ title: 'Export', description: 'Starting PDF export...' })}>
             <Download className="h-4 w-4 mr-2" />
             Export PDF
           </Button>
-          <Button onClick={() => setIsEditing?.(true)}>
+          <Button onClick={() => setIsEditing(true)}>
             <Edit className="h-4 w-4 mr-2" />
             Edit Report
           </Button>
@@ -77,24 +110,24 @@ export default function A3DetailsPage() {
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Overview</CardTitle>
+            <CardTitle>Analysis & Background</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <section className="space-y-2">
               <h3 className="font-semibold text-sm uppercase text-muted-foreground">1. Background</h3>
-              <p className="text-sm leading-relaxed">{a3.background}</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{getSectionContent('background')}</p>
             </section>
             <section className="space-y-2">
               <h3 className="font-semibold text-sm uppercase text-muted-foreground">2. Current Status</h3>
-              <p className="text-sm leading-relaxed">{a3.currentStatus}</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{getSectionContent('current_condition')}</p>
             </section>
             <section className="space-y-2">
               <h3 className="font-semibold text-sm uppercase text-muted-foreground">3. Goals / Targets</h3>
-              <p className="text-sm leading-relaxed">{a3.goals}</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{getSectionContent('goal')}</p>
             </section>
             <section className="space-y-2">
               <h3 className="font-semibold text-sm uppercase text-muted-foreground">4. Root Cause Analysis</h3>
-              <p className="text-sm leading-relaxed">{a3.analysis}</p>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{getSectionContent('root_cause')}</p>
             </section>
           </CardContent>
         </Card>
@@ -102,49 +135,49 @@ export default function A3DetailsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Status</CardTitle>
+              <CardTitle>Status & Progress</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span>Overall Progress</span>
-                  <span>{a3.progress}%</span>
+                  <span>{a3.progress_percentage}%</span>
                 </div>
-                <Progress value={a3.progress} />
+                <Progress value={a3.progress_percentage} />
               </div>
               <div className="flex items-center justify-between py-2 border-t">
                 <span className="text-sm text-muted-foreground">Status</span>
-                <Badge>{a3.status}</Badge>
+                <Badge className="capitalize">{a3.status}</Badge>
               </div>
               <div className="flex items-center justify-between py-2 border-t">
                 <span className="text-sm text-muted-foreground">Priority</span>
-                <Badge variant="warning">{a3.priority}</Badge>
+                <Badge variant={a3.priority === 'critical' || a3.priority === 'high' ? 'destructive' : 'warning'} className="capitalize">
+                  {a3.priority}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between py-2 border-t">
+                <span className="text-sm text-muted-foreground">Type</span>
+                <span className="text-sm font-medium capitalize">{a3.a3_type.replace('_', ' ')}</span>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Proposed Actions</CardTitle>
+              <CardTitle>Implementation</CardTitle>
+              <CardDescription>Countermeasures and follow-up</CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-3">
-                {a3.proposedActions.map(action => (
-                  <li key={action.id} className="flex items-start gap-3 text-sm">
-                    {action.status === 'completed' ? (
-                      <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
-                    ) : action.status === 'in_progress' ? (
-                      <Clock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <div className="h-4 w-4 border rounded-full shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <p className="font-medium">{action.task}</p>
-                      <p className="text-xs text-muted-foreground">Owner: {action.owner}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-4">
+                <section className="space-y-2">
+                  <h4 className="font-medium text-xs uppercase text-muted-foreground">Countermeasures</h4>
+                  <p className="text-sm">{getSectionContent('countermeasures')}</p>
+                </section>
+                <section className="space-y-2 pt-4 border-t">
+                  <h4 className="font-medium text-xs uppercase text-muted-foreground">Implementation Plan</h4>
+                  <p className="text-sm">{getSectionContent('implementation_plan')}</p>
+                </section>
+              </div>
             </CardContent>
           </Card>
         </div>

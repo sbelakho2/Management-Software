@@ -1,7 +1,7 @@
 from typing import Any, Annotated
 from fastapi import APIRouter, Depends
 from sensei.services.ai.enhanced_ml_pipeline import get_ml_pipeline_service, EnhancedMLPipelineService
-from sensei.services.analytics_warehouse import AnalyticsWarehouseService, FactType
+from sensei.services.ops.analytics_warehouse import AnalyticsWarehouseService, FactType
 from sensei.api import deps
 from sensei.core.pii import mask_analytics_data
 
@@ -64,12 +64,14 @@ async def get_ml_insights(
 @router.get("/trends", response_model=list[dict[str, Any]])
 async def get_performance_trends(
     _: AllowAnalytics,
+    db: deps.DBSession,
     warehouse: AnalyticsWarehouseService = Depends(get_analytics_warehouse_service),
     token_data: deps.TokenData = Depends(deps.get_token_data)
 ):
     """Get key performance indicators and their trends."""
     # Attempt to fetch real data from warehouse
-    records = warehouse.get_exported_records(
+    records = await warehouse.get_exported_records(
+        db=db,
         actor_roles=token_data.roles,
         fact_type=FactType.QUALITY_METRIC
     )

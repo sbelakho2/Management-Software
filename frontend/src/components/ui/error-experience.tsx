@@ -186,9 +186,9 @@ export function ActionableError({
               Report Issue
             </button>
           )}
-          {actions?.map((action, index) => (
+          {actions?.map((action) => (
             <button
-              key={index}
+              key={action.label}
               onClick={action.onClick}
               className={cn(
                 'px-3 py-1.5 text-sm font-medium rounded transition-colors',

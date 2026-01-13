@@ -114,6 +114,7 @@ export interface GenerationRequest {
   senderTitle?: string;
   senderEmail: string;
   companyName: string;
+  language?: string;
   requestedBy?: string;
   requestedAt: Date;
 }
@@ -125,10 +126,12 @@ export interface GeneratedDraft {
   bodyPlain: string;
   bodyHtml: string;
   salutation: string;
+  body?: string;
   opening: string;
   mainContent: string[];
   closing: string;
   signature: string;
+  fullText?: string;
   status: DraftStatus;
   confidenceScore: number;
   alternatives: string[];
@@ -136,6 +139,11 @@ export interface GeneratedDraft {
   suggestions: string[];
   tokensUsed: number;
   generationTimeMs: number;
+  context?: EmailContext;
+  tone?: string;
+  language?: string;
+  modelVersion?: string;
+  generatedAt?: Date;
   createdAt: Date;
   reviewedAt?: Date;
   reviewedBy?: string;
@@ -614,11 +622,16 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
           // Map API response to frontend draft format
           const draft: GeneratedDraft = {
             id: apiDraft.id || generateId(),
+            requestId: request.id,
             status: 'ready',
             context: request.context,
             subject: apiDraft.subject,
             salutation: apiDraft.salutation,
             body: apiDraft.body,
+            bodyPlain: apiDraft.body || '',
+            bodyHtml: `<p>${apiDraft.salutation}</p><p>${apiDraft.body}</p><p>${apiDraft.closing}</p>`,
+            opening: apiDraft.opening || '',
+            mainContent: apiDraft.main_content || [],
             closing: apiDraft.closing,
             signature: apiDraft.signature || `${request.senderName}\n${request.senderTitle}\n${request.companyName}`,
             fullText: `${apiDraft.salutation}\n\n${apiDraft.body}\n\n${apiDraft.closing}\n\n${apiDraft.signature || ''}`,
@@ -626,6 +639,14 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
             language: request.language,
             generatedAt: new Date(),
             modelVersion: apiDraft.model_version || 'v1.0',
+            confidenceScore: apiDraft.confidence_score || 0.85,
+            alternatives: apiDraft.alternatives || [],
+            complianceIssues: apiDraft.compliance_issues || [],
+            suggestions: apiDraft.suggestions || [],
+            tokensUsed: apiDraft.tokens_used || 0,
+            generationTimeMs: apiDraft.generation_time_ms || 0,
+            createdAt: new Date(),
+            editsMade: [],
           };
 
           const drafts = new Map(get().drafts);

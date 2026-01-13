@@ -21,6 +21,9 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar } from '@/components/ui/avatar';
 import Link from 'next/link';
+import { hasPageAccess } from '@/lib/page-access';
+import { useAuthStore } from '@/stores';
+import type { UserRole } from '@/types';
 
 // Demo data
 const hrStats = {
@@ -95,6 +98,12 @@ function StatCard({
 
 export default function HRDashboard() {
   const [isLoading, setIsLoading] = React.useState(true);
+  const { user } = useAuthStore();
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
   React.useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 1000);
@@ -123,26 +132,32 @@ export default function HRDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">HR Dashboard</h1>
-          <p className="text-muted-foreground">
-            Manage employees, track certifications, and handle requests
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            People & Talent
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Manage organizational headcount, certifications, and human capital velocity
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/training">
-              <GraduationCap className="h-4 w-4 mr-2" />
-              Training
-            </Link>
-          </Button>
-          <Button>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add Employee
-          </Button>
+        <div className="flex items-center gap-3">
+          {hasPageAccess('/training', userRoles) && (
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" asChild>
+              <Link href="/training">
+                <GraduationCap className="h-4 w-4 mr-2" />
+                Training Matrix
+              </Link>
+            </Button>
+          )}
+          {hasPageAccess('/hr/add', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Employee
+            </Button>
+          )}
         </div>
       </div>
 
@@ -243,12 +258,14 @@ export default function HRDashboard() {
                 </div>
               ))}
             </div>
-            <Button variant="outline" className="w-full mt-4" asChild>
-              <Link href="/training/matrix">
-                <FileText className="h-4 w-4 mr-2" />
-                View Training Matrix
-              </Link>
-            </Button>
+            {hasPageAccess('/training/matrix', userRoles) && (
+              <Button variant="outline" className="w-full mt-4" asChild>
+                <Link href="/training/matrix">
+                  <FileText className="h-4 w-4 mr-2" />
+                  View Training Matrix
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
 

@@ -172,6 +172,7 @@ export default function ProductDetailPage() {
   const [showAdjustDialog, setShowAdjustDialog] = React.useState(false);
   const [adjustmentQty, setAdjustmentQty] = React.useState(0);
   const [adjustmentNotes, setAdjustmentNotes] = React.useState('');
+  const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -237,7 +238,7 @@ export default function ProductDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsEditing?.(true)}>
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

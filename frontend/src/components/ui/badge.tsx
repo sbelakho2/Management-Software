@@ -3,34 +3,37 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center rounded-full border font-bold transition-all focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground shadow',
+          'border-transparent bg-primary text-primary-foreground shadow-sm hover:opacity-90',
         secondary:
-          'border-transparent bg-secondary text-secondary-foreground',
+          'border-transparent bg-secondary/80 text-secondary-foreground backdrop-blur-sm hover:bg-secondary',
         destructive:
-          'border-transparent bg-destructive text-destructive-foreground shadow',
-        outline: 'text-foreground',
+          'border-transparent bg-destructive text-destructive-foreground shadow-sm hover:opacity-90',
+        outline: 'text-foreground border-border/50 hover:bg-accent hover:text-accent-foreground',
+        ghost: 'border-transparent bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground',
+        primary:
+          'border-transparent bg-primary text-primary-foreground shadow-sm hover:opacity-90',
         success:
-          'border-transparent bg-success/10 text-success',
+          'border-transparent bg-success/15 text-success dark:bg-success/20',
         warning:
-          'border-transparent bg-warning/10 text-warning',
+          'border-transparent bg-warning/15 text-warning dark:bg-warning/20',
         danger:
-          'border-transparent bg-danger/10 text-danger',
-        // Status badges
+          'border-transparent bg-danger/15 text-danger dark:bg-danger/20',
+        // Status badges - Premium refined
         pending:
-          'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-500',
+          'border-transparent bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-500',
         active:
-          'border-transparent bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-500',
+          'border-transparent bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-500',
         inactive:
-          'border-transparent bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-500',
+          'border-transparent bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-500',
         completed:
-          'border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-500',
+          'border-transparent bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-500',
         failed:
-          'border-transparent bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-500',
+          'border-transparent bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-500',
       },
       size: {
         default: 'px-2.5 py-0.5 text-xs',

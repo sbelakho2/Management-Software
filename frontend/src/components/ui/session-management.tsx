@@ -1140,13 +1140,3 @@ export function NotificationBell({ onClick, className = '' }: NotificationBellPr
 // =============================================================================
 // EXPORTS
 // =============================================================================
-
-export type {
-  BroadcastMessage,
-  ToastMessage,
-  Notification,
-  TabSyncContextValue,
-  SessionContextValue,
-  ToastContextValue,
-  NotificationContextValue,
-};

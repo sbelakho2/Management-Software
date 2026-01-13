@@ -47,27 +47,29 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          Create an account
+        <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          Create Account
         </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          Join Sensei OS to optimize your operations
+        <p className="mt-2 text-sm text-muted-foreground font-medium">
+          Request access to the Sensei OS enterprise platform
         </p>
       </div>
 
       {(error || localError) && (
-        <Alert variant="destructive">
-          <AlertDescription>{error || localError}</AlertDescription>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300">
+          <AlertDescription className="font-medium">{error || localError}</AlertDescription>
         </Alert>
       )}
 
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="fullName">Full Name</Label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <Label htmlFor="fullName" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+            Full Name
+          </Label>
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
               <User className="h-4 w-4" />
             </div>
             <Input
@@ -75,7 +77,7 @@ export default function RegisterPage() {
               type="text"
               placeholder="John Doe"
               required
-              className="pl-10"
+              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               disabled={isLoading}
@@ -84,9 +86,11 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email">Email address</Label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+            Email address
+          </Label>
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -95,7 +99,7 @@ export default function RegisterPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-10"
+              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -104,9 +108,11 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+          <Label htmlFor="password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+            Password
+          </Label>
+          <div className="relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -115,40 +121,34 @@ export default function RegisterPage() {
               placeholder="••••••••"
               autoComplete="new-password"
               required
-              className="pl-10"
+              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
           </div>
-          <p className="text-xs text-slate-500">
-            Must be at least 8 characters long
+          <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40">
+            Minimum 8 characters with enterprise complexity
           </p>
         </div>
 
         <Button
           type="submit"
-          className="w-full"
-          disabled={isLoading}
+          className="w-full h-12 text-base rounded-xl premium-shimmer"
+          loading={isLoading}
+          size="xl"
         >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating account...
-            </>
-          ) : (
-            'Create account'
-          )}
+          {isLoading ? 'Processing...' : 'Request Access'}
         </Button>
       </form>
 
-      <div className="text-center">
+      <div className="text-center pt-4">
         <Link
           href="/login"
-          className="text-sm font-medium text-primary hover:text-primary/80 flex items-center justify-center gap-2"
+          className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Already have an account? Sign in
+          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+          <span>Back to sign in</span>
         </Link>
       </div>
     </div>

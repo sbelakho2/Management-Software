@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { useCTQStore } from '@/stores/ctq';
 import {
   Table,
   TableBody,
@@ -147,13 +148,24 @@ const resultIcons: Record<MeasurementResult, React.ReactNode> = {
 export default function CTQDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { id } = params;
   const { toast } = useToast();
+  
+  const { 
+    fetchCTQById, 
+    updateCTQ, 
+    deleteCTQ, 
+    addMeasurement,
+    isLoading: storeLoading 
+  } = useCTQStore();
+
   const [isLoading, setIsLoading] = useState(true);
   const [ctq, setCTQ] = useState<CTQ | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMeasurementDialog, setShowMeasurementDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAddingMeasurement, setIsAddingMeasurement] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [measurementForm, setMeasurementForm] = useState({
     measured_value: '',
@@ -162,116 +174,25 @@ export default function CTQDetailPage() {
   });
 
   useEffect(() => {
-    fetchCTQ();
-  }, [params.id]);
+    if (id) {
+      loadData();
+    }
+  }, [id]);
 
-  const fetchCTQ = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/v1/ctqs/${params.id}`);
-      // const data = await response.json();
-      // setCTQ(data);
-
-      // Mock data
-      setTimeout(() => {
-        setCTQ({
-          id: params.id as string,
-          ctq_number: 'CTQ-2024-0089',
-          category: 'dimensional',
-          priority: 'critical',
-          status: 'approved',
-          rfq_id: 'rfq-123',
-          rfq_number: 'RFQ-2024-0456',
-          part_number: 'P/N-1234567',
-          characteristic: 'Mounting hole diameter',
-          description: 'Critical mounting hole for bracket assembly. Must maintain tight tolerance to ensure proper fit with mating hardware.',
-          specification: '10.0 ± 0.05mm',
-          nominal_value: 10.0,
-          upper_tolerance: 0.05,
-          lower_tolerance: -0.05,
-          unit_of_measure: 'mm',
-          measurement_method: 'CMM (Coordinate Measuring Machine)',
-          sampling_plan: '100% inspection for first 10 parts, then 1 in 10 for production run',
-          check_stage: 'Final inspection',
-          evidence_required: true,
-          measurement_count: 45,
-          pass_rate: 97.8,
-          measurements: [
-            {
-              id: 'm1',
-              ctq_id: params.id as string,
-              measured_value: 10.02,
-              measured_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-              measured_by_id: 'user-1',
-              measured_by_name: 'John Smith',
-              result: 'pass',
-              notes: 'Part #456 - Within spec',
-              attachment_ids: [],
-              created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              id: 'm2',
-              ctq_id: params.id as string,
-              measured_value: 9.96,
-              measured_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-              measured_by_id: 'user-2',
-              measured_by_name: 'Sarah Johnson',
-              result: 'pass',
-              notes: 'Part #455 - Good',
-              attachment_ids: [],
-              created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              id: 'm3',
-              ctq_id: params.id as string,
-              measured_value: 10.06,
-              measured_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-              measured_by_id: 'user-1',
-              measured_by_name: 'John Smith',
-              result: 'fail',
-              notes: 'Part #454 - Out of spec, scrapped',
-              attachment_ids: ['att-1'],
-              created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              id: 'm4',
-              ctq_id: params.id as string,
-              measured_value: 10.048,
-              measured_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-              measured_by_id: 'user-3',
-              measured_by_name: 'Mike Williams',
-              result: 'marginal',
-              notes: 'Part #453 - At limit, approved for use',
-              attachment_ids: [],
-              created_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-            },
-            {
-              id: 'm5',
-              ctq_id: params.id as string,
-              measured_value: 10.01,
-              measured_at: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
-              measured_by_id: 'user-2',
-              measured_by_name: 'Sarah Johnson',
-              result: 'pass',
-              notes: 'Part #452 - Excellent',
-              attachment_ids: [],
-              created_at: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
-            },
-          ],
-          created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          created_by_id: 'user-1',
-          created_by_name: 'John Smith',
-        });
-        setIsLoading(false);
-      }, 500);
+      const data = await fetchCTQById(id as string);
+      if (data) {
+        setCTQ(data as any);
+      }
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to fetch CTQ details',
+        description: 'Failed to load CTQ details',
         variant: 'destructive',
       });
+    } finally {
       setIsLoading(false);
     }
   };
@@ -279,51 +200,51 @@ export default function CTQDetailPage() {
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/ctqs/${params.id}`, { method: 'DELETE' });
-      
-      setTimeout(() => {
-        toast({
-          title: 'Success',
-          description: 'CTQ deleted successfully',
-        });
-        router.push('/ctq');
-      }, 500);
+      await deleteCTQ(id as string);
+      toast({
+        title: 'Success',
+        description: 'CTQ deleted successfully',
+      });
+      router.push('/ctq');
     } catch (error) {
       toast({
         title: 'Error',
         description: 'Failed to delete CTQ',
         variant: 'destructive',
       });
+    } finally {
       setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
   const handleAddMeasurement = async () => {
+    if (!measurementForm.measured_value) return;
+
     setIsAddingMeasurement(true);
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/ctqs/${params.id}/measurements`, {
-      //   method: 'POST',
-      //   body: JSON.stringify(measurementForm),
-      // });
-
-      setTimeout(() => {
-        toast({
-          title: 'Success',
-          description: 'Measurement added successfully',
-        });
-        setShowMeasurementDialog(false);
-        setMeasurementForm({ measured_value: '', result: 'not_measured', notes: '' });
-        fetchCTQ();
-        setIsAddingMeasurement(false);
-      }, 500);
+      await addMeasurement(id as string, {
+        measured_value: parseFloat(measurementForm.measured_value),
+        notes: measurementForm.notes,
+      });
+      
+      toast({
+        title: 'Success',
+        description: 'Measurement added successfully',
+      });
+      
+      setShowMeasurementDialog(false);
+      setMeasurementForm({ measured_value: '', result: 'not_measured', notes: '' });
+      
+      // Reload data
+      loadData();
     } catch (error) {
       toast({
         title: 'Error',
         description: 'Failed to add measurement',
         variant: 'destructive',
       });
+    } finally {
       setIsAddingMeasurement(false);
     }
   };
@@ -429,7 +350,7 @@ export default function CTQDetailPage() {
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button variant="outline" onClick={() => setIsEditing?.(true)}>
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>

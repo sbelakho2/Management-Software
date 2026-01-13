@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { todayApi, TodayScreenData } from '@/api/today';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface TodayState {
   data: TodayScreenData | null;
@@ -19,8 +20,8 @@ export const useTodayStore = create<TodayState>((set) => ({
     try {
       const data = await todayApi.getTodayScreen(userId, userName);
       set({ data, loading: false });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
     }
   },
 }));

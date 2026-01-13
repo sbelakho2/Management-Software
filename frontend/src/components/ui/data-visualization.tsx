@@ -207,7 +207,7 @@ export function DrilldownBreadcrumbs({ className = '' }: DrilldownBreadcrumbsPro
         {breadcrumbs[0]}
       </button>
       {breadcrumbs.slice(1).map((crumb, index) => (
-        <React.Fragment key={index}>
+        <React.Fragment key={crumb}>
           <span className="text-gray-400" aria-hidden="true">
             /
           </span>
@@ -543,7 +543,7 @@ export function BarChart({
 
           return (
             <div
-              key={index}
+              key={point.label}
               className={`
                 ${horizontal ? 'flex items-center gap-2' : 'flex flex-col items-center flex-1'}
               `}
@@ -711,7 +711,7 @@ export function DonutChart({
 
           return (
             <path
-              key={index}
+              key={segment.label}
               d={createArcPath(
                 segment.startAngle,
                 segment.endAngle,

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { taskApi, type TaskListParams, type CreateTaskData, type UpdateTaskData } from '@/api/task';
 import type { Task, TaskStatus } from '@/types';
+import { getErrorMessage } from '@/lib/error-utils';
 
 interface TasksState {
   tasks: Task[];
@@ -26,8 +27,8 @@ export const useTasksStore = create<TasksState>()(
       try {
         const response = await taskApi.list(params);
         set({ tasks: response.items, loading: false });
-      } catch (error: any) {
-        set({ error: error.message, loading: false });
+      } catch (error: unknown) {
+        set({ error: getErrorMessage(error), loading: false });
       }
     },
 
@@ -40,8 +41,8 @@ export const useTasksStore = create<TasksState>()(
           loading: false 
         }));
         return newTask;
-      } catch (error: any) {
-        set({ error: error.message, loading: false });
+      } catch (error: unknown) {
+        set({ error: getErrorMessage(error), loading: false });
         throw error;
       }
     },
@@ -55,8 +56,8 @@ export const useTasksStore = create<TasksState>()(
           loading: false,
         }));
         return updatedTask;
-      } catch (error: any) {
-        set({ error: error.message, loading: false });
+      } catch (error: unknown) {
+        set({ error: getErrorMessage(error), loading: false });
         throw error;
       }
     },
@@ -69,8 +70,8 @@ export const useTasksStore = create<TasksState>()(
           tasks: state.tasks.filter((t) => t.id !== id),
           loading: false,
         }));
-      } catch (error: any) {
-        set({ error: error.message, loading: false });
+      } catch (error: unknown) {
+        set({ error: getErrorMessage(error), loading: false });
         throw error;
       }
     },
@@ -82,8 +83,8 @@ export const useTasksStore = create<TasksState>()(
           tasks: state.tasks.map((t) => (t.id === id ? updatedTask : t)),
         }));
         return updatedTask;
-      } catch (error: any) {
-        set({ error: error.message });
+      } catch (error: unknown) {
+        set({ error: getErrorMessage(error) });
         throw error;
       }
     },

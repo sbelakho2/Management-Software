@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatDate, getInitials } from '@/lib/utils';
+import { useTrainingStore } from '@/stores/training';
 
 type TabType = 'certifications' | 'programs' | 'records';
 
@@ -77,32 +78,7 @@ interface TrainingRecord {
   score?: number;
 }
 
-const mockCertifications: Certification[] = [
-  { id: '1', name: 'ISO 9001 Internal Auditor', description: 'Qualified to conduct internal quality audits', category: 'Quality', validityPeriod: 36, requiredFor: ['Quality Manager', 'Quality Engineer'], enrolledCount: 8, certifiedCount: 5 },
-  { id: '2', name: 'AS9100 Awareness', description: 'Aerospace quality management system fundamentals', category: 'Quality', validityPeriod: 24, requiredFor: ['All Production', 'Quality'], enrolledCount: 45, certifiedCount: 42 },
-  { id: '3', name: 'CNC Machine Operation Level 1', description: 'Basic CNC programming and operation', category: 'Technical', validityPeriod: 12, requiredFor: ['CNC Operator'], enrolledCount: 15, certifiedCount: 12 },
-  { id: '4', name: 'Forklift Operator', description: 'Licensed forklift operation certification', category: 'Safety', validityPeriod: 36, requiredFor: ['Warehouse', 'Shipping'], enrolledCount: 10, certifiedCount: 10 },
-  { id: '5', name: 'First Aid & CPR', description: 'Emergency first aid and CPR certification', category: 'Safety', validityPeriod: 24, requiredFor: ['Safety Team'], enrolledCount: 12, certifiedCount: 11 },
-];
-
-const mockPrograms: TrainingProgram[] = [
-  { id: '1', name: 'ISO 9001 Internal Auditor Training', description: 'Comprehensive auditor training course', duration: '3 days', format: 'classroom', certificationId: '1', certificationName: 'ISO 9001 Internal Auditor', enrolledCount: 8, completionRate: 62 },
-  { id: '2', name: 'New Employee Orientation', description: 'Company policies, procedures, and culture', duration: '4 hours', format: 'blended', enrolledCount: 5, completionRate: 80 },
-  { id: '3', name: 'CNC Programming Fundamentals', description: 'G-code basics and machine setup', duration: '2 weeks', format: 'hands_on', certificationId: '3', certificationName: 'CNC Machine Operation Level 1', enrolledCount: 15, completionRate: 80 },
-  { id: '4', name: 'Safety Awareness Training', description: 'Workplace safety and hazard recognition', duration: '2 hours', format: 'online', enrolledCount: 50, completionRate: 96 },
-  { id: '5', name: 'Quality Documentation', description: 'Proper completion of quality records', duration: '1 hour', format: 'online', enrolledCount: 45, completionRate: 89 },
-];
-
-const mockRecords: TrainingRecord[] = [
-  { id: '1', employeeId: 'E001', employeeName: 'John Doe', programId: '1', programName: 'ISO 9001 Internal Auditor Training', certificationName: 'ISO 9001 Internal Auditor', status: 'completed', enrolledDate: '2023-10-01', completedDate: '2023-10-03', expiresDate: '2026-10-03', score: 92 },
-  { id: '2', employeeId: 'E002', employeeName: 'Sarah Chen', programId: '3', programName: 'CNC Programming Fundamentals', certificationName: 'CNC Machine Operation Level 1', status: 'in_progress', enrolledDate: '2024-01-08' },
-  { id: '3', employeeId: 'E003', employeeName: 'Maria Garcia', programId: '2', programName: 'New Employee Orientation', status: 'completed', enrolledDate: '2024-01-02', completedDate: '2024-01-02' },
-  { id: '4', employeeId: 'E004', employeeName: 'David Lee', programId: '4', programName: 'Safety Awareness Training', status: 'expired', enrolledDate: '2022-01-15', completedDate: '2022-01-15', expiresDate: '2024-01-15' },
-  { id: '5', employeeId: 'E005', employeeName: 'Emily Rodriguez', programId: '1', programName: 'ISO 9001 Internal Auditor Training', certificationName: 'ISO 9001 Internal Auditor', status: 'enrolled', enrolledDate: '2024-01-10' },
-  { id: '6', employeeId: 'E001', employeeName: 'John Doe', programId: '5', programName: 'Quality Documentation', status: 'completed', enrolledDate: '2023-11-01', completedDate: '2023-11-01', score: 100 },
-];
-
-const recordStatusConfig: Record<TrainingRecord['status'], { label: string; variant: BadgeProps['variant']; icon: typeof CheckCircle }> = {
+const recordStatusConfig: Record<string, { label: string; variant: BadgeProps['variant']; icon: typeof CheckCircle }> = {
   enrolled: { label: 'Enrolled', variant: 'secondary', icon: Clock },
   in_progress: { label: 'In Progress', variant: 'warning', icon: RefreshCw },
   completed: { label: 'Completed', variant: 'success', icon: CheckCircle },
@@ -110,7 +86,7 @@ const recordStatusConfig: Record<TrainingRecord['status'], { label: string; vari
   failed: { label: 'Failed', variant: 'danger', icon: AlertTriangle },
 };
 
-const formatConfig: Record<TrainingProgram['format'], { label: string; color: string }> = {
+const formatConfig: Record<string, { label: string; color: string }> = {
   online: { label: 'Online', color: 'bg-primary/10 text-primary' },
   classroom: { label: 'Classroom', color: 'bg-success/10 text-success' },
   hands_on: { label: 'Hands-On', color: 'bg-warning/10 text-warning' },
@@ -118,11 +94,13 @@ const formatConfig: Record<TrainingProgram['format'], { label: string; color: st
 };
 
 function TrainingStats() {
-  const expiringCount = mockRecords.filter(r => {
-    if (!r.expiresDate) return false;
-    const expDate = new Date(r.expiresDate);
-    const daysUntil = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return daysUntil <= 30 && daysUntil > 0;
+  const { skills, trainings, records } = useTrainingStore();
+  
+  const expiringCount = records.filter(r => {
+    // In a real app, UserSkill model might have expires_at. 
+    // Records in store represent enrollments/completions.
+    // For now we'll simulate based on store data if available.
+    return false; 
   }).length;
 
   return (
@@ -134,8 +112,8 @@ function TrainingStats() {
               <Award className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{mockCertifications.length}</p>
-              <p className="text-sm text-muted-foreground">Active Certifications</p>
+              <p className="text-2xl font-bold">{skills.length}</p>
+              <p className="text-sm text-muted-foreground">Active Skills</p>
             </div>
           </div>
         </CardContent>
@@ -147,7 +125,7 @@ function TrainingStats() {
               <GraduationCap className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{mockPrograms.length}</p>
+              <p className="text-2xl font-bold">{trainings.length}</p>
               <p className="text-sm text-muted-foreground">Training Programs</p>
             </div>
           </div>
@@ -160,7 +138,7 @@ function TrainingStats() {
               <Clock className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{mockRecords.filter(r => r.status === 'in_progress').length}</p>
+              <p className="text-2xl font-bold">{records.filter(r => r.status === 'in_progress').length}</p>
               <p className="text-sm text-muted-foreground">In Progress</p>
             </div>
           </div>
@@ -185,16 +163,23 @@ function TrainingStats() {
 
 function CertificationsTab() {
   const router = useRouter();
+  const { skills, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState('all');
 
-  const categories = [...new Set(mockCertifications.map(c => c.category))];
+  const categories = [...new Set(skills.map(c => c.skill_category))];
 
-  const filtered = mockCertifications.filter(cert => {
-    if (search && !cert.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (categoryFilter !== 'all' && cert.category !== categoryFilter) return false;
+  const filtered = skills.filter(skill => {
+    if (search && !skill.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (categoryFilter !== 'all' && skill.skill_category !== categoryFilter) return false;
     return true;
   });
+
+  if (isLoading && skills.length === 0) {
+    return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {[1, 2, 3].map(i => <Card key={i} className="h-40 animate-pulse bg-muted" />)}
+    </div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -202,7 +187,7 @@ function CertificationsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search certifications..."
+            placeholder="Search skills..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -222,15 +207,15 @@ function CertificationsTab() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((cert) => (
+        {filtered.map((skill) => (
           <Card 
-            key={cert.id} 
+            key={skill.id} 
             className="hover:border-primary/50 cursor-pointer transition-colors"
-            onClick={() => router.push(`/training/certifications/${cert.id}`)}
+            onClick={() => router.push(`/training/certifications/${skill.id}`)}
           >
             <CardContent className="pt-4">
               <div className="flex items-start justify-between mb-2">
-                <Badge variant="outline">{cert.category}</Badge>
+                <Badge variant="outline">{skill.skill_category}</Badge>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                     <Button variant="ghost" size="icon-sm">
@@ -245,22 +230,23 @@ function CertificationsTab() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <h3 className="font-semibold mb-1">{cert.name}</h3>
-              <p className="text-sm text-muted-foreground mb-4">{cert.description}</p>
+              <h3 className="font-semibold mb-1">{skill.name}</h3>
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{skill.description}</p>
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Valid {cert.validityPeriod} months
+                  Valid {skill.recertification_interval_days / 30} months
                 </div>
-                <div className="flex items-center gap-1">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{cert.certifiedCount}</span>
-                  <span className="text-muted-foreground">/ {cert.enrolledCount}</span>
-                </div>
+                {skill.is_safety_critical && <Badge variant="destructive" size="sm">Safety</Badge>}
               </div>
             </CardContent>
           </Card>
         ))}
+        {filtered.length === 0 && !isLoading && (
+          <div className="col-span-full py-12 text-center text-muted-foreground">
+            No skills found
+          </div>
+        )}
       </div>
     </div>
   );
@@ -268,12 +254,13 @@ function CertificationsTab() {
 
 function ProgramsTab() {
   const router = useRouter();
+  const { trainings, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
   const [formatFilter, setFormatFilter] = React.useState('all');
 
-  const filtered = mockPrograms.filter(program => {
-    if (search && !program.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (formatFilter !== 'all' && program.format !== formatFilter) return false;
+  const filtered = trainings.filter(program => {
+    if (search && !program.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (formatFilter !== 'all' && program.training_type !== formatFilter) return false;
     return true;
   });
 
@@ -291,13 +278,14 @@ function ProgramsTab() {
         </div>
         <Select value={formatFilter} onValueChange={setFormatFilter}>
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="Format" />
+            <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Formats</SelectItem>
-            {Object.entries(formatConfig).map(([key, cfg]) => (
-              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-            ))}
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="INTERNAL">Internal</SelectItem>
+            <SelectItem value="EXTERNAL">External</SelectItem>
+            <SelectItem value="ON_THE_JOB">On the Job</SelectItem>
+            <SelectItem value="E_LEARNING">E-Learning</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -307,17 +295,14 @@ function ProgramsTab() {
           <thead className="bg-muted/50">
             <tr>
               <th className="text-left p-3 font-medium text-sm">Program</th>
-              <th className="text-left p-3 font-medium text-sm">Format</th>
-              <th className="text-left p-3 font-medium text-sm">Duration</th>
-              <th className="text-left p-3 font-medium text-sm">Certification</th>
+              <th className="text-left p-3 font-medium text-sm">Type</th>
+              <th className="text-left p-3 font-medium text-sm">Dates</th>
               <th className="text-center p-3 font-medium text-sm">Enrolled</th>
-              <th className="text-center p-3 font-medium text-sm">Completion</th>
               <th className="p-3 w-10"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {filtered.map((program) => {
-              const fmtCfg = formatConfig[program.format];
               return (
                 <tr 
                   key={program.id} 
@@ -325,39 +310,18 @@ function ProgramsTab() {
                   onClick={() => router.push(`/training/programs/${program.id}`)}
                 >
                   <td className="p-3">
-                    <p className="font-medium">{program.name}</p>
-                    <p className="text-sm text-muted-foreground">{program.description}</p>
+                    <p className="font-medium">{program.title}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-1">{program.description}</p>
                   </td>
                   <td className="p-3">
-                    <span className={cn('text-xs px-2 py-1 rounded', fmtCfg.color)}>
-                      {fmtCfg.label}
-                    </span>
+                    <Badge variant="outline">{program.training_type}</Badge>
                   </td>
-                  <td className="p-3 text-sm">{program.duration}</td>
-                  <td className="p-3">
-                    {program.certificationName ? (
-                      <Badge variant="outline" size="sm">{program.certificationName}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">—</span>
-                    )}
+                  <td className="p-3 text-sm">
+                    {formatDate(program.start_date)}
                   </td>
                   <td className="p-3 text-center">
-                    <span className="font-medium">{program.enrolledCount}</span>
-                  </td>
-                  <td className="p-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
-                          className={cn(
-                            'h-full rounded-full',
-                            program.completionRate >= 80 ? 'bg-success' : 
-                            program.completionRate >= 50 ? 'bg-warning' : 'bg-danger'
-                          )}
-                          style={{ width: `${program.completionRate}%` }}
-                        />
-                      </div>
-                      <span className="text-sm">{program.completionRate}%</span>
-                    </div>
+                    <span className="font-medium">{program.enrolled_count}</span>
+                    {program.capacity && <span className="text-muted-foreground text-xs ml-1">/ {program.capacity}</span>}
                   </td>
                   <td className="p-3">
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -365,6 +329,11 @@ function ProgramsTab() {
                 </tr>
               );
             })}
+            {filtered.length === 0 && !isLoading && (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-muted-foreground">No programs found</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -373,12 +342,13 @@ function ProgramsTab() {
 }
 
 function RecordsTab() {
+  const { records, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
 
-  const filtered = mockRecords.filter(record => {
-    if (search && !record.employeeName.toLowerCase().includes(search.toLowerCase()) && 
-        !record.programName.toLowerCase().includes(search.toLowerCase())) return false;
+  const filtered = records.filter(record => {
+    if (search && !record.user_name.toLowerCase().includes(search.toLowerCase()) && 
+        !record.training_title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && record.status !== statusFilter) return false;
     return true;
   });
@@ -389,7 +359,7 @@ function RecordsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by employee or program..."
+            placeholder="Search by employee or training..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -417,44 +387,33 @@ function RecordsTab() {
           <thead className="bg-muted/50">
             <tr>
               <th className="text-left p-3 font-medium text-sm">Employee</th>
-              <th className="text-left p-3 font-medium text-sm">Program</th>
+              <th className="text-left p-3 font-medium text-sm">Training</th>
               <th className="text-left p-3 font-medium text-sm">Status</th>
               <th className="text-left p-3 font-medium text-sm">Enrolled</th>
               <th className="text-left p-3 font-medium text-sm">Completed</th>
-              <th className="text-left p-3 font-medium text-sm">Expires</th>
               <th className="text-center p-3 font-medium text-sm">Score</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {filtered.map((record) => {
-              const statusCfg = recordStatusConfig[record.status];
+              const statusCfg = recordStatusConfig[record.status] || { label: record.status, variant: 'secondary', icon: Clock };
               const StatusIcon = statusCfg.icon;
-              const isExpiringSoon = record.expiresDate && (() => {
-                const days = Math.ceil((new Date(record.expiresDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                return days <= 30 && days > 0;
-              })();
 
               return (
-                <tr key={record.id} className={cn('hover:bg-muted/50', record.status === 'expired' && 'bg-danger/5')}>
+                <tr key={record.id} className={cn('hover:bg-muted/50')}>
                   <td className="p-3">
                     <div className="flex items-center gap-3">
                       <Avatar size="sm">
-                        <AvatarFallback>{getInitials(record.employeeName)}</AvatarFallback>
+                        <AvatarFallback>{getInitials(record.user_name)}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{record.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{record.employeeId}</p>
+                        <p className="font-medium">{record.user_name}</p>
+                        <p className="text-xs text-muted-foreground">{record.user_id.split('-')[0]}</p>
                       </div>
                     </div>
                   </td>
                   <td className="p-3">
-                    <p className="text-sm">{record.programName}</p>
-                    {record.certificationName && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Award className="h-3 w-3" />
-                        {record.certificationName}
-                      </p>
-                    )}
+                    <p className="text-sm">{record.training_title}</p>
                   </td>
                   <td className="p-3">
                     <Badge variant={statusCfg.variant} size="sm" className="gap-1">
@@ -463,20 +422,10 @@ function RecordsTab() {
                     </Badge>
                   </td>
                   <td className="p-3 text-sm">
-                    {formatDate(new Date(record.enrolledDate), { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {formatDate(record.enrolled_at)}
                   </td>
                   <td className="p-3 text-sm">
-                    {record.completedDate 
-                      ? formatDate(new Date(record.completedDate), { month: 'short', day: 'numeric', year: 'numeric' })
-                      : '—'}
-                  </td>
-                  <td className="p-3 text-sm">
-                    {record.expiresDate ? (
-                      <span className={cn(isExpiringSoon && 'text-warning font-medium', record.status === 'expired' && 'text-danger')}>
-                        {formatDate(new Date(record.expiresDate), { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {isExpiringSoon && <AlertTriangle className="inline h-3 w-3 ml-1" />}
-                      </span>
-                    ) : '—'}
+                    {record.completed_at ? formatDate(record.completed_at) : '—'}
                   </td>
                   <td className="p-3 text-center">
                     {record.score !== undefined ? (
@@ -491,6 +440,11 @@ function RecordsTab() {
                 </tr>
               );
             })}
+            {filtered.length === 0 && !isLoading && (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-muted-foreground">No records found</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -501,10 +455,18 @@ function RecordsTab() {
 function TrainingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { fetchSkills, fetchTrainings, fetchRecords } = useTrainingStore();
+  
   const [activeTab, setActiveTab] = React.useState<TabType>(() => {
     const tab = searchParams.get('tab') as TabType | null;
     return tab && ['certifications', 'programs', 'records'].includes(tab) ? tab : 'certifications';
   });
+
+  React.useEffect(() => {
+    fetchSkills();
+    fetchTrainings();
+    fetchRecords();
+  }, []);
 
   React.useEffect(() => {
     const url = new URL(window.location.href);

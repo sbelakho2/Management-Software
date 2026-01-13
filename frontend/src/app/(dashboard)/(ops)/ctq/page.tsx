@@ -53,6 +53,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatDate, formatRelativeTime } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthStore } from '@/stores';
+import { useCTQStore } from '@/stores/ctq';
+import { hasPageAccess } from '@/lib/page-access';
+import { UserRole } from '@/types';
 
 type CTQCategory = 'dimensional' | 'surface' | 'material' | 'mechanical' | 'electrical' | 'visual' | 'functional' | 'environmental' | 'other';
 type CTQPriority = 'critical' | 'major' | 'minor';
@@ -61,39 +65,44 @@ type MeasurementResult = 'pass' | 'fail' | 'marginal' | 'not_measured';
 
 interface CTQMeasurement {
   id: string;
-  measuredValue: number | null;
-  measuredAt: string;
-  measuredBy: string;
+  ctq_id: string;
+  measured_value: number | null;
+  measured_at: string;
+  measured_by_id: string;
+  measured_by_name: string;
   result: MeasurementResult;
   notes: string;
-  attachmentIds: string[];
+  attachment_ids: string[];
+  created_at: string;
 }
 
 interface CTQ {
   id: string;
-  ctqNumber: string;
+  ctq_number: string;
   category: CTQCategory;
   priority: CTQPriority;
   status: CTQStatus;
-  rfqNumber?: string;
-  partNumber?: string;
+  rfq_id?: string;
+  rfq_number?: string;
+  part_number?: string;
   characteristic: string;
   description: string;
   specification: string;
-  nominalValue: number | null;
-  upperTolerance: number | null;
-  lowerTolerance: number | null;
-  unitOfMeasure: string;
-  measurementMethod: string;
-  samplingPlan: string;
-  checkStage: string;
-  evidenceRequired: boolean;
-  latestMeasurement?: CTQMeasurement;
-  measurementCount: number;
-  passRate: number;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
+  nominal_value: number | null;
+  upper_tolerance: number | null;
+  lower_tolerance: number | null;
+  unit_of_measure: string;
+  measurement_method: string;
+  sampling_plan: string;
+  check_stage: string;
+  evidence_required: boolean;
+  measurements: CTQMeasurement[];
+  measurement_count: number;
+  pass_rate: number;
+  created_at: string;
+  updated_at: string;
+  created_by_id: string;
+  created_by_name: string;
 }
 
 interface CTQStats {
@@ -101,8 +110,8 @@ interface CTQStats {
   active: number;
   approved: number;
   critical: number;
-  averagePassRate: number;
-  measuredToday: number;
+  average_pass_rate: number;
+  measured_today: number;
 }
 
 const categoryIcons: Record<CTQCategory, React.ReactNode> = {
@@ -150,228 +159,41 @@ const resultColors: Record<MeasurementResult, string> = {
   not_measured: 'secondary',
 };
 
-// Mock data for development
-const mockStats: CTQStats = {
-  total: 127,
-  active: 89,
-  approved: 103,
-  critical: 34,
-  averagePassRate: 96.5,
-  measuredToday: 12,
-};
-
-const mockCTQs: CTQ[] = [
-  {
-    id: '1',
-    ctqNumber: 'CTQ-2024-0089',
-    category: 'dimensional',
-    priority: 'critical',
-    status: 'approved',
-    rfqNumber: 'RFQ-2024-0123',
-    partNumber: 'BRK-1234-A',
-    characteristic: 'Mounting hole diameter',
-    description: 'Diameter of primary mounting holes',
-    specification: '10.0 ± 0.05 mm',
-    nominalValue: 10.0,
-    upperTolerance: 0.05,
-    lowerTolerance: -0.05,
-    unitOfMeasure: 'mm',
-    measurementMethod: 'CMM (Coordinate Measuring Machine)',
-    samplingPlan: '5 pieces per lot',
-    checkStage: 'Final Inspection',
-    evidenceRequired: true,
-    latestMeasurement: {
-      id: 'm1',
-      measuredValue: 10.02,
-      measuredAt: '2024-01-15T10:30:00Z',
-      measuredBy: 'John Doe',
-      result: 'pass',
-      notes: 'Within specification',
-      attachmentIds: ['att1'],
-    },
-    measurementCount: 47,
-    passRate: 97.8,
-    createdAt: '2023-12-01T09:00:00Z',
-    updatedAt: '2024-01-15T10:30:00Z',
-    createdBy: 'Quality Manager',
-  },
-  {
-    id: '2',
-    ctqNumber: 'CTQ-2024-0088',
-    category: 'surface',
-    priority: 'major',
-    status: 'active',
-    rfqNumber: 'RFQ-2024-0124',
-    partNumber: 'MNT-5678-B',
-    characteristic: 'Surface roughness',
-    description: 'Ra value for mating surface',
-    specification: 'Ra 1.6 μm max',
-    nominalValue: null,
-    upperTolerance: 1.6,
-    lowerTolerance: null,
-    unitOfMeasure: 'μm',
-    measurementMethod: 'Surface roughness tester',
-    samplingPlan: '3 pieces per lot',
-    checkStage: 'In-Process',
-    evidenceRequired: true,
-    latestMeasurement: {
-      id: 'm2',
-      measuredValue: 1.4,
-      measuredAt: '2024-01-14T14:15:00Z',
-      measuredBy: 'Maria Garcia',
-      result: 'pass',
-      notes: 'Surface finish acceptable',
-      attachmentIds: [],
-    },
-    measurementCount: 23,
-    passRate: 95.6,
-    createdAt: '2023-12-05T10:00:00Z',
-    updatedAt: '2024-01-14T14:15:00Z',
-    createdBy: 'Engineering',
-  },
-  {
-    id: '3',
-    ctqNumber: 'CTQ-2024-0087',
-    category: 'material',
-    priority: 'critical',
-    status: 'approved',
-    rfqNumber: 'RFQ-2024-0125',
-    partNumber: 'HYD-9012-C',
-    characteristic: 'Material hardness',
-    description: 'Rockwell hardness for structural components',
-    specification: 'HRC 45-50',
-    nominalValue: 47.5,
-    upperTolerance: 2.5,
-    lowerTolerance: -2.5,
-    unitOfMeasure: 'HRC',
-    measurementMethod: 'Rockwell hardness tester',
-    samplingPlan: '2 pieces per lot',
-    checkStage: 'Incoming Inspection',
-    evidenceRequired: true,
-    latestMeasurement: {
-      id: 'm3',
-      measuredValue: 48.2,
-      measuredAt: '2024-01-13T09:45:00Z',
-      measuredBy: 'Sarah Chen',
-      result: 'pass',
-      notes: 'Material meets specification',
-      attachmentIds: ['att2', 'att3'],
-    },
-    measurementCount: 31,
-    passRate: 100.0,
-    createdAt: '2023-11-28T11:00:00Z',
-    updatedAt: '2024-01-13T09:45:00Z',
-    createdBy: 'Quality Manager',
-  },
-  {
-    id: '4',
-    ctqNumber: 'CTQ-2024-0086',
-    category: 'functional',
-    priority: 'critical',
-    status: 'approved',
-    rfqNumber: 'RFQ-2024-0126',
-    partNumber: 'ASM-3456-D',
-    characteristic: 'Pressure test',
-    description: 'Hydraulic pressure holding capacity',
-    specification: 'Hold 3000 PSI for 10 min, no leakage',
-    nominalValue: 3000,
-    upperTolerance: null,
-    lowerTolerance: null,
-    unitOfMeasure: 'PSI',
-    measurementMethod: 'Hydrostatic pressure test',
-    samplingPlan: '100% inspection',
-    checkStage: 'Final Inspection',
-    evidenceRequired: true,
-    latestMeasurement: {
-      id: 'm4',
-      measuredValue: null,
-      measuredAt: '2024-01-12T16:20:00Z',
-      measuredBy: 'John Doe',
-      result: 'fail',
-      notes: 'Minor leakage detected at 8-minute mark. NCR raised.',
-      attachmentIds: ['att4'],
-    },
-    measurementCount: 15,
-    passRate: 93.3,
-    createdAt: '2023-12-10T13:00:00Z',
-    updatedAt: '2024-01-12T16:20:00Z',
-    createdBy: 'Engineering',
-  },
-  {
-    id: '5',
-    ctqNumber: 'CTQ-2024-0085',
-    category: 'dimensional',
-    priority: 'major',
-    status: 'active',
-    rfqNumber: 'RFQ-2024-0127',
-    partNumber: 'FST-7890-E',
-    characteristic: 'Thread pitch',
-    description: 'Thread pitch for M12 fasteners',
-    specification: 'M12 × 1.75',
-    nominalValue: 1.75,
-    upperTolerance: 0.02,
-    lowerTolerance: -0.02,
-    unitOfMeasure: 'mm',
-    measurementMethod: 'Thread pitch gauge',
-    samplingPlan: '10 pieces per lot',
-    checkStage: 'In-Process',
-    evidenceRequired: false,
-    measurementCount: 8,
-    passRate: 100.0,
-    createdAt: '2024-01-08T08:00:00Z',
-    updatedAt: '2024-01-11T15:30:00Z',
-    createdBy: 'Quality Engineer',
-  },
-];
-
 export default function CTQPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [ctqs, setCTQs] = React.useState<CTQ[]>(mockCTQs);
-  const [stats, setStats] = React.useState<CTQStats>(mockStats);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const { user } = useAuthStore();
+  
+  const { 
+    ctqs, 
+    stats, 
+    isLoading, 
+    fetchCTQs, 
+    deleteCTQ 
+  } = useCTQStore();
+
   const [searchQuery, setSearchQuery] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState<string>('all');
   const [priorityFilter, setPriorityFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
 
-  // Fetch CTQs from API
-  const fetchCTQs = React.useCallback(async () => {
-    setIsLoading(true);
-    try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/v1/ctqs');
-      // const data = await response.json();
-      // setCTQs(data.items);
-      // setStats(data.stats);
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setCTQs(mockCTQs);
-      setStats(mockStats);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to load CTQs. Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
   React.useEffect(() => {
     fetchCTQs();
-  }, [fetchCTQs]);
+  }, []);
 
   // Filter CTQs
   const filteredCTQs = React.useMemo(() => {
     return ctqs.filter((ctq) => {
       const matchesSearch = 
-        ctq.ctqNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ctq.ctq_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ctq.characteristic.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ctq.partNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ctq.rfqNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+        ctq.part_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ctq.rfq_number?.toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesCategory = categoryFilter === 'all' || ctq.category === categoryFilter;
       const matchesPriority = priorityFilter === 'all' || ctq.priority === priorityFilter;
@@ -383,10 +205,7 @@ export default function CTQPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/v1/ctqs/${id}`, { method: 'DELETE' });
-      
-      setCTQs(ctqs.filter(ctq => ctq.id !== id));
+      await deleteCTQ(id);
       toast({
         title: 'Success',
         description: 'CTQ deleted successfully.',
@@ -401,44 +220,37 @@ export default function CTQPage() {
   };
 
   const handleExport = async () => {
-    try {
-      // TODO: Replace with actual API call
-      // await fetch('/api/v1/ctqs/export');
-      
-      toast({
-        title: 'Success',
-        description: 'CTQs exported successfully.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to export CTQs.',
-        variant: 'destructive',
-      });
-    }
+    toast({
+      title: 'Info',
+      description: 'Exporting CTQs...',
+    });
   };
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Critical to Quality (CTQ)</h2>
-          <p className="text-muted-foreground">
-            Manage quality characteristics and specifications
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Critical to Quality (CTQ)
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Manage precision quality characteristics and automated gate specifications
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExport}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
-            Export
+            Export Intel
           </Button>
-          <Button asChild>
-            <Link href="/ctq/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New CTQ
-            </Link>
-          </Button>
+          {hasPageAccess('/ctq/new', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+              <Link href="/ctq/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Specification
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -489,7 +301,7 @@ export default function CTQPage() {
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.averagePassRate.toFixed(1)}%</div>
+            <div className="text-2xl font-bold">{stats.average_pass_rate.toFixed(1)}%</div>
             <p className="text-xs text-muted-foreground">
               Average across all CTQs
             </p>
@@ -502,7 +314,7 @@ export default function CTQPage() {
             <Gauge className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.measuredToday}</div>
+            <div className="text-2xl font-bold">{stats.measured_today}</div>
             <p className="text-xs text-muted-foreground">
               Measurements recorded
             </p>
@@ -516,7 +328,7 @@ export default function CTQPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {ctqs.reduce((sum, ctq) => sum + ctq.measurementCount, 0)}
+              {ctqs.reduce((sum, ctq) => sum + ctq.measurement_count, 0)}
             </div>
             <p className="text-xs text-muted-foreground">
               All time
@@ -651,14 +463,14 @@ export default function CTQPage() {
                 <TableRow key={ctq.id} className="cursor-pointer hover:bg-muted/50">
                   <TableCell>
                     <Link href={`/ctq/${ctq.id}`} className="font-medium hover:underline">
-                      {ctq.ctqNumber}
+                      {ctq.ctq_number}
                     </Link>
                   </TableCell>
                   <TableCell>
                     <div>
                       <p className="font-medium">{ctq.characteristic}</p>
-                      {ctq.partNumber && (
-                        <p className="text-xs text-muted-foreground">{ctq.partNumber}</p>
+                      {ctq.part_number && (
+                        <p className="text-xs text-muted-foreground">{ctq.part_number}</p>
                       )}
                     </div>
                   </TableCell>
@@ -686,17 +498,17 @@ export default function CTQPage() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="text-sm font-medium">
-                        {ctq.passRate.toFixed(1)}%
+                        {ctq.pass_rate.toFixed(1)}%
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        ({ctq.measurementCount})
+                        ({ctq.measurement_count})
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    {ctq.latestMeasurement ? (
-                      <Badge variant={resultColors[ctq.latestMeasurement.result] as any}>
-                        {ctq.latestMeasurement.result}
+                    {ctq.measurements && ctq.measurements.length > 0 ? (
+                      <Badge variant={resultColors[ctq.measurements[0].result] as any}>
+                        {ctq.measurements[0].result}
                       </Badge>
                     ) : (
                       <Badge variant="secondary">No data</Badge>

@@ -1,16 +1,48 @@
-import { create } from 'zustand';
-import { productionApi, WorkOrder } from '@/api/production';
+/**
+ * Production Store
+ * 
+ * Zustand store for managing production/manufacturing state including:
+ * - Work orders CRUD operations
+ * - Production statistics
+ * - Real-time status updates
+ * 
+ * @module stores/production
+ */
 
+import { create } from 'zustand';
+import { productionApi, WorkOrder, WorkOrderFilters, ProductionStats, UpdateWorkOrderData } from '@/api/production';
+
+/**
+ * Production store state interface
+ */
 interface ProductionState {
+  /** List of work orders */
   workOrders: WorkOrder[];
+  /** Total count for pagination */
   totalWorkOrders: number;
-  stats: any | null;
+  /** Production statistics */
+  stats: ProductionStats | null;
+  /** Loading state for async operations */
   loading: boolean;
+  /** Error message if any operation fails */
   error: string | null;
 
-  fetchWorkOrders: (params?: any) => Promise<void>;
+  /** Fetch work orders with optional filters */
+  fetchWorkOrders: (params?: WorkOrderFilters) => Promise<void>;
+  /** Fetch production statistics */
   fetchStats: () => Promise<void>;
+  /** Update a work order's status */
   updateWorkOrderStatus: (id: number, status: string) => Promise<void>;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return 'An unexpected error occurred';
 }
 
 export const useProductionStore = create<ProductionState>((set, get) => ({
@@ -29,8 +61,8 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
         totalWorkOrders: response.total,
         loading: false 
       });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
     }
   },
 
@@ -38,17 +70,17 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
     try {
       const stats = await productionApi.getStats();
       set({ stats });
-    } catch (error) {
-      console.error('Failed to fetch production stats:', error);
+    } catch {
+      // Stats fetch is non-critical, silently fail
     }
   },
 
   updateWorkOrderStatus: async (id, status) => {
     try {
-      await productionApi.updateWorkOrder(id, { status });
+      await productionApi.updateWorkOrder(id, { status } as UpdateWorkOrderData);
       await get().fetchWorkOrders();
-    } catch (error: any) {
-      set({ error: error.message });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error) });
     }
   },
 }));

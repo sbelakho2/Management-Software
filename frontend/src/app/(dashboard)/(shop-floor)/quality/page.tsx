@@ -40,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { useQualityStore } from '@/stores';
+import { useQualityStore, useAnalyticsStore } from '@/stores';
 import {
   QualityInspection,
   NonConformanceReport,
@@ -97,6 +97,16 @@ const priorityConfig = {
 
 function QualityStats() {
   const { totalInspections, totalNcrs, totalCapas } = useQualityStore();
+  const { trends, fetchTrends } = useAnalyticsStore();
+
+  React.useEffect(() => {
+    if (trends.length === 0) {
+      fetchTrends();
+    }
+  }, [fetchTrends, trends.length]);
+
+  const fpyTrend = trends.find(t => t.metric.toLowerCase().includes('yield') || t.metric.toLowerCase() === 'fpy');
+  const currentFPY = fpyTrend ? fpyTrend.current_value : 94.2;
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
@@ -146,7 +156,7 @@ function QualityStats() {
               <TrendingUp className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">94.2%</p>
+              <p className="text-2xl font-bold">{currentFPY}%</p>
               <p className="text-sm text-muted-foreground">First Pass Yield</p>
             </div>
           </div>

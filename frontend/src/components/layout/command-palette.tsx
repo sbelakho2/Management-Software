@@ -3,17 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Home,
-  FileText,
-  Calculator,
-  Users,
-  Package,
-  Factory,
-  ClipboardCheck,
-  AlertTriangle,
-  LayoutGrid,
-  GraduationCap,
-  Settings,
   Search,
   Plus,
   LogOut,
@@ -29,6 +18,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useUIStore, useAuthStore } from '@/stores';
+import { hasPageAccess } from '@/lib/page-access';
+import { NAV_SECTIONS, QUICK_ACTIONS } from '@/lib/navigation';
+import { UserRole } from '@/types';
 
 interface CommandItem {
   id: string;
@@ -44,45 +36,65 @@ interface CommandItem {
 export function CommandPalette() {
   const router = useRouter();
   const { commandPaletteOpen, setCommandPaletteOpen, theme, setTheme } = useUIStore();
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const [search, setSearch] = React.useState('');
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const commands: CommandItem[] = React.useMemo(() => [
-    // Navigation
-    { id: 'nav-today', label: 'Go to Today', icon: Home, action: () => router.push('/today'), keywords: ['home', 'dashboard'], group: 'Navigation' },
-    { id: 'nav-pipeline', label: 'Go to Pipeline', icon: FileText, action: () => router.push('/pipeline'), keywords: ['rfq', 'request'], group: 'Navigation' },
-    { id: 'nav-quotes', label: 'Go to Quotes', icon: Calculator, action: () => router.push('/quotes'), keywords: ['quote', 'pricing'], group: 'Navigation' },
-    { id: 'nav-customers', label: 'Go to Customers', icon: Users, action: () => router.push('/customers'), keywords: ['customer', 'client'], group: 'Navigation' },
-    { id: 'nav-products', label: 'Go to Products', icon: Package, action: () => router.push('/products'), keywords: ['product', 'item'], group: 'Navigation' },
-    { id: 'nav-production', label: 'Go to Production', icon: Factory, action: () => router.push('/production'), keywords: ['manufacturing', 'work order'], group: 'Navigation' },
-    { id: 'nav-quality', label: 'Go to Quality', icon: ClipboardCheck, action: () => router.push('/quality'), keywords: ['quality', 'inspection', 'ncr'], group: 'Navigation' },
-    { id: 'nav-andon', label: 'Go to Andon', icon: AlertTriangle, action: () => router.push('/andon'), keywords: ['andon', 'alert'], group: 'Navigation' },
-    { id: 'nav-obeya', label: 'Go to Obeya', icon: LayoutGrid, action: () => router.push('/obeya'), keywords: ['obeya', 'board', 'visual'], group: 'Navigation' },
-    { id: 'nav-training', label: 'Go to Training', icon: GraduationCap, action: () => router.push('/training'), keywords: ['training', 'learning'], group: 'Navigation' },
-    { id: 'nav-settings', label: 'Go to Settings', icon: Settings, action: () => router.push('/settings'), keywords: ['settings', 'preferences'], group: 'Navigation' },
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
-    // Actions
-    { id: 'action-new-rfq', label: 'Create New RFQ', icon: Plus, action: () => router.push('/pipeline/new'), keywords: ['create', 'new', 'rfq'], group: 'Actions' },
-    { id: 'action-new-quote', label: 'Create New Quote', icon: Plus, action: () => router.push('/quotes/new'), keywords: ['create', 'new', 'quote'], group: 'Actions' },
-    { id: 'action-new-customer', label: 'Create New Customer', icon: Plus, action: () => router.push('/customers/new'), keywords: ['create', 'new', 'customer'], group: 'Actions' },
-    { id: 'action-new-task', label: 'Create New Task', icon: Plus, action: () => router.push('/tasks/new'), keywords: ['create', 'new', 'task'], group: 'Actions' },
+  const commands: CommandItem[] = React.useMemo(() => {
+    const allCommands: CommandItem[] = [];
 
-    // Theme
-    { 
-      id: 'theme-toggle', 
-      label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', 
-      icon: theme === 'dark' ? Sun : Moon, 
-      action: () => setTheme(theme === 'dark' ? 'light' : 'dark'), 
-      keywords: ['theme', 'dark', 'light', 'mode'], 
-      group: 'Preferences' 
-    },
+    // Add Navigation commands from NAV_SECTIONS
+    NAV_SECTIONS.forEach(section => {
+      section.items.forEach(item => {
+        if (hasPageAccess(item.href, userRoles)) {
+          allCommands.push({
+            id: `nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
+            label: `Go to ${item.label}`,
+            icon: item.icon,
+            action: () => router.push(item.href),
+            keywords: item.keywords,
+            group: 'Navigation'
+          });
+        }
+      });
+    });
 
-    // Account
-    { id: 'account-profile', label: 'View Profile', icon: User, action: () => router.push('/settings/profile'), keywords: ['profile', 'account'], group: 'Account' },
-    { id: 'account-logout', label: 'Log Out', icon: LogOut, action: async () => { await logout(); router.push('/login'); }, keywords: ['logout', 'sign out'], group: 'Account' },
-  ], [router, theme, setTheme, logout]);
+    // Add Quick Actions
+    QUICK_ACTIONS.forEach(action => {
+      if (hasPageAccess(action.href, userRoles)) {
+        allCommands.push({
+          id: action.id,
+          label: action.label,
+          icon: action.icon,
+          action: () => router.push(action.href),
+          keywords: action.keywords,
+          group: 'Actions'
+        });
+      }
+    });
+
+    // Add common commands
+    allCommands.push(
+      { 
+        id: 'theme-toggle', 
+        label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', 
+        icon: theme === 'dark' ? Sun : Moon, 
+        action: () => setTheme(theme === 'dark' ? 'light' : 'dark'), 
+        keywords: ['theme', 'dark', 'light', 'mode'], 
+        group: 'Preferences' 
+      },
+      { id: 'account-profile', label: 'View Profile', icon: User, action: () => router.push('/settings/profile'), keywords: ['profile', 'account'], group: 'Account' },
+      { id: 'account-logout', label: 'Log Out', icon: LogOut, action: async () => { await logout(); router.push('/login'); }, keywords: ['logout', 'sign out'], group: 'Account' }
+    );
+
+    return allCommands;
+  }, [router, theme, setTheme, logout, userRoles]);
 
   const filteredCommands = React.useMemo(() => {
     if (!search.trim()) return commands;

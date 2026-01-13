@@ -4,35 +4,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Home,
-  FileText,
-  Calculator,
-  Users,
-  Package,
-  Factory,
-  FolderKanban,
-  ClipboardCheck,
-  AlertTriangle,
-  LayoutGrid,
-  Eye,
-  GraduationCap,
-  Wrench,
-  Globe,
-  Shield,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
   Search,
   Bell,
   Command,
   Menu,
   LogOut,
-  DollarSign,
-  BarChart3,
-  ScrollText,
-  Target,
-  AlertCircle,
-  FileSearch,
+  ChevronLeft,
+  ChevronRight,
+  Shield,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -47,76 +26,11 @@ import {
 import { useUIStore, useAuthStore } from '@/stores';
 import { UserRole } from '@/types';
 import { MobileBottomNav } from './mobile-nav';
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-  badge?: number;
-  roles?: UserRole[];
-  children?: NavItem[];
-}
-
-interface NavSection {
-  title: string;
-  items: NavItem[];
-  roles?: UserRole[];
-}
-
-const navSections: NavSection[] = [
-  {
-    title: 'Dashboards',
-    items: [
-      { label: 'Today', href: '/today', icon: Home },
-      { label: 'Tasks', href: '/tasks', icon: ClipboardCheck },
-      { label: 'Executive', href: '/executive', icon: Eye, roles: ['admin', 'ceo', 'gm', 'exec'] },
-      { label: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin', 'ceo', 'gm', 'exec', 'ops'] },
-      { label: 'HR', href: '/hr', icon: Users, roles: ['admin', 'ceo', 'gm', 'exec', 'hr'] },
-      { label: 'IT', href: '/it', icon: Shield, roles: ['admin', 'ceo', 'gm', 'it'] },
-      { label: 'Warehouse', href: '/warehouse', icon: Package, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'warehouse', 'supply_chain'] },
-      { label: 'Auditor', href: '/auditor', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'auditor', 'quality'] },
-    ]
-  },
-  {
-    title: 'Sales & CRM',
-    roles: ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'ops', 'sales'],
-    items: [
-      { label: 'Sales Overview', href: '/sales', icon: Target },
-      { label: 'Pipeline', href: '/pipeline', icon: FileText },
-      { label: 'Quotes', href: '/quotes', icon: Calculator },
-      { label: 'Customers', href: '/customers', icon: Users },
-    ]
-  },
-  {
-    title: 'Operations',
-    roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'operator', 'quality', 'supply_chain', 'maintenance', 'warehouse', 'engineering'],
-    items: [
-      { label: 'Ops Overview', href: '/ops', icon: LayoutGrid },
-      { label: 'Production', href: '/production', icon: Factory },
-      { label: 'Projects', href: '/projects', icon: FolderKanban },
-      { label: 'Products', href: '/products', icon: Package },
-      { label: 'Obeya', href: '/obeya', icon: LayoutGrid },
-      { label: 'A3 Reports', href: '/a3', icon: ScrollText },
-      { label: 'CTQ Tracking', href: '/ctq', icon: Target },
-      { label: 'Exceptions', href: '/exceptions', icon: AlertCircle },
-    ]
-  },
-  {
-    title: 'Quality & Support',
-    items: [
-      { label: 'Quality', href: '/quality', icon: Shield },
-      { label: 'Andon', href: '/andon', icon: AlertTriangle },
-      { label: 'Maintenance', href: '/maintenance', icon: Wrench },
-      { label: 'Supply Chain', href: '/supply-chain', icon: Globe, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain', 'warehouse', 'purchasing', 'logistics'] },
-      { label: 'Training', href: '/training', icon: GraduationCap },
-      { label: 'Training Matrix', href: '/training/matrix', icon: FileSearch, roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'hr'] },
-      { label: 'Finance', href: '/finance', icon: DollarSign, roles: ['admin', 'ceo', 'gm', 'exec', 'finance', 'accountant'] },
-    ]
-  }
-];
+import { hasPageAccess } from '@/lib/page-access';
+import { NAV_SECTIONS, type NavItem, type NavSection } from '@/lib/navigation';
 
 const bottomNavItems: NavItem[] = [
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Settings', href: '/settings', icon: Shield },
 ];
 
 export function Sidebar() {
@@ -133,20 +47,23 @@ export function Sidebar() {
   const isCollapsed = sidebarState === 'collapsed';
   const isHidden = sidebarState === 'hidden';
 
-  const canAccess = (roles?: UserRole[]) => {
-    if (!roles || roles.length === 0) return true;
-    if (!user) return false;
-    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
-    return roles.some(role => userRoles.includes(role));
-  };
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
-  const filteredSections = navSections
-    .filter(section => canAccess(section.roles))
-    .map(section => ({
-      ...section,
-      items: section.items.filter(item => canAccess(item.roles))
-    }))
-    .filter(section => section.items.length > 0);
+  const filteredSections = React.useMemo(() => {
+    return NAV_SECTIONS
+      .map(section => ({
+        ...section,
+        items: section.items.filter(item => hasPageAccess(item.href, userRoles))
+      }))
+      .filter(section => section.items.length > 0);
+  }, [userRoles]);
+
+  const filteredBottomNavItems = React.useMemo(() => {
+    return bottomNavItems.filter(item => hasPageAccess(item.href, userRoles));
+  }, [userRoles]);
 
   if (user?.role === 'admin') {
     // Add Admin section at the bottom of main nav
@@ -168,7 +85,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-card transition-all duration-300',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r premium-glass transition-all duration-500 ease-in-out',
         // Mobile: slide in from left, always full width when visible
         'max-md:-translate-x-full max-md:w-64',
         isMobileVisible && 'max-md:translate-x-0',
@@ -182,15 +99,15 @@ export function Sidebar() {
       <div className="flex h-16 items-center justify-between border-b px-4">
         {!isCollapsed && (
           <Link href="/today" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-premium subtle-shine">
               S
             </div>
-            <span className="font-semibold text-lg">Sensei</span>
+            <span className="font-bold text-lg tracking-tight">Sensei OS</span>
           </Link>
         )}
         {isCollapsed && (
           <Link href="/today" className="mx-auto">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-premium">
               S
             </div>
           </Link>
@@ -239,9 +156,10 @@ export function Sidebar() {
                           <Link
                             href={item.href}
                             className={cn(
-                              'flex h-10 w-10 items-center justify-center rounded-md mx-auto',
-                              'transition-colors hover:bg-accent hover:text-accent-foreground',
-                              isActive && 'bg-accent text-accent-foreground'
+                              'flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-all duration-200 active:scale-[0.98]',
+                              isActive 
+                                ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
+                                : 'hover:bg-accent/80 hover:text-accent-foreground'
                             )}
                           >
                             <item.icon className="h-5 w-5" />
@@ -255,12 +173,13 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-10 items-center gap-3 rounded-md px-3',
-                          'transition-colors hover:bg-accent hover:text-accent-foreground',
-                          isActive && 'bg-accent text-accent-foreground'
+                          'flex h-10 items-center gap-3 rounded-lg px-3 transition-all duration-200 active:scale-[0.98]',
+                          isActive 
+                            ? 'bg-primary/10 text-primary font-semibold border border-primary/20 shadow-sm' 
+                            : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground'
                         )}
                       >
-                        <item.icon className="h-5 w-5 shrink-0" />
+                        <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
                         <span className="truncate">{item.label}</span>
                         {item.badge && item.badge > 0 && (
                           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
@@ -280,7 +199,7 @@ export function Sidebar() {
       {/* Bottom Navigation */}
       <div className="border-t p-2">
         <ul className="space-y-1 mb-2">
-          {bottomNavItems.map((item) => {
+          {filteredBottomNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
               <li key={item.href}>
@@ -290,9 +209,10 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-10 w-10 items-center justify-center rounded-md mx-auto',
-                          'transition-colors hover:bg-accent hover:text-accent-foreground',
-                          isActive && 'bg-accent text-accent-foreground'
+                          'flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-all duration-200 active:scale-[0.98]',
+                          isActive 
+                            ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
+                            : 'hover:bg-accent/80 hover:text-accent-foreground'
                         )}
                       >
                         <item.icon className="h-5 w-5" />
@@ -306,12 +226,13 @@ export function Sidebar() {
                   <Link
                     href={item.href}
                     className={cn(
-                      'flex h-10 items-center gap-3 rounded-md px-3',
-                      'transition-colors hover:bg-accent hover:text-accent-foreground',
-                      isActive && 'bg-accent text-accent-foreground'
+                      'flex h-10 items-center gap-3 rounded-lg px-3 transition-all duration-200 active:scale-[0.98]',
+                      isActive 
+                        ? 'bg-primary/10 text-primary font-semibold border border-primary/20 shadow-sm' 
+                        : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground'
                     )}
                   >
-                    <item.icon className="h-5 w-5 shrink-0" />
+                    <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 )}
@@ -429,12 +350,12 @@ export function Header() {
   } = useUIStore();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b premium-glass px-4 transition-all duration-500 ease-in-out">
       {/* Mobile menu button */}
       <Button
         variant="ghost"
         size="icon"
-        className="md:hidden"
+        className="md:hidden hover:bg-primary/10 hover:text-primary transition-colors"
         onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
       >
         <Menu className="h-5 w-5" />
@@ -501,11 +422,11 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, setSidebarState]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background selection:bg-primary/10">
       {/* Mobile overlay when sidebar is open */}
       <div 
         className={cn(
-          'fixed inset-0 z-30 bg-black/50 backdrop-blur-sm transition-opacity duration-300 md:hidden',
+          'fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-500 md:hidden',
           isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
         onClick={() => setSidebarState('hidden')}
@@ -515,7 +436,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div
         className={cn(
-          'transition-all duration-300',
+          'transition-all duration-500 ease-in-out',
           // On mobile (< md), no margin - sidebar overlays
           'md:ml-16',
           // On desktop, use sidebar state
@@ -525,7 +446,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       >
         <Header />
         {/* Add bottom padding on mobile for the bottom nav */}
-        <main className="p-6 pb-24 md:pb-6">
+        <main className="p-6 pb-24 md:pb-6 page-fade-in">
           {children}
         </main>
       </div>

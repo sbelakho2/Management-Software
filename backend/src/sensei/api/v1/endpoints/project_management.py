@@ -1005,12 +1005,21 @@ async def list_projects(
         count_stmt = count_stmt.where((Project.name.ilike(like)) | (Project.slug.ilike(like)))
 
     total = int((await db.execute(count_stmt)).scalar_one())
-    stmt = (
-        (stmt.distinct(Project.id) if db.get_bind().dialect.name == "postgresql" else stmt.distinct())
-        .order_by(Project.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
+    # For PostgreSQL DISTINCT ON, ORDER BY must start with the DISTINCT ON columns
+    if db.get_bind().dialect.name == "postgresql":
+        stmt = (
+            stmt.distinct(Project.id)
+            .order_by(Project.id, Project.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    else:
+        stmt = (
+            stmt.distinct()
+            .order_by(Project.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
 
     rows = (await db.execute(stmt)).scalars().all()
     data = [ProjectResponse.from_model(p) for p in rows]

@@ -41,8 +41,10 @@ import {
 import { Avatar } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatRelativeTime, formatDate } from '@/lib/utils';
-import type { RFQStatus, Priority } from '@/types';
+import type { RFQStatus, Priority, UserRole } from '@/types';
 import { usePipelineStore } from '@/stores/pipeline';
+import { useAuthStore } from '@/stores';
+import { hasPageAccess } from '@/lib/page-access';
 
 // Types
 interface RFQItem {
@@ -262,6 +264,12 @@ function PipelinePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { rfqs, isLoading, fetchRFQs } = usePipelineStore();
+  const { user } = useAuthStore();
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
   
   const [view, setView] = React.useState<'list' | 'kanban'>(
     (searchParams.get('view') as 'list' | 'kanban') || 'list'
@@ -312,21 +320,27 @@ function PipelinePageContent() {
   }
 
   return (
-    <div className="space-y-6" data-testid="pipeline-page">
+    <div className="space-y-8 page-fade-in" data-testid="pipeline-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Pipeline</h1>
-          <p className="text-muted-foreground">
-            Manage your RFQs and opportunities
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Pipeline Velocity
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Strategic RFQ management, opportunity tracking, and revenue forecasting
           </p>
         </div>
-        <Button asChild>
-          <Link href="/pipeline/new">
-            <Plus className="mr-2 h-4 w-4" />
-            New RFQ
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          {hasPageAccess('/pipeline/new', userRoles) && (
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+              <Link href="/pipeline/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Opportunity
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters & View Toggle */}

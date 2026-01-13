@@ -855,7 +855,12 @@ export function EmailComposer({
             <div className="space-y-4">
               <DraftPreview
                 draft={draft}
-                onEdit={(field) => console.log('Edit', field)}
+                onEdit={(field) => {
+                  // Focus the relevant field for editing
+                  if (field === 'subject') {
+                    setSubjectHint(draft.subject);
+                  }
+                }}
                 onCopy={handleCopy}
               />
 

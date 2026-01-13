@@ -756,8 +756,8 @@ export function AuditTrail({
                         </button>
                         {isExpanded && (
                           <div className="mt-2 space-y-1 bg-gray-50 dark:bg-gray-800 rounded p-2">
-                            {entry.changes.map((change, idx) => (
-                              <div key={idx} className="text-xs">
+                            {entry.changes.map((change) => (
+                              <div key={change.field} className="text-xs">
                                 <span className="font-medium text-gray-700 dark:text-gray-300">
                                   {change.field}:
                                 </span>{' '}
@@ -1113,5 +1113,3 @@ export function SessionSecurity({
 // =============================================================================
 // EXPORTS
 // =============================================================================
-
-export type { User, AuditEntry };

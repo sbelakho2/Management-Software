@@ -479,9 +479,10 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            title="Kanban view"
+            aria-label="Kanban view"
+            aria-pressed={currentView === 'kanban'}
           >
-            <KanbanIcon className="h-4 w-4" />
+            <KanbanIcon className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             onClick={() => onViewChange?.('list')}
@@ -491,9 +492,10 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            title="List view"
+            aria-label="List view"
+            aria-pressed={currentView === 'list'}
           >
-            <ListIcon className="h-4 w-4" />
+            <ListIcon className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             onClick={() => onViewChange?.('calendar')}
@@ -503,9 +505,10 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            title="Calendar view"
+            aria-label="Calendar view"
+            aria-pressed={currentView === 'calendar'}
           >
-            <CalendarIcon className="h-4 w-4" />
+            <CalendarIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
@@ -516,9 +519,10 @@ export function KanbanToolbar({
               setConfig({ compactMode: !config.compactMode })
             }
             className="rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            title={config.compactMode ? 'Expand cards' : 'Compact cards'}
+            aria-label={config.compactMode ? 'Expand cards' : 'Compact cards'}
+            aria-pressed={config.compactMode}
           >
-            <SettingsIcon className="h-4 w-4" />
+            <SettingsIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>

@@ -85,7 +85,10 @@ export function usePWA(): UsePWAReturn {
         scope: '/',
       });
 
-      console.log('[PWA] Service worker registered:', registration);
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[PWA] Service worker registered:', registration);
+      }
       setState(prev => ({ ...prev, isRegistered: true, registration }));
       setupUpdateListener(registration);
 
@@ -104,7 +107,10 @@ export function usePWA(): UsePWAReturn {
     try {
       await state.registration.unregister();
       setState(prev => ({ ...prev, isRegistered: false, registration: null }));
-      console.log('[PWA] Service worker unregistered');
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[PWA] Service worker unregistered');
+      }
     } catch (error) {
       console.error('[PWA] Service worker unregistration failed:', error);
     }
@@ -115,7 +121,10 @@ export function usePWA(): UsePWAReturn {
 
     try {
       await state.registration.update();
-      console.log('[PWA] Service worker update checked');
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[PWA] Service worker update checked');
+      }
     } catch (error) {
       console.error('[PWA] Service worker update check failed:', error);
     }

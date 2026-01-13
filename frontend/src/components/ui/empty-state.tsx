@@ -150,11 +150,11 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
     const variantStyles = getVariantStyles(variant);
     const displayIcon = icon || getVariantIcon(variant);
 
-    const renderAction = (action: EmptyStateAction, index: number, isPrimary = false) => {
+    const renderAction = (action: EmptyStateAction, isPrimary = false) => {
       if (action.href) {
         return (
           <Button
-            key={index}
+            key={action.label}
             variant={action.variant || (isPrimary ? 'default' : 'outline')}
             asChild
           >
@@ -168,7 +168,7 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
 
       return (
         <Button
-          key={index}
+          key={action.label}
           variant={action.variant || (isPrimary ? 'default' : 'outline')}
           onClick={action.onClick}
         >
@@ -218,9 +218,9 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
         {/* Actions */}
         {(primaryAction || secondaryAction || actions.length > 0) && (
           <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
-            {primaryAction && renderAction(primaryAction, -1, true)}
-            {secondaryAction && renderAction(secondaryAction, -2)}
-            {actions.map((action, i) => renderAction(action, i))}
+            {primaryAction && renderAction(primaryAction, true)}
+            {secondaryAction && renderAction(secondaryAction)}
+            {actions.map((action) => renderAction(action))}
           </div>
         )}
 

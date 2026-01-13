@@ -153,6 +153,9 @@ interface ProjectManagementState {
   fetchStoryComments: (storyId: string) => Promise<void>;
   createStoryComment: (storyId: string, content: string) => Promise<StoryComment>;
 
+  updateStoryStatus: (storyId: string, status: UserStoryStatus) => Promise<UserStory>;
+  updateStory: (storyId: string, updates: Partial<UserStory>) => Promise<UserStory>;
+
   clearError: () => void;
 }
 
@@ -390,6 +393,36 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         return res.data;
       } catch (e) {
         set({ error: e instanceof Error ? e.message : 'Failed to create comment', isLoading: false });
+        throw e;
+      }
+    },
+
+    updateStoryStatus: async (storyId, status) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<UserStory>>(`/user-stories/${storyId}`, 'PATCH', { status });
+        set({
+          stories: get().stories.map((s) => (s.id === storyId ? res.data : s)),
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to update story status', isLoading: false });
+        throw e;
+      }
+    },
+
+    updateStory: async (storyId, updates) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<UserStory>>(`/user-stories/${storyId}`, 'PATCH', updates);
+        set({
+          stories: get().stories.map((s) => (s.id === storyId ? res.data : s)),
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to update story', isLoading: false });
         throw e;
       }
     },

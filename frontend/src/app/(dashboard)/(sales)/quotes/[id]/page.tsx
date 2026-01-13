@@ -191,6 +191,7 @@ export default function QuoteDetailPage() {
   const [quote, setQuote] = React.useState<Quote | null>(null);
   const [showActionDialog, setShowActionDialog] = React.useState<'approve' | 'reject' | 'won' | 'lost' | null>(null);
   const [actionReason, setActionReason] = React.useState('');
+  const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
     const timer = setTimeout(() => {
@@ -255,7 +256,7 @@ export default function QuoteDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {quote.status === 'draft' && (
-            <Button variant="outline" onClick={() => setIsEditing?.(true)}>
+            <Button variant="outline" onClick={() => setIsEditing(true)}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </Button>

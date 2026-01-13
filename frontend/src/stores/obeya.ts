@@ -206,6 +206,7 @@ export const useObeyaStore = create<ObeyaState>()(
         items: [],
         stats: initialStats,
         sqdcpMetrics: null,
+        cognitiveInsights: null,
         selectedBoard: 'daily',
         isLoading: false,
         error: null,
@@ -225,7 +226,6 @@ export const useObeyaStore = create<ObeyaState>()(
 
           newSocket.onopen = () => {
             set({ isConnected: true });
-            console.log('Obeya WebSocket connected');
           };
 
           newSocket.onmessage = (event) => {
@@ -246,7 +246,6 @@ export const useObeyaStore = create<ObeyaState>()(
 
           newSocket.onclose = () => {
             set({ isConnected: false, socket: null });
-            console.log('Obeya WebSocket disconnected');
             // Try to reconnect after 5 seconds
             setTimeout(() => get().connect(), 5000);
           };

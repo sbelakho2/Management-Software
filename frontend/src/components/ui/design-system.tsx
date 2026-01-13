@@ -857,7 +857,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
       <div className="p-4 overflow-y-auto max-h-[60vh]">
         {report ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-center">
               <div className="p-2 bg-muted rounded">
                 <div className="text-2xl font-bold">{report.totalTokens}</div>
                 <div className="text-xs text-muted-foreground">Total</div>
