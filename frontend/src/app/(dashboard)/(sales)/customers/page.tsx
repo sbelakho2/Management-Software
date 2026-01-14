@@ -265,6 +265,7 @@ function CustomerRow({ customer }: { customer: any }) {
 export default function CustomersPage() {
   const router = useRouter();
   const { customers, loading, fetchCustomers } = useCustomersStore();
+  const customersList = React.useMemo(() => (Array.isArray(customers) ? customers : []), [customers]);
   
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
@@ -276,11 +277,11 @@ export default function CustomersPage() {
   }, [fetchCustomers]);
 
   const industries = React.useMemo(() => {
-    return [...new Set(customers.map((c) => c.industry).filter(Boolean))];
-  }, [customers]);
+    return [...new Set(customersList.map((c) => c.industry).filter(Boolean))];
+  }, [customersList]);
 
   const filteredCustomers = React.useMemo(() => {
-    return customers.map(c => ({
+    return customersList.map(c => ({
       ...c,
       code: (c as any).account_number || '',
       location_city: (c as any).city || '',
@@ -296,7 +297,7 @@ export default function CustomersPage() {
       const matchesIndustry = industryFilter === 'all' || (customer.industry || '').toLowerCase() === industryFilter.toLowerCase();
       return matchesSearch && matchesStatus && matchesIndustry;
     });
-  }, [customers, searchQuery, statusFilter, industryFilter]);
+  }, [customersList, searchQuery, statusFilter, industryFilter]);
 
   return (
     <div className="space-y-6" data-testid="customers-page">
@@ -315,7 +316,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Stats */}
-      <CustomerStats customers={customers} />
+      <CustomerStats customers={customersList} />
 
       {/* Filters */}
       <Card>

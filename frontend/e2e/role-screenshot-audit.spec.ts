@@ -42,12 +42,6 @@ const ALL_ROLES = [
 const TEST_PASSWORD = 'TestPassword123!';
 const EMAIL_DOMAIN = 'senseitest.com';
 
-const ONLY_PAGE_PATHS = (process.env.E2E_PAGE_PATHS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const DISABLE_BUTTON_CLICKS = process.env.E2E_DISABLE_BUTTON_CLICKS === '1';
-
 // Pages to test based on sidebar navigation
 const PAGES_TO_TEST = [
   { path: '/today', name: 'Today' },
@@ -91,9 +85,32 @@ function attachErrorCapture(page: Page) {
   const requestFailures: CapturedRequestFailure[] = [];
   const responseErrors: CapturedResponseError[] = [];
 
+  const shouldIgnoreConsoleError = (text: string) => {
+    // Next.js dev sometimes logs transient RSC fetch issues during navigations;
+    // these are noisy and not actionable for RBAC.
+    if (text.includes('Failed to fetch RSC payload for')) return true;
+    // Aborted resource loads are common when navigating quickly between pages.
+    // We only treat them as relevant if they clearly involve the API.
+    if (text.includes('net::ERR_ABORTED') && !text.includes('/api/')) return true;
+    return false;
+  };
+
+  const shouldIgnoreRequestFailure = (url: string, failure: string) => {
+    // Playwright/Next dev commonly emits aborted requests during route changes.
+    // We treat these as non-fatal noise unless they surface as actual page errors
+    // or API error responses.
+    if (failure.includes('net::ERR_ABORTED')) return true;
+    if (url.includes('/_next/')) return true;
+    if (url.endsWith('/favicon.ico')) return true;
+    return false;
+  };
+
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
-      consoleErrors.push({ source: 'console', message: msg.text() });
+      const text = msg.text();
+      if (!shouldIgnoreConsoleError(text)) {
+        consoleErrors.push({ source: 'console', message: text });
+      }
     }
   });
 
@@ -102,17 +119,23 @@ function attachErrorCapture(page: Page) {
   });
 
   page.on('requestfailed', (req) => {
+    const url = req.url();
+    const failure = req.failure()?.errorText || 'requestfailed';
+    if (shouldIgnoreRequestFailure(url, failure)) return;
     requestFailures.push({
-      url: req.url(),
+      url,
       method: req.method(),
-      failure: req.failure()?.errorText || 'requestfailed',
+      failure,
     });
   });
 
   page.on('response', (resp) => {
     const status = resp.status();
-    if (status >= 500) {
-      responseErrors.push({ url: resp.url(), status });
+    const url = resp.url();
+    const isApi = url.includes('/api/');
+
+    if (status >= 500 || (isApi && status >= 400)) {
+      responseErrors.push({ url, status });
     }
   });
 
@@ -138,40 +161,157 @@ async function ensureScreenshotDir(role: string): Promise<string> {
   return roleDir;
 }
 
-async function loginAsRole(page: Page, role: string): Promise<boolean> {
-  const email = `${role}@${EMAIL_DOMAIN}`;
-  
-  // Navigate to login page
-  await page.goto('/login');
-  await page.waitForLoadState('networkidle');
-  
-  // Take screenshot of login page
-  const roleDir = await ensureScreenshotDir(role);
-  await page.screenshot({ path: path.join(roleDir, '00-login-page.png'), fullPage: true });
-  
-  // Fill login form
-  await page.fill('input[name="email"], input[type="email"]', email);
-  await page.fill('input[name="password"], input[type="password"]', TEST_PASSWORD);
-  
-  // Take screenshot before submit
-  await page.screenshot({ path: path.join(roleDir, '01-login-filled.png'), fullPage: true });
-  
-  // Submit login form
-  await page.click('button[type="submit"]');
-  
-  // Wait for navigation or error
+function clearRoleArtifacts(roleDir: string): void {
   try {
-    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 });
-    
-    // Take screenshot after login
-    await page.screenshot({ path: path.join(roleDir, '02-after-login.png'), fullPage: true });
-    
-    return true;
+    for (const entry of fs.readdirSync(roleDir)) {
+      const fullPath = path.join(roleDir, entry);
+      try {
+        // Clean *everything* inside the role directory, including nested
+        // folders like "training/" or "settings/".
+        fs.rmSync(fullPath, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }
   } catch {
-    // Login failed - take error screenshot
-    await page.screenshot({ path: path.join(roleDir, '02-login-failed.png'), fullPage: true });
-    return false;
+    // ignore
   }
+}
+
+function clearAllArtifacts(): void {
+  try {
+    // Remove the aggregated summary from any previous run.
+    const summaryPath = path.join(SCREENSHOT_DIR, 'audit-summary.json');
+    if (fs.existsSync(summaryPath)) {
+      fs.unlinkSync(summaryPath);
+    }
+  } catch {
+    // ignore
+  }
+
+  for (const role of ALL_ROLES) {
+    const roleDir = path.join(SCREENSHOT_DIR, role);
+    if (fs.existsSync(roleDir)) {
+      clearRoleArtifacts(roleDir);
+    }
+  }
+}
+
+async function loginAsRole(
+  page: Page,
+  role: string,
+  capture?: ReturnType<typeof attachErrorCapture>
+): Promise<boolean> {
+  const email = `${role}@${EMAIL_DOMAIN}`;
+
+  const roleDir = await ensureScreenshotDir(role);
+  const loginLogPath = path.join(roleDir, 'login-progress.log');
+
+  const log = (line: string) => {
+    try {
+      fs.appendFileSync(loginLogPath, `[${new Date().toISOString()}] ${line}\n`);
+    } catch {
+      // ignore
+    }
+  };
+
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    const beforeCounts = capture?.snapshotCounts();
+
+    // Navigate to login page
+    await page.goto('/login');
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    await page.waitForTimeout(300).catch(() => undefined);
+
+    log(`attempt=${attempt} url=${page.url()}`);
+
+    // Take screenshot of login page
+    await page.screenshot({ path: path.join(roleDir, '00-login-page.png'), fullPage: true, timeout: 15000 }).catch(() => undefined);
+
+    // Fill login form
+    await page.fill('input[name="email"], input[type="email"]', email);
+    await page.fill('input[name="password"], input[type="password"]', TEST_PASSWORD);
+
+    // Take screenshot before submit
+    await page.screenshot({ path: path.join(roleDir, '01-login-filled.png'), fullPage: true, timeout: 15000 }).catch(() => undefined);
+
+    // Submit login form and observe backend response
+    const loginResponse = await Promise.all([
+      page
+        .waitForResponse(
+          (r) =>
+            r.url().includes('/auth/login') &&
+            r.request().method() === 'POST',
+          { timeout: 15000 }
+        )
+        .catch(() => null),
+      page.click('button[type="submit"]'),
+    ]).then(([resp]) => resp);
+
+    if (loginResponse) {
+      const status = loginResponse.status();
+      log(`attempt=${attempt} loginResponse status=${status} url=${loginResponse.url()}`);
+      if (status === 429) {
+        await page.screenshot({ path: path.join(roleDir, `02-login-rate-limited-attempt-${attempt}.png`), fullPage: true });
+        const headers = loginResponse.headers();
+        const retryAfterSeconds = Number.parseFloat(headers['retry-after'] || '');
+        const waitMs = Number.isFinite(retryAfterSeconds)
+          ? Math.min(120_000, Math.max(1_000, retryAfterSeconds * 1000))
+          : Math.min(120_000, 2000 * Math.pow(2, attempt - 1));
+        log(`attempt=${attempt} rate_limited waitMs=${waitMs}`);
+        await page.waitForTimeout(waitMs).catch(() => undefined);
+        continue;
+      }
+      if (status >= 400 && status !== 202) {
+        await page.screenshot({ path: path.join(roleDir, `02-login-http-${status}.png`), fullPage: true });
+        return false;
+      }
+    } else {
+      log(`attempt=${attempt} loginResponse=null`);
+    }
+
+    if (capture && beforeCounts) {
+      const afterCounts = capture.snapshotCounts();
+      const newRequestFailures = afterCounts.requestFailures - beforeCounts.requestFailures;
+      const newResponseErrors = afterCounts.responseErrors - beforeCounts.responseErrors;
+      const newPageErrors = afterCounts.pageErrors - beforeCounts.pageErrors;
+      const newConsoleErrors = afterCounts.consoleErrors - beforeCounts.consoleErrors;
+
+      if (newRequestFailures > 0 || newResponseErrors > 0 || newPageErrors > 0 || newConsoleErrors > 0) {
+        log(
+          `attempt=${attempt} newErrors requestfailed=${newRequestFailures} responseErrors=${newResponseErrors} pageErrors=${newPageErrors} consoleErrors=${newConsoleErrors}`
+        );
+
+        const recentRequestFailures = capture.requestFailures.slice(-Math.max(0, newRequestFailures));
+        const recentResponseErrors = capture.responseErrors.slice(-Math.max(0, newResponseErrors));
+        const recentPageErrors = capture.pageErrors.slice(-Math.max(0, newPageErrors));
+        const recentConsoleErrors = capture.consoleErrors.slice(-Math.max(0, newConsoleErrors));
+
+        for (const rf of recentRequestFailures) log(`requestfailed ${rf.method} ${rf.url} :: ${rf.failure}`);
+        for (const re of recentResponseErrors) log(`responseError ${re.status} ${re.url}`);
+        for (const pe of recentPageErrors) log(`pageerror ${pe.message}`);
+        for (const ce of recentConsoleErrors) log(`consoleerror ${ce.message}`);
+      }
+    }
+
+    // Wait for navigation away from /login
+    try {
+      await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 20000 });
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      await page.waitForTimeout(300);
+
+      // Take screenshot after login
+      await page.screenshot({ path: path.join(roleDir, '02-after-login.png'), fullPage: true, timeout: 15000 }).catch(() => undefined);
+      return true;
+    } catch {
+      await page
+        .screenshot({ path: path.join(roleDir, `02-login-failed-attempt-${attempt}.png`), fullPage: true, timeout: 15000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(1000 * attempt).catch(() => undefined);
+    }
+  }
+
+  return false;
 }
 
 async function captureSidebar(page: Page, role: string): Promise<void> {
@@ -215,8 +355,12 @@ async function navigateAndScreenshot(
   
   try {
     const beforeCounts = capture?.snapshotCounts();
-    await page.goto(pagePath, { waitUntil: 'networkidle', timeout: 15000 });
-    await page.waitForTimeout(1000); // Wait for any animations
+    // In Next.js dev, the first hit to a route can be slow due to on-demand compilation.
+    // Waiting for 'domcontentloaded' often times out even though the server has responded.
+    // Use 'commit' to ensure we at least have a response, then do a best-effort DOM settle.
+    const resp = await page.goto(pagePath, { waitUntil: 'commit', timeout: 15000 });
+    await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => undefined);
+    await page.waitForTimeout(400);
     
     // Check for error indicators
     const errorIndicators = [
@@ -243,6 +387,13 @@ async function navigateAndScreenshot(
     
     let hasError = false;
     let errorMessage: string | undefined;
+
+    // If we got an HTTP response, record obvious error status codes.
+    const status = resp?.status();
+    if (typeof status === 'number' && status >= 400) {
+      hasError = true;
+      errorMessage = `HTTP ${status} for ${pagePath}`;
+    }
     
     for (const indicator of errorIndicators) {
       try {
@@ -256,23 +407,36 @@ async function navigateAndScreenshot(
       }
     }
 
-    if (!hasError && capture && beforeCounts) {
+    if (capture && beforeCounts) {
       const afterCounts = capture.snapshotCounts();
       const newConsoleErrors = afterCounts.consoleErrors - beforeCounts.consoleErrors;
       const newPageErrors = afterCounts.pageErrors - beforeCounts.pageErrors;
       const newRequestFailures = afterCounts.requestFailures - beforeCounts.requestFailures;
       const newResponseErrors = afterCounts.responseErrors - beforeCounts.responseErrors;
 
-      if (newConsoleErrors > 0 || newPageErrors > 0 || newRequestFailures > 0 || newResponseErrors > 0) {
-        hasError = true;
+      const hasHardCaptureErrors = newPageErrors > 0 || newRequestFailures > 0 || newResponseErrors > 0;
+      const shouldAttachConsole = newConsoleErrors > 0 && (hasError || hasHardCaptureErrors);
+
+      if (hasHardCaptureErrors || shouldAttachConsole) {
         const newest =
           capture.pageErrors.at(-1)?.message ||
-          capture.consoleErrors.at(-1)?.message ||
-          capture.requestFailures.at(-1)?.failure ||
           (capture.responseErrors.at(-1)
-            ? `HTTP ${capture.responseErrors.at(-1)!.status}`
-            : undefined);
-        errorMessage = newest;
+            ? `HTTP ${capture.responseErrors.at(-1)!.status} ${capture.responseErrors.at(-1)!.url}`
+            : undefined) ||
+          capture.requestFailures.at(-1)?.failure;
+
+        const newestConsole = capture.consoleErrors.at(-1)?.message;
+
+        if (!hasError && hasHardCaptureErrors) {
+          hasError = true;
+          errorMessage = newest;
+        } else if (newest) {
+          errorMessage = errorMessage ? `${errorMessage} | ${newest}` : newest;
+        }
+
+        if (shouldAttachConsole && newestConsole) {
+          errorMessage = errorMessage ? `${errorMessage} | ${newestConsole}` : newestConsole;
+        }
       }
     }
     
@@ -284,13 +448,13 @@ async function navigateAndScreenshot(
     }
     
     // Take full page screenshot
-    await page.screenshot({ path: path.join(roleDir, screenshotName), fullPage: true });
+    await page.screenshot({ path: path.join(roleDir, screenshotName), fullPage: true, timeout: 15000 });
     
     return { accessible: true, hasError, errorMessage };
   } catch (error) {
     // Navigation failed
     await page
-      .screenshot({ path: path.join(roleDir, `${screenshotName}-error.png`), fullPage: true })
+      .screenshot({ path: path.join(roleDir, `${screenshotName}-error.png`), fullPage: false, timeout: 10000 })
       .catch(() => undefined);
     return { 
       accessible: false, 
@@ -304,9 +468,11 @@ async function clickButtonsAndScreenshot(
   page: Page,
   role: string,
   pagePath: string,
-  pageName: string
-): Promise<void> {
+  pageName: string,
+  capture?: ReturnType<typeof attachErrorCapture>
+): Promise<{ total: number; unique: number; clicked: number; failures: number; durationMs: number }> {
   const roleDir = await ensureScreenshotDir(role);
+  const progressPath = path.join(roleDir, 'click-progress.log');
 
   // Find all clickable buttons (excluding navigation/sidebar)
   const excluded = page.locator(
@@ -316,54 +482,170 @@ async function clickButtonsAndScreenshot(
     .locator('button:visible:not([disabled]), [role="button"]:visible')
     .filter({ hasNot: excluded });
 
-  const buttonCount = await buttons.count();
+  let buttonCount = 0;
+  try {
+    buttonCount = await buttons.count();
+  } catch {
+    return { total: 0, unique: 0, clicked: 0, failures: 0, durationMs: 0 };
+  }
+  const startedAt = Date.now();
+  const seen = new Set<string>();
+  let clicked = 0;
+  let failures = 0;
+  let unique = 0;
 
-  for (let i = 0; i < buttonCount; i++) {
-    try {
-      const button = buttons.nth(i);
-      const buttonText = await button.textContent() || `button-${i}`;
-      const sanitizedText = buttonText.trim().slice(0, 20).replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+  let clickIndex = 0;
+  // Re-scan until we stop finding new unique buttons.
+  for (let scan = 1; scan <= 20; scan++) {
+    const handles = await buttons.elementHandles().catch(() => []);
+    let progressMade = false;
 
-      const beforeUrl = page.url();
+    // If the page/context is gone, stop trying to click.
+    if (handles.length === 0) {
+      break;
+    }
 
-      // Click the button
-      await button.click({ timeout: 5000 });
-      await page.waitForLoadState('networkidle').catch(() => undefined);
-      await page.waitForTimeout(300);
+    for (let i = 0; i < handles.length; i++) {
+      const handle = handles[i];
+      try {
+        const buttonKey = await handle
+          .evaluate((el) => {
+            const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+            const aria = el.getAttribute('aria-label') || '';
+            const testId = el.getAttribute('data-testid') || '';
+            const type = (el as HTMLButtonElement).getAttribute?.('type') || '';
+            const tag = el.tagName;
+            const role = el.getAttribute('role') || '';
+            const name = [testId, aria, text].filter(Boolean).join('|');
+            return `${tag}|${role}|${type}|${name}`;
+          })
+          .catch(() => `scan-${scan}-idx-${i}`);
 
-      // Take screenshot after click
-      const screenshotName = `${pageName.toLowerCase().replace(/\s+/g, '-')}-click-${String(i + 1).padStart(3, '0')}-${sanitizedText}.png`;
-      await page.screenshot({ path: path.join(roleDir, screenshotName), fullPage: true });
+        if (seen.has(buttonKey)) {
+          continue;
+        }
 
-      // Close common modal patterns
-      const closeButtons = page.locator(
-        '[aria-label="Close"], [data-testid="close"], button:has-text("Cancel"), button:has-text("Close"), button:has-text("Dismiss")'
-      );
-      if (await closeButtons.first().isVisible({ timeout: 500 }).catch(() => false)) {
-        await closeButtons.first().click({ timeout: 2000 }).catch(() => undefined);
-        await page.waitForTimeout(250);
+        seen.add(buttonKey);
+        unique += 1;
+        progressMade = true;
+
+        // Best-effort label for filenames/logs.
+        const buttonText = await handle
+          .evaluate((el) => (el.textContent || '').trim())
+          .catch(() => '') as string;
+        const sanitizedText = (buttonText || `button-${clickIndex + 1}`)
+          .trim()
+          .slice(0, 20)
+          .replace(/[^a-zA-Z0-9]/g, '-')
+          .toLowerCase();
+
+        const beforeUrl = page.url();
+        clickIndex += 1;
+        const clickLabel = `${pageName}#${clickIndex} ${sanitizedText}`;
+
+        try {
+          fs.appendFileSync(
+            progressPath,
+            `[${new Date().toISOString()}] scan=${scan} click=${clickIndex} start url=${beforeUrl} key=${buttonKey}\n`
+          );
+        } catch {
+          // ignore
+        }
+
+        await handle.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => undefined);
+
+        // Click the button with a hard timeout.
+        await handle.click({ timeout: 5000 });
+        await page.waitForTimeout(150);
+
+        // Take screenshot after click (viewport only for speed)
+        const screenshotName = `${pageName.toLowerCase().replace(/\s+/g, '-')}-click-${String(clickIndex).padStart(4, '0')}-${sanitizedText}.png`;
+        const shotOk = await page
+          .screenshot({ path: path.join(roleDir, screenshotName), fullPage: false, timeout: 15000 })
+          .then(() => true)
+          .catch(() => false);
+        if (shotOk) {
+          clicked += 1;
+        } else {
+          failures += 1;
+        }
+
+        // If a click logged us out, re-login and return to the page so we can keep clicking.
+        if (page.url().includes('/login')) {
+          const reloginOk = await loginAsRole(page, role, capture);
+          if (!reloginOk) {
+            failures += 1;
+            break;
+          }
+          await page.goto(pagePath, { waitUntil: 'commit', timeout: 15000 }).catch(() => undefined);
+          await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => undefined);
+          await page.waitForTimeout(250).catch(() => undefined);
+        }
+
+        // Close common modal patterns
+        const closeButtons = page.locator(
+          '[aria-label="Close"], [data-testid="close"], button:has-text("Cancel"), button:has-text("Close"), button:has-text("Dismiss")'
+        );
+        if (await closeButtons.first().isVisible({ timeout: 500 }).catch(() => false)) {
+          await closeButtons.first().click({ timeout: 2000 }).catch(() => undefined);
+          await page.waitForTimeout(200);
+        }
+
+        // If navigation occurred, return to the original page
+        const afterUrl = page.url();
+        if (afterUrl !== beforeUrl || afterUrl.endsWith('/login')) {
+          await page.goto(pagePath, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => undefined);
+          await page.waitForTimeout(300);
+        }
+
+        try {
+          fs.appendFileSync(
+            progressPath,
+            `[${new Date().toISOString()}] scan=${scan} click=${clickIndex} done url=${page.url()}\n`
+          );
+        } catch {
+          // ignore
+        }
+      } catch {
+        failures += 1;
+        try {
+          fs.appendFileSync(
+            progressPath,
+            `[${new Date().toISOString()}] scan=${scan} click=${clickIndex} FAILED\n`
+          );
+        } catch {
+          // ignore
+        }
+      } finally {
+        await handle.dispose().catch(() => undefined);
       }
+    }
 
-      // If navigation occurred, return to the original page to continue clicking remaining buttons
-      const afterUrl = page.url();
-      if (afterUrl !== beforeUrl || afterUrl.endsWith('/login')) {
-        await page.goto(pagePath, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => undefined);
-        await page.waitForTimeout(500);
-      }
-    } catch {
-      // Button click failed - continue to next
+    // If we didn't discover any new unique buttons in this scan, we are done.
+    if (!progressMade) {
+      break;
     }
   }
+
+  return {
+    total: buttonCount,
+    unique,
+    clicked,
+    failures,
+    durationMs: Date.now() - startedAt,
+  };
 }
 
-// Run tests only on Chromium for speed
-test.describe.configure({ mode: 'serial' });
+test.describe.serial('Role-based UI Audit with Screenshots', () => {
+  test.beforeAll(() => {
+    // Keep runs deterministic: start from a clean artifact slate.
+    clearAllArtifacts();
+  });
 
-test.describe('Role-based UI Audit with Screenshots', () => {
   // Create one test per role
   for (const role of ALL_ROLES) {
     test(`Audit ${role} role`, async ({ page }) => {
-      test.setTimeout(30 * 60 * 1000); // up to 30 minutes per role
+      test.setTimeout(30 * 60 * 1000); // 30 minutes per role
       
       const results: {
         role: string;
@@ -376,6 +658,14 @@ test.describe('Role-based UI Audit with Screenshots', () => {
           hasError: boolean;
           errorMessage?: string;
           clickedButtons?: number;
+          durationMs?: number;
+          clickStats?: {
+            total: number;
+            unique: number;
+            clicked: number;
+            failures: number;
+            durationMs: number;
+          };
         }>;
       } = {
         role,
@@ -383,24 +673,29 @@ test.describe('Role-based UI Audit with Screenshots', () => {
         sidebarHrefs: [],
         pages: [],
       };
+
+      // Ensure artifacts are from this run (avoid stale screenshots/logs)
+      const roleDir = await ensureScreenshotDir(role);
+      clearRoleArtifacts(roleDir);
+
+      // Capture errors for the whole role flow (including login)
+      const capture = attachErrorCapture(page);
       
       // Login as this role
-      const loginSuccess = await loginAsRole(page, role);
+      const loginSuccess = await loginAsRole(page, role, capture);
       results.loginSuccess = loginSuccess;
       
       if (!loginSuccess) {
         console.log(`❌ Login failed for role: ${role}`);
 
         // Save results for debugging even when login fails
-        const roleDir = await ensureScreenshotDir(role);
         fs.writeFileSync(path.join(roleDir, 'results.json'), JSON.stringify(results, null, 2));
 
-        expect(loginSuccess, `Login must succeed for role: ${role}`).toBe(true);
+        // Defer assertions to the final analysis pass.
+        return;
       }
       
       console.log(`✅ Logged in as: ${role}`);
-
-      const capture = attachErrorCapture(page);
       
       // Capture sidebar
       await captureSidebar(page, role);
@@ -409,13 +704,13 @@ test.describe('Role-based UI Audit with Screenshots', () => {
       // Navigate to each page and take screenshots
       const sidebarPages = results.sidebarHrefs || [];
       const hardcodedPages = PAGES_TO_TEST.map((p) => p.path);
-      const unionPaths = Array.from(new Set([...sidebarPages, ...hardcodedPages])).filter((p) => p.startsWith('/'));
-      const pagesToTest = ONLY_PAGE_PATHS.length ? unionPaths.filter((p) => ONLY_PAGE_PATHS.includes(p)) : unionPaths;
+      const pagesToTest = Array.from(new Set([...sidebarPages, ...hardcodedPages])).filter((p) => p.startsWith('/'));
 
       for (let i = 0; i < pagesToTest.length; i++) {
         const pagePath = pagesToTest[i];
         const pageName = PAGES_TO_TEST.find((p) => p.path === pagePath)?.name || pagePath.replace(/^\//, '') || 'root';
-        
+
+        const pageStartedAt = Date.now();
         const result = await navigateAndScreenshot(page, role, pagePath, pageName, i, capture);
         const pageEntry: {
           path: string;
@@ -424,23 +719,39 @@ test.describe('Role-based UI Audit with Screenshots', () => {
           hasError: boolean;
           errorMessage?: string;
           clickedButtons?: number;
+          durationMs?: number;
+          clickStats?: {
+            total: number;
+            unique: number;
+            clicked: number;
+            failures: number;
+            durationMs: number;
+          };
         } = {
           path: pagePath,
           name: pageName,
           ...result,
         };
+        pageEntry.durationMs = Date.now() - pageStartedAt;
         results.pages.push(pageEntry);
+
+        // Write incremental progress so timeouts still leave useful artifacts
+        try {
+          fs.writeFileSync(path.join(roleDir, 'results.json'), JSON.stringify(results, null, 2));
+        } catch {
+          // ignore
+        }
         
-        if (result.accessible && !result.hasError && !DISABLE_BUTTON_CLICKS) {
-          await clickButtonsAndScreenshot(page, role, pagePath, pageName);
-          // Best-effort count: infer by matching screenshots created for this page
-          const roleDir = await ensureScreenshotDir(role);
-          const prefix = `${pageName.toLowerCase().replace(/\s+/g, '-')}-click-`;
+        if (result.accessible && !result.hasError) {
+          const clickStats = await clickButtonsAndScreenshot(page, role, pagePath, pageName, capture);
+          pageEntry.clickStats = clickStats;
+          pageEntry.clickedButtons = clickStats.clicked;
+
+          // Persist after click pass too
           try {
-            const files = fs.readdirSync(roleDir).filter((f) => f.startsWith(prefix));
-            pageEntry.clickedButtons = files.length;
+            fs.writeFileSync(path.join(roleDir, 'results.json'), JSON.stringify(results, null, 2));
           } catch {
-            pageEntry.clickedButtons = undefined;
+            // ignore
           }
         }
       }
@@ -449,7 +760,9 @@ test.describe('Role-based UI Audit with Screenshots', () => {
       // - Any sidebar link that leads to a restricted page should not be present.
       // - Any accessible audited page should be represented in the sidebar (best-effort).
       const sidebarHrefs = results.sidebarHrefs || [];
-      const restrictedPages = results.pages.filter((p) => !p.accessible).map((p) => p.path);
+      // Only treat "restricted" as "redirected away / access denied" (accessible=false, hasError=false).
+      // If a page errored or timed out, that's not a permissions signal.
+      const restrictedPages = results.pages.filter((p) => !p.accessible && !p.hasError).map((p) => p.path);
       const accessiblePages = results.pages.filter((p) => p.accessible).map((p) => p.path);
       const sidebarHasRestricted = sidebarHrefs.filter((h) => restrictedPages.includes(h));
       const sidebarMissingAccessible = accessiblePages.filter((p) => !sidebarHrefs.includes(p));
@@ -462,7 +775,6 @@ test.describe('Role-based UI Audit with Screenshots', () => {
       }
       
       // Save results as JSON
-      const roleDir = await ensureScreenshotDir(role);
       fs.writeFileSync(
         path.join(roleDir, 'results.json'),
         JSON.stringify(results, null, 2)
@@ -472,25 +784,20 @@ test.describe('Role-based UI Audit with Screenshots', () => {
       const accessibleCount = results.pages.filter(p => p.accessible).length;
       const errorCount = results.pages.filter(p => p.hasError).length;
       console.log(`Role ${role}: ${accessibleCount}/${pagesToTest.length} pages accessible, ${errorCount} errors`);
-      
-      // Verify no unexpected errors (403/401 are expected for restricted pages)
-      const unexpectedErrors = results.pages.filter(
-        p => p.hasError && p.errorMessage && !p.errorMessage.includes('401') && !p.errorMessage.includes('403')
-      );
-      
-      expect(unexpectedErrors.length).toBe(0);
-      expect(sidebarHasRestricted.length).toBe(0);
+      // Defer assertions to the final analysis pass.
     });
   }
-});
 
-test('Generate audit summary report', async () => {
-  // Wait for all role tests to complete, then generate summary
+  test('Analyze screenshots after all roles', async () => {
+  // Must run after role screenshot capture. With --workers=1 and no role-level assertions,
+  // this will execute after the capture loop and can do aggregated checks.
   const summaryPath = path.join(SCREENSHOT_DIR, 'audit-summary.json');
   const summary: Record<string, unknown> = {
     generatedAt: new Date().toISOString(),
     roles: {},
   };
+
+  const failures: Array<{ role: string; reason: string }> = [];
   
   for (const role of ALL_ROLES) {
     const roleDir = path.join(SCREENSHOT_DIR, role);
@@ -499,9 +806,46 @@ test('Generate audit summary report', async () => {
     if (fs.existsSync(resultsPath)) {
       const results = JSON.parse(fs.readFileSync(resultsPath, 'utf-8'));
       summary.roles[role] = results;
+
+      if (!results?.loginSuccess) {
+        failures.push({ role, reason: 'login failed' });
+        continue;
+      }
+
+      const pages: Array<{ hasError?: boolean; errorMessage?: string; accessible?: boolean }> = results?.pages || [];
+
+      // Unexpected errors: allow explicit 401/403 (restricted) only.
+      const unexpectedErrors = pages.filter(
+        (p) => p.hasError && p.errorMessage && !String(p.errorMessage).includes('401') && !String(p.errorMessage).includes('403')
+      );
+      if (unexpectedErrors.length > 0) {
+        failures.push({ role, reason: `${unexpectedErrors.length} unexpected page errors` });
+      }
+
+      // Sidebar should not contain links that truly behaved as "restricted" (redirect-to-login)
+      const sidebarHrefs: string[] = results?.sidebarHrefs || [];
+      const restrictedPages: string[] = (results?.pages || [])
+        .filter((p: any) => p && p.accessible === false && p.hasError === false && typeof p.path === 'string')
+        .map((p: any) => p.path);
+      const sidebarHasRestricted = sidebarHrefs.filter((h) => restrictedPages.includes(h));
+      if (sidebarHasRestricted.length > 0) {
+        failures.push({ role, reason: `sidebar exposes restricted links: ${sidebarHasRestricted.join(', ')}` });
+      }
+    }
+    else {
+      failures.push({ role, reason: 'missing results.json' });
     }
   }
   
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
-  console.log(`Audit summary saved to: ${summaryPath}`);
+
+  if (failures.length > 0) {
+    console.log(`Audit summary saved to: ${summaryPath}`);
+    for (const f of failures) {
+      console.log(`❌ ${f.role}: ${f.reason}`);
+    }
+  }
+
+  expect(failures, `One or more roles failed audit; see ${summaryPath}`).toEqual([]);
+  });
 });

@@ -1052,29 +1052,59 @@ class NegotiatorAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(AgentType.NEGOTIATOR)
-        self._win_patterns: dict[str, Any] = {}
+        self._customer_behavior: dict[str, dict[str, Any]] = {}
         
+    def register_customer_behavior(self, customer_id: str, behavior: dict[str, Any]) -> None:
+        """Register observed customer negotiation behavior."""
+        self._customer_behavior[customer_id] = behavior
+
     async def analyze(self, rfq: RFQSpec) -> list[AgentFinding]:
         findings = []
-        # Suggest negotiation tactics
+        
+        behavior = self._customer_behavior.get(rfq.customer_id, {})
+        price_sensitivity = behavior.get("price_sensitivity", "medium")
+        last_negotiation = behavior.get("last_negotiation_outcome", "fair")
+        
+        tactics = ["Focus on value-add components"]
+        if price_sensitivity == "high":
+            tactics.append("Lead with volume-based discount tiers")
+            tactics.append("Highlight total cost of ownership vs sticker price")
+        elif price_sensitivity == "low":
+            tactics.append("Emphasize quality and speed of delivery")
+            
+        if last_negotiation == "aggressive":
+            tactics.append("Prepare multiple fallback positions")
+            
         findings.append(self._create_finding(
             category=AnalysisCategory.PRICING,
-            title="Negotiation Strategy",
-            description="High-value target with competitive pressure.",
+            title="Tactical Negotiation Strategy",
+            description=f"Tailored strategy for {rfq.customer_id} based on {price_sensitivity} price sensitivity.",
             severity=Severity.INFO,
-            confidence=0.8,
-            recommendations=[
-                "Bundle with maintenance services for 5% premium",
-                "Offer multi-year volume discount",
-            ]
+            confidence=0.85,
+            data={
+                "price_sensitivity": price_sensitivity,
+                "customer_tier": behavior.get("tier", "standard")
+            },
+            recommendations=tactics
         ))
         return findings
 
     def get_strategy(self, rfq: RFQSpec) -> dict[str, Any]:
+        behavior = self._customer_behavior.get(rfq.customer_id, {})
+        target = rfq.target_price or 100.0
+        
+        # Calculate aggressive vs conservative opening
+        multiplier = 1.15 if behavior.get("price_sensitivity") == "high" else 1.08
+        
         return {
-            "opening_offer": (rfq.target_price or 100) * 1.1,
-            "walk_away_price": (rfq.target_price or 100) * 0.95,
-            "key_leverages": ["Quick turnaround", "Superior surface finish"],
+            "opening_offer": target * multiplier,
+            "walk_away_price": target * 0.92,
+            "concession_steps": ["Payment terms (Net 60)", "Partial tooling absorption", "5% volume discount"],
+            "key_leverages": [
+                "Proprietary alloy selection",
+                "ISO 9001 certified process",
+                "Existing capacity for immediate start"
+            ],
         }
 
 
@@ -1090,26 +1120,50 @@ class LogisticsAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(AgentType.LOGISTICS)
+        self._region_transit_times: dict[str, int] = {
+            "domestic": 2,
+            "international": 7,
+            "remote": 12
+        }
         
     async def analyze(self, rfq: RFQSpec) -> list[AgentFinding]:
         findings = []
+        
+        dest_region = rfq.metadata.get("destination_region", "international")
+        transit_days = self._region_transit_times.get(dest_region, 7)
+        
+        severity = Severity.LOW
+        if transit_days > 10:
+            severity = Severity.MEDIUM
+            
         findings.append(self._create_finding(
             category=AnalysisCategory.TIMELINE,
-            title="Logistics Assessment",
-            description="International shipping required. Transit risk: Low.",
-            severity=Severity.LOW,
+            title="Logistics & Lead Time Assessment",
+            description=f"Shipment to {dest_region} region. Transit estimate: {transit_days} days.",
+            severity=severity,
             confidence=0.9,
-            data={"estimated_transit_days": 5},
-            recommendations=["Use preferred carrier for customs clearance"]
+            data={"estimated_transit_days": transit_days, "region": dest_region},
+            recommendations=[
+                "Confirm customs documentation availability",
+                "Evaluate air freight if deadline is tight"
+            ]
         ))
         return findings
 
     def get_logistics_plan(self, rfq: RFQSpec) -> dict[str, Any]:
-        from datetime import timedelta
+        dest_region = rfq.metadata.get("destination_region", "international")
+        transit_days = self._region_transit_times.get(dest_region, 7)
+        
+        # Production lead time (simulated)
+        production_days = 14
+        if rfq.quantity > 5000: production_days = 21
+        
         return {
-            "estimated_delivery_date": datetime.now(timezone.utc) + timedelta(days=21),
-            "shipping_method": "Air Freight",
-            "customs_risk": "Low",
+            "estimated_delivery_date": datetime.now(timezone.utc) + timedelta(days=production_days + transit_days),
+            "production_lead_time": production_days,
+            "transit_time": transit_days,
+            "shipping_method": "Sea Freight" if rfq.quantity > 10000 else "Air Freight",
+            "customs_risk": "Medium" if dest_region == "remote" else "Low",
         }
 
 
@@ -1379,10 +1433,14 @@ class MultiAgentRFQAnalyzer:
         self.technical_agent = TechnicalAgent()
         self.commercial_agent = CommercialAgent()
         self.risk_agent = RiskAgent()
+        self.negotiator_agent = NegotiatorAgent()
+        self.logistics_agent = LogisticsAgent()
         
         self.orchestrator.register_agent(self.technical_agent)
         self.orchestrator.register_agent(self.commercial_agent)
         self.orchestrator.register_agent(self.risk_agent)
+        self.orchestrator.register_agent(self.negotiator_agent)
+        self.orchestrator.register_agent(self.logistics_agent)
         
         self._analysis_history: dict[str, ComprehensiveAnalysis] = {}
     

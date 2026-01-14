@@ -22,49 +22,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar } from '@/components/ui/avatar';
 import Link from 'next/link';
 import { hasPageAccess } from '@/lib/page-access';
-import { useAuthStore } from '@/stores';
+import { useAuthStore, useHRStore } from '@/stores';
 import type { UserRole } from '@/types';
 
-// Demo data
-const hrStats = {
-  totalEmployees: 156,
-  openPositions: 8,
-  pendingTimeOff: 12,
-  expiringCertifications: 5,
-  newHiresThisMonth: 3,
-  turnoverRate: 4.2,
-};
-
-const pendingRequests = [
-  { id: 1, employee: 'John Smith', type: 'PTO', dates: 'Dec 23-27', status: 'pending', avatar: null },
-  { id: 2, employee: 'Sarah Johnson', type: 'Sick', dates: 'Dec 18', status: 'pending', avatar: null },
-  { id: 3, employee: 'Mike Wilson', type: 'PTO', dates: 'Dec 30-Jan 2', status: 'pending', avatar: null },
-];
-
-const expiringCerts = [
-  { id: 1, employee: 'Tom Brown', cert: 'Forklift Operator', expires: '5 days', priority: 'high' },
-  { id: 2, employee: 'Lisa Chen', cert: 'First Aid', expires: '12 days', priority: 'medium' },
-  { id: 3, employee: 'James Lee', cert: 'Crane Operator', expires: '18 days', priority: 'medium' },
-  { id: 4, employee: 'Emma Davis', cert: 'Safety Training', expires: '25 days', priority: 'low' },
-];
-
-const departmentHeadcount = [
-  { name: 'Operations', count: 68, percentage: 44 },
-  { name: 'Engineering', count: 32, percentage: 21 },
-  { name: 'Quality', count: 18, percentage: 12 },
-  { name: 'Sales', count: 22, percentage: 14 },
-  { name: 'Admin', count: 16, percentage: 10 },
-];
-
-function StatCard({ 
-  title, 
-  value, 
-  icon: Icon, 
+function StatCard({
+  title,
+  value,
+  icon: Icon,
   trend,
-  variant = 'default' 
-}: { 
-  title: string; 
-  value: string | number; 
+  variant = 'default',
+}: {
+  title: string;
+  value: string | number;
   icon: React.ElementType;
   trend?: string;
   variant?: 'default' | 'warning' | 'danger' | 'success';
@@ -83,9 +52,7 @@ function StatCard({
           <div>
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
             <p className="text-2xl font-bold mt-1">{value}</p>
-            {trend && (
-              <p className="text-xs text-muted-foreground mt-1">{trend}</p>
-            )}
+            {trend && <p className="text-xs text-muted-foreground mt-1">{trend}</p>}
           </div>
           <div className={`p-3 rounded-full ${variantStyles[variant]}`}>
             <Icon className="h-5 w-5" />
@@ -97,8 +64,16 @@ function StatCard({
 }
 
 export default function HRDashboard() {
-  const [isLoading, setIsLoading] = React.useState(true);
   const { user } = useAuthStore();
+  const { 
+    stats, 
+    headcount, 
+    expiringCerts, 
+    isLoading: storeLoading, 
+    fetchStats, 
+    fetchHeadcount, 
+    fetchExpiringCerts 
+  } = useHRStore();
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
@@ -106,9 +81,13 @@ export default function HRDashboard() {
   }, [user]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
+    fetchStats();
+    fetchHeadcount();
+    fetchExpiringCerts();
+  }, [fetchStats, fetchHeadcount, fetchExpiringCerts]);
+
+  // Combined loading state
+  const isLoading = storeLoading && !stats;
 
   if (isLoading) {
     return (
@@ -165,25 +144,25 @@ export default function HRDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Employees"
-          value={hrStats.totalEmployees}
+          value={stats?.total_employees || 0}
           icon={Users}
-          trend={`+${hrStats.newHiresThisMonth} this month`}
+          trend={`+${stats?.new_hires_this_month || 0} this month`}
           variant="success"
         />
         <StatCard
           title="Open Positions"
-          value={hrStats.openPositions}
+          value={stats?.open_positions || 0}
           icon={UserPlus}
         />
         <StatCard
           title="Pending Time Off"
-          value={hrStats.pendingTimeOff}
+          value={stats?.pending_time_off || 0}
           icon={Calendar}
           variant="warning"
         />
         <StatCard
           title="Expiring Certs"
-          value={hrStats.expiringCertifications}
+          value={stats?.expiring_certifications || 0}
           icon={Award}
           variant="danger"
         />
@@ -202,7 +181,11 @@ export default function HRDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {pendingRequests.map((request) => (
+              {/* Mocking pending requests for now as they aren't in store yet */}
+              {[
+                { id: 1, employee: 'John Smith', type: 'PTO', dates: 'Dec 23-27' },
+                { id: 2, employee: 'Sarah Johnson', type: 'Sick', dates: 'Dec 18' },
+              ].map((request) => (
                 <div
                   key={request.id}
                   className="flex items-center justify-between py-2 border-b last:border-0"
@@ -280,7 +263,7 @@ export default function HRDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {departmentHeadcount.map((dept) => (
+              {headcount.map((dept) => (
                 <div key={dept.name} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{dept.name}</span>

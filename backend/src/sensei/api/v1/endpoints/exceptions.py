@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.utils import APIResponse, build_response
 from sensei.services.exceptions_aggregator import (
     ExceptionCategory,
@@ -232,6 +233,7 @@ class BlockRequest(BaseModel):
     description="Retrieve all exceptions with optional filtering",
 )
 async def get_exceptions(
+    db: DBSession,
     category: Optional[ExceptionCategory] = Query(None, description="Filter by category"),
     severity: Optional[ExceptionSeverity] = Query(None, description="Filter by severity"),
     status: Optional[ExceptionStatus] = Query(None, description="Filter by status"),
@@ -242,7 +244,8 @@ async def get_exceptions(
     """Get all exceptions with optional filters."""
     aggregator = get_exceptions_aggregator()
     
-    all_items = aggregator.get_all(
+    all_items = await aggregator.get_all(
+        db,
         category=category,
         severity=severity,
         status=status,
@@ -270,11 +273,12 @@ async def get_exceptions(
     description="Get critical and high severity exceptions",
 )
 async def get_critical_exceptions(
+    db: DBSession,
     limit: int = Query(10, ge=1, le=100),
 ) -> ExceptionsListResponse:
     """Get critical and high severity exceptions."""
     aggregator = get_exceptions_aggregator()
-    items = aggregator.get_critical(limit=limit)
+    items = await aggregator.get_critical(db, limit=limit)
     
     return ExceptionsListResponse(
         items=[ExceptionResponse.from_item(item) for item in items],
@@ -290,11 +294,12 @@ async def get_critical_exceptions(
     description="Get all overdue exceptions",
 )
 async def get_overdue_exceptions(
+    db: DBSession,
     limit: int = Query(10, ge=1, le=100),
 ) -> ExceptionsListResponse:
     """Get all overdue exceptions."""
     aggregator = get_exceptions_aggregator()
-    items = aggregator.get_overdue(limit=limit)
+    items = await aggregator.get_overdue(db, limit=limit)
     
     return ExceptionsListResponse(
         items=[ExceptionResponse.from_item(item) for item in items],
@@ -310,11 +315,12 @@ async def get_overdue_exceptions(
     description="Get all escalated exceptions",
 )
 async def get_escalated_exceptions(
+    db: DBSession,
     limit: int = Query(10, ge=1, le=100),
 ) -> ExceptionsListResponse:
     """Get all escalated exceptions."""
     aggregator = get_exceptions_aggregator()
-    items = aggregator.get_escalated(limit=limit)
+    items = await aggregator.get_escalated(db, limit=limit)
     
     return ExceptionsListResponse(
         items=[ExceptionResponse.from_item(item) for item in items],
@@ -329,10 +335,10 @@ async def get_escalated_exceptions(
     summary="Get exceptions summary",
     description="Get summary of all exceptions for dashboard",
 )
-async def get_exceptions_summary() -> SummaryResponse:
+async def get_exceptions_summary(db: DBSession) -> SummaryResponse:
     """Get summary of all exceptions."""
     aggregator = get_exceptions_aggregator()
-    summary = aggregator.get_summary()
+    summary = await aggregator.get_summary(db)
     return SummaryResponse.from_summary(summary)
 
 
@@ -342,11 +348,11 @@ async def get_exceptions_summary() -> SummaryResponse:
     summary="Get navigation badges",
     description="Get badge data for sidebar navigation",
 )
-async def get_navigation_badges() -> NavigationBadgesResponse:
+async def get_navigation_badges(db: DBSession) -> NavigationBadgesResponse:
     """Get navigation badges for sidebar."""
     aggregator = get_exceptions_aggregator()
-    badges = aggregator.get_navigation_badges()
-    summary = aggregator.get_summary()
+    badges = await aggregator.get_navigation_badges(db)
+    summary = await aggregator.get_summary(db)
     
     return NavigationBadgesResponse(
         badges=[BadgeResponse.from_badge(b) for b in badges],
@@ -362,11 +368,12 @@ async def get_navigation_badges() -> NavigationBadgesResponse:
     description="Get trend data for exception charts",
 )
 async def get_exception_trends(
+    db: DBSession,
     days: int = Query(7, ge=1, le=90, description="Number of days of trend data"),
 ) -> TrendsResponse:
     """Get trend data for charts."""
     aggregator = get_exceptions_aggregator()
-    trends = aggregator.get_trends(days=days)
+    trends = await aggregator.get_trends(db, days=days)
     
     return TrendsResponse(
         trends=[TrendPoint.from_trend(t) for t in trends],
@@ -381,12 +388,13 @@ async def get_exception_trends(
     description="Get all exceptions for a specific category",
 )
 async def get_exceptions_by_category(
+    db: DBSession,
     category: ExceptionCategory,
     limit: int = Query(20, ge=1, le=100),
 ) -> ExceptionsListResponse:
     """Get exceptions for a specific category."""
     aggregator = get_exceptions_aggregator()
-    items = aggregator.get_by_category(category, limit=limit)
+    items = await aggregator.get_by_category(db, category, limit=limit)
     
     return ExceptionsListResponse(
         items=[ExceptionResponse.from_item(item) for item in items],
@@ -402,12 +410,13 @@ async def get_exceptions_by_category(
     description="Get a specific exception by its ID",
 )
 async def get_exception_by_id(
+    db: DBSession,
     exception_id: str,
 ) -> ExceptionResponse:
     """Get a specific exception by ID."""
     aggregator = get_exceptions_aggregator()
     
-    for item in aggregator.get_all(limit=1000):
+    for item in await aggregator.get_all(db, limit=1000):
         if item.id == exception_id:
             return ExceptionResponse.from_item(item)
     
@@ -425,6 +434,7 @@ async def get_exception_by_id(
     description="Create a new exception manually",
 )
 async def create_new_exception(
+    db: DBSession,
     request: CreateExceptionRequest,
 ) -> ExceptionResponse:
     """Create a new exception."""
@@ -445,7 +455,7 @@ async def create_new_exception(
         tags=request.tags,
     )
     
-    aggregator.add_exception(item)
+    await aggregator.add_exception(db, item)
     
     return ExceptionResponse.from_item(item)
 
@@ -457,12 +467,13 @@ async def create_new_exception(
     description="Mark an exception as acknowledged",
 )
 async def acknowledge_exception(
+    db: DBSession,
     exception_id: str,
 ) -> ExceptionResponse:
     """Acknowledge an exception."""
     aggregator = get_exceptions_aggregator()
     
-    item = aggregator.acknowledge_exception(exception_id)
+    item = await aggregator.acknowledge_exception(db, exception_id)
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -479,13 +490,15 @@ async def acknowledge_exception(
     description="Escalate an exception to someone else",
 )
 async def escalate_exception(
+    db: DBSession,
     exception_id: str,
     request: EscalateRequest,
 ) -> ExceptionResponse:
     """Escalate an exception."""
     aggregator = get_exceptions_aggregator()
     
-    item = aggregator.escalate_exception(
+    item = await aggregator.escalate_exception(
+        db,
         exception_id,
         escalate_to=request.escalate_to,
         reason=request.reason,
@@ -506,13 +519,15 @@ async def escalate_exception(
     description="Mark an exception as resolved",
 )
 async def resolve_exception(
+    db: DBSession,
     exception_id: str,
     request: ResolveRequest,
 ) -> ExceptionResponse:
     """Resolve an exception."""
     aggregator = get_exceptions_aggregator()
     
-    item = aggregator.resolve_exception(
+    item = await aggregator.resolve_exception(
+        db,
         exception_id,
         resolution_notes=request.resolution_notes,
     )
@@ -532,13 +547,15 @@ async def resolve_exception(
     description="Mark an exception as blocked with a reason",
 )
 async def block_exception(
+    db: DBSession,
     exception_id: str,
     request: BlockRequest,
 ) -> ExceptionResponse:
     """Mark an exception as blocked."""
     aggregator = get_exceptions_aggregator()
     
-    item = aggregator.update_exception(
+    item = await aggregator.update_exception(
+        db,
         exception_id,
         {
             "status": ExceptionStatus.BLOCKED,
@@ -561,12 +578,14 @@ async def block_exception(
     description="Mark an exception as in progress",
 )
 async def start_exception(
+    db: DBSession,
     exception_id: str,
 ) -> ExceptionResponse:
     """Mark an exception as in progress."""
     aggregator = get_exceptions_aggregator()
     
-    item = aggregator.update_exception(
+    item = await aggregator.update_exception(
+        db,
         exception_id,
         {"status": ExceptionStatus.IN_PROGRESS},
     )

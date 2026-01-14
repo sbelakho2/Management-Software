@@ -318,7 +318,7 @@ class InspectionBatch:
 class SyntheticDefectGenerator:
     """
     Generates synthetic defects on good images for training.
-    Uses masks, texture overlay, and geometric transforms to simulate defects.
+    Uses masks, texture overlay, and geometric transforms to simulate realistic defects.
     """
     
     def generate(
@@ -329,36 +329,56 @@ class SyntheticDefectGenerator:
         count: int = 1
     ) -> tuple[np.ndarray, list[DetectedDefect]]:
         """
-        Inject synthetic defects into a clean image.
-        Returns the augmented image and the list of injected defects.
+        Inject synthetic defects into a clean image with realistic blending.
         """
         img = base_image.copy()
         h, w = img.shape[:2]
         defects = []
         
+        try:
+            import cv2
+        except ImportError:
+            cv2 = None
+        
         for _ in range(count):
-            # Random location
+            # Random location with margin
             x = random.randint(int(w * 0.1), int(w * 0.8))
             y = random.randint(int(h * 0.1), int(h * 0.8))
-            size = random.randint(10, 50)
+            size = random.randint(15, 60)
             
             bbox = BoundingBox(x, y, size, size)
             
-            if defect_type == DefectCategory.SURFACE:
-                # Draw a scratch-like line
-                color = (50, 50, 50) if len(img.shape) == 3 else 50
-                try:
-                    import cv2
-                    cv2.line(img, (x, y), (x + size, y + size), color, 2)
-                except ImportError:
-                    img[y:y+2, x:x+size] = 50 # Fallback simple line
-            
-            elif defect_type == DefectCategory.CONTAMINATION:
-                # Draw a spot
-                try:
-                    import cv2
-                    cv2.circle(img, (x + size//2, y + size//2), size//3, (20, 20, 100), -1)
-                except ImportError:
+            if cv2:
+                # Create a mask for the defect
+                mask = np.zeros((h, w), dtype=np.uint8)
+                
+                if defect_type == DefectCategory.SURFACE:
+                    # Realistic scratch: jagged line with varying thickness
+                    pts = np.array([
+                        [x, y], 
+                        [x + size//3, y + random.randint(-5, 5)],
+                        [x + 2*size//3, y + size//2 + random.randint(-5, 5)],
+                        [x + size, y + size]
+                    ], np.int32)
+                    cv2.polylines(mask, [pts], False, 255, random.randint(1, 3))
+                    # Apply Gaussian blur to the mask for softer edges
+                    mask = cv2.GaussianBlur(mask, (3, 3), 0)
+                    # Blend: darken the pixels where mask is high
+                    img[mask > 0] = img[mask > 0] * (1 - mask[mask > 0] / 510)
+                    
+                elif defect_type == DefectCategory.CONTAMINATION:
+                    # Cloud-like contamination spot
+                    cv2.circle(mask, (x + size//2, y + size//2), size//2, 255, -1)
+                    mask = cv2.GaussianBlur(mask, (15, 15), 0)
+                    # Color shift for contamination (e.g., oil spot)
+                    overlay = img.copy()
+                    overlay[mask > 0] = [20, 20, 80] # Dark blue/oil tint
+                    cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
+            else:
+                # Fallback simple logic
+                if defect_type == DefectCategory.SURFACE:
+                    img[y:y+2, x:x+size] = 50
+                elif defect_type == DefectCategory.CONTAMINATION:
                     img[y:y+size//2, x:x+size//2] = 20
             
             defects.append(DetectedDefect(
@@ -369,19 +389,32 @@ class SyntheticDefectGenerator:
                 bbox=bbox,
                 defect_type="synthetic",
                 defect_name=f"Synthetic {defect_type.value}",
-                is_synthetic=True
+                is_synthetic=True,
+                metadata={"generation_method": "jagged_poly" if cv2 else "fallback"}
             ))
             
         return img, defects
+
+    def generate_training_batch(self, base_images: list[np.ndarray], batch_size: int = 10) -> list[tuple[np.ndarray, list[DetectedDefect]]]:
+        """Generate a balanced batch of synthetic training data."""
+        batch = []
+        categories = [DefectCategory.SURFACE, DefectCategory.CONTAMINATION, DefectCategory.MATERIAL]
+        for _ in range(batch_size):
+            base = random.choice(base_images)
+            cat = random.choice(categories)
+            batch.append(self.generate(base, cat, count=random.randint(1, 3)))
+        return batch
 
 
 class VisionEnrichmentSuite:
     """
     Suite of advanced vision features for manufacturing enrichment.
+    Includes Explainable AI (XAI) and prescriptive root cause analysis.
     """
     
     def __init__(self):
         self.generator = SyntheticDefectGenerator()
+        self._history: list[InspectionResult] = []
         
     def enrich_inspection(
         self, 
@@ -390,26 +423,50 @@ class VisionEnrichmentSuite:
     ) -> InspectionResult:
         """
         Apply advanced enrichment to an inspection result.
-        - Cross-references with Standard Work
-        - Adds prescriptive recommendations
-        - Enhances explainability metadata
         """
+        self._history.append(result)
+        if len(self._history) > 100: self._history.pop(0)
+        
         if standard_work_context:
             result.metadata["standard_work_id"] = standard_work_context.get("id")
-            # If standard work specifies critical zones, verify them
             critical_zones = standard_work_context.get("critical_zones", [])
             for zone in critical_zones:
-                # Simple logic: if a defect is in a critical zone, escalate severity
                 for defect in result.defects:
                     if self._is_in_zone(defect.bbox, zone):
                         defect.severity = DefectSeverity.CRITICAL
                         defect.metadata["enriched_reason"] = "In critical zone defined by Standard Work"
         
-        # Add prescriptive fix recommendations
+        # Add prescriptive fix recommendations and root cause hypothesis
         for defect in result.defects:
             defect.metadata["recommendations"] = self._get_recommendations(defect)
+            defect.metadata["root_cause_hypothesis"] = self._hypothesize_root_cause(defect)
+            
+        # Check for recurring patterns (Predictive Maintenance Trigger)
+        if result.decision == InspectionDecision.FAIL:
+            pattern = self._detect_recurring_pattern(result)
+            if pattern:
+                result.metadata["maintenance_alert"] = pattern
             
         return result
+
+    def _hypothesize_root_cause(self, defect: DetectedDefect) -> str:
+        """Use simple heuristics to suggest why a defect occurred."""
+        if defect.category == DefectCategory.SURFACE:
+            return "Possible mechanical friction or tool wear at Station B"
+        if defect.category == DefectCategory.CONTAMINATION:
+            return "Potential fluid leak or environmental dust in Cleanroom A"
+        return "Unknown - requires further A3 analysis"
+
+    def _detect_recurring_pattern(self, current: InspectionResult) -> Optional[str]:
+        """Identify if this defect type is trending upwards."""
+        recent_fails = [r for r in self._history[-10:] if r.decision == InspectionDecision.FAIL]
+        if len(recent_fails) >= 3:
+            types = [d.category for r in recent_fails for d in r.defects]
+            from collections import Counter
+            most_common, count = Counter(types).most_common(1)[0]
+            if count >= 3:
+                return f"Recurring {most_common.value} defects detected (3/10 recent). Suggest immediate station check."
+        return None
 
     def _is_in_zone(self, bbox: BoundingBox, zone: dict[str, Any]) -> bool:
         # Simple overlap check

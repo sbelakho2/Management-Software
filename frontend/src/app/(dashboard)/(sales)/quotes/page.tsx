@@ -144,7 +144,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
   const router = useRouter();
   const config = statusConfig[quote.status];
   const StatusIcon = config.icon;
-  const isExpiringSoon = new Date(quote.validUntil) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
+  const isExpiringSoon = new Date(quote.valid_until) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) 
     && quote.status === 'sent';
 
   return (
@@ -154,14 +154,14 @@ function QuoteRow({ quote }: { quote: Quote }) {
     >
       <td className="py-3 px-4">
         <div>
-          <p className="font-medium">{quote.quoteNumber}</p>
+          <p className="font-medium">{quote.quote_number}</p>
           <p className="text-sm text-muted-foreground">
             <Link 
               href={`/pipeline/${quote.id}`} 
               className="hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
-              {quote.rfqNumber}
+              {quote.rfq_number}
             </Link>
           </p>
         </div>
@@ -172,7 +172,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
           className="hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
-          {quote.customerName}
+          {quote.customer_name}
         </Link>
       </td>
       <td className="py-3 px-4">
@@ -182,7 +182,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
         </Badge>
       </td>
       <td className="py-3 px-4 text-right font-medium">
-        {formatCurrency(quote.totalAmount)}
+        {formatCurrency(quote.total_amount)}
       </td>
       <td className="py-3 px-4 text-right">
         <span className={cn(
@@ -194,17 +194,17 @@ function QuoteRow({ quote }: { quote: Quote }) {
       </td>
       <td className="py-3 px-4">
         <div className={cn(isExpiringSoon && 'text-warning')}>
-          {formatDate(new Date(quote.validUntil))}
+          {formatDate(new Date(quote.valid_until))}
           {isExpiringSoon && <span className="text-xs ml-1">(expires soon)</span>}
         </div>
       </td>
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
           <Avatar size="sm">
-            <AvatarImage src={quote.createdBy.avatar} />
-            <AvatarFallback>{getInitials(quote.createdBy.name)}</AvatarFallback>
+            <AvatarImage src={quote.created_by.avatar} />
+            <AvatarFallback>{getInitials(quote.created_by.name)}</AvatarFallback>
           </Avatar>
-          <span className="text-sm">{quote.createdBy.name}</span>
+          <span className="text-sm">{quote.created_by.name}</span>
         </div>
       </td>
       <td className="py-3 px-4 text-center text-muted-foreground">
@@ -275,15 +275,15 @@ export default function QuotesPage() {
   const mappedQuotes: Quote[] = React.useMemo(() => {
     return quotes.map(q => ({
       id: q.id,
-      quoteNumber: q.quoteNumber,
-      rfqNumber: 'RFQ-2024-' + q.id.substring(0, 4),
-      customerName: q.customerName,
+      quote_number: q.quoteNumber,
+      rfq_number: 'RFQ-2024-' + q.id.substring(0, 4),
+      customer_name: q.customerName,
       status: q.status,
-      totalAmount: q.total,
+      total_amount: q.total,
       margin: q.subtotal > 0 ? ((q.total - q.subtotal) / q.total) * 100 : 0,
-      validUntil: q.validUntil,
-      createdAt: q.createdAt,
-      createdBy: { name: 'System' },
+      valid_until: q.validUntil,
+      created_at: q.createdAt,
+      created_by: { name: 'System' },
       version: q.version,
     }));
   }, [quotes]);
@@ -291,9 +291,9 @@ export default function QuotesPage() {
   const filteredQuotes = React.useMemo(() => {
     return mappedQuotes.filter((quote) => {
       const matchesSearch = searchQuery === '' ||
-        quote.quoteNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        quote.rfqNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        quote.customerName.toLowerCase().includes(searchQuery.toLowerCase());
+        quote.quote_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        quote.rfq_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        quote.customer_name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'all' || quote.status === statusFilter;
       return matchesSearch && matchesStatus;
     });

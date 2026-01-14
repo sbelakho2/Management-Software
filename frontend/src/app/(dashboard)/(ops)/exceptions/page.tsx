@@ -5,15 +5,12 @@ import {
   AlertTriangle,
   Clock,
   TrendingUp,
-  TrendingDown,
-  Ban,
   AlertCircle,
   Calendar,
   User,
   Target,
   CheckCircle2,
-  XCircle,
-  Filter,
+  Ban,
   Download,
   RefreshCw,
 } from 'lucide-react';
@@ -37,190 +34,48 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
-
-// Types
-type ExceptionSeverity = 'critical' | 'high' | 'medium' | 'low';
-type ExceptionCategory = 'andon' | 'quote' | 'production' | 'quality' | 'a3' | 'obeya' | 'task' | 'training';
-type ExceptionStatus = 'open' | 'acknowledged' | 'in_progress' | 'resolved' | 'escalated';
-
-interface Exception {
-  id: string;
-  title: string;
-  category: ExceptionCategory;
-  severity: ExceptionSeverity;
-  status: ExceptionStatus;
-  created_at: string;
-  due_date: string;
-  owner: string;
-  department: string;
-  description: string;
-  resolution_time?: number; // minutes
-  escalated_at?: string;
-  blocked_reason?: string;
-  related_entity_id?: string;
-  related_entity_type?: string;
-  tags: string[];
-}
-
-interface ExceptionTrend {
-  period: string;
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  resolved: number;
-}
-
-interface ExceptionStats {
-  total_open: number;
-  critical_count: number;
-  overdue_count: number;
-  escalated_count: number;
-  blocked_count: number;
-  avg_resolution_time_minutes: number;
-  resolved_today: number;
-  created_today: number;
-  by_category: Record<ExceptionCategory, number>;
-  by_severity: Record<ExceptionSeverity, number>;
-}
+import { useExceptionsStore } from '@/stores/exceptions';
+import type { ExceptionSeverity, ExceptionCategory, ExceptionStatus } from '@/stores/exceptions';
 
 export default function ExceptionsPage() {
+  const { 
+    exceptions, 
+    stats, 
+    trends, 
+    isLoading, 
+    fetchExceptions, 
+    fetchStats, 
+    fetchTrends,
+    resolveException 
+  } = useExceptionsStore();
+
   const [activeTab, setActiveTab] = React.useState('overview');
   const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = React.useState<string>('all');
   const [selectedStatus, setSelectedStatus] = React.useState<string>('open');
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
 
-  // Mock data - would come from API
-  const [stats, setStats] = React.useState<ExceptionStats>({
-    total_open: 47,
-    critical_count: 8,
-    overdue_count: 15,
-    escalated_count: 5,
-    blocked_count: 3,
-    avg_resolution_time_minutes: 245,
-    resolved_today: 12,
-    created_today: 9,
-    by_category: {
-      andon: 12,
-      quote: 8,
-      production: 15,
-      quality: 6,
-      a3: 2,
-      obeya: 1,
-      task: 2,
-      training: 1,
-    },
-    by_severity: {
-      critical: 8,
-      high: 18,
-      medium: 15,
-      low: 6,
-    },
-  });
+  const exceptionsList = React.useMemo(() => (Array.isArray(exceptions) ? exceptions : []), [exceptions]);
+  const trendsList = React.useMemo(() => (Array.isArray(trends) ? trends : []), [trends]);
 
-  const [exceptions, setExceptions] = React.useState<Exception[]>([
-    {
-      id: '1',
-      title: 'CNC Machine 3 - Emergency Stop Activated',
-      category: 'andon',
-      severity: 'critical',
-      status: 'open',
-      created_at: '2026-01-08T09:15:00Z',
-      due_date: '2026-01-08T10:15:00Z',
-      owner: 'John Smith',
-      department: 'Manufacturing',
-      description: 'Machine emergency stop activated. Production halted.',
-      tags: ['machine-down', 'safety'],
-    },
-    {
-      id: '2',
-      title: 'Quote #Q-2024-156 - Approval Overdue 48h',
-      category: 'quote',
-      severity: 'high',
-      status: 'escalated',
-      created_at: '2026-01-06T14:30:00Z',
-      due_date: '2026-01-07T14:30:00Z',
-      owner: 'Sarah Johnson',
-      department: 'Sales',
-      description: '$125,000 quote awaiting GM approval for 2 days.',
-      escalated_at: '2026-01-07T14:35:00Z',
-      tags: ['approval', 'high-value'],
-    },
-    {
-      id: '3',
-      title: 'Work Order #WO-8945 - Material Shortage',
-      category: 'production',
-      severity: 'high',
-      status: 'in_progress',
-      created_at: '2026-01-08T07:00:00Z',
-      due_date: '2026-01-09T07:00:00Z',
-      owner: 'Mike Davis',
-      department: 'Production',
-      description: 'Aluminum sheet 6061-T6 out of stock, blocking 3 work orders.',
-      blocked_reason: 'Waiting for material delivery',
-      tags: ['material', 'blocked'],
-    },
-    {
-      id: '4',
-      title: 'CTQ-2024-023 - Surface Finish Exceeds Tolerance',
-      category: 'quality',
-      severity: 'critical',
-      status: 'open',
-      created_at: '2026-01-08T08:45:00Z',
-      due_date: '2026-01-08T12:45:00Z',
-      owner: 'Emily Chen',
-      department: 'Quality',
-      description: 'Last 5 measurements failed Ra < 32. Investigating tooling.',
-      tags: ['measurement', 'ctq'],
-    },
-    {
-      id: '5',
-      title: 'A3-2024-012 - Root Cause Analysis Stalled',
-      category: 'a3',
-      severity: 'medium',
-      status: 'open',
-      created_at: '2026-01-05T11:00:00Z',
-      due_date: '2026-01-10T11:00:00Z',
-      owner: 'David Lee',
-      department: 'Manufacturing',
-      description: 'A3 for setup time reduction stuck at root cause stage for 3 days.',
-      tags: ['a3', 'overdue'],
-    },
-    {
-      id: '6',
-      title: 'Task #T-5623 - Safety Training Expired',
-      category: 'training',
-      severity: 'high',
-      status: 'open',
-      created_at: '2026-01-07T13:00:00Z',
-      due_date: '2026-01-08T13:00:00Z',
-      owner: 'Lisa Williams',
-      department: 'HR',
-      description: '8 operators have expired forklift certifications.',
-      tags: ['training', 'compliance'],
-    },
-  ]);
-
-  const [trends, setTrends] = React.useState<ExceptionTrend[]>([
-    { period: 'Mon', critical: 12, high: 25, medium: 18, low: 8, resolved: 35 },
-    { period: 'Tue', critical: 10, high: 22, medium: 20, low: 7, resolved: 38 },
-    { period: 'Wed', critical: 8, high: 20, medium: 15, low: 6, resolved: 32 },
-    { period: 'Thu', critical: 9, high: 18, medium: 16, low: 5, resolved: 30 },
-    { period: 'Fri', critical: 11, high: 21, medium: 17, low: 7, resolved: 34 },
-    { period: 'Sat', critical: 5, high: 10, medium: 8, low: 3, resolved: 20 },
-    { period: 'Sun', critical: 8, high: 18, medium: 15, low: 6, resolved: 28 },
-  ]);
+  React.useEffect(() => {
+    fetchExceptions();
+    fetchStats();
+    fetchTrends();
+  }, [fetchExceptions, fetchStats, fetchTrends]);
 
   const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsRefreshing(false);
+    await Promise.all([
+      fetchExceptions({
+        category: selectedCategory !== 'all' ? selectedCategory as any : undefined,
+        severity: selectedSeverity !== 'all' ? selectedSeverity as any : undefined,
+        status: selectedStatus !== 'all' ? selectedStatus as any : undefined,
+      }),
+      fetchStats(),
+      fetchTrends()
+    ]);
   };
 
   const handleExport = () => {
-    // Export to CSV - implementation would trigger download
     const csvContent = exceptions.map(e => 
       `${e.id},${e.title},${e.severity},${e.status},${e.category}`
     ).join('\n');
@@ -294,13 +149,16 @@ export default function ExceptionsPage() {
     });
   };
 
-  // Filter exceptions
-  const filteredExceptions = exceptions.filter(exc => {
+  const filteredExceptions = exceptionsList.filter(exc => {
     if (selectedCategory !== 'all' && exc.category !== selectedCategory) return false;
     if (selectedSeverity !== 'all' && exc.severity !== selectedSeverity) return false;
     if (selectedStatus !== 'all' && exc.status !== selectedStatus) return false;
     return true;
   });
+
+  if (!stats) return <div className="p-8 text-center">Loading exceptions stats...</div>;
+
+  const byCategory = stats.by_category ?? {};
 
   return (
     <div className="space-y-6">
@@ -313,8 +171,8 @@ export default function ExceptionsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" onClick={handleRefresh} disabled={isRefreshing}>
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <Button variant="outline" className="gap-2" onClick={handleRefresh} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Button variant="outline" className="gap-2" onClick={handleExport}>
@@ -562,7 +420,7 @@ export default function ExceptionsPage() {
                               </Badge>
                             </div>
                           </div>
-                          <Button variant="destructive" size="sm">
+                          <Button variant="destructive" size="sm" onClick={() => resolveException(exception.id, 'Resolved via Critical Dashboard')}>
                             Resolve
                           </Button>
                         </div>
@@ -584,7 +442,7 @@ export default function ExceptionsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {trends.map((trend) => (
+                  {trendsList.map((trend) => (
                     <div key={trend.period}>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span className="font-medium">{trend.period}</span>
@@ -645,7 +503,7 @@ export default function ExceptionsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {trends.map((trend) => (
+                  {trendsList.map((trend) => (
                     <div key={trend.period}>
                       <div className="flex items-center justify-between text-sm mb-1">
                         <span className="font-medium">{trend.period}</span>
@@ -663,7 +521,7 @@ export default function ExceptionsPage() {
         {/* By Category Tab */}
         <TabsContent value="by-category" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(stats.by_category).map(([category, count]) => {
+            {Object.entries(byCategory).map(([category, count]) => {
               const CategoryIcon = getCategoryIcon(category as ExceptionCategory);
               return (
                 <Card key={category}>

@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores';
 import { useTodayStore } from '@/stores/today';
 import { hasPageAccess } from '@/lib/page-access';
 import { UserRole } from '@/types';
+import { MyWorkDashboard } from './_components/my-work-dashboard';
 
 type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -70,6 +71,8 @@ function priorityBadgeVariant(priority: PriorityLevel): 'default' | 'secondary' 
 export default function TodayPage() {
 	const { user } = useAuthStore();
 	const { data: todayData, loading, error, fetchTodayScreen } = useTodayStore();
+	const [headerDate, setHeaderDate] = React.useState('');
+	const [mounted, setMounted] = React.useState(false);
 
 	const userRoles = React.useMemo(() => {
 		if (!user) return [] as UserRole[];
@@ -89,6 +92,11 @@ export default function TodayPage() {
 	}, [userRoles]);
 
 	const firstName = user?.full_name?.split(' ')[0] || 'there';
+
+	React.useEffect(() => {
+		setMounted(true);
+		setHeaderDate(formatHeaderDate(new Date()));
+	}, []);
 	
 	// Fetch data on mount
 	React.useEffect(() => {
@@ -143,30 +151,6 @@ export default function TodayPage() {
 		return [];
 	}, [todayData, userRoles]);
 
-	// Show loading state
-	if (loading) {
-		return (
-			<div className="flex items-center justify-center min-h-[400px]">
-				<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-			</div>
-		);
-	}
-
-	// Show error state
-	if (error) {
-		return (
-			<div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-				<AlertCircle className="h-12 w-12 text-destructive" />
-				<p className="text-muted-foreground">Failed to load today&apos;s data</p>
-				<Button onClick={() => user && fetchTodayScreen(user.id, user.full_name || '')}>
-					Try Again
-				</Button>
-			</div>
-		);
-	}
-
-	const priorities = mappedPriorities;
-
 	const activity: ActivityItem[] = React.useMemo(() => {
 		// Activity would come from todayData.recent_activity if available
 		if (todayData?.abnormalities?.length) {
@@ -201,16 +185,42 @@ export default function TodayPage() {
 		return [];
 	}, [todayData, userRoles]);
 
+	// Render gates (after all hooks have run)
+	if (!mounted || loading) {
+		return (
+			<div className="flex items-center justify-center min-h-[400px]">
+				<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	if (error) {
+		return (
+			<div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+				<AlertCircle className="h-12 w-12 text-destructive" />
+				<p className="text-muted-foreground">Failed to load today&apos;s data</p>
+				<Button onClick={() => user && fetchTodayScreen(user.id, user.full_name || '')}>
+					Try Again
+				</Button>
+			</div>
+		);
+	}
+
+	const priorities = mappedPriorities;
+
 	return (
 		<div className="space-y-8 page-fade-in">
 			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
 				<div className="space-y-1">
-					<h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+					<h1
+						className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
+						suppressHydrationWarning
+					>
 						Hello, {firstName}!
 					</h1>
 					<p className="text-muted-foreground font-medium flex items-center gap-2">
 						<Calendar className="h-4 w-4 text-primary" />
-						{formatHeaderDate(new Date())} • Intelligence Command Center
+						<span suppressHydrationWarning>{headerDate}</span> • Intelligence Command Center
 					</p>
 				</div>
 
@@ -287,45 +297,62 @@ export default function TodayPage() {
 				</article>
 
 				<article>
-					<Card className="h-full">
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<div>
-									<CardTitle className="text-xl">My Tasks</CardTitle>
-									<CardDescription>Assigned commitments</CardDescription>
-								</div>
-								<CheckCircle2 className="h-5 w-5 text-primary/40" />
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							{tasks.map((t) => (
-								<div key={t.id} className="flex items-start gap-4 p-2 rounded-lg hover:bg-muted/50 transition-colors group">
-									<div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/30 group-hover:border-primary/50 transition-colors">
-										<div className="h-2 w-2 rounded-full bg-transparent group-hover:bg-primary transition-all" />
+					<div className="space-y-8">
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<div>
+										<CardTitle className="text-xl">My Tasks</CardTitle>
+										<CardDescription>Assigned commitments</CardDescription>
 									</div>
-									<div className="space-y-1">
-										<Link href={t.href} className="font-bold text-sm text-foreground/80 hover:text-primary transition-colors">
-											{t.title}
-										</Link>
-										<p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{t.dueLabel}</p>
+									<CheckCircle2 className="h-5 w-5 text-primary/40" />
+								</div>
+							</CardHeader>
+							<CardContent className="space-y-4">
+								{tasks.map((t) => (
+									<div key={t.id} className="flex items-start gap-4 p-2 rounded-lg hover:bg-muted/50 transition-colors group">
+										<div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/30 group-hover:border-primary/50 transition-colors">
+											<div className="h-2 w-2 rounded-full bg-transparent group-hover:bg-primary transition-all" />
+										</div>
+										<div className="space-y-1">
+											<Link href={t.href} className="font-bold text-sm text-foreground/80 hover:text-primary transition-colors">
+												{t.title}
+											</Link>
+											<p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{t.dueLabel}</p>
+										</div>
 									</div>
+								))}
+								{tasks.length === 0 && (
+									<p className="text-sm text-muted-foreground py-4 text-center italic">All clear for today</p>
+								)}
+								{hasPageAccess('/tasks', userRoles) && (
+									<div className="pt-2">
+										<Button variant="ghost" size="sm" asChild className="w-full justify-between text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl">
+											<Link href="/tasks" className="flex items-center w-full justify-between">
+												<span className="text-xs font-bold uppercase tracking-widest">View All Tasks</span>
+												<ArrowRight className="h-4 w-4" />
+											</Link>
+										</Button>
+									</div>
+								)}
+							</CardContent>
+						</Card>
+
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<div>
+										<CardTitle className="text-xl">Project Work</CardTitle>
+										<CardDescription>Stories and Issues</CardDescription>
+									</div>
+									<Layers className="h-5 w-5 text-primary/40" />
 								</div>
-							))}
-							{tasks.length === 0 && (
-								<p className="text-sm text-muted-foreground py-4 text-center italic">All clear for today</p>
-							)}
-							{hasPageAccess('/tasks', userRoles) && (
-								<div className="pt-2">
-									<Button variant="ghost" size="sm" asChild className="w-full justify-between text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl">
-										<Link href="/tasks" className="flex items-center w-full justify-between">
-											<span className="text-xs font-bold uppercase tracking-widest">View All Tasks</span>
-											<ArrowRight className="h-4 w-4" />
-										</Link>
-									</Button>
-								</div>
-							)}
-						</CardContent>
-					</Card>
+							</CardHeader>
+							<CardContent>
+								<MyWorkDashboard />
+							</CardContent>
+						</Card>
+					</div>
 				</article>
 
 				<article className="lg:col-span-2">

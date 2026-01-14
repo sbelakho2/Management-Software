@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.services.core.pii_controls import (
     PIIControlsService,
@@ -337,12 +338,13 @@ class EmployeeLifecycleService:
         self._get_or_register_subject(employee_id)
         return updated
 
-    def get_employee_profile(
+    async def get_employee_profile(
         self,
         employee_id: UUID,
         *,
         actor_id: UUID,
         actor_roles: Iterable[str],
+        db: AsyncSession,
         purpose: str = "profile_view",
     ) -> EmployeeProfile | None:
         profile = self._profiles.get(employee_id)
@@ -354,7 +356,8 @@ class EmployeeLifecycleService:
         if self.can_view_pii(actor_roles=actor_roles):
             # Log access to the contact fields if present.
             if profile.email:
-                self._pii.log_access(
+                await self._pii.log_access(
+                    db=db,
                     subject_id=subject_id,
                     user_id=actor_id,
                     field_id=self._field_employee_email_id,
@@ -363,7 +366,8 @@ class EmployeeLifecycleService:
                     data_snapshot=profile.email,
                 )
             if profile.phone:
-                self._pii.log_access(
+                await self._pii.log_access(
+                    db=db,
                     subject_id=subject_id,
                     user_id=actor_id,
                     field_id=self._field_employee_phone_id,
@@ -375,12 +379,12 @@ class EmployeeLifecycleService:
 
         # Non-privileged viewers get masked PII.
         masked_email = (
-            self._pii.mask_value(profile.email, field_id=self._field_employee_email_id)
+            await self._pii.mask_value(profile.email, field_id=self._field_employee_email_id, db=db)
             if profile.email
             else None
         )
         masked_phone = (
-            self._pii.mask_value(profile.phone, field_id=self._field_employee_phone_id)
+            await self._pii.mask_value(profile.phone, field_id=self._field_employee_phone_id, db=db)
             if profile.phone
             else None
         )

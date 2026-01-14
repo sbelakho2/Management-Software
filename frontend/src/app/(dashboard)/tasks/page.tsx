@@ -54,7 +54,8 @@ const priorityConfig: Record<string, { label: string; color: string }> = {
 
 export default function TasksPage() {
   const router = useRouter();
-  const { tasks, loading, fetchTasks, moveTask } = useTasksStore();
+  const { tasks: tasksRaw, loading, fetchTasks, moveTask } = useTasksStore();
+  const tasks = tasksRaw ?? [];
   const [view, setView] = React.useState<'list' | 'board'>('board');
   const [search, setSearch] = React.useState('');
 
@@ -134,7 +135,7 @@ export default function TasksPage() {
 
       {view === 'board' ? (
         <div className="grid gap-6 lg:grid-cols-4 overflow-x-auto pb-4">
-          {(['todo', 'in_progress', 'review', 'completed'] as TaskStatus[]).map((status) => (
+          {(['todo', 'in_progress', 'in_review', 'done'] as TaskStatus[]).map((status) => (
             <div key={status} className="flex flex-col gap-4 min-w-[280px]">
               <div className="flex items-center justify-between px-2">
                 <div className="flex items-center gap-2">

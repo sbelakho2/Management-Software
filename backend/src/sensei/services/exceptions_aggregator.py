@@ -6,13 +6,18 @@ across the entire system. Implements "Exceptions-First" dashboard navigation
 to surface critical issues immediately.
 """
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from sensei.core.enums import Severity as ExceptionSeverity, WorkflowStatus as ExceptionStatus, EntityType as ExceptionCategory
+from sensei.models.exception import ExceptionRecord
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update
+from sensei.core.redis import redis_client
 
 
 @dataclass
@@ -141,6 +146,51 @@ class ExceptionsAggregator:
         self._last_refresh: Optional[datetime] = None
         self._cache_ttl_seconds: int = 30
         self._listeners: list[Callable[[ExceptionSummary], None]] = []
+
+    def _item_to_dict(self, item: ExceptionItem) -> dict[str, Any]:
+        d = asdict(item)
+        # Handle enums and datetimes
+        d["category"] = item.category.value
+        d["severity"] = item.severity.value
+        d["status"] = item.status.value
+        if item.created_at:
+            d["created_at"] = item.created_at.isoformat()
+        if item.due_date:
+            d["due_date"] = item.due_date.isoformat()
+        if item.escalated_at:
+            d["escalated_at"] = item.escalated_at.isoformat()
+        return d
+
+    def _dict_to_item(self, d: dict[str, Any]) -> ExceptionItem:
+        d["category"] = ExceptionCategory(d["category"])
+        d["severity"] = ExceptionSeverity(d["severity"])
+        d["status"] = ExceptionStatus(d["status"])
+        if d.get("created_at"):
+            d["created_at"] = datetime.fromisoformat(d["created_at"])
+        if d.get("due_date"):
+            d["due_date"] = datetime.fromisoformat(d["due_date"])
+        if d.get("escalated_at"):
+            d["escalated_at"] = datetime.fromisoformat(d["escalated_at"])
+        return ExceptionItem(**d)
+
+    async def _save_to_redis(self, exceptions: list[ExceptionItem]) -> None:
+        data = [self._item_to_dict(e) for e in exceptions]
+        await redis_client.set("exceptions:aggregated", json.dumps(data))
+        await redis_client.set("exceptions:last_refresh", datetime.now(timezone.utc).isoformat())
+
+    async def _load_from_redis(self) -> tuple[list[ExceptionItem], Optional[datetime]]:
+        data = await redis_client.get("exceptions:aggregated")
+        last_refresh_str = await redis_client.get("exceptions:last_refresh")
+        
+        last_refresh = None
+        if last_refresh_str:
+            last_refresh = datetime.fromisoformat(last_refresh_str)
+            
+        if not data:
+            return [], last_refresh
+            
+        items = json.loads(data)
+        return [self._dict_to_item(i) for i in items], last_refresh
     
     def register_source(
         self,
@@ -171,30 +221,69 @@ class ExceptionsAggregator:
             except Exception:
                 pass  # Don't let listener errors break the flow
     
-    def refresh(self, force: bool = False) -> None:
-        """Refresh exceptions from all sources."""
+    async def refresh(self, db: AsyncSession, force: bool = False) -> None:
+        """Refresh exceptions from all sources and database."""
         now = datetime.now(timezone.utc)
         
-        if not force and self._last_refresh:
-            elapsed = (now - self._last_refresh).total_seconds()
-            if elapsed < self._cache_ttl_seconds:
-                return
+        # 0. Try loading from Redis first
+        redis_exceptions, last_refresh = await self._load_from_redis()
         
-        # Get IDs of manually added exceptions (those not from sources)
-        manual_exceptions = [e for e in self._exceptions if e.source == "manual"]
+        if not force and last_refresh:
+            elapsed = (now - last_refresh).total_seconds()
+            if elapsed < self._cache_ttl_seconds:
+                self._exceptions = redis_exceptions
+                self._last_refresh = last_refresh
+                return
         
         all_exceptions: list[ExceptionItem] = []
         
+        # 1. Load manual and persisted exceptions from database
+        result = await db.execute(select(ExceptionRecord))
+        db_records = result.scalars().all()
+        
+        for rec in db_records:
+            # Handle potentially missing created_at from mock or newly created objects
+            created_at = rec.created_at or now
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+                
+            item = ExceptionItem(
+                id=rec.id,
+                title=rec.title,
+                description=rec.description,
+                category=ExceptionCategory(rec.category),
+                severity=ExceptionSeverity(rec.severity),
+                status=ExceptionStatus(rec.status),
+                created_at=created_at,
+                source=rec.source,
+                due_date=rec.due_date,
+                owner_id=rec.owner_id,
+                owner_name=rec.owner_name,
+                department=rec.department,
+                source_entity_type=rec.source_entity_type,
+                source_entity_id=rec.source_entity_id,
+                source_url=rec.source_url,
+                resolution_time_minutes=rec.resolution_time_minutes,
+                escalated_at=rec.escalated_at,
+                escalated_to=rec.escalated_to,
+                blocked_reason=rec.blocked_reason,
+                tags=rec.tags,
+                metadata=rec.metadata_json,
+            )
+            all_exceptions.append(item)
+        
+        # 2. Get exceptions from dynamic sources
         for source_name, source_fn in self._sources.items():
             try:
-                exceptions = source_fn()
+                # If the source function is async, await it
+                if hasattr(source_fn, "__call__") and hasattr(source_fn, "__await__"):
+                     exceptions = await source_fn()
+                else:
+                     exceptions = source_fn()
                 all_exceptions.extend(exceptions)
             except Exception:
                 # Log error but continue with other sources
                 pass
-        
-        # Preserve manually added exceptions
-        all_exceptions.extend(manual_exceptions)
         
         # Sort by priority score (highest first)
         all_exceptions.sort(key=lambda e: e.priority_score, reverse=True)
@@ -202,24 +291,73 @@ class ExceptionsAggregator:
         self._exceptions = all_exceptions
         self._last_refresh = now
         
+        # 3. Save to Redis for other workers
+        await self._save_to_redis(all_exceptions)
+        
         # Notify listeners
         summary = self._get_summary_internal()
         self._notify_listeners(summary)
-    
-    def add_exception(self, exception: ExceptionItem) -> None:
-        """Add a new exception manually."""
+
+    async def add_exception(self, db: AsyncSession, exception: ExceptionItem) -> None:
+        """Add a new exception manually and persist to database."""
+        # Persist to DB
+        record = ExceptionRecord(
+            id=exception.id,
+            title=exception.title,
+            description=exception.description,
+            category=exception.category.value,
+            severity=exception.severity.value,
+            status=exception.status.value,
+            source=exception.source,
+            due_date=exception.due_date,
+            owner_id=exception.owner_id,
+            owner_name=exception.owner_name,
+            department=exception.department,
+            source_entity_type=exception.source_entity_type,
+            source_entity_id=exception.source_entity_id,
+            source_url=exception.source_url,
+            tags=exception.tags,
+            metadata_json=exception.metadata,
+        )
+        db.add(record)
+        await db.commit()
+        
+        # Add to local cache
         self._exceptions.append(exception)
         self._exceptions.sort(key=lambda e: e.priority_score, reverse=True)
         
+        # Update Redis
+        await self._save_to_redis(self._exceptions)
+        
         summary = self._get_summary_internal()
         self._notify_listeners(summary)
-    
-    def update_exception(
+
+    async def update_exception(
         self,
+        db: AsyncSession,
         exception_id: str,
         updates: dict[str, Any],
     ) -> Optional[ExceptionItem]:
-        """Update an existing exception."""
+        """Update an existing exception and persist to database."""
+        # Update in DB
+        db_updates = {}
+        for key, value in updates.items():
+            if key == "category" or key == "severity" or key == "status":
+                 db_updates[key] = value.value if hasattr(value, "value") else value
+            elif key == "metadata":
+                 db_updates["metadata_json"] = value
+            else:
+                 db_updates[key] = value
+
+        await db.execute(
+            sql_update(ExceptionRecord)
+            .where(ExceptionRecord.id == exception_id)
+            .values(**db_updates)
+        )
+        await db.commit()
+
+        # Update in local cache
+        found_exception = None
         for exception in self._exceptions:
             if exception.id == exception_id:
                 for key, value in updates.items():
@@ -228,52 +366,65 @@ class ExceptionsAggregator:
                 
                 # Re-sort after update
                 self._exceptions.sort(key=lambda e: e.priority_score, reverse=True)
-                
-                summary = self._get_summary_internal()
-                self._notify_listeners(summary)
-                
+                found_exception = exception
+                break
+        
+        if found_exception:
+            await self._save_to_redis(self._exceptions)
+            summary = self._get_summary_internal()
+            self._notify_listeners(summary)
+            return found_exception
+        
+        # If not in cache but in DB, refresh
+        await self.refresh(db, force=True)
+        for exception in self._exceptions:
+            if exception.id == exception_id:
                 return exception
+                
         return None
-    
-    def resolve_exception(
+
+    async def resolve_exception(
         self,
+        db: AsyncSession,
         exception_id: str,
         resolution_notes: Optional[str] = None,
     ) -> Optional[ExceptionItem]:
         """Mark an exception as resolved."""
-        return self.update_exception(exception_id, {
+        # Find exception to calculate age
+        age = 0
+        for e in self._exceptions:
+            if e.id == exception_id:
+                age = e.age_minutes
+                break
+        
+        return await self.update_exception(db, exception_id, {
             "status": ExceptionStatus.RESOLVED,
-            "resolution_time_minutes": self._calculate_resolution_time(exception_id),
+            "resolution_time_minutes": age,
         })
-    
-    def escalate_exception(
+
+    async def escalate_exception(
         self,
+        db: AsyncSession,
         exception_id: str,
         escalate_to: str,
         reason: Optional[str] = None,
     ) -> Optional[ExceptionItem]:
         """Escalate an exception."""
-        return self.update_exception(exception_id, {
+        return await self.update_exception(db, exception_id, {
             "status": ExceptionStatus.ESCALATED,
             "escalated_at": datetime.now(timezone.utc),
             "escalated_to": escalate_to,
         })
-    
-    def acknowledge_exception(self, exception_id: str) -> Optional[ExceptionItem]:
+
+    async def acknowledge_exception(self, db: AsyncSession, exception_id: str) -> Optional[ExceptionItem]:
         """Acknowledge an exception."""
-        return self.update_exception(exception_id, {
+        return await self.update_exception(db, exception_id, {
             "status": ExceptionStatus.ACKNOWLEDGED,
         })
-    
-    def _calculate_resolution_time(self, exception_id: str) -> int:
-        """Calculate resolution time in minutes."""
-        for exception in self._exceptions:
-            if exception.id == exception_id:
-                return exception.age_minutes
-        return 0
-    
-    def get_all(
+
+    async def get_all(
         self,
+        db: AsyncSession,
         category: Optional[ExceptionCategory] = None,
         severity: Optional[ExceptionSeverity] = None,
         status: Optional[ExceptionStatus] = None,
@@ -281,7 +432,7 @@ class ExceptionsAggregator:
         limit: int = 100,
     ) -> list[ExceptionItem]:
         """Get all exceptions with optional filters."""
-        self.refresh()
+        await self.refresh(db)
         
         results = self._exceptions
         
@@ -298,10 +449,10 @@ class ExceptionsAggregator:
             results = [e for e in results if e.is_overdue]
         
         return results[:limit]
-    
-    def get_critical(self, limit: int = 10) -> list[ExceptionItem]:
+
+    async def get_critical(self, db: AsyncSession, limit: int = 10) -> list[ExceptionItem]:
         """Get critical and high severity exceptions."""
-        self.refresh()
+        await self.refresh(db)
         
         results = [
             e for e in self._exceptions
@@ -310,19 +461,19 @@ class ExceptionsAggregator:
         ]
         
         return results[:limit]
-    
-    def get_overdue(self, limit: int = 10) -> list[ExceptionItem]:
+
+    async def get_overdue(self, db: AsyncSession, limit: int = 10) -> list[ExceptionItem]:
         """Get overdue exceptions."""
-        return self.get_all(overdue_only=True, limit=limit)
-    
-    def get_escalated(self, limit: int = 10) -> list[ExceptionItem]:
+        return await self.get_all(db, overdue_only=True, limit=limit)
+
+    async def get_escalated(self, db: AsyncSession, limit: int = 10) -> list[ExceptionItem]:
         """Get escalated exceptions."""
-        return self.get_all(status=ExceptionStatus.ESCALATED, limit=limit)
-    
-    def get_by_category(self, category: ExceptionCategory, limit: int = 20) -> list[ExceptionItem]:
+        return await self.get_all(db, status=ExceptionStatus.ESCALATED, limit=limit)
+
+    async def get_by_category(self, db: AsyncSession, category: ExceptionCategory, limit: int = 20) -> list[ExceptionItem]:
         """Get exceptions by category."""
-        return self.get_all(category=category, limit=limit)
-    
+        return await self.get_all(db, category=category, limit=limit)
+
     def _get_summary_internal(self) -> ExceptionSummary:
         """Get summary without triggering refresh (for internal use)."""
         open_exceptions = [
@@ -346,15 +497,15 @@ class ExceptionsAggregator:
             by_category=by_category,
             last_updated=datetime.now(timezone.utc),
         )
-    
-    def get_summary(self) -> ExceptionSummary:
+
+    async def get_summary(self, db: AsyncSession) -> ExceptionSummary:
         """Get summary of all exceptions for badges/navigation."""
-        self.refresh()
+        await self.refresh(db)
         return self._get_summary_internal()
-    
-    def get_navigation_badges(self) -> list[NavigationBadge]:
+
+    async def get_navigation_badges(self, db: AsyncSession) -> list[NavigationBadge]:
         """Get badges for main navigation items."""
-        self.refresh()
+        await self.refresh(db)
         
         badges: list[NavigationBadge] = []
         
@@ -418,10 +569,10 @@ class ExceptionsAggregator:
             ))
         
         return badges
-    
-    def get_trends(self, days: int = 7) -> list[ExceptionTrend]:
+
+    async def get_trends(self, db: AsyncSession, days: int = 7) -> list[ExceptionTrend]:
         """Get exception trends for the last N days."""
-        self.refresh()
+        await self.refresh(db)
         
         now = datetime.now(timezone.utc)
         trends: list[ExceptionTrend] = []

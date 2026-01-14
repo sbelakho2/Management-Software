@@ -18,6 +18,7 @@ interface ProvidersProps {
 }
 
 export function Providers({ children }: ProvidersProps) {
+  const isE2E = process.env.NEXT_PUBLIC_E2E === '1';
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -65,7 +66,9 @@ export function Providers({ children }: ProvidersProps) {
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
+        {process.env.NODE_ENV === 'development' && !isE2E && (
+          <ReactQueryDevtools initialIsOpen={false} />
+        )}
       </QueryClientProvider>
     </ErrorBoundary>
   );

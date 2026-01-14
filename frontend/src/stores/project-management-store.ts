@@ -20,6 +20,21 @@ export interface Project {
   is_private: boolean;
   start_date?: string | null;
   target_end_date?: string | null;
+  color: string;
+  use_story_points: boolean;
+  use_time_tracking: boolean;
+  enable_wiki: boolean;
+  enable_issues: boolean;
+  enable_sprints: boolean;
+  custom_user_story_statuses?: { id: string; name: string; color?: string; is_done?: boolean }[] | null;
+  custom_task_statuses?: { id: string; name: string; color?: string; is_done?: boolean }[] | null;
+  custom_issue_statuses?: { id: string; name: string; color?: string; is_closed?: boolean }[] | null;
+  total_user_stories: number;
+  completed_user_stories: number;
+  total_story_points: number;
+  completed_story_points: number;
+  total_issues: number;
+  open_issues: number;
   created_at: string;
   updated_at: string;
   progress_percentage?: number;
@@ -64,6 +79,10 @@ export interface UserStory {
   priority: number;
   epic_id?: string | null;
   sprint_id?: string | null;
+  related_work_order_id?: number | null;
+  related_ctq_id?: string | null;
+  estimated_hours?: number | null;
+  actual_hours: number;
   created_at: string;
   updated_at: string;
 }
@@ -82,6 +101,37 @@ export interface Subtask {
 export interface StoryComment {
   id: string;
   user_story_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type IssueType = 'bug' | 'improvement' | 'task' | 'question' | 'incident' | 'ncr' | 'safety';
+export type IssueSeverity = 'wishlist' | 'minor' | 'normal' | 'important' | 'critical';
+export type IssueStatus = 'new' | 'in_progress' | 'ready_for_test' | 'closed' | 'rejected' | 'postponed';
+export type IssuePriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface Issue {
+  id: string;
+  project_id: string;
+  ref: number;
+  subject: string;
+  description?: string | null;
+  issue_type: IssueType;
+  severity: IssueSeverity;
+  status: IssueStatus;
+  priority: IssuePriority;
+  owner_id?: string | null;
+  assigned_to_id?: string | null;
+  due_date?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IssueComment {
+  id: string;
+  issue_id: string;
+  author_id?: string | null;
   content: string;
   created_at: string;
   updated_at: string;
@@ -126,8 +176,12 @@ interface ProjectManagementState {
   epics: Epic[];
   sprints: Sprint[];
   stories: UserStory[];
+  issues: Issue[];
+  wikiPages: WikiPage[];
+  myWork: { stories: UserStory[]; issues: Issue[] };
   subtasksByStoryId: Record<string, Subtask[]>;
   commentsByStoryId: Record<string, StoryComment[]>;
+  commentsByIssueId: Record<string, IssueComment[]>;
 
   isLoading: boolean;
   error: string | null;
@@ -145,6 +199,18 @@ interface ProjectManagementState {
 
   fetchStories: (projectId: string) => Promise<void>;
   createStory: (payload: { project_id: string; subject: string; priority?: number; epic_id?: string | null; sprint_id?: string | null; description?: string }) => Promise<UserStory>;
+
+  fetchIssues: (projectId: string) => Promise<void>;
+  createIssue: (payload: Partial<Issue> & { project_id: string; subject: string; issue_type: IssueType }) => Promise<Issue>;
+  updateIssue: (issueId: string, updates: Partial<Issue>) => Promise<Issue>;
+  fetchIssueComments: (issueId: string) => Promise<void>;
+  createIssueComment: (issueId: string, content: string) => Promise<IssueComment>;
+
+  fetchWikiPages: (projectId: string) => Promise<void>;
+  createWikiPage: (payload: { project_id: string; title: string; content: string; parent_id?: string | null }) => Promise<WikiPage>;
+  updateWikiPage: (pageId: string, updates: Partial<WikiPage>) => Promise<WikiPage>;
+
+  fetchMyWork: () => Promise<void>;
 
   fetchSubtasks: (storyId: string) => Promise<void>;
   createSubtask: (storyId: string, subject: string, description?: string) => Promise<Subtask>;
@@ -166,8 +232,12 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     epics: [],
     sprints: [],
     stories: [],
+    issues: [],
+    wikiPages: [],
+    myWork: { stories: [], issues: [] },
     subtasksByStoryId: {},
     commentsByStoryId: {},
+    commentsByIssueId: {},
     isLoading: false,
     error: null,
 
@@ -308,6 +378,121 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
       } catch (e) {
         set({ error: e instanceof Error ? e.message : 'Failed to create story', isLoading: false });
         throw e;
+      }
+    },
+    
+    fetchIssues: async (projectId) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiGet<ApiEnvelope<Issue[]>>(`/projects/${encodeURIComponent(projectId)}/issues`);
+        set({ issues: res.data, isLoading: false });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load issues', isLoading: false });
+      }
+    },
+
+    createIssue: async (payload) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<Issue>>('/issues', 'POST', payload);
+        set({ issues: [...get().issues, res.data], isLoading: false });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to create issue', isLoading: false });
+        throw e;
+      }
+    },
+
+    updateIssue: async (issueId, updates) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<Issue>>(`/issues/${issueId}`, 'PATCH', updates);
+        set({
+          issues: get().issues.map((i) => (i.id === issueId ? res.data : i)),
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to update issue', isLoading: false });
+        throw e;
+      }
+    },
+
+    fetchIssueComments: async (issueId) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiGet<ApiEnvelope<IssueComment[]>>(`/issues/${issueId}/comments`);
+        set({
+          commentsByIssueId: { ...get().commentsByIssueId, [issueId]: res.data },
+          isLoading: false,
+        });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load issue comments', isLoading: false });
+      }
+    },
+
+    createIssueComment: async (issueId, content) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<IssueComment>>(`/issues/${issueId}/comments`, 'POST', {
+          content,
+        });
+        const existing = get().commentsByIssueId[issueId] ?? [];
+        set({
+          commentsByIssueId: { ...get().commentsByIssueId, [issueId]: [...existing, res.data] },
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to create issue comment', isLoading: false });
+        throw e;
+      }
+    },
+
+    fetchWikiPages: async (projectId) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiGet<ApiEnvelope<WikiPage[]>>(`/projects/${encodeURIComponent(projectId)}/wiki-pages`);
+        set({ wikiPages: res.data, isLoading: false });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load wiki pages', isLoading: false });
+      }
+    },
+
+    createWikiPage: async (payload) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<WikiPage>>('/wiki-pages', 'POST', payload);
+        set({ wikiPages: [...get().wikiPages, res.data], isLoading: false });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to create wiki page', isLoading: false });
+        throw e;
+      }
+    },
+
+    updateWikiPage: async (pageId, updates) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<WikiPage>>(`/wiki-pages/${pageId}`, 'PATCH', updates);
+        set({
+          wikiPages: get().wikiPages.map((p) => (p.id === pageId ? res.data : p)),
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to update wiki page', isLoading: false });
+        throw e;
+      }
+    },
+
+    fetchMyWork: async () => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiGet<ApiEnvelope<{ stories: UserStory[]; issues: Issue[] }>>('/my-work');
+        set({ myWork: res.data, isLoading: false });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load my work', isLoading: false });
       }
     },
 

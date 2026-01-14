@@ -4,11 +4,14 @@ RFQ (Request for Quotation) Management Endpoints
 Provides full CRUD and workflow operations for RFQs:
 - RFQ lifecycle management
 - Question/Answer tracking
+
 - Qualification integration
 - Quote generation workflow
 """
 
 import logging
+import csv
+from io import StringIO
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -42,6 +45,7 @@ from sensei.models.rfq import (
 )
 from sensei.models.quote import Quote
 from sensei.services.core.common_thread import get_common_thread_service
+from fastapi.responses import StreamingResponse
 
 
 logger = logging.getLogger(__name__)
@@ -610,6 +614,79 @@ async def list_rfqs(
         page_size=page_size,
         total=total,
     )
+
+
+@router.get("/export", summary="Export RFQs as CSV")
+async def export_rfqs(
+    db: DBSession,
+    current_user: CurrentUser,
+    ids: str | None = Query(default=None, description="Comma-separated RFQ IDs to export"),
+    include_deleted: bool = Query(default=False),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    """Export RFQs as a CSV file.
+
+    If `ids` is provided, only those RFQs are exported; otherwise, the most recent RFQs are exported.
+    """
+
+    query = select(RFQ)
+    if not include_deleted:
+        query = query.where(RFQ.deleted_at.is_(None))
+
+    id_list: list[UUID] = []
+    if ids:
+        for raw in ids.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                id_list.append(UUID(raw))
+            except ValueError:
+                continue
+
+    if id_list:
+        query = query.where(RFQ.id.in_(id_list))
+    else:
+        query = query.order_by(RFQ.received_date.desc()).limit(limit)
+
+    result = await db.execute(query)
+    rfqs = result.scalars().all()
+
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "id",
+            "rfq_number",
+            "title",
+            "status",
+            "priority",
+            "account_id",
+            "received_date",
+            "due_date",
+        ]
+    )
+    for r in rfqs:
+        writer.writerow(
+            [
+                str(r.id),
+                getattr(r, "rfq_number", ""),
+                getattr(r, "title", ""),
+                getattr(r, "status", ""),
+                getattr(r, "priority", ""),
+                str(getattr(r, "account_id", "")) if getattr(r, "account_id", None) else "",
+                r.received_date.isoformat() if getattr(r, "received_date", None) else "",
+                r.due_date.isoformat() if getattr(r, "due_date", None) else "",
+            ]
+        )
+
+    filename = f"rfqs_export_{datetime.now(timezone.utc).date().isoformat()}.csv"
+    response = StreamingResponse(
+        iter([buffer.getvalue().encode("utf-8")]),
+        media_type="text/csv",
+    )
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @router.post("", response_model=APIResponse, status_code=status.HTTP_201_CREATED)

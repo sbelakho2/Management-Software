@@ -877,11 +877,12 @@ async def get_quick_metrics(user_id: UUID) -> list[QuickMetricSchema]:
 )
 async def get_today_screen(
     user_id: UUID,
-    user_name: str = Query(..., min_length=1),
+    user_name: str | None = Query(None),
 ) -> TodayScreenDataSchema:
     """Get complete Today screen data for a user."""
     service = get_today_screen_service()
-    screen = service.get_today_screen(user_id, user_name)
+    normalized_user_name = (user_name or "").strip() or "User"
+    screen = service.get_today_screen(user_id, normalized_user_name)
 
     return TodayScreenDataSchema(
         user_id=screen.user_id,

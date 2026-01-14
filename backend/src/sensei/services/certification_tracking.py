@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.services.core.pii_controls import (
     PIIControlsService,
@@ -392,13 +393,14 @@ class CertificationTrackingService:
         self._evidence[ev_id] = evidence
         return evidence
 
-    def list_evidence(
+    async def list_evidence(
         self,
         *,
         certification_id: UUID,
         actor_roles: Iterable[str],
         actor_employee_id: UUID | None,
         actor_user_id: UUID,
+        db: AsyncSession,
     ) -> list[dict[str, Any]]:
         if certification_id not in self._certs:
             raise KeyError("Certification not found")
@@ -429,7 +431,8 @@ class CertificationTrackingService:
             if privileged:
                 # Audit privileged access to potentially sensitive metadata.
                 subject_id = self._ensure_employee_subject_id(cert.employee_id)
-                self._pii.log_access(
+                await self._pii.log_access(
+                    db=db,
                     subject_id=subject_id,
                     user_id=actor_user_id,
                     field_id=self._field_evidence_filename_id,
@@ -438,7 +441,8 @@ class CertificationTrackingService:
                     data_snapshot=ev.filename,
                 )
                 if notes:
-                    self._pii.log_access(
+                    await self._pii.log_access(
+                        db=db,
                         subject_id=subject_id,
                         user_id=actor_user_id,
                         field_id=self._field_evidence_notes_id,
@@ -447,8 +451,8 @@ class CertificationTrackingService:
                         data_snapshot=ev.notes,
                     )
             else:
-                filename = self._pii.mask_value(filename, field_id=self._field_evidence_filename_id)
-                notes = self._pii.mask_value(notes, field_id=self._field_evidence_notes_id) if notes else ""
+                filename = await self._pii.mask_value(filename, field_id=self._field_evidence_filename_id, db=db)
+                notes = await self._pii.mask_value(notes, field_id=self._field_evidence_notes_id, db=db) if notes else ""
                 storage_key = "***"
 
             results.append(
@@ -468,8 +472,9 @@ class CertificationTrackingService:
             )
         return results
 
-    def get_pii_access_logs(self) -> list[dict[str, Any]]:
-        return self._pii.get_access_logs()
+    async def get_pii_access_logs(self, db: AsyncSession) -> list[dict[str, Any]]:
+        logs = await self._pii.get_access_logs(db)
+        return [l.to_dict() for l in logs]
 
     # ---- Renewal nudges ----
 

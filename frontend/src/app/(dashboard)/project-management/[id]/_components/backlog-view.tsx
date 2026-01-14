@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Plus, Search, ChevronRight, ChevronDown, Circle, CheckCircle2, MessageSquare, ListChecks } from 'lucide-react';
+import { Plus, Search, ChevronRight, ChevronDown, Circle, CheckCircle2, MessageSquare, ListChecks, Link as LinkIcon, ExternalLink, Timer } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -353,6 +353,77 @@ export function BacklogView({ projectId }: BacklogViewProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Timer className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Effort & Time Tracking</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">Estimated Hours</label>
+                      <Input 
+                        type="number"
+                        placeholder="Hours"
+                        defaultValue={selectedStory.estimated_hours ?? ''}
+                        onBlur={(e) => handleUpdateStory({ estimated_hours: parseFloat(e.target.value) || null })}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">Actual Hours</label>
+                      <Input 
+                        type="number"
+                        placeholder="Hours"
+                        defaultValue={selectedStory.actual_hours}
+                        onBlur={(e) => handleUpdateStory({ actual_hours: parseFloat(e.target.value) || 0 })}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <LinkIcon className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Integrations</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">Work Order ID</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          type="number"
+                          placeholder="WO#"
+                          defaultValue={selectedStory.related_work_order_id ?? ''}
+                          onBlur={(e) => handleUpdateStory({ related_work_order_id: parseInt(e.target.value) || null })}
+                          className="h-8 text-xs"
+                        />
+                        {selectedStory.related_work_order_id && (
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/production/work-orders/${selectedStory.related_work_order_id}`, '_blank')}>
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">CTQ ID</label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="CTQ UUID"
+                          defaultValue={selectedStory.related_ctq_id ?? ''}
+                          onBlur={(e) => handleUpdateStory({ related_ctq_id: e.target.value || null })}
+                          className="h-8 text-xs"
+                        />
+                        {selectedStory.related_ctq_id && (
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/ctq/${selectedStory.related_ctq_id}`, '_blank')}>
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <Separator />

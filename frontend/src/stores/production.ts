@@ -56,9 +56,11 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await productionApi.listWorkOrders(params);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const total = typeof response.total === 'number' ? response.total : items.length;
       set({ 
-        workOrders: response.items, 
-        totalWorkOrders: response.total,
+        workOrders: items,
+        totalWorkOrders: total,
         loading: false 
       });
     } catch (error: unknown) {

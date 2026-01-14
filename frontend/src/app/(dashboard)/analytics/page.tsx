@@ -70,6 +70,9 @@ export default function AnalyticsPage() {
   
   const { insights, trends, health, fetchInsights, fetchTrends, fetchHealth, loading: analyticsLoading } = useAnalyticsStore();
 
+  const insightsList = React.useMemo(() => (Array.isArray(insights) ? insights : []), [insights]);
+  const trendsList = React.useMemo(() => (Array.isArray(trends) ? trends : []), [trends]);
+
   React.useEffect(() => {
     if (isAuthenticated) {
       fetchInsights();
@@ -97,14 +100,16 @@ export default function AnalyticsPage() {
     return colors[impact as keyof typeof colors] || colors.low;
   };
 
-  const models = health?.models ? Object.entries(health.models).map(([name, data]: [string, any]) => ({
-    model_name: name,
-    ...data
-  })) : [];
+  const models = health?.models && typeof health.models === 'object'
+    ? Object.entries(health.models as Record<string, any>).map(([name, data]: [string, any]) => ({
+        model_name: name,
+        ...data,
+      }))
+    : [];
 
-  const oeeTrend = trends.find(t => t.metric.toLowerCase().includes('oee'));
-  const currentOEE = oeeTrend ? oeeTrend.current_value : 84.2;
-  const systemHealth = health?.overall_health_score !== undefined ? (health.overall_health_score * 100).toFixed(1) : "99.9";
+  const oeeTrend = trendsList.find(t => String(t.metric).toLowerCase().includes('oee'));
+  const currentOEE = oeeTrend ? oeeTrend.current_value : 0;
+  const systemHealth = health?.overall_health_score !== undefined ? (health.overall_health_score * 100).toFixed(1) : "0";
 
   return (
     <div className="space-y-8 page-fade-in">
@@ -370,7 +375,7 @@ export default function AnalyticsPage() {
 
         <TabsContent value="insights" className="space-y-4">
           <div className="grid gap-4">
-            {insights.map((insight) => {
+            {insightsList.map((insight) => {
               const Icon = getInsightIcon(insight.type);
               return (
                 <Card key={insight.id}>
@@ -420,13 +425,13 @@ export default function AnalyticsPage() {
                 </Card>
               );
             })}
-            {insights.length === 0 && <div className="text-center py-12 text-muted-foreground">No insights found.</div>}
+            {insightsList.length === 0 && <div className="text-center py-12 text-muted-foreground">No insights found.</div>}
           </div>
         </TabsContent>
 
         <TabsContent value="trends" className="space-y-4">
           <div className="grid gap-4">
-            {trends.map((trend) => (
+            {trendsList.map((trend) => (
               <Card key={trend.metric}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -468,7 +473,7 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
             ))}
-            {trends.length === 0 && <div className="text-center py-12 text-muted-foreground">No predictive trends found.</div>}
+            {trendsList.length === 0 && <div className="text-center py-12 text-muted-foreground">No predictive trends found.</div>}
           </div>
         </TabsContent>
 

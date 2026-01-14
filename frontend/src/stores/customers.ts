@@ -21,9 +21,11 @@ export const useCustomersStore = create<CustomersState>((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await accountApi.list(params);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const total = typeof response.total === 'number' ? response.total : items.length;
       set({ 
-        customers: response.items, 
-        totalCustomers: response.total,
+        customers: items,
+        totalCustomers: total,
         loading: false 
       });
     } catch (error: any) {

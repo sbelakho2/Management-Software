@@ -53,25 +53,27 @@ export function Sidebar() {
   }, [user]);
 
   const filteredSections = React.useMemo(() => {
-    return NAV_SECTIONS
-      .map(section => ({
+    const sections = NAV_SECTIONS
+      .map((section) => ({
         ...section,
-        items: section.items.filter(item => hasPageAccess(item.href, userRoles))
+        items: section.items.filter((item) => hasPageAccess(item.href, userRoles)),
       }))
-      .filter(section => section.items.length > 0);
+      .filter((section) => section.items.length > 0);
+
+    const isAdmin = userRoles.includes('admin' as UserRole);
+    if (isAdmin && !sections.some((s) => s.title === 'Administration')) {
+      sections.push({
+        title: 'Administration',
+        items: [{ label: 'Admin Panel', href: '/admin', icon: Shield }],
+      });
+    }
+
+    return sections;
   }, [userRoles]);
 
   const filteredBottomNavItems = React.useMemo(() => {
     return bottomNavItems.filter(item => hasPageAccess(item.href, userRoles));
   }, [userRoles]);
-
-  if (user?.role === 'admin') {
-    // Add Admin section at the bottom of main nav
-    filteredSections.push({
-      title: 'Administration',
-      items: [{ label: 'Admin Panel', href: '/admin', icon: Shield }]
-    });
-  }
 
   // On desktop, respect the hidden state. On mobile, use different logic
   const isMobileVisible = !isHidden; // On mobile, show when not hidden

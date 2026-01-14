@@ -13,6 +13,7 @@ export { useAnalyticsStore } from './analytics';
 export { useExecutiveStore } from './executive';
 export { useProductionStore } from './production';
 export { useTodayStore } from './today';
+export { useHRStore } from './hr';
 export { useCustomersStore } from './customers';
 export { useTasksStore } from './tasks';
 export { useTrainingStore } from './training';

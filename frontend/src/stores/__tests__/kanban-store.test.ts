@@ -8,6 +8,13 @@ import {
 } from '../kanban-store';
 import type { RFQ, RFQStatus, Customer, User } from '@/types';
 
+// Mock the RFQ API
+jest.mock('@/api/rfq', () => ({
+  rfqApi: {
+    update: jest.fn().mockResolvedValue({}),
+  },
+}));
+
 // Mock localStorage
 const mockLocalStorage: Record<string, string> = {};
 Object.defineProperty(window, 'localStorage', {

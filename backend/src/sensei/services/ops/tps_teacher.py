@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update
+from sensei.models.tps import PDCACycleRecord, KataSessionRecord, MudaDetectionRecord, UserTPSStats
 
 
 # =============================================================================
@@ -246,49 +250,90 @@ class PDCACoachingEngine:
     }
     
     def __init__(self):
-        self.cycles: dict[str, PDCACycle] = {}
-        self.completed_cycles: list[str] = []
+        pass
     
-    def create_cycle(
+    async def create_cycle(
         self,
+        db: AsyncSession,
         title: str,
         problem_statement: str,
         owner: str,
         team_members: list[str],
         target_days: int = 30,
     ) -> PDCACycle:
-        """Create a new PDCA cycle."""
+        """Create a new PDCA cycle and persist to database."""
         cycle_id = hashlib.md5(
-            f"{title}:{datetime.now().isoformat()}".encode()
+            f"{title}:{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:12]
         
-        cycle = PDCACycle(
-            cycle_id=cycle_id,
+        phase_statuses = {
+            PDCAPhase.PLAN: PhaseGateStatus.IN_PROGRESS,
+            PDCAPhase.DO: PhaseGateStatus.NOT_STARTED,
+            PDCAPhase.CHECK: PhaseGateStatus.NOT_STARTED,
+            PDCAPhase.ACT: PhaseGateStatus.NOT_STARTED,
+        }
+        
+        artifacts = {phase.value: [] for phase in PDCAPhase}
+        
+        record = PDCACycleRecord(
+            id=cycle_id,
             title=title,
             problem_statement=problem_statement,
-            current_phase=PDCAPhase.PLAN,
-            phase_statuses={
-                PDCAPhase.PLAN: PhaseGateStatus.IN_PROGRESS,
-                PDCAPhase.DO: PhaseGateStatus.NOT_STARTED,
-                PDCAPhase.CHECK: PhaseGateStatus.NOT_STARTED,
-                PDCAPhase.ACT: PhaseGateStatus.NOT_STARTED,
-            },
-            owner=owner,
+            current_phase=PDCAPhase.PLAN.value,
+            phase_statuses={k.value: v.value for k, v in phase_statuses.items()},
+            owner_id=owner,
             team_members=team_members,
-            started_at=datetime.now(),
-            target_completion=datetime.now() + timedelta(days=target_days),
-            artifacts={phase: [] for phase in PDCAPhase},
+            target_completion=datetime.now(timezone.utc) + timedelta(days=target_days),
+            artifacts=artifacts,
+            metrics={},
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
         
-        self.cycles[cycle_id] = cycle
-        return cycle
+        return PDCACycle(
+            cycle_id=record.id,
+            title=record.title,
+            problem_statement=record.problem_statement,
+            current_phase=PDCAPhase(record.current_phase),
+            phase_statuses=phase_statuses,
+            owner=record.owner_id,
+            team_members=record.team_members,
+            started_at=record.created_at,
+            target_completion=record.target_completion,
+            artifacts={PDCAPhase(k): v for k, v in record.artifacts.items()},
+            metrics=record.metrics,
+        )
     
-    def get_phase_requirements(
+    async def get_cycle(self, db: AsyncSession, cycle_id: str) -> PDCACycle | None:
+        """Retrieve a PDCA cycle from database."""
+        result = await db.execute(select(PDCACycleRecord).where(PDCACycleRecord.id == cycle_id))
+        record = result.scalar_one_or_none()
+        if not record:
+            return None
+        
+        return PDCACycle(
+            cycle_id=record.id,
+            title=record.title,
+            problem_statement=record.problem_statement,
+            current_phase=PDCAPhase(record.current_phase),
+            phase_statuses={PDCAPhase(k): PhaseGateStatus(v) for k, v in record.phase_statuses.items()},
+            owner=record.owner_id,
+            team_members=record.team_members,
+            started_at=record.created_at,
+            target_completion=record.target_completion,
+            actual_completion=record.actual_completion,
+            artifacts={PDCAPhase(k): v for k, v in record.artifacts.items()},
+            metrics=record.metrics,
+        )
+
+    async def get_phase_requirements(
         self,
+        db: AsyncSession,
         cycle_id: str,
     ) -> list[PhaseGateRequirement]:
         """Get requirements for the current phase gate."""
-        cycle = self.cycles.get(cycle_id)
+        cycle = await self.get_cycle(db, cycle_id)
         if not cycle:
             return []
         
@@ -304,12 +349,13 @@ class PDCACoachingEngine:
         
         return requirements
     
-    def get_coaching_prompts(
+    async def get_coaching_prompts(
         self,
+        db: AsyncSession,
         cycle_id: str,
     ) -> list[CoachingPrompt]:
         """Get coaching prompts for the current phase."""
-        cycle = self.cycles.get(cycle_id)
+        cycle = await self.get_cycle(db, cycle_id)
         if not cycle:
             return []
         
@@ -326,73 +372,57 @@ class PDCACoachingEngine:
         
         return prompts
     
-    def add_artifact(
+    async def add_artifact(
         self,
+        db: AsyncSession,
         cycle_id: str,
         phase: PDCAPhase,
         artifact: str,
     ) -> bool:
-        """Add an artifact to a phase."""
-        cycle = self.cycles.get(cycle_id)
-        if not cycle:
+        """Add an artifact to a phase and persist."""
+        result = await db.execute(select(PDCACycleRecord).where(PDCACycleRecord.id == cycle_id))
+        record = result.scalar_one_or_none()
+        if not record:
             return False
         
-        cycle.artifacts[phase].append(artifact)
+        new_artifacts = dict(record.artifacts)
+        phase_key = phase.value
+        if phase_key not in new_artifacts:
+            new_artifacts[phase_key] = []
+        new_artifacts[phase_key].append(artifact)
+        record.artifacts = new_artifacts
+        
+        await db.commit()
         return True
     
-    def check_gate_readiness(
+    async def advance_phase(
         self,
-        cycle_id: str,
-        completed_requirements: list[str],
-    ) -> dict[str, Any]:
-        """Check if the phase gate can be passed."""
-        cycle = self.cycles.get(cycle_id)
-        if not cycle:
-            return {"ready": False, "reason": "Cycle not found"}
-        
-        requirements = self.PHASE_GATE_REQUIREMENTS.get(cycle.current_phase, [])
-        mandatory = [r for r in requirements if r["mandatory"]]
-        
-        mandatory_met = all(r["id"] in completed_requirements for r in mandatory)
-        
-        if mandatory_met:
-            return {
-                "ready": True,
-                "phase": cycle.current_phase.value,
-                "next_phase": self._get_next_phase(cycle.current_phase).value,
-            }
-        
-        missing = [r["description"] for r in mandatory if r["id"] not in completed_requirements]
-        return {
-            "ready": False,
-            "reason": "Mandatory requirements not met",
-            "missing": missing,
-        }
-    
-    def advance_phase(
-        self,
+        db: AsyncSession,
         cycle_id: str,
     ) -> PDCACycle | None:
-        """Advance to the next phase."""
-        cycle = self.cycles.get(cycle_id)
-        if not cycle:
+        """Advance to the next phase and persist."""
+        result = await db.execute(select(PDCACycleRecord).where(PDCACycleRecord.id == cycle_id))
+        record = result.scalar_one_or_none()
+        if not record:
             return None
         
-        # Mark current phase complete
-        cycle.phase_statuses[cycle.current_phase] = PhaseGateStatus.COMPLETED
+        current_phase = PDCAPhase(record.current_phase)
+        new_phase_statuses = dict(record.phase_statuses)
+        new_phase_statuses[current_phase.value] = PhaseGateStatus.COMPLETED.value
         
-        # Get next phase
-        next_phase = self._get_next_phase(cycle.current_phase)
+        next_phase = self._get_next_phase(current_phase)
         
-        if next_phase == PDCAPhase.PLAN and cycle.current_phase == PDCAPhase.ACT:
-            # Cycle complete
-            cycle.actual_completion = datetime.now()
-            self.completed_cycles.append(cycle_id)
+        if next_phase == PDCAPhase.PLAN and current_phase == PDCAPhase.ACT:
+            record.actual_completion = datetime.now(timezone.utc)
         else:
-            cycle.current_phase = next_phase
-            cycle.phase_statuses[next_phase] = PhaseGateStatus.IN_PROGRESS
+            record.current_phase = next_phase.value
+            new_phase_statuses[next_phase.value] = PhaseGateStatus.IN_PROGRESS.value
+            
+        record.phase_statuses = new_phase_statuses
+        await db.commit()
+        await db.refresh(record)
         
-        return cycle
+        return await self.get_cycle(db, cycle_id)
     
     def _get_next_phase(self, current: PDCAPhase) -> PDCAPhase:
         """Get the next phase in the cycle."""
@@ -1023,33 +1053,57 @@ class KataGamificationService:
     """
     
     def __init__(self):
-        self.user_stats: dict[str, dict] = {}
+        pass
         
-    def get_user_status(self, user_id: str) -> dict[str, Any]:
-        """Get user's current belt and stats."""
-        stats = self.user_stats.get(user_id, {"xp": 0, "achievements": []})
-        xp = stats["xp"]
+    async def get_user_status(self, db: AsyncSession, user_id: str) -> dict[str, Any]:
+        """Get user's current belt and stats from database."""
+        result = await db.execute(select(UserTPSStats).where(UserTPSStats.user_id == user_id))
+        stats = result.scalar_one_or_none()
         
-        belt = "White Belt"
-        if xp >= 2000: belt = "Black Belt"
-        elif xp >= 1000: belt = "Brown Belt"
-        elif xp >= 500: belt = "Green Belt"
-        elif xp >= 200: belt = "Yellow Belt"
+        if not stats:
+            # Create default stats if not exists
+            stats = UserTPSStats(user_id=user_id, xp=0, achievements=[], belt_level="White Belt")
+            db.add(stats)
+            await db.commit()
+            await db.refresh(stats)
+        
+        xp = stats.xp
+        belt = stats.belt_level
         
         return {
             "belt": belt,
             "xp": xp,
-            "achievements": stats["achievements"],
+            "achievements": stats.achievements,
             "next_belt_xp": 200 if xp < 200 else (500 if xp < 500 else (1000 if xp < 1000 else 2000))
         }
         
-    def award_achievement(self, user_id: str, achievement: str, xp_reward: int) -> dict[str, Any]:
-        """Award an achievement to a user."""
-        stats = self.user_stats.setdefault(user_id, {"xp": 0, "achievements": []})
-        if achievement not in stats["achievements"]:
-            stats["achievements"].append(achievement)
-            stats["xp"] += xp_reward
-        return self.get_user_status(user_id)
+    async def award_achievement(self, db: AsyncSession, user_id: str, achievement: str, xp_reward: int) -> dict[str, Any]:
+        """Award an achievement to a user and persist to database."""
+        result = await db.execute(select(UserTPSStats).where(UserTPSStats.user_id == user_id))
+        stats = result.scalar_one_or_none()
+        
+        if not stats:
+            stats = UserTPSStats(user_id=user_id, xp=0, achievements=[], belt_level="White Belt")
+            db.add(stats)
+        
+        if achievement not in stats.achievements:
+            # We need to create a new list for SQLAlchemy to detect the change in JSONB
+            new_achievements = list(stats.achievements)
+            new_achievements.append(achievement)
+            stats.achievements = new_achievements
+            stats.xp += xp_reward
+            
+            # Update belt
+            xp = stats.xp
+            if xp >= 2000: stats.belt_level = "Black Belt"
+            elif xp >= 1000: stats.belt_level = "Brown Belt"
+            elif xp >= 500: stats.belt_level = "Green Belt"
+            elif xp >= 200: stats.belt_level = "Yellow Belt"
+            
+            await db.commit()
+            await db.refresh(stats)
+            
+        return await self.get_user_status(db, user_id)
 
 
 # =============================================================================

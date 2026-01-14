@@ -1257,3 +1257,36 @@ class BoardView(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_board_views_project_user", project_id, user_id),
     )
+
+
+# =============================================================================
+# SEQUENCE MODEL
+# =============================================================================
+
+
+class ProjectSequence(Base):
+    """
+    Project-specific sequences for reference numbers.
+    
+    Used to prevent collisions and ensure contiguous numbering
+    for epics, user stories, and issues within a project.
+    """
+    
+    __tablename__ = "project_sequences"
+    
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    entity_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        primary_key=True,
+    )  # epic, user_story, issue
+    
+    last_value: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    
+    # Relationship
+    project: Mapped["Project"] = relationship("Project")

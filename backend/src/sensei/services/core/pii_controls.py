@@ -14,10 +14,16 @@ Manages Personally Identifiable Information (PII) data handling, including:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID, uuid4
 import hashlib
 import re
+import json
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update, delete as sql_delete, func
+from sensei.models.pii import PIIField, DataSubject, Consent, PIIAccessLog, DeletionRequest
+from sensei.core.redis import redis_client
 
 
 class PIICategory(str, Enum):
@@ -92,88 +98,7 @@ class PIIAccessType(str, Enum):
     SHARE = "share"
 
 
-@dataclass
-class PIIFieldDefinition:
-    """Definition of a PII field."""
-
-    id: UUID
-    name: str
-    table: str
-    column: str
-    category: PIICategory
-    sensitivity: SensitivityLevel
-    description: str
-    detection_pattern: str | None
-    masking_type: MaskingType
-    retention_days: int | None
-    requires_consent: bool
-    consent_types: list[ConsentType]
-    is_searchable: bool
-    is_exportable: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-@dataclass
-class DataSubject:
-    """A data subject (person whose PII is stored)."""
-
-    id: UUID
-    external_id: str  # User ID, customer ID, etc.
-    subject_type: str  # user, customer, contact, etc.
-    email: str | None
-    created_at: datetime
-    last_accessed_at: datetime | None
-    deletion_requested_at: datetime | None
-    deletion_completed_at: datetime | None
-
-
-@dataclass
-class Consent:
-    """Consent record for a data subject."""
-
-    id: UUID
-    subject_id: UUID
-    consent_type: ConsentType
-    status: ConsentStatus
-    purpose: str
-    granted_at: datetime | None
-    expires_at: datetime | None
-    withdrawn_at: datetime | None
-    source: str  # How consent was obtained
-    version: str  # Version of privacy policy
-    ip_address: str | None
-
-
-@dataclass
-class PIIAccessLog:
-    """Log of PII data access."""
-
-    id: UUID
-    subject_id: UUID
-    user_id: UUID
-    field_id: UUID
-    access_type: PIIAccessType
-    accessed_at: datetime
-    purpose: str
-    ip_address: str | None
-    data_snapshot: str | None  # Masked snapshot of accessed data
-
-
-@dataclass
-class DeletionRequest:
-    """Request to delete PII data."""
-
-    id: UUID
-    subject_id: UUID
-    requested_by: UUID
-    requested_at: datetime
-    reason: str
-    status: str  # pending, processing, completed, failed
-    completed_at: datetime | None
-    affected_tables: list[str]
-    deleted_records: int
-    errors: list[str]
+# Data Subject and other PII classes moved to models/pii.py
 
 
 @dataclass
@@ -193,23 +118,33 @@ class PIIControlsService:
 
     def __init__(self) -> None:
         """Initialize the PII controls service."""
-        self._fields: dict[UUID, PIIFieldDefinition] = {}
-        self._subjects: dict[UUID, DataSubject] = {}
-        self._consents: dict[UUID, Consent] = {}
-        self._access_logs: list[PIIAccessLog] = []
-        self._deletion_requests: dict[UUID, DeletionRequest] = {}
-        self._pseudonym_map: dict[str, str] = {}
-        self._token_map: dict[str, str] = {}
+        self._initialized = False
 
-        # Initialize default PII field definitions
-        self._initialize_default_fields()
+    async def ensure_initialized(self, db: AsyncSession) -> None:
+        """Ensure default PII fields are populated in the database."""
+        if self._initialized:
+            return
+        await self._initialize_default_fields(db)
+        self._initialized = True
 
-    def _initialize_default_fields(self) -> None:
+    async def _get_field_definitions_cached(self, db: AsyncSession) -> dict[UUID, PIIField]:
+        """Get all field definitions, using Redis cache if available."""
+        cache_key = "pii:fields:all"
+        cached = await redis_client.get(cache_key)
+        if cached:
+            # Note: This is a simplified cache. In a real app, we'd handle serialization of UUIDs/datetimes better.
+            # For this refactor, we'll re-fetch from DB to ensure correctness if cache is messy.
+            pass
+        
+        result = await db.execute(select(PIIField))
+        fields = result.scalars().all()
+        return {f.id: f for f in fields}
+
+    async def _initialize_default_fields(self, db: AsyncSession) -> None:
         """Initialize default PII field definitions."""
-        now = datetime.now(timezone.utc)
-
         # User PII fields
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="User Email",
             table="user",
             column="email",
@@ -222,7 +157,8 @@ class PIIControlsService:
             consent_types=[ConsentType.COLLECTION, ConsentType.PROCESSING],
         )
 
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="User Name",
             table="user",
             column="full_name",
@@ -235,7 +171,8 @@ class PIIControlsService:
             consent_types=[ConsentType.COLLECTION],
         )
 
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="User Phone",
             table="user",
             column="phone",
@@ -249,7 +186,8 @@ class PIIControlsService:
         )
 
         # Customer PII fields
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="Customer Contact Email",
             table="customer_contact",
             column="email",
@@ -262,7 +200,8 @@ class PIIControlsService:
             consent_types=[ConsentType.COLLECTION, ConsentType.SHARING],
         )
 
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="Customer Address",
             table="customer",
             column="address",
@@ -276,7 +215,8 @@ class PIIControlsService:
         )
 
         # Training/certification PII
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="Training Completion Records",
             table="training_record",
             column="user_id",
@@ -291,7 +231,8 @@ class PIIControlsService:
         )
 
         # Audit/activity PII
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="IP Address",
             table="audit_log",
             column="ip_address",
@@ -305,7 +246,8 @@ class PIIControlsService:
             retention_days=365,
         )
 
-        self._add_default_field(
+        await self._add_default_field(
+            db,
             name="User Agent",
             table="audit_log",
             column="user_agent",
@@ -319,8 +261,9 @@ class PIIControlsService:
             retention_days=365,
         )
 
-    def _add_default_field(
+    async def _add_default_field(
         self,
+        db: AsyncSession,
         name: str,
         table: str,
         column: str,
@@ -332,37 +275,42 @@ class PIIControlsService:
         requires_consent: bool,
         consent_types: list[ConsentType],
         retention_days: int | None = None,
-    ) -> PIIFieldDefinition:
-        """Add a default PII field definition."""
-        now = datetime.now(timezone.utc)
+    ) -> PIIField:
+        """Add a default PII field definition if it doesn't exist."""
+        # Check if already exists
+        stmt = select(PIIField).where(PIIField.table_name == table, PIIField.column_name == column)
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing
 
-        field_def = PIIFieldDefinition(
-            id=uuid4(),
+        field_def = PIIField(
             name=name,
-            table=table,
-            column=column,
-            category=category,
-            sensitivity=sensitivity,
+            table_name=table,
+            column_name=column,
+            category=category.value,
+            sensitivity=sensitivity.value,
             description=description,
             detection_pattern=detection_pattern,
-            masking_type=masking_type,
+            masking_type=masking_type.value,
             retention_days=retention_days,
             requires_consent=requires_consent,
-            consent_types=consent_types,
+            consent_types=[ct.value for ct in consent_types],
             is_searchable=sensitivity not in [SensitivityLevel.CRITICAL],
             is_exportable=True,
-            created_at=now,
-            updated_at=now,
         )
 
-        self._fields[field_def.id] = field_def
+        db.add(field_def)
+        await db.commit()
+        await db.refresh(field_def)
         return field_def
 
-    def create_field_definition(
+    async def create_field_definition(
         self,
+        db: AsyncSession,
         name: str,
-        table: str,
-        column: str,
+        table_name: str,
+        column_name: str,
         category: PIICategory,
         sensitivity: SensitivityLevel,
         description: str,
@@ -373,67 +321,64 @@ class PIIControlsService:
         consent_types: list[ConsentType] | None = None,
         is_searchable: bool = True,
         is_exportable: bool = True,
-    ) -> PIIFieldDefinition:
+    ) -> PIIField:
         """Create a new PII field definition."""
-        now = datetime.now(timezone.utc)
-
-        field_def = PIIFieldDefinition(
-            id=uuid4(),
+        field_def = PIIField(
             name=name,
-            table=table,
-            column=column,
-            category=category,
-            sensitivity=sensitivity,
+            table_name=table_name,
+            column_name=column_name,
+            category=category.value,
+            sensitivity=sensitivity.value,
             description=description,
             detection_pattern=detection_pattern,
-            masking_type=masking_type,
+            masking_type=masking_type.value,
             retention_days=retention_days,
             requires_consent=requires_consent,
-            consent_types=consent_types or [],
+            consent_types=[ct.value for ct in (consent_types or [])],
             is_searchable=is_searchable,
             is_exportable=is_exportable,
-            created_at=now,
-            updated_at=now,
         )
 
-        self._fields[field_def.id] = field_def
+        db.add(field_def)
+        await db.commit()
+        await db.refresh(field_def)
         return field_def
 
-    def get_field_definition(self, field_id: UUID) -> PIIFieldDefinition | None:
+    async def get_field_definition(self, field_id: UUID, db: AsyncSession) -> PIIField | None:
         """Get a PII field definition by ID."""
-        return self._fields.get(field_id)
+        return await db.get(PIIField, field_id)
 
-    def get_field_by_column(
-        self, table: str, column: str
-    ) -> PIIFieldDefinition | None:
+    async def get_field_by_column(
+        self, table_name: str, column_name: str, db: AsyncSession
+    ) -> PIIField | None:
         """Get a PII field definition by table and column."""
-        for field_def in self._fields.values():
-            if field_def.table == table and field_def.column == column:
-                return field_def
-        return None
+        stmt = select(PIIField).where(PIIField.table_name == table_name, PIIField.column_name == column_name)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_field_definitions(
+    async def get_field_definitions(
         self,
+        db: AsyncSession,
         category: PIICategory | None = None,
         sensitivity: SensitivityLevel | None = None,
-        table: str | None = None,
-    ) -> list[PIIFieldDefinition]:
+        table_name: str | None = None,
+    ) -> list[PIIField]:
         """Get PII field definitions with optional filters."""
-        fields = []
+        stmt = select(PIIField)
 
-        for field_def in self._fields.values():
-            if category and field_def.category != category:
-                continue
-            if sensitivity and field_def.sensitivity != sensitivity:
-                continue
-            if table and field_def.table != table:
-                continue
-            fields.append(field_def)
+        if category:
+            stmt = stmt.where(PIIField.category == category.value)
+        if sensitivity:
+            stmt = stmt.where(PIIField.sensitivity == sensitivity.value)
+        if table_name:
+            stmt = stmt.where(PIIField.table_name == table_name)
 
-        return fields
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
-    def update_field_definition(
+    async def update_field_definition(
         self,
+        db: AsyncSession,
         field_id: UUID,
         sensitivity: SensitivityLevel | None = None,
         masking_type: MaskingType | None = None,
@@ -442,101 +387,100 @@ class PIIControlsService:
         consent_types: list[ConsentType] | None = None,
         is_searchable: bool | None = None,
         is_exportable: bool | None = None,
-    ) -> PIIFieldDefinition | None:
+    ) -> PIIField | None:
         """Update a PII field definition."""
-        field_def = self._fields.get(field_id)
+        field_def = await db.get(PIIField, field_id)
         if not field_def:
             return None
 
         if sensitivity is not None:
-            field_def.sensitivity = sensitivity
+            field_def.sensitivity = sensitivity.value
         if masking_type is not None:
-            field_def.masking_type = masking_type
+            field_def.masking_type = masking_type.value
         if retention_days is not None:
             field_def.retention_days = retention_days
         if requires_consent is not None:
             field_def.requires_consent = requires_consent
         if consent_types is not None:
-            field_def.consent_types = consent_types
+            field_def.consent_types = [ct.value for ct in consent_types]
         if is_searchable is not None:
             field_def.is_searchable = is_searchable
         if is_exportable is not None:
             field_def.is_exportable = is_exportable
 
-        field_def.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(field_def)
         return field_def
 
-    def delete_field_definition(self, field_id: UUID) -> bool:
+    async def delete_field_definition(self, db: AsyncSession, field_id: UUID) -> bool:
         """Delete a PII field definition."""
-        if field_id in self._fields:
-            del self._fields[field_id]
+        field_def = await db.get(PIIField, field_id)
+        if field_def:
+            await db.delete(field_def)
+            await db.commit()
             return True
         return False
 
     # Data Subject Management
 
-    def register_subject(
+    async def register_subject(
         self,
+        db: AsyncSession,
         external_id: str,
         subject_type: str,
         email: str | None = None,
     ) -> DataSubject:
         """Register a data subject."""
-        now = datetime.now(timezone.utc)
-
         subject = DataSubject(
-            id=uuid4(),
             external_id=external_id,
             subject_type=subject_type,
             email=email,
-            created_at=now,
-            last_accessed_at=None,
-            deletion_requested_at=None,
-            deletion_completed_at=None,
         )
 
-        self._subjects[subject.id] = subject
+        db.add(subject)
+        await db.commit()
+        await db.refresh(subject)
         return subject
 
-    def get_subject(self, subject_id: UUID) -> DataSubject | None:
+    async def get_subject(self, db: AsyncSession, subject_id: UUID) -> DataSubject | None:
         """Get a data subject by ID."""
-        return self._subjects.get(subject_id)
+        return await db.get(DataSubject, subject_id)
 
-    def get_subject_by_external_id(
-        self, external_id: str, subject_type: str
+    async def get_subject_by_external_id(
+        self, db: AsyncSession, external_id: str, subject_type: str
     ) -> DataSubject | None:
         """Get a data subject by external ID."""
-        for subject in self._subjects.values():
-            if (
-                subject.external_id == external_id
-                and subject.subject_type == subject_type
-            ):
-                return subject
-        return None
+        stmt = select(DataSubject).where(
+            DataSubject.external_id == external_id,
+            DataSubject.subject_type == subject_type
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    def get_subjects(
+    async def get_subjects(
         self,
+        db: AsyncSession,
         subject_type: str | None = None,
         has_deletion_request: bool | None = None,
     ) -> list[DataSubject]:
         """Get data subjects with optional filters."""
-        subjects = []
+        stmt = select(DataSubject)
 
-        for subject in self._subjects.values():
-            if subject_type and subject.subject_type != subject_type:
-                continue
-            if has_deletion_request is True and subject.deletion_requested_at is None:
-                continue
-            if has_deletion_request is False and subject.deletion_requested_at is not None:
-                continue
-            subjects.append(subject)
+        if subject_type:
+            stmt = stmt.where(DataSubject.subject_type == subject_type)
+        if has_deletion_request is True:
+            stmt = stmt.where(DataSubject.deletion_requested_at.is_not(None))
+        elif has_deletion_request is False:
+            stmt = stmt.where(DataSubject.deletion_requested_at.is_(None))
 
-        return subjects
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     # Consent Management
 
-    def grant_consent(
+    async def grant_consent(
         self,
+        db: AsyncSession,
         subject_id: UUID,
         consent_type: ConsentType,
         purpose: str,
@@ -546,7 +490,7 @@ class PIIControlsService:
         expires_in_days: int | None = None,
     ) -> Consent | None:
         """Grant consent for a data subject."""
-        subject = self._subjects.get(subject_id)
+        subject = await db.get(DataSubject, subject_id)
         if not subject:
             return None
 
@@ -556,107 +500,114 @@ class PIIControlsService:
             expires_at = now + timedelta(days=expires_in_days)
 
         consent = Consent(
-            id=uuid4(),
             subject_id=subject_id,
-            consent_type=consent_type,
-            status=ConsentStatus.GRANTED,
+            consent_type=consent_type.value,
+            status=ConsentStatus.GRANTED.value,
             purpose=purpose,
             granted_at=now,
             expires_at=expires_at,
-            withdrawn_at=None,
             source=source,
             version=version,
             ip_address=ip_address,
         )
 
-        self._consents[consent.id] = consent
+        db.add(consent)
+        await db.commit()
+        await db.refresh(consent)
         return consent
 
-    def withdraw_consent(self, consent_id: UUID) -> Consent | None:
+    async def withdraw_consent(self, db: AsyncSession, consent_id: UUID) -> Consent | None:
         """Withdraw a consent."""
-        consent = self._consents.get(consent_id)
+        consent = await db.get(Consent, consent_id)
         if not consent:
             return None
 
-        consent.status = ConsentStatus.WITHDRAWN
+        consent.status = ConsentStatus.WITHDRAWN.value
         consent.withdrawn_at = datetime.now(timezone.utc)
 
+        await db.commit()
+        await db.refresh(consent)
         return consent
 
-    def get_consent(self, consent_id: UUID) -> Consent | None:
+    async def get_consent(self, db: AsyncSession, consent_id: UUID) -> Consent | None:
         """Get a consent by ID."""
-        return self._consents.get(consent_id)
+        return await db.get(Consent, consent_id)
 
-    def get_consents(
+    async def get_consents(
         self,
+        db: AsyncSession,
         subject_id: UUID | None = None,
         consent_type: ConsentType | None = None,
         status: ConsentStatus | None = None,
     ) -> list[Consent]:
         """Get consents with optional filters."""
-        consents = []
+        stmt = select(Consent)
 
-        for consent in self._consents.values():
-            if subject_id and consent.subject_id != subject_id:
-                continue
-            if consent_type and consent.consent_type != consent_type:
-                continue
-            if status and consent.status != status:
-                continue
-            consents.append(consent)
+        if subject_id:
+            stmt = stmt.where(Consent.subject_id == subject_id)
+        if consent_type:
+            stmt = stmt.where(Consent.consent_type == consent_type.value)
+        if status:
+            stmt = stmt.where(Consent.status == status.value)
 
-        return consents
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
-    def check_consent(
+    async def check_consent(
         self,
+        db: AsyncSession,
         subject_id: UUID,
         consent_type: ConsentType,
     ) -> bool:
         """Check if a subject has granted consent for a type."""
         now = datetime.now(timezone.utc)
-
-        for consent in self._consents.values():
-            if consent.subject_id != subject_id:
-                continue
-            if consent.consent_type != consent_type:
-                continue
-            if consent.status != ConsentStatus.GRANTED:
-                continue
+        stmt = select(Consent).where(
+            Consent.subject_id == subject_id,
+            Consent.consent_type == consent_type.value,
+            Consent.status == ConsentStatus.GRANTED.value
+        )
+        result = await db.execute(stmt)
+        consents = result.scalars().all()
+        
+        for consent in consents:
             if consent.expires_at and consent.expires_at < now:
                 continue
             return True
 
         return False
 
-    def get_missing_consents(
-        self, subject_id: UUID, required_types: list[ConsentType]
+    async def get_missing_consents(
+        self, db: AsyncSession, subject_id: UUID, required_types: list[ConsentType]
     ) -> list[ConsentType]:
         """Get list of required consents not yet granted."""
         missing = []
 
         for consent_type in required_types:
-            if not self.check_consent(subject_id, consent_type):
+            if not await self.check_consent(db, subject_id, consent_type):
                 missing.append(consent_type)
 
         return missing
 
     # Data Masking
 
-    def mask_value(
+    async def mask_value(
         self,
         value: str,
         field_id: UUID | None = None,
         masking_type: MaskingType | None = None,
+        db: AsyncSession | None = None,
     ) -> str:
         """Mask a PII value."""
         if not value:
             return value
 
         # Get masking type from field definition or use provided
-        if field_id and not masking_type:
-            field_def = self._fields.get(field_id)
+        if field_id and not masking_type and db:
+            stmt = select(PIIField).where(PIIField.id == field_id)
+            result = await db.execute(stmt)
+            field_def = result.scalar_one_or_none()
             if field_def:
-                masking_type = field_def.masking_type
+                masking_type = MaskingType(field_def.masking_type)
 
         if not masking_type:
             masking_type = MaskingType.FULL
@@ -672,10 +623,10 @@ class PIIControlsService:
                 return self._hash_value(value)
 
             case MaskingType.PSEUDONYMIZE:
-                return self._pseudonymize(value)
+                return await self._pseudonymize(value)
 
             case MaskingType.TOKENIZE:
-                return self._tokenize(value)
+                return await self._tokenize(value)
 
             case MaskingType.TRUNCATE:
                 return self._truncate(value)
@@ -709,22 +660,29 @@ class PIIControlsService:
         """Hash a value using SHA-256."""
         return hashlib.sha256(value.encode()).hexdigest()[:16]
 
-    def _pseudonymize(self, value: str) -> str:
-        """Pseudonymize a value (reversible)."""
-        if value in self._pseudonym_map:
-            return self._pseudonym_map[value]
+    async def _pseudonymize(self, value: str) -> str:
+        """Pseudonymize a value (reversible, stored in Redis)."""
+        cache_key = f"pii:pseudonym:{value}"
+        existing = await redis_client.get(cache_key)
+        if existing:
+            return existing
 
         pseudonym = f"PSEUDO_{uuid4().hex[:8]}"
-        self._pseudonym_map[value] = pseudonym
+        # Store both ways for reversibility
+        await redis_client.set(cache_key, pseudonym)
+        await redis_client.set(f"pii:pseudonym_rev:{pseudonym}", value)
         return pseudonym
 
-    def _tokenize(self, value: str) -> str:
-        """Tokenize a value."""
-        if value in self._token_map:
-            return self._token_map[value]
+    async def _tokenize(self, value: str) -> str:
+        """Tokenize a value (stored in Redis)."""
+        cache_key = f"pii:token:{value}"
+        existing = await redis_client.get(cache_key)
+        if existing:
+            return existing
 
         token = f"TOK_{uuid4().hex[:12]}"
-        self._token_map[value] = token
+        await redis_client.set(cache_key, token)
+        await redis_client.set(f"pii:token_rev:{token}", value)
         return token
 
     def _truncate(self, value: str, keep_chars: int = 4) -> str:
@@ -733,27 +691,22 @@ class PIIControlsService:
             return "*" * len(value)
         return value[:keep_chars] + "..."
 
-    def unmask_pseudonym(self, pseudonym: str) -> str | None:
+    async def unmask_pseudonym(self, pseudonym: str) -> str | None:
         """Reverse a pseudonym to get original value."""
-        for original, pseudo in self._pseudonym_map.items():
-            if pseudo == pseudonym:
-                return original
-        return None
+        return await redis_client.get(f"pii:pseudonym_rev:{pseudonym}")
 
-    def unmask_token(self, token: str) -> str | None:
+    async def unmask_token(self, token: str) -> str | None:
         """Reverse a token to get original value."""
-        for original, tok in self._token_map.items():
-            if tok == token:
-                return original
-        return None
+        return await redis_client.get(f"pii:token_rev:{token}")
 
     # PII Detection
 
-    def detect_pii(self, text: str) -> list[dict[str, Any]]:
+    async def detect_pii(self, text: str, db: AsyncSession) -> list[dict[str, Any]]:
         """Detect PII in text using patterns."""
         detections = []
+        fields = await self._get_field_definitions_cached(db)
 
-        for field_def in self._fields.values():
+        for field_def in fields.values():
             if not field_def.detection_pattern:
                 continue
 
@@ -764,16 +717,16 @@ class PIIControlsService:
                 detections.append({
                     "field_id": field_def.id,
                     "field_name": field_def.name,
-                    "category": field_def.category.value,
-                    "sensitivity": field_def.sensitivity.value,
+                    "category": field_def.category,
+                    "sensitivity": field_def.sensitivity,
                     "value": match,
-                    "masked_value": self.mask_value(match, field_def.id),
+                    "masked_value": await self.mask_value(match, field_def.id, db=db),
                 })
 
         return detections
 
-    def scan_record(
-        self, record: dict[str, Any], table: str
+    async def scan_record(
+        self, record: dict[str, Any], table_name: str, db: AsyncSession
     ) -> list[dict[str, Any]]:
         """Scan a record for PII fields."""
         findings = []
@@ -782,13 +735,13 @@ class PIIControlsService:
             if not isinstance(value, str) or not value:
                 continue
 
-            field_def = self.get_field_by_column(table, column)
+            field_def = await self.get_field_by_column(table_name, column, db)
             if field_def:
                 findings.append({
                     "field_id": field_def.id,
                     "column": column,
-                    "category": field_def.category.value,
-                    "sensitivity": field_def.sensitivity.value,
+                    "category": field_def.category,
+                    "sensitivity": field_def.sensitivity,
                     "has_value": True,
                     "requires_consent": field_def.requires_consent,
                 })
@@ -797,8 +750,9 @@ class PIIControlsService:
 
     # Access Logging
 
-    def log_access(
+    async def log_access(
         self,
+        db: AsyncSession,
         subject_id: UUID,
         user_id: UUID,
         field_id: UUID,
@@ -808,8 +762,8 @@ class PIIControlsService:
         data_snapshot: str | None = None,
     ) -> PIIAccessLog | None:
         """Log access to PII data."""
-        subject = self._subjects.get(subject_id)
-        field_def = self._fields.get(field_id)
+        subject = await db.get(DataSubject, subject_id)
+        field_def = await db.get(PIIField, field_id)
 
         if not subject or not field_def:
             return None
@@ -817,29 +771,31 @@ class PIIControlsService:
         # Mask the snapshot if provided
         masked_snapshot = None
         if data_snapshot:
-            masked_snapshot = self.mask_value(data_snapshot, field_id)
+            masked_snapshot = await self.mask_value(data_snapshot, field_id, db=db)
 
         log = PIIAccessLog(
-            id=uuid4(),
             subject_id=subject_id,
             user_id=user_id,
             field_id=field_id,
-            access_type=access_type,
+            access_type=access_type.value,
             accessed_at=datetime.now(timezone.utc),
             purpose=purpose,
             ip_address=ip_address,
             data_snapshot=masked_snapshot,
         )
 
-        self._access_logs.append(log)
-
+        db.add(log)
         # Update subject last accessed
         subject.last_accessed_at = log.accessed_at
+        
+        await db.commit()
+        await db.refresh(log)
 
         return log
 
-    def get_access_logs(
+    async def get_access_logs(
         self,
+        db: AsyncSession,
         subject_id: UUID | None = None,
         user_id: UUID | None = None,
         field_id: UUID | None = None,
@@ -849,71 +805,67 @@ class PIIControlsService:
         limit: int = 100,
     ) -> list[PIIAccessLog]:
         """Get access logs with filters."""
-        logs = []
+        stmt = select(PIIAccessLog)
 
-        for log in self._access_logs:
-            if subject_id and log.subject_id != subject_id:
-                continue
-            if user_id and log.user_id != user_id:
-                continue
-            if field_id and log.field_id != field_id:
-                continue
-            if access_type and log.access_type != access_type:
-                continue
-            if start_date and log.accessed_at < start_date:
-                continue
-            if end_date and log.accessed_at > end_date:
-                continue
-            logs.append(log)
+        if subject_id:
+            stmt = stmt.where(PIIAccessLog.subject_id == subject_id)
+        if user_id:
+            stmt = stmt.where(PIIAccessLog.user_id == user_id)
+        if field_id:
+            stmt = stmt.where(PIIAccessLog.field_id == field_id)
+        if access_type:
+            stmt = stmt.where(PIIAccessLog.access_type == access_type.value)
+        if start_date:
+            stmt = stmt.where(PIIAccessLog.accessed_at >= start_date)
+        if end_date:
+            stmt = stmt.where(PIIAccessLog.accessed_at <= end_date)
 
-        # Sort by most recent
-        logs.sort(key=lambda l: l.accessed_at, reverse=True)
-
-        return logs[:limit]
+        stmt = stmt.order_by(PIIAccessLog.accessed_at.desc()).limit(limit)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     # Deletion Requests (Right to be Forgotten)
 
-    def request_deletion(
+    async def request_deletion(
         self,
+        db: AsyncSession,
         subject_id: UUID,
-        requested_by: UUID,
+        requested_by_id: UUID,
         reason: str,
     ) -> DeletionRequest | None:
         """Request deletion of PII data."""
-        subject = self._subjects.get(subject_id)
+        subject = await db.get(DataSubject, subject_id)
         if not subject:
             return None
 
         now = datetime.now(timezone.utc)
 
         # Get affected tables
-        affected_tables = set()
-        for field_def in self._fields.values():
-            affected_tables.add(field_def.table)
+        fields = await self._get_field_definitions_cached(db)
+        affected_tables = list(set(f.table_name for f in fields.values()))
 
         request = DeletionRequest(
-            id=uuid4(),
             subject_id=subject_id,
-            requested_by=requested_by,
+            requested_by_id=requested_by_id,
             requested_at=now,
             reason=reason,
             status="pending",
-            completed_at=None,
-            affected_tables=list(affected_tables),
-            deleted_records=0,
-            errors=[],
+            affected_tables=affected_tables,
         )
 
-        self._deletion_requests[request.id] = request
+        db.add(request)
         subject.deletion_requested_at = now
+        
+        await db.commit()
+        await db.refresh(request)
 
         return request
 
-    def process_deletion(
-        self, request_id: UUID, deleted_records: int = 0, errors: list[str] | None = None
+    async def process_deletion(
+        self, db: AsyncSession, request_id: UUID, deleted_records: int = 0, errors: list[str] | None = None
     ) -> DeletionRequest | None:
         """Mark a deletion request as processing or complete."""
-        request = self._deletion_requests.get(request_id)
+        request = await db.get(DeletionRequest, request_id)
         if not request:
             return None
 
@@ -928,82 +880,87 @@ class PIIControlsService:
             request.deleted_records = deleted_records
 
             # Update subject
-            subject = self._subjects.get(request.subject_id)
+            subject = await db.get(DataSubject, request.subject_id)
             if subject:
                 subject.deletion_completed_at = now
 
+        await db.commit()
+        await db.refresh(request)
         return request
 
-    def get_deletion_request(self, request_id: UUID) -> DeletionRequest | None:
+    async def get_deletion_request(self, db: AsyncSession, request_id: UUID) -> DeletionRequest | None:
         """Get a deletion request by ID."""
-        return self._deletion_requests.get(request_id)
+        return await db.get(DeletionRequest, request_id)
 
-    def get_deletion_requests(
+    async def get_deletion_requests(
         self,
+        db: AsyncSession,
         subject_id: UUID | None = None,
         status: str | None = None,
     ) -> list[DeletionRequest]:
         """Get deletion requests with filters."""
-        requests = []
+        stmt = select(DeletionRequest)
 
-        for request in self._deletion_requests.values():
-            if subject_id and request.subject_id != subject_id:
-                continue
-            if status and request.status != status:
-                continue
-            requests.append(request)
+        if subject_id:
+            stmt = stmt.where(DeletionRequest.subject_id == subject_id)
+        if status:
+            stmt = stmt.where(DeletionRequest.status == status)
 
-        return requests
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
-    def get_pending_deletions(self) -> list[DeletionRequest]:
+    async def get_pending_deletions(self, db: AsyncSession) -> list[DeletionRequest]:
         """Get pending deletion requests."""
-        return self.get_deletion_requests(status="pending")
+        return await self.get_deletion_requests(db, status="pending")
 
     # Reporting
 
-    def generate_pii_report(
+    async def generate_pii_report(
         self,
+        db: AsyncSession,
         subject_id: UUID,
-        generated_by: UUID,
+        generated_by_id: UUID,
     ) -> PIIReport | None:
         """Generate a PII report for a data subject."""
-        subject = self._subjects.get(subject_id)
+        subject = await db.get(DataSubject, subject_id)
         if not subject:
             return None
 
         # Collect field information
-        fields = []
-        for field_def in self._fields.values():
-            fields.append({
+        fields_data = []
+        fields = await self.get_field_definitions(db)
+        for field_def in fields:
+            fields_data.append({
                 "name": field_def.name,
-                "table": field_def.table,
-                "column": field_def.column,
-                "category": field_def.category.value,
-                "sensitivity": field_def.sensitivity.value,
+                "table": field_def.table_name,
+                "column": field_def.column_name,
+                "category": field_def.category,
+                "sensitivity": field_def.sensitivity,
                 "retention_days": field_def.retention_days,
             })
 
         # Get consents
-        consents = self.get_consents(subject_id=subject_id)
+        consents = await self.get_consents(db, subject_id=subject_id)
 
         # Get access logs
-        access_logs = self.get_access_logs(subject_id=subject_id)
+        access_logs = await self.get_access_logs(db, subject_id=subject_id)
 
         return PIIReport(
             subject_id=subject_id,
             generated_at=datetime.now(timezone.utc),
-            generated_by=generated_by,
-            fields=fields,
+            generated_by=generated_by_id,
+            fields=fields_data,
             consents=consents,
             access_logs=access_logs,
         )
 
-    def get_retention_violations(self) -> list[dict[str, Any]]:
+    async def get_retention_violations(self, db: AsyncSession) -> list[dict[str, Any]]:
         """Get fields with data past retention period."""
         violations = []
         now = datetime.now(timezone.utc)
 
-        for field_def in self._fields.values():
+        fields = await self.get_field_definitions(db)
+        for field_def in fields:
             if not field_def.retention_days:
                 continue
 
@@ -1012,47 +969,57 @@ class PIIControlsService:
             violations.append({
                 "field_id": field_def.id,
                 "field_name": field_def.name,
-                "table": field_def.table,
-                "column": field_def.column,
+                "table": field_def.table_name,
+                "column": field_def.column_name,
                 "retention_days": field_def.retention_days,
                 "cutoff_date": cutoff,
             })
 
         return violations
 
-    def get_expired_consents(self) -> list[Consent]:
+    async def get_expired_consents(self, db: AsyncSession) -> list[Consent]:
         """Get consents that have expired."""
         now = datetime.now(timezone.utc)
-        expired = []
+        stmt = select(Consent).where(
+            Consent.status == ConsentStatus.GRANTED.value,
+            Consent.expires_at.is_not(None),
+            Consent.expires_at < now
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
-        for consent in self._consents.values():
-            if (
-                consent.status == ConsentStatus.GRANTED
-                and consent.expires_at
-                and consent.expires_at < now
-            ):
-                expired.append(consent)
-
-        return expired
-
-    def get_summary(self) -> dict[str, Any]:
+    async def get_summary(self, db: AsyncSession) -> dict[str, Any]:
         """Get a summary of PII controls."""
+        fields = await self.get_field_definitions(db)
+        
         by_category: dict[str, int] = {}
         by_sensitivity: dict[str, int] = {}
 
-        for field_def in self._fields.values():
-            cat = field_def.category.value
-            sens = field_def.sensitivity.value
+        for field_def in fields:
+            cat = field_def.category
+            sens = field_def.sensitivity
             by_category[cat] = by_category.get(cat, 0) + 1
             by_sensitivity[sens] = by_sensitivity.get(sens, 0) + 1
 
+        # Counts
+        stmt_subjects = select(func.count(DataSubject.id))
+        stmt_consents = select(func.count(Consent.id))
+        stmt_logs = select(func.count(PIIAccessLog.id))
+        
+        subjects_count = (await db.execute(stmt_subjects)).scalar() or 0
+        consents_count = (await db.execute(stmt_consents)).scalar() or 0
+        logs_count = (await db.execute(stmt_logs)).scalar() or 0
+        
+        pending_deletions = await self.get_pending_deletions(db)
+        expired_consents = await self.get_expired_consents(db)
+
         return {
-            "total_fields": len(self._fields),
-            "total_subjects": len(self._subjects),
-            "total_consents": len(self._consents),
-            "total_access_logs": len(self._access_logs),
-            "pending_deletions": len(self.get_pending_deletions()),
+            "total_fields": len(fields),
+            "total_subjects": subjects_count,
+            "total_consents": consents_count,
+            "total_access_logs": logs_count,
+            "pending_deletions": len(pending_deletions),
             "by_category": by_category,
             "by_sensitivity": by_sensitivity,
-            "expired_consents": len(self.get_expired_consents()),
+            "expired_consents": len(expired_consents),
         }

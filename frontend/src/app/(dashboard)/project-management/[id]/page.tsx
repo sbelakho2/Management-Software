@@ -16,6 +16,9 @@ import { EpicsList } from './_components/epics-list';
 import { SprintList } from './_components/sprint-list';
 import { BacklogView } from './_components/backlog-view';
 import { KanbanBoard } from './_components/kanban-board';
+import { IssuesList } from './_components/issues-list';
+import { WikiView } from './_components/wiki-view';
+import { ProjectSettings } from './_components/project-settings';
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -119,17 +122,19 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="epics" className="gap-2">
                 <Layers className="h-4 w-4" /> Epics
             </TabsTrigger>
-            {/*
-            <TabsTrigger value="issues" className="gap-2">
-                <AlertCircle className="h-4 w-4" /> Issues
-            </TabsTrigger>
-             <TabsTrigger value="wiki" className="gap-2">
-                <FileText className="h-4 w-4" /> Wiki
-            </TabsTrigger>
+            {selectedProject?.enable_issues !== false && (
+              <TabsTrigger value="issues" className="gap-2">
+                  <AlertCircle className="h-4 w-4" /> Issues
+              </TabsTrigger>
+            )}
+            {selectedProject?.enable_wiki !== false && (
+              <TabsTrigger value="wiki" className="gap-2">
+                  <FileText className="h-4 w-4" /> Wiki
+              </TabsTrigger>
+            )}
             <TabsTrigger value="settings" className="gap-2">
                 <Settings className="h-4 w-4" /> Settings
             </TabsTrigger>
-            */}
         </TabsList>
 
         <TabsContent value="board" className="space-y-4">
@@ -147,17 +152,18 @@ export default function ProjectDetailPage() {
         <TabsContent value="epics" className="space-y-4">
             <EpicsList projectId={projectId} />
         </TabsContent>
-        {/*
-        <TabsContent value="issues">
-            <div className="p-4 text-center text-muted-foreground">Issues Coming Soon</div>
+
+        <TabsContent value="issues" className="space-y-4">
+            <IssuesList projectId={projectId} />
         </TabsContent>
-        <TabsContent value="wiki">
-            <div className="p-4 text-center text-muted-foreground">Wiki Coming Soon</div>
+
+        <TabsContent value="wiki" className="space-y-4">
+            <WikiView projectId={projectId} />
         </TabsContent>
-        <TabsContent value="settings">
-            <div className="p-4 text-center text-muted-foreground">Settings Coming Soon</div>
+
+        <TabsContent value="settings" className="space-y-4">
+            <ProjectSettings projectId={projectId} />
         </TabsContent>
-        */}
       </Tabs>
     </div>
   );

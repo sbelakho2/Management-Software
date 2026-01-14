@@ -24,7 +24,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
     set({ loading: true, error: null });
     try {
       const insights = await analyticsApi.getInsights();
-      set({ insights, loading: false });
+      set({ insights: Array.isArray(insights) ? insights : [], loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -34,7 +34,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
     set({ loading: true, error: null });
     try {
       const trends = await analyticsApi.getTrends();
-      set({ trends, loading: false });
+      set({ trends: Array.isArray(trends) ? trends : [], loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }

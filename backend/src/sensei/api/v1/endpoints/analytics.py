@@ -59,7 +59,7 @@ async def get_ml_insights(
             "action_items": ["Schedule inspection for Machine #3"]
         }
     ]
-    return mask_analytics_data(insights, token_data.roles)
+    return await mask_analytics_data(insights, token_data.roles)
 
 @router.get("/trends", response_model=list[dict[str, Any]])
 async def get_performance_trends(
@@ -88,7 +88,7 @@ async def get_performance_trends(
                 "trend": "up" if r.data.get("change_percent", 0) > 0 else "down",
                 "prediction_7d": r.data.get("predicted_value", 0)
             })
-        return mask_analytics_data(trends, token_data.roles)
+        return await mask_analytics_data(trends, token_data.roles)
 
     # Fallback to demo data if warehouse is empty
     demo_trends = [
@@ -109,4 +109,4 @@ async def get_performance_trends(
             "prediction_7d": 41.8
         }
     ]
-    return mask_analytics_data(demo_trends, token_data.roles)
+    return await mask_analytics_data(demo_trends, token_data.roles)

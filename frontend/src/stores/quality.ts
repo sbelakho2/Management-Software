@@ -102,9 +102,11 @@ export const useQualityStore = create<QualityState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await qualityApi.inspectionApi.list(params);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const total = typeof response.total === 'number' ? response.total : items.length;
       set({ 
-        inspections: response.items, 
-        totalInspections: response.total,
+        inspections: items,
+        totalInspections: total,
         loading: false 
       });
     } catch (error: unknown) {
@@ -116,9 +118,11 @@ export const useQualityStore = create<QualityState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await qualityApi.ncrApi.list(params);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const total = typeof response.total === 'number' ? response.total : items.length;
       set({ 
-        ncrs: response.items, 
-        totalNcrs: response.total,
+        ncrs: items,
+        totalNcrs: total,
         loading: false 
       });
     } catch (error: unknown) {
@@ -130,9 +134,11 @@ export const useQualityStore = create<QualityState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const response = await qualityApi.capaApi.list(params);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const total = typeof response.total === 'number' ? response.total : items.length;
       set({ 
-        capas: response.items, 
-        totalCapas: response.total,
+        capas: items,
+        totalCapas: total,
         loading: false 
       });
     } catch (error: unknown) {

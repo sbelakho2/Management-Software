@@ -118,9 +118,15 @@ export const useExceptionsStore = create<ExceptionsState>()(
           try {
             const params = new URLSearchParams(filters as any);
             const data = await apiClient.get<any>(`/exceptions?${params}`);
+
+            const items = Array.isArray(data?.items)
+              ? data.items
+              : Array.isArray(data)
+                ? data
+                : [];
             
             set({
-              exceptions: data.items || [],
+              exceptions: items,
               isLoading: false,
               lastFetchedAt: now,
             });
@@ -280,7 +286,14 @@ export const useExceptionsStore = create<ExceptionsState>()(
           
           try {
             const data = await apiClient.get<any>(`/exceptions/trends?days=${days}`);
-            set({ trends: data, isLoading: false });
+
+            const trends = Array.isArray(data?.items)
+              ? data.items
+              : Array.isArray(data)
+                ? data
+                : [];
+
+            set({ trends, isLoading: false });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch trends',
@@ -294,7 +307,7 @@ export const useExceptionsStore = create<ExceptionsState>()(
           
           try {
             const data = await apiClient.get<any>('/exceptions/summary');
-            set({ stats: data, isLoading: false });
+            set({ stats: data ?? null, isLoading: false });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch stats',

@@ -250,11 +250,37 @@ export default function CTQDetailPage() {
   };
 
   const handleExport = () => {
+    if (!ctq) return;
+
     toast({
       title: 'Export started',
       description: 'Your CTQ report is being generated',
     });
-    // TODO: Implement actual export
+
+    const headers = ['Date', 'Measured Value', 'Deviation', 'Result', 'Measured By', 'Notes'];
+    const rows = ctq.measurements.map(m => [
+      formatDate(new Date(m.measured_at)),
+      m.measured_value,
+      m.deviation || 0,
+      m.result,
+      m.measured_by?.name || 'N/A',
+      m.notes || ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `CTQ_${ctq.ctq_number}_Report.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const calculateTrend = (measurements: CTQMeasurement[]): 'up' | 'down' | 'stable' => {

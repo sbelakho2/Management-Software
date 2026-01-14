@@ -168,9 +168,23 @@ def create_application() -> FastAPI:
         )
     else:
         # Development: Allow all for easier testing
+        dev_origins = sorted(
+            set(
+                (
+                    settings.CORS_ORIGINS
+                    + [
+                        # Common local dev + Playwright ports
+                        "http://localhost:3000",
+                        "http://127.0.0.1:3000",
+                        "http://localhost:3100",
+                        "http://127.0.0.1:3100",
+                    ]
+                )
+            )
+        )
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=settings.CORS_ORIGINS,
+            allow_origins=dev_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

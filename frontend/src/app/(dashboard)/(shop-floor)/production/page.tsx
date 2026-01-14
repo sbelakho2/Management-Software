@@ -296,6 +296,7 @@ function ProductionPageContent() {
     fetchStats,
     loading 
   } = useProductionStore();
+  const workOrdersList = React.useMemo(() => (Array.isArray(workOrders) ? workOrders : []), [workOrders]);
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
@@ -310,11 +311,11 @@ function ProductionPageContent() {
   }, [fetchWorkOrders, fetchStats]);
 
   const workCenters = React.useMemo(() => {
-    return [...new Set(workOrders.map((wo) => wo.work_center_name).filter(Boolean))];
-  }, [workOrders]);
+    return [...new Set(workOrdersList.map((wo) => wo.work_center_name).filter(Boolean))];
+  }, [workOrdersList]);
 
   const filteredWorkOrders = React.useMemo(() => {
-    return workOrders.filter((wo) => {
+    return workOrdersList.filter((wo) => {
       const matchesSearch = searchQuery === '' ||
         wo.work_order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (wo.product_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -323,7 +324,7 @@ function ProductionPageContent() {
       const matchesWorkCenter = workCenterFilter === 'all' || wo.work_center_name === workCenterFilter;
       return matchesSearch && matchesStatus && matchesWorkCenter;
     });
-  }, [workOrders, searchQuery, statusFilter, workCenterFilter]);
+  }, [workOrdersList, searchQuery, statusFilter, workCenterFilter]);
 
   return (
     <div className="space-y-6" data-testid="production-page">

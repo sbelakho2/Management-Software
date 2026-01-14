@@ -46,6 +46,8 @@ from sensei.api.v1.endpoints import (
     backups,
     backup_scheduler,
     exceptions,
+    admin,
+    hr,
     gm_onboarding,
     rfq_time_tracking,
     quote_approval_time_tracking,
@@ -112,6 +114,8 @@ api_router.include_router(today.router)
 api_router.include_router(backups.router, prefix="/backups", tags=["Backups"])
 api_router.include_router(backup_scheduler.router, prefix="/backup-scheduler", tags=["Backup Scheduler"])
 api_router.include_router(exceptions.router, prefix="/exceptions", tags=["Exceptions"])
+api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
+api_router.include_router(hr.router, prefix="/hr", tags=["HR"])
 api_router.include_router(gm_onboarding.router, prefix="/gm-onboarding", tags=["GM Onboarding"])
 api_router.include_router(rfq_time_tracking.router, prefix="/rfq-time-tracking", tags=["RFQ Time Tracking"])
 api_router.include_router(quote_approval_time_tracking.router, prefix="/quote-approval", tags=["Quote Approval"])

@@ -27,7 +27,18 @@ const priorityColor = (priority: number): string => {
 };
 
 export function KanbanBoard({ projectId }: KanbanBoardProps) {
-  const { stories, updateStoryStatus } = useProjectManagementStore();
+  const { stories, updateStoryStatus, selectedProject } = useProjectManagementStore();
+
+  const columns = React.useMemo(() => {
+    if (selectedProject?.custom_user_story_statuses && selectedProject.custom_user_story_statuses.length > 0) {
+      return selectedProject.custom_user_story_statuses.map(s => ({
+        id: s.id as UserStoryStatus,
+        title: s.name,
+        color: s.color
+      }));
+    }
+    return COLUMNS;
+  }, [selectedProject]);
 
   const projectStories = React.useMemo(() => 
     stories.filter(s => s.project_id === projectId && s.status !== 'archived'),
@@ -44,7 +55,7 @@ export function KanbanBoard({ projectId }: KanbanBoardProps) {
   return (
     <div className="h-full overflow-x-auto">
       <div className="flex h-full gap-4 min-w-[1000px] pb-4">
-        {COLUMNS.map((col) => (
+        {columns.map((col) => (
           <BoardColumn
             key={col.id}
             column={col}

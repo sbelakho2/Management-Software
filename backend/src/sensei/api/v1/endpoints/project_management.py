@@ -19,7 +19,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from sensei.api.deps import CurrentUser, DBSession
@@ -46,6 +46,7 @@ from sensei.models.project_management import (
     Project,
     ProjectActivity,
     ProjectMember,
+    ProjectSequence,
     ProjectStatus,
     ProjectType,
     Sprint,
@@ -195,6 +196,44 @@ async def _get_project_or_404(db: DBSession, project_id: UUID) -> Project:
     return project
 
 
+async def _get_next_project_ref(db: DBSession, project_id: UUID, entity_type: str) -> int:
+    """Get next reference number using project sequences with row-level locking."""
+    # Try to get existing sequence
+    stmt = select(ProjectSequence).where(
+        ProjectSequence.project_id == project_id,
+        ProjectSequence.entity_type == entity_type
+    ).with_for_update()
+    
+    result = await db.execute(stmt)
+    seq = result.scalar_one_or_none()
+    
+    if seq is None:
+        # Fallback to MAX(ref) + 1 if sequence doesn't exist, then create it
+        # This handles existing projects before sequences were added
+        model_map = {
+            "user_story": UserStory,
+            "epic": Epic,
+            "issue": Issue
+        }
+        model_cls = model_map.get(entity_type)
+        if not model_cls:
+            raise ValueError(f"Invalid entity type for sequence: {entity_type}")
+            
+        max_stmt = select(func.max(model_cls.ref)).where(model_cls.project_id == project_id)
+        max_ref = (await db.execute(max_stmt)).scalar() or 0
+        
+        seq = ProjectSequence(
+            project_id=project_id,
+            entity_type=entity_type,
+            last_value=max_ref + 1
+        )
+        db.add(seq)
+        return max_ref + 1
+    
+    seq.last_value += 1
+    return seq.last_value
+
+
 async def _next_project_ref(db: DBSession, model_cls: Any, project_id: UUID) -> int:
     result = await db.execute(
         select(func.max(model_cls.ref)).where(
@@ -214,6 +253,43 @@ async def _next_story_ref(db: DBSession, user_story_id: UUID) -> int:
     return int(max_ref or 0) + 1
 
 
+async def _update_project_stats(db: DBSession, project_id: UUID) -> None:
+    """Update cached statistics for a project."""
+    # Count user stories
+    story_stats_stmt = select(
+        func.count(UserStory.id).label("total"),
+        func.count(UserStory.id).filter(UserStory.status == UserStoryStatus.DONE.value).label("completed"),
+        func.sum(UserStory.story_points).label("total_points"),
+        func.sum(UserStory.story_points).filter(UserStory.status == UserStoryStatus.DONE.value).label("completed_points"),
+    ).where(UserStory.project_id == project_id, UserStory.deleted_at.is_(None))
+    
+    story_stats = (await db.execute(story_stats_stmt)).one()
+    
+    # Count issues
+    issue_stats_stmt = select(
+        func.count(Issue.id).label("total"),
+        func.count(Issue.id).filter(Issue.status != IssueStatus.CLOSED.value).label("open"),
+    ).where(Issue.project_id == project_id, Issue.deleted_at.is_(None))
+    
+    issue_stats = (await db.execute(issue_stats_stmt)).one()
+    
+    # Update project
+    await db.execute(
+        update(Project)
+        .where(Project.id == project_id)
+        .values(
+            total_user_stories=story_stats.total or 0,
+            completed_user_stories=story_stats.completed or 0,
+            total_story_points=int(story_stats.total_points or 0),
+            completed_story_points=int(story_stats.completed_points or 0),
+            total_issues=issue_stats.total or 0,
+            open_issues=issue_stats.open or 0,
+            updated_at=_now_utc()
+        )
+    )
+    # No commit here, usually called within another transaction
+
+
 # =============================================================================
 # Project schemas
 # =============================================================================
@@ -228,6 +304,12 @@ class ProjectCreate(BaseModel):
     is_private: bool = Field(default=False)
     start_date: Optional[date] = None
     target_end_date: Optional[date] = None
+    color: str = Field(default="#3b82f6", max_length=7)
+    use_story_points: bool = True
+    use_time_tracking: bool = True
+    enable_wiki: bool = True
+    enable_issues: bool = True
+    enable_sprints: bool = True
 
     @field_validator("project_type")
     @classmethod
@@ -250,6 +332,15 @@ class ProjectUpdate(BaseModel):
     is_private: Optional[bool] = None
     start_date: Optional[date] = None
     target_end_date: Optional[date] = None
+    color: Optional[str] = Field(default=None, max_length=7)
+    use_story_points: Optional[bool] = None
+    use_time_tracking: Optional[bool] = None
+    enable_wiki: Optional[bool] = None
+    enable_issues: Optional[bool] = None
+    enable_sprints: Optional[bool] = None
+    custom_user_story_statuses: Optional[list] = None
+    custom_task_statuses: Optional[list] = None
+    custom_issue_statuses: Optional[list] = None
 
     @field_validator("project_type")
     @classmethod
@@ -279,6 +370,21 @@ class ProjectResponse(BaseModel):
     is_private: bool
     start_date: Optional[date]
     target_end_date: Optional[date]
+    color: str
+    use_story_points: bool
+    use_time_tracking: bool
+    enable_wiki: bool
+    enable_issues: bool
+    enable_sprints: bool
+    custom_user_story_statuses: Optional[list]
+    custom_task_statuses: Optional[list]
+    custom_issue_statuses: Optional[list]
+    total_user_stories: int
+    completed_user_stories: int
+    total_story_points: int
+    completed_story_points: int
+    total_issues: int
+    open_issues: int
     created_at: datetime
     updated_at: datetime
 
@@ -295,6 +401,21 @@ class ProjectResponse(BaseModel):
             is_private=project.is_private,
             start_date=project.start_date,
             target_end_date=project.target_end_date,
+            color=project.color,
+            use_story_points=project.use_story_points,
+            use_time_tracking=project.use_time_tracking,
+            enable_wiki=project.enable_wiki,
+            enable_issues=project.enable_issues,
+            enable_sprints=project.enable_sprints,
+            custom_user_story_statuses=project.custom_user_story_statuses,
+            custom_task_statuses=project.custom_task_statuses,
+            custom_issue_statuses=project.custom_issue_statuses,
+            total_user_stories=project.total_user_stories,
+            completed_user_stories=project.completed_user_stories,
+            total_story_points=project.total_story_points,
+            completed_story_points=project.completed_story_points,
+            total_issues=project.total_issues,
+            open_issues=project.open_issues,
             created_at=project.created_at,
             updated_at=project.updated_at,
         )
@@ -914,6 +1035,12 @@ async def create_project(payload: ProjectCreate, db: DBSession, user: CurrentUse
         is_private=payload.is_private,
         start_date=payload.start_date,
         target_end_date=payload.target_end_date,
+        color=payload.color,
+        use_story_points=payload.use_story_points,
+        use_time_tracking=payload.use_time_tracking,
+        enable_wiki=payload.enable_wiki,
+        enable_issues=payload.enable_issues,
+        enable_sprints=payload.enable_sprints,
         created_by_id=getattr(user, "id", None),
         updated_by_id=getattr(user, "id", None),
     )
@@ -1053,6 +1180,24 @@ async def update_project(project_id: UUID, payload: ProjectUpdate, db: DBSession
         project.start_date = payload.start_date
     if payload.target_end_date is not None:
         project.target_end_date = payload.target_end_date
+    if payload.color is not None:
+        project.color = payload.color
+    if payload.use_story_points is not None:
+        project.use_story_points = payload.use_story_points
+    if payload.use_time_tracking is not None:
+        project.use_time_tracking = payload.use_time_tracking
+    if payload.enable_wiki is not None:
+        project.enable_wiki = payload.enable_wiki
+    if payload.enable_issues is not None:
+        project.enable_issues = payload.enable_issues
+    if payload.enable_sprints is not None:
+        project.enable_sprints = payload.enable_sprints
+    if payload.custom_user_story_statuses is not None:
+        project.custom_user_story_statuses = payload.custom_user_story_statuses
+    if payload.custom_task_statuses is not None:
+        project.custom_task_statuses = payload.custom_task_statuses
+    if payload.custom_issue_statuses is not None:
+        project.custom_issue_statuses = payload.custom_issue_statuses
 
     project.updated_by_id = getattr(user, "id", None)
 
@@ -1198,7 +1343,7 @@ async def remove_project_member(project_id: UUID, user_id: UUID, db: DBSession, 
 async def create_epic(payload: EpicCreate, db: DBSession, user: CurrentUser):
     project = await _get_project_or_404(db, payload.project_id)
     await _require_project_access(db, project, user, permission="edit")
-    ref = await _next_project_ref(db, Epic, payload.project_id)
+    ref = await _get_next_project_ref(db, payload.project_id, "epic")
 
     epic = Epic(
         project_id=payload.project_id,
@@ -1483,7 +1628,7 @@ async def create_user_story(payload: UserStoryCreate, db: DBSession, user: Curre
         if sprint_result.scalar_one_or_none() is None:
             raise NotFoundError("Sprint", str(payload.sprint_id))
 
-    ref = await _next_project_ref(db, UserStory, payload.project_id)
+    ref = await _get_next_project_ref(db, payload.project_id, "user_story")
     story = UserStory(
         project_id=payload.project_id,
         ref=ref,
@@ -1512,6 +1657,7 @@ async def create_user_story(payload: UserStoryCreate, db: DBSession, user: Curre
         entity_ref=ref,
         summary=f"Created story US-{ref}: {story.subject}",
     )
+    await _update_project_stats(db, payload.project_id)
     await db.commit()
     await db.refresh(story)
     return build_created_response(UserStoryResponse.from_model(story), resource_name="User story")
@@ -1550,6 +1696,38 @@ async def list_user_stories(project_id: UUID, db: DBSession, user: CurrentUser):
     )
     data = [UserStoryResponse.from_model(s) for s in rows]
     return APIResponse(success=True, message=None, data=data)
+
+
+@router.get("/my-work", response_model=APIResponse)
+async def get_my_work(db: DBSession, user: CurrentUser):
+    """Get assigned user stories and issues for the current user."""
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return APIResponse(success=True, data={"stories": [], "issues": []})
+
+    # Assigned User Stories
+    story_stmt = (
+        select(UserStory)
+        .where(UserStory.owner_id == user_id, UserStory.deleted_at.is_(None))
+        .order_by(UserStory.updated_at.desc())
+    )
+    stories = (await db.execute(story_stmt)).scalars().all()
+
+    # Assigned Issues
+    issue_stmt = (
+        select(Issue)
+        .where(Issue.assigned_to_id == user_id, Issue.deleted_at.is_(None))
+        .order_by(Issue.updated_at.desc())
+    )
+    issues = (await db.execute(issue_stmt)).scalars().all()
+
+    return APIResponse(
+        success=True,
+        data={
+            "stories": [UserStoryResponse.from_model(s) for s in stories],
+            "issues": [IssueResponse.from_model(i) for i in issues],
+        },
+    )
 
 
 @router.patch("/user-stories/{story_id}", response_model=APIResponse)
@@ -1611,6 +1789,7 @@ async def update_user_story(story_id: UUID, payload: UserStoryUpdate, db: DBSess
         entity_ref=story.ref,
         summary=f"Updated story US-{story.ref}: {story.subject}",
     )
+    await _update_project_stats(db, story.project_id)
     await db.commit()
     await db.refresh(story)
     return build_updated_response(UserStoryResponse.from_model(story), resource_name="User story")
@@ -1640,6 +1819,7 @@ async def delete_user_story(story_id: UUID, db: DBSession, user: CurrentUser):
         entity_ref=story.ref,
         summary=f"Deleted story US-{story.ref}: {story.subject}",
     )
+    await _update_project_stats(db, story.project_id)
     await db.commit()
     return build_deleted_response(resource_name="User story")
 
@@ -2026,7 +2206,7 @@ async def create_issue(payload: IssueCreate, db: DBSession, user: CurrentUser):
         if milestone_result.scalar_one_or_none() is None:
             raise NotFoundError("Milestone", str(payload.milestone_id))
 
-    ref = await _next_project_ref(db, Issue, payload.project_id)
+    ref = await _get_next_project_ref(db, payload.project_id, "issue")
     issue = Issue(
         project_id=payload.project_id,
         ref=ref,
@@ -2058,6 +2238,7 @@ async def create_issue(payload: IssueCreate, db: DBSession, user: CurrentUser):
         entity_ref=ref,
         summary=f"Created issue IS-{ref}: {issue.subject}",
     )
+    await _update_project_stats(db, payload.project_id)
     await db.commit()
     await db.refresh(issue)
     return build_created_response(IssueResponse.from_model(issue), resource_name="Issue")
@@ -2141,6 +2322,7 @@ async def update_issue(issue_id: UUID, payload: IssueUpdate, db: DBSession, user
         summary=f"Updated issue IS-{issue.ref}: {issue.subject}",
     )
 
+    await _update_project_stats(db, issue.project_id)
     await db.commit()
     await db.refresh(issue)
     return build_updated_response(IssueResponse.from_model(issue), resource_name="Issue")
@@ -2171,6 +2353,7 @@ async def delete_issue(issue_id: UUID, db: DBSession, user: CurrentUser):
         summary=f"Deleted issue IS-{issue.ref}: {issue.subject}",
     )
 
+    await _update_project_stats(db, issue.project_id)
     await db.commit()
     return build_deleted_response(resource_name="Issue")
 

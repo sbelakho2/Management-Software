@@ -6,27 +6,44 @@ _pii_service = PIIControlsService()
 def get_pii_service() -> PIIControlsService:
     return _pii_service
 
-def mask_analytics_data(data: Any, roles: list[str]) -> Any:
-    """Mask PII in analytics data based on user roles."""
-    # High-level roles can see everything
-    if any(role in ["admin", "ceo", "gm", "exec"] for role in roles):
-        return data
-        
+async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
+    """Mask PII in analytics data based on user roles with granular control."""
+    # admin, ceo, gm usually see everything
+    is_top_exec = any(role in ["admin", "ceo", "gm"] for role in roles)
+    is_hr = "hr" in roles
+    is_finance = "finance" in roles
+    
     service = get_pii_service()
     
     if isinstance(data, list):
-        return [mask_analytics_data(item, roles) for item in data]
+        return [await mask_analytics_data(item, roles) for item in data]
         
     if isinstance(data, dict):
         new_data = {}
         for k, v in data.items():
-            # Mask known PII fields
-            if k in ["employee_name", "operator_name", "customer_name", "contact_name"]:
-                new_data[k] = service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
-            elif k in ["email", "phone"]:
-                new_data[k] = service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
+            # HR related PII
+            if k in ["employee_name", "operator_name", "email", "phone"]:
+                if is_top_exec or is_hr:
+                    new_data[k] = v
+                else:
+                    new_data[k] = await service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
+            
+            # Finance related PII
+            elif k in ["salary", "budget_remaining", "unit_cost"]:
+                if is_top_exec or is_finance:
+                    new_data[k] = v
+                else:
+                    new_data[k] = "***" if k == "salary" else 0.0
+            
+            # Customer related PII
+            elif k in ["customer_name", "contact_name"]:
+                if is_top_exec or any(r in ["sales", "exec"] for r in roles):
+                    new_data[k] = v
+                else:
+                    new_data[k] = await service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
+                    
             elif isinstance(v, (dict, list)):
-                new_data[k] = mask_analytics_data(v, roles)
+                new_data[k] = await mask_analytics_data(v, roles)
             else:
                 new_data[k] = v
         return new_data

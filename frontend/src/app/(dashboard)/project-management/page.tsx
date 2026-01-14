@@ -42,13 +42,15 @@ import { BarChart, CHART_TYPE } from '@/components/ui/data-visualization';
 export default function ProjectManagementPage() {
   const { toast } = useToast();
   const {
-    projects,
+    projects: projectsRaw,
     isLoading,
     error,
     fetchProjects,
     createProject,
     clearError,
   } = useProjectManagementStore();
+
+  const projects = projectsRaw ?? [];
 
   const [view, setView] = React.useState<'list' | 'portfolio'>('list');
   const [query, setQuery] = React.useState('');

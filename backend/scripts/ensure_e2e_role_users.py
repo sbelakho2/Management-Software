@@ -86,6 +86,12 @@ async def main() -> None:
                     status=UserStatus.ACTIVE.value,
                     is_superuser=(role_name == "admin"),
                     email_verified=True,
+                    totp_enabled=False,
+                    totp_secret=None,
+                    backup_codes=None,
+                    failed_login_attempts=0,
+                    locked_until=None,
+                    must_change_password=False,
                 )
                 session.add(user)
                 await session.flush()
@@ -97,6 +103,12 @@ async def main() -> None:
                 user.password_hash = password_hash
                 user.status = UserStatus.ACTIVE.value
                 user.email_verified = True
+                user.totp_enabled = False
+                user.totp_secret = None
+                user.backup_codes = None
+                user.failed_login_attempts = 0
+                user.locked_until = None
+                user.must_change_password = False
                 if role_name == "admin":
                     user.is_superuser = True
                 updated_users += 1

@@ -15,6 +15,11 @@ export default function DashboardLayout({
   const { isAuthenticated, isLoading, loadUser } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   React.useEffect(() => {
     // Attempt to load user if not already authenticated
@@ -34,7 +39,7 @@ export default function DashboardLayout({
     }
   }, [isAuthenticated, isLoading, router, pathname]);
 
-  if (isLoading) {
+  if (!mounted || isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

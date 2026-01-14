@@ -46,7 +46,8 @@ export default function ExecutivePage() {
       fetchNCRs();
       fetchCAPAs();
       if (user) {
-        fetchTodayScreen(user.id, user.full_name);
+        const name = (user.full_name || '').trim() || (user.email || '').trim() || 'User';
+        fetchTodayScreen(user.id, name);
       }
     }
   }, [fetchNCRs, fetchCAPAs, fetchTodayScreen, user, isAuthenticated]);

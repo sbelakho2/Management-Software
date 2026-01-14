@@ -52,6 +52,9 @@ from sensei.models.attachment import Attachment, AttachmentVersion
 from sensei.models.audit_log import AuditLog
 from sensei.models.data_lineage import DataLineageLink
 from sensei.models.reasoning_trace import ReasoningTrace
+from sensei.models.admin import AdminGate, ApprovalWorkflow, Template, LearningCadence, FeatureFlag
+from sensei.models.exception import ExceptionRecord
+from sensei.models.tps import PDCACycleRecord, KataSessionRecord, MudaDetectionRecord, UserTPSStats
 
 # Phase 3: Production & TPS Execution Models
 from sensei.models.work_center import (
@@ -104,6 +107,13 @@ from sensei.models.andon import (
     ResponseStatus,
     AndonEscalation,
     AndonRecurrencePattern,
+)
+from sensei.models.pii import (
+    PIIField,
+    DataSubject,
+    Consent,
+    PIIAccessLog,
+    DeletionRequest,
 )
 from sensei.models.kanban import (
     KanbanBoard,
@@ -238,6 +248,16 @@ __all__ = [
     # Audit
     "AuditLog",
     "DataLineageLink",
+    "AdminGate",
+    "ApprovalWorkflow",
+    "Template",
+    "LearningCadence",
+    "FeatureFlag",
+    "ExceptionRecord",
+    "PDCACycleRecord",
+    "KataSessionRecord",
+    "MudaDetectionRecord",
+    "UserTPSStats",
     # Phase 3: Work Center & Station
     "WorkCenter",
     "WorkCenterStatus",
