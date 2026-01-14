@@ -30,6 +30,7 @@ from sensei.api.utils import (
     build_deleted_response,
     build_paginated_response,
 )
+from sensei.core.storage import upload_file, generate_presigned_url, delete_file
 from sensei.models.attachment import (
     Attachment,
     AttachmentVersion,
@@ -246,6 +247,19 @@ async def create_attachment(
 
     # Generate storage key
     storage_key = generate_storage_key(entity_type, entity_id, original_filename)
+
+    # Upload to storage
+    await upload_file(
+        file_content=file_content,
+        key=storage_key,
+        content_type=mime_type,
+        metadata={
+            "entity_type": entity_type,
+            "entity_id": str(entity_id),
+            "original_filename": original_filename,
+            "uploaded_by": str(current_user.id),
+        }
+    )
 
     # Parse tags
     parsed_tags = None
@@ -614,6 +628,19 @@ async def create_version(
     attachment.revision = revision
     attachment.uploaded_at = datetime.now(timezone.utc)
     attachment.uploaded_by_id = current_user.id
+
+    # Upload new version to storage
+    await upload_file(
+        file_content=file_content,
+        key=new_storage_key,
+        content_type=new_mime_type,
+        metadata={
+            "attachment_id": str(attachment.id),
+            "version": str(attachment.current_version),
+            "original_filename": new_filename,
+            "uploaded_by": str(current_user.id),
+        }
+    )
 
     await db.commit()
     await db.refresh(attachment)

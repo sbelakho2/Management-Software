@@ -44,3 +44,19 @@ class ScenarioResultRecord(Base, TimestampMixin):
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
     recommendation: Mapped[str] = mapped_column(Text, nullable=False)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class VarianceAlertRecord(Base, TimestampMixin):
+    """Database model for COGS/Cost variance alerts."""
+    __tablename__ = "strategic_variance_alerts"
+    
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    quote_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    actual_cogs: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated_cogs: Mapped[float] = mapped_column(Float, nullable=False)
+    deviation_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), nullable=False)
+    work_order_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    correlation_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

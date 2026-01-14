@@ -40,14 +40,20 @@ storage_client = create_storage_client()
 async def check_storage_connection(client) -> bool:
     """Check if the storage connection is healthy."""
     try:
-        client.head_bucket(Bucket=settings.S3_BUCKET)
+        def _do_check():
+            client.head_bucket(Bucket=settings.S3_BUCKET)
+        
+        await anyio.to_thread.run_sync(_do_check)
         return True
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
         if error_code == "404":
             # Bucket doesn't exist, try to create it
             try:
-                client.create_bucket(Bucket=settings.S3_BUCKET)
+                def _do_create():
+                    client.create_bucket(Bucket=settings.S3_BUCKET)
+                
+                await anyio.to_thread.run_sync(_do_create)
                 logger.info("Created storage bucket", bucket=settings.S3_BUCKET)
                 return True
             except Exception as create_error:
@@ -78,7 +84,7 @@ def compute_file_hash(file_content: bytes) -> str:
     return hashlib.sha256(file_content).hexdigest()
 
 
-def upload_file(
+async def upload_file(
     file_content: bytes,
     key: str,
     content_type: str = "application/octet-stream",
@@ -100,13 +106,16 @@ def upload_file(
     if metadata:
         upload_metadata.update(metadata)
     
-    storage_client.put_object(
-        Bucket=settings.S3_BUCKET,
-        Key=key,
-        Body=BytesIO(file_content),
-        ContentType=content_type,
-        Metadata=upload_metadata,
-    )
+    def _do_upload():
+        storage_client.put_object(
+            Bucket=settings.S3_BUCKET,
+            Key=key,
+            Body=BytesIO(file_content),
+            ContentType=content_type,
+            Metadata=upload_metadata,
+        )
+    
+    await anyio.to_thread.run_sync(_do_upload)
     
     logger.info(
         "File uploaded",
@@ -123,26 +132,32 @@ def upload_file(
     }
 
 
-def download_file(key: str) -> Optional[bytes]:
+async def download_file(key: str) -> Optional[bytes]:
     """Download a file from S3 storage."""
     try:
-        response = storage_client.get_object(
-            Bucket=settings.S3_BUCKET,
-            Key=key,
-        )
-        return response["Body"].read()
+        def _do_download():
+            response = storage_client.get_object(
+                Bucket=settings.S3_BUCKET,
+                Key=key,
+            )
+            return response["Body"].read()
+        
+        return await anyio.to_thread.run_sync(_do_download)
     except ClientError as e:
         logger.error("File download failed", key=key, error=str(e))
         return None
 
 
-def delete_file(key: str) -> bool:
+async def delete_file(key: str) -> bool:
     """Delete a file from S3 storage."""
     try:
-        storage_client.delete_object(
-            Bucket=settings.S3_BUCKET,
-            Key=key,
-        )
+        def _do_delete():
+            storage_client.delete_object(
+                Bucket=settings.S3_BUCKET,
+                Key=key,
+            )
+        
+        await anyio.to_thread.run_sync(_do_delete)
         logger.info("File deleted", key=key)
         return True
     except ClientError as e:
@@ -175,15 +190,18 @@ def generate_presigned_url(
         return None
 
 
-def list_files(prefix: str, max_keys: int = 1000) -> list:
+async def list_files(prefix: str, max_keys: int = 1000) -> list:
     """List files with a given prefix."""
     try:
-        response = storage_client.list_objects_v2(
-            Bucket=settings.S3_BUCKET,
-            Prefix=prefix,
-            MaxKeys=max_keys,
-        )
-        return response.get("Contents", [])
+        def _do_list():
+            response = storage_client.list_objects_v2(
+                Bucket=settings.S3_BUCKET,
+                Prefix=prefix,
+                MaxKeys=max_keys,
+            )
+            return response.get("Contents", [])
+        
+        return await anyio.to_thread.run_sync(_do_list)
     except ClientError as e:
         logger.error("File listing failed", prefix=prefix, error=str(e))
         return []

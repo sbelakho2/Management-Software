@@ -247,12 +247,8 @@ export const usePipelineStore = create<PipelineState>()(
 
         // Assign RFQ
         assignRFQ: async (id: string, assigneeId: string) => {
-          // Fetch assignee details (mock for now)
-          const assignee = {
-            id: assigneeId,
-            name: 'User Name', // Would fetch from API
-          };
-          await get().updateRFQ(id, { assignee });
+          // Use the correct property name from RFQ type
+          await get().updateRFQ(id, { assigned_to: assigneeId });
         },
 
         // Clear error

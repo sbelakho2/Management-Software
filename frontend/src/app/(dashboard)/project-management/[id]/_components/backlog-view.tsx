@@ -28,7 +28,7 @@ type ViewMode = 'list' | 'create' | 'detail';
 
 export function BacklogView({ projectId }: BacklogViewProps) {
   const { 
-    currentProject,
+    selectedProject: currentProject,
     stories, epics, sprints, createStory, updateStory,
     subtasksByStoryId, commentsByStoryId,
     fetchSubtasks, createSubtask, updateSubtask,

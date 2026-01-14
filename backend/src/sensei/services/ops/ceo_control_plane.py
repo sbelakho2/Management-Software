@@ -12,11 +12,17 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Any, Dict, List
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
-    pass
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sensei.models.strategic import (
+        NL2SQLQueryRecord,
+        EmployeeRiskAssessmentRecord,
+        ScenarioResultRecord,
+        VarianceAlertRecord,
+    )
 
 
 class RiskLevel(str, Enum):
@@ -220,8 +226,9 @@ class CEOControlPlaneService:
 
     # ---- Variance Alerts (Cost/COGS) ----
 
-    def record_variance_alert(
+    async def record_variance_alert(
         self,
+        db: AsyncSession,
         role: str,
         *,
         quote_id: str,
@@ -232,9 +239,7 @@ class CEOControlPlaneService:
         correlation_id: str | None = None,
         occurred_at: datetime | None = None,
     ) -> "VarianceAlert":
-        """Record a cost variance alert for CEO/Exec visibility.
-
-        This is a lightweight ingestion point used by reconciliation/feedback-loop services.
+        """Record a cost variance alert for CEO/Exec visibility with persistence.
         """
         self._check_role(role)
 
@@ -249,6 +254,24 @@ class CEOControlPlaneService:
         deviation_pct = (actual_cogs - estimated_cogs) / estimated_cogs
         severity = _severity_from_deviation(abs(deviation_pct))
 
+        # Create persistence record
+        from sensei.models.strategic import VarianceAlertRecord
+        db_alert = VarianceAlertRecord(
+            id=uuid4(),
+            quote_id=qid,
+            actual_cogs=float(actual_cogs),
+            estimated_cogs=float(estimated_cogs),
+            deviation_pct=float(deviation_pct),
+            threshold_pct=float(threshold_pct),
+            severity=severity.value,
+            work_order_ids=[w for w in (work_order_ids or []) if w and w.strip()],
+            correlation_id=(correlation_id or "").strip() or None,
+            occurred_at=occurred_at or _utcnow(),
+        )
+        db.add(db_alert)
+        await db.commit()
+
+        # Update in-memory cache for immediate UI responsiveness if needed
         alert = VarianceAlert(
             quote_id=qid,
             actual_cogs=float(actual_cogs),
@@ -256,13 +279,13 @@ class CEOControlPlaneService:
             deviation_pct=float(deviation_pct),
             threshold_pct=float(threshold_pct),
             severity=severity,
-            occurred_at=occurred_at or _utcnow(),
-            work_order_ids=[w for w in (work_order_ids or []) if w and w.strip()],
-            correlation_id=(correlation_id or "").strip() or None,
+            occurred_at=db_alert.occurred_at,
+            work_order_ids=db_alert.work_order_ids,
+            correlation_id=db_alert.correlation_id,
         )
         self._variance_alerts.append(alert)
 
-        # Also surface as a COST metric in the War Room display.
+        # Surface as a metric
         self._metrics.append(
             SQDCPMetric(
                 metric_type=MetricType.COST,
@@ -277,9 +300,28 @@ class CEOControlPlaneService:
         )
         return alert
 
-    def list_variance_alerts(self, role: str) -> list["VarianceAlert"]:
+    async def list_variance_alerts(self, db: AsyncSession, role: str) -> list["VarianceAlert"]:
         self._check_role(role)
-        return list(self._variance_alerts)
+        from sqlalchemy import select
+        from sensei.models.strategic import VarianceAlertRecord
+        
+        result = await db.execute(select(VarianceAlertRecord).order_by(VarianceAlertRecord.occurred_at.desc()))
+        db_alerts = result.scalars().all()
+        
+        return [
+            VarianceAlert(
+                quote_id=a.quote_id,
+                actual_cogs=a.actual_cogs,
+                estimated_cogs=a.estimated_cogs,
+                deviation_pct=a.deviation_pct,
+                threshold_pct=a.threshold_pct,
+                severity=RiskLevel(a.severity),
+                occurred_at=a.occurred_at,
+                work_order_ids=a.work_order_ids,
+                correlation_id=a.correlation_id,
+            )
+            for a in db_alerts
+        ]
 
     def _check_role(self, role: str) -> None:
         if role.lower() not in self.ALLOWED_ROLES:
@@ -348,9 +390,9 @@ ORDER BY month DESC;
             explanation = "This query calculates monthly quote conversion rates by counting won quotes versus total quotes."
 
         else:
-            # Generic query.
-            sql = f"SELECT * FROM data WHERE description LIKE '%{natural_language[:20]}%' LIMIT 100;"
-            explanation = "Generic query matching the natural language description."
+            # Generic query using a safe template without direct interpolation
+            sql = "SELECT * FROM data WHERE status = 'active' LIMIT 100;"
+            explanation = "Default summary of active business data."
 
         query = NL2SQLQuery(
             natural_language=natural_language,

@@ -1128,6 +1128,7 @@ class ContinuousLearningManager:
         self.candidate_model_version: str | None = None
         self.ab_test_active: bool = False
         self._retraining_scheduled: bool = False
+        self.feedback_queue: list[FeedbackRecord] = []
 
     async def record_feedback(
         self,
@@ -1136,6 +1137,9 @@ class ContinuousLearningManager:
         image_key: str | None = None,
     ) -> None:
         """Record operator feedback and persist to database."""
+        # Add to local queue for immediate recommendation updates
+        self.feedback_queue.append(feedback)
+        
         # Create feedback record
         record = InspectionFeedback(
             inspection_id=feedback.inspection_id,
@@ -1237,18 +1241,35 @@ class VisualQualityInspectionService:
     ):
         self.config = config or InspectionConfig()
         
-        # Initialize components
-        self.anomaly_detector = PatchCoreDetector()
-        self.defect_detector = YOLODefectDetector(
-            model_size="m",
-            device="cuda" if self.config.use_gpu else "cpu",
-        )
+        # Initialize components - Lazy-loaded
+        self._anomaly_detector: PatchCoreDetector | None = None
+        self._defect_detector: YOLODefectDetector | None = None
+        
         self.scoring_engine = QualityScoringEngine()
         self.learning_manager = ContinuousLearningManager()
         self.enricher = VisionEnrichmentSuite()
         
         # Cache
         self._models_loaded = False
+
+    @property
+    def anomaly_detector(self) -> PatchCoreDetector:
+        """Lazy-load anomaly detector."""
+        if self._anomaly_detector is None:
+            logger.info("Lazy-loading PatchCoreDetector")
+            self._anomaly_detector = PatchCoreDetector()
+        return self._anomaly_detector
+
+    @property
+    def defect_detector(self) -> YOLODefectDetector:
+        """Lazy-load defect detector."""
+        if self._defect_detector is None:
+            logger.info("Lazy-loading YOLODefectDetector")
+            self._defect_detector = YOLODefectDetector(
+                model_size="m",
+                device="cuda" if self.config.use_gpu else "cpu",
+            )
+        return self._defect_detector
     
     def load_models(self) -> None:
         """Load all inspection models."""
@@ -1286,12 +1307,12 @@ class VisualQualityInspectionService:
         standard_work_context: dict[str, Any] | None = None,
     ) -> InspectionResult:
         """
-        Inspect a single image for defects.
+        Inspect a single image for defects with lazy-loaded models.
         """
         import time
         start_time = time.time()
         
-        self.load_models()
+        # Models are lazy-loaded via properties
         
         inspection_id = str(uuid.uuid4())
         image_id = image_id or str(uuid.uuid4())[:8]
@@ -1304,7 +1325,11 @@ class VisualQualityInspectionService:
         # Run anomaly detection
         if self.config.model_type in [ModelType.ANOMALY_DETECTION, ModelType.DEFECT_DETECTION]:
             try:
-                anomaly_score, anomaly_map = self.anomaly_detector.predict(image)
+                import anyio
+                # Use property for lazy loading and run in thread to avoid blocking event loop
+                anomaly_score, anomaly_map = await anyio.to_thread.run_sync(
+                    self.anomaly_detector.predict, image
+                )
                 models_used.append(f"patchcore_{self.config.anomaly_method.value}")
                 
                 # Convert high-anomaly regions to defects
@@ -1327,9 +1352,12 @@ class VisualQualityInspectionService:
         
         # Run defect detection
         if self.config.model_type in [ModelType.DEFECT_DETECTION, ModelType.DEFECT_CLASSIFICATION]:
-            detections = self.defect_detector.detect(
-                image, 
-                confidence_threshold=self.config.detection_confidence,
+            import anyio
+            detections = await anyio.to_thread.run_sync(
+                lambda: self.defect_detector.detect(
+                    image, 
+                    confidence_threshold=self.config.detection_confidence,
+                )
             )
             models_used.append(f"yolov8_{self.config.detection_model}")
             
@@ -1442,15 +1470,16 @@ class VisualQualityInspectionService:
         
         return batch
     
-    def record_feedback(
+    async def record_feedback(
         self,
+        db: AsyncSession,
         inspection_id: str,
         corrected_decision: InspectionDecision | None = None,
         false_positive_ids: list[str] | None = None,
         false_negative_boxes: list[tuple[BoundingBox, str]] | None = None,
         operator_id: str = "",
         notes: str = "",
-        image: np.ndarray | None = None,
+        image_key: str | None = None,
     ) -> None:
         """
         Record operator feedback for continuous learning.
@@ -1458,7 +1487,7 @@ class VisualQualityInspectionService:
         feedback = FeedbackRecord(
             inspection_id=inspection_id,
             timestamp=_utcnow(),
-            original_decision=InspectionDecision.PASS,  # Would look up actual
+            original_decision=InspectionDecision.PASS,  # Should ideally look up actual in production
             corrected_decision=corrected_decision,
             false_positive_ids=false_positive_ids or [],
             false_negative_boxes=false_negative_boxes or [],
@@ -1466,7 +1495,7 @@ class VisualQualityInspectionService:
             notes=notes,
         )
         
-        self.learning_manager.record_feedback(feedback, image)
+        await self.learning_manager.record_feedback(db, feedback, image_key)
     
     def get_learning_status(self) -> dict[str, Any]:
         """Get status of continuous learning."""

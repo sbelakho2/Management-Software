@@ -28,6 +28,7 @@ from sensei.models.strategic import (
     EmployeeRiskAssessmentRecord,
     ScenarioResultRecord,
 )
+from sensei.core.time import now_utc
 
 
 # =============================================================================
@@ -696,7 +697,7 @@ class MaintenanceAuditLog:
 
 class NL2SQLEngine:
     """
-    Natural Language to SQL query engine.
+    Natural Language to SQL query engine with security hardening.
     """
     
     # Simulated schema for SQL generation
@@ -720,9 +721,13 @@ class NL2SQLEngine:
         self.security_level = security_level
     
     async def generate_sql(self, db: AsyncSession, natural_language: str, user_id: str | None = None) -> NL2SQLQuery:
-        """Generate SQL from natural language query and persist."""
+        """Generate SQL from natural language query and persist with security checks."""
         nl_lower = natural_language.lower()
         
+        # Security: Prevent basic comment injection
+        if "--" in natural_language or "/*" in natural_language:
+            raise ValueError("Potential SQL injection detected: comments not allowed")
+
         # Pattern matching for SQL generation
         sql = "SELECT * FROM quotes LIMIT 100"  # Default
         tables_used = ["quotes"]
@@ -735,8 +740,9 @@ class NL2SQLEngine:
         
         # Add security restrictions
         if self.security_level == QuerySecurityLevel.READ_ONLY:
-            if any(kw in sql.upper() for kw in ["UPDATE", "DELETE", "INSERT", "DROP"]):
-                sql = "-- BLOCKED: Write operations not allowed"
+            is_valid, error = self.validate_query(sql)
+            if not is_valid:
+                sql = f"-- BLOCKED: {error}"
         
         explanation = self._generate_explanation(sql)
         

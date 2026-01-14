@@ -422,19 +422,62 @@ class KnowledgeEnrichmentService:
         db: AsyncSession,
         source_id: UUID,
         content: str,
-        chunk_size: int = 1000,
+        chunk_size: int = 1500,
+        overlap: int = 200,
     ) -> list[SemanticChunkRecord]:
-        """Chunk and ingest content into the database."""
-        # Simple chunking logic for demonstration
-        chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+        """Chunk and ingest content into the database with paragraph-aware splitting."""
+        # Use paragraph-aware chunking for better semantic coherence
+        paragraphs = re.split(r'\n\s*\n', content)
+        
+        chunks = []
+        current_chunk = ""
+        
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+            
+            if len(current_chunk) + len(para) <= chunk_size:
+                current_chunk += ("\n\n" if current_chunk else "") + para
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                
+                # Handle single large paragraphs by splitting by sentences
+                if len(para) > chunk_size:
+                    sentences = re.split(r'(?<=[.!?])\s+', para)
+                    temp_chunk = ""
+                    for sent in sentences:
+                        if len(temp_chunk) + len(sent) <= chunk_size:
+                            temp_chunk += (" " if temp_chunk else "") + sent
+                        else:
+                            if temp_chunk:
+                                chunks.append(temp_chunk)
+                            temp_chunk = sent
+                    current_chunk = temp_chunk
+                else:
+                    current_chunk = para
+        
+        if current_chunk:
+            chunks.append(current_chunk)
         
         chunk_records = []
         for i, chunk_text in enumerate(chunks):
+            chunk_type = self._detect_chunk_type(chunk_text)
+            categories = self._detect_taxonomy_categories(chunk_text)
+            
             chunk = SemanticChunkRecord(
+                id=uuid4(),
                 source_id=source_id,
                 content=chunk_text,
                 chunk_index=i,
-                token_count=len(chunk_text.split()), # Simple proxy
+                chunk_type=chunk_type.value,
+                taxonomy_categories=[cat.value for cat in categories],
+                token_count=len(chunk_text.split()), # Proxy
+                metadata_fields={
+                    "ingested_at": datetime.now(timezone.utc).isoformat(),
+                    "chunk_method": "paragraph_aware_v2"
+                }
             )
             db.add(chunk)
             chunk_records.append(chunk)

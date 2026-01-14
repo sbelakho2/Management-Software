@@ -91,7 +91,7 @@ class ModelRegistry:
         with open(self.metadata_file, 'w') as f:
             json.dump(self.registry, f, indent=2, default=str)
     
-    def register_model(
+    async def register_model(
         self,
         metadata: ModelMetadata,
         model_artifacts_path: Path,
@@ -114,11 +114,11 @@ class ModelRegistry:
                     relative_path = file_path.relative_to(model_artifacts_path)
                     key = f"ml/models/{model_id}/artifacts/{relative_path}"
                     with open(file_path, "rb") as f:
-                        upload_file(f.read(), key, metadata={"model_id": model_id})
+                        await upload_file(f.read(), key, metadata={"model_id": model_id})
         else:
             key = f"ml/models/{model_id}/model.pkl"
             with open(model_artifacts_path, "rb") as f:
-                upload_file(f.read(), key, metadata={"model_id": model_id})
+                await upload_file(f.read(), key, metadata={"model_id": model_id})
         
         # Save metadata
         metadata_dict = asdict(metadata)
@@ -127,7 +127,7 @@ class ModelRegistry:
         
         # Upload metadata to S3
         metadata_key = f"ml/models/{model_id}/metadata.json"
-        upload_file(json.dumps(metadata_dict, indent=2).encode(), metadata_key, metadata={"model_id": model_id})
+        await upload_file(json.dumps(metadata_dict, indent=2).encode(), metadata_key, metadata={"model_id": model_id})
         
         # Update registry
         self.registry[model_id] = metadata_dict
@@ -320,7 +320,7 @@ class MLPipeline:
             registry = ModelRegistry(Path(default_path))
         self.registry = registry
     
-    def run_training(
+    async def run_training(
         self,
         model_name: str,
         model_class: type,
@@ -379,7 +379,7 @@ class MLPipeline:
             )
             
             # Register
-            model_id = self.registry.register_model(metadata, model_path)
+            model_id = await self.registry.register_model(metadata, model_path)
             
             logger.info(f"Training pipeline completed. Model ID: {model_id}")
             return model_id

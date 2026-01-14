@@ -41,31 +41,13 @@ import {
 import { Avatar } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatRelativeTime, formatDate } from '@/lib/utils';
-import type { RFQStatus, Priority, UserRole } from '@/types';
+import type { RFQStatus, Priority, UserRole, RFQ } from '@/types';
 import { usePipelineStore } from '@/stores/pipeline';
 import { useAuthStore } from '@/stores';
 import { hasPageAccess } from '@/lib/page-access';
 
-// Types
-interface RFQItem {
-  id: string;
-  rfqNumber: string;
-  customerName: string;
-  customerId: string;
-  title: string;
-  description?: string;
-  dueDate: string;
-  receivedDate: string;
-  estimatedValue?: number;
-  priority: Priority;
-  status: RFQStatus;
-  assignee?: {
-    id: string;
-    name: string;
-    avatar?: string;
-  };
-  tags: string[];
-}
+// Use RFQ type directly from the types
+type RFQItem = RFQ;
 
 
 const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
@@ -96,7 +78,7 @@ const kanbanColumns: { status: RFQStatus; title: string }[] = [
 // Components
 function RFQListItem({ rfq }: { rfq: RFQItem }) {
   const router = useRouter();
-  const isOverdue = new Date(rfq.dueDate) < new Date();
+  const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
     <tr 
@@ -105,8 +87,8 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
     >
       <td className="py-3 px-4">
         <div>
-          <p className="font-medium">{rfq.rfqNumber}</p>
-          <p className="text-sm text-muted-foreground">{rfq.customerName}</p>
+          <p className="font-medium">{rfq.rfq_number}</p>
+          <p className="text-sm text-muted-foreground">{rfq.customer?.name || 'Unknown'}</p>
         </div>
       </td>
       <td className="py-3 px-4">
@@ -124,21 +106,21 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
       </td>
       <td className="py-3 px-4">
         <span className={cn(isOverdue && 'text-danger font-medium')}>
-          {formatDate(new Date(rfq.dueDate))}
+          {formatDate(new Date(rfq.due_date))}
         </span>
       </td>
       <td className="py-3 px-4">
-        {rfq.estimatedValue ? formatCurrency(rfq.estimatedValue) : '-'}
+        {rfq.estimated_value ? formatCurrency(rfq.estimated_value) : '-'}
       </td>
       <td className="py-3 px-4">
-        {rfq.assignee ? (
+        {rfq.assigned_user ? (
           <div className="flex items-center gap-2">
             <Avatar
-              fallback={rfq.assignee.name}
-              src={rfq.assignee.avatar}
+              fallback={rfq.assigned_user.full_name || rfq.assigned_user.email}
+              src={rfq.assigned_user.avatar_url}
               size="xs"
             />
-            <span className="text-sm">{rfq.assignee.name}</span>
+            <span className="text-sm">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
           </div>
         ) : (
           <span className="text-muted-foreground">Unassigned</span>
@@ -185,32 +167,32 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
 }
 
 function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
-  const isOverdue = new Date(rfq.dueDate) < new Date();
+  const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
     <Link href={`/pipeline/${rfq.id}`}>
       <Card className="mb-3 hover:shadow-md transition-shadow cursor-pointer">
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-2">
-            <p className="font-medium text-sm">{rfq.rfqNumber}</p>
+            <p className="font-medium text-sm">{rfq.rfq_number}</p>
             <Badge variant={priorityConfig[rfq.priority].color as 'secondary' | 'warning' | 'danger' | 'destructive'} className="text-xs">
               {priorityConfig[rfq.priority].label}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground mb-1">{rfq.customerName}</p>
+          <p className="text-sm text-muted-foreground mb-1">{rfq.customer?.name || 'Unknown'}</p>
           <p className="text-sm mb-3 line-clamp-2">{rfq.title}</p>
           <div className="flex items-center justify-between text-xs">
             <span className={cn(isOverdue ? 'text-danger' : 'text-muted-foreground')}>
-              Due {formatRelativeTime(new Date(rfq.dueDate))}
+              Due {formatRelativeTime(new Date(rfq.due_date))}
             </span>
-            {rfq.estimatedValue && (
-              <span className="font-medium">{formatCurrency(rfq.estimatedValue)}</span>
+            {rfq.estimated_value && (
+              <span className="font-medium">{formatCurrency(rfq.estimated_value)}</span>
             )}
           </div>
-          {rfq.assignee && (
+          {rfq.assigned_user && (
             <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-              <Avatar fallback={rfq.assignee.name} size="xs" />
-              <span className="text-xs text-muted-foreground">{rfq.assignee.name}</span>
+              <Avatar fallback={rfq.assigned_user.full_name || rfq.assigned_user.email} size="xs" />
+              <span className="text-xs text-muted-foreground">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
             </div>
           )}
           {rfq.tags.length > 0 && (
@@ -230,7 +212,7 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
 
 function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatus; rfqs: RFQItem[] }) {
   const statusItems = rfqs.filter((r) => r.status === status);
-  const totalValue = statusItems.reduce((sum, r) => sum + (r.estimatedValue || 0), 0);
+  const totalValue = statusItems.reduce((sum, r) => sum + (r.estimated_value || 0), 0);
 
   return (
     <div className="flex-1 min-w-[280px] max-w-[350px]">
@@ -286,9 +268,9 @@ function PipelinePageContent() {
   const filteredRFQs = React.useMemo(() => {
     return rfqs.filter((rfq) => {
       const matchesSearch = !search ||
-        rfq.rfqNumber.toLowerCase().includes(search.toLowerCase()) ||
+        rfq.rfq_number.toLowerCase().includes(search.toLowerCase()) ||
         rfq.title.toLowerCase().includes(search.toLowerCase()) ||
-        rfq.customerName.toLowerCase().includes(search.toLowerCase());
+        (rfq.customer?.name || '').toLowerCase().includes(search.toLowerCase());
       const matchesStatus = statusFilter === 'all' || rfq.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || rfq.priority === priorityFilter;
       return matchesSearch && matchesStatus && matchesPriority;
@@ -454,7 +436,7 @@ function PipelinePageContent() {
           Showing {filteredRFQs.length} of {rfqs.length} RFQs
         </p>
         <p>
-          Total Value: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimatedValue || 0), 0))}
+          Total Value: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimated_value || 0), 0))}
         </p>
       </div>
     </div>

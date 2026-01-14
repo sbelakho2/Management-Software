@@ -37,7 +37,7 @@ from sensei.models.project_management import (
     Sprint,
     Issue,
     IssueComment,
-    Milestone,
+    ProjectMilestone,
     WikiPage,
     ProjectActivity,
     BoardView,

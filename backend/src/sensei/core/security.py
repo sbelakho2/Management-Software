@@ -502,6 +502,12 @@ def generate_backup_codes(count: int = 10) -> list[str]:
     return codes
 
 
+def _normalize_backup_code(code: str) -> str:
+    """Normalize backup code by removing non-alphanumeric characters and uppercasing."""
+    import re
+    return re.sub(r"[^A-Z0-9]", "", code.upper())
+
+
 def hash_backup_codes(codes: list[str]) -> list[str]:
     """
     Hash backup codes for secure storage.
@@ -512,7 +518,7 @@ def hash_backup_codes(codes: list[str]) -> list[str]:
     Returns:
         List of hashed backup codes
     """
-    return [hash_password(code) for code in codes]
+    return [hash_password(_normalize_backup_code(code)) for code in codes]
 
 
 def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, int]:
@@ -531,10 +537,10 @@ def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, int]:
         return False, -1
     
     # Normalize the code
-    code = code.upper().replace(" ", "").strip()
+    normalized_code = _normalize_backup_code(code)
     
     for i, hashed in enumerate(hashed_codes):
-        if verify_password(code, hashed):
+        if verify_password(normalized_code, hashed):
             return True, i
     
     return False, -1

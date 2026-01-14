@@ -297,8 +297,8 @@ class Project(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="project",
         cascade="all, delete-orphan",
     )
-    milestones: Mapped[list["Milestone"]] = relationship(
-        "Milestone",
+    milestones: Mapped[list["ProjectMilestone"]] = relationship(
+        "ProjectMilestone",
         back_populates="project",
         cascade="all, delete-orphan",
     )
@@ -595,7 +595,7 @@ class UserStory(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     project: Mapped["Project"] = relationship("Project", back_populates="user_stories")
     epic: Mapped[Optional["Epic"]] = relationship("Epic", back_populates="user_stories")
     sprint: Mapped[Optional["Sprint"]] = relationship("Sprint", back_populates="user_stories")
-    milestone: Mapped[Optional["Milestone"]] = relationship("Milestone", back_populates="user_stories")
+    milestone: Mapped[Optional["ProjectMilestone"]] = relationship("ProjectMilestone", back_populates="user_stories")
     owner: Mapped[Optional["User"]] = relationship("User", foreign_keys=[owner_id])
     subtasks: Mapped[list["Subtask"]] = relationship(
         "Subtask",
@@ -958,7 +958,7 @@ class Issue(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="issues")
-    milestone: Mapped[Optional["Milestone"]] = relationship("Milestone", back_populates="issues")
+    milestone: Mapped[Optional["ProjectMilestone"]] = relationship("ProjectMilestone", back_populates="issues")
     owner: Mapped[Optional["User"]] = relationship("User", foreign_keys=[owner_id])
     assigned_to: Mapped[Optional["User"]] = relationship("User", foreign_keys=[assigned_to_id])
     comments: Mapped[list["IssueComment"]] = relationship(
@@ -1017,7 +1017,7 @@ class IssueComment(Base, TimestampMixin):
 # =============================================================================
 
 
-class Milestone(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
+class ProjectMilestone(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     """
     Milestone: A significant point or event in a project.
     

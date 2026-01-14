@@ -153,7 +153,7 @@ export interface WikiPage {
   updated_at: string;
 }
 
-export interface Milestone {
+export interface ProjectMilestone {
   id: string;
   project_id: string;
   name: string;
@@ -224,7 +224,7 @@ interface ProjectManagementState {
   stories: UserStory[];
   issues: Issue[];
   wikiPages: WikiPage[];
-  milestones: Milestone[];
+  milestones: ProjectMilestone[];
   activities: ProjectActivity[];
   myWork: { stories: UserStory[]; issues: Issue[] };
   subtasksByStoryId: Record<string, Subtask[]>;
@@ -259,8 +259,8 @@ interface ProjectManagementState {
   updateWikiPage: (pageId: string, updates: Partial<WikiPage>) => Promise<WikiPage>;
 
   fetchMilestones: (projectId: string) => Promise<void>;
-  createMilestone: (payload: Partial<Milestone> & { project_id: string; name: string; due_date: string }) => Promise<Milestone>;
-  updateMilestone: (milestoneId: string, updates: Partial<Milestone>) => Promise<Milestone>;
+  createMilestone: (payload: Partial<ProjectMilestone> & { project_id: string; name: string; due_date: string }) => Promise<ProjectMilestone>;
+  updateMilestone: (milestoneId: string, updates: Partial<ProjectMilestone>) => Promise<ProjectMilestone>;
   deleteMilestone: (milestoneId: string) => Promise<void>;
 
   fetchActivities: (projectId: string) => Promise<void>;
@@ -546,7 +546,7 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     fetchMilestones: async (projectId) => {
       set({ isLoading: true, error: null });
       try {
-        const res = await apiGet<ApiEnvelope<Milestone[]>>(`/projects/${encodeURIComponent(projectId)}/milestones`);
+        const res = await apiGet<ApiEnvelope<ProjectMilestone[]>>(`/projects/${encodeURIComponent(projectId)}/milestones`);
         set({ milestones: res.data, isLoading: false });
       } catch (e) {
         set({ error: e instanceof Error ? e.message : 'Failed to load milestones', isLoading: false });

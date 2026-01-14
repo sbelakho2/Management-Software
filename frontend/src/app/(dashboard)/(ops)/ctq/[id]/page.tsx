@@ -257,13 +257,12 @@ export default function CTQDetailPage() {
       description: 'Your CTQ report is being generated',
     });
 
-    const headers = ['Date', 'Measured Value', 'Deviation', 'Result', 'Measured By', 'Notes'];
+    const headers = ['Date', 'Measured Value', 'Result', 'Measured By', 'Notes'];
     const rows = ctq.measurements.map(m => [
-      formatDate(new Date(m.measured_at)),
-      m.measured_value,
-      m.deviation || 0,
+      new Date(m.measured_at).toLocaleDateString(),
+      m.measured_value ?? '',
       m.result,
-      m.measured_by?.name || 'N/A',
+      m.measured_by_name || 'N/A',
       m.notes || ''
     ]);
 

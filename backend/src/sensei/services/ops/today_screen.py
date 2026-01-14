@@ -24,10 +24,11 @@ from sensei.core.redis import redis_client
 
 from sensei.models.project_management import UserStory, ProjectMilestone, Project, ProjectStatus, UserStoryStatus
 from sqlalchemy import select, or_, and_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sensei.core.time import now_utc
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return now_utc()
 
 
 class RiskCategory(str, Enum):
@@ -1675,11 +1676,11 @@ class TodayScreenService:
 
     # ========== Full Today Screen Data ==========
     
-    def get_today_screen(
+    async def get_today_screen(
         self,
         user_id: UUID,
         user_name: str,
-        db: Session | None = None,
+        db: AsyncSession | None = None,
     ) -> TodayScreenData:
         """Get complete Today screen data for a user."""
         today = date.today()
@@ -1687,7 +1688,7 @@ class TodayScreenService:
         
         # Aggregate real-time data if DB is provided
         if db:
-            self._aggregate_project_data(db, user_id)
+            await self._aggregate_project_data(db, user_id)
         
         # Get greeting based on time of day
         hour = datetime.now().hour
@@ -1754,7 +1755,7 @@ class TodayScreenService:
             cache_valid_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5),
         )
     
-    def _aggregate_project_data(self, db: Session, user_id: UUID) -> None:
+    async def _aggregate_project_data(self, db: AsyncSession, user_id: UUID) -> None:
         """Aggregate project data into commitments and abnormalities."""
         today = date.today()
         
@@ -1768,17 +1769,18 @@ class TodayScreenService:
                 ProjectMilestone.deleted_at.is_(None)
             )
         )
-        milestones = db.execute(milestone_stmt).all()
+        result = await db.execute(milestone_stmt)
+        milestones = result.all()
         
         for ms, project_name in milestones:
             # Overdue Milestone as Abnormality
-            if ms.target_date < today:
+            if ms.due_date < today:
                 self.add_abnormality(
                     user_id=user_id,
                     title=f"Overdue Milestone: {ms.name}",
                     atype=AbnormalityType.OVERDUE_PROJECT_MILESTONE,
                     severity=8,
-                    description=f"Project: {project_name}. Due on {ms.target_date}",
+                    description=f"Project: {project_name}. Due on {ms.due_date}",
                     entity_type="project_milestone",
                     entity_id=ms.id,
                 )
@@ -1788,11 +1790,11 @@ class TodayScreenService:
                 user_id=user_id,
                 title=f"Milestone: {ms.name}",
                 ctype=CommitmentType.PROJECT_MILESTONE_DUE,
-                target_date=ms.target_date,
+                target_date=ms.due_date,
                 description=f"Project: {project_name}",
                 entity_type="project_milestone",
                 entity_id=ms.id,
-                priority=PriorityLevel.HIGH if ms.target_date <= today else PriorityLevel.MEDIUM
+                priority=PriorityLevel.HIGH if ms.due_date <= today else PriorityLevel.MEDIUM
             )
 
         # 2. Fetch Assigned User Stories with due dates
@@ -1808,7 +1810,8 @@ class TodayScreenService:
                 UserStory.due_date.isnot(None)
             )
         )
-        stories = db.execute(story_stmt).all()
+        result = await db.execute(story_stmt)
+        stories = result.all()
         
         for story, project_name in stories:
             # Overdue Story as Abnormality

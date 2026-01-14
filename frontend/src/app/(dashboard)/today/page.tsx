@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 
-import { Calendar, ArrowRight, CheckCircle2, AlertCircle, Loader2, Plus, TrendingUp, Target, Zap } from 'lucide-react';
+import { Calendar, ArrowRight, CheckCircle2, AlertCircle, Loader2, Plus, TrendingUp, Target, Zap, Layers } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

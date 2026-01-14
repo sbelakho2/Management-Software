@@ -24,5 +24,8 @@ def utcnow_naive() -> datetime:
 
     Use this when interacting with legacy naive `DateTime` columns.
     """
+    import structlog
+    logger = structlog.get_logger("sensei.core.time")
+    logger.warning("utcnow_naive called: returning naive datetime. Consider migrating to timezone-aware.")
 
     return now_utc().replace(tzinfo=None)

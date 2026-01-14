@@ -41,7 +41,7 @@ from sensei.models.project_management import (
     IssueSeverity,
     IssueStatus,
     IssueType,
-    Milestone,
+    ProjectMilestone,
     MilestoneType,
     Project,
     ProjectActivity,
@@ -243,8 +243,16 @@ async def _get_next_project_ref(db: DBSession, project_id: UUID, entity_type: st
 
 
 async def _next_story_ref(db: DBSession, user_story_id: UUID) -> int:
-    result = await db.execute(select(func.max(Subtask.ref)).where(Subtask.user_story_id == user_story_id))
-    max_ref = result.scalar_one()
+    """Get next subtask reference number with locking on the parent UserStory."""
+    # Lock the parent user story to serialize subtask creation
+    await db.execute(
+        select(UserStory.id).where(UserStory.id == user_story_id).with_for_update()
+    )
+    
+    result = await db.execute(
+        select(func.max(Subtask.ref)).where(Subtask.user_story_id == user_story_id)
+    )
+    max_ref = result.scalar()
     return int(max_ref or 0) + 1
 
 
@@ -327,8 +335,8 @@ async def _update_milestone_stats(db: DBSession, milestone_id: UUID) -> None:
     closed = (story_stats.completed or 0) + (issue_stats.closed or 0)
     
     await db.execute(
-        update(Milestone)
-        .where(Milestone.id == milestone_id)
+        update(ProjectMilestone)
+        .where(ProjectMilestone.id == milestone_id)
         .values(
             total_items=total,
             closed_items=closed,
@@ -977,11 +985,11 @@ class IssueCommentResponse(BaseModel):
 
 
 # =============================================================================
-# Milestone schemas
+# ProjectMilestone schemas
 # =============================================================================
 
 
-class MilestoneCreate(BaseModel):
+class ProjectMilestoneCreate(BaseModel):
     project_id: UUID
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
@@ -996,7 +1004,7 @@ class MilestoneCreate(BaseModel):
         return v
 
 
-class MilestoneUpdate(BaseModel):
+class ProjectMilestoneUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
     milestone_type: Optional[str] = None
@@ -1012,7 +1020,7 @@ class MilestoneUpdate(BaseModel):
         return v
 
 
-class MilestoneResponse(BaseModel):
+class ProjectMilestoneResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -1031,7 +1039,7 @@ class MilestoneResponse(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, milestone: Milestone) -> "MilestoneResponse":
+    def from_model(cls, milestone: ProjectMilestone) -> "ProjectMilestoneResponse":
         return cls(
             id=milestone.id,
             project_id=milestone.project_id,
@@ -2266,25 +2274,25 @@ async def list_story_comments(story_id: UUID, db: DBSession, user: CurrentUser):
 
 
 @router.post("/milestones", response_model=APIResponse)
-async def create_milestone(payload: MilestoneCreate, db: DBSession, user: CurrentUser):
+async def create_milestone(payload: ProjectMilestoneCreate, db: DBSession, user: CurrentUser):
     project = await _get_project_or_404(db, payload.project_id)
     await _require_project_access(db, project, user, permission="edit")
 
     slug = slugify(payload.name)
     if not slug:
-        raise ConflictError("Milestone slug could not be generated")
+        raise ConflictError("ProjectMilestone slug could not be generated")
 
     existing = await db.execute(
-        select(Milestone).where(
-            Milestone.project_id == payload.project_id,
-            Milestone.slug == slug,
-            Milestone.deleted_at.is_(None),
+        select(ProjectMilestone).where(
+            ProjectMilestone.project_id == payload.project_id,
+            ProjectMilestone.slug == slug,
+            ProjectMilestone.deleted_at.is_(None),
         )
     )
     if existing.scalar_one_or_none() is not None:
-        raise ConflictError("Milestone slug already exists")
+        raise ConflictError("ProjectMilestone slug already exists")
 
-    milestone = Milestone(
+    milestone = ProjectMilestone(
         project_id=payload.project_id,
         name=payload.name,
         slug=slug,
@@ -2311,7 +2319,7 @@ async def create_milestone(payload: MilestoneCreate, db: DBSession, user: Curren
 
     await db.commit()
     await db.refresh(milestone)
-    return build_created_response(MilestoneResponse.from_model(milestone), resource_name="Milestone")
+    return build_created_response(ProjectMilestoneResponse.from_model(milestone), resource_name="ProjectMilestone")
 
 
 @router.get("/projects/{project_id}/milestones", response_model=APIResponse)
@@ -2322,24 +2330,24 @@ async def list_milestones(project_id: UUID, db: DBSession, user: CurrentUser):
     rows = (
         (
             await db.execute(
-                select(Milestone)
-                .where(Milestone.project_id == project_id, Milestone.deleted_at.is_(None))
-                .order_by(Milestone.due_date.asc(), Milestone.order.asc())
+                select(ProjectMilestone)
+                .where(ProjectMilestone.project_id == project_id, ProjectMilestone.deleted_at.is_(None))
+                .order_by(ProjectMilestone.due_date.asc(), ProjectMilestone.order.asc())
             )
         )
         .scalars()
         .all()
     )
-    data = [MilestoneResponse.from_model(m) for m in rows]
+    data = [ProjectMilestoneResponse.from_model(m) for m in rows]
     return APIResponse(success=True, message=None, data=data)
 
 
 @router.patch("/milestones/{milestone_id}", response_model=APIResponse)
-async def update_milestone(milestone_id: UUID, payload: MilestoneUpdate, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(Milestone).where(Milestone.id == milestone_id, Milestone.deleted_at.is_(None)))
+async def update_milestone(milestone_id: UUID, payload: ProjectMilestoneUpdate, db: DBSession, user: CurrentUser):
+    result = await db.execute(select(ProjectMilestone).where(ProjectMilestone.id == milestone_id, ProjectMilestone.deleted_at.is_(None)))
     milestone = result.scalar_one_or_none()
     if milestone is None:
-        raise NotFoundError("Milestone", str(milestone_id))
+        raise NotFoundError("ProjectMilestone", str(milestone_id))
 
     project = await _get_project_or_404(db, milestone.project_id)
     await _require_project_access(db, project, user, permission="edit")
@@ -2347,18 +2355,18 @@ async def update_milestone(milestone_id: UUID, payload: MilestoneUpdate, db: DBS
     if payload.name is not None:
         new_slug = slugify(payload.name)
         if not new_slug:
-            raise ConflictError("Milestone slug could not be generated")
+            raise ConflictError("ProjectMilestone slug could not be generated")
         if new_slug != milestone.slug:
             existing = await db.execute(
-                select(Milestone).where(
-                    Milestone.project_id == milestone.project_id,
-                    Milestone.slug == new_slug,
-                    Milestone.id != milestone.id,
-                    Milestone.deleted_at.is_(None),
+                select(ProjectMilestone).where(
+                    ProjectMilestone.project_id == milestone.project_id,
+                    ProjectMilestone.slug == new_slug,
+                    ProjectMilestone.id != milestone.id,
+                    ProjectMilestone.deleted_at.is_(None),
                 )
             )
             if existing.scalar_one_or_none() is not None:
-                raise ConflictError("Milestone slug already exists")
+                raise ConflictError("ProjectMilestone slug already exists")
         milestone.name = payload.name
         milestone.slug = new_slug
 
@@ -2388,15 +2396,15 @@ async def update_milestone(milestone_id: UUID, payload: MilestoneUpdate, db: DBS
 
     await db.commit()
     await db.refresh(milestone)
-    return build_updated_response(MilestoneResponse.from_model(milestone), resource_name="Milestone")
+    return build_updated_response(ProjectMilestoneResponse.from_model(milestone), resource_name="ProjectMilestone")
 
 
 @router.delete("/milestones/{milestone_id}", response_model=APIResponse)
 async def delete_milestone(milestone_id: UUID, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(Milestone).where(Milestone.id == milestone_id, Milestone.deleted_at.is_(None)))
+    result = await db.execute(select(ProjectMilestone).where(ProjectMilestone.id == milestone_id, ProjectMilestone.deleted_at.is_(None)))
     milestone = result.scalar_one_or_none()
     if milestone is None:
-        raise NotFoundError("Milestone", str(milestone_id))
+        raise NotFoundError("ProjectMilestone", str(milestone_id))
 
     project = await _get_project_or_404(db, milestone.project_id)
     await _require_project_access(db, project, user, permission="delete")
@@ -2416,7 +2424,7 @@ async def delete_milestone(milestone_id: UUID, db: DBSession, user: CurrentUser)
     )
 
     await db.commit()
-    return build_deleted_response(resource_name="Milestone")
+    return build_deleted_response(resource_name="ProjectMilestone")
 
 
 # =============================================================================
@@ -2431,14 +2439,14 @@ async def create_issue(payload: IssueCreate, db: DBSession, user: CurrentUser):
 
     if payload.milestone_id is not None:
         milestone_result = await db.execute(
-            select(Milestone).where(
-                Milestone.id == payload.milestone_id,
-                Milestone.project_id == payload.project_id,
-                Milestone.deleted_at.is_(None),
+            select(ProjectMilestone).where(
+                ProjectMilestone.id == payload.milestone_id,
+                ProjectMilestone.project_id == payload.project_id,
+                ProjectMilestone.deleted_at.is_(None),
             )
         )
         if milestone_result.scalar_one_or_none() is None:
-            raise NotFoundError("Milestone", str(payload.milestone_id))
+            raise NotFoundError("ProjectMilestone", str(payload.milestone_id))
 
     ref = await _get_next_project_ref(db, payload.project_id, "issue")
     issue = Issue(
@@ -2515,14 +2523,14 @@ async def update_issue(issue_id: UUID, payload: IssueUpdate, db: DBSession, user
 
     if payload.milestone_id is not None:
         milestone_result = await db.execute(
-            select(Milestone).where(
-                Milestone.id == payload.milestone_id,
-                Milestone.project_id == issue.project_id,
-                Milestone.deleted_at.is_(None),
+            select(ProjectMilestone).where(
+                ProjectMilestone.id == payload.milestone_id,
+                ProjectMilestone.project_id == issue.project_id,
+                ProjectMilestone.deleted_at.is_(None),
             )
         )
         if milestone_result.scalar_one_or_none() is None:
-            raise NotFoundError("Milestone", str(payload.milestone_id))
+            raise NotFoundError("ProjectMilestone", str(payload.milestone_id))
         issue.milestone_id = payload.milestone_id
 
     if payload.subject is not None:

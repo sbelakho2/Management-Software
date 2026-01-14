@@ -681,9 +681,12 @@ async def update_user(
     
     # Update roles if provided
     if request.role_ids is not None:
+        from sensei.models.user import UserRole
+        from sqlalchemy import delete
+        
         # Remove existing roles
         await db.execute(
-            select(UserRole).where(UserRole.user_id == user_id)
+            delete(UserRole).where(UserRole.user_id == user_id)
         )
         
         # Add new roles

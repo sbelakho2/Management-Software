@@ -1322,6 +1322,17 @@ class AgentOrchestrator:
         context: dict[str, Any]
     ) -> DebateResult:
         """Run debate protocol to resolve discrepancy."""
+        if not self._agents:
+            return DebateResult(
+                topic=topic,
+                outcome=DebateOutcome.COORDINATOR_DECISION,
+                final_position="UNKNOWN",
+                agreement_score=0.0,
+                rounds_needed=0,
+                positions=[],
+                coordinator_notes="No agents available for debate",
+            )
+            
         positions: list[AgentPosition] = []
         
         # Collect initial positions

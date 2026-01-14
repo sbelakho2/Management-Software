@@ -7,8 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { 
   BarChart, 
-  LineChart, 
-  PieChart, 
+  DonutChart as PieChart,
   CHART_TYPE 
 } from '@/components/ui/data-visualization';
 import { 
@@ -32,7 +31,11 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
 
   const progress = project.progress_percentage ?? 0;
   const activeSprint = sprints.find(s => s.status === 'active');
-  const sprintProgress = activeSprint ? (activeSprint.completed_points / activeSprint.planned_points) * 100 || 0 : 0;
+  // Sprint doesn't have point tracking properties; calculate from stories if needed
+  const sprintStories = activeSprint ? stories.filter(s => s.sprint_id === activeSprint.id) : [];
+  const completedPoints = sprintStories.filter(s => s.status === 'done').reduce((sum, s) => sum + (s.estimated_hours || 0), 0);
+  const plannedPoints = sprintStories.reduce((sum, s) => sum + (s.estimated_hours || 0), 0);
+  const sprintProgress = plannedPoints > 0 ? (completedPoints / plannedPoints) * 100 : 0;
 
   // Data for Story Distribution
   const storyStatusData = [
@@ -91,7 +94,7 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
               <>
                 <div className="text-lg font-bold truncate" title={activeSprint.name}>{activeSprint.name}</div>
                 <div className="flex justify-between items-center mt-2 text-xs">
-                  <span>{activeSprint.completed_points} / {activeSprint.planned_points} pts</span>
+                  <span>{completedPoints} / {plannedPoints} pts</span>
                   <span className="font-semibold">{Math.round(sprintProgress)}%</span>
                 </div>
                 <Progress value={sprintProgress} className="mt-2 h-1.5" />
@@ -127,8 +130,6 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
             <div className="h-[250px] w-full">
               <PieChart 
                 data={storyStatusData}
-                innerRadius={60}
-                outerRadius={80}
               />
             </div>
           </CardContent>
