@@ -221,9 +221,15 @@ class DatabaseBackupService:
         )
         
         try:
-            # Execute pg_dump
-            env = os.environ.copy()
-            env['PGPASSWORD'] = db_config["password"]
+            # Execute pg_dump with a sanitized, minimal environment
+            env = {
+                'PGPASSWORD': db_config["password"],
+                'PATH': os.environ.get('PATH', '/usr/bin:/bin:/usr/local/bin'),
+            }
+            # Only include necessary SSL/security env vars if they exist
+            for var in ['PGSSLMODE', 'PGSSLROOTCERT', 'PGSSLCERT', 'PGSSLKEY']:
+                if var in os.environ:
+                    env[var] = os.environ[var]
             
             dump_command = [
                 "pg_dump",

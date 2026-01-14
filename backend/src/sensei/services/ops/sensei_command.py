@@ -14,11 +14,20 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 from collections import defaultdict
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update
+from sensei.models.strategic import (
+    NL2SQLQueryRecord,
+    EmployeeRiskAssessmentRecord,
+    ScenarioResultRecord,
+)
 
 
 # =============================================================================
@@ -709,10 +718,9 @@ class NL2SQLEngine:
     
     def __init__(self, security_level: QuerySecurityLevel = QuerySecurityLevel.READ_ONLY):
         self.security_level = security_level
-        self.query_history: list[NL2SQLQuery] = []
     
-    def generate_sql(self, natural_language: str) -> NL2SQLQuery:
-        """Generate SQL from natural language query."""
+    async def generate_sql(self, db: AsyncSession, natural_language: str, user_id: str | None = None) -> NL2SQLQuery:
+        """Generate SQL from natural language query and persist."""
         nl_lower = natural_language.lower()
         
         # Pattern matching for SQL generation
@@ -732,17 +740,29 @@ class NL2SQLEngine:
         
         explanation = self._generate_explanation(sql)
         
-        query = NL2SQLQuery(
-            query_id=f"nlsql_{int(time.time())}",
+        query_id = f"nlsql_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        
+        record = NL2SQLQueryRecord(
+            id=query_id,
             natural_language=natural_language,
             generated_sql=sql,
             explanation=explanation,
             tables_used=tables_used,
             security_level=self.security_level,
+            executed_by_id=user_id,
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
         
-        self.query_history.append(query)
-        return query
+        return NL2SQLQuery(
+            query_id=record.id,
+            natural_language=record.natural_language,
+            generated_sql=record.generated_sql,
+            explanation=record.explanation,
+            tables_used=record.tables_used,
+            security_level=record.security_level,
+        )
     
     def _extract_tables(self, sql: str) -> list[str]:
         """Extract table names from SQL."""
@@ -781,15 +801,19 @@ class NL2SQLEngine:
         
         # Check for blocked operations
         if self.security_level == QuerySecurityLevel.READ_ONLY:
-            blocked = ["UPDATE", "DELETE", "INSERT", "DROP", "TRUNCATE", "ALTER"]
+            blocked = ["UPDATE", "DELETE", "INSERT", "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE"]
             for kw in blocked:
-                if kw in sql_upper:
+                if re.search(rf"\b{kw}\b", sql_upper):
                     return False, f"Operation {kw} not allowed in read-only mode"
         
         # Basic syntax check
         if not sql.strip():
             return False, "Empty query"
         
+        # Prevent multiple statements (semicolon)
+        if ";" in sql.strip()[:-1] or ";" in sql.strip() and sql.strip().count(";") > 1:
+             return False, "Multiple statements not allowed"
+
         if "SELECT" not in sql_upper:
             return False, "Only SELECT queries allowed"
         
@@ -1073,7 +1097,7 @@ class GlobalAuditTrail:
     Single-point access to all audit trails.
     """
     
-    def __init__(self, max_entries: int = 100000):
+    def __init__(self, max_entries: int = 10000):
         self.max_entries = max_entries
         self.entries: list[AuditTrailEntry] = []
         self._by_entity: dict[str, list[AuditTrailEntry]] = defaultdict(list)
@@ -1085,9 +1109,14 @@ class GlobalAuditTrail:
         self._by_entity[f"{entry.entity_type}:{entry.entity_id}"].append(entry)
         self._by_user[entry.user_id].append(entry)
         
-        # Trim old entries
+        # Trim old entries from main list and secondary indices to prevent OOM
         if len(self.entries) > self.max_entries:
-            self.entries = self.entries[-self.max_entries:]
+            removed = self.entries.pop(0)
+            entity_key = f"{removed.entity_type}:{removed.entity_id}"
+            if removed in self._by_entity[entity_key]:
+                self._by_entity[entity_key].remove(removed)
+            if removed in self._by_user[removed.user_id]:
+                self._by_user[removed.user_id].remove(removed)
     
     def get_entity_history(self, entity_type: str, entity_id: str) -> list[AuditTrailEntry]:
         """Get audit history for an entity."""
@@ -1378,19 +1407,19 @@ class SenseiCommand:
         self.ceo_view = CEOSuperView(ceo_user_id)
         self.employee_analytics = EmployeeIntelligenceAnalytics()
     
-    def get_executive_dashboard(self) -> dict[str, Any]:
+    async def get_executive_dashboard(self, db: AsyncSession) -> dict[str, Any]:
         """Get the executive dashboard summary."""
         return {
             "kpis": self.kpi_aggregator.get_aggregate_view(),
             "financial_health": self.financial_monitor.get_pipeline_health(),
             "risk_heatmap": self.risk_generator.generate_heatmap(),
             "system_health": self.brain_dashboard.get_overall_health(),
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     
-    def query_database(self, natural_language: str) -> NL2SQLQuery:
+    async def query_database(self, db: AsyncSession, natural_language: str) -> NL2SQLQuery:
         """Execute a natural language database query."""
-        return self.nl2sql_engine.generate_sql(natural_language)
+        return await self.nl2sql_engine.generate_sql(db, natural_language, user_id=self.ceo_user_id)
     
     def generate_weekly_briefing(self) -> StrategicBriefing:
         """Generate the weekly strategic briefing."""

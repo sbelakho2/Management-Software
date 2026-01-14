@@ -18,12 +18,15 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
+import io
+
+from sensei.core.storage import upload_file, download_file, delete_file, list_files
 
 logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 class ModelStatus(str, Enum):
@@ -104,22 +107,27 @@ class ModelRegistry:
         model_id = f"{metadata.model_name}_v{metadata.version}_{int(_utcnow().timestamp())}"
         metadata.model_id = model_id
         
-        # Copy model artifacts to registry
-        model_dir = self.registry_path / model_id
-        model_dir.mkdir(parents=True, exist_ok=True)
-        
+        # Upload model artifacts to S3
         if model_artifacts_path.is_dir():
-            shutil.copytree(model_artifacts_path, model_dir / "artifacts", dirs_exist_ok=True)
+            for file_path in model_artifacts_path.glob("**/*"):
+                if file_path.is_file():
+                    relative_path = file_path.relative_to(model_artifacts_path)
+                    key = f"ml/models/{model_id}/artifacts/{relative_path}"
+                    with open(file_path, "rb") as f:
+                        upload_file(f.read(), key, metadata={"model_id": model_id})
         else:
-            shutil.copy(model_artifacts_path, model_dir / "model.pkl")
+            key = f"ml/models/{model_id}/model.pkl"
+            with open(model_artifacts_path, "rb") as f:
+                upload_file(f.read(), key, metadata={"model_id": model_id})
         
         # Save metadata
         metadata_dict = asdict(metadata)
         metadata_dict['created_at'] = metadata.created_at.isoformat()
         metadata_dict['status'] = metadata.status.value
         
-        with open(model_dir / "metadata.json", 'w') as f:
-            json.dump(metadata_dict, f, indent=2)
+        # Upload metadata to S3
+        metadata_key = f"ml/models/{model_id}/metadata.json"
+        upload_file(json.dumps(metadata_dict, indent=2).encode(), metadata_key, metadata={"model_id": model_id})
         
         # Update registry
         self.registry[model_id] = metadata_dict

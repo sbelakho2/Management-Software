@@ -26,8 +26,8 @@ export interface Project {
   enable_wiki: boolean;
   enable_issues: boolean;
   enable_sprints: boolean;
-  custom_user_story_statuses?: { id: string; name: string; color?: string; is_done?: boolean }[] | null;
-  custom_task_statuses?: { id: string; name: string; color?: string; is_done?: boolean }[] | null;
+  custom_user_story_statuses?: { id: string; name: string; color?: string; is_closed?: boolean }[] | null;
+  custom_task_statuses?: { id: string; name: string; color?: string; is_closed?: boolean }[] | null;
   custom_issue_statuses?: { id: string; name: string; color?: string; is_closed?: boolean }[] | null;
   total_user_stories: number;
   completed_user_stories: number;
@@ -93,6 +93,7 @@ export interface Subtask {
   ref: number;
   subject: string;
   description?: string | null;
+  status: string;
   is_closed: boolean;
   created_at: string;
   updated_at: string;
@@ -137,6 +138,51 @@ export interface IssueComment {
   updated_at: string;
 }
 
+export interface WikiPage {
+  id: string;
+  project_id: string;
+  title: string;
+  slug: string;
+  content: string;
+  page_type: string;
+  parent_id?: string | null;
+  order: number;
+  owner_id?: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Milestone {
+  id: string;
+  project_id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  milestone_type: string;
+  due_date: string;
+  is_closed: boolean;
+  closed_at?: string | null;
+  order: number;
+  total_items: number;
+  closed_items: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectActivity {
+  id: string;
+  project_id: string;
+  user_id?: string | null;
+  activity_type: string;
+  entity_type: string;
+  entity_id: string;
+  entity_ref?: number | null;
+  summary: string;
+  details?: Record<string, any> | null;
+  created_at: string;
+}
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -178,6 +224,8 @@ interface ProjectManagementState {
   stories: UserStory[];
   issues: Issue[];
   wikiPages: WikiPage[];
+  milestones: Milestone[];
+  activities: ProjectActivity[];
   myWork: { stories: UserStory[]; issues: Issue[] };
   subtasksByStoryId: Record<string, Subtask[]>;
   commentsByStoryId: Record<string, StoryComment[]>;
@@ -198,7 +246,7 @@ interface ProjectManagementState {
   createSprint: (projectId: string, name: string, start_date: string, end_date: string) => Promise<Sprint>;
 
   fetchStories: (projectId: string) => Promise<void>;
-  createStory: (payload: { project_id: string; subject: string; priority?: number; epic_id?: string | null; sprint_id?: string | null; description?: string }) => Promise<UserStory>;
+  createStory: (payload: { project_id: string; subject: string; priority?: number; epic_id?: string | null; sprint_id?: string | null; description?: string; story_points?: number }) => Promise<UserStory>;
 
   fetchIssues: (projectId: string) => Promise<void>;
   createIssue: (payload: Partial<Issue> & { project_id: string; subject: string; issue_type: IssueType }) => Promise<Issue>;
@@ -210,11 +258,18 @@ interface ProjectManagementState {
   createWikiPage: (payload: { project_id: string; title: string; content: string; parent_id?: string | null }) => Promise<WikiPage>;
   updateWikiPage: (pageId: string, updates: Partial<WikiPage>) => Promise<WikiPage>;
 
+  fetchMilestones: (projectId: string) => Promise<void>;
+  createMilestone: (payload: Partial<Milestone> & { project_id: string; name: string; due_date: string }) => Promise<Milestone>;
+  updateMilestone: (milestoneId: string, updates: Partial<Milestone>) => Promise<Milestone>;
+  deleteMilestone: (milestoneId: string) => Promise<void>;
+
+  fetchActivities: (projectId: string) => Promise<void>;
+
   fetchMyWork: () => Promise<void>;
 
   fetchSubtasks: (storyId: string) => Promise<void>;
-  createSubtask: (storyId: string, subject: string, description?: string) => Promise<Subtask>;
-  updateSubtask: (subtaskId: string, updates: Partial<Pick<Subtask, 'is_closed' | 'subject' | 'description'>>) => Promise<Subtask>;
+  createSubtask: (storyId: string, subject: string, description?: string, status?: string) => Promise<Subtask>;
+  updateSubtask: (subtaskId: string, updates: Partial<Subtask>) => Promise<Subtask>;
 
   fetchStoryComments: (storyId: string) => Promise<void>;
   createStoryComment: (storyId: string, content: string) => Promise<StoryComment>;
@@ -234,6 +289,8 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     stories: [],
     issues: [],
     wikiPages: [],
+    milestones: [],
+    activities: [],
     myWork: { stories: [], issues: [] },
     subtasksByStoryId: {},
     commentsByStoryId: {},
@@ -486,6 +543,67 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
       }
     },
 
+    fetchMilestones: async (projectId) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiGet<ApiEnvelope<Milestone[]>>(`/projects/${encodeURIComponent(projectId)}/milestones`);
+        set({ milestones: res.data, isLoading: false });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load milestones', isLoading: false });
+      }
+    },
+
+    createMilestone: async (payload) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<Milestone>>('/milestones', 'POST', payload);
+        set({ milestones: [...get().milestones, res.data], isLoading: false });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to create milestone', isLoading: false });
+        throw e;
+      }
+    },
+
+    updateMilestone: async (milestoneId, updates) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiSend<ApiEnvelope<Milestone>>(`/milestones/${milestoneId}`, 'PATCH', updates);
+        set({
+          milestones: get().milestones.map((m) => (m.id === milestoneId ? res.data : m)),
+          isLoading: false,
+        });
+        return res.data;
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to update milestone', isLoading: false });
+        throw e;
+      }
+    },
+
+    deleteMilestone: async (milestoneId) => {
+      set({ isLoading: true, error: null });
+      try {
+        await apiSend(`/milestones/${milestoneId}`, 'DELETE');
+        set({
+          milestones: get().milestones.filter((m) => m.id !== milestoneId),
+          isLoading: false,
+        });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to delete milestone', isLoading: false });
+        throw e;
+      }
+    },
+
+    fetchActivities: async (projectId) => {
+      set({ isLoading: true, error: null });
+      try {
+        const res = await apiClient.get<ApiPaginated<ProjectActivity[]>>(`/project-management/projects/${encodeURIComponent(projectId)}/activities`);
+        set({ activities: res.data, isLoading: false });
+      } catch (e) {
+        set({ error: e instanceof Error ? e.message : 'Failed to load activities', isLoading: false });
+      }
+    },
+
     fetchMyWork: async () => {
       set({ isLoading: true, error: null });
       try {
@@ -509,13 +627,14 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
       }
     },
 
-    createSubtask: async (storyId, subject, description) => {
+    createSubtask: async (storyId, subject, description, status) => {
       set({ isLoading: true, error: null });
       try {
         const res = await apiSend<ApiEnvelope<Subtask>>('/subtasks', 'POST', {
           user_story_id: storyId,
           subject,
           description: description ?? null,
+          status: status ?? 'open',
         });
         const existing = get().subtasksByStoryId[storyId] ?? [];
         set({
@@ -583,8 +702,15 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     },
 
     updateStoryStatus: async (storyId, status) => {
-      set({ isLoading: true, error: null });
+      const originalStories = get().stories;
+      
+      // Optimistic update
+      set({
+        stories: originalStories.map((s) => (s.id === storyId ? { ...s, status } : s)),
+      });
+
       try {
+        set({ isLoading: true, error: null });
         const res = await apiSend<ApiEnvelope<UserStory>>(`/user-stories/${storyId}`, 'PATCH', { status });
         set({
           stories: get().stories.map((s) => (s.id === storyId ? res.data : s)),
@@ -592,7 +718,12 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update story status', isLoading: false });
+        // Rollback
+        set({
+          stories: originalStories,
+          error: e instanceof Error ? e.message : 'Failed to update story status',
+          isLoading: false
+        });
         throw e;
       }
     },

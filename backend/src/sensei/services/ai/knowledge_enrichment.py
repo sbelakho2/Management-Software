@@ -20,6 +20,11 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.models.strategic_v2 import KnowledgeSourceRecord, SemanticChunkRecord
+
 
 # ============================================================
 # Role Definitions
@@ -356,36 +361,86 @@ class CrossDomainSynthesizer:
 
 
 class KnowledgeEnrichmentService:
-    """AI Model Enrichment / TPS & Lean Knowledge Service."""
+    """AI Model Enrichment / TPS & Lean Knowledge Service with DB persistence."""
 
     def __init__(self) -> None:
-        self._sources: dict[UUID, KnowledgeSource] = {}
-        self._acquisition_jobs: dict[UUID, AcquisitionJob] = {}
-        self._chunks: dict[UUID, SemanticChunk] = {}
-        self._embeddings: dict[UUID, EmbeddingRecord] = {}
-        self._alignments: dict[UUID, AlignmentResult] = {}
-        self._knowledge_packs: dict[UUID, KnowledgePack] = {}
-        self._audit_log: list[AuditEntry] = []
         self.synthesizer = CrossDomainSynthesizer()
 
-        # Initialize default sources
-        self._initialize_default_sources()
-
-    def _initialize_default_sources(self) -> None:
-        """Initialize built-in TPS/Lean knowledge sources."""
+    async def initialize_default_sources(self, db: AsyncSession) -> None:
+        """Initialize built-in TPS/Lean knowledge sources in the database."""
         for src_def in _DEFAULT_SOURCES:
-            source = KnowledgeSource(
-                id=uuid4(),
-                name=src_def["name"],
-                source_type=src_def["source_type"],
-                url=src_def["url"],
-                cli_command=src_def["cli_command"],
-                content_format=src_def["content_format"],
-                license_type=src_def["license_type"],
-                tags=tuple(src_def["tags"]),
-                created_at=datetime.now(timezone.utc),
+            # Check if source already exists
+            stmt = select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.name == src_def["name"])
+            existing = (await db.execute(stmt)).scalar_one_or_none()
+            
+            if not existing:
+                source = KnowledgeSourceRecord(
+                    name=src_def["name"],
+                    source_type=src_def["source_type"].value,
+                    uri=src_def["url"],
+                    is_active=True,
+                    metadata_fields={
+                        "cli_command": src_def["cli_command"],
+                        "content_format": src_def["content_format"].value,
+                        "license_type": src_def["license_type"],
+                        "tags": list(src_def["tags"]),
+                    }
+                )
+                db.add(source)
+        
+        await db.commit()
+
+    async def get_sources(self, db: AsyncSession) -> list[KnowledgeSourceRecord]:
+        """Get all knowledge sources from database."""
+        stmt = select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.is_active == True)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def add_custom_source(
+        self,
+        db: AsyncSession,
+        name: str,
+        uri: str,
+        source_type: SourceType = SourceType.CUSTOM_PDF,
+        metadata: dict[str, Any] | None = None,
+    ) -> KnowledgeSourceRecord:
+        """Add a custom knowledge source."""
+        source = KnowledgeSourceRecord(
+            name=name,
+            source_type=source_type.value,
+            uri=uri,
+            is_active=True,
+            metadata_fields=metadata or {},
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+        return source
+
+    async def ingest_content(
+        self,
+        db: AsyncSession,
+        source_id: UUID,
+        content: str,
+        chunk_size: int = 1000,
+    ) -> list[SemanticChunkRecord]:
+        """Chunk and ingest content into the database."""
+        # Simple chunking logic for demonstration
+        chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+        
+        chunk_records = []
+        for i, chunk_text in enumerate(chunks):
+            chunk = SemanticChunkRecord(
+                source_id=source_id,
+                content=chunk_text,
+                chunk_index=i,
+                token_count=len(chunk_text.split()), # Simple proxy
             )
-            self._sources[source.id] = source
+            db.add(chunk)
+            chunk_records.append(chunk)
+            
+        await db.commit()
+        return chunk_records
 
     # --------------------------------------------------------
     # Helpers

@@ -420,6 +420,31 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         return delta.days
 
 
+class CAPAStateHistory(Base, TimestampMixin):
+    """
+    Audit trail for CAPA state transitions.
+    
+    Required for ISO/AS compliance.
+    """
+
+    __tablename__ = "capa_state_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    capa_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("capas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    from_status: Mapped[CAPAStatus] = mapped_column(Enum(CAPAStatus), nullable=False)
+    to_status: Mapped[CAPAStatus] = mapped_column(Enum(CAPAStatus), nullable=False)
+    changed_by_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    capa: Mapped["CAPA"] = relationship("CAPA", back_populates="state_history")
+    changed_by: Mapped["User"] = relationship("User")
+
+
 class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     """
     Corrective and Preventive Action record.
@@ -574,6 +599,12 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
     linked_standard_work: Mapped[Optional["StandardWork"]] = relationship(
         "StandardWork", back_populates="linked_capas", foreign_keys=[linked_standard_work_id]
+    )
+    state_history: Mapped[list["CAPAStateHistory"]] = relationship(
+        "CAPAStateHistory",
+        back_populates="capa",
+        cascade="all, delete-orphan",
+        order_by="CAPAStateHistory.created_at.desc()",
     )
     actions: Mapped[list["CAPAAction"]] = relationship(
         "CAPAAction",

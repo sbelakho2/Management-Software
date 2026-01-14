@@ -219,32 +219,27 @@ async def _get_next_project_ref(db: DBSession, project_id: UUID, entity_type: st
         if not model_cls:
             raise ValueError(f"Invalid entity type for sequence: {entity_type}")
             
-        max_stmt = select(func.max(model_cls.ref)).where(model_cls.project_id == project_id)
-        max_ref = (await db.execute(max_stmt)).scalar() or 0
-        
-        seq = ProjectSequence(
-            project_id=project_id,
-            entity_type=entity_type,
-            last_value=max_ref + 1
-        )
-        db.add(seq)
-        return max_ref + 1
+        try:
+            async with db.begin_nested():
+                max_stmt = select(func.max(model_cls.ref)).where(model_cls.project_id == project_id)
+                max_ref = (await db.execute(max_stmt)).scalar() or 0
+                
+                seq = ProjectSequence(
+                    project_id=project_id,
+                    entity_type=entity_type,
+                    last_value=max_ref + 1
+                )
+                db.add(seq)
+                await db.flush()
+            return seq.last_value
+        except IntegrityError:
+            # Handle race condition: someone else created it.
+            # Re-fetch with lock.
+            result = await db.execute(stmt)
+            seq = result.scalar_one()
     
     seq.last_value += 1
     return seq.last_value
-
-
-async def _next_project_ref(db: DBSession, model_cls: Any, project_id: UUID) -> int:
-    result = await db.execute(
-        select(func.max(model_cls.ref)).where(
-            model_cls.project_id == project_id,
-            getattr(model_cls, "deleted_at", None).is_(None)
-            if hasattr(model_cls, "deleted_at")
-            else True,
-        )
-    )
-    max_ref = result.scalar_one()
-    return int(max_ref or 0) + 1
 
 
 async def _next_story_ref(db: DBSession, user_story_id: UUID) -> int:
@@ -290,6 +285,88 @@ async def _update_project_stats(db: DBSession, project_id: UUID) -> None:
     # No commit here, usually called within another transaction
 
 
+async def _update_sprint_stats(db: DBSession, sprint_id: UUID) -> None:
+    """Update cached statistics for a sprint."""
+    stats_stmt = select(
+        func.sum(UserStory.story_points).label("planned"),
+        func.sum(UserStory.story_points).filter(UserStory.status == UserStoryStatus.DONE.value).label("completed"),
+    ).where(UserStory.sprint_id == sprint_id, UserStory.deleted_at.is_(None))
+    
+    stats = (await db.execute(stats_stmt)).one()
+    
+    await db.execute(
+        update(Sprint)
+        .where(Sprint.id == sprint_id)
+        .values(
+            planned_points=int(stats.planned or 0),
+            completed_points=int(stats.completed or 0),
+            updated_at=_now_utc()
+        )
+    )
+
+
+async def _update_milestone_stats(db: DBSession, milestone_id: UUID) -> None:
+    """Update cached statistics for a milestone."""
+    # Count stories
+    story_stats_stmt = select(
+        func.count(UserStory.id).label("total"),
+        func.count(UserStory.id).filter(UserStory.status == UserStoryStatus.DONE.value).label("completed"),
+    ).where(UserStory.milestone_id == milestone_id, UserStory.deleted_at.is_(None))
+    
+    story_stats = (await db.execute(story_stats_stmt)).one()
+    
+    # Count issues
+    issue_stats_stmt = select(
+        func.count(Issue.id).label("total"),
+        func.count(Issue.id).filter(Issue.status == IssueStatus.CLOSED.value).label("closed"),
+    ).where(Issue.milestone_id == milestone_id, Issue.deleted_at.is_(None))
+    
+    issue_stats = (await db.execute(issue_stats_stmt)).one()
+    
+    total = (story_stats.total or 0) + (issue_stats.total or 0)
+    closed = (story_stats.completed or 0) + (issue_stats.closed or 0)
+    
+    await db.execute(
+        update(Milestone)
+        .where(Milestone.id == milestone_id)
+        .values(
+            total_items=total,
+            closed_items=closed,
+            updated_at=_now_utc()
+        )
+    )
+
+
+class ProjectActivityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    user_id: Optional[UUID]
+    activity_type: str
+    entity_type: str
+    entity_id: UUID
+    entity_ref: Optional[int]
+    summary: str
+    details: Optional[dict]
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, activity: ProjectActivity) -> "ProjectActivityResponse":
+        return cls(
+            id=activity.id,
+            project_id=activity.project_id,
+            user_id=activity.user_id,
+            activity_type=activity.activity_type,
+            entity_type=activity.entity_type,
+            entity_id=activity.entity_id,
+            entity_ref=activity.entity_ref,
+            summary=activity.summary,
+            details=activity.details,
+            created_at=activity.created_at,
+        )
+
+
 # =============================================================================
 # Project schemas
 # =============================================================================
@@ -310,6 +387,9 @@ class ProjectCreate(BaseModel):
     enable_wiki: bool = True
     enable_issues: bool = True
     enable_sprints: bool = True
+    custom_user_story_statuses: Optional[list] = None
+    custom_task_statuses: Optional[list] = None
+    custom_issue_statuses: Optional[list] = None
 
     @field_validator("project_type")
     @classmethod
@@ -546,6 +626,8 @@ class SprintResponse(BaseModel):
     status: str
     start_date: Optional[date]
     end_date: Optional[date]
+    planned_points: int
+    completed_points: int
     created_at: datetime
     updated_at: datetime
 
@@ -558,6 +640,8 @@ class SprintResponse(BaseModel):
             status=sprint.status,
             start_date=sprint.start_date,
             end_date=sprint.end_date,
+            planned_points=sprint.planned_points,
+            completed_points=sprint.completed_points,
             created_at=sprint.created_at,
             updated_at=sprint.updated_at,
         )
@@ -575,8 +659,13 @@ class UserStoryCreate(BaseModel):
     status: str = Field(default=UserStoryStatus.NEW.value)
     epic_id: Optional[UUID] = None
     sprint_id: Optional[UUID] = None
+    milestone_id: Optional[UUID] = None
     owner_id: Optional[UUID] = None
     priority: int = Field(default=50, ge=0, le=100)
+    story_points: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    tags: Optional[list[str]] = None
+    attachments: Optional[list[dict]] = None
 
     @field_validator("status")
     @classmethod
@@ -591,8 +680,14 @@ class UserStoryUpdate(BaseModel):
     status: Optional[str] = None
     epic_id: Optional[UUID] = None
     sprint_id: Optional[UUID] = None
+    milestone_id: Optional[UUID] = None
     owner_id: Optional[UUID] = None
     priority: Optional[int] = Field(default=None, ge=0, le=100)
+    story_points: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+    tags: Optional[list[str]] = None
+    attachments: Optional[list[dict]] = None
 
     @field_validator("status")
     @classmethod
@@ -613,8 +708,14 @@ class UserStoryResponse(BaseModel):
     status: str
     epic_id: Optional[UUID]
     sprint_id: Optional[UUID]
+    milestone_id: Optional[UUID]
     owner_id: Optional[UUID]
     priority: int
+    story_points: Optional[int]
+    estimated_hours: Optional[float]
+    actual_hours: float
+    tags: Optional[list]
+    attachments: Optional[list]
     created_at: datetime
     updated_at: datetime
 
@@ -629,8 +730,14 @@ class UserStoryResponse(BaseModel):
             status=story.status,
             epic_id=story.epic_id,
             sprint_id=story.sprint_id,
+            milestone_id=story.milestone_id,
             owner_id=story.owner_id,
             priority=story.priority,
+            story_points=story.story_points,
+            estimated_hours=story.estimated_hours,
+            actual_hours=story.actual_hours,
+            tags=story.tags,
+            attachments=story.attachments,
             created_at=story.created_at,
             updated_at=story.updated_at,
         )
@@ -647,6 +754,7 @@ class SubtaskCreate(BaseModel):
     description: Optional[str] = None
     assigned_to_id: Optional[UUID] = None
     due_date: Optional[date] = None
+    status: str = Field(default="open")
 
 
 class SubtaskUpdate(BaseModel):
@@ -654,6 +762,7 @@ class SubtaskUpdate(BaseModel):
     description: Optional[str] = None
     assigned_to_id: Optional[UUID] = None
     due_date: Optional[date] = None
+    status: Optional[str] = None
     is_closed: Optional[bool] = None
 
 
@@ -666,6 +775,7 @@ class SubtaskResponse(BaseModel):
     subject: str
     description: Optional[str]
     assigned_to_id: Optional[UUID]
+    status: str
     is_closed: bool
     due_date: Optional[date]
     created_at: datetime
@@ -680,6 +790,7 @@ class SubtaskResponse(BaseModel):
             subject=subtask.subject,
             description=subtask.description,
             assigned_to_id=subtask.assigned_to_id,
+            status=subtask.status,
             is_closed=subtask.is_closed,
             due_date=subtask.due_date,
             created_at=subtask.created_at,
@@ -1041,6 +1152,25 @@ async def create_project(payload: ProjectCreate, db: DBSession, user: CurrentUse
         enable_wiki=payload.enable_wiki,
         enable_issues=payload.enable_issues,
         enable_sprints=payload.enable_sprints,
+        custom_user_story_statuses=payload.custom_user_story_statuses or [
+            {"id": "new", "name": "New", "color": "#94a3b8", "is_closed": false},
+            {"id": "ready", "name": "Ready", "color": "#3b82f6", "is_closed": false},
+            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": false},
+            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": false},
+            {"id": "done", "name": "Done", "color": "#10b981", "is_closed": true}
+        ],
+        custom_task_statuses=payload.custom_task_statuses or [
+            {"id": "open", "name": "Open", "color": "#94a3b8", "is_closed": false},
+            {"id": "in_progress", "name": "In Progress", "color": "#3b82f6", "is_closed": false},
+            {"id": "completed", "name": "Completed", "color": "#10b981", "is_closed": true}
+        ],
+        custom_issue_statuses=payload.custom_issue_statuses or [
+            {"id": "new", "name": "New", "color": "#ef4444", "is_closed": false},
+            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": false},
+            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": false},
+            {"id": "closed", "name": "Closed", "color": "#10b981", "is_closed": true},
+            {"id": "rejected", "name": "Rejected", "color": "#64748b", "is_closed": true}
+        ],
         created_by_id=getattr(user, "id", None),
         updated_by_id=getattr(user, "id", None),
     )
@@ -1237,6 +1367,27 @@ async def delete_project(project_id: UUID, db: DBSession, user: CurrentUser):
     )
     await db.commit()
     return build_deleted_response(resource_name="Project")
+
+
+@router.get("/projects/{project_id}/activities", response_model=PaginatedResponse)
+async def list_project_activities(
+    project_id: UUID,
+    db: DBSession,
+    user: CurrentUser,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    project = await _get_project_or_404(db, project_id)
+    await _require_project_access(db, project, user, permission="read")
+
+    stmt = select(ProjectActivity).where(ProjectActivity.project_id == project_id).order_by(ProjectActivity.created_at.desc())
+    count_stmt = select(func.count(ProjectActivity.id)).where(ProjectActivity.project_id == project_id)
+
+    total = int((await db.execute(count_stmt)).scalar_one())
+    rows = (await db.execute(stmt.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    
+    data = [ProjectActivityResponse.from_model(a) for a in rows]
+    return build_paginated_response(data=data, page=page, page_size=page_size, total=total)
 
 
 # =============================================================================
@@ -1637,8 +1788,13 @@ async def create_user_story(payload: UserStoryCreate, db: DBSession, user: Curre
         status=payload.status,
         epic_id=payload.epic_id,
         sprint_id=payload.sprint_id,
+        milestone_id=payload.milestone_id,
         owner_id=payload.owner_id,
         priority=payload.priority,
+        story_points=payload.story_points,
+        estimated_hours=payload.estimated_hours,
+        tags=payload.tags,
+        attachments=payload.attachments,
         created_by_id=getattr(user, "id", None),
         updated_by_id=getattr(user, "id", None),
     )
@@ -1658,6 +1814,11 @@ async def create_user_story(payload: UserStoryCreate, db: DBSession, user: Curre
         summary=f"Created story US-{ref}: {story.subject}",
     )
     await _update_project_stats(db, payload.project_id)
+    if story.sprint_id:
+        await _update_sprint_stats(db, story.sprint_id)
+    if story.milestone_id:
+        await _update_milestone_stats(db, story.milestone_id)
+    
     await db.commit()
     await db.refresh(story)
     return build_created_response(UserStoryResponse.from_model(story), resource_name="User story")
@@ -1705,19 +1866,32 @@ async def get_my_work(db: DBSession, user: CurrentUser):
     if not user_id:
         return APIResponse(success=True, data={"stories": [], "issues": []})
 
-    # Assigned User Stories
+    # Assigned User Stories (Owner or Assigned)
+    # Filter out completed/archived to keep "my-work" actionable
     story_stmt = (
         select(UserStory)
-        .where(UserStory.owner_id == user_id, UserStory.deleted_at.is_(None))
-        .order_by(UserStory.updated_at.desc())
+        .where(
+            (UserStory.owner_id == user_id) | (UserStory.assigned_users.contains([str(user_id)])),
+            UserStory.deleted_at.is_(None),
+            UserStory.status != UserStoryStatus.DONE.value,
+            UserStory.status != UserStoryStatus.ARCHIVED.value
+        )
+        .order_by(UserStory.priority.desc(), UserStory.updated_at.desc())
+        .limit(50)
     )
     stories = (await db.execute(story_stmt)).scalars().all()
 
     # Assigned Issues
     issue_stmt = (
         select(Issue)
-        .where(Issue.assigned_to_id == user_id, Issue.deleted_at.is_(None))
+        .where(
+            (Issue.assigned_to_id == user_id) | (Issue.owner_id == user_id),
+            Issue.deleted_at.is_(None),
+            Issue.status != IssueStatus.CLOSED.value,
+            Issue.status != IssueStatus.REJECTED.value
+        )
         .order_by(Issue.updated_at.desc())
+        .limit(50)
     )
     issues = (await db.execute(issue_stmt)).scalars().all()
 
@@ -1762,6 +1936,9 @@ async def update_user_story(story_id: UUID, payload: UserStoryUpdate, db: DBSess
         if sprint_result.scalar_one_or_none() is None:
             raise NotFoundError("Sprint", str(payload.sprint_id))
 
+    old_sprint_id = story.sprint_id
+    old_milestone_id = story.milestone_id
+
     if payload.subject is not None:
         story.subject = payload.subject
     if payload.description is not None:
@@ -1772,10 +1949,22 @@ async def update_user_story(story_id: UUID, payload: UserStoryUpdate, db: DBSess
         story.epic_id = payload.epic_id
     if payload.sprint_id is not None:
         story.sprint_id = payload.sprint_id
+    if payload.milestone_id is not None:
+        story.milestone_id = payload.milestone_id
     if payload.owner_id is not None:
         story.owner_id = payload.owner_id
     if payload.priority is not None:
         story.priority = payload.priority
+    if payload.story_points is not None:
+        story.story_points = payload.story_points
+    if payload.estimated_hours is not None:
+        story.estimated_hours = payload.estimated_hours
+    if payload.actual_hours is not None:
+        story.actual_hours = payload.actual_hours
+    if payload.tags is not None:
+        story.tags = payload.tags
+    if payload.attachments is not None:
+        story.attachments = payload.attachments
 
     story.updated_by_id = getattr(user, "id", None)
 
@@ -1790,6 +1979,16 @@ async def update_user_story(story_id: UUID, payload: UserStoryUpdate, db: DBSess
         summary=f"Updated story US-{story.ref}: {story.subject}",
     )
     await _update_project_stats(db, story.project_id)
+    if old_sprint_id:
+        await _update_sprint_stats(db, old_sprint_id)
+    if story.sprint_id and story.sprint_id != old_sprint_id:
+        await _update_sprint_stats(db, story.sprint_id)
+    
+    if old_milestone_id:
+        await _update_milestone_stats(db, old_milestone_id)
+    if story.milestone_id and story.milestone_id != old_milestone_id:
+        await _update_milestone_stats(db, story.milestone_id)
+    
     await db.commit()
     await db.refresh(story)
     return build_updated_response(UserStoryResponse.from_model(story), resource_name="User story")
@@ -1820,6 +2019,11 @@ async def delete_user_story(story_id: UUID, db: DBSession, user: CurrentUser):
         summary=f"Deleted story US-{story.ref}: {story.subject}",
     )
     await _update_project_stats(db, story.project_id)
+    if story.sprint_id:
+        await _update_sprint_stats(db, story.sprint_id)
+    if story.milestone_id:
+        await _update_milestone_stats(db, story.milestone_id)
+    
     await db.commit()
     return build_deleted_response(resource_name="User story")
 
@@ -1841,6 +2045,15 @@ async def create_subtask(payload: SubtaskCreate, db: DBSession, user: CurrentUse
     await _require_project_access(db, project, user, permission="edit")
 
     ref = await _next_story_ref(db, payload.user_story_id)
+
+    # Determine is_closed from custom_task_statuses
+    is_closed = False
+    if project.custom_task_statuses:
+        for s in project.custom_task_statuses:
+            if s.get("id") == payload.status:
+                is_closed = s.get("is_closed", False)
+                break
+
     subtask = Subtask(
         user_story_id=payload.user_story_id,
         ref=ref,
@@ -1848,6 +2061,9 @@ async def create_subtask(payload: SubtaskCreate, db: DBSession, user: CurrentUse
         description=payload.description,
         assigned_to_id=payload.assigned_to_id,
         due_date=payload.due_date,
+        status=payload.status,
+        is_closed=is_closed,
+        closed_at=_now_utc() if is_closed else None,
         created_by_id=getattr(user, "id", None),
         updated_by_id=getattr(user, "id", None),
     )
@@ -1914,9 +2130,27 @@ async def update_subtask(subtask_id: UUID, payload: SubtaskUpdate, db: DBSession
         subtask.assigned_to_id = payload.assigned_to_id
     if payload.due_date is not None:
         subtask.due_date = payload.due_date
-    if payload.is_closed is not None:
+    
+    if payload.status is not None:
+        subtask.status = payload.status
+        # Determine is_closed from custom_task_statuses
+        is_closed = False
+        if project.custom_task_statuses:
+            for s in project.custom_task_statuses:
+                if s.get("id") == payload.status:
+                    is_closed = s.get("is_closed", False)
+                    break
+        subtask.is_closed = is_closed
+        subtask.closed_at = _now_utc() if is_closed else None
+    elif payload.is_closed is not None:
         subtask.is_closed = payload.is_closed
         subtask.closed_at = _now_utc() if payload.is_closed else None
+        # If toggling via is_closed, try to pick a reasonable status
+        if project.custom_task_statuses:
+            for s in project.custom_task_statuses:
+                if s.get("is_closed", False) == payload.is_closed:
+                    subtask.status = s.get("id")
+                    break
 
     subtask.updated_by_id = getattr(user, "id", None)
 
@@ -2239,6 +2473,9 @@ async def create_issue(payload: IssueCreate, db: DBSession, user: CurrentUser):
         summary=f"Created issue IS-{ref}: {issue.subject}",
     )
     await _update_project_stats(db, payload.project_id)
+    if issue.milestone_id:
+        await _update_milestone_stats(db, issue.milestone_id)
+    
     await db.commit()
     await db.refresh(issue)
     return build_created_response(IssueResponse.from_model(issue), resource_name="Issue")
@@ -2273,6 +2510,8 @@ async def update_issue(issue_id: UUID, payload: IssueUpdate, db: DBSession, user
 
     project = await _get_project_or_404(db, issue.project_id)
     await _require_project_access(db, project, user, permission="edit")
+
+    old_milestone_id = issue.milestone_id
 
     if payload.milestone_id is not None:
         milestone_result = await db.execute(
@@ -2323,6 +2562,11 @@ async def update_issue(issue_id: UUID, payload: IssueUpdate, db: DBSession, user
     )
 
     await _update_project_stats(db, issue.project_id)
+    if old_milestone_id:
+        await _update_milestone_stats(db, old_milestone_id)
+    if issue.milestone_id and issue.milestone_id != old_milestone_id:
+        await _update_milestone_stats(db, issue.milestone_id)
+    
     await db.commit()
     await db.refresh(issue)
     return build_updated_response(IssueResponse.from_model(issue), resource_name="Issue")
@@ -2354,6 +2598,9 @@ async def delete_issue(issue_id: UUID, db: DBSession, user: CurrentUser):
     )
 
     await _update_project_stats(db, issue.project_id)
+    if issue.milestone_id:
+        await _update_milestone_stats(db, issue.milestone_id)
+    
     await db.commit()
     return build_deleted_response(resource_name="Issue")
 

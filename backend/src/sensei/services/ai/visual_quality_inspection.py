@@ -31,18 +31,17 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import numpy as np
-try:
-    import onnxruntime as ort
-except ImportError:
-    ort = None
+from sqlalchemy import select, update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.models.strategic_v2 import InspectionFeedback, TrainingSample
 from sensei.services.core.local_first_infrastructure import get_local_first_service, ModelPrecision, ModelSize
 
 logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 # =============================================================================
@@ -1115,136 +1114,82 @@ class TrainingDataset:
 
 class ContinuousLearningManager:
     """
-    Manages continuous learning from operator feedback.
-    
-    Features:
-    - Collect feedback on false positives/negatives
-    - Trigger retraining when enough data accumulated
-    - A/B test new models
-    - Gradual rollout of improved models
+    Manages continuous learning from operator feedback with database persistence.
     """
     
     def __init__(
         self,
-        feedback_threshold: int = 100,  # Retrain after this many samples
-        improvement_threshold: float = 0.02,  # Min improvement to deploy
+        feedback_threshold: int = 100,
+        improvement_threshold: float = 0.02,
     ):
         self.feedback_threshold = feedback_threshold
         self.improvement_threshold = improvement_threshold
-        
-        # Feedback storage
-        self.feedback_queue: list[FeedbackRecord] = []
-        self.training_samples: list[tuple[np.ndarray, list]] = []
-        
-        # Model versions
         self.current_model_version: str = "1.0.0"
         self.candidate_model_version: str | None = None
-        
-        # A/B test state
         self.ab_test_active: bool = False
-        self.ab_test_results: dict[str, dict] = {}
-        
-        # Training data storage
-        self.training_images: list[np.ndarray] = []
-        self.training_labels: list[dict[str, Any]] = []
         self._retraining_scheduled: bool = False
-    
-    def record_feedback(
+
+    async def record_feedback(
         self,
+        db: AsyncSession,
         feedback: FeedbackRecord,
-        image: np.ndarray | None = None,
+        image_key: str | None = None,
     ) -> None:
-        """Record operator feedback."""
-        self.feedback_queue.append(feedback)
+        """Record operator feedback and persist to database."""
+        # Create feedback record
+        record = InspectionFeedback(
+            inspection_id=feedback.inspection_id,
+            image_key=image_key or "unknown",
+            operator_decision=feedback.corrected_decision.value if feedback.corrected_decision else "unknown",
+            ai_decision=feedback.original_decision.value if feedback.original_decision else "unknown",
+            is_correct=feedback.corrected_decision == feedback.original_decision,
+            feedback_notes=None,
+            operator_id=UUID(feedback.operator_id) if feedback.operator_id else None,
+        )
+        db.add(record)
         
-        # Store image if provided for retraining
-        if image is not None:
-            self.training_images.append(image)
-            self.training_labels.append({
-                "inspection_id": feedback.inspection_id,
-                "corrected_decision": feedback.corrected_decision,
-                "false_positive_ids": feedback.false_positive_ids,
-                "false_negative_boxes": feedback.false_negative_boxes,
-                "operator_id": feedback.operator_id,
-            })
+        # If image provided, create a training sample
+        if image_key:
+            sample = TrainingSample(
+                sample_type="feedback_correction",
+                image_key=image_key,
+                label_data={
+                    "false_positive_ids": feedback.false_positive_ids,
+                    "false_negative_boxes": feedback.false_negative_boxes,
+                },
+                confidence_score=1.0,
+            )
+            db.add(sample)
+        
+        await db.commit()
         
         # Check if we should trigger retraining
-        if len(self.feedback_queue) >= self.feedback_threshold:
-            logger.info(f"Feedback threshold reached ({len(self.feedback_queue)}), preparing retraining")
-            self._prepare_training_data()
-    
-    def _prepare_training_data(self) -> TrainingDataset | None:
-        """
-        Prepare training data from accumulated feedback.
+        # Count recent feedback
+        count_stmt = select(func.count(InspectionFeedback.id))
+        count = (await db.execute(count_stmt)).scalar() or 0
         
-        Extracts corrected annotations and prepares for model fine-tuning.
-        Returns a structured dataset ready for training.
-        """
-        if not self.feedback_queue:
-            logger.debug("No feedback to prepare for training")
+        if count >= self.feedback_threshold:
+            logger.info(f"Feedback threshold reached ({count}), preparing retraining")
+            # In a real system, this would trigger a background Celery task
+            self._retraining_scheduled = True
+
+    async def get_training_dataset(self, db: AsyncSession) -> TrainingDataset | None:
+        """Retrieve training data from database."""
+        feedback_stmt = select(InspectionFeedback)
+        feedback_records = (await db.execute(feedback_stmt)).scalars().all()
+        
+        if not feedback_records:
             return None
-        
+            
         # Aggregate feedback statistics
-        fp_annotations = []  # False positives to remove from training
-        fn_annotations = []  # False negatives to add to training
-        decision_corrections = []  # Decision overrides
-        
-        for feedback in self.feedback_queue:
-            # Collect false positive IDs (model detected but shouldn't have)
-            for fp_id in feedback.false_positive_ids:
-                fp_annotations.append({
-                    "inspection_id": feedback.inspection_id,
-                    "defect_id": fp_id,
-                    "action": "remove",
-                })
-            
-            # Collect false negatives (model missed)
-            for bbox, defect_type in feedback.false_negative_boxes:
-                fn_annotations.append({
-                    "inspection_id": feedback.inspection_id,
-                    "bbox": bbox,
-                    "defect_type": defect_type,
-                    "action": "add",
-                })
-            
-            # Track decision overrides for threshold adjustment
-            if feedback.corrected_decision and feedback.corrected_decision != feedback.original_decision:
-                decision_corrections.append({
-                    "original": feedback.original_decision,
-                    "corrected": feedback.corrected_decision,
-                    "operator": feedback.operator_id,
-                })
-        
-        # Create training dataset
-        dataset = TrainingDataset(
-            images=self.training_images.copy(),
+        return TrainingDataset(
+            images=[],  # Images would be fetched from S3 using keys
             annotations={
-                "false_positives": fp_annotations,
-                "false_negatives": fn_annotations,
-                "decision_corrections": decision_corrections,
+                "feedback_count": len(feedback_records),
+                "is_correct_count": len([r for r in feedback_records if r.is_correct]),
             },
-            feedback_count=len(self.feedback_queue),
-            created_at=datetime.now(timezone.utc),
+            feedback_count=len(feedback_records),
         )
-        
-        logger.info(
-            f"Prepared training data: {len(self.training_images)} images, "
-            f"{len(fp_annotations)} FPs, {len(fn_annotations)} FNs, "
-            f"{len(decision_corrections)} decision overrides"
-        )
-        
-        # Mark for async retraining (triggered via Celery)
-        self._retraining_scheduled = True
-        
-        # Clear processed feedback (keep some for validation)
-        processed_count = len(self.feedback_queue)
-        self.feedback_queue = self.feedback_queue[-10:]  # Keep last 10 for reference
-        
-        # Clear training data after preparation
-        self.training_images = []
-        self.training_labels = []
-        
-        return dataset
     
     def get_training_recommendations(self) -> dict[str, Any]:
         """Get recommendations for model improvement."""

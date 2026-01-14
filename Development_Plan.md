@@ -31,6 +31,18 @@
     - `MultiModalPDCACoach` & `KataGamificationService` in `tps_teacher.py`
     - `ProductionScenarioModeler` & `OrganizationalHealthHeatmap` in `ceo_control_plane.py`
     - `CrossDomainSynthesizer` in `knowledge_enrichment.py`
+- **Core Project Management**:
+  - `Project`, `Epic`, `Sprint`, `UserStory`, `Subtask`, `Issue`, `ProjectMilestone`, `WikiPage`, `ProjectActivity`
+  - Robust `ProjectSequence` for contiguous reference numbers (US-1, EP-5)
+  - Real-time statistics engine for project/sprint/milestone health
+  - Custom status workflows for User Stories, Issues, and Subtasks
+  - Full integration with "Today" dashboard (Commitments & Abnormalities)
+- **Production Management**:
+  - `WorkOrder`, `Station`, `StandardWork`, `AndonEvent`
+- **Knowledge Base**:
+  - Hierarchical versioned Wiki with Markdown support
+- **Traceability**:
+  - Native links between User Stories, Work Orders, and CTQs
 - **Core Infrastructure**: 7 core modules + 4 middleware modules
 - **ML Infrastructure**: 6 ML modules (3,450+ lines): lesson recommender, evidence detector, CBM predictor, MLOps, evaluation, safety gates
   - MLOps includes: Model versioning, automated retraining, A/B testing
@@ -39,17 +51,20 @@
 - **Total Frontend Tests**: 2,602 Jest unit tests across 59 test suites (ALL PASSING ✅) + Playwright E2E (5 test suites) + k6 load tests (3 scripts)
   - **Section 19.1**: Cross-device responsive tests (121 tests)
   - **Section 19.2**: Navigation flow tests (57 tests)
-- **UI Components**: 18 component files
-- **App Pages**: 28 pages (dashboard, pipeline, quotes, quality, CTQ, Obeya, exceptions, analytics, etc.)
+- **UI Components**: 24 component files (Kanban, Backlog, Gantt, Wiki, Issues, Dashboard)
+- **App Pages**: 32 pages (including new Project Management sub-modules)
+  - **NEW**: Project Dashboard (`project-management/[id]/page.tsx`) - Interactive health charts
+  - **NEW**: Project Wiki (`project-management/[id]/wiki`) - Markdown editor
   - **NEW**: Exceptions Dashboard (`exceptions/page.tsx` - 586 lines) - Real-time monitoring, trends
   - **NEW**: Advanced Analytics Dashboard (`analytics/page.tsx` - 524 lines) - ML insights
   - **NEW**: Admin/Configuration Page (`admin/page.tsx` - 1,084 lines) - System management
-- **Stores**: 8 Zustand stores (auth, ui, notifications, pipeline, quotes, ctq, obeya, admin, exceptions)
+- **Stores**: 9 Zustand stores (including new Project Management store)
+  - **NEW**: Project Store (`project-management-store.ts`) - Unified state for PM lifecycle
   - **NEW**: Admin Store (`admin.ts` - 754 lines) - System config, user/role management
   - **NEW**: Exceptions Store (`exceptions.ts` - 326 lines) - Exception workflow, trends
 - **PWA**: Service worker + manifest + offline support
-- **E2E Tests**: GM Day-1 flow, mobile responsiveness (3 devices), navigation, login
-- **Load Tests**: Today screen, search operations, concurrent approvals
+- **E2E Tests**: GM Day-1 flow, PM workflow, mobile responsiveness, navigation, login
+- **Load Tests**: Today screen, project kanban, concurrent story updates
 - **New Pages (Jan 2026)**: CTQ management (781 lines), CTQ detail (754 lines), Obeya board with SQDCP metrics (enhanced), Obeya item detail (754 lines), Admin/Config (1,084 lines), Exceptions Dashboard (586 lines), Advanced Analytics (524 lines)
 
 ---

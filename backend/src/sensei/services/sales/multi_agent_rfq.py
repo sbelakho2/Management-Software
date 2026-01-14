@@ -17,6 +17,12 @@ from collections import defaultdict
 import hashlib
 import re
 import asyncio
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.models.strategic_v2 import AgentAnalysisRecord, ConsensusDebateRecord
 
 
 # =============================================================================
@@ -1198,8 +1204,8 @@ class AgentOrchestrator:
         """Get registered agent by type."""
         return self._agents.get(agent_type)
     
-    async def analyze_rfq(self, rfq: RFQSpec) -> ComprehensiveAnalysis:
-        """Perform comprehensive RFQ analysis with all agents."""
+    async def analyze_rfq(self, db: AsyncSession, rfq: RFQSpec) -> ComprehensiveAnalysis:
+        """Perform comprehensive RFQ analysis with all agents and persist results."""
         analysis_id = hashlib.md5(
             f"{rfq.rfq_id}:{datetime.now(timezone.utc)}".encode()
         ).hexdigest()[:16]
@@ -1214,6 +1220,18 @@ class AgentOrchestrator:
         for agent_type, agent in self._agents.items():
             findings = await agent.analyze(rfq)
             
+            # Persist individual agent findings
+            for finding in findings:
+                record = AgentAnalysisRecord(
+                    rfq_id=UUID(rfq.rfq_id),
+                    agent_type=agent_type.value,
+                    analysis_category=finding.category.value,
+                    confidence=finding.confidence,
+                    findings={"observation": finding.finding},
+                    recommendations=[finding.recommendation],
+                )
+                db.add(record)
+
             if agent_type == AgentType.TECHNICAL:
                 analysis.technical_findings = findings
                 if isinstance(agent, TechnicalAgent):
@@ -1241,12 +1259,24 @@ class AgentOrchestrator:
         for topic, context in discrepancies:
             debate_result = await self._run_debate(topic, context)
             analysis.debate_results.append(debate_result)
+            
+            # Persist debate result
+            debate_record = ConsensusDebateRecord(
+                rfq_id=UUID(rfq.rfq_id),
+                issue_description=topic,
+                rounds=debate_result.rounds,
+                outcome=debate_result.outcome.value,
+                final_consensus_score=debate_result.consensus_score,
+                debate_log=debate_result.debate_log,
+            )
+            db.add(debate_record)
         
         # Calculate overall score and recommendation
         analysis.overall_score = self._calculate_overall_score(analysis)
         analysis.recommendation = self._generate_recommendation(analysis)
         analysis.confidence = self._calculate_confidence(analysis)
         
+        await db.commit()
         return analysis
     
     def _identify_discrepancies(

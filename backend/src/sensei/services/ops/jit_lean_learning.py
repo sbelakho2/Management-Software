@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.models.strategic_v2 import LessonDeliveryRecord, StandardWorkEvolutionRecord
 
 
 # =============================================================================
@@ -236,7 +242,7 @@ class BestPracticeSuggestion:
 
 class MicroLessonEngine:
     """
-    Contextual Lean Micro-Lesson Engine.
+    Contextual Lean Micro-Lesson Engine with DB persistence.
     
     Delivers 60-second lessons triggered by operational conditions.
     """
@@ -244,11 +250,37 @@ class MicroLessonEngine:
     def __init__(self):
         """Initialize engine."""
         self.lessons: dict[str, MicroLesson] = {}
-        self.deliveries: list[LessonDelivery] = []
         self.trigger_mappings: dict[TriggerType, list[LessonCategory]] = {}
         
         self._initialize_lessons()
         self._initialize_trigger_mappings()
+    
+    async def deliver_lesson(
+        self,
+        db: AsyncSession,
+        lesson_id: str,
+        recipient_id: UUID,
+        trigger_type: TriggerType,
+        context: dict[str, Any] | None = None,
+    ) -> LessonDeliveryRecord:
+        """Deliver a micro-lesson and persist to database."""
+        delivery = LessonDeliveryRecord(
+            lesson_id=lesson_id,
+            recipient_id=recipient_id,
+            trigger_type=trigger_type.value,
+            trigger_context=context or {},
+            status="delivered",
+        )
+        db.add(delivery)
+        await db.commit()
+        await db.refresh(delivery)
+        return delivery
+
+    async def get_user_deliveries(self, db: AsyncSession, user_id: UUID) -> list[LessonDeliveryRecord]:
+        """Get all lesson deliveries for a user."""
+        stmt = select(LessonDeliveryRecord).where(LessonDeliveryRecord.recipient_id == user_id)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
     
     def _initialize_lessons(self) -> None:
         """Initialize the lesson library."""
@@ -723,7 +755,7 @@ class KnowledgeRetrievalEngine:
 
 class StandardWorkEvolutionEngine:
     """
-    Standard Work Evolution Engine.
+    Standard Work Evolution Engine with DB persistence.
     
     Implements the Countermeasure-to-Standard loop and best practice diffusion.
     """
@@ -731,81 +763,39 @@ class StandardWorkEvolutionEngine:
     def __init__(self):
         """Initialize engine."""
         self.standards: dict[str, StandardWork] = {}
-        self.drafts: list[StandardWorkDraft] = []
         self.performers: dict[str, OperatorPerformance] = {}
-        self.best_practice_suggestions: list[BestPracticeSuggestion] = []
     
-    def register_standard(self, standard: StandardWork) -> str:
-        """Register a standard work document."""
-        self.standards[standard.standard_id] = standard
-        return standard.standard_id
-    
-    def create_standard(
+    async def draft_update_from_a3(
         self,
-        title: str,
-        process_name: str,
-        work_center_id: str,
-        steps: list[dict[str, Any]],
-        cycle_time_seconds: int,
-        key_points: list[str] | None = None,
-        safety_notes: list[str] | None = None,
-        quality_checks: list[str] | None = None,
-    ) -> StandardWork:
-        """Create a new standard work document."""
-        standard = StandardWork(
-            standard_id=str(uuid.uuid4()),
-            title=title,
-            process_name=process_name,
-            work_center_id=work_center_id,
-            version="1.0",
-            content=f"Standard work for {process_name}",
-            steps=steps,
-            cycle_time_seconds=cycle_time_seconds,
-            key_points=key_points or [],
-            safety_notes=safety_notes or [],
-            quality_checks=quality_checks or [],
-            status=StandardWorkStatus.DRAFT,
-        )
-        self.standards[standard.standard_id] = standard
-        return standard
-    
-    def draft_update_from_a3(
-        self,
+        db: AsyncSession,
         a3_id: str,
         countermeasure: str,
         target_standard_id: str | None = None,
         process_name: str = "",
         work_center_id: str = "",
-    ) -> StandardWorkDraft:
+    ) -> StandardWorkEvolutionRecord:
         """
-        Create a draft standard work update from A3 countermeasure.
-        
-        When an A3 is closed successfully, this automatically drafts
-        an update for the related StandardWork.
+        Create a draft standard work update from A3 countermeasure and persist.
         """
         # Parse countermeasure to extract proposed changes
         proposed_changes = self._parse_countermeasure(countermeasure)
         
-        # Determine target standard
-        if not target_standard_id:
-            # Find related standard by work center
-            for std in self.standards.values():
-                if std.work_center_id == work_center_id or process_name.lower() in std.title.lower():
-                    target_standard_id = std.standard_id
-                    break
-        
-        draft = StandardWorkDraft(
-            draft_id=str(uuid.uuid4()),
-            source_a3_id=a3_id,
-            source_countermeasure=countermeasure,
-            target_standard_id=target_standard_id,
-            proposed_changes=proposed_changes,
-            rationale=f"A3 {a3_id} successfully closed with countermeasure that improves the process",
-            created_at=datetime.now(),
+        record = StandardWorkEvolutionRecord(
+            original_standard_id=target_standard_id or "unknown",
+            suggested_changes=proposed_changes,
+            reasoning=f"A3 {a3_id} successfully closed with countermeasure: {countermeasure}",
+            status="pending",
         )
-        
-        self.drafts.append(draft)
-        return draft
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        return record
+
+    async def get_evolution_history(self, db: AsyncSession, standard_id: str) -> list[StandardWorkEvolutionRecord]:
+        """Get all evolution suggestions for a standard."""
+        stmt = select(StandardWorkEvolutionRecord).where(StandardWorkEvolutionRecord.original_standard_id == standard_id)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
     
     def _parse_countermeasure(self, countermeasure: str) -> dict[str, Any]:
         """Parse countermeasure text to extract proposed changes."""

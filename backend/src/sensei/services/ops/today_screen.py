@@ -11,15 +11,23 @@ Aggregates data for the Manager GPS "Today" screen, including:
 - Quick metrics and KPIs
 """
 
-from dataclasses import dataclass, field
+import json
+import logging
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, date, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, List, Dict, Optional
 from uuid import UUID, uuid4
 
+from sensei.core.redis import redis_client
+
+
+from sensei.models.project_management import UserStory, ProjectMilestone, Project, ProjectStatus, UserStoryStatus
+from sqlalchemy import select, or_, and_, func
+from sqlalchemy.orm import Session
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 class RiskCategory(str, Enum):
@@ -47,6 +55,11 @@ class AbnormalityType(str, Enum):
     LOW_MARGIN = "low_margin"
     MISSING_FOLLOW_UP = "missing_follow_up"
     
+    # Project Management abnormalities
+    LATE_USER_STORY = "late_user_story"
+    OVERDUE_PROJECT_MILESTONE = "overdue_project_milestone"
+    STALLED_PROJECT_TASK = "stalled_project_task"
+    
     # Shop Floor abnormalities (Phase 3)
     CRITICAL_ANDON = "critical_andon"  # Critical Andon events requiring acknowledgement
     WORK_ORDER_AT_RISK = "work_order_at_risk"  # Work orders at risk of missing due date
@@ -70,6 +83,11 @@ class CommitmentType(str, Enum):
     MEETING = "meeting"
     TASK_DUE = "task_due"
     DELIVERY_DUE = "delivery_due"
+    
+    # Project Management commitments
+    PROJECT_MILESTONE_DUE = "project_milestone_due"
+    USER_STORY_DUE = "user_story_due"
+    SUBTASK_DUE = "subtask_due"
     
     # Shop Floor commitments (Phase 3)
     TRAINING_SESSION = "training_session"  # Scheduled training sessions
@@ -488,44 +506,34 @@ class TodayScreenService:
     
     def __init__(self) -> None:
         """Initialize the Today screen service."""
-        # In-memory storage for user priorities
-        self._user_priorities: dict[UUID, list[Priority]] = {}
-        
-        # Mock data stores (in production, these would query actual repositories)
-        self._risks: dict[UUID, Risk] = {}
-        self._commitments: dict[UUID, Commitment] = {}
-        self._abnormalities: dict[UUID, Abnormality] = {}
-        self._micro_drills: dict[UUID, MicroDrill] = {}
-        
-        # User drill progress
-        self._drill_progress: dict[UUID, dict[str, Any]] = {}
-        
-        # Shop Floor data stores (Phase 3)
-        self._work_orders_at_risk: dict[UUID, WorkOrderAtRisk] = {}
-        self._critical_andons: dict[UUID, CriticalAndon] = {}
-        self._station_efficiencies: dict[UUID, StationEfficiency] = {}
-        self._cell_oees: dict[UUID, CellOEE] = {}
-        self._kanban_alerts: dict[UUID, KanbanAlert] = {}
-        self._expiring_certifications: dict[UUID, ExpiringCertification] = {}
-        self._wip_violations: dict[UUID, WIPViolation] = {}
-        self._capa_verifications: dict[UUID, CAPAVerification] = {}
-        self._scheduled_trainings: dict[UUID, ScheduledTraining] = {}
-        
-        # Register sample data for testing
-        self._register_sample_data()
+        self.logger = logging.getLogger(__name__)
     
+    async def _get_store(self, user_id: UUID, store_name: str) -> Dict[str, Any]:
+        """Get a user-specific store from Redis."""
+        key = f"today:{user_id}:{store_name}"
+        data = await redis_client.get(key)
+        if data:
+            return json.loads(data)
+        return {}
+
+    async def _save_store(self, user_id: UUID, store_name: str, data: Dict[str, Any]) -> None:
+        """Save a user-specific store to Redis."""
+        key = f"today:{user_id}:{store_name}"
+        await redis_client.set(key, json.dumps(data), ex=86400) # 24h TTL
+
     # ========== Priority Management ==========
     
-    def set_top_priorities(
+    async def set_top_priorities(
         self,
         user_id: UUID,
-        priority_ids: list[UUID],
-    ) -> list[Priority]:
+        priority_ids: List[UUID],
+    ) -> List[Priority]:
         """Set the user's top 3 priorities (forced selection)."""
         if len(priority_ids) > 3:
             raise ValueError("Maximum 3 top priorities allowed")
         
-        priorities = self._user_priorities.get(user_id, [])
+        priorities_data = await self._get_store(user_id, "priorities")
+        priorities = [Priority(**p) if isinstance(p, dict) else p for p in priorities_data.values()]
         
         # Reset all user-selected flags
         for p in priorities:
@@ -534,15 +542,16 @@ class TodayScreenService:
         
         # Set selected priorities
         for rank, pid in enumerate(priority_ids, 1):
-            for p in priorities:
-                if p.id == pid:
-                    p.is_user_selected = True
-                    p.rank = rank
-                    break
+            pid_str = str(pid)
+            if pid_str in priorities_data:
+                p_dict = priorities_data[pid_str]
+                p_dict['is_user_selected'] = True
+                p_dict['rank'] = rank
         
-        return [p for p in priorities if p.is_user_selected]
+        await self._save_store(user_id, "priorities", priorities_data)
+        return [Priority(**p) for p in priorities_data.values() if p.get('is_user_selected')]
     
-    def add_priority(
+    async def add_priority(
         self,
         user_id: UUID,
         title: str,
@@ -567,32 +576,48 @@ class TodayScreenService:
             owner_name=owner_name,
         )
         
-        if user_id not in self._user_priorities:
-            self._user_priorities[user_id] = []
+        priorities_data = await self._get_store(user_id, "priorities")
         
-        self._user_priorities[user_id].append(priority)
+        # Datetime needs special handling for JSON
+        priority_dict = asdict(priority)
+        priority_dict['created_at'] = priority.created_at.isoformat()
+        if priority.due_date:
+            priority_dict['due_date'] = priority.due_date.isoformat()
+        
+        priorities_data[str(priority.id)] = priority_dict
+        await self._save_store(user_id, "priorities", priorities_data)
+        
         return priority
     
-    def remove_priority(self, user_id: UUID, priority_id: UUID) -> bool:
+    async def remove_priority(self, user_id: UUID, priority_id: UUID) -> bool:
         """Remove a priority item."""
-        if user_id not in self._user_priorities:
-            return False
+        priorities_data = await self._get_store(user_id, "priorities")
+        pid_str = str(priority_id)
         
-        priorities = self._user_priorities[user_id]
-        self._user_priorities[user_id] = [p for p in priorities if p.id != priority_id]
-        return len(self._user_priorities[user_id]) < len(priorities)
+        if pid_str in priorities_data:
+            del priorities_data[pid_str]
+            await self._save_store(user_id, "priorities", priorities_data)
+            return True
+        return False
     
-    def get_user_priorities(
+    async def get_user_priorities(
         self,
         user_id: UUID,
         include_selected: bool = True,
         include_unselected: bool = True,
-    ) -> list[Priority]:
+    ) -> List[Priority]:
         """Get priorities for a user."""
-        priorities = self._user_priorities.get(user_id, [])
+        priorities_data = await self._get_store(user_id, "priorities")
         
         result = []
-        for p in priorities:
+        for p_dict in priorities_data.values():
+            # Handle date/datetime conversions from JSON
+            if isinstance(p_dict['created_at'], str):
+                p_dict['created_at'] = datetime.fromisoformat(p_dict['created_at'])
+            if p_dict.get('due_date') and isinstance(p_dict['due_date'], str):
+                p_dict['due_date'] = date.fromisoformat(p_dict['due_date'])
+                
+            p = Priority(**p_dict)
             if p.is_user_selected and include_selected:
                 result.append(p)
             elif not p.is_user_selected and include_unselected:
@@ -604,7 +629,6 @@ class TodayScreenService:
             p.rank if p.is_user_selected else 999,
             0 if p.priority_level == PriorityLevel.HIGH else 1 if p.priority_level == PriorityLevel.MEDIUM else 2,
         ))
-        
         return result
     
     # ========== Risk Management ==========
@@ -1655,10 +1679,15 @@ class TodayScreenService:
         self,
         user_id: UUID,
         user_name: str,
+        db: Session | None = None,
     ) -> TodayScreenData:
         """Get complete Today screen data for a user."""
         today = date.today()
         tomorrow = today + timedelta(days=1)
+        
+        # Aggregate real-time data if DB is provided
+        if db:
+            self._aggregate_project_data(db, user_id)
         
         # Get greeting based on time of day
         hour = datetime.now().hour
@@ -1725,6 +1754,86 @@ class TodayScreenService:
             cache_valid_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5),
         )
     
+    def _aggregate_project_data(self, db: Session, user_id: UUID) -> None:
+        """Aggregate project data into commitments and abnormalities."""
+        today = date.today()
+        
+        # 1. Fetch Overdue/Upcoming Milestones
+        milestone_stmt = (
+            select(ProjectMilestone, Project.name)
+            .join(Project, ProjectMilestone.project_id == Project.id)
+            .where(
+                ProjectMilestone.owner_id == user_id,
+                ProjectMilestone.status != "completed",
+                ProjectMilestone.deleted_at.is_(None)
+            )
+        )
+        milestones = db.execute(milestone_stmt).all()
+        
+        for ms, project_name in milestones:
+            # Overdue Milestone as Abnormality
+            if ms.target_date < today:
+                self.add_abnormality(
+                    user_id=user_id,
+                    title=f"Overdue Milestone: {ms.name}",
+                    atype=AbnormalityType.OVERDUE_PROJECT_MILESTONE,
+                    severity=8,
+                    description=f"Project: {project_name}. Due on {ms.target_date}",
+                    entity_type="project_milestone",
+                    entity_id=ms.id,
+                )
+            
+            # Milestone as Commitment
+            self.add_commitment(
+                user_id=user_id,
+                title=f"Milestone: {ms.name}",
+                ctype=CommitmentType.PROJECT_MILESTONE_DUE,
+                target_date=ms.target_date,
+                description=f"Project: {project_name}",
+                entity_type="project_milestone",
+                entity_id=ms.id,
+                priority=PriorityLevel.HIGH if ms.target_date <= today else PriorityLevel.MEDIUM
+            )
+
+        # 2. Fetch Assigned User Stories with due dates
+        # Note: We use a simplified check for assigned users since it's a JSON/Array field depending on implementation
+        # For now, we check owner_id for direct accountability on Today screen
+        story_stmt = (
+            select(UserStory, Project.name)
+            .join(Project, UserStory.project_id == Project.id)
+            .where(
+                UserStory.owner_id == user_id,
+                UserStory.status != UserStoryStatus.DONE.value,
+                UserStory.deleted_at.is_(None),
+                UserStory.due_date.isnot(None)
+            )
+        )
+        stories = db.execute(story_stmt).all()
+        
+        for story, project_name in stories:
+            # Overdue Story as Abnormality
+            if story.due_date < today:
+                self.add_abnormality(
+                    user_id=user_id,
+                    title=f"Late User Story: US-{story.ref}",
+                    atype=AbnormalityType.LATE_USER_STORY,
+                    severity=6,
+                    description=f"{story.subject} (Project: {project_name})",
+                    entity_type="user_story",
+                    entity_id=story.id,
+                )
+            
+            # Story as Commitment
+            self.add_commitment(
+                user_id=user_id,
+                title=f"US-{story.ref}: {story.subject}",
+                ctype=CommitmentType.USER_STORY_DUE,
+                target_date=story.due_date,
+                description=f"Project: {project_name}",
+                entity_type="user_story",
+                entity_id=story.id,
+            )
+
     # ========== Sample Data ==========
     
     def _register_sample_data(self) -> None:

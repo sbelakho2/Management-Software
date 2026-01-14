@@ -54,7 +54,40 @@ from sensei.models.data_lineage import DataLineageLink
 from sensei.models.reasoning_trace import ReasoningTrace
 from sensei.models.admin import AdminGate, ApprovalWorkflow, Template, LearningCadence, FeatureFlag
 from sensei.models.exception import ExceptionRecord
-from sensei.models.tps import PDCACycleRecord, KataSessionRecord, MudaDetectionRecord, UserTPSStats
+from sensei.models.tps import (
+    PDCACycleRecord, 
+    KataSessionRecord, 
+    MudaDetectionRecord, 
+    UserTPSStats,
+    TPSAndonEventRecord,
+    JidokaResponseRecord,
+)
+from sensei.models.cognitive_obeya import (
+    MetricRecord,
+    CausalLinkRecord,
+    TrendWarningRecord,
+    SiloAlertRecord,
+    ResourceRebalanceRecord,
+    HeijunkaSuggestionRecord,
+)
+from sensei.models.strategic import (
+    NL2SQLQueryRecord,
+    EmployeeRiskAssessmentRecord,
+    ScenarioResultRecord,
+)
+from sensei.models.strategic_v2 import (
+    InspectionFeedback,
+    TrainingSample,
+    AgentAnalysisRecord,
+    ConsensusDebateRecord,
+    KnowledgeSourceRecord,
+    SemanticChunkRecord,
+    SiteMaturityRecord,
+    LevelUpChecklistRecord,
+    UIActionAuditRecord,
+    LessonDeliveryRecord,
+    StandardWorkEvolutionRecord,
+)
 
 # Phase 3: Production & TPS Execution Models
 from sensei.models.work_center import (

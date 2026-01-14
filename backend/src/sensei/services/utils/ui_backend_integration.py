@@ -16,7 +16,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-from uuid import uuid4
+from uuid import uuid4, UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.models.strategic_v2 import UIActionAuditRecord
 
 
 # =============================================================================
@@ -827,14 +832,13 @@ class ValidationSchemaExportService:
 
 class ActionAuditService:
     """
-    Service for tracking UI action to backend audit log consistency.
+    Service for tracking UI action to backend audit log consistency with DB persistence.
     
     Ensures every UI action corresponds to exactly one backend audit entry.
     """
     
     def __init__(self) -> None:
         """Initialize action audit service."""
-        self.entries: dict[str, ActionAuditEntry] = {}
         self.pending_actions: dict[str, dict[str, Any]] = {}
     
     def start_action(
@@ -845,7 +849,7 @@ class ActionAuditService:
         user_id: str,
         ui_context: dict[str, Any] | None = None,
     ) -> str:
-        """Start tracking a UI action."""
+        """Start tracking a UI action (temporary in-memory until completion)."""
         action_id = f"action_{uuid4().hex[:12]}"
         
         self.pending_actions[action_id] = {
@@ -859,14 +863,15 @@ class ActionAuditService:
         
         return action_id
     
-    def complete_action(
+    async def complete_action(
         self,
+        db: AsyncSession,
         action_id: str,
         success: bool,
         backend_response: dict[str, Any] | None = None,
         error_code: str | None = None,
-    ) -> ActionAuditEntry | None:
-        """Complete tracking a UI action."""
+    ) -> UIActionAuditRecord | None:
+        """Complete tracking a UI action and persist to database."""
         if action_id not in self.pending_actions:
             return None
         
@@ -874,47 +879,48 @@ class ActionAuditService:
         now = datetime.now(timezone.utc)
         duration_ms = int((now - pending["started_at"]).total_seconds() * 1000)
         
-        entry = ActionAuditEntry(
-            entry_id=f"audit_{uuid4().hex[:12]}",
+        record = UIActionAuditRecord(
+            action_id=action_id,
             action_type=pending["action_type"],
             entity_type=pending["entity_type"],
             entity_id=pending["entity_id"],
-            user_id=pending["user_id"],
-            timestamp=now,
+            user_id=UUID(pending["user_id"]),
             ui_context=pending["ui_context"],
-            backend_response=backend_response or {},
-            duration_ms=duration_ms,
             success=success,
+            duration_ms=duration_ms,
             error_code=error_code,
         )
         
-        self.entries[entry.entry_id] = entry
-        return entry
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        return record
     
-    def get_entries(
+    async def get_entries(
         self,
+        db: AsyncSession,
         entity_type: str | None = None,
         entity_id: str | None = None,
         user_id: str | None = None,
         action_type: str | None = None,
         limit: int = 100,
-    ) -> list[ActionAuditEntry]:
-        """Get audit entries with optional filtering."""
-        entries = list(self.entries.values())
+    ) -> list[UIActionAuditRecord]:
+        """Get audit entries from database with optional filtering."""
+        stmt = select(UIActionAuditRecord)
         
         if entity_type:
-            entries = [e for e in entries if e.entity_type == entity_type]
+            stmt = stmt.where(UIActionAuditRecord.entity_type == entity_type)
         if entity_id:
-            entries = [e for e in entries if e.entity_id == entity_id]
+            stmt = stmt.where(UIActionAuditRecord.entity_id == entity_id)
         if user_id:
-            entries = [e for e in entries if e.user_id == user_id]
+            stmt = stmt.where(UIActionAuditRecord.user_id == UUID(user_id))
         if action_type:
-            entries = [e for e in entries if e.action_type == action_type]
+            stmt = stmt.where(UIActionAuditRecord.action_type == action_type)
         
-        # Sort by timestamp descending
-        entries.sort(key=lambda e: e.timestamp, reverse=True)
+        stmt = stmt.order_by(UIActionAuditRecord.created_at.desc()).limit(limit)
         
-        return entries[:limit]
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
     
     def verify_consistency(
         self,

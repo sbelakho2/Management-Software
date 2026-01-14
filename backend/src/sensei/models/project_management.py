@@ -674,9 +674,10 @@ class Subtask(Base, TimestampMixin, AuditMixin):
     )
     
     # Status
+    status: Mapped[str] = mapped_column(String(50), default="open", index=True, nullable=False)
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    
+
     # Time tracking
     estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     actual_hours: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

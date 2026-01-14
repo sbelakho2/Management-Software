@@ -35,6 +35,9 @@ from sensei.services.ops.today_screen import (
     get_today_screen_service,
 )
 
+from sensei.core.database import DBSession
+from sensei.api.v1.dependencies import CurrentUser
+
 router = APIRouter(prefix="/today", tags=["today-screen"])
 
 
@@ -877,12 +880,14 @@ async def get_quick_metrics(user_id: UUID) -> list[QuickMetricSchema]:
 )
 async def get_today_screen(
     user_id: UUID,
+    db: DBSession,
+    user: CurrentUser,
     user_name: str | None = Query(None),
 ) -> TodayScreenDataSchema:
     """Get complete Today screen data for a user."""
     service = get_today_screen_service()
     normalized_user_name = (user_name or "").strip() or "User"
-    screen = service.get_today_screen(user_id, normalized_user_name)
+    screen = service.get_today_screen(user_id, normalized_user_name, db=db)
 
     return TodayScreenDataSchema(
         user_id=screen.user_id,

@@ -22,6 +22,11 @@ from datetime import datetime, timedelta
 from enum import Enum, IntEnum
 from typing import Any, Callable
 
+from sqlalchemy import select, update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.models.strategic_v2 import SiteMaturityRecord, LevelUpChecklistRecord
+
 
 # =============================================================================
 # ENUMS
@@ -508,117 +513,100 @@ class UIVisibilityConfig:
 
 class MaturityManager:
     """
-    Manages deployment maturity levels for factory sites.
-    
-    Provides:
-    - Level configuration and tracking
-    - Feature enablement based on maturity
-    - Level-up checklist management
-    - Action validation against maturity
+    Manages deployment maturity levels for factory sites with DB persistence.
     """
     
     def __init__(self):
-        self._sites: dict[str, SiteConfig] = {}
-        self._checklists: dict[str, LevelUpChecklist] = {}
         self._level_change_callbacks: list[Callable[[str, MaturityLevel, MaturityLevel], None]] = []
     
-    def register_site(
+    async def register_site(
         self,
+        db: AsyncSession,
         site_id: str,
         site_name: str,
         initial_level: MaturityLevel = MaturityLevel.L0_STRATEGIC,
         timezone: str = "UTC",
         metadata: dict[str, Any] | None = None,
-    ) -> SiteConfig:
-        """Register a new site with initial maturity level."""
-        config = SiteConfig(
+    ) -> SiteMaturityRecord:
+        """Register a new site with initial maturity level in the database."""
+        record = SiteMaturityRecord(
             site_id=site_id,
             site_name=site_name,
-            current_level=initial_level,
-            timezone=timezone,
-            metadata=metadata or {},
+            current_level=initial_level.value,
+            target_level=initial_level.value + 1,
+            deployment_metadata={
+                "timezone": timezone,
+                **(metadata or {})
+            }
         )
-        self._sites[site_id] = config
-        return config
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        return record
     
-    def get_site(self, site_id: str) -> SiteConfig | None:
-        """Get site configuration."""
-        return self._sites.get(site_id)
+    async def get_site(self, db: AsyncSession, site_id: str) -> SiteMaturityRecord | None:
+        """Get site configuration from database."""
+        stmt = select(SiteMaturityRecord).where(SiteMaturityRecord.site_id == site_id)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
     
-    def get_all_sites(self) -> list[SiteConfig]:
-        """Get all registered sites."""
-        return list(self._sites.values())
-    
-    def get_current_level(self, site_id: str) -> MaturityLevel | None:
+    async def get_current_level(self, db: AsyncSession, site_id: str) -> MaturityLevel | None:
         """Get current maturity level for a site."""
-        site = self._sites.get(site_id)
-        return site.current_level if site else None
+        site = await self.get_site(db, site_id)
+        return MaturityLevel(site.current_level) if site else None
     
-    def get_enabled_features(self, site_id: str) -> set[FeatureModule]:
-        """Get all enabled features for a site."""
-        site = self._sites.get(site_id)
-        if not site:
-            return set()
-        return site.get_enabled_features()
-    
-    def is_feature_enabled(self, site_id: str, feature: FeatureModule) -> bool:
-        """Check if a feature is enabled for a site."""
-        site = self._sites.get(site_id)
-        if not site:
-            return False
-        return site.is_feature_enabled(feature)
-    
-    def create_level_up_checklist(
+    async def create_level_up_checklist(
         self,
+        db: AsyncSession,
         site_id: str,
         target_level: MaturityLevel | None = None,
-    ) -> LevelUpChecklist | None:
-        """Create a checklist for level-up transition."""
-        site = self._sites.get(site_id)
+    ) -> LevelUpChecklistRecord | None:
+        """Create a checklist for level-up transition in the database."""
+        site = await self.get_site(db, site_id)
         if not site:
             return None
         
         from_level = site.current_level
         
         # Check if already at max level
-        if from_level >= MaturityLevel.L5_TPS:
+        if from_level >= MaturityLevel.L5_TPS.value:
             return None
         
-        # Calculate target level - either provided or next level
-        if target_level is not None:
-            to_level = target_level
-        else:
-            to_level = MaturityLevel(from_level + 1)
+        # Calculate target level
+        to_level = target_level.value if target_level is not None else from_level + 1
         
-        if to_level <= from_level:
+        if to_level <= from_level or to_level > MaturityLevel.L5_TPS.value:
             return None
         
-        if to_level > MaturityLevel.L5_TPS:
-            return None
-        
-        # Get default items for this transition
-        default_items = DEFAULT_LEVEL_UP_CHECKLISTS.get((from_level, to_level), [])
+        # Get default items
+        default_items = DEFAULT_LEVEL_UP_CHECKLISTS.get((MaturityLevel(from_level), MaturityLevel(to_level)), [])
         
         items = [
-            ChecklistItem(
-                item_id=item["id"],
-                title=item["title"],
-                required=item.get("required", True),
-            )
+            {
+                "item_id": item["id"],
+                "title": item["title"],
+                "required": item.get("required", True),
+                "completed": False
+            }
             for item in default_items
         ]
         
-        checklist = LevelUpChecklist(
-            checklist_id=str(uuid.uuid4()),
+        checklist = LevelUpChecklistRecord(
             site_id=site_id,
             from_level=from_level,
             to_level=to_level,
             items=items,
+            is_completed=False
         )
         
-        self._checklists[checklist.checklist_id] = checklist
-        site.target_level = to_level
+        db.add(checklist)
         
+        # Update site target level
+        site.target_level = to_level
+        site.is_in_transition = True
+        
+        await db.commit()
+        await db.refresh(checklist)
         return checklist
     
     def get_checklist(self, checklist_id: str) -> LevelUpChecklist | None:

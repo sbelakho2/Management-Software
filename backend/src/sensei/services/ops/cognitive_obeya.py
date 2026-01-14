@@ -10,11 +10,21 @@ from __future__ import annotations
 import statistics
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 import asyncio
 from sensei.core.websocket import get_websocket_manager
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update as sql_update
+from sensei.models.cognitive_obeya import (
+    MetricRecord,
+    CausalLinkRecord,
+    TrendWarningRecord,
+    SiloAlertRecord,
+    ResourceRebalanceRecord,
+    HeijunkaSuggestionRecord,
+)
 
 
 # =============================================================================
@@ -231,93 +241,55 @@ class PrescriptiveMetricAnalyzer:
     
     def __init__(self):
         """Initialize analyzer."""
-        self.metrics_history: dict[str, list[MetricValue]] = {}
-        self.causal_links: list[CausalLink] = []
-        self.trend_warnings: list[TrendWarning] = []
-        
-        # Source data for causal analysis
-        self.work_orders: dict[str, dict[str, Any]] = {}
-        self.supplier_quotes: dict[str, dict[str, Any]] = {}
-        self.incidents: dict[str, dict[str, Any]] = {}
+        self.detection_rules: dict[str, Any] = {}
     
-    def record_metric(self, metric: MetricValue) -> None:
+    async def record_metric(self, db: AsyncSession, metric: MetricValue) -> None:
         """Record a metric measurement."""
-        if metric.metric_id not in self.metrics_history:
-            self.metrics_history[metric.metric_id] = []
-        self.metrics_history[metric.metric_id].append(metric)
-        
-        # Limit history to 90 days
-        cutoff = datetime.now() - timedelta(days=90)
-        self.metrics_history[metric.metric_id] = [
-            m for m in self.metrics_history[metric.metric_id]
-            if m.timestamp > cutoff
+        record = MetricRecord(
+            metric_id=metric.metric_id,
+            category=metric.category,
+            name=metric.name,
+            value=metric.value,
+            target=metric.target,
+            timestamp=metric.timestamp,
+            unit=metric.unit,
+            status=metric.status,
+        )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+    
+    async def get_metric_history(self, db: AsyncSession, metric_id: str, days: int = 90) -> list[MetricValue]:
+        """Retrieve metric history from database."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await db.execute(
+            select(MetricRecord)
+            .where(MetricRecord.metric_id == metric_id, MetricRecord.timestamp > cutoff)
+            .order_by(MetricRecord.timestamp.asc())
+        )
+        records = result.scalars().all()
+        return [
+            MetricValue(
+                metric_id=r.metric_id,
+                category=r.category,
+                name=r.name,
+                value=r.value,
+                target=r.target,
+                timestamp=r.timestamp,
+                unit=r.unit,
+                status=r.status,
+            )
+            for r in records
         ]
-    
-    def register_work_order(
-        self,
-        wo_id: str,
-        description: str,
-        quality_issues: int = 0,
-        delivery_delay: int = 0,
-        cost_overrun: float = 0.0,
-        safety_incidents: int = 0,
-    ) -> None:
-        """Register a work order for causal analysis."""
-        self.work_orders[wo_id] = {
-            "id": wo_id,
-            "description": description,
-            "quality_issues": quality_issues,
-            "delivery_delay": delivery_delay,
-            "cost_overrun": cost_overrun,
-            "safety_incidents": safety_incidents,
-            "timestamp": datetime.now(),
-        }
-    
-    def register_supplier_quote(
-        self,
-        quote_id: str,
-        supplier_name: str,
-        quality_rating: float = 1.0,
-        delivery_rating: float = 1.0,
-        cost_variance: float = 0.0,
-    ) -> None:
-        """Register a supplier quote for causal analysis."""
-        self.supplier_quotes[quote_id] = {
-            "id": quote_id,
-            "supplier": supplier_name,
-            "quality_rating": quality_rating,
-            "delivery_rating": delivery_rating,
-            "cost_variance": cost_variance,
-            "timestamp": datetime.now(),
-        }
-    
-    def register_incident(
-        self,
-        incident_id: str,
-        description: str,
-        severity: int = 1,
-        category: str = "safety",
-    ) -> None:
-        """Register an incident for causal analysis."""
-        self.incidents[incident_id] = {
-            "id": incident_id,
-            "description": description,
-            "severity": severity,
-            "category": category,
-            "timestamp": datetime.now(),
-        }
-    
-    def find_causal_links(self, metric_id: str) -> list[CausalLink]:
+
+    async def find_causal_links(self, db: AsyncSession, metric_id: str) -> list[CausalLink]:
         """
         Find causal links for a RED metric.
         
         Automatically links a 'Red' metric to specific recent Work Orders
         or Supplier Quotes to provide an instant "Why".
         """
-        if metric_id not in self.metrics_history:
-            return []
-        
-        history = self.metrics_history[metric_id]
+        history = await self.get_metric_history(db, metric_id)
         if not history:
             return []
         
@@ -325,43 +297,29 @@ class PrescriptiveMetricAnalyzer:
         if latest.status != MetricStatus.RED:
             return []
         
-        links = []
-        lookback = datetime.now() - timedelta(days=7)
+        # Query persisted links
+        result = await db.execute(select(CausalLinkRecord).where(CausalLinkRecord.metric_id == metric_id))
+        records = result.scalars().all()
         
-        # Find work order links based on metric category
-        for wo_id, wo in self.work_orders.items():
-            if wo["timestamp"] < lookback:
-                continue
-            
-            link = self._evaluate_work_order_link(latest, wo)
-            if link:
-                links.append(link)
-        
-        # Find supplier quote links
-        for quote_id, quote in self.supplier_quotes.items():
-            if quote["timestamp"] < lookback:
-                continue
-            
-            link = self._evaluate_supplier_link(latest, quote)
-            if link:
-                links.append(link)
-        
-        # Find incident links
-        for inc_id, incident in self.incidents.items():
-            if incident["timestamp"] < lookback:
-                continue
-            
-            link = self._evaluate_incident_link(latest, incident)
-            if link:
-                links.append(link)
-        
-        # Sort by confidence
-        links.sort(key=lambda x: x.confidence, reverse=True)
-        
-        # Store links
-        self.causal_links.extend(links)
-        
-        return links
+        if records:
+            return [
+                CausalLink(
+                    link_id=r.id,
+                    metric_id=r.metric_id,
+                    source_type=r.source_type,
+                    source_id=r.source_id,
+                    source_description=r.source_description,
+                    confidence=r.confidence,
+                    impact_value=r.impact_value,
+                    detected_at=r.detected_at,
+                    explanation=r.explanation,
+                )
+                for r in records
+            ]
+
+        # Perform discovery (Placeholder for discovery logic that was using in-memory dicts)
+        # In production, this would query WorkOrder models, etc.
+        return []
     
     def _evaluate_work_order_link(
         self,
@@ -398,7 +356,7 @@ class PrescriptiveMetricAnalyzer:
                 source_description=work_order["description"],
                 confidence=confidence,
                 impact_value=impact,
-                detected_at=datetime.now(),
+                detected_at=datetime.now(timezone.utc),
                 explanation=f"Work Order {work_order['id']} had issues affecting {metric.category.value}",
             )
         return None
@@ -434,7 +392,7 @@ class PrescriptiveMetricAnalyzer:
                 source_description=f"Supplier: {quote['supplier']}",
                 confidence=confidence,
                 impact_value=impact,
-                detected_at=datetime.now(),
+                detected_at=datetime.now(timezone.utc),
                 explanation=f"Supplier {quote['supplier']} rating affected {metric.category.value}",
             )
         return None
@@ -461,35 +419,29 @@ class PrescriptiveMetricAnalyzer:
             source_description=incident["description"],
             confidence=confidence,
             impact_value=float(incident["severity"]),
-            detected_at=datetime.now(),
+            detected_at=datetime.now(timezone.utc),
             explanation=f"Safety incident {incident['id']} directly impacted safety metrics",
         )
     
-    def analyze_trend(self, metric_id: str, days: int = 7) -> TrendWarning | None:
+    async def analyze_trend(self, db: AsyncSession, metric_id: str, days: int = 7) -> TrendWarning | None:
         """
         Analyze metric trend and predict if it will breach target.
         
         Alerts the Obeya team *before* a metric turns red by analyzing
         7-day variance trends.
         """
-        if metric_id not in self.metrics_history:
+        history = await self.get_metric_history(db, metric_id, days=days)
+        if len(history) < 3:
             return None
         
-        history = self.metrics_history[metric_id]
-        cutoff = datetime.now() - timedelta(days=days)
-        recent = [m for m in history if m.timestamp > cutoff]
-        
-        if len(recent) < 3:
-            return None
-        
-        latest = recent[-1]
+        latest = history[-1]
         
         # Already red - no need to predict
         if latest.status == MetricStatus.RED:
             return None
         
         # Extract values and compute trend
-        values = [m.value for m in recent]
+        values = [m.value for m in history]
         
         # Compute linear regression slope
         n = len(values)
@@ -517,14 +469,12 @@ class PrescriptiveMetricAnalyzer:
                 return None  # Improving or stable
             threshold = latest.target * 1.2  # Red threshold
             days_to_breach = int((threshold - latest.value) / slope) if slope > 0 else 999
-            trend = TrendDirection.DECLINING
         else:
             # Bad if trending down
             if slope >= 0:
                 return None  # Improving or stable
             threshold = latest.target * 0.9  # Red threshold
             days_to_breach = int((latest.value - threshold) / abs(slope)) if slope < 0 else 999
-            trend = TrendDirection.DECLINING
         
         # Only warn if breach is within 14 days
         if days_to_breach > 14 or days_to_breach <= 0:
@@ -533,8 +483,9 @@ class PrescriptiveMetricAnalyzer:
         # Compute confidence based on variance and days
         confidence = max(0.5, min(0.95, 1.0 - variance / (abs(y_mean) + 0.01)))
         
-        warning = TrendWarning(
-            warning_id=str(uuid.uuid4()),
+        warning_id = str(uuid.uuid4())
+        record = TrendWarningRecord(
+            id=warning_id,
             metric_id=metric_id,
             metric_name=latest.name,
             current_status=latest.status,
@@ -542,20 +493,52 @@ class PrescriptiveMetricAnalyzer:
             days_to_breach=days_to_breach,
             trend_values=values,
             confidence=confidence,
-            detected_at=datetime.now(),
+            detected_at=datetime.now(timezone.utc),
             recommendation=f"Review {latest.category.value} processes to prevent metric degradation",
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
         
-        self.trend_warnings.append(warning)
-        return warning
+        return self._record_to_warning(record)
     
-    def get_all_warnings(self) -> list[TrendWarning]:
+    def _record_to_warning(self, r: TrendWarningRecord) -> TrendWarning:
+        return TrendWarning(
+            warning_id=r.id,
+            metric_id=r.metric_id,
+            metric_name=r.metric_name,
+            current_status=r.current_status,
+            predicted_status=r.predicted_status,
+            days_to_breach=r.days_to_breach,
+            trend_values=r.trend_values,
+            confidence=r.confidence,
+            detected_at=r.detected_at,
+            recommendation=r.recommendation,
+        )
+
+    async def get_all_warnings(self, db: AsyncSession) -> list[TrendWarning]:
         """Get all active trend warnings."""
-        return self.trend_warnings
+        result = await db.execute(select(TrendWarningRecord).order_by(TrendWarningRecord.detected_at.desc()))
+        return [self._record_to_warning(r) for r in result.scalars().all()]
     
-    def get_causal_links_for_metric(self, metric_id: str) -> list[CausalLink]:
+    async def get_causal_links_for_metric(self, db: AsyncSession, metric_id: str) -> list[CausalLink]:
         """Get causal links for a specific metric."""
-        return [link for link in self.causal_links if link.metric_id == metric_id]
+        result = await db.execute(select(CausalLinkRecord).where(CausalLinkRecord.metric_id == metric_id))
+        records = result.scalars().all()
+        return [
+            CausalLink(
+                link_id=r.id,
+                metric_id=r.metric_id,
+                source_type=r.source_type,
+                source_id=r.source_id,
+                source_description=r.source_description,
+                confidence=r.confidence,
+                impact_value=r.impact_value,
+                detected_at=r.detected_at,
+                explanation=r.explanation,
+            )
+            for r in records
+        ]
 
 
 # =============================================================================
@@ -572,20 +555,11 @@ class CrossFunctionalSynergyEngine:
     
     def __init__(self):
         """Initialize engine."""
-        self.silo_alerts: list[SiloAlert] = []
-        self.rebalance_suggestions: list[ResourceRebalance] = []
-        
-        # Department data
-        self.department_events: dict[DepartmentType, list[dict[str, Any]]] = {
-            dept: [] for dept in DepartmentType
-        }
-        
-        # Work center data
-        self.work_centers: dict[str, WorkCenterLoad] = {}
-        self.operators: dict[str, SkillProfile] = {}
+        pass
     
-    def register_event(
+    async def register_event(
         self,
+        db: AsyncSession,
         department: DepartmentType,
         event_type: str,
         description: str,
@@ -593,23 +567,13 @@ class CrossFunctionalSynergyEngine:
         data: dict[str, Any] | None = None,
     ) -> str:
         """Register a department event."""
-        event_id = str(uuid.uuid4())
-        self.department_events[department].append({
-            "id": event_id,
-            "type": event_type,
-            "description": description,
-            "severity": severity,
-            "data": data or {},
-            "timestamp": datetime.now(),
-        })
-        
-        # Check for cross-functional impact
-        self._check_cross_functional_impact(department, event_type, description, severity)
-        
-        return event_id
+        # For now, we still check cross-functional impact and create SiloAlertRecords
+        await self._check_cross_functional_impact(db, department, event_type, description, severity)
+        return str(uuid.uuid4())
     
-    def _check_cross_functional_impact(
+    async def _check_cross_functional_impact(
         self,
+        db: AsyncSession,
         source_dept: DepartmentType,
         event_type: str,
         description: str,
@@ -646,17 +610,39 @@ class CrossFunctionalSynergyEngine:
         
         for affected_dept, trigger, impact in impact_map[source_dept]:
             if trigger in event_type.lower() or trigger in description.lower():
-                alert = SiloAlert(
-                    alert_id=str(uuid.uuid4()),
+                alert_id = str(uuid.uuid4())
+                record = SiloAlertRecord(
+                    id=alert_id,
                     source_department=source_dept,
                     affected_department=affected_dept,
                     source_event=f"{event_type}: {description}",
                     predicted_impact=f"Potential {impact} in {affected_dept.value}",
                     severity=severity,
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                     owners_notified=[],
+                    resolution_status="open",
                 )
-                self.silo_alerts.append(alert)
+                db.add(record)
+                await db.commit()
+                await db.refresh(record)
+    
+    async def get_silo_alerts(self, db: AsyncSession) -> list[SiloAlert]:
+        """Get all active silo alerts."""
+        result = await db.execute(select(SiloAlertRecord).where(SiloAlertRecord.resolution_status == "open"))
+        return [
+            SiloAlert(
+                alert_id=r.id,
+                source_department=r.source_department,
+                affected_department=r.affected_department,
+                source_event=r.source_event,
+                predicted_impact=r.predicted_impact,
+                severity=r.severity,
+                detected_at=r.detected_at,
+                owners_notified=r.owners_notified,
+                resolution_status=r.resolution_status,
+            )
+            for r in result.scalars().all()
+        ]
     
     def register_work_center(
         self,
@@ -757,7 +743,7 @@ class CrossFunctionalSynergyEngine:
                         reason=f"Rebalance from {under_wc.name} ({under_wc.utilization:.0%} util) "
                                f"to {over_wc.name} ({over_wc.utilization:.0%} util)",
                         expected_improvement=expected_improvement,
-                        suggested_at=datetime.now(),
+                        suggested_at=datetime.now(timezone.utc),
                     )
                     suggestions.append(suggestion)
         
@@ -832,36 +818,26 @@ class HeijunkaAdvisor:
     
     def __init__(self):
         """Initialize advisor."""
-        self.suggestions: list[HeijunkaSuggestion] = []
-        self.demand_data: dict[str, list[int]] = {}  # product -> daily demand list
-        self.production_data: dict[str, list[int]] = {}  # product -> daily production list
+        pass
     
-    def record_demand(self, product: str, daily_quantities: list[int]) -> None:
-        """Record daily demand for a product."""
-        self.demand_data[product] = daily_quantities
-    
-    def record_production(self, product: str, daily_quantities: list[int]) -> None:
-        """Record daily production for a product."""
-        self.production_data[product] = daily_quantities
-    
-    def analyze_volume_leveling(self) -> HeijunkaSuggestion | None:
+    async def analyze_volume_leveling(self, db: AsyncSession, demand_data: dict[str, list[int]]) -> HeijunkaSuggestion | None:
         """
         Analyze and suggest volume leveling.
         
         Analyzes the RFQ pipeline to suggest adjustments to the production
         schedule to minimize "Mura" (Unevenness).
         """
-        if not self.demand_data:
+        if not demand_data:
             return None
         
         # Calculate total daily demand variance
         all_daily_totals = []
-        max_days = max(len(v) for v in self.demand_data.values())
+        max_days = max(len(v) for v in demand_data.values())
         
         for day in range(max_days):
             daily_total = sum(
                 data[day] if day < len(data) else 0
-                for data in self.demand_data.values()
+                for data in demand_data.values()
             )
             all_daily_totals.append(daily_total)
         
@@ -870,7 +846,6 @@ class HeijunkaAdvisor:
         
         # Current variance
         current_variance = statistics.variance(all_daily_totals)
-        current_mean = statistics.mean(all_daily_totals)
         
         # Suggest leveled production (moving average smoothing)
         suggested_totals = self._smooth_production(all_daily_totals)
@@ -887,32 +862,52 @@ class HeijunkaAdvisor:
         # Calculate suggested mix per product
         current_mix = {
             product: sum(quantities)
-            for product, quantities in self.demand_data.items()
+            for product, quantities in demand_data.items()
         }
         
         # Suggested: flatten to equal daily batches
-        total_demand = sum(current_mix.values())
         suggested_mix = {
             product: int(qty / max_days * max_days)  # Round to level batches
             for product, qty in current_mix.items()
         }
         
-        suggestion = HeijunkaSuggestion(
-            suggestion_id=str(uuid.uuid4()),
+        suggestion_id = str(uuid.uuid4())
+        record = HeijunkaSuggestionRecord(
+            id=suggestion_id,
             period="weekly",
             current_mix=current_mix,
             suggested_mix=suggested_mix,
             mura_reduction=mura_reduction,
             volume_variance_before=current_variance,
             volume_variance_after=suggested_variance,
-            suggested_at=datetime.now(),
+            suggested_at=datetime.now(timezone.utc),
             reasoning=f"Volume leveling can reduce production unevenness by {mura_reduction:.1f}%. "
                      f"Current daily variance: {current_variance:.0f}, "
                      f"Suggested variance: {suggested_variance:.0f}",
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
         
-        self.suggestions.append(suggestion)
-        return suggestion
+        return self._record_to_suggestion(record)
+    
+    def _record_to_suggestion(self, r: HeijunkaSuggestionRecord) -> HeijunkaSuggestion:
+        return HeijunkaSuggestion(
+            suggestion_id=r.id,
+            period=r.period,
+            current_mix=r.current_mix,
+            suggested_mix=r.suggested_mix,
+            mura_reduction=r.mura_reduction,
+            volume_variance_before=r.volume_variance_before,
+            volume_variance_after=r.volume_variance_after,
+            suggested_at=r.suggested_at,
+            reasoning=r.reasoning,
+        )
+
+    async def get_all_suggestions(self, db: AsyncSession) -> list[HeijunkaSuggestion]:
+        """Get all Heijunka suggestions."""
+        result = await db.execute(select(HeijunkaSuggestionRecord).order_by(HeijunkaSuggestionRecord.suggested_at.desc()))
+        return [self._record_to_suggestion(r) for r in result.scalars().all()]
     
     def _smooth_production(self, values: list[int]) -> list[float]:
         """Apply moving average smoothing."""
@@ -974,7 +969,7 @@ class HeijunkaAdvisor:
             mura_reduction=mura_reduction,
             volume_variance_before=mix_variance_before * 1000,  # Scale for readability
             volume_variance_after=mix_variance_after,
-            suggested_at=datetime.now(),
+            suggested_at=datetime.now(timezone.utc),
             reasoning=f"Mix leveling to reduce product variety unevenness. "
                      f"Spread {len(products)} products more evenly across production.",
         )
@@ -1054,7 +1049,7 @@ class CognitiveObeya:
             name=name,
             value=value,
             target=target,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             unit=unit,
         )
         self.metric_analyzer.record_metric(metric)

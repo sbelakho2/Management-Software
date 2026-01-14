@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowLeft, Calendar, Layout, ListTodo, Layers, AlertCircle, Settings, FileText } from 'lucide-react';
+import { ArrowLeft, Calendar, Layout, ListTodo, Layers, AlertCircle, Settings, FileText, Flag, History, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -19,6 +19,9 @@ import { KanbanBoard } from './_components/kanban-board';
 import { IssuesList } from './_components/issues-list';
 import { WikiView } from './_components/wiki-view';
 import { ProjectSettings } from './_components/project-settings';
+import { MilestonesList } from './_components/milestones-list';
+import { ProjectActivityTimeline } from './_components/project-activity';
+import { ProjectDashboard } from './_components/project-dashboard';
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -32,6 +35,8 @@ export default function ProjectDetailPage() {
     fetchEpics,
     fetchSprints,
     fetchStories,
+    fetchIssues,
+    fetchMilestones,
     isLoading,
     error,
     clearError,
@@ -43,8 +48,10 @@ export default function ProjectDetailPage() {
       fetchEpics(projectId);
       fetchSprints(projectId);
       fetchStories(projectId);
+      fetchIssues(projectId);
+      fetchMilestones(projectId);
     }
-  }, [projectId, fetchProjectById, fetchEpics, fetchSprints, fetchStories]);
+  }, [projectId, fetchProjectById, fetchEpics, fetchSprints, fetchStories, fetchIssues, fetchMilestones]);
 
   React.useEffect(() => {
     if (error) {
@@ -108,60 +115,81 @@ export default function ProjectDetailPage() {
       </div>
 
       {/* Main Content */}
-      <Tabs defaultValue="board" className="space-y-4">
-        <TabsList>
-            <TabsTrigger value="board" className="gap-2">
+      <Tabs defaultValue="dashboard" className="space-y-4">
+        <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0">
+            <TabsTrigger value="dashboard" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+                <BarChart3 className="h-4 w-4" /> Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="board" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                 <Layout className="h-4 w-4" /> Board
             </TabsTrigger>
-            <TabsTrigger value="backlog" className="gap-2">
+            <TabsTrigger value="backlog" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                 <ListTodo className="h-4 w-4" /> Backlog
             </TabsTrigger>
-            <TabsTrigger value="sprints" className="gap-2">
+            <TabsTrigger value="sprints" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                 <Calendar className="h-4 w-4" /> Sprints
             </TabsTrigger>
-            <TabsTrigger value="epics" className="gap-2">
+            <TabsTrigger value="epics" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                 <Layers className="h-4 w-4" /> Epics
             </TabsTrigger>
+            <TabsTrigger value="milestones" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+                <Flag className="h-4 w-4" /> Milestones
+            </TabsTrigger>
             {selectedProject?.enable_issues !== false && (
-              <TabsTrigger value="issues" className="gap-2">
+              <TabsTrigger value="issues" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                   <AlertCircle className="h-4 w-4" /> Issues
               </TabsTrigger>
             )}
             {selectedProject?.enable_wiki !== false && (
-              <TabsTrigger value="wiki" className="gap-2">
+              <TabsTrigger value="wiki" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                   <FileText className="h-4 w-4" /> Wiki
               </TabsTrigger>
             )}
-            <TabsTrigger value="settings" className="gap-2">
+            <TabsTrigger value="activity" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
+                <History className="h-4 w-4" /> Activity
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
                 <Settings className="h-4 w-4" /> Settings
             </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="board" className="space-y-4">
+        <TabsContent value="dashboard" className="space-y-4 outline-none">
+            <ProjectDashboard projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="board" className="space-y-4 outline-none">
             <KanbanBoard projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="backlog" className="space-y-4">
+        <TabsContent value="backlog" className="space-y-4 outline-none">
             <BacklogView projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="sprints" className="space-y-4">
+        <TabsContent value="sprints" className="space-y-4 outline-none">
              <SprintList projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="epics" className="space-y-4">
+        <TabsContent value="epics" className="space-y-4 outline-none">
             <EpicsList projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="issues" className="space-y-4">
+        <TabsContent value="milestones" className="space-y-4 outline-none">
+            <MilestonesList projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="issues" className="space-y-4 outline-none">
             <IssuesList projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="wiki" className="space-y-4">
+        <TabsContent value="wiki" className="space-y-4 outline-none">
             <WikiView projectId={projectId} />
         </TabsContent>
 
-        <TabsContent value="settings" className="space-y-4">
+        <TabsContent value="activity" className="space-y-4 outline-none">
+            <ProjectActivityTimeline projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-4 outline-none">
             <ProjectSettings projectId={projectId} />
         </TabsContent>
       </Tabs>

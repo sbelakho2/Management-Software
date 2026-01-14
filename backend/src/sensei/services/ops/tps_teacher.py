@@ -18,7 +18,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
-from sensei.models.tps import PDCACycleRecord, KataSessionRecord, MudaDetectionRecord, UserTPSStats
+from sensei.models.tps import (
+    PDCACycleRecord, 
+    KataSessionRecord, 
+    MudaDetectionRecord, 
+    UserTPSStats,
+    TPSAndonEventRecord,
+    JidokaResponseRecord,
+)
 
 
 # =============================================================================
@@ -430,9 +437,9 @@ class PDCACoachingEngine:
         idx = phase_order.index(current)
         return phase_order[(idx + 1) % len(phase_order)]
     
-    def get_cycle_status(self, cycle_id: str) -> dict[str, Any]:
+    async def get_cycle_status(self, db: AsyncSession, cycle_id: str) -> dict[str, Any]:
         """Get comprehensive cycle status."""
-        cycle = self.cycles.get(cycle_id)
+        cycle = await self.get_cycle(db, cycle_id)
         if not cycle:
             return {}
         
@@ -442,8 +449,8 @@ class PDCACoachingEngine:
             "current_phase": cycle.current_phase.value,
             "phase_statuses": {p.value: s.value for p, s in cycle.phase_statuses.items()},
             "progress_pct": sum(1 for s in cycle.phase_statuses.values() if s == PhaseGateStatus.COMPLETED) * 25,
-            "days_elapsed": (datetime.now() - cycle.started_at).days,
-            "days_remaining": max(0, (cycle.target_completion - datetime.now()).days),
+            "days_elapsed": (datetime.now(timezone.utc) - cycle.started_at).days,
+            "days_remaining": max(0, (cycle.target_completion - datetime.now(timezone.utc)).days),
             "is_complete": cycle.actual_completion is not None,
         }
 
@@ -489,40 +496,66 @@ class ImprovementKataAssistant:
     }
     
     def __init__(self):
-        self.sessions: dict[str, KataSession] = {}
+        pass
     
-    def start_session(
+    async def start_session(
         self,
+        db: AsyncSession,
         challenge: str,
         current_condition: str,
         coach: str | None = None,
     ) -> KataSession:
         """Start a new Kata coaching session."""
         session_id = hashlib.md5(
-            f"{challenge}:{datetime.now().isoformat()}".encode()
+            f"{challenge}:{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:12]
         
-        session = KataSession(
-            session_id=session_id,
+        record = KataSessionRecord(
+            id=session_id,
             challenge=challenge,
-            current_step=KataStep.DIRECTION,
+            current_step=KataStep.DIRECTION.value,
             current_condition=current_condition,
             target_condition="",
             obstacles=[],
             experiments=[],
             learnings=[],
-            coach=coach,
+            coach_id=coach,
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
         
-        self.sessions[session_id] = session
-        return session
+        return self._record_to_session(record)
     
-    def get_daily_coaching(
+    def _record_to_session(self, record: KataSessionRecord) -> KataSession:
+        return KataSession(
+            session_id=record.id,
+            challenge=record.challenge,
+            current_step=KataStep(record.current_step),
+            current_condition=record.current_condition,
+            target_condition=record.target_condition,
+            obstacles=record.obstacles,
+            experiments=record.experiments,
+            learnings=record.learnings,
+            coach=record.coach_id,
+            started_at=record.created_at,
+        )
+
+    async def get_session(self, db: AsyncSession, session_id: str) -> KataSession | None:
+        """Retrieve a Kata session from database."""
+        result = await db.execute(select(KataSessionRecord).where(KataSessionRecord.id == session_id))
+        record = result.scalar_one_or_none()
+        if not record:
+            return None
+        return self._record_to_session(record)
+
+    async def get_daily_coaching(
         self,
+        db: AsyncSession,
         session_id: str,
     ) -> list[CoachingPrompt]:
         """Get daily coaching prompts for the current step."""
-        session = self.sessions.get(session_id)
+        session = await self.get_session(db, session_id)
         if not session:
             return []
         
@@ -570,7 +603,7 @@ class ImprovementKataAssistant:
             "description": description,
             "expected_result": expected_result,
             "actual_result": actual_result,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         return True
     
@@ -600,32 +633,47 @@ class ImprovementKataAssistant:
         session.learnings.append(learning)
         return True
     
-    def advance_step(
+    async def update_session(
         self,
+        db: AsyncSession,
+        session_id: str,
+        updates: dict[str, Any],
+    ) -> KataSession | None:
+        """Update an existing Kata session."""
+        stmt = sql_update(KataSessionRecord).where(KataSessionRecord.id == session_id).values(**updates)
+        await db.execute(stmt)
+        await db.commit()
+        return await self.get_session(db, session_id)
+
+    async def advance_step(
+        self,
+        db: AsyncSession,
         session_id: str,
     ) -> KataSession | None:
         """Advance to the next Kata step."""
-        session = self.sessions.get(session_id)
+        session = await self.get_session(db, session_id)
         if not session:
             return None
         
         step_order = list(KataStep)
         idx = step_order.index(session.current_step)
         
+        next_step = session.current_step
         if idx < len(step_order) - 1:
-            session.current_step = step_order[idx + 1]
+            next_step = step_order[idx + 1]
         else:
             # Complete one iteration, can go back to experiment
-            session.current_step = KataStep.EXPERIMENT
+            next_step = KataStep.EXPERIMENT
         
-        return session
+        return await self.update_session(db, session_id, {"current_step": next_step.value})
     
-    def get_session_summary(
+    async def get_session_summary(
         self,
+        db: AsyncSession,
         session_id: str,
     ) -> dict[str, Any]:
         """Get session summary."""
-        session = self.sessions.get(session_id)
+        session = await self.get_session(db, session_id)
         if not session:
             return {}
         
@@ -637,7 +685,7 @@ class ImprovementKataAssistant:
             "obstacles_count": len(session.obstacles),
             "experiments_count": len(session.experiments),
             "learnings_count": len(session.learnings),
-            "duration_hours": (datetime.now() - session.started_at).total_seconds() / 3600,
+            "duration_hours": (datetime.now(timezone.utc) - session.started_at).total_seconds() / 3600,
         }
 
 
@@ -704,11 +752,11 @@ class MudaDetectionEngine:
     }
     
     def __init__(self):
-        self.detections: list[MudaDetection] = []
         self.detection_rules: dict[MudaType, list[dict[str, Any]]] = {}
     
-    def analyze_process_data(
+    async def analyze_process_data(
         self,
+        db: AsyncSession,
         process_data: dict[str, Any],
     ) -> list[MudaDetection]:
         """Analyze process data for waste."""
@@ -716,7 +764,8 @@ class MudaDetectionEngine:
         
         # Check for overproduction
         if process_data.get("output_qty", 0) > process_data.get("demand_qty", 0) * 1.1:
-            detections.append(self._create_detection(
+            detections.append(await self._create_detection(
+                db,
                 MudaType.OVERPRODUCTION,
                 process_data.get("location", "Unknown"),
                 "Production exceeds demand by >10%",
@@ -728,7 +777,8 @@ class MudaDetectionEngine:
         # Check for waiting
         if process_data.get("idle_time_pct", 0) > 15:
             severity = 3 if process_data.get("idle_time_pct", 0) < 30 else 5
-            detections.append(self._create_detection(
+            detections.append(await self._create_detection(
+                db,
                 MudaType.WAITING,
                 process_data.get("location", "Unknown"),
                 f"Idle time at {process_data.get('idle_time_pct', 0)}%",
@@ -740,7 +790,8 @@ class MudaDetectionEngine:
         
         # Check for inventory waste
         if process_data.get("wip_days", 0) > 5:
-            detections.append(self._create_detection(
+            detections.append(await self._create_detection(
+                db,
                 MudaType.INVENTORY,
                 process_data.get("location", "Unknown"),
                 f"WIP inventory at {process_data.get('wip_days', 0)} days",
@@ -752,7 +803,8 @@ class MudaDetectionEngine:
         # Check for defects
         if process_data.get("defect_rate", 0) > 1:  # > 1%
             severity = 4 if process_data.get("defect_rate", 0) < 5 else 5
-            detections.append(self._create_detection(
+            detections.append(await self._create_detection(
+                db,
                 MudaType.DEFECTS,
                 process_data.get("location", "Unknown"),
                 f"Defect rate at {process_data.get('defect_rate', 0)}%",
@@ -764,7 +816,8 @@ class MudaDetectionEngine:
         
         # Check for motion waste
         if process_data.get("steps_per_unit", 0) > process_data.get("standard_steps", 10):
-            detections.append(self._create_detection(
+            detections.append(await self._create_detection(
+                db,
                 MudaType.MOTION,
                 process_data.get("location", "Unknown"),
                 "Excessive steps per unit",
@@ -773,11 +826,11 @@ class MudaDetectionEngine:
                 "Redesign workstation layout",
             ))
         
-        self.detections.extend(detections)
         return detections
     
-    def _create_detection(
+    async def _create_detection(
         self,
+        db: AsyncSession,
         muda_type: MudaType,
         location: str,
         description: str,
@@ -788,27 +841,47 @@ class MudaDetectionEngine:
     ) -> MudaDetection:
         """Create a muda detection."""
         detection_id = hashlib.md5(
-            f"{muda_type.value}:{location}:{datetime.now().isoformat()}".encode()
+            f"{muda_type.value}:{location}:{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:12]
         
-        return MudaDetection(
-            detection_id=detection_id,
-            muda_type=muda_type,
+        record = MudaDetectionRecord(
+            id=detection_id,
+            muda_type=muda_type.value,
             location=location,
             description=description,
             estimated_impact=impact,
-            detected_at=datetime.now(),
             evidence=evidence,
             severity=severity,
             suggested_countermeasure=countermeasure,
         )
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        
+        return self._record_to_detection(record)
     
-    def get_waste_summary(self) -> dict[str, Any]:
+    def _record_to_detection(self, record: MudaDetectionRecord) -> MudaDetection:
+        return MudaDetection(
+            detection_id=record.id,
+            muda_type=MudaType(record.muda_type),
+            location=record.location,
+            description=record.description,
+            estimated_impact=record.estimated_impact,
+            detected_at=record.created_at,
+            evidence=record.evidence,
+            severity=record.severity,
+            suggested_countermeasure=record.suggested_countermeasure,
+        )
+
+    async def get_waste_summary(self, db: AsyncSession) -> dict[str, Any]:
         """Get summary of all detected waste."""
+        result = await db.execute(select(MudaDetectionRecord))
+        detections = [self._record_to_detection(r) for r in result.scalars().all()]
+        
         summary: dict[MudaType, dict[str, Any]] = {}
         
         for muda_type in MudaType:
-            type_detections = [d for d in self.detections if d.muda_type == muda_type]
+            type_detections = [d for d in detections if d.muda_type == muda_type]
             if type_detections:
                 summary[muda_type] = {
                     "count": len(type_detections),
@@ -818,8 +891,8 @@ class MudaDetectionEngine:
                 }
         
         return {
-            "total_detections": len(self.detections),
-            "total_impact": sum(d.estimated_impact for d in self.detections),
+            "total_detections": len(detections),
+            "total_impact": sum(d.estimated_impact for d in detections),
             "by_type": {k.value: v for k, v in summary.items()},
         }
     
@@ -856,115 +929,133 @@ class JidokaMentor:
     }
     
     def __init__(self):
-        self.andon_events: list[AndonEvent] = []
-        self.jidoka_responses: list[JidokaResponse] = []
-        self.station_status: dict[str, AndonStatus] = {}
+        pass
     
-    def trigger_andon(
+    async def trigger_andon(
         self,
+        db: AsyncSession,
         station_id: str,
         status: AndonStatus,
         issue_description: str,
     ) -> AndonEvent:
         """Trigger an Andon signal."""
         event_id = hashlib.md5(
-            f"{station_id}:{datetime.now().isoformat()}".encode()
+            f"{station_id}:{datetime.now(timezone.utc).isoformat()}".encode()
         ).hexdigest()[:12]
         
-        event = AndonEvent(
-            event_id=event_id,
+        record = TPSAndonEventRecord(
+            id=event_id,
             station_id=station_id,
-            status=status,
+            status=status.value,
             issue_description=issue_description,
-            detected_at=datetime.now(),
+            detected_at=datetime.now(timezone.utc),
         )
-        
-        self.andon_events.append(event)
-        self.station_status[station_id] = status
+        db.add(record)
         
         # Generate Jidoka response
-        self._generate_jidoka_response(event)
+        await self._generate_jidoka_response(db, record)
         
-        return event
+        await db.commit()
+        await db.refresh(record)
+        
+        return self._record_to_event(record)
     
-    def _generate_jidoka_response(
+    async def _generate_jidoka_response(
         self,
-        event: AndonEvent,
+        db: AsyncSession,
+        event: TPSAndonEventRecord,
     ) -> JidokaResponse:
         """Generate automatic Jidoka response."""
-        rule = self.ANDON_ESCALATION_RULES.get(event.status, {})
+        rule = self.ANDON_ESCALATION_RULES.get(AndonStatus(event.status), {})
         action = rule.get("action", JidokaAction.ALERT)
         
-        response = JidokaResponse(
-            response_id=f"jidoka_{event.event_id}",
+        record = JidokaResponseRecord(
+            id=f"jidoka_{event.id}",
             trigger=event.issue_description,
-            action=action,
-            details=f"Andon {event.status.value} triggered at {event.station_id}",
+            action=action.value,
+            details=f"Andon {event.status} triggered at {event.station_id}",
             affected_process=event.station_id,
-            timestamp=datetime.now(),
-            quality_impact=self._assess_quality_impact(event.status),
+            timestamp=datetime.now(timezone.utc),
+            quality_impact=self._assess_quality_impact(AndonStatus(event.status)),
         )
-        
-        self.jidoka_responses.append(response)
-        return response
+        db.add(record)
+        return self._record_to_jidoka(record)
     
-    def _assess_quality_impact(
-        self,
-        status: AndonStatus,
-    ) -> str:
-        """Assess quality impact based on status."""
-        impact_map = {
-            AndonStatus.GREEN: "No impact",
-            AndonStatus.YELLOW: "Potential quality risk - monitoring required",
-            AndonStatus.RED: "Critical quality issue - immediate action required",
-            AndonStatus.BLUE: "Quality inspection needed before release",
-        }
-        return impact_map.get(status, "Unknown impact")
+    def _record_to_event(self, record: TPSAndonEventRecord) -> AndonEvent:
+        return AndonEvent(
+            event_id=record.id,
+            station_id=record.station_id,
+            status=AndonStatus(record.status),
+            issue_description=record.issue_description,
+            detected_at=record.detected_at,
+            responded_at=record.responded_at,
+            resolved_at=record.resolved_at,
+            responder=record.responder,
+            root_cause=record.root_cause,
+            countermeasure=record.countermeasure,
+        )
+
+    def _record_to_jidoka(self, record: JidokaResponseRecord) -> JidokaResponse:
+        return JidokaResponse(
+            response_id=record.id,
+            trigger=record.trigger,
+            action=JidokaAction(record.action),
+            details=record.details,
+            affected_process=record.affected_process,
+            timestamp=record.timestamp,
+            quality_impact=record.quality_impact,
+        )
+
+    async def get_active_andons(self, db: AsyncSession) -> list[AndonEvent]:
+        """Get all unresolved Andon signals."""
+        result = await db.execute(
+            select(TPSAndonEventRecord).where(TPSAndonEventRecord.resolved_at.is_(None))
+        )
+        return [self._record_to_event(r) for r in result.scalars().all()]
     
-    def respond_to_andon(
+    async def respond_to_andon(
         self,
+        db: AsyncSession,
         event_id: str,
         responder: str,
     ) -> AndonEvent | None:
         """Record response to Andon."""
-        for event in self.andon_events:
-            if event.event_id == event_id:
-                event.responded_at = datetime.now()
-                event.responder = responder
-                return event
+        result = await db.execute(select(TPSAndonEventRecord).where(TPSAndonEventRecord.id == event_id))
+        record = result.scalar_one_or_none()
+        if record:
+            record.responded_at = datetime.now(timezone.utc)
+            record.responder = responder
+            await db.commit()
+            await db.refresh(record)
+            return self._record_to_event(record)
         return None
     
-    def resolve_andon(
+    async def resolve_andon(
         self,
+        db: AsyncSession,
         event_id: str,
         root_cause: str,
         countermeasure: str,
     ) -> AndonEvent | None:
         """Resolve an Andon event."""
-        for event in self.andon_events:
-            if event.event_id == event_id:
-                event.resolved_at = datetime.now()
-                event.root_cause = root_cause
-                event.countermeasure = countermeasure
-                self.station_status[event.station_id] = AndonStatus.GREEN
-                return event
+        result = await db.execute(select(TPSAndonEventRecord).where(TPSAndonEventRecord.id == event_id))
+        record = result.scalar_one_or_none()
+        if record:
+            record.resolved_at = datetime.now(timezone.utc)
+            record.root_cause = root_cause
+            record.countermeasure = countermeasure
+            await db.commit()
+            await db.refresh(record)
+            return self._record_to_event(record)
         return None
     
-    def get_active_andons(self) -> list[AndonEvent]:
-        """Get all active (unresolved) Andon events."""
-        return [e for e in self.andon_events if e.resolved_at is None]
-    
-    def get_station_status(
-        self,
-        station_id: str,
-    ) -> AndonStatus:
-        """Get current status of a station."""
-        return self.station_status.get(station_id, AndonStatus.GREEN)
-    
-    def get_response_metrics(self) -> dict[str, Any]:
+    async def get_response_metrics(self, db: AsyncSession) -> dict[str, Any]:
         """Get Andon response metrics."""
-        responded = [e for e in self.andon_events if e.responded_at]
-        resolved = [e for e in self.andon_events if e.resolved_at]
+        result = await db.execute(select(TPSAndonEventRecord))
+        events = [self._record_to_event(r) for r in result.scalars().all()]
+        
+        responded = [e for e in events if e.responded_at]
+        resolved = [e for e in events if e.resolved_at]
         
         avg_response_time = 0.0
         avg_resolution_time = 0.0
@@ -984,14 +1075,14 @@ class JidokaMentor:
             avg_resolution_time = sum(resolution_times) / len(resolution_times)
         
         return {
-            "total_events": len(self.andon_events),
-            "active_events": len(self.get_active_andons()),
+            "total_events": len(events),
+            "active_events": len(events) - len(resolved),
             "responded": len(responded),
             "resolved": len(resolved),
             "avg_response_time_sec": avg_response_time,
             "avg_resolution_time_sec": avg_resolution_time,
             "by_status": {
-                status.value: sum(1 for e in self.andon_events if e.status == status)
+                status.value: sum(1 for e in events if e.status == status)
                 for status in AndonStatus
             },
         }
@@ -1125,8 +1216,9 @@ class TPSTeacher:
         self.multimodal_coach = MultiModalPDCACoach()
         self.gamification = KataGamificationService()
     
-    def start_improvement_cycle(
+    async def start_improvement_cycle(
         self,
+        db: AsyncSession,
         title: str,
         problem: str,
         owner: str,
@@ -1134,7 +1226,8 @@ class TPSTeacher:
     ) -> dict[str, Any]:
         """Start a comprehensive improvement cycle."""
         # Create PDCA cycle
-        cycle = self.pdca_engine.create_cycle(
+        cycle = await self.pdca_engine.create_cycle(
+            db=db,
             title=title,
             problem_statement=problem,
             owner=owner,
@@ -1142,7 +1235,8 @@ class TPSTeacher:
         )
         
         # Create Kata session
-        session = self.kata_assistant.start_session(
+        session = await self.kata_assistant.start_session(
+            db=db,
             challenge=title,
             current_condition=problem,
         )
@@ -1150,11 +1244,12 @@ class TPSTeacher:
         return {
             "pdca_cycle_id": cycle.cycle_id,
             "kata_session_id": session.session_id,
-            "coaching_prompts": self.pdca_engine.get_coaching_prompts(cycle.cycle_id),
+            "coaching_prompts": await self.pdca_engine.get_coaching_prompts(db, cycle.cycle_id),
         }
     
-    def get_daily_teaching(
+    async def get_daily_teaching(
         self,
+        db: AsyncSession,
         pdca_cycle_id: str | None = None,
         kata_session_id: str | None = None,
     ) -> dict[str, Any]:
@@ -1162,32 +1257,34 @@ class TPSTeacher:
         teaching = {}
         
         if pdca_cycle_id:
-            teaching["pdca_prompts"] = self.pdca_engine.get_coaching_prompts(pdca_cycle_id)
-            teaching["phase_requirements"] = self.pdca_engine.get_phase_requirements(pdca_cycle_id)
+            teaching["pdca_prompts"] = await self.pdca_engine.get_coaching_prompts(db, pdca_cycle_id)
+            teaching["phase_requirements"] = await self.pdca_engine.get_phase_requirements(db, pdca_cycle_id)
         
         if kata_session_id:
-            teaching["kata_prompts"] = self.kata_assistant.get_daily_coaching(kata_session_id)
+            teaching["kata_prompts"] = await self.kata_assistant.get_daily_coaching(db, kata_session_id)
         
         # Add waste summary
-        teaching["waste_summary"] = self.muda_detector.get_waste_summary()
+        teaching["waste_summary"] = await self.muda_detector.get_waste_summary(db)
         
         # Add active Andons
         teaching["active_andons"] = [
             {"station": e.station_id, "status": e.status.value, "issue": e.issue_description}
-            for e in self.jidoka_mentor.get_active_andons()
+            for e in await self.jidoka_mentor.get_active_andons(db)
         ]
         
         return teaching
     
-    def analyze_for_waste(
+    async def analyze_for_waste(
         self,
+        db: AsyncSession,
         process_data: dict[str, Any],
     ) -> list[MudaDetection]:
         """Analyze process data for waste."""
-        return self.muda_detector.analyze_process_data(process_data)
+        return await self.muda_detector.analyze_process_data(db, process_data)
     
-    def trigger_quality_stop(
+    async def trigger_quality_stop(
         self,
+        db: AsyncSession,
         station_id: str,
         issue: str,
         severity: str = "yellow",
@@ -1199,24 +1296,35 @@ class TPSTeacher:
             "red": AndonStatus.RED,
             "blue": AndonStatus.BLUE,
         }
-        return self.jidoka_mentor.trigger_andon(
+        return await self.jidoka_mentor.trigger_andon(
+            db=db,
             station_id=station_id,
             status=status_map.get(severity, AndonStatus.YELLOW),
             issue_description=issue,
         )
     
-    def get_tps_metrics(self) -> dict[str, Any]:
+    async def get_tps_metrics(self, db: AsyncSession) -> dict[str, Any]:
         """Get comprehensive TPS metrics."""
+        # Query active PDCA cycles
+        pdca_result = await db.execute(select(PDCACycleRecord))
+        pdca_records = pdca_result.scalars().all()
+        active_pdca = [r for r in pdca_records if r.actual_completion is None]
+        completed_pdca = [r for r in pdca_records if r.actual_completion is not None]
+
+        # Query active Kata sessions
+        kata_result = await db.execute(select(KataSessionRecord))
+        kata_records = kata_result.scalars().all()
+        
         return {
             "pdca_cycles": {
-                "active": len(self.pdca_engine.cycles),
-                "completed": len(self.pdca_engine.completed_cycles),
+                "active": len(active_pdca),
+                "completed": len(completed_pdca),
             },
             "kata_sessions": {
-                "active": len(self.kata_assistant.sessions),
+                "active": len(kata_records),
             },
-            "muda": self.muda_detector.get_waste_summary(),
-            "jidoka": self.jidoka_mentor.get_response_metrics(),
+            "muda": await self.muda_detector.get_waste_summary(db),
+            "jidoka": await self.jidoka_mentor.get_response_metrics(db),
         }
 
 

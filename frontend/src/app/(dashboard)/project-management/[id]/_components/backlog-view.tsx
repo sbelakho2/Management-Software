@@ -28,6 +28,7 @@ type ViewMode = 'list' | 'create' | 'detail';
 
 export function BacklogView({ projectId }: BacklogViewProps) {
   const { 
+    currentProject,
     stories, epics, sprints, createStory, updateStory,
     subtasksByStoryId, commentsByStoryId,
     fetchSubtasks, createSubtask, updateSubtask,
@@ -437,27 +438,52 @@ export function BacklogView({ projectId }: BacklogViewProps) {
                   </div>
                   
                   <div className="space-y-2">
-                    {currentSubtasks.map((subtask) => (
-                      <div key={subtask.id} className="flex items-center gap-2 p-2 border rounded-md">
-                        <button
-                          onClick={() => handleToggleSubtask(subtask)}
-                          className="focus:outline-none"
-                          data-testid={`pm-subtask-toggle-${subtask.ref}`}
-                        >
-                          {subtask.is_closed ? (
-                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                          ) : (
-                            <Circle className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </button>
-                        <span className={cn("flex-1 text-sm", subtask.is_closed && "line-through text-muted-foreground")}>
-                          ST-{subtask.ref}: {subtask.subject}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {subtask.is_closed ? 'Reopen' : 'Close'}
-                        </span>
-                      </div>
-                    ))}
+                    {currentSubtasks.map((subtask) => {
+                      const status = currentProject?.custom_task_statuses?.find(s => s.id === subtask.status);
+                      return (
+                        <div key={subtask.id} className="flex items-center gap-2 p-2 border rounded-md">
+                          <button
+                            onClick={() => handleToggleSubtask(subtask)}
+                            className="focus:outline-none"
+                            data-testid={`pm-subtask-toggle-${subtask.ref}`}
+                          >
+                            {subtask.is_closed ? (
+                              <CheckCircle2 className="h-5 w-5 text-green-600" />
+                            ) : (
+                              <Circle className="h-5 w-5 text-muted-foreground" />
+                            )}
+                          </button>
+                          
+                          <div className="flex-1 flex flex-col min-w-0">
+                            <span className={cn("text-sm truncate", subtask.is_closed && "line-through text-muted-foreground")}>
+                              ST-{subtask.ref}: {subtask.subject}
+                            </span>
+                            {status && (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: status.color || '#94a3b8' }} />
+                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{status.name}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <Select 
+                            value={subtask.status} 
+                            onValueChange={(val) => updateSubtask(subtask.id, { status: val })}
+                          >
+                            <SelectTrigger className="h-7 w-[100px] text-[10px]">
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {currentProject?.custom_task_statuses?.map((s) => (
+                                <SelectItem key={s.id} value={s.id} className="text-xs">
+                                  {s.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
                     
                     <div className="flex items-center gap-2">
                       <Input 
