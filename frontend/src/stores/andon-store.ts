@@ -244,13 +244,17 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
       acknowledged_at: new Date().toISOString(),
     });
 
-    // API call would go here
-    // try {
-    //   await api.acknowledgeAndonEvent(eventId, acknowledgedBy);
-    // } catch (error) {
-    //   // Rollback
-    //   get().updateEvent(eventId, { status: event.status, acknowledged_by: undefined, acknowledged_at: undefined });
-    // }
+    try {
+      await andonApi.acknowledgeEvent(eventId);
+    } catch (error) {
+      console.error('Error acknowledging Andon event:', error);
+      // Rollback
+      get().updateEvent(eventId, { 
+        status: event.status, 
+        acknowledged_by: event.acknowledged_by, 
+        acknowledged_at: event.acknowledged_at 
+      });
+    }
   },
 
   resolveEvent: async (eventId, resolution, rootCause) => {
@@ -258,9 +262,9 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
     if (!event) return;
 
     const resolvedAt = new Date().toISOString();
-    const acknowledgedAt = event.acknowledged_at ? new Date(event.acknowledged_at).getTime() : new Date(event.created_at).getTime();
     const downtimeMinutes = Math.round((new Date(resolvedAt).getTime() - new Date(event.created_at).getTime()) / 60000);
 
+    // Optimistic update
     get().updateEvent(eventId, {
       status: 'resolved' as AndonStatus,
       resolution,
@@ -268,41 +272,61 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
       resolved_at: resolvedAt,
       downtime_minutes: downtimeMinutes,
     });
+
+    try {
+      await andonApi.resolveEvent(eventId, { resolution, root_cause: rootCause });
+    } catch (error) {
+      console.error('Error resolving Andon event:', error);
+      // Rollback
+      get().updateEvent(eventId, {
+        status: event.status,
+        resolution: event.resolution,
+        root_cause: event.root_cause,
+        resolved_at: event.resolved_at,
+        downtime_minutes: event.downtime_minutes,
+      });
+    }
   },
 
   escalateEvent: async (eventId) => {
     const event = get().events.get(eventId);
     if (!event) return;
 
+    // Optimistic update
     get().updateEvent(eventId, {
       status: 'escalated' as AndonStatus,
       escalation_level: event.escalation_level + 1,
     });
 
-    // Play escalation sound
-    if (get().config.soundEnabled) {
-      playEscalationSound();
+    try {
+      await andonApi.escalateEvent(eventId);
+      // Play escalation sound
+      if (get().config.soundEnabled) {
+        playEscalationSound();
+      }
+    } catch (error) {
+      console.error('Error escalating Andon event:', error);
+      // Rollback
+      get().updateEvent(eventId, {
+        status: event.status,
+        escalation_level: event.escalation_level,
+      });
     }
   },
 
   triggerAndon: async (workCenterId, type, severity, description) => {
-    const now = new Date().toISOString();
-    const workCenter = get().workCenters.get(workCenterId);
-    
-    const newEvent: Partial<AndonEvent> = {
-      id: `andon-${Date.now()}`,
-      andon_number: `AND-${Date.now()}`,
-      work_center_id: workCenterId,
-      type,
-      status: 'triggered',
-      severity,
-      description,
-      escalation_level: 0,
-      created_at: now,
-      updated_at: now,
-    };
+    try {
+      const newEvent = await andonApi.triggerAndon({
+        work_center_id: workCenterId,
+        type,
+        severity,
+        description,
+      });
 
-    get().addEvent(newEvent as AndonEvent);
+      get().addEvent(newEvent);
+    } catch (error) {
+      console.error('Error triggering Andon event:', error);
+    }
   },
 
   // Work Center actions
@@ -418,9 +442,10 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
     }
 
     const token = localStorage.getItem('access_token');
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    // WebSocket endpoint is at /api/v1/ws/{token}
     const wsBase = apiUrl.replace(/^http/, 'ws').replace(/\/$/, '');
-    const wsUrl = wsBase.includes('/api/v1') ? wsBase.replace('/api/v1', '/ws') : `${wsBase}/ws`;
+    const wsUrl = wsBase.includes('/api/v1') ? `${wsBase}/ws` : `${wsBase}/api/v1/ws`;
     const socketUrl = token ? `${wsUrl}/${token}` : wsUrl;
     const newSocket = new WebSocket(socketUrl);
 

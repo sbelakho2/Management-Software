@@ -32,17 +32,7 @@ from sensei.models.cognitive_obeya import (
 # =============================================================================
 
 
-class MetricCategory(Enum):
-    """SQDCP metric categories."""
-    
-    SAFETY = "safety"
-    QUALITY = "quality"
-    DELIVERY = "delivery"
-    COST = "cost"
-    PRODUCTIVITY = "productivity"
-
-
-from sensei.core.enums import MetricStatus, Severity as AlertSeverity
+from sensei.core.enums import MetricStatus, Severity as AlertSeverity, MetricCategory, DepartmentType
 
 
 class TrendDirection(Enum):
@@ -61,17 +51,6 @@ class AlertType(Enum):
     SILO_BUSTER = "silo_buster"
     RESOURCE_REBALANCE = "resource_rebalance"
     HEIJUNKA_SUGGESTION = "heijunka_suggestion"
-
-
-class DepartmentType(Enum):
-    """Department types for cross-functional analysis."""
-    
-    SALES = "sales"
-    PRODUCTION = "production"
-    QUALITY = "quality"
-    LOGISTICS = "logistics"
-    ENGINEERING = "engineering"
-    MAINTENANCE = "maintenance"
 
 
 # =============================================================================
@@ -1034,8 +1013,9 @@ class CognitiveObeya:
         except Exception:
             pass
 
-    def record_metric(
+    async def record_metric(
         self,
+        db: AsyncSession,
         category: MetricCategory,
         name: str,
         value: float,
@@ -1052,7 +1032,7 @@ class CognitiveObeya:
             timestamp=datetime.now(timezone.utc),
             unit=unit,
         )
-        self.metric_analyzer.record_metric(metric)
+        await self.metric_analyzer.record_metric(db, metric)
         self._broadcast_update("metric_update", {
             "metric_id": metric.metric_id,
             "category": metric.category.value,
@@ -1064,10 +1044,10 @@ class CognitiveObeya:
         })
         return metric
     
-    def get_metric_insights(self, metric_id: str) -> dict[str, Any]:
+    async def get_metric_insights(self, db: AsyncSession, metric_id: str) -> dict[str, Any]:
         """Get comprehensive insights for a metric."""
-        causal_links = self.metric_analyzer.find_causal_links(metric_id)
-        trend_warning = self.metric_analyzer.analyze_trend(metric_id)
+        causal_links = await self.metric_analyzer.find_causal_links(db, metric_id)
+        trend_warning = await self.metric_analyzer.analyze_trend(db, metric_id)
         
         return {
             "metric_id": metric_id,
@@ -1088,15 +1068,17 @@ class CognitiveObeya:
             } if trend_warning else None,
         }
     
-    def register_cross_functional_event(
+    async def register_cross_functional_event(
         self,
+        db: AsyncSession,
         department: DepartmentType,
         event_type: str,
         description: str,
         severity: AlertSeverity = AlertSeverity.INFO,
     ) -> str:
         """Register an event and check for cross-functional impact."""
-        event_id = self.synergy_engine.register_event(
+        event_id = await self.synergy_engine.register_event(
+            db,
             department,
             event_type,
             description,
@@ -1111,9 +1093,9 @@ class CognitiveObeya:
         })
         return event_id
     
-    def get_silo_alerts(self) -> list[dict[str, Any]]:
+    async def get_silo_alerts(self, db: AsyncSession) -> list[dict[str, Any]]:
         """Get active silo-busting alerts."""
-        alerts = self.synergy_engine.get_active_silo_alerts()
+        alerts = await self.synergy_engine.get_silo_alerts(db)
         return [
             {
                 "alert_id": a.alert_id,
@@ -1122,13 +1104,14 @@ class CognitiveObeya:
                 "event": a.source_event,
                 "impact": a.predicted_impact,
                 "severity": a.severity.value,
+                "detected_at": a.detected_at.isoformat(),
             }
             for a in alerts
         ]
     
-    def analyze_resource_rebalancing(self) -> list[dict[str, Any]]:
+    async def analyze_resource_rebalancing(self, db: AsyncSession) -> list[dict[str, Any]]:
         """Analyze and get resource rebalancing suggestions."""
-        suggestions = self.synergy_engine.analyze_resource_rebalancing()
+        suggestions = await self.synergy_engine.analyze_resource_rebalancing(db)
         return [
             {
                 "suggestion_id": s.suggestion_id,
@@ -1142,13 +1125,11 @@ class CognitiveObeya:
             for s in suggestions
         ]
     
-    def get_heijunka_suggestions(self) -> list[dict[str, Any]]:
+    async def get_heijunka_suggestions(self, db: AsyncSession) -> list[dict[str, Any]]:
         """Get Heijunka leveling suggestions."""
-        # Analyze if not yet done
-        self.heijunka_advisor.analyze_volume_leveling()
-        self.heijunka_advisor.analyze_mix_leveling()
-        
-        suggestions = self.heijunka_advisor.get_all_suggestions()
+        # Note: analyze_volume_leveling requires demand_data, 
+        # normally fetched from RFQ service. Using empty for auto-trigger check.
+        suggestions = await self.heijunka_advisor.get_all_suggestions(db)
         return [
             {
                 "suggestion_id": s.suggestion_id,
@@ -1163,28 +1144,34 @@ class CognitiveObeya:
             if s.status == "pending"
         ]
     
-    def get_obeya_dashboard(self) -> dict[str, Any]:
+    async def get_obeya_dashboard(self, db: AsyncSession) -> dict[str, Any]:
         """Get comprehensive Obeya dashboard data."""
+        from sqlalchemy import func
+        
+        # Count metrics
+        metric_count_stmt = select(func.count(MetricRecord.id))
+        metric_count = (await db.execute(metric_count_stmt)).scalar() or 0
+        
+        # Count active silo alerts
+        silo_count_stmt = select(func.count(SiloAlertRecord.id)).where(SiloAlertRecord.resolution_status == "open")
+        silo_count = (await db.execute(silo_count_stmt)).scalar() or 0
+        
+        # Count pending heijunka suggestions
+        heijunka_count_stmt = select(func.count(HeijunkaSuggestionRecord.id)).where(HeijunkaSuggestionRecord.status == "pending")
+        heijunka_count = (await db.execute(heijunka_count_stmt)).scalar() or 0
+        
         return {
             "metrics": {
-                "total_tracked": sum(
-                    len(h) for h in self.metric_analyzer.metrics_history.values()
-                ),
-                "warnings": len(self.metric_analyzer.trend_warnings),
-                "causal_links": len(self.metric_analyzer.causal_links),
+                "total_recorded": metric_count,
+                "active_trend_warnings": 0, # Placeholder for active warnings query
             },
             "cross_functional": {
-                "active_alerts": len(self.synergy_engine.get_active_silo_alerts()),
-                "pending_rebalances": len(
-                    self.synergy_engine.get_pending_rebalance_suggestions()
-                ),
+                "active_silo_alerts": silo_count,
             },
             "heijunka": {
-                "pending_suggestions": len([
-                    s for s in self.heijunka_advisor.suggestions
-                    if s.status == "pending"
-                ]),
+                "pending_suggestions": heijunka_count,
             },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 

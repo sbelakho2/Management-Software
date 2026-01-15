@@ -260,6 +260,56 @@ class NonConformanceUpdate(BaseModel):
         return _parse_enum(RootCauseCategory, v, "root_cause_category")
 
 
+class NCRInvestigationData(BaseModel):
+    root_cause_category: Optional[RootCauseCategory] = None
+    root_cause_description: Optional[str] = None
+    investigation_notes: Optional[str] = None
+
+    @field_validator("root_cause_category", mode="before")
+    @classmethod
+    def validate_root_cause_category(cls, v):
+        if v is None:
+            return None
+        return _parse_enum(RootCauseCategory, v, "root_cause_category")
+
+
+class NCRDispositionData(BaseModel):
+    disposition: NCDisposition
+    notes: Optional[str] = None
+    disposition_notes: Optional[str] = None
+
+    @field_validator("disposition", mode="before")
+    @classmethod
+    def validate_disposition(cls, v):
+        return _parse_enum(NCDisposition, v, "disposition")
+
+
+class NCRCloseData(BaseModel):
+    notes: Optional[str] = None
+
+
+class NCRStatsResponse(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    by_severity: dict[str, int]
+    by_disposition: dict[str, int]
+    total_cost_impact: float
+    average_resolution_days: float
+    open_count: int
+    overdue_count: int
+
+
+class TimelineEventResponse(BaseModel):
+    id: str
+    type: str
+    action: str
+    description: str
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    created_at: datetime
+    metadata: Optional[dict[str, Any]] = None
+
+
 class NonConformanceResponse(BaseModel):
     id: int
     nc_number: str
@@ -559,6 +609,30 @@ class CAPAUpdate(BaseModel):
         return _parse_enum(EffectivenessStatus, v, "effectiveness_status")
 
 
+class CAPAVerifyData(BaseModel):
+    notes: Optional[str] = None
+    verification_evidence: Optional[str] = None
+
+
+class CAPARejectData(BaseModel):
+    reason: str
+
+
+class CAPACloseData(BaseModel):
+    effectiveness_review: Optional[str] = None
+
+
+class CAPAStatsResponse(BaseModel):
+    total: int
+    by_type: dict[str, int]
+    by_status: dict[str, int]
+    completion_rate: float
+    average_completion_days: float
+    open_count: int
+    overdue_count: int
+    verification_rate: float
+
+
 class CAPAActionResponse(BaseModel):
     id: int
     capa_id: int
@@ -813,6 +887,16 @@ class InspectionPlanUpdate(BaseModel):
     @classmethod
     def validate_insp_type(cls, v):
         return _parse_enum(InspectionType, v, "inspection_type")
+
+
+class InspectionStatsResponse(BaseModel):
+    total: int
+    by_type: dict[str, int]
+    by_status: dict[str, int]
+    pass_rate: float
+    total_inspected: int
+    total_passed: int
+    total_failed: int
 
 
 class InspectionPlanResponse(BaseModel):
@@ -1171,6 +1255,238 @@ async def update_non_conformance(
     return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
 
 
+@router.get("/non-conformances/stats", response_model=APIResponse[NCRStatsResponse])
+async def get_ncr_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+    from_date: Optional[date] = Query(None, alias="date_from"),
+    to_date: Optional[date] = Query(None, alias="date_to"),
+) -> APIResponse[NCRStatsResponse]:
+    query = select(NonConformance).where(NonConformance.deleted_at.is_(None))
+    if from_date:
+        query = query.where(func.date(NonConformance.created_at) >= from_date)
+    if to_date:
+        query = query.where(func.date(NonConformance.created_at) <= to_date)
+
+    result = await db.execute(query)
+    ncs = result.scalars().all()
+
+    stats = NCRStatsResponse(
+        total=len(ncs),
+        by_status={},
+        by_severity={},
+        by_disposition={},
+        total_cost_impact=0.0,
+        average_resolution_days=0.0,
+        open_count=0,
+        overdue_count=0,
+    )
+
+    resolution_times = []
+
+    for nc in ncs:
+        status = nc.status.value if hasattr(nc.status, "value") else str(nc.status)
+        stats.by_status[status] = stats.by_status.get(status, 0) + 1
+        
+        severity = nc.severity.value if hasattr(nc.severity, "value") else str(nc.severity)
+        stats.by_severity[severity] = stats.by_severity.get(severity, 0) + 1
+        
+        if nc.disposition:
+            disp = nc.disposition.value if hasattr(nc.disposition, "value") else str(nc.disposition)
+            stats.by_disposition[disp] = stats.by_disposition.get(disp, 0) + 1
+            
+        if nc.total_cost:
+            stats.total_cost_impact += float(nc.total_cost)
+            
+        if nc.status != NCStatus.CLOSED:
+            stats.open_count += 1
+            if nc.investigation_due_date and nc.investigation_due_date < date.today():
+                stats.overdue_count += 1
+        
+        if nc.closed_at:
+            delta = nc.closed_at.date() - nc.created_at.date()
+            resolution_times.append(delta.days)
+
+    if resolution_times:
+        stats.average_resolution_days = sum(resolution_times) / len(resolution_times)
+
+    return build_response(data=stats)
+
+
+@router.post("/non-conformances/{nc_id}/investigate", response_model=APIResponse[NonConformanceResponse])
+async def investigate_non_conformance(
+    nc_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+    data: Optional[NCRInvestigationData] = None,
+) -> APIResponse[NonConformanceResponse]:
+    result = await db.execute(
+        select(NonConformance).where(
+            NonConformance.id == nc_id,
+            NonConformance.deleted_at.is_(None),
+        )
+    )
+    nc = result.scalar_one_or_none()
+    if not nc:
+        raise NotFoundError("Non-conformance", str(nc_id))
+
+    if data:
+        if data.root_cause_category:
+            nc.root_cause_category = data.root_cause_category
+        if data.root_cause_description:
+            nc.root_cause_description = data.root_cause_description
+        if data.investigation_notes:
+            nc.investigation_notes = data.investigation_notes
+    
+    nc.investigation_completed_at = now_utc()
+    nc.status = NCStatus.PENDING_DISPOSITION
+    nc.updated_by_id = getattr(current_user, "id", None)
+    nc.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(nc)
+    return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
+
+
+@router.post("/non-conformances/{nc_id}/disposition", response_model=APIResponse[NonConformanceResponse])
+async def disposition_non_conformance(
+    nc_id: int,
+    data: NCRDispositionData,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[NonConformanceResponse]:
+    result = await db.execute(
+        select(NonConformance).where(
+            NonConformance.id == nc_id,
+            NonConformance.deleted_at.is_(None),
+        )
+    )
+    nc = result.scalar_one_or_none()
+    if not nc:
+        raise NotFoundError("Non-conformance", str(nc_id))
+
+    nc.disposition = data.disposition
+    nc.disposition_notes = data.notes or data.disposition_notes
+    nc.disposition_at = now_utc()
+    nc.disposition_by_id = getattr(current_user, "id", None)
+    nc.status = NCStatus.DISPOSITIONED
+    nc.updated_by_id = getattr(current_user, "id", None)
+    nc.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(nc)
+    return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
+
+
+@router.post("/non-conformances/{nc_id}/close", response_model=APIResponse[NonConformanceResponse])
+async def close_non_conformance(
+    nc_id: int,
+    data: NCRCloseData,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[NonConformanceResponse]:
+    result = await db.execute(
+        select(NonConformance).where(
+            NonConformance.id == nc_id,
+            NonConformance.deleted_at.is_(None),
+        )
+    )
+    nc = result.scalar_one_or_none()
+    if not nc:
+        raise NotFoundError("Non-conformance", str(nc_id))
+
+    nc.status = NCStatus.CLOSED
+    nc.closure_notes = data.notes
+    nc.closed_at = now_utc()
+    nc.closed_by_id = getattr(current_user, "id", None)
+    nc.updated_by_id = getattr(current_user, "id", None)
+    nc.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(nc)
+    return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
+
+
+@router.get("/non-conformances/{nc_id}/timeline", response_model=APIResponse[list[TimelineEventResponse]])
+async def get_ncr_timeline(
+    nc_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[TimelineEventResponse]]:
+    from sensei.models.audit_log import AuditLog
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_type == "non_conformance",
+            AuditLog.entity_id == str(nc_id)
+        ).order_by(AuditLog.created_at.desc())
+    )
+    logs = result.scalars().all()
+    
+    events = [
+        TimelineEventResponse(
+            id=str(log.id),
+            type=log.entity_type,
+            action=log.action,
+            description=log.description or f"{log.action} action on {log.entity_type}",
+            user_id=str(log.user_id) if log.user_id else None,
+            user_name=log.user_email,
+            created_at=log.created_at,
+            metadata=log.extra_data,
+        )
+        for log in logs
+    ]
+    
+    return build_response(data=events)
+
+
+@router.post("/non-conformances/{nc_id}/create-capa", response_model=APIResponse[CAPAResponse])
+async def create_capa_from_nc_endpoint(
+    nc_id: int,
+    data: CAPACreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    result = await db.execute(
+        select(NonConformance).where(
+            NonConformance.id == nc_id,
+            NonConformance.deleted_at.is_(None),
+        )
+    )
+    nc = result.scalar_one_or_none()
+    if not nc:
+        raise NotFoundError("Non-conformance", str(nc_id))
+
+    # Create CAPA
+    capa = CAPA(
+        capa_number=data.capa_number,
+        capa_type=data.capa_type,
+        source_type=data.source_type,
+        priority=data.priority,
+        title=data.title,
+        description=data.description,
+        status=CAPAStatus.OPEN,
+        owner_id=data.owner_id,
+        due_date=data.due_date,
+        source_nc_id=nc.id,
+        created_by_id=getattr(current_user, "id", None),
+        created_at=now_utc(),
+        updated_at=now_utc(),
+    )
+    db.add(capa)
+    
+    nc.capa_id = capa.id # This might not work if capa.id is not yet available, but it should be on flush or commit
+    nc.status = NCStatus.ESCALATED_TO_CAPA
+    
+    await db.commit()
+    await db.refresh(capa)
+    
+    # We need to refresh NC too to get the linked capa_id correctly if needed, 
+    # but we are returning the CAPA response.
+    
+    return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
 @router.delete("/non-conformances/{nc_id}", response_model=APIResponse[None])
 async def delete_non_conformance(
     nc_id: int,
@@ -1400,6 +1716,65 @@ async def create_capa(
     return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
 
 
+@router.get("/capas/stats", response_model=APIResponse[CAPAStatsResponse])
+async def get_capa_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+) -> APIResponse[CAPAStatsResponse]:
+    query = select(CAPA).where(CAPA.deleted_at.is_(None))
+    if from_date:
+        query = query.where(func.date(CAPA.created_at) >= from_date)
+    if to_date:
+        query = query.where(func.date(CAPA.created_at) <= to_date)
+
+    result = await db.execute(query)
+    capas = result.scalars().all()
+
+    stats = CAPAStatsResponse(
+        total=len(capas),
+        by_type={},
+        by_status={},
+        completion_rate=0.0,
+        average_completion_days=0.0,
+        open_count=0,
+        overdue_count=0,
+        verification_rate=0.0,
+    )
+
+    completion_times = []
+    verified_count = 0
+
+    for capa in capas:
+        ctype = capa.capa_type.value if hasattr(capa.capa_type, "value") else str(capa.capa_type)
+        stats.by_type[ctype] = stats.by_type.get(ctype, 0) + 1
+        
+        status = capa.status.value if hasattr(capa.status, "value") else str(capa.status)
+        stats.by_status[status] = stats.by_status.get(status, 0) + 1
+        
+        if capa.status == CAPAStatus.CLOSED:
+            if capa.closed_at:
+                delta = capa.closed_at.date() - capa.created_at.date()
+                completion_times.append(delta.days)
+        else:
+            stats.open_count += 1
+            if capa.due_date and capa.due_date < date.today():
+                stats.overdue_count += 1
+                
+        if capa.verification_status == VerificationStatus.VERIFIED:
+            verified_count += 1
+
+    if stats.total > 0:
+        stats.completion_rate = (stats.total - stats.open_count) / stats.total
+        stats.verification_rate = verified_count / stats.total
+
+    if completion_times:
+        stats.average_completion_days = sum(completion_times) / len(completion_times)
+
+    return build_response(data=stats)
+
+
 @router.get("/capas/{capa_id}", response_model=APIResponse[CAPAResponse])
 async def get_capa(
     capa_id: int,
@@ -1490,6 +1865,150 @@ async def restore_capa(
     await db.refresh(capa)
 
     return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.post("/capas/{capa_id}/start", response_model=APIResponse[CAPAResponse])
+async def start_capa(
+    capa_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    query = select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)).options(selectinload(CAPA.actions))
+    capa = (await db.execute(query)).scalar_one_or_none()
+    if not capa:
+        raise NotFoundError("CAPA", str(capa_id))
+
+    capa.status = CAPAStatus.IN_PROGRESS
+    capa.updated_by_id = getattr(current_user, "id", None)
+    capa.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(capa)
+    return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.post("/capas/{capa_id}/submit-for-verification", response_model=APIResponse[CAPAResponse])
+async def submit_capa_for_verification(
+    capa_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    query = select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)).options(selectinload(CAPA.actions))
+    capa = (await db.execute(query)).scalar_one_or_none()
+    if not capa:
+        raise NotFoundError("CAPA", str(capa_id))
+
+    capa.status = CAPAStatus.VERIFICATION
+    capa.updated_by_id = getattr(current_user, "id", None)
+    capa.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(capa)
+    return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.post("/capas/{capa_id}/verify", response_model=APIResponse[CAPAResponse])
+async def verify_capa(
+    capa_id: int,
+    data: CAPAVerifyData,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    query = select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)).options(selectinload(CAPA.actions))
+    capa = (await db.execute(query)).scalar_one_or_none()
+    if not capa:
+        raise NotFoundError("CAPA", str(capa_id))
+
+    capa.verification_status = VerificationStatus.VERIFIED
+    capa.verified_by_id = getattr(current_user, "id", None)
+    capa.verified_at = now_utc()
+    capa.verification_evidence = data.verification_evidence
+    capa.status = CAPAStatus.EFFECTIVENESS_CHECK
+    capa.updated_by_id = getattr(current_user, "id", None)
+    capa.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(capa)
+    return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.post("/capas/{capa_id}/reject-verification", response_model=APIResponse[CAPAResponse])
+async def reject_capa_verification(
+    capa_id: int,
+    data: CAPARejectData,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    query = select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)).options(selectinload(CAPA.actions))
+    capa = (await db.execute(query)).scalar_one_or_none()
+    if not capa:
+        raise NotFoundError("CAPA", str(capa_id))
+
+    capa.verification_status = VerificationStatus.REJECTED
+    capa.status = CAPAStatus.IN_PROGRESS
+    capa.updated_by_id = getattr(current_user, "id", None)
+    capa.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(capa)
+    return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.post("/capas/{capa_id}/close", response_model=APIResponse[CAPAResponse])
+async def close_capa_endpoint(
+    capa_id: int,
+    data: CAPACloseData,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CAPAResponse]:
+    query = select(CAPA).where(CAPA.id == capa_id, CAPA.deleted_at.is_(None)).options(selectinload(CAPA.actions))
+    capa = (await db.execute(query)).scalar_one_or_none()
+    if not capa:
+        raise NotFoundError("CAPA", str(capa_id))
+
+    capa.status = CAPAStatus.CLOSED
+    capa.effectiveness_evidence = data.effectiveness_review
+    capa.closed_at = now_utc()
+    capa.closed_by_id = getattr(current_user, "id", None)
+    capa.updated_by_id = getattr(current_user, "id", None)
+    capa.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(capa)
+    return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
+
+
+@router.get("/capas/{capa_id}/timeline", response_model=APIResponse[list[TimelineEventResponse]])
+async def get_capa_timeline(
+    capa_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[TimelineEventResponse]]:
+    from sensei.models.audit_log import AuditLog
+
+    result = await db.execute(
+        select(AuditLog).where(
+            AuditLog.entity_type == "capa",
+            AuditLog.entity_id == str(capa_id)
+        ).order_by(AuditLog.created_at.desc())
+    )
+    logs = result.scalars().all()
+    
+    events = [
+        TimelineEventResponse(
+            id=str(log.id),
+            type=log.entity_type,
+            action=log.action,
+            description=log.description or f"{log.action} action on {log.entity_type}",
+            user_id=str(log.user_id) if log.user_id else None,
+            user_name=log.user_email,
+            created_at=log.created_at,
+            metadata=log.extra_data,
+        )
+        for log in logs
+    ]
+    
+    return build_response(data=events)
 
 
 @router.get("/capas/{capa_id}/actions", response_model=PaginatedResponse[CAPAActionResponse])
@@ -1853,8 +2372,51 @@ async def restore_inspection_plan(
     return build_updated_response(data=inspection_plan_to_response(plan), resource_name="Inspection plan")
 
 
-@router.get("/inspection-records", response_model=PaginatedResponse[InspectionRecordResponse])
-async def list_inspection_records(
+@router.get("/inspections/stats", response_model=APIResponse[InspectionStatsResponse])
+async def get_inspection_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+) -> APIResponse[InspectionStatsResponse]:
+    query = select(InspectionRecord)
+    if from_date:
+        query = query.where(func.date(InspectionRecord.inspected_at) >= from_date)
+    if to_date:
+        query = query.where(func.date(InspectionRecord.inspected_at) <= to_date)
+
+    result = await db.execute(query)
+    records = result.scalars().all()
+
+    stats = InspectionStatsResponse(
+        total=len(records),
+        by_type={},
+        by_status={},
+        pass_rate=0.0,
+        total_inspected=0,
+        total_passed=0,
+        total_failed=0,
+    )
+
+    passed = 0
+    for r in records:
+        stats.total_inspected += r.sample_size
+        if r.overall_result == InspectionResult.PASS:
+            passed += 1
+            stats.total_passed += r.sample_size
+        else:
+            stats.total_failed += r.sample_size
+        
+        stats.by_status["completed"] = stats.by_status.get("completed", 0) + 1
+
+    if stats.total > 0:
+        stats.pass_rate = passed / stats.total
+
+    return build_response(data=stats)
+
+
+@router.get("/inspections", response_model=PaginatedResponse[InspectionRecordResponse])
+async def list_inspections(
     db: DBSession,
     current_user: CurrentUser,
     page: int = Query(1, ge=1),
@@ -1889,8 +2451,8 @@ async def list_inspection_records(
     )
 
 
-@router.post("/inspection-records", response_model=APIResponse[InspectionRecordResponse])
-async def create_inspection_record(
+@router.post("/inspections", response_model=APIResponse[InspectionRecordResponse])
+async def create_inspection(
     data: InspectionRecordCreate,
     db: DBSession,
     current_user: CurrentUser,
@@ -1900,7 +2462,6 @@ async def create_inspection_record(
     if not plan:
         raise NotFoundError("Inspection plan", str(data.inspection_plan_id))
 
-    # Enforce certification requirements (mandatory skill requirements for the plan scope).
     await get_quality_certification_gate().assert_user_can_record_inspection(
         db,
         user_id=getattr(current_user, "id", None),
@@ -1930,7 +2491,6 @@ async def create_inspection_record(
     await db.commit()
     await db.refresh(record)
 
-    # Best-effort: capture lineage links (do not block inspection record creation).
     try:
         await get_data_lineage_service().capture_inspection_record_created(
             db,
@@ -1957,24 +2517,107 @@ async def create_inspection_record(
         await db.rollback()
         logger.exception("Failed to capture inspection record lineage")
 
-    return build_created_response(data=inspection_record_to_response(record), resource_name="Inspection record")
+    return build_created_response(data=inspection_record_to_response(record), resource_name="Inspection")
 
 
-@router.get("/inspection-records/{record_id}", response_model=APIResponse[InspectionRecordResponse])
-async def get_inspection_record(
+@router.get("/inspections/{record_id}", response_model=APIResponse[InspectionRecordResponse])
+async def get_inspection(
     record_id: int,
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[InspectionRecordResponse]:
     record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
     if not record:
-        raise NotFoundError("Inspection record", str(record_id))
+        raise NotFoundError("Inspection", str(record_id))
 
     return build_response(data=inspection_record_to_response(record))
 
 
-@router.patch("/inspection-records/{record_id}", response_model=APIResponse[InspectionRecordResponse])
-async def update_inspection_record(
+@router.post("/inspections/{record_id}/start", response_model=APIResponse[InspectionRecordResponse])
+async def start_inspection(
+    record_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[InspectionRecordResponse]:
+    # Placeholder for start action
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection", str(record_id))
+    return build_response(data=inspection_record_to_response(record))
+
+
+@router.post("/inspections/{record_id}/complete", response_model=APIResponse[InspectionRecordResponse])
+async def complete_inspection(
+    record_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[InspectionRecordResponse]:
+    # Placeholder for complete action
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection", str(record_id))
+    return build_response(data=inspection_record_to_response(record))
+
+
+@router.post("/inspections/{record_id}/cancel", response_model=APIResponse[InspectionRecordResponse])
+async def cancel_inspection(
+    record_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[InspectionRecordResponse]:
+    # Placeholder for cancel action
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection", str(record_id))
+    return build_response(data=inspection_record_to_response(record))
+
+
+@router.post("/inspections/{record_id}/create-ncr", response_model=APIResponse[NonConformanceResponse])
+async def create_ncr_from_inspection_endpoint(
+    record_id: int,
+    data: NonConformanceCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[NonConformanceResponse]:
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection", str(record_id))
+
+    # Create NC
+    nc = NonConformance(
+        nc_number=data.nc_number,
+        nc_type=data.nc_type,
+        source=data.source,
+        severity=data.severity,
+        product_id=data.product_id,
+        work_order_id=data.work_order_id,
+        station_id=data.station_id,
+        lot_number=data.lot_number,
+        quantity_affected=data.quantity_affected,
+        quantity_inspected=data.quantity_inspected,
+        title=data.title,
+        description=data.description,
+        specification_requirement=data.specification_requirement,
+        actual_condition=data.actual_condition,
+        detected_by_id=getattr(current_user, "id", None),
+        detected_at=now_utc(),
+        status=NCStatus.OPEN,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+    )
+    db.add(nc)
+    await db.flush()
+    
+    record.nc_id = nc.id
+    
+    await db.commit()
+    await db.refresh(nc)
+    
+    return build_created_response(data=nc_to_response(nc), resource_name="Non-conformance")
+
+
+@router.patch("/inspections/{record_id}", response_model=APIResponse[InspectionRecordResponse])
+async def update_inspection(
     record_id: int,
     data: InspectionRecordUpdate,
     db: DBSession,
@@ -1997,8 +2640,8 @@ async def update_inspection_record(
     return build_updated_response(data=inspection_record_to_response(record), resource_name="Inspection record")
 
 
-@router.delete("/inspection-records/{record_id}", response_model=APIResponse[None])
-async def delete_inspection_record(
+@router.delete("/inspections/{record_id}", response_model=APIResponse[None])
+async def delete_inspection(
     record_id: int,
     db: DBSession,
     current_user: CurrentUser,

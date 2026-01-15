@@ -21,21 +21,47 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
+import { useA3Store } from '@/stores/a3';
+
 export default function NewA3Page() {
   const router = useRouter();
   const { toast } = useToast();
+  const createA3 = useA3Store(state => state.createA3);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [title, setTitle] = React.useState('');
 
   const handleSave = async () => {
+    if (!title) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a title for the A3 report.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSaving(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsSaving(false);
-    toast({
-      title: 'A3 Report Created',
-      description: 'The new A3 report has been successfully initialized.',
-    });
-    router.push('/a3');
+    try {
+      await createA3({ 
+        title,
+        status: 'draft',
+        priority: 'medium',
+        a3_type: 'problem_solving'
+      });
+      toast({
+        title: 'A3 Report Created',
+        description: 'The new A3 report has been successfully initialized.',
+      });
+      router.push('/a3');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create A3 report. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -60,6 +86,25 @@ export default function NewA3Page() {
           </Button>
         </div>
       </div>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Basic Information</CardTitle>
+          <CardDescription>Enter the title and basic details for this A3 report</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">A3 Title</Label>
+            <Input 
+              id="title"
+              placeholder="e.g., Reducing Defect Rate in Assembly Line A" 
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

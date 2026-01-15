@@ -96,6 +96,26 @@ class TaskUpdate(BaseModel):
     tags: Optional[list] = None
 
 
+class TaskBulkUpdate(BaseModel):
+    """Schema for bulk updating tasks."""
+
+    ids: list[UUID]
+    updates: TaskUpdate
+
+
+class TaskMove(BaseModel):
+    """Schema for moving a task."""
+
+    column: str
+    position: int
+
+
+class TaskBulkDelete(BaseModel):
+    """Schema for bulk deleting tasks."""
+
+    ids: list[UUID]
+
+
 class TaskResponse(BaseModel):
     """Schema for task response."""
 
@@ -1100,13 +1120,6 @@ async def get_blocked_tasks(
     total = count_result.scalar_one()
 
     offset = (page - 1) * page_size
-    data_stmt = (
-        select(Task)
-        .where(and_(*base_conditions))
-        .order_by(Task.priority.desc(), Task.created_at.asc())
-        .offset(offset)
-        .limit(page_size)
-    )
     data_result = await db.execute(data_stmt)
     tasks = data_result.scalars().all()
 
@@ -1118,3 +1131,149 @@ async def get_blocked_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post(
+    "/{task_id}/duplicate",
+    response_model=APIResponse[TaskResponse],
+    summary="Duplicate task",
+    description="Create a copy of an existing task.",
+)
+async def duplicate_task(
+    task_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[TaskResponse]:
+    stmt = select(Task).where(
+        and_(Task.id == task_id, Task.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    original = result.scalar_one_or_none()
+
+    if not original:
+        raise NotFoundError(f"Task {task_id} not found")
+
+    new_task = Task(
+        title=f"Copy of {original.title}",
+        description=original.description,
+        task_type=original.task_type,
+        status=TaskStatus.OPEN.value,
+        priority=original.priority,
+        related_entity_type=original.related_entity_type,
+        related_entity_id=original.related_entity_id,
+        assignee_id=original.assignee_id,
+        due_date=original.due_date,
+        start_date=original.start_date,
+        estimated_hours=original.estimated_hours,
+        checklist=original.checklist,
+        tags=original.tags,
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id,
+    )
+
+    db.add(new_task)
+    await db.flush()
+    await db.refresh(new_task)
+
+    return build_created_response(
+        data=TaskResponse.model_validate(new_task),
+        resource_name="Task",
+    )
+
+
+@router.post(
+    "/{task_id}/move",
+    response_model=APIResponse[TaskResponse],
+    summary="Move task",
+    description="Move task to a different column/position.",
+)
+async def move_task(
+    task_id: UUID,
+    data: TaskMove,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[TaskResponse]:
+    stmt = select(Task).where(
+        and_(Task.id == task_id, Task.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise NotFoundError(f"Task {task_id} not found")
+
+    # In a real implementation, we would update positions of other tasks too.
+    # For now, just update the column and position.
+    task.status = data.column  # In Kanban boards, status usually represents the column
+    task.updated_by_id = current_user.id
+
+    await db.flush()
+    await db.refresh(task)
+
+    return build_response(
+        data=TaskResponse.model_validate(task),
+        message="Task moved",
+    )
+
+
+@router.patch(
+    "/bulk",
+    response_model=APIResponse[list[TaskResponse]],
+    summary="Bulk update tasks",
+    description="Update multiple tasks at once.",
+)
+async def bulk_update_tasks(
+    data: TaskBulkUpdate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[TaskResponse]]:
+    stmt = select(Task).where(
+        and_(Task.id.in_(data.ids), Task.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    update_data = data.updates.model_dump(exclude_unset=True)
+    updated_tasks = []
+
+    for task in tasks:
+        for field, value in update_data.items():
+            setattr(task, field, value)
+        task.updated_by_id = current_user.id
+        updated_tasks.append(task)
+
+    await db.flush()
+    for task in updated_tasks:
+        await db.refresh(task)
+
+    return build_updated_response(
+        data=[TaskResponse.model_validate(t) for t in updated_tasks],
+        resource_name="Tasks",
+    )
+
+
+@router.delete(
+    "/bulk",
+    response_model=APIResponse[dict],
+    summary="Bulk delete tasks",
+    description="Delete multiple tasks at once.",
+)
+async def bulk_delete_tasks(
+    data: TaskBulkDelete,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[dict]:
+    stmt = select(Task).where(
+        and_(Task.id.in_(data.ids), Task.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    for task in tasks:
+        task.is_deleted = True
+        task.deleted_at = datetime.now(timezone.utc)
+        task.deleted_by_id = current_user.id
+
+    await db.flush()
+
+    return build_deleted_response(resource_name="Tasks")

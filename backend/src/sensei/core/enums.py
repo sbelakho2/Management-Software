@@ -120,3 +120,70 @@ class EntityType(str, Enum):
     FEATURE_FLAG = "feature_flag"
     APPROVAL = "approval"
     COMPLIANCE = "compliance"
+
+
+class JidokaAction(str, Enum):
+    """Jidoka response actions."""
+    
+    CONTINUE = "continue"  # Continue operation
+    ALERT = "alert"  # Alert operator
+    SLOW_DOWN = "slow_down"  # Reduce speed
+    STOP = "stop"  # Stop the line
+    ESCALATE = "escalate"  # Escalate to supervisor
+
+
+class MetricCategory(str, Enum):
+    """SQDCP metric categories."""
+    
+    SAFETY = "safety"
+    QUALITY = "quality"
+    DELIVERY = "delivery"
+    COST = "cost"
+    PRODUCTIVITY = "productivity"
+
+
+class DepartmentType(str, Enum):
+    """Department types for cross-functional analysis."""
+    
+    SALES = "sales"
+    PRODUCTION = "production"
+    QUALITY = "quality"
+    LOGISTICS = "logistics"
+    ENGINEERING = "engineering"
+    MAINTENANCE = "maintenance"
+
+
+class QuerySecurityLevel(str, Enum):
+    """Security levels for NL2SQL queries."""
+    
+    READ_ONLY = "read_only"
+    RESTRICTED = "restricted"
+    ELEVATED = "elevated"
+
+
+class EmployeeRiskType(str, Enum):
+    """Types of employee-related risks."""
+    
+    BURNOUT = "burnout"
+    RETENTION = "retention"
+    PERFORMANCE_DRIFT = "performance_drift"
+    SKILL_GAP = "skill_gap"
+
+
+class PersonaType(str, Enum):
+    """User persona types for overlay."""
+    
+    GM = "gm"
+    OPERATOR = "operator"
+    SALES = "sales"
+    QUALITY = "quality"
+    ENGINEERING = "engineering"
+
+
+class ExportFormat(str, Enum):
+    """Export format options."""
+    
+    PDF = "pdf"
+    CSV = "csv"
+    PPTX = "pptx"
+    JSON = "json"

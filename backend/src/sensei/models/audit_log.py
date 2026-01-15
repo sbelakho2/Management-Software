@@ -7,6 +7,7 @@ Implements:
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 from uuid import UUID as PyUUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
@@ -59,8 +60,8 @@ class AuditLog(Base):
     
     # What was changed
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    entity_id: Mapped[PyUUID] = mapped_column(
-        PGUUID(as_uuid=True),
+    entity_id: Mapped[str] = mapped_column(
+        String(100),
         nullable=False,
         index=True,
     )
@@ -117,7 +118,7 @@ class AuditLog(Base):
     def create_log(
         cls,
         entity_type: str,
-        entity_id: PyUUID,
+        entity_id: Any,
         action: str,
         user_id: PyUUID | None = None,
         user_email: str | None = None,
@@ -151,7 +152,7 @@ class AuditLog(Base):
         
         return cls(
             entity_type=entity_type,
-            entity_id=entity_id,
+            entity_id=str(entity_id),
             action=action,
             user_id=user_id,
             user_email=user_email,

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useProjectManagementStore, type Milestone } from '@/stores/project-management-store';
+import { useProjectManagementStore, type ProjectMilestone } from '@/stores/project-management-store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +58,7 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
     }
   };
 
-  const handleToggleClosed = async (milestone: Milestone) => {
+  const handleToggleClosed = async (milestone: ProjectMilestone) => {
     try {
       await updateMilestone(milestone.id, { is_closed: !milestone.is_closed });
     } catch (error) {
@@ -173,7 +173,7 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
   );
 }
 
-function MilestoneCard({ milestone, onToggle }: { milestone: Milestone, onToggle: () => void }) {
+function MilestoneCard({ milestone, onToggle }: { milestone: ProjectMilestone, onToggle: () => void }) {
   const progress = milestone.total_items > 0 ? (milestone.closed_items / milestone.total_items) * 100 : 0;
   const isOverdue = !milestone.is_closed && new Date(milestone.due_date) < new Date();
 

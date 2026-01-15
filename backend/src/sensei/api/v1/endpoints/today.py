@@ -35,8 +35,7 @@ from sensei.services.ops.today_screen import (
     get_today_screen_service,
 )
 
-from sensei.core.database import DBSession
-from sensei.api.v1.dependencies import CurrentUser
+from sensei.api.deps import CurrentUser, DBSession
 
 router = APIRouter(prefix="/today", tags=["today-screen"])
 
@@ -421,12 +420,12 @@ def _drill_to_response(drill: MicroDrill) -> MicroDrillResponseSchema:
 )
 async def get_user_priorities(
     user_id: UUID,
-    include_selected: bool = True,
-    include_unselected: bool = True,
+    include_selected: bool = Query(default=True),
+    include_unselected: bool = Query(default=True),
 ) -> list[PriorityResponseSchema]:
     """Get all priorities for a user."""
     service = get_today_screen_service()
-    priorities = service.get_user_priorities(
+    priorities = await service.get_user_priorities(
         user_id=user_id,
         include_selected=include_selected,
         include_unselected=include_unselected,
@@ -446,7 +445,7 @@ async def add_priority(
 ) -> PriorityResponseSchema:
     """Add a new priority for a user."""
     service = get_today_screen_service()
-    priority = service.add_priority(
+    priority = await service.add_priority(
         user_id=user_id,
         entity_type=data.entity_type,
         entity_id=data.entity_id,
@@ -472,7 +471,7 @@ async def set_top_priorities(
     """Set the user's top 3 priorities (max 3)."""
     service = get_today_screen_service()
     try:
-        priorities = service.set_top_priorities(
+        priorities = await service.set_top_priorities(
             user_id=user_id,
             priority_ids=data.priority_ids,
         )
@@ -492,7 +491,7 @@ async def set_top_priorities(
 async def remove_priority(user_id: UUID, priority_id: UUID) -> None:
     """Remove a priority."""
     service = get_today_screen_service()
-    if not service.remove_priority(user_id, priority_id):
+    if not await service.remove_priority(user_id, priority_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "Priority not found"},
@@ -510,6 +509,7 @@ async def remove_priority(user_id: UUID, priority_id: UUID) -> None:
     summary="Get all risks",
 )
 async def get_risks(
+    current_user: CurrentUser,
     category: RiskCategory | None = None,
     top_n: int | None = None,
 ) -> list[RiskResponseSchema]:
@@ -517,13 +517,13 @@ async def get_risks(
     service = get_today_screen_service()
     
     if category is not None or top_n is not None:
-        risks_by_cat = service.get_risks_by_category(category=category, top_n=top_n)
+        risks_by_cat = await service.get_risks_by_category(user_id=current_user.id, category=category, top_n=top_n)
         result = []
         for cat_risks in risks_by_cat.values():
             result.extend(cat_risks)
         return [_risk_to_response(r) for r in result]
     else:
-        return [_risk_to_response(r) for r in service.get_top_risks(top_n=100)]
+        return [_risk_to_response(r) for r in await service.get_top_risks(user_id=current_user.id, top_n=100)]
 
 
 @router.get(
@@ -532,11 +532,12 @@ async def get_risks(
     summary="Get risks grouped by category",
 )
 async def get_risks_by_category(
+    current_user: CurrentUser,
     top_n: int | None = None,
 ) -> list[RisksByCategorySchema]:
     """Get risks grouped by category."""
     service = get_today_screen_service()
-    risks_by_cat = service.get_risks_by_category(top_n=top_n)
+    risks_by_cat = await service.get_risks_by_category(user_id=current_user.id, top_n=top_n)
     
     return [
         RisksByCategorySchema(
@@ -554,11 +555,12 @@ async def get_risks_by_category(
     summary="Get top risks",
 )
 async def get_top_risks(
+    current_user: CurrentUser,
     top_n: int = Query(5, ge=1, le=50),
 ) -> list[RiskResponseSchema]:
     """Get top N risks by risk score."""
     service = get_today_screen_service()
-    risks = service.get_top_risks(top_n=top_n)
+    risks = await service.get_top_risks(user_id=current_user.id, top_n=top_n)
     return [_risk_to_response(r) for r in risks]
 
 
@@ -568,10 +570,14 @@ async def get_top_risks(
     status_code=status.HTTP_201_CREATED,
     summary="Add a risk",
 )
-async def add_risk(data: RiskCreateSchema) -> RiskResponseSchema:
+async def add_risk(
+    current_user: CurrentUser,
+    data: RiskCreateSchema,
+) -> RiskResponseSchema:
     """Add a new risk."""
     service = get_today_screen_service()
-    risk = service.add_risk(
+    risk = await service.add_risk(
+        user_id=current_user.id,
         title=data.title,
         category=data.category,
         severity=data.severity,
@@ -598,15 +604,15 @@ async def add_risk(data: RiskCreateSchema) -> RiskResponseSchema:
     summary="Get commitments",
 )
 async def get_commitments(
-    user_id: UUID | None = None,
+    current_user: CurrentUser,
     target_date: date | None = None,
     include_overdue: bool = True,
     include_completed: bool = False,
 ) -> list[CommitmentResponseSchema]:
     """Get commitments with optional filtering."""
     service = get_today_screen_service()
-    commitments = service.get_commitments(
-        user_id=user_id,
+    commitments = await service.get_commitments(
+        user_id=current_user.id,
         target_date=target_date,
         include_overdue=include_overdue,
         include_completed=include_completed,
@@ -620,10 +626,14 @@ async def get_commitments(
     status_code=status.HTTP_201_CREATED,
     summary="Add a commitment",
 )
-async def add_commitment(data: CommitmentCreateSchema) -> CommitmentResponseSchema:
+async def add_commitment(
+    current_user: CurrentUser,
+    data: CommitmentCreateSchema,
+) -> CommitmentResponseSchema:
     """Add a new commitment."""
     service = get_today_screen_service()
-    commitment = service.add_commitment(
+    commitment = await service.add_commitment(
+        user_id=current_user.id,
         title=data.title,
         commitment_type=data.commitment_type,
         due_date=data.due_date,
@@ -643,10 +653,13 @@ async def add_commitment(data: CommitmentCreateSchema) -> CommitmentResponseSche
     response_model=CommitmentResponseSchema,
     summary="Complete a commitment",
 )
-async def complete_commitment(commitment_id: UUID) -> CommitmentResponseSchema:
+async def complete_commitment(
+    current_user: CurrentUser,
+    commitment_id: UUID,
+) -> CommitmentResponseSchema:
     """Mark a commitment as completed."""
     service = get_today_screen_service()
-    commitment = service.complete_commitment(commitment_id)
+    commitment = await service.complete_commitment(user_id=current_user.id, commitment_id=commitment_id)
     if commitment is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -666,14 +679,14 @@ async def complete_commitment(commitment_id: UUID) -> CommitmentResponseSchema:
     summary="Get abnormalities",
 )
 async def get_abnormalities(
-    user_id: UUID | None = None,
+    current_user: CurrentUser,
     abnormality_type: AbnormalityType | None = None,
-    severity: PriorityLevel | None = None,
+    severity: int | None = None,
 ) -> list[AbnormalityResponseSchema]:
     """Get abnormalities with optional filtering."""
     service = get_today_screen_service()
-    abnormalities = service.get_abnormalities(
-        user_id=user_id,
+    abnormalities = await service.get_abnormalities(
+        user_id=current_user.id,
         abnormality_type=abnormality_type,
         severity=severity,
     )
@@ -685,11 +698,11 @@ async def get_abnormalities(
     response_model=dict[str, int],
     summary="Get abnormality counts by type",
 )
-async def get_abnormality_counts() -> dict[str, int]:
-    """Get counts of abnormalities by type."""
+async def get_abnormality_counts(current_user: CurrentUser) -> dict[str, int]:
+    """Get counts of abnormalities by type for current user."""
     service = get_today_screen_service()
-    counts = service.get_abnormality_counts()
-    return {atype.value: count for atype, count in counts.items()}
+    counts = await service.get_abnormality_counts(user_id=current_user.id)
+    return {k.value if hasattr(k, "value") else str(k): v for k, v in counts.items()}
 
 
 @router.post(
@@ -698,10 +711,14 @@ async def get_abnormality_counts() -> dict[str, int]:
     status_code=status.HTTP_201_CREATED,
     summary="Add an abnormality",
 )
-async def add_abnormality(data: AbnormalityCreateSchema) -> AbnormalityResponseSchema:
+async def add_abnormality(
+    current_user: CurrentUser,
+    data: AbnormalityCreateSchema,
+) -> AbnormalityResponseSchema:
     """Add a new abnormality."""
     service = get_today_screen_service()
-    abnormality = service.add_abnormality(
+    abnormality = await service.add_abnormality(
+        user_id=current_user.id,
         title=data.title,
         abnormality_type=data.abnormality_type,
         entity_type=data.entity_type,
@@ -721,10 +738,13 @@ async def add_abnormality(data: AbnormalityCreateSchema) -> AbnormalityResponseS
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Resolve an abnormality",
 )
-async def resolve_abnormality(abnormality_id: UUID) -> None:
+async def resolve_abnormality(
+    current_user: CurrentUser,
+    abnormality_id: UUID,
+) -> None:
     """Resolve (remove) an abnormality."""
     service = get_today_screen_service()
-    if not service.resolve_abnormality(abnormality_id):
+    if not await service.resolve_abnormality(user_id=current_user.id, abnormality_id=abnormality_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "Abnormality not found"},
@@ -747,7 +767,7 @@ async def get_todays_drills(
 ) -> list[MicroDrillResponseSchema]:
     """Get micro-drill questions for today."""
     service = get_today_screen_service()
-    drills = service.get_todays_drills(user_id, count=count)
+    drills = await service.get_todays_drills(user_id, count=count)
     return [_drill_to_response(d) for d in drills]
 
 
@@ -757,10 +777,14 @@ async def get_todays_drills(
     status_code=status.HTTP_201_CREATED,
     summary="Add a micro-drill",
 )
-async def add_micro_drill(data: MicroDrillCreateSchema) -> MicroDrillResponseSchema:
+async def add_micro_drill(
+    current_user: CurrentUser,
+    data: MicroDrillCreateSchema,
+) -> MicroDrillResponseSchema:
     """Add a new micro-drill question."""
     service = get_today_screen_service()
-    drill = service.add_micro_drill(
+    drill = await service.add_micro_drill(
+        user_id=current_user.id,
         question=data.question,
         answer=data.answer,
         category=data.category,
@@ -784,7 +808,7 @@ async def complete_drill(
 ) -> DrillCompletionResultSchema:
     """Record drill completion."""
     service = get_today_screen_service()
-    result = service.complete_drill(user_id, drill_id, correct=data.correct)
+    result = await service.complete_drill(user_id, drill_id, correct=data.correct)
     return DrillCompletionResultSchema(
         streak=result["streak"],
         total_completed=result["total_completed"],
@@ -800,7 +824,7 @@ async def complete_drill(
 async def get_drill_progress(user_id: UUID) -> DrillProgressSchema:
     """Get user's drill progress."""
     service = get_today_screen_service()
-    progress = service.get_drill_progress(user_id)
+    progress = await service.get_drill_progress(user_id)
     return DrillProgressSchema(
         drills_completed_today=progress["drills_completed_today"],
         streak=progress["streak"],
@@ -887,7 +911,7 @@ async def get_today_screen(
     """Get complete Today screen data for a user."""
     service = get_today_screen_service()
     normalized_user_name = (user_name or "").strip() or "User"
-    screen = service.get_today_screen(user_id, normalized_user_name, db=db)
+    screen = await service.get_today_screen(user_id, normalized_user_name, db=db)
 
     return TodayScreenDataSchema(
         user_id=screen.user_id,

@@ -23,6 +23,7 @@ from collections import defaultdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
+from sensei.core.enums import QuerySecurityLevel, EmployeeRiskType, ExportFormat, PersonaType
 from sensei.models.strategic import (
     NL2SQLQueryRecord,
     EmployeeRiskAssessmentRecord,
@@ -72,38 +73,6 @@ class LearningMetricType(str, Enum):
     AUTONOMOUS_UPDATES = "autonomous_updates"
     MODEL_ACCURACY = "model_accuracy"
     USER_ADOPTION = "user_adoption"
-
-
-class QuerySecurityLevel(str, Enum):
-    """Security levels for NL2SQL queries."""
-    READ_ONLY = "read_only"
-    RESTRICTED = "restricted"
-    ELEVATED = "elevated"
-
-
-class ExportFormat(str, Enum):
-    """Export format options."""
-    PDF = "pdf"
-    CSV = "csv"
-    PPTX = "pptx"
-    JSON = "json"
-
-
-class EmployeeRiskType(str, Enum):
-    """Types of employee-related risks."""
-    BURNOUT = "burnout"
-    RETENTION = "retention"
-    PERFORMANCE_DRIFT = "performance_drift"
-    SKILL_GAP = "skill_gap"
-
-
-class PersonaType(str, Enum):
-    """User persona types for overlay."""
-    GM = "gm"
-    OPERATOR = "operator"
-    SALES = "sales"
-    QUALITY = "quality"
-    ENGINEERING = "engineering"
 
 
 # =============================================================================

@@ -50,9 +50,18 @@ export default function NewProductPage() {
 
     setIsSubmitting(true);
     try {
-      // In a real app, this would be an API call
-      // For now we'll simulate it and update the store if possible
-      // await createProduct(form);
+      await createProduct({
+        part_number: form.partNumber,
+        name: form.name,
+        description: form.description,
+        category: form.category,
+        status: form.status,
+        unit_of_measure: form.unitOfMeasure,
+        standard_cost: form.standardCost,
+        list_price: form.listPrice,
+        reorder_point: form.reorderPoint,
+        lead_time_days: form.leadTimeDays,
+      } as any);
       
       toast({
         title: 'Product Created',

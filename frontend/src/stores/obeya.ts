@@ -221,8 +221,9 @@ export const useObeyaStore = create<ObeyaState>()(
           const token = localStorage.getItem('access_token');
           if (!token) return;
 
-          const wsUrl = API_BASE_URL.replace('http', 'ws').replace('/api/v1', '/ws');
-          const newSocket = new WebSocket(`${wsUrl}/${token}`);
+          // WebSocket endpoint is at /api/v1/ws/{token}
+          const wsUrl = API_BASE_URL.replace('http', 'ws');
+          const newSocket = new WebSocket(`${wsUrl}/ws/${token}`);
 
           newSocket.onopen = () => {
             set({ isConnected: true });

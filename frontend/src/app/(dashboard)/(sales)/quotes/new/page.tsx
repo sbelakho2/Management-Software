@@ -188,13 +188,16 @@ function QuoteLineItemRow({
   );
 }
 
+import { useQuoteStore } from '@/stores/quote';
+
 function NewQuotePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const rfqId = searchParams.get('rfq');
+  const { saveQuote, submitQuote } = useQuoteStore();
   
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoading, setIsLoading] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = React.useState(false);
   
@@ -289,8 +292,11 @@ function NewQuotePageContent() {
   const handleSave = async (asDraft = true) => {
     setIsSaving(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (asDraft) {
+        await saveQuote(formData as any);
+      } else {
+        await submitQuote(formData as any);
+      }
       toast({
         title: asDraft ? 'Quote saved as draft' : 'Quote submitted for approval',
         description: 'Q-2024-0113',

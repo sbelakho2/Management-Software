@@ -189,6 +189,7 @@ class Commitment:
     customer_name: str | None
     is_completed: bool = False
     is_overdue: bool = False
+    is_auto_generated: bool = False
 
 
 @dataclass
@@ -203,10 +204,11 @@ class Abnormality:
     entity_id: UUID
     detected_at: datetime
     days_stale: int
-    severity: PriorityLevel
-    owner_id: UUID | None
-    owner_name: str | None
-    suggested_action: str | None
+    severity: int = 5
+    owner_id: UUID | None = None
+    owner_name: str | None = None
+    suggested_action: str | None = None
+    is_auto_generated: bool = False
 
 
 @dataclass
@@ -508,6 +510,25 @@ class TodayScreenService:
     def __init__(self) -> None:
         """Initialize the Today screen service."""
         self.logger = logging.getLogger(__name__)
+        # Internal stores for items that might not be in Redis yet or are system-wide
+        self._risks: dict[UUID, Risk] = {}
+        self._commitments: dict[UUID, Commitment] = {}
+        self._abnormalities: dict[UUID, Abnormality] = {}
+        self._micro_drills: dict[UUID, MicroDrill] = {}
+        self._drill_progress: dict[UUID, dict[str, Any]] = {}
+        
+        # Phase 3 stores
+        self._work_orders_at_risk: dict[UUID, Any] = {}
+        self._critical_andons: dict[UUID, Any] = {}
+        self._station_efficiencies: dict[str, float] = {}
+        self._cell_oees: dict[str, float] = {}
+        self._kanban_alerts: dict[UUID, Any] = {}
+        self._expiring_certifications: dict[UUID, Any] = {}
+        self._wip_violations: dict[str, Any] = {}
+        self._capa_verifications: dict[UUID, Any] = {}
+        self._scheduled_trainings: dict[UUID, Any] = {}
+        
+        self._register_sample_data()
     
     async def _get_store(self, user_id: UUID, store_name: str) -> Dict[str, Any]:
         """Get a user-specific store from Redis."""
@@ -634,8 +655,9 @@ class TodayScreenService:
     
     # ========== Risk Management ==========
     
-    def add_risk(
+    async def add_risk(
         self,
+        user_id: UUID,
         title: str,
         category: RiskCategory,
         severity: int,
@@ -659,24 +681,43 @@ class TodayScreenService:
             risk_score=min(10, max(1, severity)) * min(10, max(1, probability)),
             entity_type=entity_type,
             entity_id=entity_id,
-            owner_id=owner_id,
+            owner_id=owner_id or user_id,
             owner_name=owner_name,
             mitigation=mitigation,
             due_date=due_date,
         )
         
-        self._risks[risk.id] = risk
+        risks_data = await self._get_store(user_id, "risks")
+        
+        risk_dict = asdict(risk)
+        risk_dict['created_at'] = risk.created_at.isoformat()
+        if risk.due_date:
+            risk_dict['due_date'] = risk.due_date.isoformat()
+            
+        risks_data[str(risk.id)] = risk_dict
+        await self._save_store(user_id, "risks", risks_data)
+        
         return risk
     
-    def get_risks_by_category(
+    async def get_risks_by_category(
         self,
+        user_id: UUID,
         category: RiskCategory | None = None,
         top_n: int | None = None,
     ) -> dict[RiskCategory, list[Risk]]:
         """Get risks grouped by category."""
+        risks_data = await self._get_store(user_id, "risks")
+        risks = []
+        for r_dict in risks_data.values():
+            if 'due_date' in r_dict and r_dict['due_date']:
+                r_dict['due_date'] = date.fromisoformat(r_dict['due_date'])
+            if 'created_at' in r_dict and r_dict['created_at']:
+                r_dict['created_at'] = datetime.fromisoformat(r_dict['created_at'])
+            risks.append(Risk(**r_dict))
+
         result: dict[RiskCategory, list[Risk]] = {}
         
-        for risk in self._risks.values():
+        for risk in risks:
             if category is not None and risk.category != category:
                 continue
             
@@ -692,16 +733,25 @@ class TodayScreenService:
         
         return result
     
-    def get_top_risks(self, top_n: int = 5) -> list[Risk]:
+    async def get_top_risks(self, user_id: UUID, top_n: int = 5) -> list[Risk]:
         """Get top N risks across all categories."""
-        risks = list(self._risks.values())
+        risks_data = await self._get_store(user_id, "risks")
+        risks = []
+        for r_dict in risks_data.values():
+            if 'due_date' in r_dict and r_dict['due_date']:
+                r_dict['due_date'] = date.fromisoformat(r_dict['due_date'])
+            if 'created_at' in r_dict and r_dict['created_at']:
+                r_dict['created_at'] = datetime.fromisoformat(r_dict['created_at'])
+            risks.append(Risk(**r_dict))
+
         risks.sort(key=lambda r: r.risk_score, reverse=True)
         return risks[:top_n]
     
     # ========== Commitment Management ==========
     
-    def add_commitment(
+    async def add_commitment(
         self,
+        user_id: UUID,
         title: str,
         commitment_type: CommitmentType,
         due_date: date,
@@ -712,6 +762,7 @@ class TodayScreenService:
         owner_id: UUID | None = None,
         owner_name: str | None = None,
         customer_name: str | None = None,
+        is_auto_generated: bool = False,
     ) -> Commitment:
         """Add a commitment."""
         commitment = Commitment(
@@ -723,37 +774,63 @@ class TodayScreenService:
             entity_id=entity_id,
             due_date=due_date,
             due_time=due_time,
-            owner_id=owner_id,
+            owner_id=owner_id or user_id,
             owner_name=owner_name,
             customer_name=customer_name,
             is_overdue=due_date < date.today(),
+            is_auto_generated=is_auto_generated,
         )
         
-        self._commitments[commitment.id] = commitment
+        commitments_data = await self._get_store(user_id, "commitments")
+        
+        commitment_dict = asdict(commitment)
+        commitment_dict['created_at'] = commitment.created_at.isoformat()
+        if commitment.due_date:
+            commitment_dict['due_date'] = commitment.due_date.isoformat()
+            
+        commitments_data[str(commitment.id)] = commitment_dict
+        await self._save_store(user_id, "commitments", commitments_data)
+        
         return commitment
     
-    def complete_commitment(self, commitment_id: UUID) -> Commitment | None:
+    async def complete_commitment(self, user_id: UUID, commitment_id: UUID) -> Commitment | None:
         """Mark a commitment as completed."""
-        commitment = self._commitments.get(commitment_id)
-        if commitment:
-            commitment.is_completed = True
-        return commitment
+        commitments_data = await self._get_store(user_id, "commitments")
+        cid_str = str(commitment_id)
+        
+        if cid_str in commitments_data:
+            c_dict = commitments_data[cid_str]
+            c_dict['is_completed'] = True
+            await self._save_store(user_id, "commitments", commitments_data)
+            
+            if 'due_date' in c_dict and c_dict['due_date']:
+                c_dict['due_date'] = date.fromisoformat(c_dict['due_date'])
+            if 'created_at' in c_dict and c_dict['created_at']:
+                c_dict['created_at'] = datetime.fromisoformat(c_dict['created_at'])
+            return Commitment(**c_dict)
+        return None
     
-    def get_commitments(
+    async def get_commitments(
         self,
-        user_id: UUID | None = None,
+        user_id: UUID,
         target_date: date | None = None,
         include_overdue: bool = True,
         include_completed: bool = False,
     ) -> list[Commitment]:
         """Get commitments with filtering."""
+        commitments_data = await self._get_store(user_id, "commitments")
+        commitments = []
+        for c_dict in commitments_data.values():
+            if 'due_date' in c_dict and c_dict['due_date']:
+                c_dict['due_date'] = date.fromisoformat(c_dict['due_date'])
+            if 'created_at' in c_dict and c_dict['created_at']:
+                c_dict['created_at'] = datetime.fromisoformat(c_dict['created_at'])
+            commitments.append(Commitment(**c_dict))
+
         result = []
         today = date.today()
         
-        for commitment in self._commitments.values():
-            if user_id is not None and commitment.owner_id != user_id:
-                continue
-            
+        for commitment in commitments:
             if not include_completed and commitment.is_completed:
                 continue
             
@@ -774,18 +851,20 @@ class TodayScreenService:
     
     # ========== Abnormality Management ==========
     
-    def add_abnormality(
+    async def add_abnormality(
         self,
+        user_id: UUID,
         title: str,
         abnormality_type: AbnormalityType,
         entity_type: str,
         entity_id: UUID,
         days_stale: int = 0,
         description: str | None = None,
-        severity: PriorityLevel = PriorityLevel.MEDIUM,
+        severity: int = 5,
         owner_id: UUID | None = None,
         owner_name: str | None = None,
         suggested_action: str | None = None,
+        is_auto_generated: bool = False,
     ) -> Abnormality:
         """Add an abnormality."""
         abnormality = Abnormality(
@@ -798,60 +877,77 @@ class TodayScreenService:
             detected_at=datetime.now(timezone.utc).replace(tzinfo=None),
             days_stale=days_stale,
             severity=severity,
-            owner_id=owner_id,
+            owner_id=owner_id or user_id,
             owner_name=owner_name,
             suggested_action=suggested_action,
+            is_auto_generated=is_auto_generated,
         )
         
-        self._abnormalities[abnormality.id] = abnormality
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
+        
+        abnormality_dict = asdict(abnormality)
+        abnormality_dict['detected_at'] = abnormality.detected_at.isoformat()
+        
+        abnormalities_data[str(abnormality.id)] = abnormality_dict
+        await self._save_store(user_id, "abnormalities", abnormalities_data)
+        
         return abnormality
     
-    def resolve_abnormality(self, abnormality_id: UUID) -> bool:
+    async def resolve_abnormality(self, user_id: UUID, abnormality_id: UUID) -> bool:
         """Resolve (remove) an abnormality."""
-        if abnormality_id in self._abnormalities:
-            del self._abnormalities[abnormality_id]
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
+        aid_str = str(abnormality_id)
+        
+        if aid_str in abnormalities_data:
+            del abnormalities_data[aid_str]
+            await self._save_store(user_id, "abnormalities", abnormalities_data)
             return True
         return False
     
-    def get_abnormalities(
+    async def get_abnormalities(
         self,
-        user_id: UUID | None = None,
+        user_id: UUID,
         abnormality_type: AbnormalityType | None = None,
-        severity: PriorityLevel | None = None,
+        severity: int | None = None,
     ) -> list[Abnormality]:
         """Get abnormalities with filtering."""
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
+        abnormalities = []
+        for a_dict in abnormalities_data.values():
+            if 'detected_at' in a_dict and a_dict['detected_at']:
+                a_dict['detected_at'] = datetime.fromisoformat(a_dict['detected_at'])
+            abnormalities.append(Abnormality(**a_dict))
+
         result = []
         
-        for abnormality in self._abnormalities.values():
-            if user_id is not None and abnormality.owner_id != user_id:
-                continue
+        for abnormality in abnormalities:
             if abnormality_type is not None and abnormality.abnormality_type != abnormality_type:
                 continue
             if severity is not None and abnormality.severity != severity:
                 continue
             result.append(abnormality)
         
-        # Sort by severity then days stale
-        result.sort(key=lambda a: (
-            0 if a.severity == PriorityLevel.HIGH else 1 if a.severity == PriorityLevel.MEDIUM else 2,
-            -a.days_stale,
-        ))
+        # Sort by severity descending then days stale descending
+        result.sort(key=lambda a: (-a.severity, -a.days_stale))
         
         return result
     
-    def get_abnormality_counts(self) -> dict[AbnormalityType, int]:
-        """Get counts of abnormalities by type."""
+    async def get_abnormality_counts(self, user_id: UUID) -> dict[AbnormalityType, int]:
+        """Get counts of abnormalities by type for a user."""
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
         counts: dict[AbnormalityType, int] = {}
-        for abnormality in self._abnormalities.values():
-            if abnormality.abnormality_type not in counts:
-                counts[abnormality.abnormality_type] = 0
-            counts[abnormality.abnormality_type] += 1
+        for a_dict in abnormalities_data.values():
+            atype = a_dict['abnormality_type']
+            if atype not in counts:
+                counts[atype] = 0
+            counts[atype] += 1
         return counts
     
     # ========== Micro-Drill Management ==========
     
-    def add_micro_drill(
+    async def add_micro_drill(
         self,
+        user_id: UUID,
         question: str,
         answer: str,
         category: str,
@@ -872,21 +968,23 @@ class TodayScreenService:
             context_entity_id=context_entity_id,
         )
         
-        self._micro_drills[drill.id] = drill
+        drills_data = await self._get_store(user_id, "micro_drills")
+        drills_data[str(drill.id)] = asdict(drill)
+        await self._save_store(user_id, "micro_drills", drills_data)
+        
         return drill
     
-    def get_todays_drills(
+    async def get_todays_drills(
         self,
         user_id: UUID,
         count: int = 3,
     ) -> list[MicroDrill]:
         """Get today's micro-drill questions for a user."""
-        # In production, this would use spaced repetition algorithm
-        # For now, return random selection
-        drills = list(self._micro_drills.values())
+        drills_data = await self._get_store(user_id, "micro_drills")
+        drills = [MicroDrill(**d) for d in drills_data.values()]
         
         # Get user progress
-        progress = self._drill_progress.get(user_id, {})
+        progress = await self._get_store(user_id, "drill_progress")
         completed_today = progress.get("completed_today", [])
         
         # Filter out completed drills
@@ -894,53 +992,55 @@ class TodayScreenService:
         
         return available[:count]
     
-    def complete_drill(
+    async def complete_drill(
         self,
         user_id: UUID,
         drill_id: UUID,
         correct: bool,
     ) -> dict[str, Any]:
         """Record drill completion."""
-        if user_id not in self._drill_progress:
-            self._drill_progress[user_id] = {
+        progress = await self._get_store(user_id, "drill_progress")
+        if not progress:
+            progress = {
                 "completed_today": [],
                 "streak": 0,
                 "total_completed": 0,
                 "correct_count": 0,
             }
         
-        progress = self._drill_progress[user_id]
-        progress["completed_today"].append(str(drill_id))
-        progress["total_completed"] += 1
-        if correct:
-            progress["correct_count"] += 1
-            progress["streak"] += 1
-        else:
-            progress["streak"] = 0
+        if str(drill_id) not in progress["completed_today"]:
+            progress["completed_today"].append(str(drill_id))
+            progress["total_completed"] += 1
+            if correct:
+                progress["correct_count"] += 1
+                progress["streak"] += 1
+            else:
+                progress["streak"] = 0
+        
+        await self._save_store(user_id, "drill_progress", progress)
         
         return {
             "streak": progress["streak"],
             "total_completed": progress["total_completed"],
-            "accuracy": progress["correct_count"] / progress["total_completed"] * 100,
+            "accuracy": (progress["correct_count"] / progress["total_completed"] * 100) if progress["total_completed"] > 0 else 0,
         }
     
-    def get_drill_progress(self, user_id: UUID) -> dict[str, Any]:
-        """Get user's drill progress."""
-        progress = self._drill_progress.get(user_id, {
-            "completed_today": [],
-            "streak": 0,
-            "total_completed": 0,
-            "correct_count": 0,
-        })
+    async def get_drill_progress(self, user_id: UUID) -> dict[str, Any]:
+        """Get drill progress for a user."""
+        progress = await self._get_store(user_id, "drill_progress")
+        if not progress:
+            return {
+                "drills_completed_today": 0,
+                "streak": 0,
+                "total_completed": 0,
+                "accuracy": 0.0,
+            }
         
         return {
             "drills_completed_today": len(progress.get("completed_today", [])),
             "streak": progress.get("streak", 0),
             "total_completed": progress.get("total_completed", 0),
-            "accuracy": (
-                progress.get("correct_count", 0) / progress.get("total_completed", 1) * 100
-                if progress.get("total_completed", 0) > 0 else 0
-            ),
+            "accuracy": (progress.get("correct_count", 0) / progress.get("total_completed", 1) * 100) if progress.get("total_completed", 0) > 0 else 0,
         }
     
     # ========== LSW Summary ==========
@@ -1700,27 +1800,29 @@ class TodayScreenService:
             greeting = f"Good evening, {user_name.split()[0]}"
         
         # Get priorities
-        all_priorities = self.get_user_priorities(user_id)
+        all_priorities = await self.get_user_priorities(user_id)
         top_priorities = [p for p in all_priorities if p.is_user_selected]
         unselected_priorities = [p for p in all_priorities if not p.is_user_selected]
         
         # Get risks
-        risks_by_category = self.get_risks_by_category(top_n=3)
-        total_risks = len(self._risks)
-        critical_risks = len([r for r in self._risks.values() if r.risk_score >= 50])
+        risks_by_category = await self.get_risks_by_category(user_id, top_n=3)
+        risks_data = await self._get_store(user_id, "risks")
+        total_risks = len(risks_data)
+        critical_risks = sum(1 for r in risks_data.values() if r.get('severity', 0) >= 8)
         
         # Get commitments
-        todays_commitments = self.get_commitments(user_id=user_id, target_date=today)
-        tomorrows_commitments = self.get_commitments(user_id=user_id, target_date=tomorrow)
-        overdue_commitments = [c for c in self.get_commitments(user_id=user_id) if c.is_overdue]
+        todays_commitments = await self.get_commitments(user_id, target_date=today)
+        tomorrows_commitments = await self.get_commitments(user_id, target_date=today + timedelta(days=1))
+        overdue_commitments = await self.get_commitments(user_id, include_overdue=True, include_completed=False)
+        overdue_commitments = [c for c in overdue_commitments if c.is_overdue]
         
         # Get abnormalities
-        abnormalities = self.get_abnormalities(user_id=user_id)
-        abnormality_counts = self.get_abnormality_counts()
+        abnormalities = await self.get_abnormalities(user_id)
+        abnormality_counts = await self.get_abnormality_counts(user_id)
         
         # Get micro-drills
-        todays_drills = self.get_todays_drills(user_id)
-        drill_progress = self.get_drill_progress(user_id)
+        todays_drills = await self.get_todays_drills(user_id)
+        drill_progress = await self.get_drill_progress(user_id)
         
         # Get LSW summary
         lsw_summary = self.get_lsw_summary(user_id)
@@ -1755,8 +1857,27 @@ class TodayScreenService:
             cache_valid_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5),
         )
     
+    async def _clear_auto_generated_items(self, user_id: UUID) -> None:
+        """Clear auto-generated commitments and abnormalities for a user."""
+        # Clear commitments
+        commitments_data = await self._get_store(user_id, "commitments")
+        to_remove_c = [cid for cid, c in commitments_data.items() if c.get('is_auto_generated')]
+        for cid in to_remove_c:
+            del commitments_data[cid]
+        await self._save_store(user_id, "commitments", commitments_data)
+        
+        # Clear abnormalities
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
+        to_remove_a = [aid for aid, a in abnormalities_data.items() if a.get('is_auto_generated')]
+        for aid in to_remove_a:
+            del abnormalities_data[aid]
+        await self._save_store(user_id, "abnormalities", abnormalities_data)
+
     async def _aggregate_project_data(self, db: AsyncSession, user_id: UUID) -> None:
         """Aggregate project data into commitments and abnormalities."""
+        # Clear existing auto-generated items first to avoid duplication
+        await self._clear_auto_generated_items(user_id)
+        
         today = date.today()
         
         # 1. Fetch Overdue/Upcoming Milestones
@@ -1775,31 +1896,30 @@ class TodayScreenService:
         for ms, project_name in milestones:
             # Overdue Milestone as Abnormality
             if ms.due_date < today:
-                self.add_abnormality(
+                await self.add_abnormality(
                     user_id=user_id,
                     title=f"Overdue Milestone: {ms.name}",
-                    atype=AbnormalityType.OVERDUE_PROJECT_MILESTONE,
+                    abnormality_type=AbnormalityType.OVERDUE_PROJECT_MILESTONE,
                     severity=8,
                     description=f"Project: {project_name}. Due on {ms.due_date}",
                     entity_type="project_milestone",
                     entity_id=ms.id,
+                    is_auto_generated=True,
                 )
             
             # Milestone as Commitment
-            self.add_commitment(
+            await self.add_commitment(
                 user_id=user_id,
                 title=f"Milestone: {ms.name}",
-                ctype=CommitmentType.PROJECT_MILESTONE_DUE,
-                target_date=ms.due_date,
+                commitment_type=CommitmentType.PROJECT_MILESTONE_DUE,
+                due_date=ms.due_date,
                 description=f"Project: {project_name}",
                 entity_type="project_milestone",
                 entity_id=ms.id,
-                priority=PriorityLevel.HIGH if ms.due_date <= today else PriorityLevel.MEDIUM
+                is_auto_generated=True,
             )
 
         # 2. Fetch Assigned User Stories with due dates
-        # Note: We use a simplified check for assigned users since it's a JSON/Array field depending on implementation
-        # For now, we check owner_id for direct accountability on Today screen
         story_stmt = (
             select(UserStory, Project.name)
             .join(Project, UserStory.project_id == Project.id)
@@ -1816,25 +1936,27 @@ class TodayScreenService:
         for story, project_name in stories:
             # Overdue Story as Abnormality
             if story.due_date < today:
-                self.add_abnormality(
+                await self.add_abnormality(
                     user_id=user_id,
                     title=f"Late User Story: US-{story.ref}",
-                    atype=AbnormalityType.LATE_USER_STORY,
+                    abnormality_type=AbnormalityType.LATE_USER_STORY,
                     severity=6,
                     description=f"{story.subject} (Project: {project_name})",
                     entity_type="user_story",
                     entity_id=story.id,
+                    is_auto_generated=True,
                 )
             
             # Story as Commitment
-            self.add_commitment(
+            await self.add_commitment(
                 user_id=user_id,
                 title=f"US-{story.ref}: {story.subject}",
-                ctype=CommitmentType.USER_STORY_DUE,
-                target_date=story.due_date,
+                commitment_type=CommitmentType.USER_STORY_DUE,
+                due_date=story.due_date,
                 description=f"Project: {project_name}",
                 entity_type="user_story",
                 entity_id=story.id,
+                is_auto_generated=True,
             )
 
     # ========== Sample Data ==========

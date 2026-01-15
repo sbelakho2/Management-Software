@@ -11,6 +11,7 @@ Implements:
 from __future__ import annotations
 
 import hashlib
+import numpy as np
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -18,6 +19,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
+from sensei.core.enums import JidokaAction
 from sensei.models.tps import (
     PDCACycleRecord, 
     KataSessionRecord, 
@@ -78,15 +80,6 @@ class AndonStatus(str, Enum):
     YELLOW = "yellow"  # Potential issue, attention needed
     RED = "red"  # Stop, immediate action required
     BLUE = "blue"  # Quality issue, needs inspection
-
-
-class JidokaAction(str, Enum):
-    """Jidoka response actions."""
-    CONTINUE = "continue"  # Continue operation
-    ALERT = "alert"  # Alert operator
-    SLOW_DOWN = "slow_down"  # Reduce speed
-    STOP = "stop"  # Stop the line
-    ESCALATE = "escalate"  # Escalate to supervisor
 
 
 # =============================================================================

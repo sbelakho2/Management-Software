@@ -23,30 +23,30 @@ from sensei.api.v1.endpoints.quality import (
     complete_capa_action,
     create_capa,
     create_capa_action,
+    create_inspection,
     create_inspection_plan,
-    create_inspection_record,
     create_non_conformance,
     delete_capa,
     delete_capa_action,
     delete_inspection_plan,
-    delete_inspection_record,
+    delete_inspection,
     delete_non_conformance,
     get_capa,
     get_inspection_plan,
-    get_inspection_record,
+    get_inspection,
     get_non_conformance,
     list_capas,
     list_capa_actions,
     list_inspection_plans,
-    list_inspection_records,
+    list_inspections,
     list_non_conformances,
     restore_capa,
     restore_inspection_plan,
     restore_non_conformance,
     update_capa,
     update_capa_action,
+    update_inspection,
     update_inspection_plan,
-    update_inspection_record,
     update_non_conformance,
  )
 from sensei.models.quality import (
@@ -585,7 +585,7 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
     # Records create requires plan exists
     db.execute.return_value = make_result(scalar_one_or_none=None)
     with pytest.raises(NotFoundError):
-        await create_inspection_record(
+        await create_inspection(
             InspectionRecordCreate(
                 inspection_plan_id=77,
                 sample_size=5,
@@ -622,7 +622,7 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
 
     db.add.side_effect = capture_add_record
 
-    resp = await create_inspection_record(
+    resp = await create_inspection(
         InspectionRecordCreate(
             inspection_plan_id=77,
             sample_size=5,
@@ -639,11 +639,11 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
     # Get record not found
     db.execute.return_value = make_result(scalar_one_or_none=None)
     with pytest.raises(NotFoundError):
-        await get_inspection_record(999, db, current_user)
+        await get_inspection(999, db, current_user)
 
     # Update record ok
     db.execute.return_value = make_result(scalar_one_or_none=record)
-    resp = await update_inspection_record(501, InspectionRecordUpdate(notes="ok"), db, current_user)
+    resp = await update_inspection(501, InspectionRecordUpdate(notes="ok"), db, current_user)
     assert resp.data.id == 501
 
     # List records filter
@@ -651,7 +651,7 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
         make_result(scalar=1),
         make_result(scalars_all=[record]),
     ]
-    page = await list_inspection_records(
+    page = await list_inspections(
         db,
         current_user,
         page=1,
@@ -665,7 +665,7 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
 
     # Delete record
     db.execute.return_value = make_result(scalar_one_or_none=record)
-    resp = await delete_inspection_record(501, db, current_user)
+    resp = await delete_inspection(501, db, current_user)
     assert resp.success is True
 
 
@@ -714,7 +714,7 @@ async def test_inspection_record_requires_certified_skills_when_plan_scoped() ->
     ]
 
     with pytest.raises(ConflictError) as exc:
-        await create_inspection_record(
+        await create_inspection(
             InspectionRecordCreate(
                 inspection_plan_id=77,
                 sample_size=5,

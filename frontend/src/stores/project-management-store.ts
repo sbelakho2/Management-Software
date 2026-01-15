@@ -556,7 +556,7 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     createMilestone: async (payload) => {
       set({ isLoading: true, error: null });
       try {
-        const res = await apiSend<ApiEnvelope<Milestone>>('/milestones', 'POST', payload);
+        const res = await apiSend<ApiEnvelope<ProjectMilestone>>('/milestones', 'POST', payload);
         set({ milestones: [...get().milestones, res.data], isLoading: false });
         return res.data;
       } catch (e) {
@@ -568,7 +568,7 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     updateMilestone: async (milestoneId, updates) => {
       set({ isLoading: true, error: null });
       try {
-        const res = await apiSend<ApiEnvelope<Milestone>>(`/milestones/${milestoneId}`, 'PATCH', updates);
+        const res = await apiSend<ApiEnvelope<ProjectMilestone>>(`/milestones/${milestoneId}`, 'PATCH', updates);
         set({
           milestones: get().milestones.map((m) => (m.id === milestoneId ? res.data : m)),
           isLoading: false,

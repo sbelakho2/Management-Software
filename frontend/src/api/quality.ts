@@ -202,77 +202,77 @@ export const ncrApi = {
    * List NCRs with pagination and filters
    */
   async list(params?: NCRListParams): Promise<PaginatedResponse<NonConformanceReport>> {
-    return apiClient.get('/quality/ncrs', { params });
+    return apiClient.get('/quality/non-conformances', { params });
   },
 
   /**
    * Get an NCR by ID
    */
   async get(id: string): Promise<NonConformanceReport> {
-    return apiClient.get(`/quality/ncrs/${id}`);
+    return apiClient.get(`/quality/non-conformances/${id}`);
   },
 
   /**
    * Create a new NCR
    */
   async create(data: CreateNCRData): Promise<NonConformanceReport> {
-    return apiClient.post('/quality/ncrs', data);
+    return apiClient.post('/quality/non-conformances', data);
   },
 
   /**
    * Update an NCR
    */
   async update(id: string, data: UpdateNCRData): Promise<NonConformanceReport> {
-    return apiClient.patch(`/quality/ncrs/${id}`, data);
+    return apiClient.patch(`/quality/non-conformances/${id}`, data);
   },
 
   /**
    * Delete an NCR
    */
   async delete(id: string): Promise<void> {
-    return apiClient.delete(`/quality/ncrs/${id}`);
+    return apiClient.delete(`/quality/non-conformances/${id}`);
   },
 
   /**
    * Start investigation
    */
   async startInvestigation(id: string): Promise<NonConformanceReport> {
-    return apiClient.post(`/quality/ncrs/${id}/investigate`);
+    return apiClient.post(`/quality/non-conformances/${id}/investigate`);
   },
 
   /**
    * Set disposition
    */
   async setDisposition(id: string, disposition: NCRDisposition, notes?: string): Promise<NonConformanceReport> {
-    return apiClient.post(`/quality/ncrs/${id}/disposition`, { disposition, notes });
+    return apiClient.post(`/quality/non-conformances/${id}/disposition`, { disposition, notes });
   },
 
   /**
    * Close NCR
    */
   async close(id: string, notes?: string): Promise<NonConformanceReport> {
-    return apiClient.post(`/quality/ncrs/${id}/close`, { notes });
+    return apiClient.post(`/quality/non-conformances/${id}/close`, { notes });
   },
 
   /**
    * Create CAPA from NCR
    */
   async createCAPA(id: string, data: Partial<CreateCAPAData>): Promise<CAPA> {
-    return apiClient.post(`/quality/ncrs/${id}/create-capa`, data);
+    return apiClient.post(`/quality/non-conformances/${id}/create-capa`, data);
   },
 
   /**
    * Get NCR statistics
    */
   async getStats(params?: { from_date?: string; to_date?: string }): Promise<NCRStats> {
-    return apiClient.get('/quality/ncrs/stats', { params });
+    return apiClient.get('/quality/non-conformances/stats', { params });
   },
 
   /**
    * Get NCR timeline
    */
   async getTimeline(id: string): Promise<TimelineEvent[]> {
-    return apiClient.get(`/quality/ncrs/${id}/timeline`);
+    return apiClient.get(`/quality/non-conformances/${id}/timeline`);
   },
 };
 

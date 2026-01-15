@@ -9,6 +9,8 @@ interface CustomersState {
   error: string | null;
 
   fetchCustomers: (params?: AccountListParams) => Promise<void>;
+  createCustomer: (data: any) => Promise<Customer>;
+  updateCustomer: (id: string, data: any) => Promise<Customer>;
 }
 
 export const useCustomersStore = create<CustomersState>((set) => ({
@@ -30,6 +32,37 @@ export const useCustomersStore = create<CustomersState>((set) => ({
       });
     } catch (error: any) {
       set({ error: error.message, loading: false });
+    }
+  },
+
+  createCustomer: async (data) => {
+    set({ loading: true, error: null });
+    try {
+      const customer = await accountApi.create(data);
+      set((state) => ({ 
+        customers: [customer, ...state.customers],
+        totalCustomers: state.totalCustomers + 1,
+        loading: false 
+      }));
+      return customer;
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+      throw error;
+    }
+  },
+
+  updateCustomer: async (id, data) => {
+    set({ loading: true, error: null });
+    try {
+      const customer = await accountApi.update(id, data);
+      set((state) => ({ 
+        customers: state.customers.map((c) => (c.id === id ? customer : c)),
+        loading: false 
+      }));
+      return customer;
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+      throw error;
     }
   },
 }));

@@ -102,6 +102,60 @@ class ObeyaItemUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class ObeyaItemResolve(BaseModel):
+    """Schema for resolving an Obeya item."""
+
+    resolution: str
+
+
+class SQDCPSafetyMetric(BaseModel):
+    incidents: int = 0
+    days_since_last_incident: int = 0
+    near_misses: int = 0
+    training_completion: float = 0.0
+    status: str = "green"
+
+
+class SQDCPQualityMetric(BaseModel):
+    first_pass_yield: float = 0.0
+    defect_rate: float = 0.0
+    customer_complaints: int = 0
+    ncr_open: int = 0
+    status: str = "green"
+
+
+class SQDCPDeliveryMetric(BaseModel):
+    on_time_delivery: float = 0.0
+    lead_time_days: float = 0.0
+    schedule_adherence: float = 0.0
+    backlog_items: int = 0
+    status: str = "green"
+
+
+class SQDCPCostMetric(BaseModel):
+    variance_percent: float = 0.0
+    cost_savings: float = 0.0
+    waste_reduction: float = 0.0
+    budget_utilization: float = 0.0
+    status: str = "green"
+
+
+class SQDCPPeopleMetric(BaseModel):
+    morale_score: float = 0.0
+    training_hours: float = 0.0
+    attendance_rate: float = 0.0
+    active_improvements: int = 0
+    status: str = "green"
+
+
+class SQDCPMetricsResponse(BaseModel):
+    safety: SQDCPSafetyMetric
+    quality: SQDCPQualityMetric
+    delivery: SQDCPDeliveryMetric
+    cost: SQDCPCostMetric
+    people: SQDCPPeopleMetric
+
+
 class ObeyaItemResponse(BaseModel):
     """Schema for Obeya item response."""
 
@@ -727,6 +781,64 @@ async def deescalate_item(
     return build_response(
         data=ObeyaItemResponse.model_validate(item),
         message="Item de-escalated",
+    )
+
+
+@router.post(
+    "/{item_id}/resolve",
+    response_model=APIResponse[ObeyaItemResponse],
+    summary="Resolve item",
+    description="Resolve an Obeya item with a resolution description.",
+)
+async def resolve_item(
+    item_id: UUID,
+    data: ObeyaItemResolve,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ObeyaItemResponse]:
+    stmt = select(ObeyaItem).where(
+        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    item = result.scalar_one_or_none()
+
+    if not item:
+        raise NotFoundError(f"Obeya item {item_id} not found")
+
+    item.status = ObeyaStatus.COMPLETED.value
+    item.resolution = data.resolution
+    item.completed_at = datetime.now(timezone.utc)
+    item.updated_by_id = current_user.id
+
+    await db.flush()
+    await db.refresh(item)
+
+    return build_response(
+        data=ObeyaItemResponse.model_validate(item),
+        message="Item resolved",
+    )
+
+
+@router.get(
+    "/sqdcp-metrics",
+    response_model=APIResponse[SQDCPMetricsResponse],
+    summary="Get SQDCP metrics",
+    description="Get summarized SQDCP metrics for the Obeya board.",
+)
+async def get_sqdcp_metrics(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SQDCPMetricsResponse]:
+    # In a real system, these would come from various tables (safety incidents, quality yields, etc.)
+    # For now, return mock data matching the frontend expected structure.
+    return build_response(
+        data=SQDCPMetricsResponse(
+            safety=SQDCPSafetyMetric(status="green", days_since_last_incident=120),
+            quality=SQDCPQualityMetric(status="yellow", first_pass_yield=94.5, defect_rate=1.2, ncr_open=5),
+            delivery=SQDCPDeliveryMetric(status="green", on_time_delivery=98.0, lead_time_days=3.5),
+            cost=SQDCPCostMetric(status="green", variance_percent=-2.5, cost_savings=15000),
+            people=SQDCPPeopleMetric(status="green", morale_score=4.2, training_hours=450)
+        )
     )
 
 

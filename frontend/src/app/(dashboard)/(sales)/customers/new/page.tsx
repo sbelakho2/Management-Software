@@ -158,10 +158,13 @@ function ContactCard({
   );
 }
 
+import { useCustomersStore } from '@/stores/customers';
+
 export default function CustomerFormPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
+  const { createCustomer, updateCustomer } = useCustomersStore();
   const isEditing = params?.id !== undefined;
   
   const [isLoading, setIsLoading] = React.useState(isEditing);
@@ -315,8 +318,11 @@ export default function CustomerFormPage() {
 
     setIsSaving(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (isEditing) {
+        await updateCustomer(params.id as string, formData);
+      } else {
+        await createCustomer(formData);
+      }
       toast({
         title: isEditing ? 'Customer updated' : 'Customer created',
         description: formData.name,

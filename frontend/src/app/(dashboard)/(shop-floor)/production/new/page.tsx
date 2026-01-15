@@ -22,6 +22,7 @@ import { useProductStore } from '@/stores/products';
 export default function NewWorkOrderPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { createWorkOrder } = useProductionStore();
   const { products } = useProductStore();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -47,7 +48,13 @@ export default function NewWorkOrderPage() {
 
     setIsSubmitting(true);
     try {
-      // Simulate API call
+      await createWorkOrder({
+        product_id: Number(form.productId),
+        quantity_ordered: form.quantity,
+        priority: form.priority as any,
+        scheduled_end: form.dueDate,
+        external_reference: form.orderNumber,
+      });
       toast({
         title: 'Work Order Created',
         description: `Order ${form.orderNumber} has been scheduled.`,

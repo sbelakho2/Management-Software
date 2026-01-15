@@ -21,6 +21,7 @@ import { useQualityStore } from '@/stores';
 export default function NewNCRPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { createNCR } = useQualityStore();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const [form, setForm] = React.useState({
@@ -46,7 +47,16 @@ export default function NewNCRPage() {
 
     setIsSubmitting(true);
     try {
-      // Simulate API call
+      await createNCR({
+        title: form.title,
+        description: form.description,
+        severity: form.severity as any,
+        product_id: form.productId ? Number(form.productId) : undefined,
+        work_order_id: form.workOrderId ? Number(form.workOrderId) : undefined,
+        nc_number: `NCR-${Date.now()}`,
+        nc_type: 'product' as any, // Default type
+        source: 'in_process' as any, // Default source
+      });
       toast({
         title: 'NCR Created',
         description: `NCR has been successfully recorded.`,

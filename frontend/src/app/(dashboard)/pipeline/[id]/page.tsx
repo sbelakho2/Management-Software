@@ -186,17 +186,38 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+import { usePipelineStore } from '@/stores/pipeline';
+
 export default function RFQDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const [rfq] = React.useState<RFQDetail>(mockRFQ);
-  const [isLoading] = React.useState(false); // Will be true when fetching from API
+  const { fetchRFQById, setRFQStatus } = usePipelineStore();
+  const [rfq, setRfq] = React.useState<RFQDetail | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
   const [noBidDialogOpen, setNoBidDialogOpen] = React.useState(false);
   const [noBidReason, setNoBidReason] = React.useState('');
 
-  const isOverdue = new Date(rfq.due_date) < new Date();
-  const daysUntilDue = Math.ceil((new Date(rfq.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  React.useEffect(() => {
+    const loadRFQ = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchRFQById(params.id);
+        if (data) {
+          setRfq(data as any);
+        } else {
+          // Fallback to mock if API fails or return 404
+          setRfq(mockRFQ);
+        }
+      } catch (error) {
+        console.error('Failed to load RFQ:', error);
+        setRfq(mockRFQ);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadRFQ();
+  }, [params.id, fetchRFQById]);
 
-  if (isLoading) {
+  if (isLoading || !rfq) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -213,6 +234,9 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
       </div>
     );
   }
+
+  const isOverdue = new Date(rfq.due_date) < new Date();
+  const daysUntilDue = Math.ceil((new Date(rfq.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
   return (
     <div className="space-y-6">

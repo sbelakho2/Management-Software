@@ -193,22 +193,50 @@ function CustomerDetailSkeleton() {
   );
 }
 
+import { useCustomersStore } from '@/stores/customers';
+
 export default function CustomerDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
+  const { customers, fetchCustomers } = useCustomersStore();
   const [isLoading, setIsLoading] = React.useState(true);
   const [customer, setCustomer] = React.useState<Customer | null>(null);
   const [showDeactivateDialog, setShowDeactivateDialog] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setCustomer(mockCustomer);
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [params.id]);
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        await fetchCustomers();
+      } catch (err) {
+        console.error('Failed to load customer:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [fetchCustomers]);
+
+  React.useEffect(() => {
+    if (customers.length > 0 && params.id) {
+      const found = customers.find(c => c.id === params.id);
+      if (found) {
+        setCustomer({
+          ...found,
+          address: (found as any).address || mockCustomer.address,
+          contacts: (found as any).contacts || [],
+          stats: (found as any).stats || mockCustomer.stats,
+          recentRFQs: (found as any).recentRFQs || [],
+          recentActivity: (found as any).recentActivity || [],
+        } as any);
+      } else {
+        // Fallback to mock
+        setCustomer(mockCustomer);
+      }
+    }
+  }, [customers, params.id]);
 
   const handleDeactivate = () => {
     toast({

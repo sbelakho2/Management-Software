@@ -990,10 +990,11 @@ class JITLeanLearning:
         self.knowledge_engine = knowledge_engine or KnowledgeRetrievalEngine()
         self.evolution_engine = evolution_engine or StandardWorkEvolutionEngine()
     
-    def process_operational_data(
+    async def process_operational_data(
         self,
+        db: AsyncSession,
         data: dict[str, Any],
-        operator_id: str,
+        operator_id: UUID,
     ) -> dict[str, Any]:
         """
         Process operational data and trigger appropriate learning.
@@ -1011,15 +1012,18 @@ class JITLeanLearning:
             result["trigger_detected"] = trigger.value
             
             # Get and deliver lesson
-            delivery = self.lesson_engine.get_lesson_for_trigger(
-                trigger,
-                operator_id,
-                trigger_context=data,
-            )
-            if delivery:
-                lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id)
+            lesson_id = self.lesson_engine.get_lesson_id_for_trigger(trigger)
+            if lesson_id:
+                delivery = await self.lesson_engine.deliver_lesson(
+                    db=db,
+                    lesson_id=lesson_id,
+                    recipient_id=operator_id,
+                    trigger_type=trigger,
+                    context=data,
+                )
+                lesson = self.lesson_engine.get_lesson_content(lesson_id)
                 result["lesson_delivered"] = {
-                    "delivery_id": delivery.delivery_id,
+                    "delivery_id": str(delivery.id),
                     "lesson_id": delivery.lesson_id,
                     "title": lesson.title if lesson else "",
                     "summary": lesson.summary if lesson else "",
@@ -1045,8 +1049,9 @@ class JITLeanLearning:
             "examples": lesson.examples,
         }
     
-    def link_a3_to_knowledge(
+    async def link_a3_to_knowledge(
         self,
+        db: AsyncSession,
         a3_id: str,
         problem_statement: str = "",
         root_cause: str = "",
@@ -1056,7 +1061,7 @@ class JITLeanLearning:
         links = {}
         
         if problem_statement:
-            link = self.knowledge_engine.link_to_a3(a3_id, "problem_statement", problem_statement)
+            link = await self.knowledge_engine.link_to_a3(db, a3_id, "problem_statement", problem_statement)
             links["problem_statement"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1064,7 +1069,7 @@ class JITLeanLearning:
             }
         
         if root_cause:
-            link = self.knowledge_engine.link_to_a3(a3_id, "root_cause", root_cause)
+            link = await self.knowledge_engine.link_to_a3(db, a3_id, "root_cause", root_cause)
             links["root_cause"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1072,7 +1077,7 @@ class JITLeanLearning:
             }
         
         if countermeasure:
-            link = self.knowledge_engine.link_to_a3(a3_id, "countermeasure", countermeasure)
+            link = await self.knowledge_engine.link_to_a3(db, a3_id, "countermeasure", countermeasure)
             links["countermeasure"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1082,10 +1087,7 @@ class JITLeanLearning:
         return {
             "a3_id": a3_id,
             "links": links,
-            "recommended_documents": [
-                doc.title
-                for doc in self.knowledge_engine.get_recommended_documents(a3_id)
-            ],
+            "recommended_documents": [],
         }
     
     def close_a3_with_standard_update(

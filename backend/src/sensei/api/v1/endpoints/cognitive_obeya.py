@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from sensei.api.deps import DBSession, CurrentUser
+from sensei.api.deps import DBSession, CurrentUser, require_role
 from sensei.api.utils import APIResponse, build_response
 from sensei.services.ops.cognitive_obeya import (
     get_cognitive_obeya,
@@ -22,7 +22,8 @@ router = APIRouter()
 @router.get("/dashboard", response_model=APIResponse)
 async def get_obeya_dashboard(
     db: DBSession,
-    user: CurrentUser
+    user: CurrentUser,
+    _: require_role("admin", "gm", "ceo", "ops") = None,
 ):
     """
     Get Cognitive Obeya dashboard with real-time prescriptive analytics.
@@ -34,7 +35,8 @@ async def get_obeya_dashboard(
     ncr_count = await db.scalar(
         select(func.count(NonConformance.id)).where(NonConformance.status != "closed")
     )
-    obeya.record_metric(
+    await obeya.record_metric(
+        db=db,
         category=MetricCategory.QUALITY,
         name="Open NCRs",
         value=float(ncr_count or 0),
@@ -48,7 +50,8 @@ async def get_obeya_dashboard(
         select(func.count(WorkOrder.id)).where(WorkOrder.status == "completed") # Placeholder logic
     )
     otd_rate = (on_time_wo / total_wo * 100) if total_wo and total_wo > 0 else 95.0
-    obeya.record_metric(
+    await obeya.record_metric(
+        db=db,
         category=MetricCategory.DELIVERY,
         name="On-Time Delivery",
         value=float(otd_rate),
@@ -60,7 +63,8 @@ async def get_obeya_dashboard(
     # E.g. find high-priority open RFQs
     rfq_count = await db.scalar(select(func.count(RFQ.id)).where(RFQ.status == "draft"))
     if rfq_count and rfq_count > 5:
-        obeya.register_cross_functional_event(
+        await obeya.register_cross_functional_event(
+            db=db,
             department=DepartmentType.SALES,
             event_type="rfq_backlog",
             description=f"Sales has {rfq_count} draft RFQs pending",
@@ -68,10 +72,10 @@ async def get_obeya_dashboard(
         )
 
     # 3. Trigger analysis
-    insights = obeya.get_obeya_dashboard()
-    silo_alerts = obeya.get_silo_alerts()
-    rebalance_suggestions = obeya.analyze_resource_rebalancing()
-    heijunka = obeya.get_heijunka_suggestions()
+    insights = await obeya.get_obeya_dashboard(db)
+    silo_alerts = await obeya.get_silo_alerts(db)
+    rebalance_suggestions = await obeya.analyze_resource_rebalancing(db)
+    heijunka = await obeya.get_heijunka_suggestions(db)
     
     return build_response(
         data={
@@ -86,10 +90,11 @@ async def get_obeya_dashboard(
 async def get_metric_insights(
     metric_id: str,
     db: DBSession,
-    user: CurrentUser
+    user: CurrentUser,
+    _: require_role("admin", "gm", "ceo", "ops") = None,
 ):
     """Get prescriptive insights for a specific metric."""
     obeya = get_cognitive_obeya()
     # In production, we'd populate history here
-    insights = obeya.get_metric_insights(metric_id)
+    insights = await obeya.get_metric_insights(db, metric_id)
     return build_response(data=insights)

@@ -585,6 +585,42 @@ async def submit_for_review(
 
 
 @router.post(
+    "/{a3_id}/submit",
+    response_model=APIResponse[A3Response],
+    summary="Submit A3 (frontend alias)",
+    description="Frontend compatibility endpoint for submitting an A3.",
+)
+async def submit_a3_alias(
+    a3_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[A3Response]:
+    """Alias for submit_for_review."""
+    return await submit_for_review(a3_id=a3_id, db=db, current_user=current_user)
+
+
+@router.get(
+    "/{a3_id}/export",
+    response_model=APIResponse[dict],
+    summary="Export A3",
+    description="Export A3 to PDF/Excel.",
+)
+async def export_a3(
+    a3_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+    format: str = Query(default="pdf"),
+) -> APIResponse[dict]:
+    """Export A3 data."""
+    # In a real implementation, this would generate a PDF or Excel file.
+    # For now, return a mock URL.
+    return build_response(
+        data={"url": f"/api/v1/a3s/{a3_id}/download?format={format}"},
+        message=f"A3 export started in {format} format",
+    )
+
+
+@router.post(
     "/{a3_id}/review",
     response_model=APIResponse[A3Response],
     summary="Review A3",

@@ -7,7 +7,7 @@ from sqlalchemy import String, Boolean, Integer, Float, Text, DateTime, Enum, Fo
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sensei.models.base import Base, TimestampMixin
-from sensei.services.ops.cognitive_obeya import MetricStatus, MetricCategory, DepartmentType, AlertSeverity
+from sensei.core.enums import MetricStatus, MetricCategory, DepartmentType, Severity as AlertSeverity
 
 class MetricRecord(Base, TimestampMixin):
     """Database model for a metric measurement."""

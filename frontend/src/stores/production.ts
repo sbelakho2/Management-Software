@@ -33,6 +33,8 @@ interface ProductionState {
   fetchStats: () => Promise<void>;
   /** Update a work order's status */
   updateWorkOrderStatus: (id: number, status: string) => Promise<void>;
+  /** Create a new work order */
+  createWorkOrder: (data: CreateWorkOrderData) => Promise<WorkOrder>;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -83,6 +85,23 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
       await get().fetchWorkOrders();
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
+    }
+  },
+
+  createWorkOrder: async (data) => {
+    set({ loading: true, error: null });
+    try {
+      const workOrder = await productionApi.createWorkOrder(data);
+      set((state) => ({ 
+        workOrders: [workOrder, ...state.workOrders],
+        totalWorkOrders: state.totalWorkOrders + 1,
+        loading: false 
+      }));
+      return workOrder;
+    } catch (error: unknown) {
+      const errorMsg = getErrorMessage(error);
+      set({ error: errorMsg, loading: false });
+      throw new Error(errorMsg);
     }
   },
 }));

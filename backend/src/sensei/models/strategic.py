@@ -3,11 +3,13 @@ Strategic Control Plane models for CEO insights and governance.
 """
 
 from datetime import datetime
+from typing import Optional
+from uuid import UUID
 from sqlalchemy import String, Boolean, Integer, Float, Text, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sensei.models.base import Base, TimestampMixin
-from sensei.services.ops.sensei_command import QuerySecurityLevel, EmployeeRiskType
+from sensei.core.enums import QuerySecurityLevel, EmployeeRiskType
 
 class NL2SQLQueryRecord(Base, TimestampMixin):
     """Database model for a natural language to SQL query."""

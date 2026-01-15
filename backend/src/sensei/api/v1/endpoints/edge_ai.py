@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, List, Optional
+import anyio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
@@ -39,13 +40,13 @@ async def run_inference(request: SensorReadingRequest, user: CurrentUser):
         reading_type=request.reading_type,
     )
     
-    detection = _orchestrator.run_inference(reading)
+    detection = await anyio.to_thread.run_sync(_orchestrator.run_inference, reading)
     return build_response(data=detection.__dict__ if detection else None)
 
 @router.get("/machines/{machine_id}/health", response_model=APIResponse)
 async def get_machine_health(machine_id: str, user: CurrentUser):
     """Get machine health status."""
-    health = _orchestrator.get_machine_health(machine_id)
+    health = await anyio.to_thread.run_sync(_orchestrator.get_machine_health, machine_id)
     if not health:
         raise HTTPException(status_code=404, detail="Machine health data not found")
     return build_response(data=health.__dict__)
@@ -53,7 +54,7 @@ async def get_machine_health(machine_id: str, user: CurrentUser):
 @router.post("/sync", response_model=APIResponse)
 async def trigger_sync(user: CurrentUser):
     """Trigger a manual sync of edge messages to core."""
-    result = _orchestrator.sync_batch()
+    result = await anyio.to_thread.run_sync(_orchestrator.sync_batch)
     return build_response(data=result.__dict__)
 
 @router.get("/anomalies", response_model=APIResponse)
@@ -63,5 +64,7 @@ async def get_recent_anomalies(
     user: CurrentUser = None
 ):
     """Get recent anomaly detections."""
-    anomalies = _orchestrator.get_recent_anomalies(machine_id=machine_id, hours=hours)
+    anomalies = await anyio.to_thread.run_sync(
+        lambda: _orchestrator.get_recent_anomalies(machine_id=machine_id, hours=hours)
+    )
     return build_response(data=[a.__dict__ for a in anomalies])

@@ -53,19 +53,24 @@ const departments = [
   'IT',
 ];
 
+import { useAuthStore } from '@/stores/auth-store';
+import { useToast } from '@/hooks/use-toast';
+
 export default function ProfileSettingsPage() {
   const router = useRouter();
+  const { toast } = useToast();
+  const { user, updateProfile } = useAuthStore();
   const [isSaving, setIsSaving] = React.useState(false);
   const [formData, setFormData] = React.useState<ProfileFormData>({
-    firstName: 'John',
-    lastName: 'Doe',
-    email: 'john.doe@sensei.ma',
-    phone: '+212 5XX-XXXXXX',
-    jobTitle: 'Production Manager',
-    department: 'Production',
-    location: 'Casablanca, Morocco',
-    bio: 'Experienced manufacturing professional with focus on lean processes and continuous improvement.',
-    timezone: 'Africa/Casablanca',
+    firstName: user?.full_name?.split(' ')[0] || 'John',
+    lastName: user?.full_name?.split(' ').slice(1).join(' ') || 'Doe',
+    email: user?.email || 'john.doe@sensei.ma',
+    phone: (user as any)?.phone || '+212 5XX-XXXXXX',
+    jobTitle: (user as any)?.job_title || 'Production Manager',
+    department: (user as any)?.department || 'Production',
+    location: (user as any)?.location || 'Casablanca, Morocco',
+    bio: (user as any)?.bio || 'Experienced manufacturing professional with focus on lean processes and continuous improvement.',
+    timezone: (user as any)?.timezone || 'Africa/Casablanca',
   });
 
   const handleChange = (field: keyof ProfileFormData, value: string) => {
@@ -74,9 +79,26 @@ export default function ProfileSettingsPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsSaving(false);
+    try {
+      await updateProfile({
+        full_name: `${formData.firstName} ${formData.lastName}`,
+        email: formData.email,
+        // job_title, department, etc are not in User type yet, but we'll try to update them if API supports
+        ...formData
+      } as any);
+      toast({
+        title: 'Profile Updated',
+        description: 'Your changes have been saved successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Update Failed',
+        description: 'There was an error saving your changes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const fullName = `${formData.firstName} ${formData.lastName}`;

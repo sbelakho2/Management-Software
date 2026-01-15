@@ -261,6 +261,14 @@ class KanbanCardMoveRequest(BaseModel):
     swimlane_name: Optional[str] = Field(default=None, max_length=100)
 
 
+class KanbanTaskMoveRequest(BaseModel):
+    """Schema for moving a task (frontend compatibility)."""
+
+    column: str = Field(..., max_length=100)
+    position: Optional[int] = Field(default=None, ge=0)
+    swimlane: Optional[str] = Field(default=None, max_length=100)
+
+
 class KanbanCardBlockRequest(BaseModel):
     """Schema for blocking a card."""
 
@@ -1383,3 +1391,32 @@ async def get_board_stats(
     )
 
     return build_response(stats)
+
+
+@router.post(
+    "/kanban-boards/{board_id}/tasks/{task_id}/move",
+    response_model=APIResponse[KanbanCardResponse],
+    summary="Move task (frontend alias)",
+    description="Frontend compatibility endpoint for moving a card.",
+)
+async def move_task_alias(
+    board_id: UUID,
+    task_id: int,
+    data: KanbanTaskMoveRequest,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[KanbanCardResponse]:
+    """Move a card using frontend-expected path and body."""
+    # Note: taskId in frontend is cardId in backend.
+    # boardId is also provided in frontend path.
+    card_move_data = KanbanCardMoveRequest(
+        column_name=data.column,
+        position=data.position,
+        swimlane_name=data.swimlane,
+    )
+    return await move_kanban_card(
+        card_id=task_id,
+        data=card_move_data,
+        db=db,
+        current_user=current_user,
+    )

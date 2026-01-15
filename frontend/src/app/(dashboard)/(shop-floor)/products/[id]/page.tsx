@@ -163,10 +163,13 @@ function ProductDetailSkeleton() {
   );
 }
 
+import { useProductStore } from '@/stores/products';
+
 export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
+  const { currentProduct, fetchProduct } = useProductStore();
   const [isLoading, setIsLoading] = React.useState(true);
   const [product, setProduct] = React.useState<Product | null>(null);
   const [showAdjustDialog, setShowAdjustDialog] = React.useState(false);
@@ -175,12 +178,44 @@ export default function ProductDetailPage() {
   const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setProduct(mockProduct);
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [params.id]);
+    const loadData = async () => {
+      if (params.id) {
+        setIsLoading(true);
+        try {
+          await fetchProduct(Number(params.id));
+        } catch (err) {
+          console.error('Failed to load product:', err);
+          // Fallback to mock
+          setProduct(mockProduct);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    loadData();
+  }, [params.id, fetchProduct]);
+
+  React.useEffect(() => {
+    if (currentProduct) {
+      setProduct({
+        ...currentProduct,
+        id: String(currentProduct.id),
+        partNumber: currentProduct.part_number,
+        unitOfMeasure: currentProduct.unit_of_measure,
+        standardCost: currentProduct.standard_cost,
+        listPrice: currentProduct.list_price,
+        inventoryQty: (currentProduct as any).inventory_qty || 0,
+        reorderPoint: currentProduct.reorder_point,
+        leadTimeDays: currentProduct.lead_time_days,
+        minimumOrderQty: (currentProduct as any).minimum_order_qty || 0,
+        bom: (currentProduct as any).bom || [],
+        recentTransactions: (currentProduct as any).recent_transactions || [],
+        stats: (currentProduct as any).stats || { totalSold: 0, revenue: 0, quotedCount: 0, wonCount: 0 },
+        createdAt: currentProduct.created_at,
+        updatedAt: currentProduct.updated_at,
+      } as any);
+    }
+  }, [currentProduct]);
 
   const handleAdjustInventory = () => {
     toast({

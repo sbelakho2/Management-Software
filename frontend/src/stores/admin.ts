@@ -389,12 +389,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const newApproval: ApprovalWorkflow = {
-              ...approvalData,
-              id: Math.random().toString(36).substr(2, 9),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+            const newApproval = await apiClient.post<ApprovalWorkflow>('/admin/approvals', approvalData);
             
             set((state) => ({
               approvals: [...state.approvals, newApproval],
@@ -415,11 +410,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const updatedApproval = {
-              ...get().approvals.find(a => a.id === id)!,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            };
+            const updatedApproval = await apiClient.patch<ApprovalWorkflow>(`/admin/approvals/${id}`, updates);
             
             set((state) => ({
               approvals: state.approvals.map(a => a.id === id ? updatedApproval : a),
@@ -440,6 +431,8 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
+            await apiClient.delete(`/admin/approvals/${id}`);
+            
             set((state) => ({
               approvals: state.approvals.filter(a => a.id !== id),
               isLoading: false,
@@ -488,12 +481,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const newTemplate: Template = {
-              ...templateData,
-              id: Math.random().toString(36).substr(2, 9),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+            const newTemplate = await apiClient.post<Template>('/admin/templates', templateData);
             
             set((state) => ({
               templates: [...state.templates, newTemplate],
@@ -514,11 +502,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const updatedTemplate = {
-              ...get().templates.find(t => t.id === id)!,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            };
+            const updatedTemplate = await apiClient.patch<Template>(`/admin/templates/${id}`, updates);
             
             set((state) => ({
               templates: state.templates.map(t => t.id === id ? updatedTemplate : t),
@@ -539,6 +523,8 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
+            await apiClient.delete(`/admin/templates/${id}`);
+            
             set((state) => ({
               templates: state.templates.filter(t => t.id !== id),
               isLoading: false,
@@ -556,12 +542,18 @@ export const useAdminStore = create<AdminState>()(
           const template = get().templates.find(t => t.id === id);
           if (!template) return;
           
-          // Unset all other defaults for the same type
-          set((state) => ({
-            templates: state.templates.map(t =>
-              t.type === template.type ? { ...t, is_default: t.id === id } : t
-            ),
-          }));
+          try {
+            await apiClient.patch(`/admin/templates/${id}`, { is_default: true });
+            
+            // Unset all other defaults for the same type
+            set((state) => ({
+              templates: state.templates.map(t =>
+                t.type === template.type ? { ...t, is_default: t.id === id } : t
+              ),
+            }));
+          } catch (error) {
+            console.error('Failed to set default template:', error);
+          }
         },
         
         // Roles Actions
@@ -640,12 +632,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const newCadence: LearningCadence = {
-              ...cadenceData,
-              id: Math.random().toString(36).substr(2, 9),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
+            const newCadence = await apiClient.post<LearningCadence>('/admin/learning-cadences', cadenceData);
             
             set((state) => ({
               learningCadences: [...state.learningCadences, newCadence],
@@ -666,11 +653,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const updatedCadence = {
-              ...get().learningCadences.find(c => c.id === id)!,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            };
+            const updatedCadence = await apiClient.patch<LearningCadence>(`/admin/learning-cadences/${id}`, updates);
             
             set((state) => ({
               learningCadences: state.learningCadences.map(c => c.id === id ? updatedCadence : c),
@@ -691,6 +674,8 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
+            await apiClient.delete(`/admin/learning-cadences/${id}`);
+            
             set((state) => ({
               learningCadences: state.learningCadences.filter(c => c.id !== id),
               isLoading: false,
@@ -733,11 +718,7 @@ export const useAdminStore = create<AdminState>()(
           set({ isLoading: true, error: null });
           
           try {
-            const updatedFlag = {
-              ...get().featureFlags.find(f => f.id === id)!,
-              ...updates,
-              updated_at: new Date().toISOString(),
-            };
+            const updatedFlag = await apiClient.patch<FeatureFlag>(`/admin/feature-flags/${id}`, updates);
             
             set((state) => ({
               featureFlags: state.featureFlags.map(f => f.id === id ? updatedFlag : f),
