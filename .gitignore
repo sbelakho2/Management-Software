@@ -177,6 +177,7 @@ cython_debug/
 .vscode/
 
 # Node.js (Frontend)
+node_modules/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
@@ -194,6 +195,8 @@ Thumbs.db
 tmp.txt
 *.tmp
 *.temp
+.output.txt
+repo_analysis_report*.md
 
 # Log files (root level)
 backend.log
