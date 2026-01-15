@@ -10,7 +10,7 @@
  */
 
 import { create } from 'zustand';
-import { productionApi, WorkOrder, WorkOrderFilters, ProductionStats, UpdateWorkOrderData } from '@/api/production';
+import { productionApi, WorkOrder, WorkOrderFilters, ProductionStats, UpdateWorkOrderData, CreateWorkOrderData } from '@/api/production';
 
 /**
  * Production store state interface

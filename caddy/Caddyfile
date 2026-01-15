@@ -1,0 +1,15 @@
+{
+    email admin@starzmorocco.com
+}
+
+:80 {
+    encode gzip
+
+    route /api/* {
+        reverse_proxy api:8000
+    }
+
+    route / {
+        reverse_proxy web:3000
+    }
+}

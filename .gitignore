@@ -200,6 +200,9 @@ backend.log
 backend_v2.log
 frontend.log
 frontend_v2.log
+tmp-*.log
+frontend.log
+frontend_v2.log
 
 # Root level node_modules (monorepo root)
 /node_modules/

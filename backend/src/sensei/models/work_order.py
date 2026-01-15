@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
+from sensei.core.time import utcnow_naive
 
 if TYPE_CHECKING:
     from sensei.models.work_center import WorkCenter, Station
@@ -254,7 +255,7 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             WorkOrderStatus.CANCELLED,
             WorkOrderStatus.CLOSED,
         ]:
-            return datetime.now(timezone.utc).replace(tzinfo=None) > self.scheduled_end
+            return utcnow_naive() > self.scheduled_end
         return False
 
     @property
@@ -382,7 +383,7 @@ class WorkOrderOperation(Base, TimestampMixin, AuditMixin):
         """Calculate elapsed time from start to now or completion."""
         if not self.started_at:
             return None
-        end = self.completed_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        end = self.completed_at or utcnow_naive()
         return int((end - self.started_at).total_seconds())
 
     @property

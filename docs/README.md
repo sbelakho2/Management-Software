@@ -232,7 +232,7 @@ See [Contributing Guide](./development/getting-started.md#contributing) for deta
 
 Documentation licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
-Code licensed under MIT License (see [LICENSE](../LICENSE))
+Code is proprietary to Starz Morocco. All rights reserved.
 
 ---
 

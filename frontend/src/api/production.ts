@@ -29,16 +29,45 @@ export interface WorkOrder {
   quantity_ordered: number;
   quantity_completed: number;
   quantity_scrapped: number;
+  quantity_in_progress?: number;
+  quantity_remaining?: number;
+  completion_percentage?: number;
+  yield_percentage?: number;
   status: WorkOrderStatus;
   priority: WorkOrderPriority;
+  hold_reason?: string;
+  hold_notes?: string;
+  held_at?: string;
+  held_by_id?: string;
   work_center_id?: number;
   work_center_name?: string;
+  current_station_id?: number;
+  current_operation_sequence?: number;
   assigned_to_name?: string;
   scheduled_start?: string;
   scheduled_end?: string;
   actual_start?: string;
   actual_end?: string;
+  lot_number?: string;
+  batch_id?: string;
+  notes?: string;
+  production_notes?: string;
+  jidoka_suggestions?: JidokaSuggestion[];
+  is_late: boolean;
+  is_on_hold: boolean;
+  operation_count: number;
   created_at: string;
+  updated_at: string;
+  created_by_id?: string;
+  updated_by_id?: string;
+}
+
+export interface JidokaSuggestion {
+  title: string;
+  rationale: string;
+  actions: string[];
+  related_non_conformance_ids: number[];
+  confidence: number;
 }
 
 export interface WorkOrderFilters extends PaginationParams {
@@ -50,24 +79,38 @@ export interface WorkOrderFilters extends PaginationParams {
 }
 
 export interface CreateWorkOrderData {
+  work_order_number: string;
+  external_reference?: string;
+  quote_id?: string;
   product_id: number;
   quantity_ordered: number;
   priority?: WorkOrderPriority;
+  status?: WorkOrderStatus;
   work_center_id?: number;
   scheduled_start?: string;
   scheduled_end?: string;
-  external_reference?: string;
+  lot_number?: string;
+  batch_id?: string;
+  notes?: string;
+  production_notes?: string;
 }
 
 export interface UpdateWorkOrderData {
-  status?: WorkOrderStatus;
-  priority?: WorkOrderPriority;
+  work_order_number?: string;
+  external_reference?: string;
   quantity_ordered?: number;
+  priority?: WorkOrderPriority;
+  status?: WorkOrderStatus;
   work_center_id?: number;
+  current_station_id?: number;
   scheduled_start?: string;
   scheduled_end?: string;
   actual_start?: string;
   actual_end?: string;
+  lot_number?: string;
+  batch_id?: string;
+  notes?: string;
+  production_notes?: string;
 }
 
 export interface ProductionStats {

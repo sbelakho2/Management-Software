@@ -4,7 +4,6 @@ Thank you for your interest in contributing to the Starz Morocco Management Soft
 
 ## 📋 Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
 - [Coding Standards](#coding-standards)
@@ -13,10 +12,6 @@ Thank you for your interest in contributing to the Starz Morocco Management Soft
 - [Commit Message Guidelines](#commit-message-guidelines)
 - [Documentation](#documentation)
 - [Community](#community)
-
-## 📜 Code of Conduct
-
-This project adheres to a Code of Conduct that all contributors are expected to follow. Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before contributing.
 
 ## 🚀 Getting Started
 

@@ -12,7 +12,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-sensei}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d:ro
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -110,7 +110,7 @@ services:
       dockerfile: Dockerfile
     container_name: sensei-worker
     restart: unless-stopped
-    command: celery -A sensei.worker worker --loglevel=info --concurrency=4
+    command: celery -A sensei.core.celery_app:celery_app worker --loglevel=info --concurrency=4
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
@@ -138,7 +138,7 @@ services:
       dockerfile: Dockerfile
     container_name: sensei-scheduler
     restart: unless-stopped
-    command: celery -A sensei.worker beat --loglevel=info
+    command: celery -A sensei.core.celery_app:celery_app beat --loglevel=info
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
@@ -179,7 +179,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

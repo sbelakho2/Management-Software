@@ -247,8 +247,7 @@
 | 8.8 Troubleshooting Guide | ✅ | `docs/guides/troubleshooting.md` - Common issues & solutions |
 | 8.9 Contributing Guide | ✅ | `CONTRIBUTING.md` - Complete contribution guidelines |
 | 8.10 Security Policy | ✅ | `SECURITY.md` - Security features & reporting |
-| 8.11 Code of Conduct | ✅ | `CODE_OF_CONDUCT.md` - Community guidelines |
-| 8.12 Main README | ✅ | `README.md` - Project overview with badges |
+| 8.11 Main README | ✅ | `README.md` - Project overview |
 
 ---
 
@@ -450,7 +449,6 @@ All 28 routers registered in `backend/src/sensei/api/v1/__init__.py`:
 |---------|--------|-------|
 | 1.1 Frontend (React/Next.js) | ✅ | Next.js 14.1 with App Router, 22 pages, 18 UI components |
 | 1.4 PWA/Offline/Mobile | ✅ | Service worker, manifest, SVG icons, offline page |
-| 5.1 Today Screen UI | ⏳ | Frontend page exists, needs API integration |
 | 8 AI Features | ⏳ | Future enhancement |
 | 9 Non-Functional/UX | ⏳ | Performance optimization phase |
 | 10 Testing & Acceptance | ✅ | 165 Jest unit tests, Playwright E2E tests configured |

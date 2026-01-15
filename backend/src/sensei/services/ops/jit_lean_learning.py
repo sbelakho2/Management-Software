@@ -254,6 +254,18 @@ class MicroLessonEngine:
         
         self._initialize_lessons()
         self._initialize_trigger_mappings()
+
+    def get_lesson_id_for_trigger(self, trigger: TriggerType) -> str | None:
+        """Get a lesson ID for a specific trigger."""
+        categories = self.trigger_mappings.get(trigger, [])
+        if not categories:
+            return None
+        
+        for category in categories:
+            for lesson in self.lessons.values():
+                if lesson.category == category:
+                    return lesson.lesson_id
+        return None
     
     async def deliver_lesson(
         self,
@@ -488,92 +500,77 @@ class MicroLessonEngine:
             return TriggerType.A3_STARTED
         return None
     
-    def get_lesson_for_trigger(
-        self,
-        trigger: TriggerType,
-        recipient_id: str,
-        trigger_context: dict[str, Any] | None = None,
-    ) -> LessonDelivery | None:
-        """Get a lesson for a specific trigger."""
-        categories = self.trigger_mappings.get(trigger, [])
-        if not categories:
-            return None
-        
-        # Find an undelivered lesson in the relevant categories
-        for category in categories:
-            for lesson in self.lessons.values():
-                if lesson.category == category:
-                    # Check if already delivered recently
-                    recent = [
-                        d for d in self.deliveries
-                        if d.lesson_id == lesson.lesson_id
-                        and d.recipient_id == recipient_id
-                        and d.delivered_at > datetime.now() - timedelta(days=7)
-                    ]
-                    if not recent:
-                        delivery = LessonDelivery(
-                            delivery_id=str(uuid.uuid4()),
-                            lesson_id=lesson.lesson_id,
-                            trigger_type=trigger,
-                            trigger_context=trigger_context or {},
-                            recipient_id=recipient_id,
-                            delivered_at=datetime.now(),
-                            status=LessonStatus.DELIVERED,
-                        )
-                        self.deliveries.append(delivery)
-                        return delivery
-        
-        return None
     
     def get_lesson_content(self, lesson_id: str) -> MicroLesson | None:
         """Get the content of a specific lesson."""
         return self.lessons.get(lesson_id)
     
-    def mark_viewed(self, delivery_id: str) -> bool:
-        """Mark a lesson delivery as viewed."""
-        for delivery in self.deliveries:
-            if delivery.delivery_id == delivery_id:
-                delivery.status = LessonStatus.VIEWED
-                delivery.viewed_at = datetime.now()
-                return True
+    async def mark_viewed(self, db: AsyncSession, delivery_id: UUID) -> bool:
+        """Mark a lesson delivery as viewed in the database."""
+        result = await db.execute(
+            select(LessonDeliveryRecord).where(LessonDeliveryRecord.id == delivery_id)
+        )
+        delivery = result.scalar_one_or_none()
+        if delivery:
+            delivery.status = "viewed"
+            await db.commit()
+            return True
         return False
     
-    def mark_completed(
+    async def mark_completed(
         self,
-        delivery_id: str,
+        db: AsyncSession,
+        delivery_id: UUID,
         rating: int | None = None,
         comment: str = "",
     ) -> bool:
-        """Mark a lesson delivery as completed with optional feedback."""
-        for delivery in self.deliveries:
-            if delivery.delivery_id == delivery_id:
-                delivery.status = LessonStatus.COMPLETED
-                delivery.completed_at = datetime.now()
-                if rating:
-                    delivery.feedback_rating = min(5, max(1, rating))
-                delivery.feedback_comment = comment
-                return True
+        """Mark a lesson delivery as completed with optional feedback in the database."""
+        result = await db.execute(
+            select(LessonDeliveryRecord).where(LessonDeliveryRecord.id == delivery_id)
+        )
+        delivery = result.scalar_one_or_none()
+        if delivery:
+            delivery.status = "completed"
+            if rating:
+                delivery.feedback_score = min(5, max(1, rating))
+            # Note: feedback_comment is not in the current LessonDeliveryRecord model
+            # but we can store it in trigger_context or ignore for now if not critical
+            await db.commit()
+            return True
         return False
     
-    def get_delivery_stats(self, recipient_id: str | None = None) -> dict[str, Any]:
-        """Get lesson delivery statistics."""
-        filtered = self.deliveries
+    async def get_delivery_stats(self, db: AsyncSession, recipient_id: UUID | None = None) -> dict[str, Any]:
+        """Get lesson delivery statistics from the database."""
+        stmt = select(LessonDeliveryRecord)
         if recipient_id:
-            filtered = [d for d in filtered if d.recipient_id == recipient_id]
+            stmt = stmt.where(LessonDeliveryRecord.recipient_id == recipient_id)
         
-        total = len(filtered)
-        viewed = len([d for d in filtered if d.status in [LessonStatus.VIEWED, LessonStatus.COMPLETED]])
-        completed = len([d for d in filtered if d.status == LessonStatus.COMPLETED])
+        result = await db.execute(stmt)
+        deliveries = result.scalars().all()
         
-        ratings = [d.feedback_rating for d in filtered if d.feedback_rating]
+        total = len(deliveries)
+        if total == 0:
+            return {
+                "total_delivered": 0,
+                "viewed": 0,
+                "completed": 0,
+                "view_rate": 0,
+                "completion_rate": 0,
+                "average_rating": 0,
+            }
+
+        viewed = len([d for d in deliveries if d.status in ["viewed", "completed"]])
+        completed = len([d for d in deliveries if d.status == "completed"])
+        
+        ratings = [d.feedback_score for d in deliveries if d.feedback_score]
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
         
         return {
             "total_delivered": total,
             "viewed": viewed,
             "completed": completed,
-            "view_rate": viewed / total if total > 0 else 0,
-            "completion_rate": completed / total if total > 0 else 0,
+            "view_rate": viewed / total,
+            "completion_rate": completed / total,
             "average_rating": avg_rating,
         }
 
@@ -764,6 +761,7 @@ class StandardWorkEvolutionEngine:
         """Initialize engine."""
         self.standards: dict[str, StandardWork] = {}
         self.performers: dict[str, OperatorPerformance] = {}
+        self.best_practice_suggestions: list[BestPracticeSuggestion] = []
     
     async def draft_update_from_a3(
         self,
@@ -823,28 +821,39 @@ class StandardWorkEvolutionEngine:
         
         return changes
     
-    def approve_draft(self, draft_id: str, reviewer: str) -> bool:
-        """Approve a standard work draft."""
-        for draft in self.drafts:
-            if draft.draft_id == draft_id:
-                draft.status = "approved"
-                draft.reviewed_by = reviewer
-                draft.approved_at = datetime.now()
-                
-                # Apply changes to standard
-                if draft.target_standard_id and draft.target_standard_id in self.standards:
-                    self._apply_draft_to_standard(draft)
-                
-                return True
-        return False
+    async def approve_draft(
+        self,
+        db: AsyncSession,
+        draft_id: UUID,
+        reviewer: str,
+    ) -> bool:
+        """Approve a standard work draft and apply changes."""
+        result = await db.execute(
+            select(StandardWorkEvolutionRecord).where(StandardWorkEvolutionRecord.id == draft_id)
+        )
+        record = result.scalar_one_or_none()
+        
+        if not record:
+            return False
+            
+        record.status = "approved"
+        # In a real system, we'd also record the reviewer and timestamp
+        # but the current model doesn't have these fields.
+        
+        # Apply changes to in-memory standard (if exists)
+        if record.original_standard_id in self.standards:
+            self._apply_record_to_standard(record)
+            
+        await db.commit()
+        return True
     
-    def _apply_draft_to_standard(self, draft: StandardWorkDraft) -> None:
-        """Apply draft changes to the standard work document."""
-        standard = self.standards.get(draft.target_standard_id)
+    def _apply_record_to_standard(self, record: StandardWorkEvolutionRecord) -> None:
+        """Apply record changes to the in-memory standard work document."""
+        standard = self.standards.get(record.original_standard_id)
         if not standard:
             return
         
-        changes = draft.proposed_changes
+        changes = record.suggested_changes
         
         # Update key points
         if changes.get("new_key_points"):
@@ -855,10 +864,16 @@ class StandardWorkEvolutionEngine:
             standard.quality_checks.extend(changes["new_quality_checks"])
         
         # Update version
-        major, minor = standard.version.split(".")
-        standard.version = f"{major}.{int(minor) + 1}"
+        try:
+            major, minor = standard.version.split(".")
+            standard.version = f"{major}.{int(minor) + 1}"
+        except (ValueError, AttributeError):
+            standard.version = "1.1"
+            
         standard.updated_at = datetime.now()
-        standard.source_a3_id = draft.source_a3_id
+        # reasoning often contains the source A3
+        if "A3" in record.reasoning:
+            standard.source_a3_id = record.reasoning.split("A3 ")[1].split(" ")[0]
     
     def register_operator_performance(
         self,
@@ -958,9 +973,11 @@ class StandardWorkEvolutionEngine:
         self.best_practice_suggestions.extend(suggestions)
         return suggestions
     
-    def get_pending_drafts(self) -> list[StandardWorkDraft]:
-        """Get pending standard work drafts."""
-        return [d for d in self.drafts if d.status == "pending"]
+    async def get_pending_drafts(self, db: AsyncSession) -> list[StandardWorkEvolutionRecord]:
+        """Get pending standard work drafts from DB."""
+        stmt = select(StandardWorkEvolutionRecord).where(StandardWorkEvolutionRecord.status == "pending")
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
     
     def get_pending_suggestions(self) -> list[BestPracticeSuggestion]:
         """Get pending best practice suggestions."""
@@ -1014,20 +1031,28 @@ class JITLeanLearning:
             # Get and deliver lesson
             lesson_id = self.lesson_engine.get_lesson_id_for_trigger(trigger)
             if lesson_id:
-                delivery = await self.lesson_engine.deliver_lesson(
-                    db=db,
-                    lesson_id=lesson_id,
-                    recipient_id=operator_id,
-                    trigger_type=trigger,
-                    context=data,
+                # Check for recent deliveries (last 7 days) to avoid spam
+                stmt = select(LessonDeliveryRecord).where(
+                    LessonDeliveryRecord.lesson_id == lesson_id,
+                    LessonDeliveryRecord.recipient_id == operator_id,
+                    LessonDeliveryRecord.created_at > datetime.now(timezone.utc) - timedelta(days=7)
                 )
-                lesson = self.lesson_engine.get_lesson_content(lesson_id)
-                result["lesson_delivered"] = {
-                    "delivery_id": str(delivery.id),
-                    "lesson_id": delivery.lesson_id,
-                    "title": lesson.title if lesson else "",
-                    "summary": lesson.summary if lesson else "",
-                }
+                recent_result = await db.execute(stmt)
+                if not recent_result.scalars().first():
+                    delivery = await self.lesson_engine.deliver_lesson(
+                        db=db,
+                        lesson_id=lesson_id,
+                        recipient_id=operator_id,
+                        trigger_type=trigger,
+                        context=data,
+                    )
+                    lesson = self.lesson_engine.get_lesson_content(lesson_id)
+                    result["lesson_delivered"] = {
+                        "delivery_id": str(delivery.id),
+                        "lesson_id": delivery.lesson_id,
+                        "title": lesson.title if lesson else "",
+                        "summary": lesson.summary if lesson else "",
+                    }
         
         return result
     
@@ -1061,7 +1086,7 @@ class JITLeanLearning:
         links = {}
         
         if problem_statement:
-            link = await self.knowledge_engine.link_to_a3(db, a3_id, "problem_statement", problem_statement)
+            link = self.knowledge_engine.link_to_a3(a3_id, "problem_statement", problem_statement)
             links["problem_statement"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1069,7 +1094,7 @@ class JITLeanLearning:
             }
         
         if root_cause:
-            link = await self.knowledge_engine.link_to_a3(db, a3_id, "root_cause", root_cause)
+            link = self.knowledge_engine.link_to_a3(a3_id, "root_cause", root_cause)
             links["root_cause"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1077,7 +1102,7 @@ class JITLeanLearning:
             }
         
         if countermeasure:
-            link = await self.knowledge_engine.link_to_a3(db, a3_id, "countermeasure", countermeasure)
+            link = self.knowledge_engine.link_to_a3(a3_id, "countermeasure", countermeasure)
             links["countermeasure"] = {
                 "link_id": link.link_id,
                 "documents": link.document_ids,
@@ -1090,8 +1115,9 @@ class JITLeanLearning:
             "recommended_documents": [],
         }
     
-    def close_a3_with_standard_update(
+    async def close_a3_with_standard_update(
         self,
+        db: AsyncSession,
         a3_id: str,
         countermeasure: str,
         work_center_id: str = "",
@@ -1102,7 +1128,8 @@ class JITLeanLearning:
         
         Implements the Countermeasure-to-Standard loop.
         """
-        draft = self.evolution_engine.draft_update_from_a3(
+        draft = await self.evolution_engine.draft_update_from_a3(
+            db=db,
             a3_id=a3_id,
             countermeasure=countermeasure,
             work_center_id=work_center_id,
@@ -1111,9 +1138,9 @@ class JITLeanLearning:
         
         return {
             "a3_id": a3_id,
-            "draft_id": draft.draft_id,
-            "target_standard": draft.target_standard_id,
-            "proposed_changes": draft.proposed_changes,
+            "draft_id": str(draft.id),
+            "target_standard": draft.original_standard_id,
+            "proposed_changes": draft.suggested_changes,
             "status": draft.status,
         }
     
@@ -1155,9 +1182,10 @@ class JITLeanLearning:
             ],
         }
     
-    def get_learning_dashboard(self, operator_id: str | None = None) -> dict[str, Any]:
+    async def get_learning_dashboard(self, db: AsyncSession, operator_id: UUID | None = None) -> dict[str, Any]:
         """Get comprehensive learning dashboard."""
-        lesson_stats = self.lesson_engine.get_delivery_stats(operator_id)
+        lesson_stats = await self.lesson_engine.get_delivery_stats(db, operator_id)
+        pending_drafts = await self.evolution_engine.get_pending_drafts(db)
         
         return {
             "lessons": lesson_stats,
@@ -1167,7 +1195,7 @@ class JITLeanLearning:
             },
             "standards": {
                 "total_standards": len(self.evolution_engine.standards),
-                "pending_drafts": len(self.evolution_engine.get_pending_drafts()),
+                "pending_drafts": len(pending_drafts),
                 "pending_suggestions": len(self.evolution_engine.get_pending_suggestions()),
                 "super_performers": len(self.evolution_engine.identify_super_performers()),
             },

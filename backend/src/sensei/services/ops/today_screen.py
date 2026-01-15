@@ -25,10 +25,10 @@ from sensei.core.redis import redis_client
 from sensei.models.project_management import UserStory, ProjectMilestone, Project, ProjectStatus, UserStoryStatus
 from sqlalchemy import select, or_, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sensei.core.time import now_utc
+from sensei.core.time import now_utc, utcnow_naive
 
 def _utcnow() -> datetime:
-    return now_utc()
+    return utcnow_naive()
 
 
 class RiskCategory(str, Enum):
@@ -510,38 +510,51 @@ class TodayScreenService:
     def __init__(self) -> None:
         """Initialize the Today screen service."""
         self.logger = logging.getLogger(__name__)
-        # Internal stores for items that might not be in Redis yet or are system-wide
-        self._risks: dict[UUID, Risk] = {}
-        self._commitments: dict[UUID, Commitment] = {}
-        self._abnormalities: dict[UUID, Abnormality] = {}
-        self._micro_drills: dict[UUID, MicroDrill] = {}
+        # Note: Internal in-memory stores have been migrated to Redis for persistence and concurrency
+        
         self._drill_progress: dict[UUID, dict[str, Any]] = {}
         
-        # Phase 3 stores
-        self._work_orders_at_risk: dict[UUID, Any] = {}
-        self._critical_andons: dict[UUID, Any] = {}
-        self._station_efficiencies: dict[str, float] = {}
-        self._cell_oees: dict[str, float] = {}
-        self._kanban_alerts: dict[UUID, Any] = {}
-        self._expiring_certifications: dict[UUID, Any] = {}
-        self._wip_violations: dict[str, Any] = {}
-        self._capa_verifications: dict[UUID, Any] = {}
-        self._scheduled_trainings: dict[UUID, Any] = {}
-        
-        self._register_sample_data()
+        # Sample data should be registered via an async bootstrap process if needed
     
     async def _get_store(self, user_id: UUID, store_name: str) -> Dict[str, Any]:
-        """Get a user-specific store from Redis."""
+        """Get a user-specific store from Redis (using Hashes for atomicity)."""
         key = f"today:{user_id}:{store_name}"
-        data = await redis_client.get(key)
+        data = await redis_client.hgetall(key)
         if data:
-            return json.loads(data)
+            return {k: json.loads(v) for k, v in data.items()}
         return {}
 
     async def _save_store(self, user_id: UUID, store_name: str, data: Dict[str, Any]) -> None:
-        """Save a user-specific store to Redis."""
+        """Save a user-specific store to Redis (using Hashes)."""
         key = f"today:{user_id}:{store_name}"
-        await redis_client.set(key, json.dumps(data), ex=86400) # 24h TTL
+        if not data:
+            await redis_client.delete(key)
+            return
+            
+        serialized = {k: json.dumps(v) for k, v in data.items()}
+        # We delete and recreate to ensure it exactly matches the provided data
+        # In a high-concurrency environment, Lua would be better.
+        async with redis_client.pipeline(transaction=True) as pipe:
+            await pipe.delete(key)
+            await pipe.hset(key, mapping=serialized)
+            await pipe.expire(key, 86400)
+            await pipe.execute()
+
+    async def _get_global_store(self, store_name: str) -> Dict[str, Any]:
+        """Get a global store from Redis."""
+        key = f"today:global:{store_name}"
+        data = await redis_client.hgetall(key)
+        if data:
+            return {k: json.loads(v) for k, v in data.items()}
+        return {}
+
+    async def _save_global_item(self, store_name: str, item_id: str, data: Any) -> None:
+        """Save an item to a global store in Redis."""
+        key = f"today:global:{store_name}"
+        # Handle non-dict data (like floats in efficiencies)
+        val = json.dumps(data)
+        await redis_client.hset(key, item_id, val)
+        await redis_client.expire(key, 86400)
 
     # ========== Priority Management ==========
     
@@ -1118,7 +1131,7 @@ class TodayScreenService:
     
     # ========== Shop Floor Management (Phase 3) ==========
     
-    def add_work_order_at_risk(
+    async def add_work_order_at_risk(
         self,
         work_order_number: str,
         product_name: str,
@@ -1155,17 +1168,24 @@ class TodayScreenService:
             assigned_to_name=assigned_to_name,
         )
         
-        self._work_orders_at_risk[wo.id] = wo
+        await self._save_global_item("work_orders_at_risk", str(wo.id), asdict(wo))
         return wo
     
-    def get_work_orders_at_risk(
+    async def get_work_orders_at_risk(
         self,
         work_center_id: UUID | None = None,
         severity: ShopFloorAlertSeverity | None = None,
     ) -> list[WorkOrderAtRisk]:
         """Get work orders at risk."""
+        data = await self._get_global_store("work_orders_at_risk")
         result = []
-        for wo in self._work_orders_at_risk.values():
+        for wo_dict in data.values():
+            if 'due_date' in wo_dict and wo_dict['due_date']:
+                wo_dict['due_date'] = date.fromisoformat(wo_dict['due_date'])
+            if 'estimated_completion' in wo_dict and wo_dict['estimated_completion']:
+                wo_dict['estimated_completion'] = date.fromisoformat(wo_dict['estimated_completion'])
+            
+            wo = WorkOrderAtRisk(**wo_dict)
             if work_center_id and wo.work_center_id != work_center_id:
                 continue
             if severity and wo.severity != severity:
@@ -1179,14 +1199,12 @@ class TodayScreenService:
         ))
         return result
     
-    def resolve_work_order_at_risk(self, work_order_id: UUID) -> bool:
+    async def resolve_work_order_at_risk(self, work_order_id: UUID) -> bool:
         """Remove a work order from at-risk list."""
-        if work_order_id in self._work_orders_at_risk:
-            del self._work_orders_at_risk[work_order_id]
-            return True
-        return False
+        key = "today:global:work_orders_at_risk"
+        return await redis_client.hdel(key, str(work_order_id)) > 0
     
-    def add_critical_andon(
+    async def add_critical_andon(
         self,
         andon_type: str,
         title: str,
@@ -1215,40 +1233,50 @@ class TodayScreenService:
             severity=severity,
         )
         
-        self._critical_andons[andon.id] = andon
+        await self._save_global_item("critical_andons", str(andon.id), asdict(andon))
         return andon
     
-    def acknowledge_andon(
+    async def acknowledge_andon(
         self,
         andon_id: UUID,
         acknowledged_by_id: UUID,
         acknowledged_by_name: str,
     ) -> CriticalAndon | None:
         """Acknowledge an Andon event."""
-        andon = self._critical_andons.get(andon_id)
-        if andon:
-            andon.acknowledged = True
-            andon.acknowledged_by_id = acknowledged_by_id
-            andon.acknowledged_by_name = acknowledged_by_name
-        return andon
+        data = await self._get_global_store("critical_andons")
+        cid_str = str(andon_id)
+        if cid_str in data:
+            andon_dict = data[cid_str]
+            andon_dict['acknowledged'] = True
+            andon_dict['acknowledged_by_id'] = str(acknowledged_by_id)
+            andon_dict['acknowledged_by_name'] = acknowledged_by_name
+            await self._save_global_item("critical_andons", cid_str, andon_dict)
+            
+            if 'raised_at' in andon_dict and andon_dict['raised_at']:
+                andon_dict['raised_at'] = datetime.fromisoformat(andon_dict['raised_at'])
+            return CriticalAndon(**andon_dict)
+        return None
     
-    def resolve_andon(self, andon_id: UUID) -> bool:
+    async def resolve_andon(self, andon_id: UUID) -> bool:
         """Resolve an Andon event."""
-        if andon_id in self._critical_andons:
-            del self._critical_andons[andon_id]
-            return True
-        return False
+        key = "today:global:critical_andons"
+        return await redis_client.hdel(key, str(andon_id)) > 0
     
-    def get_critical_andons(
+    async def get_critical_andons(
         self,
         work_center_id: UUID | None = None,
         unacknowledged_only: bool = False,
     ) -> list[CriticalAndon]:
         """Get critical Andon events."""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        data = await self._get_global_store("critical_andons")
         result = []
         
-        for andon in self._critical_andons.values():
+        for andon_dict in data.values():
+            if 'raised_at' in andon_dict and andon_dict['raised_at']:
+                andon_dict['raised_at'] = datetime.fromisoformat(andon_dict['raised_at'])
+            
+            andon = CriticalAndon(**andon_dict)
             # Update minutes open
             andon.minutes_open = int((now - andon.raised_at).total_seconds() / 60)
             
@@ -1262,7 +1290,7 @@ class TodayScreenService:
         result.sort(key=lambda a: (0 if not a.acknowledged else 1, -a.minutes_open))
         return result
     
-    def add_station_efficiency(
+    async def add_station_efficiency(
         self,
         station_id: UUID,
         station_name: str,
@@ -1294,18 +1322,20 @@ class TodayScreenService:
             operator_name=operator_name,
         )
         
-        self._station_efficiencies[station_id] = eff
+        await self._save_global_item("station_efficiencies", str(eff.station_id), asdict(eff))
         return eff
     
-    def get_low_efficiency_stations(
+    async def get_low_efficiency_stations(
         self,
         work_center_id: UUID | None = None,
         threshold: float | None = None,
     ) -> list[StationEfficiency]:
         """Get stations with efficiency below target or threshold."""
+        data = await self._get_global_store("station_efficiencies")
         result = []
         
-        for eff in self._station_efficiencies.values():
+        for eff_dict in data.values():
+            eff = StationEfficiency(**eff_dict)
             if work_center_id and eff.work_center_id != work_center_id:
                 continue
             if threshold is not None:
@@ -1318,7 +1348,7 @@ class TodayScreenService:
         result.sort(key=lambda e: e.variance)
         return result
     
-    def add_cell_oee(
+    async def add_cell_oee(
         self,
         cell_id: UUID,
         cell_name: str,
@@ -1347,18 +1377,20 @@ class TodayScreenService:
             variance=round(variance, 2),
         )
         
-        self._cell_oees[cell_id] = oee
+        await self._save_global_item("cell_oees", str(oee.cell_id), asdict(oee))
         return oee
     
-    def get_low_oee_cells(
+    async def get_low_oee_cells(
         self,
         work_center_id: UUID | None = None,
         threshold: float | None = None,
     ) -> list[CellOEE]:
         """Get cells with OEE below target or threshold."""
+        data = await self._get_global_store("cell_oees")
         result = []
         
-        for oee in self._cell_oees.values():
+        for oee_dict in data.values():
+            oee = CellOEE(**oee_dict)
             if work_center_id and oee.work_center_id != work_center_id:
                 continue
             if threshold is not None:
@@ -1371,15 +1403,16 @@ class TodayScreenService:
         result.sort(key=lambda o: o.variance)
         return result
     
-    def get_overall_oee(self) -> float:
+    async def get_overall_oee(self) -> float:
         """Get overall OEE across all cells."""
-        if not self._cell_oees:
+        data = await self._get_global_store("cell_oees")
+        if not data:
             return 0.0
         
-        total_oee = sum(oee.current_oee for oee in self._cell_oees.values())
-        return round(total_oee / len(self._cell_oees), 2)
+        total_oee = sum(oee['current_oee'] for oee in data.values())
+        return round(total_oee / len(data), 2)
     
-    def add_kanban_alert(
+    async def add_kanban_alert(
         self,
         material_code: str,
         material_name: str,
@@ -1410,36 +1443,46 @@ class TodayScreenService:
             replenishment_status=replenishment_status,
         )
         
-        self._kanban_alerts[alert.id] = alert
+        await self._save_global_item("kanban_alerts", str(alert.id), asdict(alert))
         return alert
     
-    def update_kanban_status(
+    async def update_kanban_status(
         self,
         kanban_id: UUID,
         status: str,
     ) -> KanbanAlert | None:
         """Update Kanban replenishment status."""
-        alert = self._kanban_alerts.get(kanban_id)
-        if alert:
-            alert.replenishment_status = status
-        return alert
+        data = await self._get_global_store("kanban_alerts")
+        kid_str = str(kanban_id)
+        if kid_str in data:
+            alert_dict = data[kid_str]
+            alert_dict['replenishment_status'] = status
+            await self._save_global_item("kanban_alerts", kid_str, alert_dict)
+            
+            if 'due_date' in alert_dict and alert_dict['due_date']:
+                alert_dict['due_date'] = date.fromisoformat(alert_dict['due_date'])
+            return KanbanAlert(**alert_dict)
+        return None
     
-    def resolve_kanban_alert(self, kanban_id: UUID) -> bool:
+    async def resolve_kanban_alert(self, kanban_id: UUID) -> bool:
         """Resolve a Kanban alert."""
-        if kanban_id in self._kanban_alerts:
-            del self._kanban_alerts[kanban_id]
-            return True
-        return False
+        key = "today:global:kanban_alerts"
+        return await redis_client.hdel(key, str(kanban_id)) > 0
     
-    def get_overdue_kanbans(
+    async def get_overdue_kanbans(
         self,
         work_center_id: UUID | None = None,
     ) -> list[KanbanAlert]:
         """Get overdue Kanban alerts."""
         today = date.today()
+        data = await self._get_global_store("kanban_alerts")
         result = []
         
-        for alert in self._kanban_alerts.values():
+        for alert_dict in data.values():
+            if 'due_date' in alert_dict and alert_dict['due_date']:
+                alert_dict['due_date'] = date.fromisoformat(alert_dict['due_date'])
+            
+            alert = KanbanAlert(**alert_dict)
             # Update days overdue
             alert.days_overdue = max(0, (today - alert.due_date).days)
             
@@ -1452,7 +1495,7 @@ class TodayScreenService:
         result.sort(key=lambda a: -a.days_overdue)
         return result
     
-    def add_expiring_certification(
+    async def add_expiring_certification(
         self,
         user_id: UUID,
         user_name: str,
@@ -1480,10 +1523,10 @@ class TodayScreenService:
             renewal_training_id=renewal_training_id,
         )
         
-        self._expiring_certifications[cert.id] = cert
+        await self._save_global_item("expiring_certifications", str(cert.id), asdict(cert))
         return cert
     
-    def get_expiring_certifications(
+    async def get_expiring_certifications(
         self,
         user_id: UUID | None = None,
         days_ahead: int = 30,
@@ -1491,9 +1534,14 @@ class TodayScreenService:
     ) -> list[ExpiringCertification]:
         """Get expiring certifications."""
         today = date.today()
+        data = await self._get_global_store("expiring_certifications")
         result = []
         
-        for cert in self._expiring_certifications.values():
+        for cert_dict in data.values():
+            if 'expiration_date' in cert_dict and cert_dict['expiration_date']:
+                cert_dict['expiration_date'] = date.fromisoformat(cert_dict['expiration_date'])
+            
+            cert = ExpiringCertification(**cert_dict)
             # Update days until expiry
             cert.days_until_expiry = (cert.expiration_date - today).days
             cert.is_expired = cert.expiration_date < today
@@ -1511,14 +1559,12 @@ class TodayScreenService:
         result.sort(key=lambda c: (0 if c.is_expired else 1, c.days_until_expiry))
         return result
     
-    def renew_certification(self, certification_id: UUID) -> bool:
+    async def renew_certification(self, certification_id: UUID) -> bool:
         """Mark certification as renewed (remove from expiring list)."""
-        if certification_id in self._expiring_certifications:
-            del self._expiring_certifications[certification_id]
-            return True
-        return False
+        key = "today:global:expiring_certifications"
+        return await redis_client.hdel(key, str(certification_id)) > 0
     
-    def add_wip_violation(
+    async def add_wip_violation(
         self,
         work_center_id: UUID,
         work_center_name: str,
@@ -1541,18 +1587,23 @@ class TodayScreenService:
             duration_minutes=0,
         )
         
-        self._wip_violations[violation.id] = violation
+        await self._save_global_item("wip_violations", str(violation.id), asdict(violation))
         return violation
     
-    def get_wip_violations(
+    async def get_wip_violations(
         self,
         work_center_id: UUID | None = None,
     ) -> list[WIPViolation]:
         """Get WIP violations."""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        data = await self._get_global_store("wip_violations")
         result = []
         
-        for violation in self._wip_violations.values():
+        for v_dict in data.values():
+            if 'started_at' in v_dict and v_dict['started_at']:
+                v_dict['started_at'] = datetime.fromisoformat(v_dict['started_at'])
+            
+            violation = WIPViolation(**v_dict)
             # Update duration
             violation.duration_minutes = int((now - violation.started_at).total_seconds() / 60)
             
@@ -1564,14 +1615,12 @@ class TodayScreenService:
         result.sort(key=lambda v: -v.violation_amount)
         return result
     
-    def resolve_wip_violation(self, violation_id: UUID) -> bool:
+    async def resolve_wip_violation(self, violation_id: UUID) -> bool:
         """Resolve a WIP violation."""
-        if violation_id in self._wip_violations:
-            del self._wip_violations[violation_id]
-            return True
-        return False
+        key = "today:global:wip_violations"
+        return await redis_client.hdel(key, str(violation_id)) > 0
     
-    def add_capa_verification(
+    async def add_capa_verification(
         self,
         capa_number: str,
         title: str,
@@ -1582,9 +1631,10 @@ class TodayScreenService:
         original_nc_id: UUID | None = None,
         effectiveness_check: bool = False,
     ) -> CAPAVerification:
-        """Add a CAPA verification due."""
+        """Add a CAPA verification."""
         today = date.today()
         days_until_due = (verification_due_date - today).days
+        is_overdue = verification_due_date < today
         
         capa = CAPAVerification(
             id=uuid4(),
@@ -1593,17 +1643,17 @@ class TodayScreenService:
             capa_type=capa_type,
             verification_due_date=verification_due_date,
             days_until_due=days_until_due,
-            is_overdue=verification_due_date < today,
+            is_overdue=is_overdue,
             owner_id=owner_id,
             owner_name=owner_name,
             original_nc_id=original_nc_id,
             effectiveness_check=effectiveness_check,
         )
         
-        self._capa_verifications[capa.id] = capa
+        await self._save_global_item("capa_verifications", str(capa.id), asdict(capa))
         return capa
     
-    def get_capa_verifications_due(
+    async def get_capa_verifications_due(
         self,
         owner_id: UUID | None = None,
         days_ahead: int = 7,
@@ -1611,9 +1661,14 @@ class TodayScreenService:
     ) -> list[CAPAVerification]:
         """Get CAPA verifications due."""
         today = date.today()
+        data = await self._get_global_store("capa_verifications")
         result = []
         
-        for capa in self._capa_verifications.values():
+        for capa_dict in data.values():
+            if 'verification_due_date' in capa_dict and capa_dict['verification_due_date']:
+                capa_dict['verification_due_date'] = date.fromisoformat(capa_dict['verification_due_date'])
+            
+            capa = CAPAVerification(**capa_dict)
             # Update status
             capa.days_until_due = (capa.verification_due_date - today).days
             capa.is_overdue = capa.verification_due_date < today
@@ -1627,18 +1682,16 @@ class TodayScreenService:
             elif capa.days_until_due <= days_ahead:
                 result.append(capa)
         
-        # Sort: overdue first, then by due date
+        # Sort: overdue first, then by days until due
         result.sort(key=lambda c: (0 if c.is_overdue else 1, c.days_until_due))
         return result
     
-    def complete_capa_verification(self, capa_id: UUID) -> bool:
-        """Mark CAPA verification as complete."""
-        if capa_id in self._capa_verifications:
-            del self._capa_verifications[capa_id]
-            return True
-        return False
-    
-    def add_scheduled_training(
+    async def resolve_capa_verification(self, capa_id: UUID) -> bool:
+        """Resolve a CAPA verification."""
+        key = "today:global:capa_verifications"
+        return await redis_client.hdel(key, str(capa_id)) > 0
+
+    async def add_scheduled_training(
         self,
         title: str,
         training_type: str,
@@ -1668,10 +1721,10 @@ class TodayScreenService:
             is_user_enrolled=is_user_enrolled,
         )
         
-        self._scheduled_trainings[training.id] = training
+        await self._save_global_item("scheduled_trainings", str(training.id), asdict(training))
         return training
     
-    def get_scheduled_trainings(
+    async def get_scheduled_trainings(
         self,
         target_date: date | None = None,
         user_enrolled_only: bool = False,
@@ -1679,9 +1732,14 @@ class TodayScreenService:
     ) -> list[ScheduledTraining]:
         """Get scheduled training sessions."""
         today = date.today()
+        data = await self._get_global_store("scheduled_trainings")
         result = []
         
-        for training in self._scheduled_trainings.values():
+        for t_dict in data.values():
+            if 'scheduled_date' in t_dict and t_dict['scheduled_date']:
+                t_dict['scheduled_date'] = date.fromisoformat(t_dict['scheduled_date'])
+            
+            training = ScheduledTraining(**t_dict)
             if user_enrolled_only and not training.is_user_enrolled:
                 continue
             
@@ -1695,17 +1753,26 @@ class TodayScreenService:
         result.sort(key=lambda t: (t.scheduled_date, t.scheduled_time))
         return result
     
-    def enroll_in_training(self, training_id: UUID) -> ScheduledTraining | None:
+    async def enroll_in_training(self, training_id: UUID) -> ScheduledTraining | None:
         """Enroll user in a training session."""
-        training = self._scheduled_trainings.get(training_id)
-        if training:
-            if training.max_attendees and training.attendee_count >= training.max_attendees:
+        data = await self._get_global_store("scheduled_trainings")
+        tid_str = str(training_id)
+        if tid_str in data:
+            training_dict = data[tid_str]
+            if training_dict.get('max_attendees') and training_dict.get('attendee_count', 0) >= training_dict['max_attendees']:
                 return None
-            training.is_user_enrolled = True
-            training.attendee_count += 1
-        return training
+            
+            training_dict['attendee_count'] = training_dict.get('attendee_count', 0) + 1
+            training_dict['is_user_enrolled'] = True
+            await self._save_global_item("scheduled_trainings", tid_str, training_dict)
+            
+            if 'scheduled_date' in training_dict and training_dict['scheduled_date']:
+                training_dict['scheduled_date'] = date.fromisoformat(training_dict['scheduled_date'])
+            
+            return ScheduledTraining(**training_dict)
+        return None
     
-    def get_shop_floor_summary(
+    async def get_shop_floor_summary(
         self,
         user_id: UUID | None = None,
         work_center_id: UUID | None = None,
@@ -1714,10 +1781,10 @@ class TodayScreenService:
         today = date.today()
         
         # Work orders at risk
-        work_orders_at_risk = self.get_work_orders_at_risk(work_center_id=work_center_id)
+        work_orders_at_risk = await self.get_work_orders_at_risk(work_center_id=work_center_id)
         
         # Critical Andons
-        critical_andons = self.get_critical_andons(work_center_id=work_center_id)
+        critical_andons = await self.get_critical_andons(work_center_id=work_center_id)
         unacknowledged = [a for a in critical_andons if not a.acknowledged]
         avg_response = (
             sum(a.minutes_open for a in critical_andons) / len(critical_andons)
@@ -1725,32 +1792,33 @@ class TodayScreenService:
         )
         
         # Efficiency
-        low_efficiency = self.get_low_efficiency_stations(work_center_id=work_center_id)
-        low_oee = self.get_low_oee_cells(work_center_id=work_center_id)
-        overall_oee = self.get_overall_oee()
+        low_efficiency = await self.get_low_efficiency_stations(work_center_id=work_center_id)
+        low_oee = await self.get_low_oee_cells(work_center_id=work_center_id)
+        overall_oee = await self.get_overall_oee()
         
         # Kanbans
-        overdue_kanbans = self.get_overdue_kanbans(work_center_id=work_center_id)
+        overdue_kanbans = await self.get_overdue_kanbans(work_center_id=work_center_id)
+        pending_data = await self._get_global_store("kanban_alerts")
         pending_kanbans = [
-            k for k in self._kanban_alerts.values()
-            if k.replenishment_status == "pending"
+            k for k in pending_data.values()
+            if k.get('replenishment_status') == "pending"
         ]
         
         # Certifications
-        expiring_certs = self.get_expiring_certifications(user_id=user_id)
+        expiring_certs = await self.get_expiring_certifications(user_id=user_id)
         expired = [c for c in expiring_certs if c.is_expired]
         expiring_soon = [c for c in expiring_certs if not c.is_expired and c.days_until_expiry <= 30]
         
         # WIP violations
-        wip_violations = self.get_wip_violations(work_center_id=work_center_id)
+        wip_violations = await self.get_wip_violations(work_center_id=work_center_id)
         
         # CAPA verifications
-        capa_due = self.get_capa_verifications_due(owner_id=user_id)
+        capa_due = await self.get_capa_verifications_due(owner_id=user_id)
         overdue_capas = [c for c in capa_due if c.is_overdue]
         
         # Scheduled trainings
-        trainings_today = self.get_scheduled_trainings(target_date=today)
-        all_trainings = self.get_scheduled_trainings()
+        trainings_today = await self.get_scheduled_trainings(target_date=today)
+        all_trainings = await self.get_scheduled_trainings()
         
         return ShopFloorSummary(
             work_orders_at_risk=work_orders_at_risk,
@@ -1784,11 +1852,25 @@ class TodayScreenService:
     ) -> TodayScreenData:
         """Get complete Today screen data for a user."""
         today = date.today()
-        tomorrow = today + timedelta(days=1)
         
-        # Aggregate real-time data if DB is provided
+        # Aggregate real-time data if DB is provided and cache is expired
         if db:
-            await self._aggregate_project_data(db, user_id)
+            cache_key = f"today:{user_id}:last_aggregated"
+            last_agg = await redis_client.get(cache_key)
+            now = utcnow_naive()
+            
+            should_aggregate = True
+            if last_agg:
+                try:
+                    last_agg_dt = datetime.fromisoformat(last_agg)
+                    if (now - last_agg_dt).total_seconds() < 300: # 5 minutes
+                        should_aggregate = False
+                except ValueError:
+                    pass
+            
+            if should_aggregate:
+                await self._aggregate_project_data(db, user_id)
+                await redis_client.set(cache_key, now.isoformat(), ex=3600)
         
         # Get greeting based on time of day
         hour = datetime.now().hour
@@ -1831,7 +1913,7 @@ class TodayScreenService:
         quick_metrics = self.get_quick_metrics(user_id)
         
         # Get shop floor summary (Phase 3)
-        shop_floor = self.get_shop_floor_summary(user_id=user_id)
+        shop_floor = await self.get_shop_floor_summary(user_id=user_id)
         
         return TodayScreenData(
             user_id=user_id,
@@ -1854,7 +1936,7 @@ class TodayScreenService:
             lsw_summary=lsw_summary,
             quick_metrics=quick_metrics,
             shop_floor=shop_floor,
-            cache_valid_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5),
+            cache_valid_until=utcnow_naive() + timedelta(minutes=5),
         )
     
     async def _clear_auto_generated_items(self, user_id: UUID) -> None:
@@ -1893,31 +1975,40 @@ class TodayScreenService:
         result = await db.execute(milestone_stmt)
         milestones = result.all()
         
+        # Batch updates to Redis to avoid N+1 roundtrips
+        commitments_data = await self._get_store(user_id, "commitments")
+        abnormalities_data = await self._get_store(user_id, "abnormalities")
+
         for ms, project_name in milestones:
             # Overdue Milestone as Abnormality
             if ms.due_date < today:
-                await self.add_abnormality(
-                    user_id=user_id,
-                    title=f"Overdue Milestone: {ms.name}",
-                    abnormality_type=AbnormalityType.OVERDUE_PROJECT_MILESTONE,
-                    severity=8,
-                    description=f"Project: {project_name}. Due on {ms.due_date}",
-                    entity_type="project_milestone",
-                    entity_id=ms.id,
-                    is_auto_generated=True,
-                )
+                ab_id = f"ab_ms_{ms.id}"
+                abnormalities_data[ab_id] = {
+                    "id": ab_id,
+                    "title": f"Overdue Milestone: {ms.name}",
+                    "type": AbnormalityType.OVERDUE_PROJECT_MILESTONE.value,
+                    "severity": 8,
+                    "description": f"Project: {project_name}. Due on {ms.due_date}",
+                    "detected_at": utcnow_naive().isoformat(),
+                    "entity_type": "project_milestone",
+                    "entity_id": str(ms.id),
+                    "is_auto_generated": True,
+                    "is_resolved": False,
+                }
             
             # Milestone as Commitment
-            await self.add_commitment(
-                user_id=user_id,
-                title=f"Milestone: {ms.name}",
-                commitment_type=CommitmentType.PROJECT_MILESTONE_DUE,
-                due_date=ms.due_date,
-                description=f"Project: {project_name}",
-                entity_type="project_milestone",
-                entity_id=ms.id,
-                is_auto_generated=True,
-            )
+            c_id = f"c_ms_{ms.id}"
+            commitments_data[c_id] = {
+                "id": c_id,
+                "title": f"Milestone: {ms.name}",
+                "type": CommitmentType.PROJECT_MILESTONE_DUE.value,
+                "due_date": ms.due_date.isoformat(),
+                "description": f"Project: {project_name}",
+                "entity_type": "project_milestone",
+                "entity_id": str(ms.id),
+                "is_auto_generated": True,
+                "is_completed": False,
+            }
 
         # 2. Fetch Assigned User Stories with due dates
         story_stmt = (
@@ -1936,28 +2027,36 @@ class TodayScreenService:
         for story, project_name in stories:
             # Overdue Story as Abnormality
             if story.due_date < today:
-                await self.add_abnormality(
-                    user_id=user_id,
-                    title=f"Late User Story: US-{story.ref}",
-                    abnormality_type=AbnormalityType.LATE_USER_STORY,
-                    severity=6,
-                    description=f"{story.subject} (Project: {project_name})",
-                    entity_type="user_story",
-                    entity_id=story.id,
-                    is_auto_generated=True,
-                )
+                ab_id = f"ab_us_{story.id}"
+                abnormalities_data[ab_id] = {
+                    "id": ab_id,
+                    "title": f"Late User Story: US-{story.ref}",
+                    "type": AbnormalityType.LATE_USER_STORY.value,
+                    "severity": 6,
+                    "description": f"{story.subject} (Project: {project_name})",
+                    "detected_at": utcnow_naive().isoformat(),
+                    "entity_type": "user_story",
+                    "entity_id": str(story.id),
+                    "is_auto_generated": True,
+                    "is_resolved": False,
+                }
             
             # Story as Commitment
-            await self.add_commitment(
-                user_id=user_id,
-                title=f"US-{story.ref}: {story.subject}",
-                commitment_type=CommitmentType.USER_STORY_DUE,
-                due_date=story.due_date,
-                description=f"Project: {project_name}",
-                entity_type="user_story",
-                entity_id=story.id,
-                is_auto_generated=True,
-            )
+            c_id = f"c_us_{story.id}"
+            commitments_data[c_id] = {
+                "id": c_id,
+                "title": f"US-{story.ref}: {story.subject}",
+                "type": CommitmentType.USER_STORY_DUE.value,
+                "due_date": story.due_date.isoformat(),
+                "description": f"Project: {project_name}",
+                "entity_type": "user_story",
+                "entity_id": str(story.id),
+                "is_auto_generated": True,
+                "is_completed": False,
+            }
+        
+        await self._save_store(user_id, "commitments", commitments_data)
+        await self._save_store(user_id, "abnormalities", abnormalities_data)
 
     # ========== Sample Data ==========
     

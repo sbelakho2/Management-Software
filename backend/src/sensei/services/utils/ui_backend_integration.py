@@ -695,13 +695,20 @@ class ValidationSchemaExportService:
             name="WorkOrderCreate",
             description="Schema for creating a work order",
             fields=[
-                SchemaField("order_number", FieldType.STRING, min_length=1, max_length=50),
-                SchemaField("product_id", FieldType.UUID),
-                SchemaField("quantity", FieldType.INTEGER, min_value=1),
-                SchemaField("due_date", FieldType.DATE),
-                SchemaField("priority", FieldType.ENUM, enum_values=["low", "normal", "high", "urgent"]),
-                SchemaField("work_center_id", FieldType.UUID, required=False),
+                SchemaField("work_order_number", FieldType.STRING, min_length=1, max_length=50),
+                SchemaField("external_reference", FieldType.STRING, required=False, max_length=100),
+                SchemaField("quote_id", FieldType.UUID, required=False),
+                SchemaField("product_id", FieldType.INTEGER),
+                SchemaField("quantity_ordered", FieldType.NUMBER, min_value=0.0001),
+                SchemaField("priority", FieldType.ENUM, enum_values=["low", "normal", "high", "urgent", "critical"], required=False),
+                SchemaField("status", FieldType.ENUM, enum_values=["draft", "released", "in_progress", "on_hold", "completed", "cancelled", "closed"], required=False),
+                SchemaField("work_center_id", FieldType.INTEGER, required=False),
+                SchemaField("scheduled_start", FieldType.DATETIME, required=False),
+                SchemaField("scheduled_end", FieldType.DATETIME, required=False),
+                SchemaField("lot_number", FieldType.STRING, required=False, max_length=50),
+                SchemaField("batch_id", FieldType.STRING, required=False, max_length=50),
                 SchemaField("notes", FieldType.STRING, required=False, max_length=2000),
+                SchemaField("production_notes", FieldType.STRING, required=False, max_length=2000),
             ],
         ))
         
@@ -725,14 +732,14 @@ class ValidationSchemaExportService:
             name="A3Create",
             description="Schema for creating an A3 problem solving document",
             fields=[
-                SchemaField("title", FieldType.STRING, min_length=5, max_length=200),
-                SchemaField("problem_statement", FieldType.STRING, min_length=10, max_length=2000),
-                SchemaField("current_condition", FieldType.STRING, required=False, max_length=3000),
-                SchemaField("root_cause", FieldType.STRING, required=False, max_length=2000),
-                SchemaField("target_condition", FieldType.STRING, required=False, max_length=2000),
-                SchemaField("countermeasures", FieldType.STRING, required=False, max_length=3000),
-                SchemaField("owner_id", FieldType.UUID),
-                SchemaField("due_date", FieldType.DATE, required=False),
+                SchemaField("a3_number", FieldType.STRING, min_length=1, max_length=50),
+                SchemaField("title", FieldType.STRING, min_length=1, max_length=255),
+                SchemaField("a3_type", FieldType.ENUM, enum_values=["problem_solving", "proposal", "status_report", "strategy"]),
+                SchemaField("priority", FieldType.ENUM, enum_values=["critical", "high", "medium", "low"]),
+                SchemaField("target_completion_date", FieldType.DATETIME, required=False),
+                SchemaField("sponsor_id", FieldType.UUID, required=False),
+                SchemaField("coach_id", FieldType.UUID, required=False),
+                SchemaField("create_default_sections", FieldType.BOOLEAN, default=True),
             ],
         ))
     
@@ -922,13 +929,14 @@ class ActionAuditService:
         result = await db.execute(stmt)
         return list(result.scalars().all())
     
-    def verify_consistency(
+    async def verify_consistency(
         self,
+        db: AsyncSession,
         entity_type: str,
         entity_id: str,
     ) -> dict[str, Any]:
         """Verify that all UI actions have corresponding audit entries."""
-        entries = self.get_entries(entity_type=entity_type, entity_id=entity_id)
+        entries = await self.get_entries(db, entity_type=entity_type, entity_id=entity_id)
         
         total = len(entries)
         successful = len([e for e in entries if e.success])
@@ -1166,7 +1174,6 @@ class UIBackendIntegration:
             "validation_schemas": len(self.schema_export.schemas),
             "connection_health": self.connection_health.get_health_summary(),
             "pending_actions": len(self.action_audit.pending_actions),
-            "audit_entries": len(self.action_audit.entries),
         }
 
 

@@ -42,4 +42,4 @@ src/sensei/
 
 ## License
 
-Proprietary - Starz Morocco
+Proprietary - Starz Morocco. All rights reserved.

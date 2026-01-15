@@ -415,7 +415,7 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def age_days(self) -> int:
         """Calculate age of NC in days."""
-        end = self.closed_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        end = self.closed_at or utcnow_naive()
         delta = end - self.detected_at
         return delta.days
 
@@ -489,7 +489,7 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
     opened_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+        DateTime, nullable=False, default=utcnow_naive
     )
     due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     target_close_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -624,7 +624,7 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def age_days(self) -> int:
         """Calculate age of CAPA in days."""
-        end = self.closed_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        end = self.closed_at or utcnow_naive()
         delta = end - self.opened_at
         return delta.days
 
