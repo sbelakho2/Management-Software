@@ -81,7 +81,7 @@ export default function NewNCRPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">New NCR</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New NCR</h1>
             <p className="text-muted-foreground">Report a new non-conformance</p>
           </div>
         </div>

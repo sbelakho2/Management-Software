@@ -156,94 +156,114 @@ export default function ExceptionsPage() {
     return true;
   });
 
-  if (!stats) return <div className="p-8 text-center">Loading exceptions stats...</div>;
+  if (!stats) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-in fade-in duration-700">
+      <div className="relative">
+        <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full animate-pulse" />
+        <div className="relative bg-card/40 backdrop-blur-2xl p-12 rounded-[3rem] border border-primary/20 shadow-2xl flex flex-col items-center">
+          <div className="flex gap-2 mb-8">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-4 h-4 rounded-full bg-primary animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </div>
+          <h2 className="text-2xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mb-2">
+            Auditing Anomalies
+          </h2>
+          <p className="text-muted-foreground font-medium text-sm">Synchronizing operational exceptions...</p>
+        </div>
+      </div>
+    </div>
+  );
 
   const byCategory = stats.by_category ?? {};
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-red-600">Exceptions Dashboard</h1>
-          <p className="text-muted-foreground">
-            Real-time monitoring of critical issues and overdue items
-          </p>
+    <div className="space-y-8 page-fade-in" data-testid="exceptions-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Anomalous Node Registry
+          </h1>
+          <p className="text-muted-foreground font-medium">Real-time exception tracking, escalation velocity, and resolution protocol</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" onClick={handleRefresh} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleRefresh} disabled={isLoading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Sync Intelligence
           </Button>
-          <Button variant="outline" className="gap-2" onClick={handleExport}>
-            <Download className="h-4 w-4" />
-            Export
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
+            Export Protocol
           </Button>
         </div>
       </div>
 
       {/* Critical Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-red-200 bg-red-50">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Critical Open</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Critical Open</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.critical_count}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.total_open} total open
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-destructive to-destructive/70">{stats.critical_count}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
+              {stats.total_open} total open nodes
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-orange-50">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <Clock className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Overdue Protocol</CardTitle>
+            <Clock className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.overdue_count}</div>
-            <p className="text-xs text-muted-foreground">
-              Past due date
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-amber-500 to-amber-500/70">{stats.overdue_count}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mt-2">
+              SLA Variance Detected
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Escalated</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Escalated Nodes</CardTitle>
+            <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.escalated_count}</div>
-            <p className="text-xs text-muted-foreground">
-              Escalated to management
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.escalated_count}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
+              Management Sync Required
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Resolution</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg Resolution</CardTitle>
+            <Target className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.resolved_today} resolved today
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-emerald-500 to-emerald-500/70">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2">
+              {stats.resolved_today} nodes resolved today
             </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="critical">Critical Only</TabsTrigger>
-          <TabsTrigger value="trends">Trends</TabsTrigger>
-          <TabsTrigger value="by-category">By Category</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8 animate-in fade-in duration-700">
+        <TabsList className="flex h-14 w-full justify-start gap-3 bg-muted/10 p-1.5 rounded-2xl backdrop-blur-md border border-border/5 overflow-x-auto no-scrollbar shadow-inner-soft">
+          <TabsTrigger value="overview" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Overview</TabsTrigger>
+          <TabsTrigger value="critical" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Critical Only</TabsTrigger>
+          <TabsTrigger value="trends" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Trends</TabsTrigger>
+          <TabsTrigger value="by-category" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">By Category</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -530,7 +550,7 @@ export default function ExceptionsPage() {
                     <CategoryIcon className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{count}</div>
+                    <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{count}</div>
                     <p className="text-xs text-muted-foreground">
                       {((count / stats.total_open) * 100).toFixed(1)}% of total
                     </p>

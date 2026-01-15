@@ -53,8 +53,8 @@ const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      'border-b bg-muted/50',
-      sticky && 'sticky top-0 z-10 bg-background shadow-sm',
+      'bg-muted/5 border-b',
+      sticky && 'sticky top-0 z-10 bg-background/80 backdrop-blur-md shadow-sm',
       className
     )}
     {...props}
@@ -81,7 +81,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      'border-t bg-muted/50 font-medium [&>tr]:last:border-b-0',
+      'border-t bg-muted/5 font-medium [&>tr]:last:border-b-0',
       className
     )}
     {...props}
@@ -102,10 +102,10 @@ const TableRow = React.forwardRef<
       <tr
         ref={ref}
         className={cn(
-          'border-b transition-colors',
-          hoverable && 'hover:bg-muted/50',
-          selected && 'bg-muted',
-          'data-[state=selected]:bg-muted',
+          'border-b border-border/10 transition-all duration-300',
+          hoverable && 'hover:bg-primary/5',
+          selected && 'bg-primary/10',
+          'data-[state=selected]:bg-primary/10',
           className
         )}
         {...props}
@@ -141,8 +141,8 @@ const TableHead = React.forwardRef<
       <th
         ref={ref}
         className={cn(
-          'h-10 px-4 text-left align-middle font-medium text-muted-foreground',
-          sortable && 'cursor-pointer select-none hover:text-foreground',
+          'h-12 px-4 text-left align-middle font-heading font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60',
+          sortable && 'cursor-pointer select-none hover:text-primary transition-colors',
           className
         )}
         onClick={sortable && onSort ? onSort : undefined}

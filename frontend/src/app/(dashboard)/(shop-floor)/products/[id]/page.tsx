@@ -251,63 +251,63 @@ export default function ProductDetailPage() {
   const bomCost = product.bom.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.push('/products')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-lg text-muted-foreground">{product.partNumber}</span>
-              <Badge variant={config.variant}>{config.label}</Badge>
+              <span className="font-mono text-base font-bold text-primary/60 tracking-tight">{product.partNumber}</span>
+              <Badge variant={config.variant} className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{config.label}</Badge>
               {isLowStock && product.status === 'active' && (
-                <Badge variant="warning" className="gap-1">
+                <Badge variant="warning" className="gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                   <AlertTriangle className="h-3 w-3" />
                   Low Stock
                 </Badge>
               )}
             </div>
-            <h1 className="text-2xl font-bold">{product.name}</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{product.name}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setIsEditing(true)}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
-            Edit
+            Edit Master Data
           </Button>
-          <Button variant="outline" onClick={() => setShowAdjustDialog(true)}>
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setShowAdjustDialog(true)}>
             <Boxes className="mr-2 h-4 w-4" />
             Adjust Inventory
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <MoreHorizontal className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="rounded-xl h-12 w-12 border border-border/40">
+                <MoreHorizontal className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem>
+            <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
+              <DropdownMenuItem className="rounded-xl m-1">
                 <Copy className="mr-2 h-4 w-4" />
-                Duplicate
+                Clone Product
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="rounded-xl m-1">
                 <BarChart3 className="mr-2 h-4 w-4" />
                 View Analytics
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem className="rounded-xl m-1">
                 <History className="mr-2 h-4 w-4" />
                 View History
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {product.status === 'active' ? (
-                <DropdownMenuItem className="text-warning">
+                <DropdownMenuItem className="text-warning rounded-xl m-1">
                   <Archive className="mr-2 h-4 w-4" />
                   Deactivate
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem className="text-success">
+                <DropdownMenuItem className="text-success rounded-xl m-1">
                   <Package className="mr-2 h-4 w-4" />
                   Activate
                 </DropdownMenuItem>
@@ -317,43 +317,43 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats row */}
       <div className="grid gap-4 sm:grid-cols-5">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrency(product.listPrice)}</p>
-            <p className="text-sm text-muted-foreground">List Price</p>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(product.listPrice)}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">List Price</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <CardContent className="pt-6 text-center">
             <p className={cn(
-              'text-2xl font-bold',
-              margin >= 40 ? 'text-success' : margin >= 25 ? 'text-warning' : 'text-danger'
+              'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br',
+              margin >= 40 ? 'from-success to-success/70' : margin >= 25 ? 'from-warning to-warning/70' : 'from-danger to-danger/70'
             )}>
               {margin.toFixed(1)}%
             </p>
-            <p className="text-sm text-muted-foreground">Margin</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Gross Margin</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className={cn('text-2xl font-bold', isLowStock && 'text-warning')}>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <CardContent className="pt-6 text-center">
+            <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70', isLowStock && 'from-warning to-warning/70')}>
               {formatNumber(product.inventoryQty)}
             </p>
-            <p className="text-sm text-muted-foreground">In Stock</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">In Stock</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatNumber(product.stats.totalSold)}</p>
-            <p className="text-sm text-muted-foreground">Total Sold</p>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatNumber(product.stats.totalSold)}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Total Sold</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{winRate.toFixed(0)}%</p>
-            <p className="text-sm text-muted-foreground">Win Rate</p>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <CardContent className="pt-6 text-center">
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{winRate.toFixed(0)}%</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Win Rate</p>
           </CardContent>
         </Card>
       </div>
@@ -572,7 +572,7 @@ export default function ProductDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{product.leadTimeDays} days</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{product.leadTimeDays} days</p>
               <p className="text-sm text-muted-foreground">Standard manufacturing time</p>
             </CardContent>
           </Card>

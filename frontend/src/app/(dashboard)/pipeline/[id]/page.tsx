@@ -248,7 +248,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{rfq.rfq_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{rfq.rfq_number}</h1>
               <Badge className={statusConfig[rfq.status].color}>
                 {statusConfig[rfq.status].label}
               </Badge>

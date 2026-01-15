@@ -360,7 +360,7 @@ export default function CustomerFormPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
               {isEditing ? 'Edit Customer' : 'New Customer'}
             </h1>
             <p className="text-muted-foreground">

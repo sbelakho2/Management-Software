@@ -47,7 +47,7 @@ export default function LoginPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
           Welcome back
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
@@ -56,18 +56,18 @@ export default function LoginPage() {
       </div>
 
       {(error || localError) && (
-        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300">
-          <AlertDescription className="font-medium">{error || localError}</AlertDescription>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300 rounded-2xl">
+          <AlertDescription className="font-bold uppercase tracking-widest text-[10px]">{error || localError}</AlertDescription>
         </Alert>
       )}
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
             Email address
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -76,7 +76,7 @@ export default function LoginPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -85,19 +85,19 @@ export default function LoginPage() {
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <div className="flex items-center justify-between ml-1">
+            <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
               Password
             </Label>
             <Link
               href="/forgot-password"
-              className="text-xs font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-widest"
+              className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-[0.2em]"
             >
               Forgot?
             </Link>
           </div>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -106,14 +106,14 @@ export default function LoginPage() {
               placeholder="••••••••"
               autoComplete="current-password"
               required
-              className="pl-10 pr-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11 pr-11"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
             <button
               type="button"
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground/40 hover:text-primary transition-colors"
+              className="absolute inset-y-0 right-0 pr-4 flex items-center text-muted-foreground/30 hover:text-primary transition-colors"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
@@ -128,7 +128,7 @@ export default function LoginPage() {
 
         <Button
           type="submit"
-          className="w-full h-12 text-base rounded-xl premium-shimmer"
+          className="w-full premium-shimmer"
           loading={isLoading}
           size="xl"
         >

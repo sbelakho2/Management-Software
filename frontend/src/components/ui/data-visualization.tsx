@@ -417,12 +417,12 @@ export function Sparkline({
   if (data.length === 0) {
     return (
       <div
-        className={`inline-block ${className}`}
+        className={cn("inline-flex items-center justify-center opacity-30", className)}
         style={{ width, height }}
         role="img"
         aria-label={ariaLabel}
       >
-        <span className="text-gray-400 text-xs">No data</span>
+        <span className="text-[8px] font-bold uppercase tracking-widest">Null</span>
       </div>
     );
   }
@@ -430,7 +430,7 @@ export function Sparkline({
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const padding = 2;
+  const padding = 4;
 
   // Generate SVG path
   const points = data.map((value, index) => {
@@ -443,7 +443,7 @@ export function Sparkline({
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
     .join(' ');
 
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padding} L ${padding} ${height - padding} Z`;
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height} L ${padding} ${height} Z`;
 
   const lastPoint = points[points.length - 1];
   const trend = data.length > 1 ? data[data.length - 1] - data[0] : 0;
@@ -452,23 +452,36 @@ export function Sparkline({
     <svg
       width={width}
       height={height}
-      className={className}
+      className={cn("overflow-visible drop-shadow-[0_0_8px_rgba(var(--primary),0.2)]", className)}
       role="img"
       aria-label={`${ariaLabel}: ${trend >= 0 ? 'up' : 'down'} ${Math.abs(trend).toFixed(1)}`}
     >
+      <defs>
+        <linearGradient id={`sparkline-gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
       {showArea && (
-        <path d={areaPath} fill={color} fillOpacity={0.1} />
+        <path d={areaPath} fill={`url(#sparkline-gradient-${color})`} />
       )}
       <path
         d={linePath}
         fill="none"
         stroke={color}
-        strokeWidth={1.5}
+        strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
+        className="transition-all duration-1000 ease-in-out"
       />
       {showDot && lastPoint && (
-        <circle cx={lastPoint.x} cy={lastPoint.y} r={3} fill={color} />
+        <circle 
+          cx={lastPoint.x} 
+          cy={lastPoint.y} 
+          r={3} 
+          fill={color} 
+          className="animate-pulse shadow-glow"
+        />
       )}
     </svg>
   );
@@ -524,74 +537,69 @@ export function BarChart({
   };
 
   return (
-    <div className={`relative ${className}`}>
-      {title && (
-        <h3 className="text-lg font-semibold text-gray-900 mb-1">{title}</h3>
+    <div className={cn("flex flex-col gap-6", className)}>
+      {(title || subtitle) && (
+        <div className="space-y-1 text-left">
+          {title && <h4 className="font-heading font-bold text-base tracking-tight text-foreground/80">{title}</h4>}
+          {subtitle && <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{subtitle}</p>}
+        </div>
       )}
-      {subtitle && (
-        <p className="text-sm text-gray-600 mb-4">{subtitle}</p>
-      )}
-      
-      <div
-        className={`flex ${horizontal ? 'flex-col' : 'flex-row items-end'} gap-2`}
-        role="img"
-        aria-label={title || 'Bar chart'}
-      >
+
+      <div className={cn(
+        "relative flex items-end gap-3 h-48 px-2",
+        horizontal && "flex-col items-stretch h-auto"
+      )}>
         {data.map((point, index) => {
           const percentage = ((point.value - minValue) / range) * 100;
-          const color = point.color || KPI_COLORS.NEUTRAL;
+          const barColor = point.color || KPI_COLORS.VOLUME;
 
           return (
             <div
-              key={point.label}
-              className={`
-                ${horizontal ? 'flex items-center gap-2' : 'flex flex-col items-center flex-1'}
-              `}
+              key={`${point.label}-${index}`}
+              className={cn(
+                "relative flex-1 group transition-all duration-500",
+                horizontal ? "flex items-center gap-4 h-10" : "flex flex-col items-center"
+              )}
+              onMouseEnter={(e) => handleBarMouseEnter(index, e)}
+              onMouseLeave={handleBarMouseLeave}
+              onClick={() => handleBarClick(point, index)}
             >
               {horizontal ? (
                 <>
-                  <span className="text-xs text-gray-600 w-20 truncate">
+                  <div className="w-24 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 truncate text-right">
                     {point.label}
-                  </span>
-                  <button
-                    type="button"
-                    className={`
-                      h-6 rounded transition-all duration-200
-                      ${onBarClick ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}
-                    `}
-                    style={{
-                      width: `${percentage}%`,
-                      minWidth: 4,
-                      maxWidth: '100%',
-                      backgroundColor: color,
-                    }}
-                    onMouseEnter={(e) => handleBarMouseEnter(index, e)}
-                    onMouseLeave={handleBarMouseLeave}
-                    onClick={() => handleBarClick(point, index)}
-                    aria-label={`${point.label}: ${point.value}`}
-                  />
+                  </div>
+                  <div className="flex-1 h-2 rounded-full bg-muted/20 overflow-hidden shadow-inner-soft">
+                    <div
+                      className="h-full transition-all duration-1000 ease-out shadow-glow"
+                      style={{
+                        width: `${Math.max(percentage, 2)}%`,
+                        backgroundColor: barColor,
+                        boxShadow: `0 0 12px ${barColor}40`
+                      }}
+                    />
+                  </div>
+                  <div className="w-12 text-[10px] font-mono font-bold text-foreground/60">
+                    {point.value}
+                  </div>
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    className={`
-                      w-full rounded-t transition-all duration-200
-                      ${onBarClick ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}
-                    `}
+                  <div
+                    className="w-full rounded-t-xl transition-all duration-500 ease-out shadow-glow relative overflow-hidden"
                     style={{
-                      height: `${percentage}%`,
-                      minHeight: 4,
-                      backgroundColor: color,
+                      height: `${Math.max(percentage, 4)}%`,
+                      backgroundColor: barColor,
+                      boxShadow: `0 0 12px ${barColor}40`,
+                      opacity: hoveredIndex === null || hoveredIndex === index ? 1 : 0.4,
+                      transform: hoveredIndex === index ? 'translateY(-4px)' : 'none'
                     }}
-                    onMouseEnter={(e) => handleBarMouseEnter(index, e)}
-                    onMouseLeave={handleBarMouseLeave}
-                    onClick={() => handleBarClick(point, index)}
-                    aria-label={`${point.label}: ${point.value}`}
-                  />
-                  <span className="text-xs text-gray-600 mt-1 truncate max-w-full">
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
+                  </div>
+                  <div className="mt-4 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 rotate-[-45deg] origin-top-right whitespace-nowrap">
                     {point.label}
-                  </span>
+                  </div>
                 </>
               )}
             </div>
@@ -799,15 +807,15 @@ export function KPICard({
   className = '',
 }: KPICardProps) {
   const isPositive = change !== undefined && change >= 0;
-  const changeColor = isPositive ? 'text-green-600' : 'text-red-600';
+  const changeColor = isPositive ? 'text-success' : 'text-danger';
 
   return (
     <div
-      className={`
-        bg-white rounded-lg border border-gray-200 p-4 shadow-sm
-        ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-300 transition-shadow' : ''}
-        ${className}
-      `}
+      className={cn(
+        "rounded-[2rem] border border-border/40 bg-card/40 backdrop-blur-md p-6 transition-all duration-500 shadow-premium",
+        onClick && "cursor-pointer hover:shadow-premium-hover hover:-translate-y-1.5 hover:border-primary/20",
+        className
+      )}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -819,37 +827,41 @@ export function KPICard({
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {icon && (
-              <span className="text-xl" aria-hidden="true">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary shadow-sm group-hover:scale-110 transition-transform">
                 {icon}
-              </span>
+              </div>
             )}
-            <span className="text-sm text-gray-600">{label}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{label}</span>
           </div>
-          <div className="flex items-baseline gap-2 mt-1">
+          <div className="flex items-baseline gap-2 mt-6">
             <span
-              className="text-2xl font-bold"
-              style={{ color }}
+              className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
+              style={{ color: color === KPI_COLORS.NEUTRAL ? undefined : color }}
             >
               {value}
             </span>
             {change !== undefined && (
-              <span className={`text-sm font-medium ${changeColor}`}>
-                {isPositive ? '+' : ''}{change}%
-                {changeLabel && <span className="text-gray-500 ml-1">{changeLabel}</span>}
-              </span>
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className={cn("text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md", isPositive ? "text-success bg-success/5" : "text-danger bg-danger/5")}>
+                  {isPositive ? '↑' : '↓'} {Math.abs(change)}%
+                </span>
+                {changeLabel && <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{changeLabel}</span>}
+              </div>
             )}
           </div>
         </div>
         {trend && trend.length > 0 && (
-          <Sparkline
-            data={trend}
-            width={60}
-            height={32}
-            color={color}
-            showArea
-          />
+          <div className="pt-2">
+            <Sparkline
+              data={trend}
+              width={80}
+              height={40}
+              color={color}
+              showArea
+            />
+          </div>
         )}
       </div>
     </div>

@@ -54,6 +54,26 @@ type KpiItem = {
 	href: string;
 };
 
+type MicroDrillItem = {
+	id: string;
+	question: string;
+	hint?: string;
+};
+
+type LswSummary = {
+	daily_status: string;
+	daily_total: number;
+	daily_completed: number;
+	weekly_status: string;
+	weekly_total: number;
+	weekly_completed: number;
+	monthly_status: string;
+	monthly_total: number;
+	monthly_completed: number;
+	overdue_count: number;
+	next_due_item?: string | null;
+};
+
 function formatHeaderDate(date: Date): string {
 	return date.toLocaleDateString('en-US', {
 		weekday: 'long',
@@ -66,6 +86,25 @@ function priorityBadgeVariant(priority: PriorityLevel): 'default' | 'secondary' 
 	if (priority === 'urgent') return 'destructive';
 	if (priority === 'high') return 'default';
 	return 'secondary';
+}
+
+function severityToPriority(severity?: number): PriorityLevel {
+	if (!severity) return 'medium';
+	if (severity >= 9) return 'urgent';
+	if (severity >= 7) return 'high';
+	if (severity <= 3) return 'low';
+	return 'medium';
+}
+
+function formatDateLabel(rawDate?: string, rawTime?: string): string {
+	if (!rawDate) return 'Today';
+	const parsed = new Date(rawDate);
+	if (Number.isNaN(parsed.getTime())) return 'Today';
+	const dateLabel = parsed.toLocaleDateString('en-US', {
+		month: 'short',
+		day: 'numeric',
+	});
+	return rawTime ? `${dateLabel} ${rawTime}` : dateLabel;
 }
 
 export default function TodayPage() {
@@ -92,11 +131,21 @@ export default function TodayPage() {
 	}, [userRoles]);
 
 	const firstName = user?.full_name?.split(' ')[0] || 'there';
+	const greeting = todayData?.greeting || `Hello, ${firstName}!`;
 
 	React.useEffect(() => {
 		setMounted(true);
 		setHeaderDate(formatHeaderDate(new Date()));
 	}, []);
+
+	React.useEffect(() => {
+		if (todayData?.current_date) {
+			const parsed = new Date(todayData.current_date);
+			if (!Number.isNaN(parsed.getTime())) {
+				setHeaderDate(formatHeaderDate(parsed));
+			}
+		}
+	}, [todayData?.current_date]);
 	
 	// Fetch data on mount
 	React.useEffect(() => {
@@ -112,7 +161,7 @@ export default function TodayPage() {
 			items = todayData.top_priorities.map((p: any, idx: number) => ({
 				id: p.id || `p${idx}`,
 				title: p.title || p.name,
-				priority: (p.priority || 'medium') as PriorityLevel,
+				priority: (p.priority_level || p.priority || 'medium') as PriorityLevel,
 				href: p.href || p.link || '/pipeline',
 			}));
 		} else {
@@ -127,7 +176,7 @@ export default function TodayPage() {
 				.map((t: any, idx: number) => ({
 					id: t.id || `t${idx}`,
 					title: t.title || t.description,
-					dueLabel: t.due_label || t.deadline || 'Today',
+					dueLabel: t.due_label || t.deadline || formatDateLabel(t.due_date, t.due_time),
 					href: t.href || '/tasks',
 				}))
 				.filter(t => hasPageAccess(t.href, userRoles))
@@ -139,13 +188,20 @@ export default function TodayPage() {
 	const kpis: KpiItem[] = React.useMemo(() => {
 		if (todayData?.quick_metrics?.length) {
 			return todayData.quick_metrics
-				.map((m: any, idx: number) => ({
-					id: m.id || `k${idx}`,
-					title: m.title || m.label,
-					value: m.value ?? 0,
-					trendLabel: m.trend_label || m.trend || '',
-					href: m.href || '/analytics',
-				}))
+				.map((m: any, idx: number) => {
+					const trendValue = m.trend_value ?? m.trendValue;
+					const trendText = trendValue !== undefined && trendValue !== null
+						? `${m.trend === 'down' ? '' : '+'}${trendValue}`
+						: '';
+					const trendLabel = m.trend_label || m.trend || trendText;
+					return {
+						id: m.id || `k${idx}`,
+						title: m.title || m.label || m.name,
+						value: m.value ?? 0,
+						trendLabel,
+						href: m.href || m.link || '/analytics',
+					};
+				})
 				.filter(k => hasPageAccess(k.href, userRoles));
 		}
 		return [];
@@ -158,7 +214,7 @@ export default function TodayPage() {
 				.map((a: any, idx: number) => ({
 					id: a.id || `a${idx}`,
 					text: a.description || a.title,
-					when: a.when || a.created_at || 'Recently',
+					when: a.when || a.detected_at || a.created_at || 'Recently',
 					href: a.href || '/quality',
 				}))
 				.filter(a => !a.href || hasPageAccess(a.href, userRoles))
@@ -168,22 +224,37 @@ export default function TodayPage() {
 	}, [todayData, userRoles]);
 
 	const rfqs: RFQItem[] = React.useMemo(() => {
-		// RFQs would come from todayData.top_risks.rfq if available
-		if (todayData?.top_risks?.rfq?.length) {
-			return todayData.top_risks.rfq
-				.map((r: any, idx: number) => ({
-					id: r.id || `r${idx}`,
-					title: r.title || r.name,
-					customer: r.customer || r.customer_name || 'Unknown',
-					priority: (r.priority || 'medium') as PriorityLevel,
-					status: r.status || 'new',
-					href: r.href || `/pipeline/${r.id}`,
-				}))
-				.filter(r => hasPageAccess(r.href, userRoles))
-				.slice(0, 3);
-		}
-		return [];
+		const risks = todayData?.top_risks
+			? Object.values(todayData.top_risks).flat()
+			: [];
+		const explicitRfqs = todayData?.top_risks?.rfq || [];
+		const rfqRisks = [...explicitRfqs, ...risks].filter(
+			(r: any) => (r?.entity_type || '').toLowerCase() === 'rfq'
+		);
+		if (!rfqRisks.length) return [];
+		return rfqRisks
+			.map((r: any, idx: number) => ({
+				id: r.id || `r${idx}`,
+				title: r.title || r.name || r.description || 'RFQ at risk',
+				customer: r.customer || r.customer_name || r.owner_name || 'Unknown',
+				priority: severityToPriority(r.severity),
+				status: r.status || 'at_risk',
+				href: r.href || (r.entity_id ? `/pipeline/${r.entity_id}` : '/pipeline'),
+			}))
+			.filter(r => hasPageAccess(r.href, userRoles))
+			.slice(0, 3);
 	}, [todayData, userRoles]);
+
+	const microDrills: MicroDrillItem[] = React.useMemo(() => {
+		if (!todayData?.todays_micro_drills?.length) return [];
+		return todayData.todays_micro_drills.map((d: any, idx: number) => ({
+			id: d.id || `d${idx}`,
+			question: d.question,
+			hint: d.hint,
+		}));
+	}, [todayData]);
+
+	const lswSummary = (todayData?.lsw_summary || null) as LswSummary | null;
 
 	// Render gates (after all hooks have run)
 	if (!mounted || loading) {
@@ -213,13 +284,13 @@ export default function TodayPage() {
 			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
 				<div className="space-y-1">
 					<h1
-						className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
+						className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
 						suppressHydrationWarning
 					>
-						Hello, {firstName}!
+						{greeting}
 					</h1>
-					<p className="text-muted-foreground font-medium flex items-center gap-2">
-						<Calendar className="h-4 w-4 text-primary" />
+					<p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
+						<Calendar className="h-4 w-4 text-primary/60" />
 						<span suppressHydrationWarning>{headerDate}</span> • Intelligence Command Center
 					</p>
 				</div>
@@ -243,11 +314,13 @@ export default function TodayPage() {
 						<CardHeader className="space-y-1">
 							<Link href={kpi.href} className="block group-hover:translate-x-1 transition-transform">
 								<CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{kpi.title}</CardTitle>
-								<div className="text-3xl font-bold mt-1 tracking-tight">{kpi.value}</div>
-								<CardDescription className="font-medium text-success/80 mt-1 flex items-center gap-1">
-									<TrendingUp className="h-3 w-3" />
-									{kpi.trendLabel}
-								</CardDescription>
+								<div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{kpi.value}</div>
+								{Boolean(kpi.trendLabel) && (
+									<CardDescription className="font-medium text-success/80 mt-1 flex items-center gap-1">
+										<TrendingUp className="h-3 w-3" />
+										{kpi.trendLabel}
+									</CardDescription>
+								)}
 							</Link>
 						</CardHeader>
 					</Card>
@@ -268,24 +341,24 @@ export default function TodayPage() {
 						</CardHeader>
 						<CardContent className="space-y-4">
 							{priorities.map((p, idx) => (
-								<div key={p.id} className="flex items-center justify-between p-4 rounded-xl bg-muted/30 border border-border/10 hover:bg-muted/50 transition-colors group">
-									<div className="flex items-center gap-4">
-										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background border font-bold shadow-sm">
+								<div key={p.id} className="flex items-center justify-between p-5 rounded-[1.5rem] bg-muted/20 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
+									<div className="flex items-center gap-5">
+										<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background border border-border/10 font-heading font-bold text-lg shadow-sm group-hover:scale-110 transition-transform duration-500">
 											{idx + 1}
 										</div>
-										<div className="space-y-1">
-											<Link href={p.href} className="font-bold text-foreground/90 group-hover:text-primary transition-colors">
+										<div className="space-y-1.5">
+											<Link href={p.href} className="font-heading font-bold text-base tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
 												{p.title}
 											</Link>
-											<div className="flex items-center gap-2">
-												<Badge role="status" variant={priorityBadgeVariant(p.priority)} className="rounded-md text-[10px] font-bold uppercase tracking-wider">
+											<div className="flex items-center gap-3">
+												<Badge role="status" variant={priorityBadgeVariant(p.priority)} className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">
 													{p.priority}
 												</Badge>
-												<span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Target Today</span>
+												<span className="text-[9px] text-muted-foreground/60 font-bold uppercase tracking-[0.2em]">Target Today</span>
 											</div>
 										</div>
 									</div>
-									<Button variant="ghost" size="sm" asChild className="rounded-lg group-hover:bg-primary/10 group-hover:text-primary transition-all">
+									<Button variant="ghost" size="sm" asChild className="rounded-xl group-hover:bg-primary/10 group-hover:text-primary transition-all">
 										<Link href={p.href}>
 											Execute <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
 										</Link>
@@ -310,15 +383,15 @@ export default function TodayPage() {
 							</CardHeader>
 							<CardContent className="space-y-4">
 								{tasks.map((t) => (
-									<div key={t.id} className="flex items-start gap-4 p-2 rounded-lg hover:bg-muted/50 transition-colors group">
-										<div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-muted-foreground/30 group-hover:border-primary/50 transition-colors">
-											<div className="h-2 w-2 rounded-full bg-transparent group-hover:bg-primary transition-all" />
+									<div key={t.id} className="flex items-start gap-4 p-3 rounded-2xl bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
+										<div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground/20 group-hover:border-primary/40 transition-colors">
+											<div className="h-2 w-2 rounded-full bg-transparent group-hover:bg-primary group-hover:shadow-glow transition-all" />
 										</div>
 										<div className="space-y-1">
-											<Link href={t.href} className="font-bold text-sm text-foreground/80 hover:text-primary transition-colors">
+											<Link href={t.href} className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
 												{t.title}
 											</Link>
-											<p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{t.dueLabel}</p>
+											<p className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/40">{t.dueLabel}</p>
 										</div>
 									</div>
 								))}
@@ -352,6 +425,37 @@ export default function TodayPage() {
 								<MyWorkDashboard />
 							</CardContent>
 						</Card>
+
+						{lswSummary && (
+							<Card>
+								<CardHeader>
+									<div className="flex items-center justify-between">
+										<div>
+											<CardTitle className="text-xl">Leader Standard Work</CardTitle>
+											<CardDescription>Checklist completion</CardDescription>
+										</div>
+										<Target className="h-5 w-5 text-primary/40" />
+									</div>
+								</CardHeader>
+								<CardContent className="space-y-3">
+									<div className="text-sm text-muted-foreground">
+										Daily: <span className="font-semibold text-foreground">{lswSummary.daily_completed}/{lswSummary.daily_total}</span>
+									</div>
+									<div className="text-sm text-muted-foreground">
+										Weekly: <span className="font-semibold text-foreground">{lswSummary.weekly_completed}/{lswSummary.weekly_total}</span>
+									</div>
+									<div className="text-sm text-muted-foreground">
+										Monthly: <span className="font-semibold text-foreground">{lswSummary.monthly_completed}/{lswSummary.monthly_total}</span>
+									</div>
+									{lswSummary.overdue_count > 0 && (
+										<Badge role="status" variant="destructive" className="w-fit">Overdue: {lswSummary.overdue_count}</Badge>
+									)}
+									{lswSummary.next_due_item && (
+										<p className="text-xs text-muted-foreground">Next due: {lswSummary.next_due_item}</p>
+									)}
+								</CardContent>
+							</Card>
+						)}
 					</div>
 				</article>
 
@@ -370,21 +474,21 @@ export default function TodayPage() {
 						</CardHeader>
 						<CardContent className="space-y-4">
 							{activity.map((a) => (
-								<div key={a.id} className="flex items-start justify-between p-3 rounded-xl bg-danger/5 border border-danger/10 hover:bg-danger/10 transition-colors group">
-									<div className="flex items-start gap-3">
-										<div className="mt-1 h-2 w-2 rounded-full bg-danger animate-pulse" />
+								<div key={a.id} className="flex items-start justify-between p-4 rounded-[1.5rem] bg-danger/5 border border-danger/5 hover:bg-danger/10 transition-all duration-300 group">
+									<div className="flex items-start gap-4">
+										<div className="mt-1.5 h-2 w-2 rounded-full bg-danger animate-pulse shadow-[0_0_8px_rgba(220,38,38,0.5)]" />
 										<div className="space-y-1">
 											{a.href ? (
-												<Link href={a.href} className="font-bold text-sm hover:underline decoration-danger/30 underline-offset-4">
+												<Link href={a.href} className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-danger transition-colors">
 													{a.text}
 												</Link>
 											) : (
-												<span className="font-bold text-sm">{a.text}</span>
+												<span className="font-heading font-bold text-sm tracking-tight text-foreground/80">{a.text}</span>
 											)}
-											<p className="text-[10px] uppercase tracking-widest font-bold text-danger/60">{a.when}</p>
+											<p className="text-[9px] uppercase tracking-[0.2em] font-bold text-danger/40">{a.when}</p>
 										</div>
 									</div>
-									<ArrowRight className="h-4 w-4 text-danger/40 group-hover:translate-x-1 transition-transform" />
+									<ArrowRight className="h-4 w-4 text-danger/30 group-hover:translate-x-1 transition-transform" />
 								</div>
 							))}
 							{activity.length === 0 && (
@@ -408,15 +512,15 @@ export default function TodayPage() {
 						</CardHeader>
 						<CardContent className="space-y-4">
 							{rfqs.map((r) => (
-								<div key={r.id} className="space-y-2 p-3 rounded-xl hover:bg-muted/50 transition-colors group">
-									<Link href={r.href} className="font-bold text-sm block group-hover:text-primary transition-colors">
+								<div key={r.id} className="space-y-2.5 p-4 rounded-[1.5rem] bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
+									<Link href={r.href} className="font-heading font-bold text-sm tracking-tight block text-foreground/80 group-hover:text-primary transition-colors">
 										{r.customer} • {r.title}
 									</Link>
 									<div className="flex items-center gap-2">
-										<Badge role="status" variant={priorityBadgeVariant(r.priority)} className="text-[10px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0">
+										<Badge role="status" variant={priorityBadgeVariant(r.priority)} className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0 bg-background/50">
 											{r.priority}
 										</Badge>
-										<Badge role="status" variant="secondary" className="text-[10px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0 bg-primary/5 text-primary border-primary/10">
+										<Badge role="status" variant="secondary" className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0 bg-primary/5 text-primary border-primary/10">
 											{r.status}
 										</Badge>
 									</div>
@@ -438,30 +542,48 @@ export default function TodayPage() {
 				</article>
 
 				<article className="lg:col-span-3">
-					<Card className="bg-primary shadow-lg shadow-primary/20 border-none overflow-hidden relative group">
-						<div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700">
-							<Target className="h-32 w-32 text-white" />
+					<Card className="bg-primary shadow-glow shadow-primary/20 border-none overflow-hidden relative group rounded-[3rem]">
+						<div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-1000 ease-out">
+							<Target className="h-48 w-48 text-white" />
 						</div>
-						<CardHeader>
-							<div className="flex items-center justify-between relative z-10">
-								<CardTitle className="text-white text-xl flex items-center gap-2">
-									<Zap className="h-5 w-5 fill-white" />
-									Sensei Daily Drill
-								</CardTitle>
-								<Badge className="bg-white/20 text-white border-white/20 hover:bg-white/30 backdrop-blur-md">
-									Level 4 Maturity
+						<div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/80" />
+						<div className="absolute inset-0 opacity-[0.15] mix-blend-soft-light" 
+							 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} 
+						/>
+						<CardHeader className="relative z-10 p-10 pb-6">
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-4">
+									<div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-lg">
+										<Zap className="h-6 w-6 text-white fill-white animate-pulse" />
+									</div>
+									<CardTitle className="text-white text-2xl font-heading tracking-tight">Sensei Daily Drill</CardTitle>
+								</div>
+								<Badge className="bg-white/20 text-white border-white/20 hover:bg-white/30 backdrop-blur-md rounded-lg px-3 py-1 font-black uppercase tracking-widest text-[9px]">
+									LEVEL 4 MATURITY
 								</Badge>
 							</div>
-							<CardDescription className="text-primary-foreground/70 font-medium">Precision improvement practice</CardDescription>
+							<CardDescription className="text-white/60 font-bold uppercase tracking-[0.2em] mt-4 ml-1">Continuous Improvement Practice established</CardDescription>
 						</CardHeader>
-						<CardContent className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-							<p className="text-white font-medium text-lg">
-								"Run a 5-minute “5 Whys” on the top abnormality to identify root causes before they cascade."
-							</p>
-							<div className="flex items-center gap-3 shrink-0">
+						<CardContent className="relative z-10 p-10 pt-0 flex flex-col md:flex-row items-center justify-between gap-10">
+							{microDrills.length > 0 ? (
+								<div className="space-y-3 flex-1">
+									<p className="text-white font-heading font-bold text-xl leading-relaxed tracking-tight">{microDrills[0].question}</p>
+									{microDrills[0].hint && (
+										<div className="flex items-center gap-2 text-white/50">
+											<div className="h-1 w-1 rounded-full bg-white/30" />
+											<p className="text-xs font-medium italic">Sensei Intelligence: {microDrills[0].hint}</p>
+										</div>
+									)}
+								</div>
+							) : (
+								<p className="text-white font-heading font-bold text-xl leading-relaxed tracking-tight flex-1">
+									"Run a 5-minute “5 Whys” on the top organizational abnormality to identify root causes before they cascade."
+								</p>
+							)}
+							<div className="flex items-center gap-4 shrink-0">
 								{hasPageAccess('/training', userRoles) && (
-									<Button asChild variant="secondary" className="bg-white text-primary hover:bg-white/90 shadow-xl rounded-xl font-bold">
-										<Link href="/training">Execute Drill</Link>
+									<Button asChild variant="secondary" className="bg-white text-primary hover:bg-white/95 shadow-xl rounded-[1.25rem] font-black uppercase tracking-widest h-14 px-10 active:scale-95 transition-all text-xs">
+										<Link href="/training">Execute Protocol</Link>
 									</Button>
 								)}
 							</div>

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-from uuid import uuid4, UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,71 +29,73 @@ from sensei.models.strategic_v2 import UIActionAuditRecord
 # =============================================================================
 
 
-class ErrorCategory(str, Enum):
-    """Categories of errors for UI handling."""
-    
+class ErrorCategory(Enum):
+    """Categories of backend errors."""
+
     AUTHENTICATION = "authentication"
     AUTHORIZATION = "authorization"
     VALIDATION = "validation"
     NOT_FOUND = "not_found"
-    CONFLICT = "conflict"
-    BUSINESS_RULE = "business_rule"
-    RATE_LIMIT = "rate_limit"
     SERVER_ERROR = "server_error"
+    BUSINESS_RULE = "business_rule"
+    CONFLICT = "conflict"
+    RATE_LIMIT = "rate_limit"
+    BAD_REQUEST = "bad_request"
     NETWORK = "network"
     TIMEOUT = "timeout"
 
 
-class RecoveryAction(str, Enum):
-    """Suggested recovery actions for errors."""
-    
+class RecoveryAction(Enum):
+    """Suggested recovery actions for the UI."""
+
     RETRY = "retry"
     LOGIN = "login"
-    REFRESH = "refresh"
-    CONTACT_ADMIN = "contact_admin"
     FIX_INPUT = "fix_input"
-    WAIT_AND_RETRY = "wait_and_retry"
-    CREATE_NEW = "create_new"
-    GO_BACK = "go_back"
     CHECK_PERMISSIONS = "check_permissions"
+    CONTACT_ADMIN = "contact_admin"
+    GO_BACK = "go_back"
+    CREATE_NEW = "create_new"
+    REFRESH = "refresh"
+    WAIT_AND_RETRY = "wait_and_retry"
+    CHECK_NETWORK = "check_network"
+    CONTACT_SUPPORT = "contact_support"
 
 
-class FieldType(str, Enum):
-    """Schema field types for export."""
-    
+class FieldType(Enum):
+    """Schema field types for validation export."""
+
     STRING = "string"
     NUMBER = "number"
     INTEGER = "integer"
     BOOLEAN = "boolean"
-    ARRAY = "array"
-    OBJECT = "object"
     DATE = "date"
     DATETIME = "datetime"
     UUID = "uuid"
     EMAIL = "email"
     URL = "url"
+    ARRAY = "array"
+    OBJECT = "object"
     ENUM = "enum"
 
 
-class ConnectionState(str, Enum):
-    """Real-time connection states."""
-    
+class ConnectionState(Enum):
+    """Connection state for UI channels."""
+
     CONNECTED = "connected"
     CONNECTING = "connecting"
     RECONNECTING = "reconnecting"
     DISCONNECTED = "disconnected"
-    ERROR = "error"
 
 
 # =============================================================================
-# DATA MODELS
+# DATA MODELS (Partial)
 # =============================================================================
 
 
 @dataclass
 class ErrorMapping:
-    """Mapping from error code to user-friendly message."""
-    
+    """Mapping from backend error code to UI-friendly message."""
+
     error_code: str
     category: ErrorCategory
     title: str
@@ -101,7 +103,7 @@ class ErrorMapping:
     recovery_actions: list[RecoveryAction]
     recovery_instructions: str
     support_link: str | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for API response."""
         return {
@@ -112,6 +114,204 @@ class ErrorMapping:
             "recovery_actions": [a.value for a in self.recovery_actions],
             "recovery_instructions": self.recovery_instructions,
             "support_link": self.support_link,
+        }
+
+class AsyncActionAuditService:
+    """
+    Service for tracking UI action to backend audit log consistency with DB persistence.
+    
+    Ensures every UI action corresponds to exactly one backend audit entry.
+    """
+    
+    def __init__(self) -> None:
+        """Initialize action audit service."""
+        self.pending_actions: dict[str, dict[str, Any]] = {}
+    
+    def start_action(
+        self,
+        action_type: str,
+        entity_type: str,
+        entity_id: str,
+        user_id: str,
+        ui_context: dict[str, Any] | None = None,
+    ) -> str:
+        """Start tracking a UI action (temporary in-memory until completion)."""
+        action_id = f"action_{uuid4().hex[:12]}"
+        
+        self.pending_actions[action_id] = {
+            "action_type": action_type,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "user_id": user_id,
+            "ui_context": ui_context or {},
+            "started_at": datetime.now(timezone.utc),
+        }
+        
+        return action_id
+    
+    async def complete_action(
+        self,
+        db: AsyncSession,
+        action_id: str,
+        success: bool,
+        backend_response: dict[str, Any] | None = None,
+        error_code: str | None = None,
+    ) -> UIActionAuditRecord | None:
+        """Complete tracking a UI action and persist to database."""
+        if action_id not in self.pending_actions:
+            return None
+        
+        pending = self.pending_actions.pop(action_id)
+        now = datetime.now(timezone.utc)
+        duration_ms = int((now - pending["started_at"]).total_seconds() * 1000)
+        
+        record = UIActionAuditRecord(
+            action_id=action_id,
+            action_type=pending["action_type"],
+            entity_type=pending["entity_type"],
+            entity_id=pending["entity_id"],
+            user_id=UUID(pending["user_id"]),
+            ui_context=pending["ui_context"],
+            success=success,
+            duration_ms=duration_ms,
+            error_code=error_code,
+        )
+        
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        return record
+    
+    async def get_entries(
+        self,
+        db: AsyncSession,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        user_id: str | None = None,
+        action_type: str | None = None,
+        limit: int = 100,
+    ) -> list[UIActionAuditRecord]:
+        """Get audit entries from database with optional filtering."""
+        stmt = select(UIActionAuditRecord)
+        
+        if entity_type:
+            stmt = stmt.where(UIActionAuditRecord.entity_type == entity_type)
+        if entity_id:
+            stmt = stmt.where(UIActionAuditRecord.entity_id == entity_id)
+        if user_id:
+            stmt = stmt.where(UIActionAuditRecord.user_id == UUID(user_id))
+        if action_type:
+            stmt = stmt.where(UIActionAuditRecord.action_type == action_type)
+        
+        stmt = stmt.order_by(UIActionAuditRecord.timestamp.desc()).limit(limit)
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+
+class ActionAuditService:
+    """
+    Service for tracking UI action to backend audit log consistency in memory.
+    """
+    
+    def __init__(self) -> None:
+        """Initialize action audit service."""
+        self.pending_actions: dict[str, dict[str, Any]] = {}
+        self._entries: list[ActionAuditEntry] = []
+    
+    def start_action(
+        self,
+        action_type: str,
+        entity_type: str,
+        entity_id: str,
+        user_id: str,
+        ui_context: dict[str, Any] | None = None,
+    ) -> str:
+        """Start tracking a UI action (temporary in-memory until completion)."""
+        action_id = f"action_{uuid4().hex[:12]}"
+        
+        self.pending_actions[action_id] = {
+            "action_type": action_type,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "user_id": user_id,
+            "ui_context": ui_context or {},
+            "started_at": datetime.now(timezone.utc),
+        }
+        
+        return action_id
+    
+    def complete_action(
+        self,
+        action_id: str,
+        success: bool,
+        backend_response: dict[str, Any] | None = None,
+        error_code: str | None = None,
+    ) -> ActionAuditEntry | None:
+        """Complete tracking a UI action and store in memory."""
+        if action_id not in self.pending_actions:
+            return None
+        
+        pending = self.pending_actions.pop(action_id)
+        now = datetime.now(timezone.utc)
+        duration_ms = int((now - pending["started_at"]).total_seconds() * 1000)
+        
+        entry = ActionAuditEntry(
+            entry_id=action_id,
+            action_type=pending["action_type"],
+            entity_type=pending["entity_type"],
+            entity_id=pending["entity_id"],
+            user_id=pending["user_id"],
+            timestamp=now,
+            ui_context=pending["ui_context"],
+            backend_response=backend_response or {},
+            duration_ms=duration_ms,
+            success=success,
+            error_code=error_code,
+        )
+        
+        self._entries.append(entry)
+        return entry
+    
+    def get_entries(
+        self,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        user_id: str | None = None,
+        action_type: str | None = None,
+        limit: int = 100,
+    ) -> list[ActionAuditEntry]:
+        """Get audit entries with optional filtering."""
+        entries = self._entries
+        
+        if entity_type:
+            entries = [e for e in entries if e.entity_type == entity_type]
+        if entity_id:
+            entries = [e for e in entries if e.entity_id == entity_id]
+        if user_id:
+            entries = [e for e in entries if e.user_id == user_id]
+        if action_type:
+            entries = [e for e in entries if e.action_type == action_type]
+        
+        return list(reversed(entries))[:limit]
+
+    def verify_consistency(self, entity_type: str, entity_id: str) -> dict[str, Any]:
+        """Verify that all UI actions have corresponding audit entries."""
+        entries = [
+            e for e in self._entries if e.entity_type == entity_type and e.entity_id == entity_id
+        ]
+        total = len(entries)
+        successful = len([e for e in entries if e.success])
+        failed = len([e for e in entries if not e.success])
+
+        consistency_score = 1.0 if total == successful + failed else 0.0
+
+        return {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "total_actions": total,
+            "successful_actions": successful,
+            "failed_actions": failed,
+            "consistency_score": consistency_score,
         }
 
 
@@ -837,7 +1037,7 @@ class ValidationSchemaExportService:
 # =============================================================================
 
 
-class ActionAuditService:
+class AsyncActionAuditServiceDB:
     """
     Service for tracking UI action to backend audit log consistency with DB persistence.
     
@@ -1174,6 +1374,7 @@ class UIBackendIntegration:
             "validation_schemas": len(self.schema_export.schemas),
             "connection_health": self.connection_health.get_health_summary(),
             "pending_actions": len(self.action_audit.pending_actions),
+            "audit_entries": len(self.action_audit.get_entries(limit=10_000)),
         }
 
 

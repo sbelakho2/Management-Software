@@ -49,7 +49,7 @@ export default function RegisterPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
           Create Account
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
@@ -58,18 +58,18 @@ export default function RegisterPage() {
       </div>
 
       {(error || localError) && (
-        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300">
-          <AlertDescription className="font-medium">{error || localError}</AlertDescription>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300 rounded-2xl">
+          <AlertDescription className="font-bold uppercase tracking-widest text-[10px]">{error || localError}</AlertDescription>
         </Alert>
       )}
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="fullName" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <Label htmlFor="fullName" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
             Full Name
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <User className="h-4 w-4" />
             </div>
             <Input
@@ -77,7 +77,7 @@ export default function RegisterPage() {
               type="text"
               placeholder="John Doe"
               required
-              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               disabled={isLoading}
@@ -86,11 +86,11 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
             Email address
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -99,7 +99,7 @@ export default function RegisterPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -108,11 +108,11 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
             Password
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -121,20 +121,20 @@ export default function RegisterPage() {
               placeholder="••••••••"
               autoComplete="new-password"
               required
-              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
           </div>
-          <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/40">
+          <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground/30 ml-1">
             Minimum 8 characters with enterprise complexity
           </p>
         </div>
 
         <Button
           type="submit"
-          className="w-full h-12 text-base rounded-xl premium-shimmer"
+          className="w-full premium-shimmer"
           loading={isLoading}
           size="xl"
         >

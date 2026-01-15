@@ -99,37 +99,40 @@ function NotificationRow({ label, description, icon: Icon, value, onChange, crit
   };
 
   return (
-    <div className="flex items-center justify-between py-4 border-b last:border-0">
-      <div className="flex items-start gap-3">
-        <div className={cn('p-2 rounded-lg', critical ? 'bg-danger/10' : 'bg-muted')}>
-          <Icon className={cn('h-4 w-4', critical ? 'text-danger' : 'text-muted-foreground')} />
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between py-6 border-b border-border/40 last:border-0 group transition-all">
+      <div className="flex items-start gap-4 mb-4 sm:mb-0">
+        <div className={cn('p-3 rounded-2xl shadow-sm transition-transform duration-300 group-hover:scale-110', critical ? 'bg-danger/10 text-danger' : 'bg-primary/5 text-primary')}>
+          <Icon className="h-5 w-5" />
         </div>
-        <div>
-          <p className="font-medium text-sm">{label}</p>
-          <p className="text-xs text-muted-foreground">{description}</p>
+        <div className="space-y-1">
+          <p className="font-heading font-bold text-sm tracking-tight">{label}</p>
+          <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{description}</p>
         </div>
       </div>
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <Mail className={cn('h-4 w-4', value.email ? 'text-primary' : 'text-muted-foreground')} />
+      <div className="flex items-center gap-8 bg-muted/30 p-3 rounded-2xl border border-border/40">
+        <div className="flex items-center gap-3">
+          <Mail className={cn('h-4 w-4 transition-colors', value.email ? 'text-primary' : 'text-muted-foreground/40')} />
           <Switch 
             checked={value.email} 
             onCheckedChange={() => toggle('email')}
             disabled={critical && value.email}
+            className="data-[state=checked]:bg-primary"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Smartphone className={cn('h-4 w-4', value.push ? 'text-primary' : 'text-muted-foreground')} />
+        <div className="flex items-center gap-3 border-l border-border/40 pl-8">
+          <Smartphone className={cn('h-4 w-4 transition-colors', value.push ? 'text-primary' : 'text-muted-foreground/40')} />
           <Switch 
             checked={value.push} 
             onCheckedChange={() => toggle('push')}
+            className="data-[state=checked]:bg-primary"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Bell className={cn('h-4 w-4', value.inApp ? 'text-primary' : 'text-muted-foreground')} />
+        <div className="flex items-center gap-3 border-l border-border/40 pl-8">
+          <Bell className={cn('h-4 w-4 transition-colors', value.inApp ? 'text-primary' : 'text-muted-foreground/40')} />
           <Switch 
             checked={value.inApp} 
             onCheckedChange={() => toggle('inApp')}
+            className="data-[state=checked]:bg-primary"
           />
         </div>
       </div>
@@ -156,47 +159,51 @@ export default function NotificationsSettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-8 page-fade-in max-w-4xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/settings')}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Notification Settings</h1>
-          <p className="text-muted-foreground">Choose how you want to be notified</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              Notification Center
+            </h1>
+            <p className="text-muted-foreground font-medium text-sm">Configure multi-channel intelligence dispatch parameters</p>
+          </div>
         </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button onClick={handleSave} disabled={isSaving} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Calibrating...
             </>
           ) : (
             <>
-              <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              <Save className="mr-2 h-5 w-5" />
+              Save Routing
             </>
           )}
         </Button>
       </div>
 
       {/* Channel Legend */}
-      <Card className="bg-muted/50">
-        <CardContent className="py-4">
-          <div className="flex items-center gap-6 text-sm">
-            <span className="text-muted-foreground">Notification channels:</span>
-            <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              <span>Email</span>
+      <Card className="bg-primary/[0.02] border-primary/10">
+        <CardContent className="py-5">
+          <div className="flex flex-wrap items-center gap-8 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
+            <span className="text-primary/60">Intelligence Channels:</span>
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-primary/5"><Mail className="h-3.5 w-3.5" /></div>
+              <span>Email Protocol</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Smartphone className="h-4 w-4" />
-              <span>Push</span>
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-primary/5"><Smartphone className="h-3.5 w-3.5" /></div>
+              <span>Mobile Push</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              <span>In-App</span>
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-primary/5"><Bell className="h-3.5 w-3.5" /></div>
+              <span>OS Console</span>
             </div>
           </div>
         </CardContent>
@@ -205,30 +212,30 @@ export default function NotificationsSettingsPage() {
       {/* RFQ & Quotes */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            RFQ & Quotes
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <FileText className="h-5 w-5 text-primary/60" />
+            Pipeline & Commerce
           </CardTitle>
-          <CardDescription>Notifications related to requests for quotes and quotations</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Alerts related to RFQ velocity and quotation approvals</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <NotificationRow
-            label="New RFQ Received"
-            description="When a new RFQ is created or assigned to you"
+            label="Inbound RFQ Signal"
+            description="When a new RFQ enters the pipeline or is assigned"
             icon={FileText}
             value={settings.newRfq}
             onChange={(v) => handleChange('newRfq', v)}
           />
           <NotificationRow
-            label="Quote Approval Required"
-            description="When a quote needs your approval"
+            label="Approval Request"
+            description="When a quotation requires strategic sign-off"
             icon={CheckCircle}
             value={settings.quoteApproval}
             onChange={(v) => handleChange('quoteApproval', v)}
           />
           <NotificationRow
-            label="Quote Won/Lost"
-            description="When a quote status changes to won or lost"
+            label="Commerce Outcome"
+            description="When a quote reaches a terminal won/lost state"
             icon={Package}
             value={settings.quoteWonLost}
             onChange={(v) => handleChange('quoteWonLost', v)}
@@ -239,31 +246,31 @@ export default function NotificationsSettingsPage() {
       {/* Quality */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Quality Management
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Shield className="h-5 w-5 text-primary/60" />
+            Quality Assurance
           </CardTitle>
-          <CardDescription>NCRs, CAPAs, and inspection notifications</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Signals for non-conformances and inspection gates</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <NotificationRow
-            label="NCR Created"
-            description="When a new non-conformance is reported"
+            label="Abnormality Detected (NCR)"
+            description="When a new non-conformance protocol is initiated"
             icon={AlertTriangle}
             value={settings.ncrCreated}
             onChange={(v) => handleChange('ncrCreated', v)}
             critical
           />
           <NotificationRow
-            label="CAPA Assigned"
-            description="When a CAPA is assigned to you"
+            label="Resolution Protocol (CAPA)"
+            description="When a corrective action is assigned for execution"
             icon={CheckCircle}
             value={settings.capaAssigned}
             onChange={(v) => handleChange('capaAssigned', v)}
           />
           <NotificationRow
-            label="Inspection Due"
-            description="Reminders for upcoming inspections"
+            label="Inspection Threshold"
+            description="Reminders for upcoming quality gate synchronizations"
             icon={CheckCircle}
             value={settings.inspectionDue}
             onChange={(v) => handleChange('inspectionDue', v)}
@@ -274,23 +281,23 @@ export default function NotificationsSettingsPage() {
       {/* Production */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Package className="h-4 w-4" />
-            Production
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Package className="h-5 w-5 text-primary/60" />
+            Production Floor
           </CardTitle>
-          <CardDescription>Work orders and production alerts</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Real-time status changes and factory floor alerts</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-0">
           <NotificationRow
-            label="Work Order Status"
-            description="Status changes on work orders you're following"
+            label="Work Order Evolution"
+            description="Status transitions on tracked production orders"
             icon={Package}
             value={settings.workOrderStatus}
             onChange={(v) => handleChange('workOrderStatus', v)}
           />
           <NotificationRow
-            label="Andon Alerts"
-            description="Production line alerts and escalations"
+            label="Andon Escalation"
+            description="Immediate production line alerts requiring attention"
             icon={AlertTriangle}
             value={settings.andonAlert}
             onChange={(v) => handleChange('andonAlert', v)}
@@ -299,109 +306,56 @@ export default function NotificationsSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* General */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Collaboration
-          </CardTitle>
-          <CardDescription>Tasks, mentions, and team activity</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <NotificationRow
-            label="Task Assigned"
-            description="When a task is assigned to you"
-            icon={CheckCircle}
-            value={settings.taskAssigned}
-            onChange={(v) => handleChange('taskAssigned', v)}
-          />
-          <NotificationRow
-            label="Mentioned in Comment"
-            description="When someone @mentions you in a comment"
-            icon={MessageSquare}
-            value={settings.mentionedInComment}
-            onChange={(v) => handleChange('mentionedInComment', v)}
-          />
-        </CardContent>
-      </Card>
-
-      {/* System */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            System
-          </CardTitle>
-          <CardDescription>Security and system notifications</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <NotificationRow
-            label="Security Alerts"
-            description="Login attempts and security events"
-            icon={Shield}
-            value={settings.securityAlerts}
-            onChange={(v) => handleChange('securityAlerts', v)}
-            critical
-          />
-          <NotificationRow
-            label="System Updates"
-            description="New features and maintenance notices"
-            icon={Bell}
-            value={settings.systemUpdates}
-            onChange={(v) => handleChange('systemUpdates', v)}
-          />
-        </CardContent>
-      </Card>
-
       {/* Digest */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Email Digest
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Mail className="h-5 w-5 text-primary/60" />
+            Strategic Digests
           </CardTitle>
-          <CardDescription>Periodic summary emails</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Synchronized periodic intelligence summaries</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between py-2">
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/30 border border-border/40">
             <div>
-              <p className="font-medium text-sm">Daily Digest</p>
-              <p className="text-xs text-muted-foreground">Summary of daily activity and pending items</p>
+              <p className="font-heading font-bold tracking-tight">Daily Command Summary</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Briefing of previous day activity and pending tasks</p>
             </div>
             <Switch 
               checked={settings.dailyDigest} 
               onCheckedChange={(v) => handleChange('dailyDigest', v)}
+              className="data-[state=checked]:bg-primary"
             />
           </div>
-          <div className="flex items-center justify-between py-2">
+          <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/30 border border-border/40">
             <div>
-              <p className="font-medium text-sm">Weekly Report</p>
-              <p className="text-xs text-muted-foreground">Weekly metrics and team performance summary</p>
+              <p className="font-heading font-bold tracking-tight">Weekly Performance Intelligence</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Aggregate metrics and organizational velocity report</p>
             </div>
             <Switch 
               checked={settings.weeklyReport} 
               onCheckedChange={(v) => handleChange('weeklyReport', v)}
+              className="data-[state=checked]:bg-primary"
             />
           </div>
-          <div className="flex items-center justify-between py-2">
+          <div className="flex items-center justify-between p-5 rounded-2xl bg-primary/[0.02] border border-primary/10">
             <Label htmlFor="digestTime" className="flex-1">
-              <p className="font-medium text-sm">Digest Time</p>
-              <p className="text-xs text-muted-foreground">When to send daily digest emails</p>
+              <p className="font-heading font-bold tracking-tight">Dispatch Synchronization</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-primary/60">Target delivery time for daily intelligence briefing</p>
             </Label>
             <Select 
               value={settings.digestTime} 
               onValueChange={(v) => handleChange('digestTime', v)}
             >
-              <SelectTrigger id="digestTime" className="w-32">
+              <SelectTrigger id="digestTime" className="w-40 h-12 rounded-xl bg-background border-border/50">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="06:00">6:00 AM</SelectItem>
-                <SelectItem value="07:00">7:00 AM</SelectItem>
-                <SelectItem value="08:00">8:00 AM</SelectItem>
-                <SelectItem value="09:00">9:00 AM</SelectItem>
-                <SelectItem value="18:00">6:00 PM</SelectItem>
+              <SelectContent className="rounded-2xl shadow-premium">
+                <SelectItem value="06:00" className="rounded-xl m-1">06:00 AM (Sunrise)</SelectItem>
+                <SelectItem value="07:00" className="rounded-xl m-1">07:00 AM</SelectItem>
+                <SelectItem value="08:00" className="rounded-xl m-1">08:00 AM (Shift Start)</SelectItem>
+                <SelectItem value="09:00" className="rounded-xl m-1">09:00 AM</SelectItem>
+                <SelectItem value="18:00" className="rounded-xl m-1">06:00 PM (Shift End)</SelectItem>
               </SelectContent>
             </Select>
           </div>

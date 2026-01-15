@@ -63,7 +63,7 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
             <Trophy className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.round(progress)}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{Math.round(progress)}%</div>
             <Progress value={progress} className="mt-3 h-2" />
             <p className="text-xs text-muted-foreground mt-2">
               {project.completed_user_stories} of {project.total_user_stories} stories done
@@ -77,7 +77,7 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
             <Target className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{project.completed_story_points} / {project.total_story_points}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{project.completed_story_points} / {project.total_story_points}</div>
             <p className="text-xs text-muted-foreground mt-2">
               Velocity Tracking Enabled
             </p>
@@ -111,7 +111,7 @@ export function ProjectDashboard({ projectId }: ProjectDashboardProps) {
             <AlertCircle className={issues.length > 0 ? "h-4 w-4 text-danger" : "h-4 w-4 text-muted-foreground"} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{project.open_issues}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{project.open_issues}</div>
             <p className="text-xs text-muted-foreground mt-2">
               {issues.filter(i => i.severity === 'critical' || i.severity === 'important').length} high priority
             </p>

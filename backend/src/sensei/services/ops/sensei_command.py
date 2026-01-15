@@ -688,35 +688,31 @@ class NL2SQLEngine:
     
     def __init__(self, security_level: QuerySecurityLevel = QuerySecurityLevel.READ_ONLY):
         self.security_level = security_level
-    
-    async def generate_sql(self, db: AsyncSession, natural_language: str, user_id: str | None = None) -> NL2SQLQuery:
-        """Generate SQL from natural language query and persist with security checks."""
-        nl_lower = natural_language.lower()
-        
-        # Security: Prevent basic comment injection
-        if "--" in natural_language or "/*" in natural_language:
-            raise ValueError("Potential SQL injection detected: comments not allowed")
 
-        # Pattern matching for SQL generation
-        sql = "SELECT * FROM quotes LIMIT 100"  # Default
-        tables_used = ["quotes"]
-        
-        for pattern, sql_template in self.SQL_PATTERNS:
-            if re.search(pattern, nl_lower):
-                sql = sql_template
-                tables_used = self._extract_tables(sql)
-                break
-        
-        # Add security restrictions
-        if self.security_level == QuerySecurityLevel.READ_ONLY:
-            is_valid, error = self.validate_query(sql)
-            if not is_valid:
-                sql = f"-- BLOCKED: {error}"
-        
-        explanation = self._generate_explanation(sql)
-        
+    def generate_sql(self, natural_language: str, user_id: str | None = None) -> NL2SQLQuery:
+        """Generate SQL from natural language query without persistence."""
+        sql, tables_used, explanation = self._build_sql(natural_language)
         query_id = f"nlsql_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-        
+
+        return NL2SQLQuery(
+            query_id=query_id,
+            natural_language=natural_language,
+            generated_sql=sql,
+            explanation=explanation,
+            tables_used=tables_used,
+            security_level=self.security_level,
+        )
+
+    async def _generate_sql_async(
+        self,
+        db: AsyncSession,
+        natural_language: str,
+        user_id: str | None = None,
+    ) -> NL2SQLQuery:
+        """Generate SQL from natural language query and persist with security checks."""
+        sql, tables_used, explanation = self._build_sql(natural_language)
+        query_id = f"nlsql_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+
         record = NL2SQLQueryRecord(
             id=query_id,
             natural_language=natural_language,
@@ -729,7 +725,7 @@ class NL2SQLEngine:
         db.add(record)
         await db.commit()
         await db.refresh(record)
-        
+
         return NL2SQLQuery(
             query_id=record.id,
             natural_language=record.natural_language,
@@ -738,6 +734,33 @@ class NL2SQLEngine:
             tables_used=record.tables_used,
             security_level=record.security_level,
         )
+
+    def _build_sql(self, natural_language: str) -> tuple[str, list[str], str]:
+        """Build SQL, tables used, and explanation for a natural language query."""
+        nl_lower = natural_language.lower()
+
+        # Security: Prevent basic comment injection
+        if "--" in natural_language or "/*" in natural_language:
+            raise ValueError("Potential SQL injection detected: comments not allowed")
+
+        # Pattern matching for SQL generation
+        sql = "SELECT * FROM quotes LIMIT 100"  # Default
+        tables_used = ["quotes"]
+
+        for pattern, sql_template in self.SQL_PATTERNS:
+            if re.search(pattern, nl_lower):
+                sql = sql_template
+                tables_used = self._extract_tables(sql)
+                break
+
+        # Add security restrictions
+        if self.security_level == QuerySecurityLevel.READ_ONLY:
+            is_valid, error = self.validate_query(sql)
+            if not is_valid:
+                sql = f"-- BLOCKED: {error}"
+
+        explanation = self._generate_explanation(sql)
+        return sql, tables_used, explanation
     
     def _extract_tables(self, sql: str) -> list[str]:
         """Extract table names from SQL."""
@@ -1382,7 +1405,7 @@ class SenseiCommand:
         self.ceo_view = CEOSuperView(ceo_user_id)
         self.employee_analytics = EmployeeIntelligenceAnalytics()
     
-    async def get_executive_dashboard(self, db: AsyncSession) -> dict[str, Any]:
+    def get_executive_dashboard(self) -> dict[str, Any]:
         """Get the executive dashboard summary."""
         return {
             "kpis": self.kpi_aggregator.get_aggregate_view(),
@@ -1391,10 +1414,18 @@ class SenseiCommand:
             "system_health": self.brain_dashboard.get_overall_health(),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    async def _get_executive_dashboard_async(self, db: AsyncSession) -> dict[str, Any]:
+        """Get the executive dashboard summary with async signature."""
+        return self.get_executive_dashboard()
     
-    async def query_database(self, db: AsyncSession, natural_language: str) -> NL2SQLQuery:
-        """Execute a natural language database query."""
-        return await self.nl2sql_engine.generate_sql(db, natural_language, user_id=self.ceo_user_id)
+    def query_database(self, natural_language: str) -> NL2SQLQuery:
+        """Execute a natural language database query without persistence."""
+        return self.nl2sql_engine.generate_sql(natural_language, user_id=self.ceo_user_id)
+
+    async def _query_database_async(self, db: AsyncSession, natural_language: str) -> NL2SQLQuery:
+        """Execute a natural language database query with persistence."""
+        return await self.nl2sql_engine._generate_sql_async(db, natural_language, user_id=self.ceo_user_id)
     
     def generate_weekly_briefing(self) -> StrategicBriefing:
         """Generate the weekly strategic briefing."""

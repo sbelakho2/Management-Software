@@ -24,6 +24,11 @@ from sensei.models.analytics import (
     ExportedRecord as ExportedRecordModel,
 )
 
+DailySnapshot = DailySnapshotModel
+DimensionSchema = DimensionSchemaModel
+FactSchema = FactSchemaModel
+ExportedRecord = ExportedRecordModel
+
 
 class SnapshotStatus(str, Enum):
     PENDING = "pending"

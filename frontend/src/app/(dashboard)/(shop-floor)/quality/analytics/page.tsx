@@ -36,76 +36,76 @@ export default function QualityAnalyticsPage() {
   const fpyTrend = trends.find(t => t.metric === 'First Pass Yield');
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Quality Analytics</h1>
-            <p className="text-muted-foreground">Quality performance metrics and predictive insights</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Quality Intelligence</h1>
+            <p className="text-muted-foreground font-medium text-sm">Performance metrics and prescriptive organizational insights</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <Calendar className="mr-2 h-4 w-4" />
-            Last 30 Days
+            Strategic Window
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <Download className="mr-2 h-4 w-4" />
-            Export Data
+            Export Intel
           </Button>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
-            <CardDescription>First Pass Yield</CardDescription>
-            <CardTitle className="text-2xl">{fpyTrend?.current_value || '94.2'}%</CardTitle>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">First Pass Yield</CardDescription>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{fpyTrend?.current_value || '94.2'}%</div>
           </CardHeader>
           <CardContent>
             <div className={cn(
-              "text-xs flex items-center gap-1 font-medium",
-              (fpyTrend?.change_percent || 0) >= 0 ? "text-green-600" : "text-red-600"
+              "text-[10px] font-bold uppercase tracking-widest flex items-center gap-1",
+              (fpyTrend?.change_percent || 0) >= 0 ? "text-success" : "text-danger"
             )}>
               {fpyTrend?.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingUp className="h-3 w-3 rotate-180" />}
-              {Math.abs(fpyTrend?.change_percent || 1.5)}% vs last month
+              {Math.abs(fpyTrend?.change_percent || 1.5)}% vs LAST CYCLE
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
-            <CardDescription>Open NCRs</CardDescription>
-            <CardTitle className="text-2xl">{totalNcrs}</CardTitle>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active NCRs</CardDescription>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">{totalNcrs}</div>
           </CardHeader>
           <CardContent>
-            <div className="text-xs text-muted-foreground font-medium">
-              Awaiting disposition
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+              Awaiting Disposition
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
-            <CardDescription>Active CAPAs</CardDescription>
-            <CardTitle className="text-2xl">{totalCapas}</CardTitle>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active CAPAs</CardDescription>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70">{totalCapas}</div>
           </CardHeader>
           <CardContent>
-            <div className="text-xs text-muted-foreground font-medium">
-              In implementation/verification
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+              In Implementation Phase
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
-            <CardDescription>Avg Inspection Time</CardDescription>
-            <CardTitle className="text-2xl">18.5m</CardTitle>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Inspection Time</CardDescription>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">18.5m</div>
           </CardHeader>
           <CardContent>
-            <div className="text-xs text-green-600 flex items-center gap-1 font-medium">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-success flex items-center gap-1">
               <TrendingUp className="h-3 w-3 rotate-180" />
-              -2.4% vs last week
+              -2.4% VELOCITY GAIN
             </div>
           </CardContent>
         </Card>

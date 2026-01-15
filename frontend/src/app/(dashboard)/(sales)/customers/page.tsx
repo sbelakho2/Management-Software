@@ -64,54 +64,54 @@ function CustomerStats({ customers }: { customers: any[] }) {
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/10">
-              <Building2 className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{stats.active}</p>
-              <p className="text-sm text-muted-foreground">Active Customers</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Intelligence Nodes</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.active}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <Building2 className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-warning/10">
-              <Users className="h-5 w-5 text-warning" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{stats.prospects}</p>
-              <p className="text-sm text-muted-foreground">Prospects</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Prospective Partners</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.prospects}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+              <Users className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <DollarSign className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</p>
-              <p className="text-sm text-muted-foreground">Total Revenue</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Aggregated Revenue</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalRevenue)}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <DollarSign className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-secondary/50">
-              <TrendingUp className="h-5 w-5 text-foreground" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{stats.avgWinRate.toFixed(0)}%</p>
-              <p className="text-sm text-muted-foreground">Avg. Win Rate</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Conversion Pulse</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgWinRate.toFixed(0)}%</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
@@ -300,15 +300,17 @@ export default function CustomersPage() {
   }, [customersList, searchQuery, statusFilter, industryFilter]);
 
   return (
-    <div className="space-y-6" data-testid="customers-page">
+    <div className="space-y-8 page-fade-in" data-testid="customers-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Customers</h1>
-          <p className="text-muted-foreground">Manage customer relationships and track activity</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Account Management
+          </h1>
+          <p className="text-muted-foreground font-medium">Strategic customer relationships and account intelligence</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => router.push('/customers/new')}>
+        <div className="flex items-center gap-3">
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/customers/new')}>
             <Plus className="mr-2 h-4 w-4" />
             Add Customer
           </Button>

@@ -55,8 +55,8 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   }
 
   const NavSection = ({ title, items }: { title: string; items: typeof sections }) => (
-    <div className="mb-6">
-      <h3 className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+    <div className="mb-8">
+      <h3 className="px-4 mb-3 text-[10px] font-bold text-muted-foreground/50 uppercase tracking-[0.2em]">
         {title}
       </h3>
       <div className="space-y-1">
@@ -68,14 +68,14 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
               key={section.id}
               href={section.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors',
+                'flex items-center gap-3 px-4 py-2.5 text-sm rounded-xl transition-all duration-300 group',
                 isActive 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-glow font-semibold scale-[1.02]' 
+                  : 'hover:bg-primary/5 text-muted-foreground hover:text-primary'
               )}
             >
-              <Icon className="h-4 w-4" />
-              {section.label}
+              <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-110", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
+              <span className="truncate tracking-tight">{section.label}</span>
             </Link>
           );
         })}
@@ -84,13 +84,15 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8">
+    <div className="flex flex-col lg:flex-row gap-12 page-fade-in">
       <aside className="w-full lg:w-64 shrink-0 hidden lg:block">
-        <NavSection title="Personal" items={sections.filter(s => s.category === 'personal')} />
-        <NavSection title="Organization" items={sections.filter(s => s.category === 'organization')} />
-        <NavSection title="System" items={sections.filter(s => s.category === 'system')} />
+        <div className="sticky top-24">
+          <NavSection title="Personal" items={sections.filter(s => s.category === 'personal')} />
+          <NavSection title="Organization" items={sections.filter(s => s.category === 'organization')} />
+          <NavSection title="System" items={sections.filter(s => s.category === 'system')} />
+        </div>
       </aside>
-      <main className="flex-1">
+      <main className="flex-1 max-w-4xl">
         {children}
       </main>
     </div>

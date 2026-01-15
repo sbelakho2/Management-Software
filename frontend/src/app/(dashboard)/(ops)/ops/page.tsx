@@ -87,27 +87,29 @@ function KPICard({ data }: { data: KPICardData }) {
   const trendColor = data.trendIsGood ? 'text-success' : 'text-danger';
 
   const content = (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md hover:shadow-premium-hover hover:-translate-y-1 transition-all duration-500 group">
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-              <data.icon className="h-6 w-6 text-primary" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm transition-transform duration-500 group-hover:scale-110">
+              <data.icon className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">{data.label}</p>
-              <p className="text-2xl font-bold">{data.value}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{data.label}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{data.value}</p>
             </div>
           </div>
           {TrendIcon && data.change !== undefined && (
-            <div className={cn('flex items-center gap-1 text-sm', trendColor)}>
-              <TrendIcon className="h-4 w-4" />
-              <span>{data.change > 0 ? '+' : ''}{data.change}</span>
+            <div className={cn('flex flex-col items-end gap-1', trendColor)}>
+              <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest">
+                <TrendIcon className="h-3 w-3" />
+                <span>{data.change > 0 ? '+' : ''}{data.change}%</span>
+              </div>
             </div>
           )}
         </div>
         {data.changeLabel && (
-          <p className="mt-2 text-xs text-muted-foreground">{data.changeLabel}</p>
+          <p className="mt-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{data.changeLabel}</p>
         )}
       </CardContent>
     </Card>
@@ -120,59 +122,67 @@ function KPICard({ data }: { data: KPICardData }) {
 }
 
 function TaskCard({ task }: { task: TaskItem }) {
-  const priorityColors = {
-    low: 'bg-muted text-muted-foreground',
-    medium: 'bg-warning/10 text-warning',
-    high: 'bg-danger/10 text-danger',
-    urgent: 'bg-danger text-white',
+  const priorityConfig = {
+    low: { bg: 'bg-muted/50', text: 'text-muted-foreground', label: 'Low' },
+    medium: { bg: 'bg-warning/10', text: 'text-warning', label: 'Medium' },
+    high: { bg: 'bg-danger/10', text: 'text-danger', label: 'High' },
+    urgent: { bg: 'bg-danger', text: 'text-white', label: 'Urgent' },
   };
 
   const statusIcons = {
-    todo: <Clock className="h-4 w-4 text-muted-foreground" />,
-    in_progress: <AlertCircle className="h-4 w-4 text-warning" />,
-    done: <CheckCircle2 className="h-4 w-4 text-success" />,
+    todo: <Clock className="h-4 w-4 text-muted-foreground/40" />,
+    in_progress: <AlertCircle className="h-4 w-4 text-warning/60" />,
+    done: <CheckCircle2 className="h-4 w-4 text-success/60" />,
   };
 
+  const cfg = priorityConfig[task.priority];
+
   return (
-    <div className="flex items-center gap-4 py-3 border-b last:border-0">
-      {statusIcons[task.status]}
-      <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{task.title}</p>
-        {task.linkedEntity && (
-          <Link
-            href={task.linkedEntity.href}
-            className="text-sm text-muted-foreground hover:text-primary"
-          >
-            {task.linkedEntity.type}: {task.linkedEntity.title}
-          </Link>
-        )}
+    <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
+      <div className="flex items-center gap-4 min-w-0">
+        <div className="p-2 rounded-xl bg-background shadow-sm">
+          {statusIcons[task.status]}
+        </div>
+        <div className="min-w-0">
+          <p className="font-heading font-bold text-sm tracking-tight truncate text-foreground/80 group-hover:text-primary transition-colors">{task.title}</p>
+          {task.linkedEntity && (
+            <Link
+              href={task.linkedEntity.href}
+              className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 hover:text-primary transition-colors"
+            >
+              {task.linkedEntity.type}: {task.linkedEntity.title}
+            </Link>
+          )}
+        </div>
       </div>
-      <Badge className={priorityColors[task.priority]}>
-        {task.priority}
-      </Badge>
-      <span className="text-sm text-muted-foreground whitespace-nowrap">
-        {formatRelativeTime(new Date(task.dueDate))}
-      </span>
+      <div className="flex items-center gap-4 shrink-0">
+        <Badge className={cn('rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest border-none', cfg.bg, cfg.text)}>
+          {cfg.label}
+        </Badge>
+        <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/30 whitespace-nowrap">
+          {formatRelativeTime(new Date(task.dueDate))}
+        </span>
+      </div>
     </div>
   );
 }
 
 function ActivityCard({ activity }: { activity: ActivityItem }) {
   return (
-    <div className="flex items-start gap-4 py-3 border-b last:border-0">
-      <Avatar fallback={activity.user.name} size="sm" />
+    <div className="flex items-start gap-4 p-4 rounded-2xl bg-muted/5 border border-border/5 hover:bg-muted/10 transition-all duration-300 group">
+      <Avatar fallback={activity.user.name} size="sm" className="ring-2 ring-background shadow-sm" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm">
-          <span className="font-medium">{activity.user.name}</span>{' '}
+        <p className="text-sm font-medium leading-relaxed">
+          <span className="font-heading font-bold text-foreground/90">{activity.user.name}</span>{' '}
           {activity.link ? (
-            <Link href={activity.link} className="text-primary hover:underline">
+            <Link href={activity.link} className="text-primary hover:underline underline-offset-4 decoration-primary/30">
               {activity.description}
             </Link>
           ) : (
-            activity.description
+            <span className="text-muted-foreground">{activity.description}</span>
           )}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground/30 mt-1.5">
           {formatRelativeTime(new Date(activity.timestamp))}
         </p>
       </div>
@@ -195,27 +205,27 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
   };
 
   return (
-    <Link href={`/pipeline/${rfq.id}`}>
-      <Card className="hover:shadow-md transition-shadow cursor-pointer">
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between mb-2">
+    <Link href={`/pipeline/${rfq.id}`} className="group">
+      <Card className="hover:shadow-premium-hover hover:-translate-y-1 transition-all duration-500 border-border/40 bg-card/40 backdrop-blur-sm rounded-[1.5rem] h-full">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="font-medium">{rfq.rfqNumber}</p>
-              <p className="text-sm text-muted-foreground">{rfq.customerName}</p>
+              <p className="font-mono text-xs font-bold text-primary/60">{rfq.rfqNumber}</p>
+              <p className="font-heading font-bold text-sm tracking-tight group-hover:text-primary transition-colors">{rfq.customerName}</p>
             </div>
-            <Badge variant={priorityColors[rfq.priority]}>{rfq.priority}</Badge>
+            <Badge variant={priorityColors[rfq.priority]} className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">{rfq.priority}</Badge>
           </div>
-          <p className="text-sm mb-3 line-clamp-2">{rfq.title}</p>
-          <div className="flex items-center justify-between">
-            <Badge className={statusColors[rfq.status] || 'bg-muted'}>
+          <p className="text-xs text-muted-foreground line-clamp-2 font-medium leading-relaxed">{rfq.title}</p>
+          <div className="flex items-center justify-between pt-4 border-t border-border/10">
+            <Badge className={cn('rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest border-none', statusColors[rfq.status] || 'bg-muted')}>
               {rfq.status}
             </Badge>
             <div className="text-right">
               {rfq.estimatedValue && (
-                <p className="font-medium">{formatCurrency(rfq.estimatedValue)}</p>
+                <p className="text-sm font-heading font-bold tracking-tight">{formatCurrency(rfq.estimatedValue)}</p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Due {formatRelativeTime(new Date(rfq.dueDate))}
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">
+                DUE {formatRelativeTime(new Date(rfq.dueDate))}
               </p>
             </div>
           </div>
@@ -295,11 +305,11 @@ export default function TodayPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             Operations Command
           </h1>
-          <p className="text-muted-foreground font-medium flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-primary" />
+          <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary/60" />
             {formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })} • Real-time Production Pulse
           </p>
         </div>

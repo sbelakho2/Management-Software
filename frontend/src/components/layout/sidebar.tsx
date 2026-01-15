@@ -87,29 +87,31 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r premium-glass transition-all duration-500 ease-in-out',
+        'fixed left-4 top-4 z-40 flex h-[calc(100vh-2rem)] flex-col rounded-3xl border premium-glass transition-all duration-500 ease-in-out shadow-premium hover:shadow-premium-hover',
         // Mobile: slide in from left, always full width when visible
-        'max-md:-translate-x-full max-md:w-64',
+        'max-md:-translate-x-[calc(100%+1rem)] max-md:w-64 max-md:left-4',
         isMobileVisible && 'max-md:translate-x-0',
         // Desktop: collapse/expand normally
         'md:translate-x-0',
-        desktopHidden && 'md:-translate-x-full',
-        isCollapsed ? 'md:w-16' : 'md:w-64'
+        desktopHidden && 'md:-translate-x-[calc(100%+2rem)]',
+        isCollapsed ? 'md:w-20' : 'md:w-64'
       )}
     >
       {/* Logo */}
-      <div className="flex h-16 items-center justify-between border-b px-4">
+      <div className="flex h-20 items-center justify-between px-6">
         {!isCollapsed && (
-          <Link href="/today" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-premium subtle-shine">
+          <Link href="/today" className="flex items-center gap-3 transition-transform hover:scale-105 active:scale-95">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
               S
             </div>
-            <span className="font-bold text-lg tracking-tight">Sensei OS</span>
+            <span className="font-heading font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/60">
+              Sensei OS
+            </span>
           </Link>
         )}
         {isCollapsed && (
-          <Link href="/today" className="mx-auto">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold shadow-premium">
+          <Link href="/today" className="mx-auto transition-transform hover:scale-110 active:scale-90">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
               S
             </div>
           </Link>
@@ -117,20 +119,20 @@ export function Sidebar() {
       </div>
 
       {/* Search */}
-      <div className="p-2">
+      <div className="px-4 py-2">
         <Button
           variant="outline"
           className={cn(
-            'w-full justify-start text-muted-foreground',
-            isCollapsed ? 'px-2' : 'px-3'
+            'w-full justify-start text-muted-foreground border-border/40 bg-background/50 backdrop-blur-sm hover:bg-background/80 transition-all duration-300',
+            isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto rounded-xl' : 'px-4 h-11 rounded-2xl'
           )}
           onClick={() => setCommandPaletteOpen(true)}
         >
-          <Search className="h-4 w-4" />
+          <Search className={cn("h-4 w-4", isCollapsed ? "h-5 w-5" : "")} />
           {!isCollapsed && (
             <>
-              <span className="ml-2 flex-1 text-left">Search...</span>
-              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              <span className="ml-3 flex-1 text-left text-sm">Search...</span>
+              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground/60">
                 <span className="text-xs">⌘</span>K
               </kbd>
             </>
@@ -143,11 +145,11 @@ export function Sidebar() {
         {filteredSections.map((section, idx) => (
           <div key={section.title} className={cn('mb-4', idx === 0 && 'mt-0')}>
             {!isCollapsed && (
-              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <h3 className="mb-2 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
                 {section.title}
               </h3>
             )}
-            <ul className="space-y-1">
+            <ul className="space-y-1 px-2">
               {section.items.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
                 return (
@@ -158,16 +160,16 @@ export function Sidebar() {
                           <Link
                             href={item.href}
                             className={cn(
-                              'flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-all duration-200 active:scale-[0.98]',
+                              'flex h-12 w-12 items-center justify-center rounded-xl mx-auto transition-all duration-300 active:scale-[0.9]',
                               isActive 
-                                ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
-                                : 'hover:bg-accent/80 hover:text-accent-foreground'
+                                ? 'bg-primary text-primary-foreground shadow-glow scale-105' 
+                                : 'text-muted-foreground hover:bg-primary/10 hover:text-primary hover:scale-110'
                             )}
                           >
                             <item.icon className="h-5 w-5" />
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent side="right">
+                        <TooltipContent side="right" className="font-heading">
                           {item.label}
                         </TooltipContent>
                       </Tooltip>
@@ -175,16 +177,22 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-10 items-center gap-3 rounded-lg px-3 transition-all duration-200 active:scale-[0.98]',
+                          'flex h-11 items-center gap-3 rounded-2xl px-4 transition-all duration-300 active:scale-[0.98] group relative overflow-hidden',
                           isActive 
-                            ? 'bg-primary/10 text-primary font-semibold border border-primary/20 shadow-sm' 
-                            : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground'
+                            ? 'bg-primary text-primary-foreground font-semibold shadow-glow' 
+                            : 'text-muted-foreground hover:bg-primary/5 hover:text-primary'
                         )}
                       >
-                        <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
-                        <span className="truncate">{item.label}</span>
+                        <item.icon className={cn("h-5 w-5 shrink-0 transition-transform duration-300 group-hover:scale-110", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
+                        <span className="truncate text-sm font-medium tracking-tight">{item.label}</span>
+                        {isActive && (
+                          <div className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-primary-foreground/40" />
+                        )}
                         {item.badge && item.badge > 0 && (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">
+                          <span className={cn(
+                            "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold shadow-sm",
+                            isActive ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"
+                          )}>
                             {item.badge}
                           </span>
                         )}
@@ -293,7 +301,7 @@ export function Sidebar() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="flex h-10 w-10 items-center justify-center rounded-md mx-auto text-muted-foreground hover:text-danger hover:bg-danger/10"
+                  className="flex h-12 w-12 items-center justify-center rounded-xl mx-auto text-muted-foreground hover:text-danger hover:bg-danger/10 transition-all active:scale-90"
                   onClick={async () => {
                     await logout();
                     router.push('/login');
@@ -302,21 +310,21 @@ export function Sidebar() {
                   <LogOut className="h-5 w-5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">
-                Logout
+              <TooltipContent side="right" className="font-heading">
+                Logout Protocol
               </TooltipContent>
             </Tooltip>
           ) : (
             <Button
               variant="ghost"
-              className="w-full justify-start gap-3 px-3 text-muted-foreground hover:text-danger hover:bg-danger/10"
+              className="w-full justify-start gap-3 px-4 h-11 rounded-2xl text-muted-foreground hover:text-danger hover:bg-danger/5 transition-all active:scale-[0.98]"
               onClick={async () => {
                 await logout();
                 router.push('/login');
               }}
             >
               <LogOut className="h-5 w-5 shrink-0" />
-              <span>Logout</span>
+              <span className="font-medium tracking-tight">Logout Protocol</span>
             </Button>
           )}
         </div>
@@ -325,16 +333,16 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className={cn('mt-2', isCollapsed ? 'mx-auto' : 'w-full')}
+          className={cn('mt-2 h-10 transition-all rounded-xl hover:bg-primary/5 hover:text-primary', isCollapsed ? 'mx-auto w-12' : 'w-full px-4 justify-start')}
           onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
         >
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" />
           ) : (
-            <>
+            <div className="flex items-center gap-3">
               <ChevronLeft className="h-4 w-4" />
-              {!isCollapsed && <span className="ml-2">Collapse</span>}
-            </>
+              <span className="text-xs font-bold uppercase tracking-widest opacity-60">Collapse</span>
+            </div>
           )}
         </Button>
       </div>
@@ -352,12 +360,12 @@ export function Header() {
   } = useUIStore();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b premium-glass px-4 transition-all duration-500 ease-in-out">
+    <header className="sticky top-4 z-30 flex h-16 items-center gap-4 px-6 mx-4 rounded-2xl border premium-glass transition-all duration-500 ease-in-out shadow-premium hover:shadow-premium-hover">
       {/* Mobile menu button */}
       <Button
         variant="ghost"
         size="icon"
-        className="md:hidden hover:bg-primary/10 hover:text-primary transition-colors"
+        className="md:hidden hover:bg-primary/10 hover:text-primary transition-colors rounded-xl"
         onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
       >
         <Menu className="h-5 w-5" />
@@ -366,19 +374,20 @@ export function Header() {
       <div className="flex-1" />
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {/* Command Palette */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
+              className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
               onClick={toggleCommandPalette}
             >
               <Command className="h-5 w-5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
+          <TooltipContent className="font-heading">
             <p>Command Palette</p>
             <kbd className="ml-2 text-xs text-muted-foreground">⌘K</kbd>
           </TooltipContent>
@@ -390,18 +399,18 @@ export function Header() {
             <Button
               variant="ghost"
               size="icon"
-              className="relative"
+              className="relative rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
               onClick={toggleNotificationPanel}
             >
               <Bell className="h-5 w-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1 text-xs font-medium text-white">
+                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-glow">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Notifications</TooltipContent>
+          <TooltipContent className="font-heading">Notifications</TooltipContent>
         </Tooltip>
       </div>
     </header>
@@ -424,11 +433,13 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, setSidebarState]);
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/10">
+    <div className="min-h-screen bg-background selection:bg-primary/20">
+      {/* Mesh Gradient Background (handled by globals.css body) */}
+      
       {/* Mobile overlay when sidebar is open */}
       <div 
         className={cn(
-          'fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-500 md:hidden',
+          'fixed inset-0 z-30 bg-black/40 backdrop-blur-md transition-opacity duration-500 md:hidden',
           isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
         onClick={() => setSidebarState('hidden')}
@@ -438,17 +449,16 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div
         className={cn(
-          'transition-all duration-500 ease-in-out',
+          'transition-all duration-500 ease-in-out min-h-screen flex flex-col',
           // On mobile (< md), no margin - sidebar overlays
-          'md:ml-16',
+          'md:pl-24',
           // On desktop, use sidebar state
-          !isHidden && !isCollapsed && 'md:ml-64',
-          isHidden && 'md:ml-0'
+          !isHidden && !isCollapsed && 'md:pl-72',
+          isHidden && 'md:pl-0'
         )}
       >
         <Header />
-        {/* Add bottom padding on mobile for the bottom nav */}
-        <main className="p-6 pb-24 md:pb-6 page-fade-in">
+        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 page-fade-in max-w-[1600px] w-full mx-auto">
           {children}
         </main>
       </div>

@@ -147,163 +147,173 @@ export default function NewRFQPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 page-fade-in max-w-5xl mx-auto">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">New RFQ</h1>
-            <p className="text-muted-foreground">Create a new Request for Quote</p>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              New Intelligence Opportunity
+            </h1>
+            <p className="text-muted-foreground font-medium text-sm">Initiate a new Request for Quote protocol</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => router.back()}>
-            Cancel
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.back()}>
+            Discard
           </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            <Save className="mr-2 h-4 w-4" />
-            {isSaving ? 'Saving...' : 'Create RFQ'}
+          <Button onClick={handleSave} disabled={isSaving} size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8">
+            <Save className="mr-2 h-5 w-5" />
+            {isSaving ? 'Synchronizing...' : 'Establish RFQ'}
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
+      <div className="grid gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-8">
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                General Information
+              <CardTitle className="text-lg font-heading flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                  <FileText className="h-5 w-5" />
+                </div>
+                Opportunity Parameters
               </CardTitle>
+              <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Core intelligence for the request protocol</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <Label htmlFor="title">RFQ Title</Label>
+            <CardContent className="space-y-6">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="sm:col-span-2 space-y-2.5">
+                  <Label htmlFor="title" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Title</Label>
                   <Input
                     id="title"
                     value={formData.title}
                     onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                     placeholder="e.g. Precision Parts for Aerospace Project"
-                    className="mt-1.5"
+                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="customer">Customer</Label>
+                <div className="space-y-2.5">
+                  <Label htmlFor="customer" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Customer Node</Label>
                   <Input
                     id="customer"
                     value={formData.customer_id}
                     onChange={(e) => setFormData((prev) => ({ ...prev, customer_id: e.target.value }))}
-                    placeholder="Search customers..."
-                    className="mt-1.5"
+                    placeholder="Search intelligence partners..."
+                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="priority">Priority</Label>
+                <div className="space-y-2.5">
+                  <Label htmlFor="priority" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Priority Layer</Label>
                   <Select
                     value={formData.priority}
                     onValueChange={(v: Priority) => setFormData((prev) => ({ ...prev, priority: v }))}
                   >
-                    <SelectTrigger id="priority" className="mt-1.5">
+                    <SelectTrigger id="priority" className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectContent className="rounded-2xl shadow-premium">
+                      <SelectItem value="low" className="rounded-xl m-1">Low</SelectItem>
+                      <SelectItem value="medium" className="rounded-xl m-1">Medium</SelectItem>
+                      <SelectItem value="high" className="rounded-xl m-1">High</SelectItem>
+                      <SelectItem value="urgent" className="rounded-xl m-1">Urgent</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div>
-                <Label htmlFor="description">Description</Label>
+              <div className="space-y-2.5">
+                <Label htmlFor="description" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Detailed Context</Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Additional details about the RFQ..."
-                  className="mt-1.5"
+                  placeholder="Additional intelligence regarding the RFQ protocol..."
+                  className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all resize-none"
                   rows={4}
                 />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5" />
-                Line Items
-              </CardTitle>
-              <Button variant="outline" size="sm" onClick={handleAddLineItem}>
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/5 bg-muted/5 p-6">
+              <div className="space-y-1">
+                <CardTitle className="text-lg font-heading flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                    <Briefcase className="h-5 w-5" />
+                  </div>
+                  Line Intelligence
+                </CardTitle>
+                <CardDescription className="text-xs font-medium uppercase tracking-wider">Product nodes and quantity requirements</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleAddLineItem} className="rounded-xl border-primary/20 text-primary hover:bg-primary/5">
                 <Plus className="mr-2 h-4 w-4" />
-                Add Item
+                Add Node
               </Button>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            <CardContent className="p-6">
+              <div className="space-y-6">
                 {formData.line_items.map((item, index) => (
-                  <div key={item.id} className="grid gap-4 border rounded-lg p-4 relative bg-muted/30">
+                  <div key={item.id} className="grid gap-6 border border-border/10 rounded-[1.5rem] p-6 relative bg-muted/10 group transition-all hover:bg-muted/20">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 h-8 w-8 text-muted-foreground hover:text-destructive"
+                      className="absolute top-4 right-4 h-8 w-8 text-muted-foreground/40 hover:text-danger hover:bg-danger/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                       onClick={() => handleRemoveLineItem(item.id)}
                       disabled={formData.line_items.length === 1}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                    <div className="grid gap-4 sm:grid-cols-4">
-                      <div className="sm:col-span-1">
-                        <Label>Part Number</Label>
+                    <div className="grid gap-6 sm:grid-cols-4">
+                      <div className="sm:col-span-1 space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Part Node</Label>
                         <Input
                           value={item.part_number}
                           onChange={(e) => handleUpdateLineItem(item.id, { part_number: e.target.value })}
-                          placeholder="PN-123"
-                          className="mt-1"
+                          placeholder="PN-XXXX"
+                          className="h-11 rounded-xl bg-background/50 border-border/50"
                         />
                       </div>
-                      <div className="sm:col-span-3">
-                        <Label>Description</Label>
+                      <div className="sm:col-span-3 space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Specification</Label>
                         <Input
                           value={item.description}
                           onChange={(e) => handleUpdateLineItem(item.id, { description: e.target.value })}
-                          placeholder="Part description..."
-                          className="mt-1"
+                          placeholder="Node description protocol..."
+                          className="h-11 rounded-xl bg-background/50 border-border/50"
                         />
                       </div>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div>
-                        <Label>Quantity</Label>
+                    <div className="grid gap-6 sm:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Magnitude</Label>
                         <Input
                           type="number"
                           value={item.quantity}
                           onChange={(e) => handleUpdateLineItem(item.id, { quantity: Number(e.target.value) })}
-                          className="mt-1"
+                          className="h-11 rounded-xl bg-background/50 border-border/50"
                         />
                       </div>
-                      <div>
-                        <Label>Unit of Measure</Label>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Unit Protocol</Label>
                         <Input
                           value={item.unit_of_measure}
                           onChange={(e) => handleUpdateLineItem(item.id, { unit_of_measure: e.target.value })}
                           placeholder="pcs, kg, etc."
-                          className="mt-1"
+                          className="h-11 rounded-xl bg-background/50 border-border/50"
                         />
                       </div>
-                      <div>
-                        <Label>Target Price (Optional)</Label>
-                        <div className="relative mt-1">
-                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Target Valuation</Label>
+                        <div className="relative">
+                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/30" />
                           <Input
                             type="number"
                             value={item.target_price || ''}
                             onChange={(e) => handleUpdateLineItem(item.id, { target_price: Number(e.target.value) })}
-                            className="pl-9"
+                            className="pl-9 h-11 rounded-xl bg-background/50 border-border/50"
                           />
                         </div>
                       </div>
@@ -315,67 +325,66 @@ export default function NewRFQPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
-          <Card>
+        <div className="space-y-8">
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
             <CardHeader>
-              <CardTitle>Timeline & Value</CardTitle>
+              <CardTitle className="text-lg font-heading">Temporal Horizon</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="receivedDate">Received Date</Label>
-                <div className="relative mt-1.5">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <CardContent className="space-y-6">
+              <div className="space-y-2.5">
+                <Label htmlFor="receivedDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Ingestion Date</Label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
                   <Input
                     id="receivedDate"
                     type="date"
                     value={formData.received_date}
                     onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value }))}
-                    className="pl-9"
+                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
                   />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="dueDate">Due Date</Label>
-                <div className="relative mt-1.5">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="space-y-2.5">
+                <Label htmlFor="dueDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Deadline</Label>
+                <div className="relative">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
                   <Input
                     id="dueDate"
                     type="date"
                     value={formData.due_date}
                     onChange={(e) => setFormData((prev) => ({ ...prev, due_date: e.target.value }))}
-                    className="pl-9"
+                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
                   />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="estimatedValue">Estimated Value</Label>
-                <div className="relative mt-1.5">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="pt-4 border-t border-border/5">
+                <Label htmlFor="estimatedValue" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Estimated Magnitude</Label>
+                <div className="relative mt-2.5">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
                   <Input
                     id="estimatedValue"
                     type="number"
                     value={formData.estimated_value}
                     onChange={(e) => setFormData((prev) => ({ ...prev, estimated_value: Number(e.target.value) }))}
-                    className="pl-9"
+                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
                   />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
             <CardHeader>
-              <CardTitle>Additional Info</CardTitle>
+              <CardTitle className="text-lg font-heading">Protocol Notes</CardTitle>
             </CardHeader>
             <CardContent>
-              <Label htmlFor="internalNotes">Internal Notes</Label>
               <Textarea
                 id="internalNotes"
                 value={formData.notes}
                 onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Internal notes, not visible to customer..."
-                className="mt-1.5"
-                rows={5}
+                placeholder="Confidential intelligence, restricted access..."
+                className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50 resize-none"
+                rows={6}
               />
             </CardContent>
           </Card>

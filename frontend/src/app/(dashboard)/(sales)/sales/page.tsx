@@ -170,38 +170,31 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
   const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
-    <Link href={`/pipeline/${rfq.id}`}>
-      <Card className="mb-3 hover:shadow-md transition-shadow cursor-pointer">
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between mb-2">
-            <p className="font-medium text-sm">{rfq.rfq_number}</p>
-            <Badge variant={priorityConfig[rfq.priority].color as 'secondary' | 'warning' | 'danger' | 'destructive'} className="text-xs">
+    <Link href={`/pipeline/${rfq.id}`} className="group">
+      <Card className="mb-4 transition-all duration-500 hover:shadow-glow hover:-translate-y-1 group border-border/40 bg-card/60 backdrop-blur-sm rounded-[1.5rem]">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="font-mono text-[10px] font-bold text-primary/60">{rfq.rfq_number}</p>
+              <p className="font-heading font-bold text-sm tracking-tight group-hover:text-primary transition-colors mt-0.5">{rfq.customer?.name || 'Unknown Partner'}</p>
+            </div>
+            <Badge variant={priorityConfig[rfq.priority].color as any} className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0">
               {priorityConfig[rfq.priority].label}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground mb-1">{rfq.customer?.name || 'Unknown'}</p>
-          <p className="text-sm mb-3 line-clamp-2">{rfq.title}</p>
-          <div className="flex items-center justify-between text-xs">
-            <span className={cn(isOverdue ? 'text-danger' : 'text-muted-foreground')}>
-              Due {formatRelativeTime(new Date(rfq.due_date))}
+          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed font-medium">{rfq.title}</p>
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest pt-4 border-t border-border/10">
+            <span className={cn(isOverdue ? 'text-danger' : 'text-muted-foreground/60')}>
+              DUE {formatRelativeTime(new Date(rfq.due_date))}
             </span>
             {rfq.estimated_value && (
-              <span className="font-medium">{formatCurrency(rfq.estimated_value)}</span>
+              <span className="text-foreground/80 font-heading">{formatCurrency(rfq.estimated_value)}</span>
             )}
           </div>
           {rfq.assigned_user && (
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-              <Avatar fallback={rfq.assigned_user.full_name || rfq.assigned_user.email} size="xs" />
-              <span className="text-xs text-muted-foreground">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
-            </div>
-          )}
-          {rfq.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {rfq.tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="px-1.5 py-0.5 bg-muted text-muted-foreground text-xs rounded">
-                  {tag}
-                </span>
-              ))}
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/5">
+              <Avatar fallback={rfq.assigned_user.full_name || rfq.assigned_user.email} size="xs" className="ring-2 ring-background" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
             </div>
           )}
         </CardContent>
@@ -215,23 +208,23 @@ function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatu
   const totalValue = statusItems.reduce((sum, r) => sum + (r.estimated_value || 0), 0);
 
   return (
-    <div className="flex-1 min-w-[280px] max-w-[350px]">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <h3 className="font-semibold">{title}</h3>
-          <Badge variant="secondary" className="rounded-full">
+    <div className="flex-1 min-w-[300px] max-w-[380px]">
+      <div className="flex items-center justify-between mb-6 px-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{title}</h3>
+          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[9px] font-bold rounded-full">
             {statusItems.length}
           </Badge>
         </div>
-        <span className="text-sm text-muted-foreground">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
           {formatCurrency(totalValue)}
         </span>
       </div>
-      <div className="bg-muted/50 rounded-lg p-3 min-h-[400px]">
+      <div className="bg-muted/10 rounded-[2.5rem] p-4 min-h-[600px] border border-border/5">
         {statusItems.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground py-8">
-            No RFQs
-          </p>
+          <div className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-border/20 rounded-[2rem] text-muted-foreground/40 m-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest">Empty Stage</p>
+          </div>
         ) : (
           statusItems.map((rfq) => (
             <RFQKanbanCard key={rfq.id} rfq={rfq} />
@@ -306,7 +299,7 @@ function PipelinePageContent() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             Pipeline Velocity
           </h1>
           <p className="text-muted-foreground font-medium">

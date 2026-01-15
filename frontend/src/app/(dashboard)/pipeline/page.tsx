@@ -147,126 +147,132 @@ export default function PipelinePage() {
   }
 
   return (
-    <div className="space-y-4 lg:space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Sales Pipeline</h1>
-          <p className="text-muted-foreground">Manage RFQs and track quoting progress</p>
+    <div className="space-y-8 page-fade-in" data-testid="pipeline-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Pipeline Intelligence
+          </h1>
+          <p className="text-muted-foreground font-medium">Strategic RFQ management and opportunity velocity tracking</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => exportRFQs()} disabled={isLoading}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => exportRFQs()} disabled={isLoading}>
             <Download className="mr-2 h-4 w-4" />
-            Export
+            Export Intel
           </Button>
-          <Button asChild size="sm">
-            <Link href="/rfqs/new">
+          <Button asChild size="lg" className="rounded-xl shadow-glow subtle-shine">
+            <Link href="/pipeline/new">
               <Plus className="mr-2 h-4 w-4" />
-              New RFQ
+              New Opportunity
             </Link>
           </Button>
         </div>
-      </header>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active RFQs</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active Intelligence Nodes</CardTitle>
+            <Clock className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.activeRFQs}</div>
-            <p className="text-xs text-muted-foreground">{stats.overdueCount} overdue</p>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.activeRFQs}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60 mt-2">{stats.overdueCount} Critical Thresholds</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pipeline Value</CardTitle>
-            <span className="text-muted-foreground text-xs">$</span>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pipeline Magnitude</CardTitle>
+            <span className="text-primary/60 text-[10px] font-bold">$</span>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalValue)}</div>
-            <p className="text-xs text-muted-foreground">Across {stats.totalRFQs} items</p>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalValue)}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">Across {stats.totalRFQs} Opportunities</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Response</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Response Velocity</CardTitle>
+            <Clock className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.avgResponseTime}h</div>
-            <p className="text-xs text-muted-foreground">Target: &lt; 24h</p>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgResponseTime}h</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">Target: &lt; 24h Protocol</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Conversion Pulse</CardTitle>
+            <AlertCircle className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.conversionRate}%</div>
-            <p className="text-xs text-muted-foreground">+2% from last month</p>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.conversionRate}%</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">+2% ALPHA VARIANCE</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center space-x-2 max-w-md">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search RFQs, customers..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-1 items-center space-x-3 max-w-2xl">
+              <div className="relative flex-1 group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
+                <Input
+                  placeholder="Search opportunities by node identity..."
+                  className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px] h-12 rounded-xl bg-background/50 border-border/50">
+                  <SelectValue placeholder="Node Stage" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Stages</SelectItem>
+                  {STAGES.map(s => <SelectItem key={s.id} value={s.id} className="rounded-xl m-1">{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger className="w-[180px] h-12 rounded-xl bg-background/50 border-border/50">
+                  <SelectValue placeholder="Priority Layer" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Priorities</SelectItem>
+                  <SelectItem value="urgent" className="rounded-xl m-1">Urgent</SelectItem>
+                  <SelectItem value="high" className="rounded-xl m-1">High</SelectItem>
+                  <SelectItem value="medium" className="rounded-xl m-1">Medium</SelectItem>
+                  <SelectItem value="low" className="rounded-xl m-1">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
+                <Button variant="ghost" onClick={clearFilters} size="sm" className="rounded-xl hover:text-primary">
+                  Reset
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center rounded-xl border border-border/40 p-1 bg-background/50 shadow-inner-soft">
+              <Button
+                variant={view === 'list' ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-9 w-9 rounded-lg"
+                onClick={() => setAndPersistView('list')}
+              >
+                <LayoutList className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={view === 'board' ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-9 w-9 rounded-lg"
+                onClick={() => setAndPersistView('board')}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {STAGES.map(s => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="urgent">Urgent</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
-          {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
-            <Button variant="ghost" onClick={clearFilters} size="sm">
-              Clear
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center rounded-md border p-1 bg-muted/50">
-          <Button
-            variant={view === 'list' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => setAndPersistView('list')}
-          >
-            <LayoutList className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={view === 'board' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => setAndPersistView('board')}
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {view === 'board' ? (
         <KanbanBoard 

@@ -211,7 +211,7 @@ class SkillProfile:
 # =============================================================================
 
 
-class PrescriptiveMetricAnalyzer:
+class AsyncPrescriptiveMetricAnalyzer:
     """
     Prescriptive Metric Analysis engine.
     
@@ -520,12 +520,163 @@ class PrescriptiveMetricAnalyzer:
         ]
 
 
+class PrescriptiveMetricAnalyzer(AsyncPrescriptiveMetricAnalyzer):
+    """In-memory Prescriptive Metric Analyzer for sync use cases and tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.metrics_history: dict[str, list[MetricValue]] = {}
+        self.work_orders: dict[str, dict[str, Any]] = {}
+        self.supplier_quotes: dict[str, dict[str, Any]] = {}
+        self.incidents: dict[str, dict[str, Any]] = {}
+
+    def record_metric(self, metric: MetricValue) -> None:
+        self.metrics_history.setdefault(metric.metric_id, []).append(metric)
+
+    def get_metric_history(self, metric_id: str, days: int = 90) -> list[MetricValue]:
+        history = self.metrics_history.get(metric_id, [])
+        if not history:
+            return []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        if history and history[0].timestamp.tzinfo is None:
+            cutoff = datetime.now() - timedelta(days=days)
+        return [m for m in history if m.timestamp >= cutoff]
+
+    def register_work_order(
+        self,
+        work_order_id: str,
+        description: str,
+        quality_issues: int = 0,
+        delivery_delay: int = 0,
+        cost_overrun: float = 0.0,
+        safety_incidents: int = 0,
+    ) -> None:
+        self.work_orders[work_order_id] = {
+            "id": work_order_id,
+            "description": description,
+            "quality_issues": quality_issues,
+            "delivery_delay": delivery_delay,
+            "cost_overrun": cost_overrun,
+            "safety_incidents": safety_incidents,
+        }
+
+    def register_supplier_quote(
+        self,
+        quote_id: str,
+        supplier: str,
+        quality_rating: float = 1.0,
+        delivery_rating: float = 1.0,
+        cost_variance: float = 0.0,
+    ) -> None:
+        self.supplier_quotes[quote_id] = {
+            "id": quote_id,
+            "supplier": supplier,
+            "quality_rating": quality_rating,
+            "delivery_rating": delivery_rating,
+            "cost_variance": cost_variance,
+        }
+
+    def register_incident(
+        self,
+        incident_id: str,
+        description: str,
+        severity: int,
+        category: str = "safety",
+    ) -> None:
+        self.incidents[incident_id] = {
+            "id": incident_id,
+            "description": description,
+            "severity": severity,
+            "category": category,
+        }
+
+    def find_causal_links(self, metric_id: str) -> list[CausalLink]:
+        history = self.get_metric_history(metric_id)
+        if not history:
+            return []
+        latest = history[-1]
+        if latest.status != MetricStatus.RED:
+            return []
+
+        links: list[CausalLink] = []
+        for work_order in self.work_orders.values():
+            link = self._evaluate_work_order_link(latest, work_order)
+            if link:
+                links.append(link)
+
+        for quote in self.supplier_quotes.values():
+            link = self._evaluate_supplier_link(latest, quote)
+            if link:
+                links.append(link)
+
+        for incident in self.incidents.values():
+            link = self._evaluate_incident_link(latest, incident)
+            if link:
+                links.append(link)
+
+        return links
+
+    def analyze_trend(self, metric_id: str, days: int = 7) -> TrendWarning | None:
+        history = self.get_metric_history(metric_id, days=days)
+        if len(history) < 3:
+            return None
+
+        latest = history[-1]
+        if latest.status == MetricStatus.RED:
+            return None
+
+        values = [m.value for m in history]
+        n = len(values)
+        x_mean = (n - 1) / 2
+        y_mean = statistics.mean(values)
+
+        numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        slope = numerator / denominator if denominator != 0 else 0
+
+        lower_is_better = latest.category in [
+            MetricCategory.SAFETY,
+            MetricCategory.COST,
+        ] or "defect" in latest.name.lower()
+
+        variance = statistics.variance(values) if len(values) > 1 else 0
+
+        if lower_is_better:
+            if slope <= 0:
+                return None
+            threshold = latest.target * 1.2
+            days_to_breach = int((threshold - latest.value) / slope) if slope > 0 else 999
+        else:
+            if slope >= 0:
+                return None
+            threshold = latest.target * 0.9
+            days_to_breach = int((latest.value - threshold) / abs(slope)) if slope < 0 else 999
+
+        if days_to_breach > 14 or days_to_breach <= 0:
+            return None
+
+        confidence = max(0.5, min(0.95, 1.0 - variance / (abs(y_mean) + 0.01)))
+
+        return TrendWarning(
+            warning_id=str(uuid.uuid4()),
+            metric_id=metric_id,
+            metric_name=latest.name,
+            current_status=latest.status,
+            predicted_status=MetricStatus.RED,
+            days_to_breach=days_to_breach,
+            trend_values=values,
+            confidence=confidence,
+            detected_at=datetime.now(timezone.utc),
+            recommendation=f"Review {latest.category.value} processes to prevent metric degradation",
+        )
+
+
 # =============================================================================
 # CROSS-FUNCTIONAL SYNERGY ENGINE
 # =============================================================================
 
 
-class CrossFunctionalSynergyEngine:
+class AsyncCrossFunctionalSynergyEngine:
     """
     Cross-Functional Synergy Engine.
     
@@ -534,7 +685,13 @@ class CrossFunctionalSynergyEngine:
     
     def __init__(self):
         """Initialize engine."""
-        pass
+        self.department_events: dict[DepartmentType, list[dict[str, Any]]] = {
+            dept: [] for dept in DepartmentType
+        }
+        self.silo_alerts: list[SiloAlert] = []
+        self.work_centers: dict[str, WorkCenterLoad] = {}
+        self.operators: dict[str, SkillProfile] = {}
+        self.rebalance_suggestions: list[ResourceRebalance] = []
     
     async def register_event(
         self,
@@ -622,6 +779,151 @@ class CrossFunctionalSynergyEngine:
             )
             for r in result.scalars().all()
         ]
+
+
+class CrossFunctionalSynergyEngine:
+    """In-memory Cross-Functional Synergy Engine for sync use cases and tests."""
+
+    def __init__(self):
+        self.department_events: dict[DepartmentType, list[dict[str, Any]]] = {
+            dept: [] for dept in DepartmentType
+        }
+        self.silo_alerts: list[SiloAlert] = []
+        self.work_centers: dict[str, WorkCenterLoad] = {}
+        self.operators: dict[str, SkillProfile] = {}
+        self.rebalance_suggestions: list[ResourceRebalance] = []
+
+    def register_event(
+        self,
+        department: DepartmentType,
+        event_type: str,
+        description: str,
+        severity: AlertSeverity = AlertSeverity.INFO,
+        data: dict[str, Any] | None = None,
+    ) -> str:
+        event_id = str(uuid.uuid4())
+        self.department_events.setdefault(department, []).append({
+            "event_id": event_id,
+            "type": event_type,
+            "description": description,
+            "severity": severity,
+            "data": data or {},
+            "timestamp": datetime.now(timezone.utc),
+        })
+        self._check_cross_functional_impact_sync(department, event_type, description, severity)
+        return event_id
+
+    def _check_cross_functional_impact_sync(
+        self,
+        source_dept: DepartmentType,
+        event_type: str,
+        description: str,
+        severity: AlertSeverity,
+    ) -> None:
+        impact_map: dict[DepartmentType, list[tuple[DepartmentType, str, str]]] = {
+            DepartmentType.SALES: [
+                (DepartmentType.PRODUCTION, "rfq_delay", "production bottleneck"),
+                (DepartmentType.ENGINEERING, "new_product", "design capacity"),
+            ],
+            DepartmentType.PRODUCTION: [
+                (DepartmentType.LOGISTICS, "delay", "shipping schedule"),
+                (DepartmentType.QUALITY, "rush_order", "inspection backlog"),
+            ],
+            DepartmentType.QUALITY: [
+                (DepartmentType.PRODUCTION, "hold", "line stoppage"),
+                (DepartmentType.LOGISTICS, "reject", "return processing"),
+            ],
+            DepartmentType.LOGISTICS: [
+                (DepartmentType.PRODUCTION, "material_delay", "production halt"),
+            ],
+            DepartmentType.ENGINEERING: [
+                (DepartmentType.PRODUCTION, "design_change", "process update"),
+            ],
+            DepartmentType.MAINTENANCE: [
+                (DepartmentType.PRODUCTION, "equipment_down", "capacity loss"),
+            ],
+        }
+
+        if source_dept not in impact_map:
+            return
+
+        for affected_dept, trigger, impact in impact_map[source_dept]:
+            if trigger in event_type.lower() or trigger in description.lower():
+                alert = SiloAlert(
+                    alert_id=str(uuid.uuid4()),
+                    source_department=source_dept,
+                    affected_department=affected_dept,
+                    source_event=f"{event_type}: {description}",
+                    predicted_impact=f"Potential {impact} in {affected_dept.value}",
+                    severity=severity,
+                    detected_at=datetime.now(timezone.utc),
+                    owners_notified=[],
+                    resolution_status="open",
+                )
+                self.silo_alerts.append(alert)
+
+    def get_active_silo_alerts(self) -> list[SiloAlert]:
+        return [a for a in self.silo_alerts if a.resolution_status == "open"]
+
+    def analyze_resource_rebalancing(self) -> list[ResourceRebalance]:
+        suggestions = []
+
+        overloaded = [
+            wc for wc in self.work_centers.values()
+            if wc.utilization > 0.9
+        ]
+        underloaded = [
+            wc for wc in self.work_centers.values()
+            if wc.utilization < 0.6
+        ]
+
+        if not overloaded or not underloaded:
+            return suggestions
+
+        for over_wc in overloaded:
+            for under_wc in underloaded:
+                available_operators = [
+                    op for op in self.operators.values()
+                    if op.current_work_center == under_wc.work_center_id
+                    and op.available
+                ]
+
+                if not available_operators:
+                    continue
+
+                required_skills = self._infer_required_skills(over_wc.name)
+
+                matching_operators = []
+                for op in available_operators:
+                    match_score = self._calculate_skill_match(op.skills, required_skills)
+                    if match_score >= 0.6:
+                        matching_operators.append((op, match_score))
+
+                if matching_operators:
+                    matching_operators.sort(key=lambda x: x[1], reverse=True)
+                    top_matches = matching_operators[:2]
+
+                    avg_score = sum(m[1] for m in top_matches) / len(top_matches)
+                    expected_improvement = min(
+                        0.2,
+                        (over_wc.utilization - 0.8) * len(top_matches) * 0.1
+                    )
+
+                    suggestion = ResourceRebalance(
+                        suggestion_id=str(uuid.uuid4()),
+                        source_work_center=under_wc.work_center_id,
+                        target_work_center=over_wc.work_center_id,
+                        operator_ids=[m[0].operator_id for m in top_matches],
+                        skill_match_score=avg_score,
+                        reason=f"Rebalance from {under_wc.name} ({under_wc.utilization:.0%} util) "
+                               f"to {over_wc.name} ({over_wc.utilization:.0%} util)",
+                        expected_improvement=expected_improvement,
+                        suggested_at=datetime.now(timezone.utc),
+                    )
+                    suggestions.append(suggestion)
+
+        self.rebalance_suggestions.extend(suggestions)
+        return suggestions
     
     def register_work_center(
         self,
@@ -659,7 +961,7 @@ class CrossFunctionalSynergyEngine:
             available=available,
         )
     
-    def analyze_resource_rebalancing(self) -> list[ResourceRebalance]:
+    def analyze_resource_rebalancing(self, db: AsyncSession | None = None) -> list[ResourceRebalance]:
         """
         Analyze and suggest resource rebalancing.
         
@@ -787,7 +1089,7 @@ class CrossFunctionalSynergyEngine:
 # =============================================================================
 
 
-class HeijunkaAdvisor:
+class AsyncHeijunkaAdvisor:
     """
     Autonomous Heijunka (Leveling) Advisor.
     
@@ -797,7 +1099,9 @@ class HeijunkaAdvisor:
     
     def __init__(self):
         """Initialize advisor."""
-        pass
+        self.demand_data: dict[str, list[int]] = {}
+        self.production_data: dict[str, list[int]] = {}
+        self.suggestions: list[HeijunkaSuggestion] = []
     
     async def analyze_volume_leveling(self, db: AsyncSession, demand_data: dict[str, list[int]]) -> HeijunkaSuggestion | None:
         """
@@ -977,12 +1281,78 @@ class HeijunkaAdvisor:
         return False
 
 
+class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
+    """In-memory Heijunka Advisor for sync use cases and tests."""
+
+    def record_demand(self, product: str, quantities: list[int]) -> None:
+        self.demand_data[product] = quantities
+
+    def record_production(self, product: str, quantities: list[int]) -> None:
+        self.production_data[product] = quantities
+
+    def analyze_volume_leveling(self) -> HeijunkaSuggestion | None:
+        demand_data = self.demand_data
+        if not demand_data:
+            return None
+
+        all_daily_totals = []
+        max_days = max(len(v) for v in demand_data.values())
+
+        for day in range(max_days):
+            daily_total = sum(
+                data[day] if day < len(data) else 0
+                for data in demand_data.values()
+            )
+            all_daily_totals.append(daily_total)
+
+        if len(all_daily_totals) < 2:
+            return None
+
+        current_variance = statistics.variance(all_daily_totals)
+        suggested_totals = self._smooth_production(all_daily_totals)
+        suggested_variance = statistics.variance(suggested_totals)
+
+        mura_reduction = (
+            (current_variance - suggested_variance) / current_variance * 100
+            if current_variance > 0 else 0
+        )
+
+        if mura_reduction < 5:
+            return None
+
+        current_mix = {
+            product: sum(quantities)
+            for product, quantities in demand_data.items()
+        }
+        suggested_mix = {
+            product: int(qty / max_days * max_days)
+            for product, qty in current_mix.items()
+        }
+
+        suggestion = HeijunkaSuggestion(
+            suggestion_id=str(uuid.uuid4()),
+            period="weekly",
+            current_mix=current_mix,
+            suggested_mix=suggested_mix,
+            mura_reduction=mura_reduction,
+            volume_variance_before=current_variance,
+            volume_variance_after=suggested_variance,
+            suggested_at=datetime.now(timezone.utc),
+            reasoning=f"Volume leveling can reduce production unevenness by {mura_reduction:.1f}%. "
+                     f"Current daily variance: {current_variance:.0f}, "
+                     f"Suggested variance: {suggested_variance:.0f}",
+        )
+
+        self.suggestions.append(suggestion)
+        return suggestion
+
+
 # =============================================================================
 # COGNITIVE OBEYA ORCHESTRATOR
 # =============================================================================
 
 
-class CognitiveObeya:
+class AsyncCognitiveObeya:
     """
     Cognitive Obeya: The Organizational Brain.
     
@@ -992,14 +1362,14 @@ class CognitiveObeya:
     
     def __init__(
         self,
-        metric_analyzer: PrescriptiveMetricAnalyzer | None = None,
-        synergy_engine: CrossFunctionalSynergyEngine | None = None,
-        heijunka_advisor: HeijunkaAdvisor | None = None,
+        metric_analyzer: AsyncPrescriptiveMetricAnalyzer | None = None,
+        synergy_engine: AsyncCrossFunctionalSynergyEngine | None = None,
+        heijunka_advisor: AsyncHeijunkaAdvisor | None = None,
     ):
         """Initialize Cognitive Obeya."""
-        self.metric_analyzer = metric_analyzer or PrescriptiveMetricAnalyzer()
-        self.synergy_engine = synergy_engine or CrossFunctionalSynergyEngine()
-        self.heijunka_advisor = heijunka_advisor or HeijunkaAdvisor()
+        self.metric_analyzer = metric_analyzer or AsyncPrescriptiveMetricAnalyzer()
+        self.synergy_engine = synergy_engine or AsyncCrossFunctionalSynergyEngine()
+        self.heijunka_advisor = heijunka_advisor or AsyncHeijunkaAdvisor()
     
     def _broadcast_update(self, type: str, payload: Any):
         """Broadcast an update via WebSocket."""
@@ -1111,7 +1481,9 @@ class CognitiveObeya:
     
     async def analyze_resource_rebalancing(self, db: AsyncSession) -> list[dict[str, Any]]:
         """Analyze and get resource rebalancing suggestions."""
-        suggestions = await self.synergy_engine.analyze_resource_rebalancing(db)
+        suggestions = self.synergy_engine.analyze_resource_rebalancing(db)
+        if asyncio.iscoroutine(suggestions):
+            suggestions = await suggestions
         return [
             {
                 "suggestion_id": s.suggestion_id,
@@ -1175,19 +1547,127 @@ class CognitiveObeya:
         }
 
 
+class CognitiveObeya:
+    """Sync Cognitive Obeya orchestrator for in-memory workflows and tests."""
+
+    def __init__(
+        self,
+        metric_analyzer: PrescriptiveMetricAnalyzer | None = None,
+        synergy_engine: CrossFunctionalSynergyEngine | None = None,
+        heijunka_advisor: HeijunkaAdvisor | None = None,
+    ):
+        self.metric_analyzer = metric_analyzer or PrescriptiveMetricAnalyzer()
+        self.synergy_engine = synergy_engine or CrossFunctionalSynergyEngine()
+        self.heijunka_advisor = heijunka_advisor or HeijunkaAdvisor()
+
+    def record_metric(
+        self,
+        category: MetricCategory,
+        name: str,
+        value: float,
+        target: float,
+        unit: str = "",
+    ) -> MetricValue:
+        metric = MetricValue(
+            metric_id=f"{category.value}_{name}".replace(" ", "_").lower(),
+            category=category,
+            name=name,
+            value=value,
+            target=target,
+            timestamp=datetime.now(timezone.utc),
+            unit=unit,
+        )
+        self.metric_analyzer.record_metric(metric)
+        return metric
+
+    def get_metric_insights(self, metric_id: str) -> dict[str, Any]:
+        causal_links = self.metric_analyzer.find_causal_links(metric_id)
+        trend_warning = self.metric_analyzer.analyze_trend(metric_id)
+
+        return {
+            "metric_id": metric_id,
+            "causal_links": causal_links,
+            "trend_warning": trend_warning,
+        }
+
+    def register_cross_functional_event(
+        self,
+        department: DepartmentType,
+        event_type: str,
+        description: str,
+        severity: AlertSeverity = AlertSeverity.INFO,
+    ) -> str:
+        return self.synergy_engine.register_event(
+            department,
+            event_type,
+            description,
+            severity,
+        )
+
+    def get_silo_alerts(self) -> list[dict[str, Any]]:
+        alerts = self.synergy_engine.get_active_silo_alerts()
+        return [
+            {
+                "alert_id": a.alert_id,
+                "source": a.source_department.value,
+                "affected": a.affected_department.value,
+                "event": a.source_event,
+                "impact": a.predicted_impact,
+                "severity": a.severity.value,
+                "detected_at": a.detected_at.isoformat(),
+            }
+            for a in alerts
+        ]
+
+    def analyze_resource_rebalancing(self, db: AsyncSession | None = None) -> list[ResourceRebalance]:
+        return self.synergy_engine.analyze_resource_rebalancing()
+
+    def get_heijunka_suggestions(self) -> list[HeijunkaSuggestion]:
+        pending = [s for s in self.heijunka_advisor.get_all_suggestions() if s.status == "pending"]
+        if pending:
+            return pending
+
+        suggestion = self.heijunka_advisor.analyze_volume_leveling()
+        if suggestion:
+            return [suggestion]
+
+        suggestion = self.heijunka_advisor.analyze_mix_leveling()
+        if suggestion:
+            return [suggestion]
+
+        return []
+
+    def get_obeya_dashboard(self) -> dict[str, Any]:
+        return {
+            "metrics": {
+                "total_recorded": sum(len(v) for v in self.metric_analyzer.metrics_history.values()),
+                "total_tracked": len(self.metric_analyzer.metrics_history),
+                "active_trend_warnings": 0,
+            },
+            "cross_functional": {
+                "active_silo_alerts": len(self.synergy_engine.get_active_silo_alerts()),
+                "active_alerts": len(self.synergy_engine.get_active_silo_alerts()),
+            },
+            "heijunka": {
+                "pending_suggestions": len(self.get_heijunka_suggestions()),
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
 # =============================================================================
 # SINGLETON & FACTORY FUNCTIONS
 # =============================================================================
 
 
-_cognitive_obeya: CognitiveObeya | None = None
+_cognitive_obeya: AsyncCognitiveObeya | None = None
 
 
-def get_cognitive_obeya() -> CognitiveObeya:
+def get_cognitive_obeya() -> AsyncCognitiveObeya:
     """Get the Cognitive Obeya singleton."""
     global _cognitive_obeya
     if _cognitive_obeya is None:
-        _cognitive_obeya = CognitiveObeya()
+        _cognitive_obeya = AsyncCognitiveObeya()
     return _cognitive_obeya
 
 

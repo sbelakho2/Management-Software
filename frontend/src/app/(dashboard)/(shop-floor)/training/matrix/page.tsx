@@ -43,47 +43,47 @@ export default function TrainingMatrixPage() {
   const [search, setSearch] = React.useState('');
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Skills Matrix</h1>
-            <p className="text-muted-foreground">Visualize and manage team competency levels</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Skills Architecture</h1>
+            <p className="text-muted-foreground font-medium text-sm">Visualize and manage organizational competency nodes</p>
           </div>
         </div>
-        <Button variant="outline">
+        <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
           <Download className="mr-2 h-4 w-4" />
           Export Matrix
         </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-4">
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="relative flex-1 max-w-sm group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
               <Input
-                placeholder="Search employees..."
-                className="pl-9"
+                placeholder="Search operatives by node identity..."
+                className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Select defaultValue="all">
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Department" />
+                <SelectTrigger className="w-48 h-12 rounded-xl bg-background/50 border-border/50">
+                  <SelectValue placeholder="Department Node" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  <SelectItem value="ops">Operations</SelectItem>
-                  <SelectItem value="quality">Quality</SelectItem>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Departments</SelectItem>
+                  <SelectItem value="ops" className="rounded-xl m-1">Operations</SelectItem>
+                  <SelectItem value="quality" className="rounded-xl m-1">Quality</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon">
+              <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl border-border/50">
                 <Filter className="h-4 w-4" />
               </Button>
             </div>
@@ -91,15 +91,15 @@ export default function TrainingMatrixPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+        <CardHeader className="border-b border-border/10 bg-muted/5 p-6">
           <div className="flex items-center justify-between">
-            <CardTitle>Competency Grid</CardTitle>
-            <div className="flex items-center gap-4 text-xs">
+            <CardTitle className="text-lg font-heading">Competency Matrix</CardTitle>
+            <div className="flex flex-wrap items-center gap-6">
               {Object.entries(levelConfig).map(([level, cfg]) => (
-                <div key={level} className="flex items-center gap-1">
-                  <div className={cn("w-3 h-3 rounded", cfg.color.split(' ')[0])} />
-                  <span className="text-muted-foreground">{cfg.label}</span>
+                <div key={level} className="flex items-center gap-2">
+                  <div className={cn("w-2.5 h-2.5 rounded-full shadow-sm", cfg.color.split(' ')[0])} />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{cfg.label}</span>
                 </div>
               ))}
             </div>
@@ -107,31 +107,31 @@ export default function TrainingMatrixPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-separate border-spacing-0">
               <thead>
-                <tr className="bg-muted/50 border-b">
-                  <th className="p-4 text-left font-medium text-sm sticky left-0 bg-muted/50 z-10 min-w-[200px]">Employee</th>
+                <tr>
+                  <th className="p-5 text-left sticky left-0 bg-background/80 backdrop-blur-md z-20 border-r border-border/10 min-w-[240px]">Operative Node</th>
                   {skillNames.map(skill => (
-                    <th key={skill} className="p-4 text-center font-medium text-sm min-w-[120px]">{skill}</th>
+                    <th key={skill} className="p-5 text-center min-w-[140px]">{skill}</th>
                   ))}
-                  <th className="p-4 text-center font-medium text-sm">Avg. Score</th>
+                  <th className="p-5 text-center min-w-[140px]">Strategic Avg</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody>
                 {employees.map(emp => {
                   const scores = Object.values(emp.skills);
                   const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
                   
                   return (
-                    <tr key={emp.id} className="hover:bg-muted/30">
-                      <td className="p-4 sticky left-0 bg-background z-10 border-r">
-                        <div className="flex items-center gap-3">
-                          <Avatar size="sm">
-                            <AvatarFallback>{getInitials(emp.name)}</AvatarFallback>
+                    <tr key={emp.id} className="group hover:bg-primary/5 transition-all duration-300">
+                      <td className="p-5 sticky left-0 bg-background/80 backdrop-blur-md z-10 border-r border-border/10 transition-colors group-hover:bg-transparent">
+                        <div className="flex items-center gap-4">
+                          <Avatar size="sm" className="ring-2 ring-background shadow-sm">
+                            <AvatarFallback className="font-heading font-bold bg-muted/30">{getInitials(emp.name)}</AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium text-sm">{emp.name}</p>
-                            <p className="text-xs text-muted-foreground">{emp.role}</p>
+                            <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-primary transition-colors">{emp.name}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{emp.role}</p>
                           </div>
                         </div>
                       </td>
@@ -139,9 +139,9 @@ export default function TrainingMatrixPage() {
                         const score = emp.skills[skill as keyof typeof emp.skills] || 0;
                         const cfg = levelConfig[score as keyof typeof levelConfig];
                         return (
-                          <td key={skill} className="p-4 text-center">
+                          <td key={skill} className="p-5 text-center">
                             <div className={cn(
-                              "inline-flex items-center justify-center w-10 h-10 rounded-lg font-bold transition-transform hover:scale-110 cursor-default",
+                              "inline-flex items-center justify-center w-12 h-12 rounded-2xl font-heading font-bold text-base shadow-inner-soft transition-all duration-500 group-hover:scale-110 cursor-default border border-transparent hover:border-primary/20",
                               cfg.color
                             )}>
                               {score}
@@ -149,12 +149,12 @@ export default function TrainingMatrixPage() {
                           </td>
                         );
                       })}
-                      <td className="p-4 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="font-bold">{avg.toFixed(1)}</span>
-                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <td className="p-5 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <span className="font-heading font-bold text-base tracking-tight">{avg.toFixed(1)}</span>
+                          <div className="w-20 h-1.5 bg-muted/20 rounded-full overflow-hidden shadow-inner-soft">
                             <div 
-                              className="h-full bg-primary" 
+                              className="h-full bg-gradient-to-r from-primary to-primary/60 transition-all duration-1000" 
                               style={{ width: `${(avg / 4) * 100}%` }} 
                             />
                           </div>

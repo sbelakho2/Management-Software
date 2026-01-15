@@ -87,7 +87,7 @@ function ProductStats({ products }: { products: Product[] }) {
               <Package className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.active}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.active}</p>
               <p className="text-sm text-muted-foreground">Active Products</p>
             </div>
           </div>
@@ -100,7 +100,7 @@ function ProductStats({ products }: { products: Product[] }) {
               <Boxes className={cn('h-5 w-5', stats.lowStock > 0 ? 'text-warning' : 'text-muted-foreground')} />
             </div>
             <div>
-              <p className={cn('text-2xl font-bold', stats.lowStock > 0 && 'text-warning')}>
+              <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70', stats.lowStock > 0 && 'from-warning to-warning/70')}>
                 {stats.lowStock}
               </p>
               <p className="text-sm text-muted-foreground">Low Stock</p>
@@ -115,7 +115,7 @@ function ProductStats({ products }: { products: Product[] }) {
               <DollarSign className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalRevenue)}</p>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
             </div>
           </div>
@@ -128,7 +128,7 @@ function ProductStats({ products }: { products: Product[] }) {
               <TrendingUp className="h-5 w-5 text-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.avgMargin.toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgMargin.toFixed(1)}%</p>
               <p className="text-sm text-muted-foreground">Avg. Margin</p>
             </div>
           </div>
@@ -276,31 +276,33 @@ export default function ProductsPage() {
   }, [mappedProducts, searchQuery, statusFilter, categoryFilter, stockFilter]);
 
   return (
-    <div className="space-y-6" data-testid="products-page">
+    <div className="space-y-8 page-fade-in" data-testid="products-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Products</h1>
-          <p className="text-muted-foreground">Manage your product catalog and inventory</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Product Portfolio
+          </h1>
+          <p className="text-muted-foreground font-medium">Manage manufacturing specifications and master data intelligence</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
                 <Download className="mr-2 h-4 w-4" />
-                Export
+                Export Intel
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem>Export as CSV</DropdownMenuItem>
-              <DropdownMenuItem>Export as Excel</DropdownMenuItem>
+            <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
+              <DropdownMenuItem className="rounded-xl m-1">Export as CSV</DropdownMenuItem>
+              <DropdownMenuItem className="rounded-xl m-1">Export as Excel</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="outline">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <Upload className="mr-2 h-4 w-4" />
             Import
           </Button>
-          <Button onClick={() => router.push('/products/new')}>
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/products/new')}>
             <Plus className="mr-2 h-4 w-4" />
             Add Product
           </Button>

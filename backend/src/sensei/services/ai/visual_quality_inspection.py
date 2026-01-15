@@ -1112,7 +1112,7 @@ class TrainingDataset:
         }
 
 
-class ContinuousLearningManager:
+class AsyncContinuousLearningManager:
     """
     Manages continuous learning from operator feedback with database persistence.
     """
@@ -1181,31 +1181,29 @@ class ContinuousLearningManager:
         """Retrieve training data from database."""
         feedback_stmt = select(InspectionFeedback)
         feedback_records = (await db.execute(feedback_stmt)).scalars().all()
-        
+
         if not feedback_records:
             return None
-            
-        # Aggregate feedback statistics
+
         return TrainingDataset(
-            images=[],  # Images would be fetched from S3 using keys
+            images=[],
             annotations={
                 "feedback_count": len(feedback_records),
                 "is_correct_count": len([r for r in feedback_records if r.is_correct]),
             },
             feedback_count=len(feedback_records),
         )
-    
+
     def get_training_recommendations(self) -> dict[str, Any]:
         """Get recommendations for model improvement."""
-        # Analyze feedback patterns
         fp_count = sum(len(f.false_positive_ids) for f in self.feedback_queue)
         fn_count = sum(len(f.false_negative_boxes) for f in self.feedback_queue)
-        
+
         overrides = sum(
-            1 for f in self.feedback_queue 
+            1 for f in self.feedback_queue
             if f.corrected_decision and f.corrected_decision != f.original_decision
         )
-        
+
         return {
             "total_feedback": len(self.feedback_queue),
             "false_positives": fp_count,
@@ -1217,6 +1215,23 @@ class ContinuousLearningManager:
                 "Adjust confidence threshold to reduce false positives",
             ],
         }
+
+
+class ContinuousLearningManager(AsyncContinuousLearningManager):
+    """In-memory continuous learning manager for sync use cases and tests."""
+
+    def record_feedback(
+        self,
+        feedback: FeedbackRecord,
+        image_key: str | None = None,
+    ) -> None:
+        self.feedback_queue.append(feedback)
+
+        if len(self.feedback_queue) >= self.feedback_threshold:
+            self._retraining_scheduled = True
+
+    async def get_training_dataset(self, db: AsyncSession) -> TrainingDataset | None:
+        return await super().get_training_dataset(db)
 
 
 # =============================================================================
@@ -1246,7 +1261,7 @@ class VisualQualityInspectionService:
         self._defect_detector: YOLODefectDetector | None = None
         
         self.scoring_engine = QualityScoringEngine()
-        self.learning_manager = ContinuousLearningManager()
+        self.learning_manager = AsyncContinuousLearningManager()
         self.enricher = VisionEnrichmentSuite()
         
         # Cache
@@ -1470,7 +1485,7 @@ class VisualQualityInspectionService:
         
         return batch
     
-    async def record_feedback(
+    async def _record_feedback_async(
         self,
         db: AsyncSession,
         inspection_id: str,
@@ -1481,21 +1496,53 @@ class VisualQualityInspectionService:
         notes: str = "",
         image_key: str | None = None,
     ) -> None:
-        """
-        Record operator feedback for continuous learning.
-        """
+        """Record operator feedback with DB persistence."""
         feedback = FeedbackRecord(
             inspection_id=inspection_id,
             timestamp=_utcnow(),
-            original_decision=InspectionDecision.PASS,  # Should ideally look up actual in production
+            original_decision=InspectionDecision.PASS,
             corrected_decision=corrected_decision,
             false_positive_ids=false_positive_ids or [],
             false_negative_boxes=false_negative_boxes or [],
             operator_id=operator_id,
             notes=notes,
         )
-        
         await self.learning_manager.record_feedback(db, feedback, image_key)
+
+    def record_feedback(
+        self,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Record operator feedback (sync) or return awaitable when DB provided."""
+        if args and isinstance(args[0], AsyncSession):
+            db = args[0]
+            return self._record_feedback_async(
+                db=db,
+                inspection_id=kwargs.get("inspection_id", ""),
+                corrected_decision=kwargs.get("corrected_decision"),
+                false_positive_ids=kwargs.get("false_positive_ids"),
+                false_negative_boxes=kwargs.get("false_negative_boxes"),
+                operator_id=kwargs.get("operator_id", ""),
+                notes=kwargs.get("notes", ""),
+                image_key=kwargs.get("image_key"),
+            )
+
+        inspection_id = kwargs.get("inspection_id") or (args[0] if args else "")
+        feedback = FeedbackRecord(
+            inspection_id=inspection_id,
+            timestamp=_utcnow(),
+            original_decision=InspectionDecision.PASS,
+            corrected_decision=kwargs.get("corrected_decision"),
+            false_positive_ids=kwargs.get("false_positive_ids") or [],
+            false_negative_boxes=kwargs.get("false_negative_boxes") or [],
+            operator_id=kwargs.get("operator_id", ""),
+            notes=kwargs.get("notes", ""),
+        )
+        self.learning_manager.feedback_queue.append(feedback)
+        if len(self.learning_manager.feedback_queue) >= self.learning_manager.feedback_threshold:
+            self.learning_manager._retraining_scheduled = True
+        return None
     
     def get_learning_status(self) -> dict[str, Any]:
         """Get status of continuous learning."""

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Iterable
+from uuid import UUID, uuid4
 from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sensei.models.business_continuity import (
@@ -114,7 +115,7 @@ class RestoreRehearsal:
     created_by: UUID
 
 
-class BusinessContinuityService:
+class AsyncBusinessContinuityService:
     """Production business continuity and DR service using SQLAlchemy."""
 
     # ---- RBAC ----
@@ -445,3 +446,257 @@ class BusinessContinuityService:
         stmt = select(RestoreRehearsalModel).order_by(RestoreRehearsalModel.scheduled_at.desc())
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+
+class BusinessContinuityService:
+    """In-memory Business Continuity service for sync workflows and tests."""
+
+    def __init__(self):
+        self._events: dict[UUID, QueuedEvent] = {}
+        self._rules: dict[str, CriticalityRule] = {}
+        self._rto_rpo: RTORPOConfig | None = None
+        self._rehearsals: dict[UUID, RestoreRehearsal] = {}
+
+    def can_admin(self, *, actor_roles: Iterable[str]) -> bool:
+        return len(_norm_roles(actor_roles).intersection(_DR_ADMIN_ROLES)) > 0
+
+    def queue_event(
+        self,
+        *,
+        device_id: str,
+        entity_type: str,
+        entity_id: UUID | None,
+        operation: str,
+        priority: EventPriority,
+        payload: dict[str, Any],
+        client_timestamp: datetime,
+    ) -> QueuedEvent:
+        event = QueuedEvent(
+            id=uuid4(),
+            device_id=device_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            operation=operation,
+            priority=priority,
+            payload=payload,
+            client_timestamp=client_timestamp,
+            status=QueuedEventStatus.QUEUED,
+            queued_at=_utcnow(),
+        )
+        self._events[event.id] = event
+        return event
+
+    def get_pending_events(
+        self,
+        *,
+        device_id: str | None = None,
+        priority: EventPriority | None = None,
+    ) -> list[QueuedEvent]:
+        events = [e for e in self._events.values() if e.status == QueuedEventStatus.QUEUED]
+        if device_id:
+            events = [e for e in events if e.device_id == device_id]
+        if priority:
+            events = [e for e in events if e.priority == priority]
+
+        priority_order = {
+            EventPriority.CRITICAL: 0,
+            EventPriority.HIGH: 1,
+            EventPriority.NORMAL: 2,
+            EventPriority.LOW: 3,
+        }
+        events.sort(key=lambda e: (priority_order.get(e.priority, 9), e.client_timestamp))
+        return events
+
+    def mark_synced(self, event_id: UUID) -> QueuedEvent:
+        event = self._events.get(event_id)
+        if not event:
+            raise KeyError("Event not found")
+        event.status = QueuedEventStatus.SYNCED
+        event.synced_at = _utcnow()
+        return event
+
+    def mark_conflict(self, event_id: UUID, *, conflict_details: dict[str, Any]) -> QueuedEvent:
+        event = self._events.get(event_id)
+        if not event:
+            raise KeyError("Event not found")
+        event.status = QueuedEventStatus.CONFLICT
+        event.conflict_details = conflict_details
+        rule = self._rules.get(event.entity_type)
+        if rule:
+            event.resolution_strategy = rule.resolution_strategy
+        else:
+            event.resolution_strategy = ConflictResolutionStrategy.MANUAL_REVIEW
+        return event
+
+    def resolve_conflict(
+        self,
+        event_id: UUID,
+        *,
+        resolution: ConflictResolutionStrategy,
+        actor_roles: Iterable[str],
+    ) -> QueuedEvent:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to resolve conflicts")
+        event = self._events.get(event_id)
+        if not event:
+            raise KeyError("Event not found")
+        event.resolution_strategy = resolution
+        event.status = QueuedEventStatus.RESOLVED
+        return event
+
+    def get_conflicts(self) -> list[QueuedEvent]:
+        return [e for e in self._events.values() if e.status == QueuedEventStatus.CONFLICT]
+
+    def set_criticality_rule(
+        self,
+        *,
+        entity_type: str,
+        resolution_strategy: ConflictResolutionStrategy,
+        actor_roles: Iterable[str],
+    ) -> CriticalityRule:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to set criticality rules")
+        rule = CriticalityRule(
+            id=uuid4(),
+            entity_type=entity_type,
+            resolution_strategy=resolution_strategy,
+        )
+        self._rules[entity_type] = rule
+        return rule
+
+    def get_criticality_rule(self, entity_type: str) -> CriticalityRule | None:
+        return self._rules.get(entity_type)
+
+    def set_rto_rpo_targets(
+        self,
+        *,
+        rto_minutes: int,
+        rpo_minutes: int,
+        actor_user_id: UUID,
+        actor_roles: Iterable[str],
+    ) -> RTORPOConfig:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to set RTO/RPO targets")
+        now = _utcnow()
+        if self._rto_rpo is None:
+            self._rto_rpo = RTORPOConfig(
+                id=uuid4(),
+                rto_minutes=rto_minutes,
+                rpo_minutes=rpo_minutes,
+                last_validated_at=None,
+                validation_passed=None,
+                created_at=now,
+                updated_by=actor_user_id,
+            )
+        else:
+            self._rto_rpo.rto_minutes = rto_minutes
+            self._rto_rpo.rpo_minutes = rpo_minutes
+            self._rto_rpo.updated_by = actor_user_id
+        return self._rto_rpo
+
+    def get_rto_rpo_config(self) -> RTORPOConfig | None:
+        return self._rto_rpo
+
+    def validate_rto_rpo(
+        self,
+        *,
+        achieved_rto_minutes: int,
+        achieved_rpo_minutes: int,
+        actor_roles: Iterable[str],
+    ) -> dict[str, Any]:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to validate RTO/RPO")
+        if not self._rto_rpo:
+            raise ValueError("RTO/RPO targets not configured")
+
+        rto_passed = achieved_rto_minutes <= self._rto_rpo.rto_minutes
+        rpo_passed = achieved_rpo_minutes <= self._rto_rpo.rpo_minutes
+        overall_passed = rto_passed and rpo_passed
+
+        self._rto_rpo.last_validated_at = _utcnow()
+        self._rto_rpo.validation_passed = overall_passed
+
+        return {
+            "rto_target": self._rto_rpo.rto_minutes,
+            "rto_achieved": achieved_rto_minutes,
+            "rto_passed": rto_passed,
+            "rpo_target": self._rto_rpo.rpo_minutes,
+            "rpo_achieved": achieved_rpo_minutes,
+            "rpo_passed": rpo_passed,
+            "overall_passed": overall_passed,
+        }
+
+    def schedule_rehearsal(
+        self,
+        *,
+        scheduled_at: datetime,
+        actor_user_id: UUID,
+        actor_roles: Iterable[str],
+    ) -> RestoreRehearsal:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to schedule rehearsals")
+        rehearsal = RestoreRehearsal(
+            id=uuid4(),
+            scheduled_at=scheduled_at,
+            started_at=None,
+            completed_at=None,
+            status=RehearsalStatus.SCHEDULED,
+            rto_achieved_minutes=None,
+            rpo_achieved_minutes=None,
+            notes=None,
+            created_by=actor_user_id,
+        )
+        self._rehearsals[rehearsal.id] = rehearsal
+        return rehearsal
+
+    def start_rehearsal(
+        self,
+        rehearsal_id: UUID,
+        *,
+        actor_roles: Iterable[str],
+    ) -> RestoreRehearsal:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to start rehearsals")
+        rehearsal = self._rehearsals.get(rehearsal_id)
+        if not rehearsal:
+            raise KeyError("Rehearsal not found")
+        rehearsal.status = RehearsalStatus.RUNNING
+        rehearsal.started_at = _utcnow()
+        return rehearsal
+
+    def complete_rehearsal(
+        self,
+        rehearsal_id: UUID,
+        *,
+        rto_achieved_minutes: int,
+        rpo_achieved_minutes: int,
+        notes: str | None,
+        actor_roles: Iterable[str],
+    ) -> RestoreRehearsal:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to complete rehearsals")
+        rehearsal = self._rehearsals.get(rehearsal_id)
+        if not rehearsal:
+            raise KeyError("Rehearsal not found")
+
+        rehearsal.completed_at = _utcnow()
+        rehearsal.rto_achieved_minutes = rto_achieved_minutes
+        rehearsal.rpo_achieved_minutes = rpo_achieved_minutes
+        rehearsal.notes = notes
+
+        if self._rto_rpo:
+            passed = (
+                rto_achieved_minutes <= self._rto_rpo.rto_minutes
+                and rpo_achieved_minutes <= self._rto_rpo.rpo_minutes
+            )
+            rehearsal.status = RehearsalStatus.PASSED if passed else RehearsalStatus.FAILED
+        else:
+            rehearsal.status = RehearsalStatus.PASSED
+        return rehearsal
+
+    def list_rehearsals(self, *, actor_roles: Iterable[str]) -> list[RestoreRehearsal]:
+        if not self.can_admin(actor_roles=actor_roles):
+            raise PermissionError("Not permitted to view rehearsals")
+        rehearsals = list(self._rehearsals.values())
+        rehearsals.sort(key=lambda r: r.scheduled_at, reverse=True)
+        return rehearsals

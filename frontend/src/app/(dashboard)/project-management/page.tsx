@@ -110,33 +110,34 @@ export default function ProjectManagementPage() {
   };
 
   return (
-    <div className="space-y-6" data-testid="pm-page">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-8 page-fade-in" data-testid="pm-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Project Management</h1>
-          <p className="text-sm text-muted-foreground">
-            Projects, epics, sprints, and stories integrated across Sensei OS.
-          </p>
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Project Engineering
+          </h1>
+          <p className="text-muted-foreground font-medium">Strategic orchestration of complex initiatives and milestones</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-[200px]">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-2 bg-background/50 border-border/50">
               <TabsTrigger value="list">List</TabsTrigger>
               <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button onClick={() => setCreateOpen(true)} data-testid="pm-create-project">
-            <Plus className="mr-2 h-4 w-4" /> New Project
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => setCreateOpen(true)} data-testid="pm-create-project">
+            <Plus className="mr-2 h-4 w-4" />
+            New Initiative
           </Button>
         </div>
       </div>
 
       {view === 'portfolio' ? (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Projects by Status</CardTitle>
-              <CardDescription>High-level portfolio distribution</CardDescription>
+        <div className="grid gap-8 md:grid-cols-2">
+          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+            <CardHeader className="pb-6">
+              <CardTitle className="text-lg font-heading">Initiative Distribution</CardTitle>
+              <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">High-level portfolio nodes by status</CardDescription>
             </CardHeader>
             <CardContent>
               <BarChart 
@@ -149,105 +150,103 @@ export default function ProjectManagementPage() {
               />
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Portfolio Health</CardTitle>
-              <CardDescription>Aggregated project status</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col justify-center items-center h-[200px]">
-              <div className="text-4xl font-bold text-success">
+          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md flex flex-col items-center justify-center p-12">
+            <div className="relative">
+              <div className="text-6xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">
                 {projects.length > 0 ? Math.round((projects.filter(p => p.status === 'active' || p.status === 'completed').length / projects.length) * 100) : 0}%
               </div>
-              <p className="text-muted-foreground mt-2">Healthy / Completed Ratio</p>
-            </CardContent>
+              <div className="absolute -inset-8 border-2 border-success/10 rounded-full animate-pulse" />
+            </div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-success/60 mt-12">Portfolio Health Index</p>
+            <p className="text-sm text-muted-foreground font-medium mt-2">Strategic Velocity Optimal</p>
           </Card>
         </div>
       ) : (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5" />
-              Projects
-            </CardTitle>
-            <CardDescription>Search, open, and manage your workspaces.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <div className="space-y-8">
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+            <CardContent className="p-6">
+              <div className="relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search projects by name, slug, or description"
-                  className="pl-9"
+                  placeholder="Search initiatives by intelligence key, slug, or description..."
+                  className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
                   data-testid="pm-search"
                 />
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
           {isLoading && (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 6 }).map((_, idx) => (
-                <Card key={idx} className="p-4">
-                  <Skeleton className="h-5 w-48" />
-                  <Skeleton className="mt-3 h-4 w-full" />
-                  <Skeleton className="mt-2 h-4 w-2/3" />
+                <Card key={idx} className="p-6 rounded-3xl">
+                  <Skeleton className="h-6 w-48 rounded-lg" />
+                  <Skeleton className="mt-4 h-4 w-full rounded-md" />
+                  <Skeleton className="mt-2 h-4 w-2/3 rounded-md" />
                 </Card>
               ))}
             </div>
           )}
 
           {!isLoading && filtered.length === 0 && (
-            <div className="rounded-lg border border-dashed p-10 text-center">
-              <p className="text-sm text-muted-foreground">No projects match your search.</p>
-              <div className="mt-3">
-                <Button variant="outline" onClick={() => setCreateOpen(true)}>
+            <div className="rounded-[3rem] border-2 border-dashed border-border/20 p-20 text-center bg-muted/5">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6 shadow-inner-soft">
+                <FolderKanban className="h-10 w-10 text-muted-foreground/30" />
+              </div>
+              <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No initiatives match current search parameters.</p>
+              <div className="mt-8">
+                <Button variant="outline" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setCreateOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Create your first project
+                  Initiate First Protocol
                 </Button>
               </div>
             </div>
           )}
 
           {!isLoading && filtered.length > 0 && (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pm-project-grid">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="pm-project-grid">
               {filtered.map((p: Project) => {
                 const tone = statusTone[p.status];
                 return (
-                  <Link key={p.id} href={`/project-management/${p.id}`} className="block">
-                    <Card className="h-full transition-colors hover:bg-accent/40" data-testid={`pm-project-${p.id}`}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <CardTitle className="text-base leading-5">{p.name}</CardTitle>
-                            <p className="text-xs text-muted-foreground">/{p.slug}</p>
+                  <Link key={p.id} href={`/project-management/${p.id}`} className="block group">
+                    <Card className="h-full border-border/40 bg-card/40 backdrop-blur-sm rounded-[2rem] transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1.5 hover:border-primary/20" data-testid={`pm-project-${p.id}`}>
+                      <CardHeader className="pb-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1.5">
+                            <CardTitle className="text-lg font-heading font-bold tracking-tight group-hover:text-primary transition-colors">{p.name}</CardTitle>
+                            <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">NODE: {p.slug}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             {p.is_private ? (
-                              <Badge variant="secondary" className="gap-1">
-                                <Lock className="h-3 w-3" /> Private
-                              </Badge>
+                              <div className="p-2 rounded-xl bg-danger/5 text-danger/40 border border-danger/5" title="Private Protocol">
+                                <Lock className="h-3.5 w-3.5" />
+                              </div>
                             ) : (
-                              <Badge variant="secondary" className="gap-1">
-                                <Globe className="h-3 w-3" /> Shared
-                              </Badge>
+                              <div className="p-2 rounded-xl bg-primary/5 text-primary/40 border border-primary/5" title="Shared Intelligence">
+                                <Globe className="h-3.5 w-3.5" />
+                              </div>
                             )}
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="space-y-3">
+                      <CardContent className="space-y-5">
                         <div className="flex flex-wrap gap-2">
-                          <Badge className={cn('border', tone.className)}>{tone.label}</Badge>
-                          <Badge variant="outline">{typeLabel[p.project_type]}</Badge>
+                          <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest', tone.className)}>{tone.label}</Badge>
+                          <Badge variant="outline" className="rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border-border/40 text-muted-foreground/60">{typeLabel[p.project_type]}</Badge>
                         </div>
                         {p.description ? (
-                          <p className="line-clamp-2 text-sm text-muted-foreground">{p.description}</p>
+                          <p className="line-clamp-2 text-xs text-muted-foreground/80 leading-relaxed font-medium">{p.description}</p>
                         ) : (
-                          <p className="text-sm text-muted-foreground">No description</p>
+                          <p className="text-xs text-muted-foreground/40 italic">No description protocol established.</p>
                         )}
-                        <p className="text-xs text-muted-foreground">
-                          Updated {formatRelativeTime(p.updated_at)}
-                        </p>
+                        <div className="pt-4 border-t border-border/5 flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
+                            PULSE {formatRelativeTime(p.updated_at)}
+                          </p>
+                          <ArrowRight className="h-4 w-4 text-primary/20 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        </div>
                       </CardContent>
                     </Card>
                   </Link>
@@ -255,8 +254,7 @@ export default function ProjectManagementPage() {
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
       )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

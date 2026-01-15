@@ -11,7 +11,12 @@ function normalizeApiRoot(rawUrl: string): string {
   return trimmed;
 }
 
-const API_ROOT = normalizeApiRoot(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
+const DEFAULT_PUBLIC_API_URL = 'http://localhost:8000';
+const API_ROOT = normalizeApiRoot(
+  typeof window === 'undefined'
+    ? (process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || DEFAULT_PUBLIC_API_URL)
+    : (process.env.NEXT_PUBLIC_API_URL || DEFAULT_PUBLIC_API_URL)
+);
 
 export interface ApiError {
   message: string;

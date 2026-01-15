@@ -73,78 +73,75 @@ export default function NewWorkOrderPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-3xl mx-auto space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+            <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">New Work Order</h1>
-            <p className="text-muted-foreground">Schedule a new production run</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Execution Node</h1>
+            <p className="text-muted-foreground font-medium text-sm">Schedule and establish a new organizational production run</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.back()} disabled={isSubmitting}>
-            <X className="h-4 w-4 mr-2" />
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12 px-8" onClick={() => router.back()} disabled={isSubmitting}>Abort</Button>
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8 font-bold" onClick={handleSubmit} disabled={isSubmitting}>
             <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Creating...' : 'Create Work Order'}
+            {isSubmitting ? 'Synchronizing...' : 'Establish Order'}
           </Button>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Details</CardTitle>
-            <CardDescription>Specify product, quantity, and schedule</CardDescription>
+        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
+          <CardHeader className="pb-8 border-b border-border/5 bg-muted/5 p-8">
+            <CardTitle className="text-lg font-heading">Operational Parameters</CardTitle>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider">Specify product nodes, magnitude, and strategic horizons</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="orderNumber">Work Order #</Label>
+          <CardContent className="space-y-8 p-8">
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="space-y-3">
+                <Label htmlFor="orderNumber" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Work Order Identity</Label>
                 <Input
                   id="orderNumber"
                   value={form.orderNumber}
                   readOnly
-                  className="bg-muted"
+                  className="h-12 rounded-2xl bg-muted/20 border-border/50 text-muted-foreground/60 font-mono font-bold"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="priority">Priority</Label>
+              <div className="space-y-3">
+                <Label htmlFor="priority" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Priority Layer</Label>
                 <Select
                   value={form.priority}
                   onValueChange={(value) => setForm({ ...form, priority: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
+                  <SelectContent className="rounded-2xl shadow-premium">
+                    <SelectItem value="low" className="rounded-xl m-1">Low Velocity</SelectItem>
+                    <SelectItem value="normal" className="rounded-xl m-1">Standard Node</SelectItem>
+                    <SelectItem value="high" className="rounded-xl m-1">High Priority</SelectItem>
+                    <SelectItem value="urgent" className="rounded-xl m-1">Urgent Escalation</SelectItem>
+                    <SelectItem value="critical" className="rounded-xl m-1">Critical Threshold</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="product">Product *</Label>
+            <div className="space-y-3">
+              <Label htmlFor="product" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Target Product Node *</Label>
               <Select
                 value={form.productId}
                 onValueChange={(value) => setForm({ ...form, productId: value })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a product" />
+                <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+                  <SelectValue placeholder="Identify target product in mesh..." />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-2xl shadow-premium">
                   {products.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
+                    <SelectItem key={p.id} value={String(p.id)} className="rounded-xl m-1">
                       {(p as any).partNumber || (p as any).part_number} - {p.name}
                     </SelectItem>
                   ))}
@@ -152,35 +149,40 @@ export default function NewWorkOrderPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity *</Label>
+            <div className="grid md:grid-cols-2 gap-8">
+              <div className="space-y-3">
+                <Label htmlFor="quantity" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Magnitude (Quantity) *</Label>
                 <Input
                   id="quantity"
                   type="number"
                   min="1"
+                  className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
                   value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="dueDate">Due Date *</Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                  required
-                />
+              <div className="space-y-3">
+                <Label htmlFor="dueDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Temporal Horizon *</Label>
+                <div className="relative">
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    required
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="notes">Production Notes</Label>
+            <div className="space-y-3">
+              <Label htmlFor="notes" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Production Intel & Notes</Label>
               <Textarea
                 id="notes"
-                placeholder="Special instructions for the shop floor..."
+                placeholder="Incorporate special instructions for the shop floor nodes..."
+                className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all min-h-[120px] resize-none"
                 rows={4}
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}

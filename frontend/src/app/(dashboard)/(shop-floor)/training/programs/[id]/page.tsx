@@ -40,7 +40,7 @@ export default function ProgramDetailsPage() {
         </Button>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold">{program.title}</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{program.title}</h1>
             <Badge variant="outline">{program.level}</Badge>
           </div>
           <p className="text-muted-foreground">{program.category}</p>

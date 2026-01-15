@@ -36,44 +36,44 @@ export default function EnrollTrainingPage() {
     }, 1000);
   };
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-8 page-fade-in">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ChevronLeft className="h-4 w-4" />
+        <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+          <ChevronLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Enroll in Training</h1>
-          <p className="text-muted-foreground">Join a new development program</p>
+          <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Enrollment Protocol</h1>
+          <p className="text-muted-foreground font-medium text-sm">Join a new organizational development program</p>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Enrollment Form</CardTitle>
-          <CardDescription>Select a program and confirm your enrollment</CardDescription>
+      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+        <CardHeader className="pb-8">
+          <CardTitle className="text-lg font-heading">Initiate Enrollment</CardTitle>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Configure your training node parameters</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="program">Training Program</Label>
+          <form onSubmit={handleSubmit} className="space-y-8">
+            <div className="space-y-3">
+              <Label htmlFor="program" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Program Node</Label>
               <Select required>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a program" />
+                <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+                  <SelectValue placeholder="Select a program node" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="rounded-2xl shadow-premium">
                   {programs.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                    <SelectItem key={p.id} value={p.id} className="rounded-xl m-1">{p.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="reason">Reason for Enrollment (Optional)</Label>
-              <Input id="reason" placeholder="e.g., Required for promotion, Skill refresh..." />
+            <div className="space-y-3">
+              <Label htmlFor="reason" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Rational Optimization Context (Optional)</Label>
+              <Input id="reason" placeholder="e.g. Skill gap resolution, maturity escalation..." className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft" />
             </div>
-            <div className="pt-4 flex gap-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => router.back()}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                {isSubmitting ? 'Enrolling...' : 'Confirm Enrollment'}
+            <div className="pt-6 flex gap-4">
+              <Button type="button" variant="outline" className="flex-1 rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12" onClick={() => router.back()}>Abort</Button>
+              <Button type="submit" className="flex-1 rounded-xl shadow-glow subtle-shine h-12 font-bold" disabled={isSubmitting}>
+                {isSubmitting ? 'Synchronizing...' : 'Establish Enrollment'}
               </Button>
             </div>
           </form>

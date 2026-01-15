@@ -338,7 +338,7 @@ class EmployeeLifecycleService:
         self._get_or_register_subject(employee_id)
         return updated
 
-    async def get_employee_profile(
+    async def _get_employee_profile_async(
         self,
         employee_id: UUID,
         *,
@@ -388,6 +388,42 @@ class EmployeeLifecycleService:
             if profile.phone
             else None
         )
+        return replace(profile, email=masked_email, phone=masked_phone)
+
+    def get_employee_profile(
+        self,
+        employee_id: UUID,
+        *,
+        actor_id: UUID,
+        actor_roles: Iterable[str],
+        db: AsyncSession | None = None,
+        purpose: str = "profile_view",
+    ) -> EmployeeProfile | None:
+        if db is not None:
+            return self._get_employee_profile_async(
+                employee_id,
+                actor_id=actor_id,
+                actor_roles=actor_roles,
+                db=db,
+                purpose=purpose,
+            )
+
+        profile = self._profiles.get(employee_id)
+        if profile is None:
+            return None
+
+        if self.can_view_pii(actor_roles=actor_roles):
+            return profile
+
+        masked_email = None
+        masked_phone = None
+        if profile.email:
+            masked = self._pii.mask_value(profile.email, field_id=self._field_employee_email_id)
+            masked_email = masked._get_value() if hasattr(masked, "_get_value") else masked
+        if profile.phone:
+            masked = self._pii.mask_value(profile.phone, field_id=self._field_employee_phone_id)
+            masked_phone = masked._get_value() if hasattr(masked, "_get_value") else masked
+
         return replace(profile, email=masked_email, phone=masked_phone)
 
     # ------------------------------------------------------------------
@@ -602,12 +638,14 @@ class EmployeeLifecycleService:
         for d in docs:
             masked_filename = self._pii.mask_value(d.filename, field_id=self._field_personnel_filename_id)
             masked_notes = self._pii.mask_value(d.notes, field_id=self._field_personnel_notes_id) if d.notes else ""
+            filename_value = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
+            notes_value = masked_notes._get_value() if hasattr(masked_notes, "_get_value") else masked_notes
             redacted.append(
                 replace(
                     d,
-                    filename=masked_filename,
+                    filename=filename_value,
                     storage_key="",
-                    notes=masked_notes,
+                    notes=notes_value,
                 )
             )
         return redacted
@@ -619,4 +657,7 @@ class EmployeeLifecycleService:
         limit: int = 100,
     ) -> list[Any]:
         subject_id = self._get_or_register_subject(employee_id)
-        return self._pii.get_access_logs(subject_id=subject_id, limit=limit)
+        logs = self._pii.get_access_logs(subject_id=subject_id)
+        if hasattr(logs, "_get_value"):
+            logs = logs._get_value()
+        return list(logs)[:limit]

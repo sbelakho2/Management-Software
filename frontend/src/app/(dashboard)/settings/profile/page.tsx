@@ -104,84 +104,99 @@ export default function ProfileSettingsPage() {
   const fullName = `${formData.firstName} ${formData.lastName}`;
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-8 page-fade-in max-w-4xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/settings')}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Profile Settings</h1>
-          <p className="text-muted-foreground">Manage your personal information</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              Profile Settings
+            </h1>
+            <p className="text-muted-foreground font-medium text-sm">Manage your personal identity and organizational role</p>
+          </div>
         </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button onClick={handleSave} disabled={isSaving} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Synchronizing...
             </>
           ) : (
             <>
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="mr-2 h-5 w-5" />
               Save Changes
             </>
           )}
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Avatar Card */}
-        <Card className="lg:col-span-1">
-          <CardContent className="pt-6 text-center">
+        <Card className="lg:col-span-1 overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 to-accent/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <CardContent className="pt-10 text-center space-y-4">
             <div className="relative inline-block">
-              <Avatar className="h-24 w-24">
-                <AvatarImage src="/avatar.jpg" alt={fullName} />
-                <AvatarFallback className="text-2xl">{getInitials(fullName)}</AvatarFallback>
-              </Avatar>
-              <button className="absolute bottom-0 right-0 p-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:bg-primary/90 transition-colors">
+              <div className="p-1 rounded-full bg-gradient-to-br from-primary/20 to-accent/20">
+                <Avatar className="h-28 w-28 border-4 border-background shadow-premium">
+                  <AvatarImage src="/avatar.jpg" alt={fullName} />
+                  <AvatarFallback className="text-3xl font-heading bg-muted/30">{getInitials(fullName)}</AvatarFallback>
+                </Avatar>
+              </div>
+              <button className="absolute bottom-1 right-1 p-2.5 bg-primary text-primary-foreground rounded-xl shadow-glow hover:scale-110 active:scale-95 transition-all duration-300">
                 <Camera className="h-4 w-4" />
               </button>
             </div>
-            <h3 className="mt-4 text-lg font-semibold">{fullName}</h3>
-            <p className="text-sm text-muted-foreground">{formData.jobTitle}</p>
-            <p className="text-sm text-muted-foreground">{formData.department}</p>
+            <div className="space-y-1">
+              <h3 className="text-xl font-heading font-bold tracking-tight">{fullName}</h3>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-primary/60">{formData.jobTitle}</p>
+              <div className="flex items-center justify-center gap-2 text-muted-foreground/60 text-xs font-medium">
+                <Building2 className="h-3 w-3" />
+                {formData.department}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         {/* Basic Info */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Basic Information</CardTitle>
-            <CardDescription>Your public profile information</CardDescription>
+            <CardTitle className="text-lg font-heading">Basic Information</CardTitle>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider">Your public identity and biography</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-2.5">
+                <Label htmlFor="firstName" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">First Name</Label>
                 <Input
                   id="firstName"
                   value={formData.firstName}
                   onChange={(e) => handleChange('firstName', e.target.value)}
+                  className="h-12"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
+              <div className="space-y-2.5">
+                <Label htmlFor="lastName" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Last Name</Label>
                 <Input
                   id="lastName"
                   value={formData.lastName}
                   onChange={(e) => handleChange('lastName', e.target.value)}
+                  className="h-12"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="bio">Bio</Label>
+            <div className="space-y-2.5">
+              <Label htmlFor="bio" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Bio</Label>
               <Textarea
                 id="bio"
-                placeholder="Tell us about yourself..."
+                placeholder="Professional summary..."
                 value={formData.bio}
                 onChange={(e) => handleChange('bio', e.target.value)}
-                rows={3}
+                rows={4}
+                className="rounded-2xl bg-background/50 border-border/50 focus:border-primary/50 transition-all shadow-inner-soft resize-none"
               />
             </div>
           </CardContent>
@@ -190,14 +205,14 @@ export default function ProfileSettingsPage() {
         {/* Contact Info */}
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Contact Information</CardTitle>
-            <CardDescription>How others can reach you</CardDescription>
+            <CardTitle className="text-lg font-heading">Contact Information</CardTitle>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider">How the organization communicates with you</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-2.5">
+                <Label htmlFor="email" className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
+                  <Mail className="h-3 w-3" />
                   Email Address
                 </Label>
                 <Input
@@ -205,11 +220,12 @@ export default function ProfileSettingsPage() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleChange('email', e.target.value)}
+                  className="h-12"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
+              <div className="space-y-2.5">
+                <Label htmlFor="phone" className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
+                  <Phone className="h-3 w-3" />
                   Phone Number
                 </Label>
                 <Input
@@ -217,6 +233,7 @@ export default function ProfileSettingsPage() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
+                  className="h-12"
                 />
               </div>
             </div>
@@ -226,64 +243,66 @@ export default function ProfileSettingsPage() {
         {/* Work Info */}
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Work Information</CardTitle>
-            <CardDescription>Your role and location</CardDescription>
+            <CardTitle className="text-lg font-heading">Organizational Role</CardTitle>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider">Your position within the factory hierarchy</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="jobTitle" className="flex items-center gap-2">
-                  <Briefcase className="h-4 w-4" />
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2.5">
+                <Label htmlFor="jobTitle" className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
+                  <Briefcase className="h-3 w-3" />
                   Job Title
                 </Label>
                 <Input
                   id="jobTitle"
                   value={formData.jobTitle}
                   onChange={(e) => handleChange('jobTitle', e.target.value)}
+                  className="h-12"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="department" className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
+              <div className="space-y-2.5">
+                <Label htmlFor="department" className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
+                  <Building2 className="h-3 w-3" />
                   Department
                 </Label>
                 <Select 
                   value={formData.department} 
                   onValueChange={(value) => handleChange('department', value)}
                 >
-                  <SelectTrigger id="department">
+                  <SelectTrigger id="department" className="h-12 rounded-2xl bg-background/50 border-border/50">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-2xl shadow-premium">
                     {departments.map(dept => (
-                      <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      <SelectItem key={dept} value={dept} className="rounded-xl m-1">{dept}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="location" className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
+              <div className="space-y-2.5">
+                <Label htmlFor="location" className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
+                  <MapPin className="h-3 w-3" />
                   Location
                 </Label>
                 <Input
                   id="location"
                   value={formData.location}
                   onChange={(e) => handleChange('location', e.target.value)}
+                  className="h-12"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="timezone">Timezone</Label>
+              <div className="space-y-2.5">
+                <Label htmlFor="timezone" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Timezone</Label>
                 <Select 
                   value={formData.timezone} 
                   onValueChange={(value) => handleChange('timezone', value)}
                 >
-                  <SelectTrigger id="timezone">
+                  <SelectTrigger id="timezone" className="h-12 rounded-2xl bg-background/50 border-border/50">
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="rounded-2xl shadow-premium">
                     {timezones.map(tz => (
-                      <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                      <SelectItem key={tz.value} value={tz.value} className="rounded-xl m-1">{tz.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

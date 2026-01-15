@@ -585,7 +585,7 @@ Significant contributions may result in:
 
 ## 📄 License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions are proprietary to Starz Morocco. All rights reserved.
 
 ## 🙏 Thank You
 

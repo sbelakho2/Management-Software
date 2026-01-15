@@ -334,7 +334,7 @@ function NewQuotePageContent() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">New Quote</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Quote</h1>
             {rfqId && (
               <p className="text-muted-foreground">
                 For RFQ: <Link href={`/pipeline/${rfqId}`} className="text-primary hover:underline">RFQ-2024-0089</Link>

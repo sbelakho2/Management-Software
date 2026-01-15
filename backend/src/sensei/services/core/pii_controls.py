@@ -14,7 +14,7 @@ Manages Personally Identifiable Information (PII) data handling, including:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Awaitable, Iterable, Generic, TypeVar
 from uuid import UUID, uuid4
 import hashlib
 import re
@@ -113,7 +113,136 @@ class PIIReport:
     access_logs: list[PIIAccessLog]
 
 
-class PIIControlsService:
+@dataclass
+class MemoryPIIField:
+    name: str
+    table_name: str
+    column_name: str
+    category: PIICategory
+    sensitivity: SensitivityLevel
+    description: str | None
+    detection_pattern: str | None
+    masking_type: MaskingType
+    retention_days: int | None
+    requires_consent: bool
+    consent_types: list[ConsentType]
+    is_searchable: bool
+    is_exportable: bool
+    id: UUID = field(default_factory=uuid4)
+    table: str = ""
+    column: str = ""
+
+
+@dataclass
+class MemoryDataSubject:
+    external_id: str
+    subject_type: str
+    email: str | None = None
+    last_accessed_at: datetime | None = None
+    deletion_requested_at: datetime | None = None
+    deletion_completed_at: datetime | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass
+class MemoryConsent:
+    subject_id: UUID
+    consent_type: ConsentType
+    status: ConsentStatus
+    purpose: str
+    granted_at: datetime | None
+    expires_at: datetime | None
+    withdrawn_at: datetime | None
+    source: str
+    version: str
+    ip_address: str | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass
+class MemoryAccessLog:
+    subject_id: UUID
+    user_id: UUID
+    field_id: UUID
+    access_type: PIIAccessType
+    accessed_at: datetime
+    purpose: str
+    ip_address: str | None = None
+    data_snapshot: str | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass
+class MemoryDeletionRequest:
+    subject_id: UUID
+    requested_by_id: UUID
+    requested_at: datetime
+    reason: str
+    status: str
+    affected_tables: list[str]
+    deleted_records: int = 0
+    errors: list[str] = field(default_factory=list)
+    completed_at: datetime | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+T = TypeVar("T")
+
+
+class AwaitableValue(Generic[T]):
+    def __init__(self, value: T | None = None, coro: Awaitable[T] | None = None) -> None:
+        self._value = value
+        self._coro = coro
+
+    @staticmethod
+    def from_value(value: T) -> "AwaitableValue[T]":
+        return AwaitableValue(value=value)
+
+    @staticmethod
+    def from_coroutine(coro: Awaitable[T]) -> "AwaitableValue[T]":
+        return AwaitableValue(coro=coro)
+
+    def __await__(self):
+        if self._coro is not None:
+            return self._coro.__await__()
+
+        async def _wrap() -> T:
+            return self._value  # type: ignore[return-value]
+
+        return _wrap().__await__()
+
+    def _get_value(self) -> T:
+        return self._value  # type: ignore[return-value]
+
+    def __getattr__(self, item: str):
+        return getattr(self._get_value(), item)
+
+    def __iter__(self):
+        return iter(self._get_value())
+
+    def __len__(self) -> int:
+        return len(self._get_value())
+
+    def __getitem__(self, item):
+        return self._get_value()[item]
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._get_value()
+
+    def __bool__(self) -> bool:
+        return bool(self._get_value())
+
+    def __eq__(self, other: object) -> bool:
+        return self._get_value() == other
+
+    def __str__(self) -> str:
+        return str(self._get_value())
+
+    def __repr__(self) -> str:
+        return repr(self._get_value())
+
+
+class AsyncPIIControlsService:
     """Service for managing PII data controls."""
 
     def __init__(self) -> None:
@@ -1023,3 +1152,816 @@ class PIIControlsService:
             "by_sensitivity": by_sensitivity,
             "expired_consents": len(expired_consents),
         }
+
+
+class PIIControlsService:
+    """In-memory PII Controls service with awaitable return values."""
+
+    def __init__(self) -> None:
+        self._async = AsyncPIIControlsService()
+        self._fields: dict[UUID, MemoryPIIField] = {}
+        self._subjects: dict[UUID, MemoryDataSubject] = {}
+        self._consents: dict[UUID, MemoryConsent] = {}
+        self._access_logs: dict[UUID, MemoryAccessLog] = {}
+        self._deletion_requests: dict[UUID, MemoryDeletionRequest] = {}
+        self._pseudonym_map: dict[str, str] = {}
+        self._pseudonym_rev: dict[str, str] = {}
+        self._token_map: dict[str, str] = {}
+        self._token_rev: dict[str, str] = {}
+        self._seed_default_fields()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _wrap(self, value: T) -> AwaitableValue[T]:
+        return value
+
+    def _wrap_coro(self, coro: Awaitable[T]) -> AwaitableValue[T]:
+        return AwaitableValue.from_coroutine(coro)
+
+    def _seed_default_fields(self) -> None:
+        self._create_field_definition_sync(
+            name="User Email",
+            table="user",
+            column="email",
+            category=PIICategory.EMAIL,
+            sensitivity=SensitivityLevel.HIGH,
+            description="User's email address",
+            detection_pattern=r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+            masking_type=MaskingType.PARTIAL,
+            requires_consent=True,
+            consent_types=[ConsentType.COLLECTION, ConsentType.PROCESSING],
+            retention_days=365,
+        )
+        self._create_field_definition_sync(
+            name="User Name",
+            table="user",
+            column="full_name",
+            category=PIICategory.NAME,
+            sensitivity=SensitivityLevel.MEDIUM,
+            description="User's full name",
+            detection_pattern=None,
+            masking_type=MaskingType.PARTIAL,
+            requires_consent=True,
+            consent_types=[ConsentType.COLLECTION],
+        )
+        self._create_field_definition_sync(
+            name="User Phone",
+            table="user",
+            column="phone",
+            category=PIICategory.PHONE,
+            sensitivity=SensitivityLevel.MEDIUM,
+            description="User's phone number",
+            detection_pattern=r"\+?[\d\s\-\(\)]{10,}",
+            masking_type=MaskingType.PARTIAL,
+            requires_consent=True,
+            consent_types=[ConsentType.COLLECTION],
+        )
+        self._create_field_definition_sync(
+            name="Audit Log IP",
+            table="audit_log",
+            column="ip_address",
+            category=PIICategory.IP_ADDRESS,
+            sensitivity=SensitivityLevel.LOW,
+            description="IP address",
+            detection_pattern=r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+            masking_type=MaskingType.PARTIAL,
+            requires_consent=False,
+            consent_types=[],
+        )
+
+    def _normalize_field(self, field: MemoryPIIField) -> MemoryPIIField:
+        field.table = field.table_name
+        field.column = field.column_name
+        return field
+
+    def _create_field_definition_sync(
+        self,
+        *,
+        name: str,
+        table: str,
+        column: str,
+        category: PIICategory,
+        sensitivity: SensitivityLevel,
+        description: str,
+        detection_pattern: str | None = None,
+        masking_type: MaskingType = MaskingType.FULL,
+        retention_days: int | None = None,
+        requires_consent: bool = True,
+        consent_types: list[ConsentType] | None = None,
+        is_searchable: bool = True,
+        is_exportable: bool = True,
+    ) -> MemoryPIIField:
+        field_def = MemoryPIIField(
+            name=name,
+            table_name=table,
+            column_name=column,
+            category=category,
+            sensitivity=sensitivity,
+            description=description,
+            detection_pattern=detection_pattern,
+            masking_type=masking_type,
+            retention_days=retention_days,
+            requires_consent=requires_consent,
+            consent_types=list(consent_types or []),
+            is_searchable=is_searchable,
+            is_exportable=is_exportable,
+        )
+        self._normalize_field(field_def)
+        self._fields[field_def.id] = field_def
+        return field_def
+
+    def _find_field_by_column(self, table: str, column: str) -> MemoryPIIField | None:
+        for field_def in self._fields.values():
+            table_name = getattr(field_def, "table_name", None)
+            column_name = getattr(field_def, "column_name", None)
+            table_alias = getattr(field_def, "table", None)
+            column_alias = getattr(field_def, "column", None)
+            if (table_name == table or table_alias == table) and (column_name == column or column_alias == column):
+                return field_def
+        for field_def in self._fields.values():
+            column_name = getattr(field_def, "column_name", None)
+            column_alias = getattr(field_def, "column", None)
+            if column_name == column or column_alias == column:
+                return field_def
+        return None
+
+    def _resolve_category(self, value: PIICategory | str) -> str:
+        return value.value if isinstance(value, PIICategory) else value
+
+    def _resolve_sensitivity(self, value: SensitivityLevel | str) -> str:
+        return value.value if isinstance(value, SensitivityLevel) else value
+
+    def _resolve_masking(self, value: MaskingType | str) -> MaskingType:
+        return value if isinstance(value, MaskingType) else MaskingType(value)
+
+    # ------------------------------------------------------------------
+    # Field definitions
+    # ------------------------------------------------------------------
+
+    def create_field_definition(
+        self,
+        name: str,
+        table: str | None = None,
+        column: str | None = None,
+        category: PIICategory | None = None,
+        sensitivity: SensitivityLevel | None = None,
+        description: str | None = None,
+        detection_pattern: str | None = None,
+        masking_type: MaskingType = MaskingType.FULL,
+        retention_days: int | None = None,
+        requires_consent: bool = True,
+        consent_types: list[ConsentType] | None = None,
+        is_searchable: bool = True,
+        is_exportable: bool = True,
+        db: AsyncSession | None = None,
+        table_name: str | None = None,
+        column_name: str | None = None,
+    ) -> AwaitableValue[MemoryPIIField | PIIField]:
+        if db is not None:
+            return self._wrap_coro(
+                self._async.create_field_definition(
+                    db,
+                    name=name,
+                    table_name=table_name or table or "",
+                    column_name=column_name or column or "",
+                    category=category or PIICategory.CUSTOM,
+                    sensitivity=sensitivity or SensitivityLevel.LOW,
+                    description=description or "",
+                    detection_pattern=detection_pattern,
+                    masking_type=masking_type,
+                    retention_days=retention_days,
+                    requires_consent=requires_consent,
+                    consent_types=consent_types,
+                    is_searchable=is_searchable,
+                    is_exportable=is_exportable,
+                )
+            )
+
+        field_def = self._create_field_definition_sync(
+            name=name,
+            table=table_name or table or "",
+            column=column_name or column or "",
+            category=category or PIICategory.CUSTOM,
+            sensitivity=sensitivity or SensitivityLevel.LOW,
+            description=description or "",
+            detection_pattern=detection_pattern,
+            masking_type=masking_type,
+            retention_days=retention_days,
+            requires_consent=requires_consent,
+            consent_types=consent_types,
+            is_searchable=is_searchable,
+            is_exportable=is_exportable,
+        )
+        return self._wrap(field_def)
+
+    def get_field_definition(self, field_id: UUID, db: AsyncSession | None = None) -> AwaitableValue[MemoryPIIField | PIIField | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_field_definition(field_id, db))
+        return self._wrap(self._fields.get(field_id))
+
+    def get_field_by_column(
+        self,
+        table: str,
+        column: str,
+        db: AsyncSession | None = None,
+        table_name: str | None = None,
+        column_name: str | None = None,
+    ) -> AwaitableValue[MemoryPIIField | PIIField | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_field_by_column(table_name or table, column_name or column, db))
+        return self._wrap(self._find_field_by_column(table_name or table, column_name or column))
+
+    def get_field_definitions(
+        self,
+        category: PIICategory | None = None,
+        sensitivity: SensitivityLevel | None = None,
+        table: str | None = None,
+        db: AsyncSession | None = None,
+        table_name: str | None = None,
+    ) -> AwaitableValue[list[MemoryPIIField | PIIField]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_field_definitions(db, category=category, sensitivity=sensitivity, table_name=table_name or table))
+
+        results = list(self._fields.values())
+        if category:
+            results = [f for f in results if f.category == category]
+        if sensitivity:
+            results = [f for f in results if f.sensitivity == sensitivity]
+        if table_name or table:
+            target = table_name or table
+            results = [f for f in results if f.table == target]
+        return self._wrap(results)
+
+    def update_field_definition(
+        self,
+        field_id: UUID,
+        sensitivity: SensitivityLevel | None = None,
+        masking_type: MaskingType | None = None,
+        retention_days: int | None = None,
+        requires_consent: bool | None = None,
+        consent_types: list[ConsentType] | None = None,
+        is_searchable: bool | None = None,
+        is_exportable: bool | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryPIIField | PIIField | None]:
+        if db is not None:
+            return self._wrap_coro(
+                self._async.update_field_definition(
+                    db,
+                    field_id,
+                    sensitivity=sensitivity,
+                    masking_type=masking_type,
+                    retention_days=retention_days,
+                    requires_consent=requires_consent,
+                    consent_types=consent_types,
+                    is_searchable=is_searchable,
+                    is_exportable=is_exportable,
+                )
+            )
+
+        field_def = self._fields.get(field_id)
+        if not field_def:
+            return self._wrap(None)
+        if sensitivity is not None:
+            field_def.sensitivity = sensitivity
+        if masking_type is not None:
+            field_def.masking_type = masking_type
+        if retention_days is not None:
+            field_def.retention_days = retention_days
+        if requires_consent is not None:
+            field_def.requires_consent = requires_consent
+        if consent_types is not None:
+            field_def.consent_types = list(consent_types)
+        if is_searchable is not None:
+            field_def.is_searchable = is_searchable
+        if is_exportable is not None:
+            field_def.is_exportable = is_exportable
+        return self._wrap(field_def)
+
+    def delete_field_definition(self, field_id: UUID, db: AsyncSession | None = None) -> AwaitableValue[bool]:
+        if db is not None:
+            return self._wrap_coro(self._async.delete_field_definition(db, field_id))
+        if field_id in self._fields:
+            del self._fields[field_id]
+            return self._wrap(True)
+        return self._wrap(False)
+
+    # ------------------------------------------------------------------
+    # Subjects
+    # ------------------------------------------------------------------
+
+    def register_subject(
+        self,
+        external_id: str,
+        subject_type: str,
+        email: str | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryDataSubject | DataSubject]:
+        if db is not None:
+            return self._wrap_coro(self._async.register_subject(db, external_id=external_id, subject_type=subject_type, email=email))
+
+        subject = MemoryDataSubject(
+            external_id=external_id,
+            subject_type=subject_type,
+            email=email,
+            last_accessed_at=None,
+            deletion_requested_at=None,
+            deletion_completed_at=None,
+        )
+        self._subjects[subject.id] = subject
+        return self._wrap(subject)
+
+    def get_subject(self, subject_id: UUID, db: AsyncSession | None = None) -> AwaitableValue[MemoryDataSubject | DataSubject | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_subject(db, subject_id))
+        return self._wrap(self._subjects.get(subject_id))
+
+    def get_subject_by_external_id(
+        self,
+        external_id: str,
+        subject_type: str,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryDataSubject | DataSubject | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_subject_by_external_id(db, external_id, subject_type))
+        for subject in self._subjects.values():
+            if subject.external_id == external_id and subject.subject_type == subject_type:
+                return self._wrap(subject)
+        return self._wrap(None)
+
+    def get_subjects(
+        self,
+        subject_type: str | None = None,
+        has_deletion_request: bool | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[list[MemoryDataSubject | DataSubject]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_subjects(db, subject_type=subject_type, has_deletion_request=has_deletion_request))
+
+        subjects = list(self._subjects.values())
+        if subject_type:
+            subjects = [s for s in subjects if s.subject_type == subject_type]
+        if has_deletion_request is True:
+            subjects = [s for s in subjects if s.deletion_requested_at is not None]
+        elif has_deletion_request is False:
+            subjects = [s for s in subjects if s.deletion_requested_at is None]
+        return self._wrap(subjects)
+
+    # ------------------------------------------------------------------
+    # Consent
+    # ------------------------------------------------------------------
+
+    def grant_consent(
+        self,
+        subject_id: UUID,
+        consent_type: ConsentType,
+        purpose: str,
+        source: str,
+        version: str,
+        ip_address: str | None = None,
+        expires_in_days: int | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryConsent | Consent | None]:
+        if db is not None:
+            return self._wrap_coro(
+                self._async.grant_consent(
+                    db,
+                    subject_id,
+                    consent_type,
+                    purpose,
+                    source,
+                    version,
+                    ip_address=ip_address,
+                    expires_in_days=expires_in_days,
+                )
+            )
+
+        subject = self._subjects.get(subject_id)
+        if not subject:
+            return self._wrap(None)
+
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=expires_in_days) if expires_in_days else None
+        consent = MemoryConsent(
+            subject_id=subject_id,
+            consent_type=consent_type,
+            status=ConsentStatus.GRANTED,
+            purpose=purpose,
+            granted_at=now,
+            expires_at=expires_at,
+            withdrawn_at=None,
+            source=source,
+            version=version,
+            ip_address=ip_address,
+        )
+        self._consents[consent.id] = consent
+        return self._wrap(consent)
+
+    def withdraw_consent(self, consent_id: UUID, db: AsyncSession | None = None) -> AwaitableValue[MemoryConsent | Consent | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.withdraw_consent(db, consent_id))
+
+        consent = self._consents.get(consent_id)
+        if not consent:
+            return self._wrap(None)
+        consent.status = ConsentStatus.WITHDRAWN
+        consent.withdrawn_at = datetime.now(timezone.utc)
+        return self._wrap(consent)
+
+    def check_consent(
+        self,
+        subject_id: UUID,
+        consent_type: ConsentType,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[bool]:
+        if db is not None:
+            return self._wrap_coro(self._async.check_consent(db, subject_id, consent_type))
+        for consent in self._consents.values():
+            if consent.subject_id == subject_id and consent.consent_type == consent_type and consent.status == ConsentStatus.GRANTED:
+                return self._wrap(True)
+        return self._wrap(False)
+
+    def get_missing_consents(
+        self,
+        subject_id: UUID,
+        required_consents: Iterable[ConsentType],
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[list[ConsentType]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_missing_consents(db, subject_id, list(required_consents)))
+
+        granted = {c.consent_type for c in self._consents.values() if c.subject_id == subject_id and c.status == ConsentStatus.GRANTED}
+        missing = [c for c in required_consents if c not in granted]
+        return self._wrap(missing)
+
+    def get_consents(
+        self,
+        subject_id: UUID | None = None,
+        consent_type: ConsentType | None = None,
+        status: ConsentStatus | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[list[MemoryConsent | Consent]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_consents(db, subject_id=subject_id, consent_type=consent_type, status=status))
+
+        consents = list(self._consents.values())
+        if subject_id:
+            consents = [c for c in consents if c.subject_id == subject_id]
+        if consent_type:
+            consents = [c for c in consents if c.consent_type == consent_type]
+        if status:
+            consents = [c for c in consents if c.status == status]
+        return self._wrap(consents)
+
+    # ------------------------------------------------------------------
+    # Masking
+    # ------------------------------------------------------------------
+
+    def mask_value(
+        self,
+        value: str,
+        field_id: UUID | None = None,
+        masking_type: MaskingType | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[str]:
+        if db is not None:
+            return self._wrap_coro(self._async.mask_value(value, field_id=field_id, masking_type=masking_type, db=db))
+
+        if value == "":
+            return self._wrap("")
+
+        resolved_masking = masking_type
+        if field_id:
+            field_def = self._fields.get(field_id)
+            if field_def is None:
+                return self._wrap(value)
+            resolved_masking = field_def.masking_type  # type: ignore[assignment]
+
+        resolved_masking = self._resolve_masking(resolved_masking or MaskingType.FULL)
+
+        if resolved_masking == MaskingType.FULL:
+            return self._wrap("***REDACTED***")
+        if resolved_masking == MaskingType.PARTIAL:
+            if "@" in value:
+                local, domain = value.split("@", 1)
+                masked_local = (local[:1] + "***") if local else "***"
+                return self._wrap(f"{masked_local}@{domain}")
+            digits = re.sub(r"\D", "", value)
+            if len(digits) >= 4:
+                return self._wrap("*" * (len(digits) - 4) + digits[-4:])
+            return self._wrap("***")
+        if resolved_masking == MaskingType.HASH:
+            digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+            return self._wrap(digest)
+        if resolved_masking == MaskingType.PSEUDONYMIZE:
+            if value in self._pseudonym_map:
+                return self._wrap(self._pseudonym_map[value])
+            pseudonym = f"PSEUDO_{hashlib.md5(value.encode('utf-8')).hexdigest()[:8]}"
+            self._pseudonym_map[value] = pseudonym
+            self._pseudonym_rev[pseudonym] = value
+            return self._wrap(pseudonym)
+        if resolved_masking == MaskingType.TOKENIZE:
+            if value in self._token_map:
+                return self._wrap(self._token_map[value])
+            token = f"TOK_{uuid4().hex[:10]}"
+            self._token_map[value] = token
+            self._token_rev[token] = value
+            return self._wrap(token)
+        if resolved_masking == MaskingType.TRUNCATE:
+            if len(value) <= 4:
+                return self._wrap(value)
+            return self._wrap(value[:4] + "...")
+        return self._wrap(value)
+
+    def unmask_pseudonym(self, pseudonym: str, db: AsyncSession | None = None) -> AwaitableValue[str | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.unmask_pseudonym(pseudonym))
+        return self._wrap(self._pseudonym_rev.get(pseudonym))
+
+    def unmask_token(self, token: str, db: AsyncSession | None = None) -> AwaitableValue[str | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.unmask_token(token))
+        return self._wrap(self._token_rev.get(token))
+
+    # ------------------------------------------------------------------
+    # Detection
+    # ------------------------------------------------------------------
+
+    def detect_pii(self, text: str, db: AsyncSession | None = None) -> AwaitableValue[list[dict[str, Any]]]:
+        if db is not None:
+            return self._wrap_coro(self._async.detect_pii(text, db))
+
+        detections: list[dict[str, Any]] = []
+        for field_def in self._fields.values():
+            if not field_def.detection_pattern:
+                continue
+            for match in re.findall(field_def.detection_pattern, text):
+                match_value = match if isinstance(match, str) else match[0]
+                detections.append({
+                    "category": self._resolve_category(field_def.category),
+                    "match": match_value,
+                    "field_id": field_def.id,
+                })
+        return self._wrap(detections)
+
+    def scan_record(self, record: dict[str, Any], table: str, db: AsyncSession | None = None) -> AwaitableValue[list[dict[str, Any]]]:
+        if db is not None:
+            return self._wrap_coro(self._async.scan_record(record, table, db))
+
+        findings: list[dict[str, Any]] = []
+        for field_def in self._fields.values():
+            if field_def.table != table:
+                continue
+            if field_def.column not in record:
+                continue
+            value = record.get(field_def.column)
+            if value is None:
+                continue
+            findings.append({
+                "field_id": field_def.id,
+                "table": table,
+                "column": field_def.column,
+                "category": self._resolve_category(field_def.category),
+                "sensitivity": self._resolve_sensitivity(field_def.sensitivity),
+                "value": value,
+            })
+        return self._wrap(findings)
+
+    # ------------------------------------------------------------------
+    # Access logging
+    # ------------------------------------------------------------------
+
+    def log_access(
+        self,
+        subject_id: UUID,
+        user_id: UUID,
+        field_id: UUID,
+        access_type: PIIAccessType,
+        purpose: str,
+        ip_address: str | None = None,
+        data_snapshot: str | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryAccessLog | PIIAccessLog | None]:
+        if db is not None:
+            return self._wrap_coro(
+                self._async.log_access(
+                    db,
+                    subject_id,
+                    user_id,
+                    field_id,
+                    access_type,
+                    purpose,
+                    ip_address=ip_address,
+                    data_snapshot=data_snapshot,
+                )
+            )
+
+        subject = self._subjects.get(subject_id)
+        if not subject:
+            return self._wrap(None)
+
+        log = MemoryAccessLog(
+            subject_id=subject_id,
+            user_id=user_id,
+            field_id=field_id,
+            access_type=access_type,
+            accessed_at=datetime.now(timezone.utc),
+            purpose=purpose,
+            ip_address=ip_address,
+            data_snapshot=data_snapshot,
+        )
+        self._access_logs[log.id] = log
+        subject.last_accessed_at = datetime.now(timezone.utc)
+        return self._wrap(log)
+
+    def get_access_logs(
+        self,
+        subject_id: UUID | None = None,
+        access_type: PIIAccessType | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[list[MemoryAccessLog | PIIAccessLog]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_access_logs(db, subject_id=subject_id, access_type=access_type))
+
+        logs = list(self._access_logs.values())
+        if subject_id:
+            logs = [l for l in logs if l.subject_id == subject_id]
+        if access_type:
+            logs = [l for l in logs if l.access_type == access_type]
+        return self._wrap(logs)
+
+    # ------------------------------------------------------------------
+    # Deletion
+    # ------------------------------------------------------------------
+
+    def request_deletion(
+        self,
+        subject_id: UUID,
+        requested_by: UUID,
+        reason: str,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryDeletionRequest | DeletionRequest | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.request_deletion(db, subject_id, requested_by, reason))
+
+        subject = self._subjects.get(subject_id)
+        if not subject:
+            return self._wrap(None)
+
+        now = datetime.now(timezone.utc)
+        affected_tables = list({f.table for f in self._fields.values() if f.table})
+        request = MemoryDeletionRequest(
+            subject_id=subject_id,
+            requested_by_id=requested_by,
+            requested_at=now,
+            reason=reason,
+            status="pending",
+            affected_tables=affected_tables,
+            deleted_records=0,
+            errors=[],
+        )
+        self._deletion_requests[request.id] = request
+        subject.deletion_requested_at = now
+        return self._wrap(request)
+
+    def process_deletion(
+        self,
+        request_id: UUID,
+        deleted_records: int = 0,
+        errors: list[str] | None = None,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[MemoryDeletionRequest | DeletionRequest | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.process_deletion(db, request_id, deleted_records=deleted_records, errors=errors))
+
+        request = self._deletion_requests.get(request_id)
+        if not request:
+            return self._wrap(None)
+
+        now = datetime.now(timezone.utc)
+        if errors:
+            request.status = "failed"
+            request.errors = errors
+        else:
+            request.status = "completed"
+            request.completed_at = now
+            request.deleted_records = deleted_records
+            subject = self._subjects.get(request.subject_id)
+            if subject:
+                subject.deletion_completed_at = now
+        return self._wrap(request)
+
+    def get_pending_deletions(self, db: AsyncSession | None = None) -> AwaitableValue[list[MemoryDeletionRequest | DeletionRequest]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_pending_deletions(db))
+
+        pending = [r for r in self._deletion_requests.values() if r.status == "pending"]
+        return self._wrap(pending)
+
+    # ------------------------------------------------------------------
+    # Reporting
+    # ------------------------------------------------------------------
+
+    def generate_pii_report(
+        self,
+        subject_id: UUID,
+        generated_by: UUID,
+        db: AsyncSession | None = None,
+    ) -> AwaitableValue[PIIReport | None]:
+        if db is not None:
+            return self._wrap_coro(self._async.generate_pii_report(db, subject_id, generated_by))
+
+        subject = self._subjects.get(subject_id)
+        if not subject:
+            return self._wrap(None)
+
+        fields_data = [
+            {
+                "name": f.name,
+                "table": f.table,
+                "column": f.column,
+                "category": self._resolve_category(f.category),
+                "sensitivity": self._resolve_sensitivity(f.sensitivity),
+                "retention_days": f.retention_days,
+            }
+            for f in self._fields.values()
+        ]
+
+        consents = [c for c in self._consents.values() if c.subject_id == subject_id]
+        access_logs = [l for l in self._access_logs.values() if l.subject_id == subject_id]
+
+        return self._wrap(
+            PIIReport(
+                subject_id=subject_id,
+                generated_at=datetime.now(timezone.utc),
+                generated_by=generated_by,
+                fields=fields_data,
+                consents=consents,
+                access_logs=access_logs,
+            )
+        )
+
+    def get_retention_violations(self, db: AsyncSession | None = None) -> AwaitableValue[list[dict[str, Any]]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_retention_violations(db))
+
+        violations = []
+        now = datetime.now(timezone.utc)
+        for field_def in self._fields.values():
+            if not field_def.retention_days:
+                continue
+            violations.append(
+                {
+                    "field_id": field_def.id,
+                    "field_name": field_def.name,
+                    "table": field_def.table,
+                    "column": field_def.column,
+                    "retention_days": field_def.retention_days,
+                    "cutoff_date": now - timedelta(days=field_def.retention_days),
+                }
+            )
+        return self._wrap(violations)
+
+    def get_expired_consents(self, db: AsyncSession | None = None) -> AwaitableValue[list[MemoryConsent | Consent]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_expired_consents(db))
+
+        now = datetime.now(timezone.utc)
+        expired = [
+            c for c in self._consents.values()
+            if c.status == ConsentStatus.GRANTED and c.expires_at and c.expires_at < now
+        ]
+        return self._wrap(expired)
+
+    def get_summary(self, db: AsyncSession | None = None) -> AwaitableValue[dict[str, Any]]:
+        if db is not None:
+            return self._wrap_coro(self._async.get_summary(db))
+
+        by_category: dict[str, int] = {}
+        by_sensitivity: dict[str, int] = {}
+        for field_def in self._fields.values():
+            cat = self._resolve_category(field_def.category)
+            sens = self._resolve_sensitivity(field_def.sensitivity)
+            by_category[cat] = by_category.get(cat, 0) + 1
+            by_sensitivity[sens] = by_sensitivity.get(sens, 0) + 1
+
+        pending_deletions = [r for r in self._deletion_requests.values() if r.status == "pending"]
+        expired_consents = [
+            c for c in self._consents.values()
+            if c.status == ConsentStatus.GRANTED and c.expires_at and c.expires_at < datetime.now(timezone.utc)
+        ]
+
+        return self._wrap(
+            {
+                "total_fields": len(self._fields),
+                "total_subjects": len(self._subjects),
+                "total_consents": len(self._consents),
+                "total_access_logs": len(self._access_logs),
+                "pending_deletions": len(pending_deletions),
+                "by_category": by_category,
+                "by_sensitivity": by_sensitivity,
+                "expired_consents": len(expired_consents),
+            }
+        )

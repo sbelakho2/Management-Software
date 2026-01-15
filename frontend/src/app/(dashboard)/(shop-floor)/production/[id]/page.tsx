@@ -64,68 +64,68 @@ export default function WorkOrderDetailsPage() {
   const canStart = ['planned', 'released', 'on_hold'].includes(workOrder.status);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{workOrder.work_order_number}</h1>
-              <Badge className={statusConfig[workOrder.status as keyof typeof statusConfig]?.color}>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{workOrder.work_order_number}</h1>
+              <Badge className={cn('rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', statusConfig[workOrder.status as keyof typeof statusConfig]?.color)}>
                 {statusConfig[workOrder.status as keyof typeof statusConfig]?.label}
               </Badge>
             </div>
-            <p className="text-muted-foreground">{(workOrder as any).product?.name || 'Unknown Product'}</p>
+            <p className="text-muted-foreground font-medium text-sm">{(workOrder as any).product?.name || 'Unknown Product'} Node</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {canStart ? (
-            <Button className="bg-green-600 hover:bg-green-700">
+            <Button size="lg" className="rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-glow subtle-shine text-white">
               <Play className="h-4 w-4 mr-2" />
-              Start Work
+              Initiate Execution
             </Button>
           ) : (
-            <Button variant="outline">
+            <Button variant="outline" size="lg" className="rounded-xl border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700">
               <Pause className="h-4 w-4 mr-2" />
-              Pause
+              Suspend Protocol
             </Button>
           )}
-          <Button variant="outline">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
+      <div className="grid gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-8">
+          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
             <CardHeader>
-              <CardTitle>Production Progress</CardTitle>
+              <CardTitle className="text-lg font-heading">Production Velocity</CardTitle>
+              <CardDescription className="text-xs font-medium uppercase tracking-wider">Real-time execution status and synchronization</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Overall Completion</span>
-                  <span className="font-medium">0%</span>
+            <CardContent className="space-y-8">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                  <span>Overall Completion Pulse</span>
+                  <span className="text-primary">0%</span>
                 </div>
-                <Progress value={0} className="h-2" />
+                <Progress value={0} className="h-3 rounded-full bg-primary/10" />
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="p-3 border rounded-lg bg-muted/30">
-                  <div className="text-sm text-muted-foreground mb-1">Target Quantity</div>
-                  <div className="text-2xl font-bold">{(workOrder as any).quantity}</div>
+
+              <div className="grid gap-6 sm:grid-cols-3">
+                <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 text-center">
+                  <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{(workOrder as any).quantity}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Target Units</p>
                 </div>
-                <div className="p-3 border rounded-lg bg-muted/30">
-                  <div className="text-sm text-muted-foreground mb-1">Completed</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {(workOrder as any).quantity_completed}
-                  </div>
+                <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 text-center">
+                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{(workOrder as any).quantity_completed}</div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Passed Gate</p>
                 </div>
-                <div className="p-3 border rounded-lg bg-muted/30">
-                  <div className="text-sm text-muted-foreground mb-1">Scrap</div>
-                  <div className="text-2xl font-bold text-red-600">0</div>
+                <div className="p-5 rounded-2xl bg-rose-500/5 border border-rose-500/10 text-center">
+                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">0</div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Rejected</p>
                 </div>
               </div>
             </CardContent>

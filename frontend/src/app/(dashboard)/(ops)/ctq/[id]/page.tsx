@@ -325,7 +325,7 @@ export default function CTQDetailPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <FileText className="h-16 w-16 text-muted-foreground" />
         <div className="text-center">
-          <h2 className="text-2xl font-bold">CTQ Not Found</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">CTQ Not Found</h2>
           <p className="text-muted-foreground mt-2">
             The CTQ you're looking for doesn't exist or has been deleted.
           </p>
@@ -341,21 +341,21 @@ export default function CTQDetailPage() {
   const trend = calculateTrend(ctq.measurements);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/ctq')}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.push('/ctq')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-bold">{ctq.ctq_number}</h1>
-              <Badge variant="outline" className={cn('gap-1', categoryColors[ctq.category])}>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.ctq_number}</h1>
+              <Badge variant="outline" className={cn('rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider gap-1', categoryColors[ctq.category])}>
                 {categoryIcons[ctq.category]}
                 {ctq.category}
               </Badge>
-              <Badge variant={ctq.priority === 'critical' ? 'destructive' : ctq.priority === 'major' ? 'warning' : 'default'}>
+              <Badge variant={ctq.priority === 'critical' ? 'destructive' : ctq.priority === 'major' ? 'warning' : 'default'} className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                 {ctq.priority}
               </Badge>
               <Badge variant={
@@ -363,84 +363,86 @@ export default function CTQDetailPage() {
                 ctq.status === 'active' ? 'default' :
                 ctq.status === 'under_review' ? 'warning' :
                 'secondary'
-              }>
+              } className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                 {ctq.status.replace('_', ' ')}
               </Badge>
             </div>
-            <p className="text-muted-foreground mt-1">{ctq.characteristic}</p>
+            <p className="text-muted-foreground font-medium text-sm mt-1">{ctq.characteristic} Characteristic</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExport}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
-            Export
+            Export Intel
           </Button>
-          <Button variant="outline" onClick={() => setIsEditing(true)}>
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+          <Button variant="destructive" size="lg" className="rounded-xl shadow-sm" onClick={() => setShowDeleteDialog(true)}>
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete
+            Retire
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pass Rate</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Pass Rate</CardTitle>
+            <CheckCircle className="h-4 w-4 text-success/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{ctq.pass_rate.toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground">
-              {Math.round((ctq.measurement_count * ctq.pass_rate) / 100)} of {ctq.measurement_count} passed
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.pass_rate.toFixed(1)}%</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
+              {Math.round((ctq.measurement_count * ctq.pass_rate) / 100)} of {ctq.measurement_count} PASSED
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Measurements</CardTitle>
-            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Synchronization Pulse</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{ctq.measurement_count}</div>
-            <p className="text-xs text-muted-foreground">
-              {ctq.measurements.length} recent measurements
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.measurement_count}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
+              Total Recorded Samples
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Latest Result</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Latest Intelligence</CardTitle>
             {resultIcons[ctq.measurements[0]?.result || 'not_measured']}
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {ctq.measurements[0]?.measured_value?.toFixed(3) || '-'} {ctq.unit_of_measure}
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              {ctq.measurements[0]?.measured_value?.toFixed(3) || '-'} <span className="text-base text-muted-foreground/60">{ctq.unit_of_measure}</span>
             </div>
-            <Badge variant={resultBadgeVariant[ctq.measurements[0]?.result || 'not_measured']} className="gap-1">
-              {resultIcons[ctq.measurements[0]?.result || 'not_measured']}
-              {ctq.measurements[0]?.result.replace('_', ' ') || 'No data'}
-            </Badge>
+            <div className="mt-2">
+              <Badge variant={resultBadgeVariant[ctq.measurements[0]?.result || 'not_measured']} className="gap-1 rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">
+                {resultIcons[ctq.measurements[0]?.result || 'not_measured']}
+                {ctq.measurements[0]?.result.replace('_', ' ') || 'No data'}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Trend</CardTitle>
-            {trend === 'up' ? <TrendingUp className="h-4 w-4 text-red-500" /> :
-             trend === 'down' ? <TrendingDown className="h-4 w-4 text-green-500" /> :
-             <Minus className="h-4 w-4 text-muted-foreground" />}
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Performance Trend</CardTitle>
+            {trend === 'up' ? <TrendingUp className="h-4 w-4 text-danger/60" /> :
+             trend === 'down' ? <TrendingDown className="h-4 w-4 text-success/60" /> :
+             <Minus className="h-4 w-4 text-muted-foreground/60" />}
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold capitalize">{trend}</div>
-            <p className="text-xs text-muted-foreground">
-              Based on last 3 measurements
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 capitalize">{trend}</div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
+              Velocity over last 3 samples
             </p>
           </CardContent>
         </Card>

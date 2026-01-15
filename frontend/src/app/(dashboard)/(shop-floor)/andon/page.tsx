@@ -90,21 +90,23 @@ export default function AndonBoardPage() {
   }, []);
 
   return (
-    <div className="space-y-6" data-testid="andon-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Zap className="h-6 w-6 text-warning" />
-            Andon Board
+    <div className="space-y-8 page-fade-in" data-testid="andon-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
+            <Zap className="h-10 w-10 text-primary" />
+            Andon Intelligence
           </h1>
-          <p className="text-muted-foreground">
-            Real-time production monitoring • Last updated {formatDate(lastRefresh, { hour: 'numeric', minute: 'numeric', second: 'numeric' })}
+          <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            Real-time monitoring • Last updated {formatDate(lastRefresh, { hour: 'numeric', minute: 'numeric', second: 'numeric' })}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Button 
             variant="ghost" 
             size="icon"
+            className="rounded-xl hover:bg-primary/10 transition-all"
             onClick={() => setSoundEnabled(!soundEnabled)}
             title={soundEnabled ? 'Mute alerts' : 'Enable alert sounds'}
           >
@@ -112,119 +114,136 @@ export default function AndonBoardPage() {
           </Button>
           <Button
             variant="outline"
-            className="gap-2"
+            size="lg"
+            className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary"
             onClick={() => router.push('/andon/analytics')}
           >
-            <TrendingUp className="h-4 w-4" />
+            <TrendingUp className="h-4 w-4 mr-2" />
             Analytics
           </Button>
           <Button 
             variant="ghost" 
             size="icon"
+            className="rounded-xl hover:bg-primary/10 transition-all"
             onClick={toggleFullscreen}
             title="Toggle fullscreen"
           >
             <Maximize2 className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setLastRefresh(new Date())}>
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => setLastRefresh(new Date())}>
             <RefreshCw className="h-5 w-5" />
           </Button>
-          <Button variant="outline" onClick={() => router.push('/andon/settings')}>
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/andon/settings')}>
             <Settings className="mr-2 h-4 w-4" />
-            Configure
+            Settings
           </Button>
         </div>
       </div>
 
       {/* Summary Stats */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className={cn(criticalAlerts.length > 0 && 'border-danger bg-danger/5')}>
-          <CardContent className="p-4">
+        <Card className={cn("rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1", criticalAlerts.length > 0 && 'border-danger/20 bg-danger/[0.02]')}>
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold">{activeEvents.length}</p>
-                <p className="text-sm text-muted-foreground">Active Alerts</p>
+                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{activeEvents.length}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Active Signals</p>
               </div>
-              <AlertTriangle className={cn('h-8 w-8', criticalAlerts.length > 0 ? 'text-danger' : 'text-muted-foreground')} />
+              <div className={cn("p-3 rounded-2xl shadow-sm", criticalAlerts.length > 0 ? "bg-danger/10 text-danger animate-pulse" : "bg-muted/10 text-muted-foreground")}>
+                <AlertTriangle className="h-5 w-5" />
+              </div>
             </div>
             {criticalAlerts.length > 0 && (
-              <Badge variant="danger" className="mt-2">{criticalAlerts.length} Critical</Badge>
+              <Badge variant="destructive" className="mt-3 rounded-md px-1.5 py-0 text-[8px] font-black uppercase tracking-widest">
+                {criticalAlerts.length} CRITICAL NODES
+              </Badge>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-4">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold">{runningMachines}/{workCenters.size}</p>
-                <p className="text-sm text-muted-foreground">Machines Running</p>
+                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{runningMachines}/{workCenters.size}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Operational Pulse</p>
               </div>
-              <Play className="h-8 w-8 text-success" />
+              <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 shadow-sm">
+                <Play className="h-5 w-5" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-4">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className={cn(
-                  'text-3xl font-bold',
-                  metrics.avgResponseTime < 300 ? 'text-success' : 'text-warning'
+                  'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1',
+                  metrics.avgResponseTime < 300 ? 'from-success to-success/70' : 'from-warning to-warning/70'
                 )}>
                   {Math.round(metrics.avgResponseTime / 60)}m
                 </p>
-                <p className="text-sm text-muted-foreground">Avg Response</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Mean Response</p>
               </div>
-              <Zap className="h-8 w-8 text-primary" />
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+                <Zap className="h-5 w-5" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-4">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold">{metrics.totalResolved}</p>
-                <p className="text-sm text-muted-foreground">Resolved Today</p>
+                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{metrics.totalResolved}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Resolved Nodes</p>
               </div>
-              <Package className="h-8 w-8 text-muted-foreground" />
+              <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">
+                <Package className="h-5 w-5" />
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Active Alerts */}
-        <div className="lg:col-span-1">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-warning" />
-            Active Alerts ({activeEvents.length})
+        <div className="lg:col-span-1 space-y-6">
+          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2 px-2">
+            <AlertTriangle className="h-4 w-4 text-warning/60" />
+            Active Signals ({activeEvents.length})
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {activeEvents.length === 0 ? (
-              <Card className="border-success bg-success/5">
-                <CardContent className="p-6 text-center">
-                  <CheckCircle className="h-12 w-12 text-success mx-auto mb-2" />
-                  <p className="font-medium text-success">All Clear</p>
-                  <p className="text-sm text-muted-foreground">No active alerts</p>
+              <Card className="rounded-[2.5rem] border-emerald-500/20 bg-emerald-500/[0.02] backdrop-blur-md shadow-glow">
+                <CardContent className="p-8 text-center space-y-4">
+                  <div className="p-4 rounded-full bg-emerald-500/10 inline-block">
+                    <CheckCircle className="h-10 w-10 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="font-heading font-bold text-lg text-emerald-800 dark:text-emerald-200">Protocol Stable</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/60 mt-1">No active anomalies identified</p>
+                  </div>
                 </CardContent>
               </Card>
             ) : (
               activeEvents.map((alert) => (
-                <Card key={alert.id} className={cn('border-l-4', alert.severity === 'critical' ? 'border-danger' : 'border-warning')}>
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="font-semibold">{alert.work_center_id}</div>
-                      <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'}>{alert.severity}</Badge>
+                <Card key={alert.id} className={cn('rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-premium group', alert.severity === 'critical' ? 'border-danger/20' : 'border-warning/20')}>
+                  <div className={cn('h-1 w-full', alert.severity === 'critical' ? 'bg-danger' : 'bg-warning')} />
+                  <CardContent className="p-6 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div className="font-mono text-xs font-bold text-primary/60">{alert.work_center_id}</div>
+                      <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'} className="rounded-md text-[8px] font-black uppercase tracking-widest border-none">{alert.severity}</Badge>
                     </div>
-                    <p className="text-sm mb-3">{alert.description}</p>
-                    <div className="flex justify-between items-center text-xs text-muted-foreground">
-                      <span>{formatElapsedTime(alert.created_at)}</span>
+                    <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 leading-snug group-hover:text-primary transition-colors">{alert.description}</p>
+                    <div className="flex justify-between items-center pt-4 border-t border-border/10">
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{formatElapsedTime(alert.created_at)}</span>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleAcknowledge(alert.id)}>Ack</Button>
-                        <Button size="sm" variant="outline" onClick={() => handleEscalate(alert.id)}>Escalate</Button>
+                        <Button size="sm" variant="outline" className="h-8 rounded-lg text-[9px] uppercase tracking-widest font-black" onClick={() => handleAcknowledge(alert.id)}>SYNC</Button>
+                        <Button size="sm" variant="outline" className="h-8 rounded-lg text-[9px] uppercase tracking-widest font-black" onClick={() => handleEscalate(alert.id)}>ESCALATE</Button>
                       </div>
                     </div>
                   </CardContent>
@@ -235,22 +254,33 @@ export default function AndonBoardPage() {
         </div>
 
         {/* Work Centers */}
-        <div className="lg:col-span-2">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Wrench className="h-5 w-5" />
-            Work Centers
+        <div className="lg:col-span-2 space-y-6">
+          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2 px-2">
+            <Wrench className="h-4 w-4 text-primary/60" />
+            Intelligence Nodes
           </h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from(workCenters.values()).map((wc) => (
-              <Card key={wc.id} className="relative overflow-hidden">
-                <div className={cn('absolute top-0 left-0 w-1 h-full', wc.status === 'running' ? 'bg-success' : 'bg-danger')} />
-                <CardContent className="p-4 pl-5">
-                  <div className="flex justify-between mb-2">
-                    <span className="font-medium">{wc.name}</span>
-                    <Badge variant={wc.status === 'running' ? 'success' : 'secondary'}>{wc.status}</Badge>
+              <Card key={wc.id} className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden hover:shadow-premium-hover transition-all duration-500 group">
+                <div className={cn('h-1.5 w-full transition-colors duration-1000', wc.status === 'running' ? 'bg-success shadow-glow' : 'bg-danger animate-pulse')} />
+                <CardContent className="p-6 space-y-5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-heading font-bold text-base tracking-tight text-foreground/80">{wc.name}</span>
+                    <Badge variant={wc.status === 'running' ? 'success' : 'secondary'} className="rounded-md text-[8px] font-black uppercase tracking-widest border-none">{wc.status}</Badge>
                   </div>
-                  <div className="text-xs text-muted-foreground mb-4">OEE: {wc.oee}%</div>
-                  <Progress value={wc.efficiency} className="h-1.5" />
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                    <span>OEE Pulse</span>
+                    <span className="text-foreground/60">{wc.oee}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted/20 overflow-hidden shadow-inner-soft">
+                    <div 
+                      className={cn(
+                        "h-full transition-all duration-1000",
+                        wc.status === 'running' ? 'bg-success' : 'bg-danger'
+                      )} 
+                      style={{ width: `${wc.efficiency}%` }} 
+                    />
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -259,31 +289,31 @@ export default function AndonBoardPage() {
       </div>
 
       {/* Quick Actions */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Quick Actions</CardTitle>
+      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
+        <CardHeader className="pb-4 border-b border-border/5 bg-muted/5 p-6">
+          <CardTitle className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/60">Strategic Operational Controls</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm">
+        <CardContent className="p-6">
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
               <PhoneCall className="mr-2 h-4 w-4" />
-              Call Supervisor
+              Sync Supervisor
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
               <MessageSquare className="mr-2 h-4 w-4" />
-              Broadcast Message
+              Global Broadcast
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
               <Wrench className="mr-2 h-4 w-4" />
-              Request Maintenance
+              Technician Node
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
               <Package className="mr-2 h-4 w-4" />
-              Request Material
+              Logistics Sync
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="lg" className="rounded-xl border-danger/20 hover:bg-danger/5 text-danger">
               <AlertTriangle className="mr-2 h-4 w-4" />
-              Report Issue
+              Protocol Exception
             </Button>
           </div>
         </CardContent>

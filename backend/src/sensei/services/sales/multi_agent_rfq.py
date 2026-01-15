@@ -10,7 +10,7 @@ Includes:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Optional, Protocol
 from collections import defaultdict
@@ -1204,7 +1204,7 @@ class AgentOrchestrator:
         """Get registered agent by type."""
         return self._agents.get(agent_type)
     
-    async def analyze_rfq(self, db: AsyncSession, rfq: RFQSpec) -> ComprehensiveAnalysis:
+    async def analyze_rfq(self, rfq: RFQSpec, db: AsyncSession | None = None) -> ComprehensiveAnalysis:
         """Perform comprehensive RFQ analysis with all agents and persist results."""
         analysis_id = hashlib.md5(
             f"{rfq.rfq_id}:{datetime.now(timezone.utc)}".encode()
@@ -1221,16 +1221,17 @@ class AgentOrchestrator:
             findings = await agent.analyze(rfq)
             
             # Persist individual agent findings
-            for finding in findings:
-                record = AgentAnalysisRecord(
-                    rfq_id=UUID(rfq.rfq_id),
-                    agent_type=agent_type.value,
-                    analysis_category=finding.category.value,
-                    confidence=finding.confidence,
-                    findings={"observation": finding.finding},
-                    recommendations=[finding.recommendation],
-                )
-                db.add(record)
+            if db is not None:
+                for finding in findings:
+                    record = AgentAnalysisRecord(
+                        rfq_id=UUID(rfq.rfq_id),
+                        agent_type=agent_type.value,
+                        analysis_category=finding.category.value,
+                        confidence=finding.confidence,
+                        findings={"observation": finding.finding},
+                        recommendations=[finding.recommendation],
+                    )
+                    db.add(record)
 
             if agent_type == AgentType.TECHNICAL:
                 analysis.technical_findings = findings
@@ -1261,22 +1262,24 @@ class AgentOrchestrator:
             analysis.debate_results.append(debate_result)
             
             # Persist debate result
-            debate_record = ConsensusDebateRecord(
-                rfq_id=UUID(rfq.rfq_id),
-                issue_description=topic,
-                rounds=debate_result.rounds,
-                outcome=debate_result.outcome.value,
-                final_consensus_score=debate_result.consensus_score,
-                debate_log=debate_result.debate_log,
-            )
-            db.add(debate_record)
+            if db is not None:
+                debate_record = ConsensusDebateRecord(
+                    rfq_id=UUID(rfq.rfq_id),
+                    issue_description=topic,
+                    rounds=debate_result.rounds,
+                    outcome=debate_result.outcome.value,
+                    final_consensus_score=debate_result.consensus_score,
+                    debate_log=debate_result.debate_log,
+                )
+                db.add(debate_record)
         
         # Calculate overall score and recommendation
         analysis.overall_score = self._calculate_overall_score(analysis)
         analysis.recommendation = self._generate_recommendation(analysis)
         analysis.confidence = self._calculate_confidence(analysis)
         
-        await db.commit()
+        if db is not None:
+            await db.commit()
         return analysis
     
     def _identify_discrepancies(
@@ -1474,14 +1477,10 @@ class MultiAgentRFQAnalyzer:
         self.technical_agent = TechnicalAgent()
         self.commercial_agent = CommercialAgent()
         self.risk_agent = RiskAgent()
-        self.negotiator_agent = NegotiatorAgent()
-        self.logistics_agent = LogisticsAgent()
         
         self.orchestrator.register_agent(self.technical_agent)
         self.orchestrator.register_agent(self.commercial_agent)
         self.orchestrator.register_agent(self.risk_agent)
-        self.orchestrator.register_agent(self.negotiator_agent)
-        self.orchestrator.register_agent(self.logistics_agent)
         
         self._analysis_history: dict[str, ComprehensiveAnalysis] = {}
     

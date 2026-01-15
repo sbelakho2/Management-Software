@@ -190,7 +190,7 @@ export default function A3Page() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             A3 Strategic Resolutions
           </h1>
           <p className="text-muted-foreground font-medium">
@@ -215,7 +215,7 @@ export default function A3Page() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
               {stats.by_status.in_progress || 0} in progress
             </p>
@@ -228,7 +228,7 @@ export default function A3Page() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.approval_pending}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.approval_pending}</div>
             <p className="text-xs text-muted-foreground">Awaiting approval</p>
           </CardContent>
         </Card>
@@ -239,7 +239,7 @@ export default function A3Page() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
               {(stats.by_status.approved || 0) + (stats.by_status.implemented || 0) + (stats.by_status.closed || 0)}
             </div>
             <p className="text-xs text-muted-foreground">Approved or closed</p>
@@ -252,7 +252,7 @@ export default function A3Page() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{stats.overdue_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">{stats.overdue_count}</div>
             <p className="text-xs text-muted-foreground">Past target date</p>
           </CardContent>
         </Card>

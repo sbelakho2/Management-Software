@@ -393,7 +393,7 @@ class CertificationTrackingService:
         self._evidence[ev_id] = evidence
         return evidence
 
-    async def list_evidence(
+    async def _list_evidence_async(
         self,
         *,
         certification_id: UUID,
@@ -472,8 +472,79 @@ class CertificationTrackingService:
             )
         return results
 
+    def list_evidence(
+        self,
+        *,
+        certification_id: UUID,
+        actor_roles: Iterable[str],
+        actor_employee_id: UUID | None,
+        actor_user_id: UUID,
+        db: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        if db is not None:
+            return self._list_evidence_async(
+                certification_id=certification_id,
+                actor_roles=actor_roles,
+                actor_employee_id=actor_employee_id,
+                actor_user_id=actor_user_id,
+                db=db,
+            )
+        if certification_id not in self._certs:
+            raise KeyError("Certification not found")
+        cert = self._certs[certification_id]
+
+        if not self.can_view_employee(
+            actor_roles=actor_roles,
+            actor_employee_id=actor_employee_id,
+            target_employee_id=cert.employee_id,
+        ):
+            raise PermissionError("Not permitted to view certification evidence")
+
+        roles = _norm_roles(actor_roles)
+        privileged = (
+            len(roles.intersection(_PRIVILEGED_CERT_ROLES)) > 0
+            or (actor_employee_id is not None and actor_employee_id == cert.employee_id)
+        )
+
+        results: list[dict[str, Any]] = []
+        for ev in sorted(
+            [e for e in self._evidence.values() if e.certification_id == certification_id],
+            key=lambda e: e.uploaded_at,
+        ):
+            filename = ev.filename
+            notes = ev.notes
+            storage_key = ev.storage_key
+
+            if not privileged:
+                masked_filename = self._pii.mask_value(filename, field_id=self._field_evidence_filename_id)
+                masked_notes = self._pii.mask_value(notes, field_id=self._field_evidence_notes_id) if notes else ""
+                filename = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
+                notes = masked_notes._get_value() if hasattr(masked_notes, "_get_value") else masked_notes
+                storage_key = "***"
+
+            results.append(
+                {
+                    "id": ev.id,
+                    "certification_id": ev.certification_id,
+                    "employee_id": ev.employee_id,
+                    "filename": filename,
+                    "storage_key": storage_key,
+                    "uploaded_at": ev.uploaded_at,
+                    "uploaded_by": ev.uploaded_by,
+                    "sha256": ev.sha256,
+                    "mime_type": ev.mime_type,
+                    "notes": notes,
+                    "metadata": dict(ev.metadata),
+                }
+            )
+        return results
+
     async def get_pii_access_logs(self, db: AsyncSession) -> list[dict[str, Any]]:
         logs = await self._pii.get_access_logs(db)
+        return [l.to_dict() for l in logs]
+
+    def get_pii_access_logs_sync(self) -> list[dict[str, Any]]:
+        logs = self._pii.get_access_logs()
         return [l.to_dict() for l in logs]
 
     # ---- Renewal nudges ----

@@ -76,56 +76,56 @@ function ProductionStats() {
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-warning/10">
-              <Play className="h-5 w-5 text-warning" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{inProgress}</p>
-              <p className="text-sm text-muted-foreground">In Progress</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Execution Pulse</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{inProgress}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+              <Play className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('p-2 rounded-lg', onHold > 0 ? 'bg-danger/10' : 'bg-muted')}>
-              <Pause className={cn('h-5 w-5', onHold > 0 ? 'text-danger' : 'text-muted-foreground')} />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className={cn('text-2xl font-bold', onHold > 0 && 'text-danger')}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Suspended Nodes</p>
+              <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1', onHold > 0 ? 'from-danger to-danger/70' : 'from-foreground to-foreground/70')}>
                 {onHold}
               </p>
-              <p className="text-sm text-muted-foreground">On Hold</p>
+            </div>
+            <div className={cn('p-3 rounded-2xl shadow-sm', onHold > 0 ? 'bg-danger/10 text-danger' : 'bg-muted text-muted-foreground')}>
+              <Pause className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Clock className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{overdue}</p>
-              <p className="text-sm text-muted-foreground">Overdue</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Overdue Horizon</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{overdue}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <Clock className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/10">
-              <TrendingUp className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{efficiency}%</p>
-              <p className="text-sm text-muted-foreground">Efficiency</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Operational Velocity</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{efficiency}%</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
@@ -327,77 +327,82 @@ function ProductionPageContent() {
   }, [workOrdersList, searchQuery, statusFilter, workCenterFilter]);
 
   return (
-    <div className="space-y-6" data-testid="production-page">
+    <div className="space-y-8 page-fade-in" data-testid="production-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Production</h1>
-          <p className="text-muted-foreground">Manage work orders and track manufacturing progress</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Production Management
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Monitor shop floor velocity, work orders, and manufacturing execution
+          </p>
         </div>
-        <Button onClick={() => router.push('/production/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Work Order
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => router.push('/production/new')} size="lg" className="rounded-xl shadow-glow subtle-shine">
+            <Plus className="mr-2 h-4 w-4" />
+            New Work Order
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
       <ProductionStats />
 
       {/* Filters */}
-      <Card>
-        <CardContent className="py-4">
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="relative flex-1 max-w-sm group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
               <Input
-                placeholder="Search work orders..."
+                placeholder="Search work orders by node identity..."
+                className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
               />
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-3 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Status" />
+                <SelectTrigger className="w-[160px] h-12 rounded-xl bg-background/50 border-border/50">
+                  <SelectValue placeholder="Node Status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Statuses</SelectItem>
                   {Object.values(WorkOrderStatus).map((status) => (
-                    <SelectItem key={status} value={status}>
+                    <SelectItem key={status} value={status} className="rounded-xl m-1">
                       {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <Select value={workCenterFilter} onValueChange={setWorkCenterFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Work Center" />
+                <SelectTrigger className="w-[180px] h-12 rounded-xl bg-background/50 border-border/50">
+                  <SelectValue placeholder="Intelligence Node" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All work centers</SelectItem>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Nodes</SelectItem>
                   {workCenters.map((wc) => (
-                    <SelectItem key={wc} value={wc as string}>{wc}</SelectItem>
+                    <SelectItem key={wc} value={wc as string} className="rounded-xl m-1">{wc}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <div className="flex border rounded-md">
+              <div className="flex items-center rounded-xl border border-border/40 p-1 bg-background/50 shadow-inner-soft">
                 <Button
-                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="rounded-r-none"
+                  className="rounded-lg h-9"
                   onClick={() => setViewMode('list')}
                 >
-                  List
+                  <List className="h-4 w-4" />
                 </Button>
                 <Button
-                  variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                  variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="rounded-l-none"
+                  className="rounded-lg h-9"
                   onClick={() => setViewMode('cards')}
                 >
-                  Cards
+                  <LayoutGrid className="h-4 w-4" />
                 </Button>
               </div>
             </div>

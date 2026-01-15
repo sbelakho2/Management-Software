@@ -59,7 +59,7 @@ export function MobileBottomNav() {
 
   return (
     <nav 
-      className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden safe-area-inset-bottom"
+      className="fixed bottom-4 left-4 right-4 z-50 flex h-16 items-center justify-around rounded-3xl border premium-glass shadow-premium md:hidden safe-area-inset-bottom"
       role="navigation"
       aria-label="Mobile navigation"
     >
@@ -70,19 +70,19 @@ export function MobileBottomNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px]',
-              'text-muted-foreground transition-colors',
-              'hover:text-foreground active:scale-95',
-              isActive && 'text-primary'
+              'flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px] rounded-2xl transition-all duration-300',
+              'text-muted-foreground',
+              'hover:text-primary active:scale-90',
+              isActive && 'text-primary bg-primary/10 shadow-glow'
             )}
             aria-current={isActive ? 'page' : undefined}
           >
             <item.icon 
-              className={cn('h-5 w-5', isActive && 'text-primary')} 
+              className={cn('h-5 w-5 transition-transform duration-300', isActive && 'text-primary scale-110')} 
               aria-hidden="true" 
             />
             <span className={cn(
-              'text-[10px] font-medium',
+              'text-[10px] font-bold tracking-tight',
               isActive && 'text-primary'
             )}>
               {item.label}
@@ -94,11 +94,11 @@ export function MobileBottomNav() {
       {/* More button to open sidebar drawer */}
       <button
         onClick={() => setSidebarState('expanded')}
-        className="flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px] text-muted-foreground transition-colors hover:text-foreground active:scale-95"
+        className="flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px] rounded-2xl text-muted-foreground transition-all duration-300 hover:text-primary active:scale-90 hover:bg-primary/5"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
-        <span className="text-[10px] font-medium">More</span>
+        <span className="text-[10px] font-bold tracking-tight">More</span>
       </button>
     </nav>
   );

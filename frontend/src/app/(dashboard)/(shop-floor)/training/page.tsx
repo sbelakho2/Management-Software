@@ -97,62 +97,59 @@ function TrainingStats() {
   const { skills, trainings, records } = useTrainingStore();
   
   const expiringCount = records.filter(r => {
-    // In a real app, UserSkill model might have expires_at. 
-    // Records in store represent enrollments/completions.
-    // For now we'll simulate based on store data if available.
     return false; 
   }).length;
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Award className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{skills.length}</p>
-              <p className="text-sm text-muted-foreground">Active Skills</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Active Skill Nodes</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{skills.length}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <Award className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-success/10 rounded-lg">
-              <GraduationCap className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{trainings.length}</p>
-              <p className="text-sm text-muted-foreground">Training Programs</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Intelligence Protocols</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{trainings.length}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <GraduationCap className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-warning/10 rounded-lg">
-              <Clock className="h-5 w-5 text-warning" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{records.filter(r => r.status === 'in_progress').length}</p>
-              <p className="text-sm text-muted-foreground">In Progress</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Synchronization Pulse</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{records.filter(r => r.status === 'in_progress').length}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+              <Clock className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card className={cn(expiringCount > 0 && 'border-danger')}>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('p-2 rounded-lg', expiringCount > 0 ? 'bg-danger/10' : 'bg-muted')}>
-              <AlertTriangle className={cn('h-5 w-5', expiringCount > 0 ? 'text-danger' : 'text-muted-foreground')} />
-            </div>
+      <Card className={cn("rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md", expiringCount > 0 && 'border-danger/20 bg-danger/[0.02]')}>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{expiringCount}</p>
-              <p className="text-sm text-muted-foreground">Expiring (30 days)</p>
+              <p className={cn("text-[10px] font-bold uppercase tracking-widest", expiringCount > 0 ? 'text-danger/60' : 'text-muted-foreground/60')}>Threshold Alerts</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{expiringCount}</p>
+            </div>
+            <div className={cn('p-3 rounded-2xl shadow-sm', expiringCount > 0 ? 'bg-danger/10 text-danger' : 'bg-muted text-muted-foreground')}>
+              <AlertTriangle className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
@@ -475,22 +472,24 @@ function TrainingPageContent() {
   }, [activeTab]);
 
   return (
-    <div className="space-y-6" data-testid="training-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Training & Certifications</h1>
-          <p className="text-muted-foreground">Manage employee training and track certifications</p>
+    <div className="space-y-8 page-fade-in" data-testid="training-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Training & Certifications
+          </h1>
+          <p className="text-muted-foreground font-medium">Manage employee training and track certifications</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.push('/training/matrix')}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/training/matrix')}>
             <TrendingUp className="mr-2 h-4 w-4" />
             Skills Matrix
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
+              <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
                 <Plus className="mr-2 h-4 w-4" />
-                Create
+                New Activity
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -516,48 +515,63 @@ function TrainingPageContent() {
       <TrainingStats />
 
       {/* Tabs */}
-      <Card>
-        <CardHeader className="pb-0 border-b">
-          <div className="flex gap-4">
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+        <CardHeader className="pb-0 border-b border-border/10 bg-muted/5">
+          <div className="flex gap-8">
             <button
               className={cn(
-                'pb-3 px-1 text-sm font-medium border-b-2 transition-colors',
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
                 activeTab === 'certifications'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
               )}
               onClick={() => setActiveTab('certifications')}
             >
-              <Award className="inline h-4 w-4 mr-2" />
-              Certifications
+              <div className="flex items-center gap-2">
+                <Award className="h-4 w-4" />
+                Certifications
+              </div>
+              {activeTab === 'certifications' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
             </button>
             <button
               className={cn(
-                'pb-3 px-1 text-sm font-medium border-b-2 transition-colors',
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
                 activeTab === 'programs'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
               )}
               onClick={() => setActiveTab('programs')}
             >
-              <BookOpen className="inline h-4 w-4 mr-2" />
-              Programs
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4" />
+                Programs
+              </div>
+              {activeTab === 'programs' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
             </button>
             <button
               className={cn(
-                'pb-3 px-1 text-sm font-medium border-b-2 transition-colors',
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
                 activeTab === 'records'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
               )}
               onClick={() => setActiveTab('records')}
             >
-              <FileText className="inline h-4 w-4 mr-2" />
-              Records
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Records
+              </div>
+              {activeTab === 'records' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
             </button>
           </div>
         </CardHeader>
-        <CardContent className="pt-6">
+        <CardContent className="pt-8">
           {activeTab === 'certifications' && <CertificationsTab />}
           {activeTab === 'programs' && <ProgramsTab />}
           {activeTab === 'records' && <RecordsTab />}

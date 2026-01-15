@@ -23,90 +23,95 @@ export default function AndonSettingsPage() {
     setIsSubmitting(true);
     setTimeout(() => {
       toast({
-        title: 'Settings Saved',
-        description: 'Andon notification preferences have been updated.',
+        title: 'Protocol Calibrated',
+        description: 'Signal notification preferences have been updated.',
       });
       router.push('/andon');
     }, 1000);
   };
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-3xl mx-auto space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+            <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Andon Settings</h1>
-            <p className="text-muted-foreground">Configure alerts and response protocols</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Signal Configuration</h1>
+            <p className="text-muted-foreground font-medium text-sm">Configure multi-channel alerts and organizational response protocols</p>
           </div>
         </div>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
+        <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8" onClick={handleSubmit} disabled={isSubmitting}>
           <Save className="h-4 w-4 mr-2" />
-          {isSubmitting ? 'Saving...' : 'Save Settings'}
+          {isSubmitting ? 'Calibrating...' : 'Save Configuration'}
         </Button>
       </div>
-      <div className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-primary" />
-              <CardTitle>Notification Rules</CardTitle>
+      <div className="grid gap-8">
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+          <CardHeader className="pb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
+                <Bell className="h-5 w-5" />
+              </div>
+              <CardTitle className="text-lg font-heading">Notification Intelligence</CardTitle>
             </div>
-            <CardDescription>Who gets notified and when</CardDescription>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Strategic routing for anomalous signals</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Critical Alerts</Label>
-                <p className="text-xs text-muted-foreground">Notify all supervisors immediately for Line Stop</p>
+          <CardContent className="space-y-8">
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">Critical Escalation</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Notify global supervisors immediately for LINE STOP protocols</p>
               </div>
-              <Switch defaultChecked />
+              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Quality Abnormalities</Label>
-                <p className="text-xs text-muted-foreground">Notify Quality Engineer after 5 mins of unresolved issue</p>
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">Quality Abnormalities</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Notify Quality Engineer node after 5 mins of unresolved state</p>
               </div>
-              <Switch defaultChecked />
+              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Maintenance Requests</Label>
-                <p className="text-xs text-muted-foreground">Notify maintenance team for machine breakdowns</p>
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">Maintenance Dispatch</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Initiate immediate technician node request for machine breakdowns</p>
               </div>
-              <Switch defaultChecked />
+              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Volume2 className="h-5 w-5 text-primary" />
-              <CardTitle>Alert Methods</CardTitle>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+          <CardHeader className="pb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
+                <Volume2 className="h-5 w-5" />
+              </div>
+              <CardTitle className="text-lg font-heading">Protocol Channels</CardTitle>
             </div>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Multi-modal signal delivery methods</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Visual Dashboard</Label>
-                <p className="text-xs text-muted-foreground">Flash red on all shop floor monitors</p>
+          <CardContent className="space-y-8">
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">Visual Command Mesh</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Flash strategic warnings on all synchronized shop floor monitors</p>
               </div>
-              <Switch defaultChecked />
+              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>SMS Notifications</Label>
-                <p className="text-xs text-muted-foreground">Send text alerts to on-call staff</p>
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">Mobile SMS Gateway</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Dispatch text alerts to active on-call intelligence nodes</p>
               </div>
-              <Switch />
+              <Switch className="data-[state=checked]:bg-primary" />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Desktop Push</Label>
-                <p className="text-xs text-muted-foreground">Show browser notifications for active alerts</p>
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+              <div className="space-y-1">
+                <Label className="font-heading font-bold text-sm tracking-tight">OS Intelligence Push</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Show native browser notifications for active organizational alerts</p>
               </div>
-              <Switch defaultChecked />
+              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
             </div>
           </CardContent>
         </Card>

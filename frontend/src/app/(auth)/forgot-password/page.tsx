@@ -34,12 +34,12 @@ export default function ForgotPasswordPage() {
     return (
       <div className="space-y-8 text-center animate-in fade-in zoom-in-95 duration-500">
         <div className="flex justify-center">
-          <div className="rounded-full bg-success/10 p-4 border border-success/20 shadow-lg shadow-success/10">
+          <div className="rounded-full bg-success/10 p-5 border border-success/20 shadow-glow">
             <CheckCircle2 className="h-10 w-10 text-success" />
           </div>
         </div>
         <div>
-          <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             Verification Sent
           </h2>
           <p className="mt-2 text-sm text-muted-foreground font-medium max-w-[280px] mx-auto">
@@ -62,7 +62,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-extrabold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
           Reset Access
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
@@ -71,18 +71,18 @@ export default function ForgotPasswordPage() {
       </div>
 
       {error && (
-        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300">
-          <AlertDescription className="font-medium">{error}</AlertDescription>
+        <Alert variant="destructive" className="bg-destructive/10 border-destructive/20 text-destructive animate-in slide-in-from-top-2 duration-300 rounded-2xl">
+          <AlertDescription className="font-bold uppercase tracking-widest text-[10px]">{error}</AlertDescription>
         </Alert>
       )}
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
+          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
             Email address
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground/50 group-focus-within:text-primary transition-colors">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -90,7 +90,7 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="name@company.com"
               required
-              className="pl-10 h-12 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl"
+              className="pl-11"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -100,7 +100,7 @@ export default function ForgotPasswordPage() {
 
         <Button
           type="submit"
-          className="w-full h-12 text-base rounded-xl premium-shimmer"
+          className="w-full premium-shimmer"
           loading={isLoading}
           disabled={!email}
           size="xl"

@@ -285,7 +285,7 @@ export default function ObeyaItemDetailPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <FileText className="h-16 w-16 text-muted-foreground" />
         <div className="text-center">
-          <h2 className="text-2xl font-bold">Item Not Found</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Item Not Found</h2>
           <p className="text-muted-foreground mt-2">
             The Obeya item you're looking for doesn't exist or has been deleted.
           </p>
@@ -308,7 +308,7 @@ export default function ObeyaItemDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{item.title}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{item.title}</h1>
               {item.is_escalated && (
                 <Badge variant="destructive" className="gap-1">
                   <Flag className="h-3 w-3" />
@@ -398,13 +398,13 @@ export default function ObeyaItemDetailPage() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <Label className="text-sm font-medium">Target</Label>
-                    <p className="text-2xl font-bold">
+                    <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
                       {item.kpi_target} {item.kpi_unit}
                     </p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium">Actual</Label>
-                    <p className="text-2xl font-bold">
+                    <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
                       {item.kpi_actual} {item.kpi_unit}
                     </p>
                   </div>

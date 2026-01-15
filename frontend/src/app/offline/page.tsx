@@ -2,52 +2,73 @@
 
 import { WifiOff, RefreshCw, Home } from 'lucide-react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
 export default function OfflinePage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="text-center max-w-md">
-        <div className="inline-flex items-center justify-center w-20 h-20 bg-muted rounded-full mb-6">
-          <WifiOff className="h-10 w-10 text-muted-foreground" />
-        </div>
-        
-        <h1 className="text-2xl font-bold mb-2">You're Offline</h1>
-        
-        <p className="text-muted-foreground mb-6">
-          It looks like you've lost your internet connection. 
-          Some features may not be available until you're back online.
-        </p>
-
-        <div className="space-y-3">
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Try Again
-          </button>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 page-fade-in">
+      <div className="text-center max-w-md w-full">
+        <div className="premium-glass p-10 rounded-[2.5rem] shadow-premium border border-white/20 dark:border-white/5 space-y-8 transition-all duration-500 hover:shadow-premium-hover">
+          <div className="inline-flex items-center justify-center w-24 h-24 bg-primary/10 rounded-[2rem] mb-2 shadow-glow">
+            <WifiOff className="h-12 w-12 text-primary animate-pulse" />
+          </div>
           
-          <Link
-            href="/"
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 border rounded-md hover:bg-muted transition-colors"
-          >
-            <Home className="h-4 w-4" />
-            Go to Homepage
-          </Link>
-        </div>
+          <div className="space-y-3">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              Connection Lost
+            </h1>
+            
+            <p className="text-muted-foreground font-medium text-sm">
+              The Sensei OS intelligence link has been interrupted. 
+              Some core features are currently unavailable.
+            </p>
+          </div>
 
-        <div className="mt-8 p-4 bg-muted/50 rounded-lg text-left">
-          <h2 className="font-medium text-sm mb-2">Available Offline:</h2>
-          <ul className="text-sm text-muted-foreground space-y-1">
-            <li>• Previously viewed pages</li>
-            <li>• Cached data (may be outdated)</li>
-            <li>• Draft forms (will sync when online)</li>
-          </ul>
-        </div>
+          <div className="space-y-4 pt-4">
+            <Button
+              onClick={() => window.location.reload()}
+              className="w-full h-12 text-base rounded-2xl shadow-glow subtle-shine"
+              size="xl"
+            >
+              <RefreshCw className="mr-2 h-5 w-5" />
+              Re-establish Link
+            </Button>
+            
+            <Button
+              asChild
+              variant="outline"
+              className="w-full h-12 text-base rounded-2xl"
+              size="xl"
+            >
+              <Link href="/">
+                <Home className="mr-2 h-5 w-5" />
+                Return to Base
+              </Link>
+            </Button>
+          </div>
 
-        <p className="text-xs text-muted-foreground mt-6">
-          Your work is automatically saved. Changes will sync when you're back online.
-        </p>
+          <div className="p-5 bg-primary/5 rounded-2xl text-left border border-primary/10">
+            <h2 className="font-heading font-bold text-[10px] uppercase tracking-[0.2em] text-primary/60 mb-3">Offline Capabilities</h2>
+            <ul className="text-xs text-muted-foreground/80 space-y-2 font-medium">
+              <li className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                Cached intelligence data
+              </li>
+              <li className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                Previously synchronized pages
+              </li>
+              <li className="flex items-center gap-2">
+                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                Draft synchronization on reconnect
+              </li>
+            </ul>
+          </div>
+
+          <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-muted-foreground/30 pt-4">
+            Sensei OS • Precision Continuity
+          </p>
+        </div>
       </div>
     </div>
   );

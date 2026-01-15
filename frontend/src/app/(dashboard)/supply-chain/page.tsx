@@ -25,54 +25,54 @@ function SupplyChainStats() {
   
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-              <Activity className="h-5 w-5 text-red-600 dark:text-red-400" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{(riskAnalysis?.global_risk_index * 100).toFixed(1)}%</p>
-              <p className="text-sm text-muted-foreground">Global Risk Index</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Global Risk Index</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70 mt-1">{(riskAnalysis?.global_risk_index * 100).toFixed(1)}%</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
+              <Activity className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-              <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{stats?.supply_chain_nodes || 0}</p>
-              <p className="text-sm text-muted-foreground">Active Nodes</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Active Intelligence Nodes</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats?.supply_chain_nodes || 0}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <Globe className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
-              <Shield className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{(riskAnalysis?.mitigation_readiness * 100).toFixed(1)}%</p>
-              <p className="text-sm text-muted-foreground">Mitigation Readiness</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Mitigation Readiness</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{(riskAnalysis?.mitigation_readiness * 100).toFixed(1)}%</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <Shield className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-              <BarChart className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{stats?.simulation_runs || 0}</p>
-              <p className="text-sm text-muted-foreground">Simulations Run</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Simulation Protocols</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats?.simulation_runs || 0}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-500 shadow-sm">
+              <BarChart className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
@@ -161,11 +161,19 @@ function SupplyChainPageContent() {
   }, [fetchStats, fetchRiskAnalysis]);
 
   return (
-    <div className="space-y-6" data-testid="supply-chain-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Supply Chain Intelligence</h1>
-          <p className="text-muted-foreground">Global disruption simulation and risk stress-testing</p>
+    <div className="space-y-8 page-fade-in" data-testid="supply-chain-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Supply Chain Intelligence
+          </h1>
+          <p className="text-muted-foreground font-medium">Global disruption simulation and risk stress-testing</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
+            <Plus className="mr-2 h-4 w-4" />
+            New Simulation
+          </Button>
         </div>
       </div>
 

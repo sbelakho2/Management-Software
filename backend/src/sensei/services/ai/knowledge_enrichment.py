@@ -365,6 +365,30 @@ class KnowledgeEnrichmentService:
 
     def __init__(self) -> None:
         self.synthesizer = CrossDomainSynthesizer()
+        self._sources: dict[UUID, KnowledgeSource] = {}
+        self._acquisition_jobs: dict[UUID, AcquisitionJob] = {}
+        self._chunks: dict[UUID, SemanticChunk] = {}
+        self._embeddings: dict[UUID, EmbeddingRecord] = {}
+        self._alignments: dict[UUID, AlignmentResult] = {}
+        self._knowledge_packs: dict[UUID, KnowledgePack] = {}
+        self._audit_log: list[AuditEntry] = []
+        self._initialize_default_sources()
+
+    def _initialize_default_sources(self) -> None:
+        """Load built-in knowledge sources into in-memory storage."""
+        for src_def in _DEFAULT_SOURCES:
+            source = KnowledgeSource(
+                id=uuid4(),
+                name=src_def["name"],
+                source_type=src_def["source_type"],
+                url=src_def["url"],
+                cli_command=src_def["cli_command"],
+                content_format=src_def["content_format"],
+                license_type=src_def["license_type"],
+                tags=tuple(src_def["tags"]),
+                created_at=datetime.now(timezone.utc),
+            )
+            self._sources[source.id] = source
 
     async def initialize_default_sources(self, db: AsyncSession) -> None:
         """Initialize built-in TPS/Lean knowledge sources in the database."""

@@ -169,7 +169,7 @@ class MudaAwareContextualNudgingService:
         delivery = self.lesson_engine.get_lesson_for_trigger(
             trigger,
             recipient_id,
-            trigger_context=trigger_context,
+            context=trigger_context,
         )
         lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id) if delivery else None
 

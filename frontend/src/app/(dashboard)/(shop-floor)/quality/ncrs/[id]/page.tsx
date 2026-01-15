@@ -71,7 +71,7 @@ export default function NCRDetailsPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{ncr.ncr_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ncr.ncr_number}</h1>
               <Badge variant={statusConfig[ncr.status as keyof typeof statusConfig]?.variant || 'default'}>
                 {statusConfig[ncr.status as keyof typeof statusConfig]?.label || ncr.status}
               </Badge>

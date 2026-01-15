@@ -303,8 +303,7 @@ kubectl exec -n sensei -it deployment/sensei-backend -- \
 # Ingest documentation
 kubectl exec -n sensei -it deployment/sensei-backend -- \
   python -m sensei.cli.knowledge ingest \
-    --url https://example.com/docs \
-    --license MIT
+    --url https://example.com/docs
 
 # Generate embeddings
 kubectl exec -n sensei -it deployment/sensei-backend -- \

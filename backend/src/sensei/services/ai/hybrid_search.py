@@ -1161,6 +1161,9 @@ class DynamicContextSizer:
     
     # Local model token limits (on-device)
     MODEL_LIMITS = {
+        "gpt-3.5-turbo": 4096,
+        "gpt-4": 8192,
+        "gpt-4-32k": 32768,
         "local-llm-small": 8192,
         "local-llm-large": 32768,
         "mistral-7b": 32768,

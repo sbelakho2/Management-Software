@@ -226,7 +226,66 @@ class CEOControlPlaneService:
 
     # ---- Variance Alerts (Cost/COGS) ----
 
-    async def record_variance_alert(
+    def record_variance_alert(
+        self,
+        role: str,
+        *,
+        quote_id: str,
+        actual_cogs: float,
+        estimated_cogs: float,
+        threshold_pct: float,
+        work_order_ids: list[str] | None = None,
+        correlation_id: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> "VarianceAlert":
+        """Record a cost variance alert for CEO/Exec visibility in memory."""
+        self._check_role(role)
+
+        qid = (quote_id or "").strip()
+        if not qid:
+            raise ValueError("quote_id is required")
+        if estimated_cogs <= 0:
+            raise ValueError("estimated_cogs must be > 0")
+        if threshold_pct <= 0:
+            raise ValueError("threshold_pct must be > 0")
+
+        deviation_pct = (actual_cogs - estimated_cogs) / estimated_cogs
+        severity = _severity_from_deviation(abs(deviation_pct))
+
+        alert = VarianceAlert(
+            quote_id=qid,
+            actual_cogs=float(actual_cogs),
+            estimated_cogs=float(estimated_cogs),
+            deviation_pct=float(deviation_pct),
+            threshold_pct=float(threshold_pct),
+            severity=severity,
+            occurred_at=occurred_at or _utcnow(),
+            work_order_ids=[w for w in (work_order_ids or []) if w and w.strip()],
+            correlation_id=(correlation_id or "").strip() or None,
+        )
+        self._variance_alerts.append(alert)
+
+        # Surface as a metric
+        self._metrics.append(
+            SQDCPMetric(
+                metric_type=MetricType.COST,
+                name=f"COGS variance alert (Quote {qid})",
+                value=round(deviation_pct * 100.0, 2),
+                target=round(threshold_pct * 100.0, 2),
+                unit="%",
+                status="red" if abs(deviation_pct) >= threshold_pct else "yellow",
+                trend="up" if deviation_pct > 0 else "down",
+                period="event",
+            )
+        )
+        return alert
+
+    def list_variance_alerts(self, role: str) -> list["VarianceAlert"]:
+        """List variance alerts from in-memory cache."""
+        self._check_role(role)
+        return list(self._variance_alerts)
+
+    async def _record_variance_alert_async(
         self,
         db: AsyncSession,
         role: str,
@@ -239,8 +298,7 @@ class CEOControlPlaneService:
         correlation_id: str | None = None,
         occurred_at: datetime | None = None,
     ) -> "VarianceAlert":
-        """Record a cost variance alert for CEO/Exec visibility with persistence.
-        """
+        """Record a cost variance alert for CEO/Exec visibility with persistence."""
         self._check_role(role)
 
         qid = (quote_id or "").strip()
@@ -300,7 +358,7 @@ class CEOControlPlaneService:
         )
         return alert
 
-    async def list_variance_alerts(self, db: AsyncSession, role: str) -> list["VarianceAlert"]:
+    async def _list_variance_alerts_async(self, db: AsyncSession, role: str) -> list["VarianceAlert"]:
         self._check_role(role)
         from sqlalchemy import select
         from sensei.models.strategic import VarianceAlertRecord

@@ -71,20 +71,20 @@ function StatCard({
   };
 
   return (
-    <Card>
+    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1 hover:border-primary/20">
       <CardContent className="pt-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{title}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{value}</p>
             {trend && trendLabel && (
-              <div className={`flex items-center gap-1 text-xs mt-1 ${trend === 'up' ? 'text-emerald-600' : 'text-destructive'}`}>
+              <div className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest mt-2 ${trend === 'up' ? 'text-emerald-600' : 'text-danger'}`}>
                 {trend === 'up' ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                 {trendLabel}
               </div>
             )}
           </div>
-          <div className={`p-3 rounded-full ${variantStyles[variant]}`}>
+          <div className={`p-3 rounded-2xl shadow-sm ${variantStyles[variant]}`}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function WarehouseDashboard() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             Logistics & Inventory
           </h1>
           <p className="text-muted-foreground font-medium">
@@ -161,25 +161,25 @@ export default function WarehouseDashboard() {
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total SKUs"
+          title="Inventory Nodes (SKUs)"
           value={inventoryStats.totalItems.toLocaleString()}
           icon={Box}
           trend="up"
-          trendLabel="+124 this month"
+          trendLabel="+124 vs LAST CYCLE"
         />
         <StatCard
-          title="Low Stock Items"
+          title="Abnormal Stock Levels"
           value={inventoryStats.lowStock}
           icon={AlertTriangle}
           variant="warning"
         />
         <StatCard
-          title="Pending Receipts"
+          title="Inbound Synchronization"
           value={inventoryStats.pendingReceipts}
           icon={Truck}
         />
         <StatCard
-          title="Pending Shipments"
+          title="Outbound Velocity"
           value={inventoryStats.pendingShipments}
           icon={Package}
         />

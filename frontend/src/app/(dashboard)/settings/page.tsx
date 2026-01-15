@@ -106,18 +106,18 @@ function SettingsCard({ section }: { section: SettingsSection }) {
   
   return (
     <Card 
-      className="hover:border-primary/50 cursor-pointer transition-colors"
+      className="group cursor-pointer rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1.5 hover:border-primary/20"
       onClick={() => router.push(section.href)}
     >
-      <CardContent className="p-4 flex items-center gap-4">
-        <div className="p-2 bg-muted rounded-lg">
-          <Icon className="h-5 w-5" />
+      <CardContent className="p-6 flex items-center gap-6">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm transition-transform duration-500 group-hover:scale-110 group-hover:bg-primary group-hover:text-primary-foreground">
+          <Icon className="h-7 w-7" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium">{section.label}</h3>
-          <p className="text-sm text-muted-foreground truncate">{section.description}</p>
+          <h3 className="font-heading font-bold text-lg tracking-tight group-hover:text-primary transition-colors">{section.label}</h3>
+          <p className="text-xs text-muted-foreground line-clamp-1 font-medium mt-1 leading-relaxed">{section.description}</p>
         </div>
-        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+        <ChevronRight className="h-5 w-5 text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
       </CardContent>
     </Card>
   );
@@ -133,122 +133,58 @@ export default function SettingsPage() {
   const systemSections = filteredSections.filter(s => s.category === 'system');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10 page-fade-in max-w-6xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your account and application preferences</p>
+      <div className="space-y-1">
+        <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          Control Center
+        </h1>
+        <p className="text-muted-foreground font-medium">Configure your personal interface and enterprise parameters</p>
       </div>
 
-      {/* Mobile View - Cards */}
-      <div className="lg:hidden space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Personal</h2>
-          <div className="space-y-2">
+      <div className="space-y-12">
+        <section>
+          <h2 className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40 mb-6 flex items-center gap-3">
+            <span className="h-px flex-1 bg-border/50" />
+            Personal Intelligence
+            <span className="h-px flex-1 bg-border/50" />
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {personalSections.map((section) => (
               <SettingsCard key={section.id} section={section} />
             ))}
           </div>
-        </div>
+        </section>
         
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Organization</h2>
-          <div className="space-y-2">
-            {orgSections.map((section) => (
-              <SettingsCard key={section.id} section={section} />
-            ))}
-          </div>
-        </div>
+        {orgSections.length > 0 && (
+          <section>
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40 mb-6 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border/50" />
+              Organizational Parameters
+              <span className="h-px flex-1 bg-border/50" />
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {orgSections.map((section) => (
+                <SettingsCard key={section.id} section={section} />
+              ))}
+            </div>
+          </section>
+        )}
         
-        <div>
-          <h2 className="text-lg font-semibold mb-3">System</h2>
-          <div className="space-y-2">
-            {systemSections.map((section) => (
-              <SettingsCard key={section.id} section={section} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop View - Grid */}
-      <div className="hidden lg:grid gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Personal Settings</CardTitle>
-            <CardDescription>Your preferences and account</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {personalSections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <a
-                  key={section.id}
-                  href={section.href}
-                  className="flex items-center gap-3 p-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{section.label}</p>
-                    <p className="text-xs text-muted-foreground">{section.description}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </a>
-              );
-            })}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Organization</CardTitle>
-            <CardDescription>Company and team settings</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {orgSections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <a
-                  key={section.id}
-                  href={section.href}
-                  className="flex items-center gap-3 p-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{section.label}</p>
-                    <p className="text-xs text-muted-foreground">{section.description}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </a>
-              );
-            })}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">System</CardTitle>
-            <CardDescription>Data and technical settings</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {systemSections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <a
-                  key={section.id}
-                  href={section.href}
-                  className="flex items-center gap-3 p-2 rounded-md hover:bg-muted transition-colors"
-                >
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{section.label}</p>
-                    <p className="text-xs text-muted-foreground">{section.description}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </a>
-              );
-            })}
-          </CardContent>
-        </Card>
+        {systemSections.length > 0 && (
+          <section>
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40 mb-6 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border/50" />
+              System Architecture
+              <span className="h-px flex-1 bg-border/50" />
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {systemSections.map((section) => (
+                <SettingsCard key={section.id} section={section} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

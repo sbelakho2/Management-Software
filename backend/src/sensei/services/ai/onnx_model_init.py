@@ -268,6 +268,7 @@ class ONNXModelRegistry:
         paths["reranker"] = self.cache_dir / f"{reranker_model}_reranker.int8.onnx"
         
         # 3. Vision-Language Model (VLM - e.g. LLaVA or Moondream)
+        # 3. Vision-Language Model (VLM - e.g. LLaVA or Moondream)
         vlm_model = os.getenv(
             "SENSEI_ONNX_VLM_MODEL",
             "llava-v1.6-7b"
@@ -285,6 +286,12 @@ class ONNXModelRegistry:
         
         return paths
 
+    def _core_model_paths(self) -> Dict[str, Path]:
+        """Return core model paths for validation/warmup."""
+        paths = self.get_model_paths()
+        core_names = {"embeddings", "reranker", "edge_anomaly"}
+        return {name: path for name, path in paths.items() if name in core_names}
+
     def validate_file_integrity(self, path: Path) -> tuple[bool, str]:
         """Validate file size and existence."""
         if not path.exists():
@@ -298,7 +305,7 @@ class ONNXModelRegistry:
     
     def validate_all(self) -> ModelRegistryStatus:
         """Validate all registered models."""
-        paths = self.get_model_paths()
+        paths = self._core_model_paths()
         
         status = ModelRegistryStatus(
             total_models=len(paths),
@@ -349,7 +356,7 @@ class ONNXModelRegistry:
             Dict mapping model name to warm-up time in milliseconds
         """
         warmup_times = {}
-        paths = self.get_model_paths()
+        paths = self._core_model_paths()
         
         for name, path in paths.items():
             if not path.exists():

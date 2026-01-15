@@ -56,7 +56,7 @@ export default function EditA3Page() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Edit A3 Report</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Edit A3 Report</h1>
             <p className="text-muted-foreground">Modify the strategic problem-solving document</p>
           </div>
         </div>

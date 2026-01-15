@@ -52,9 +52,9 @@ class NetworkZone:
     name: str
     zone_type: ZoneType
     cidrs: list[str]
+    description: str
     mac_addresses: list[str] = field(default_factory=list)
     allowed_protocols: list[str] = field(default_factory=list)
-    description: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: UUID | None = None
 

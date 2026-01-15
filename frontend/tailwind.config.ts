@@ -73,15 +73,19 @@ const config: Config = {
         'elevation-3': '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
         'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
         'glow': '0 0 20px rgba(var(--primary), 0.15)',
+        'quirky': '5px 5px 0px 0px rgba(var(--primary), 0.1)',
+        'quirky-hover': '8px 8px 0px 0px rgba(var(--primary), 0.2)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
         'premium-gradient': 'linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-foreground)) 100%)',
         'surface-gradient': 'linear-gradient(to bottom, transparent, hsl(var(--background)))',
+        'mesh-gradient': 'radial-gradient(at 0% 0%, hsla(263, 70%, 50%, 0.15) 0px, transparent 50%), radial-gradient(at 100% 0%, hsla(142, 70%, 45%, 0.15) 0px, transparent 50%), radial-gradient(at 100% 100%, hsla(263, 70%, 50%, 0.15) 0px, transparent 50%), radial-gradient(at 0% 100%, hsla(142, 70%, 45%, 0.15) 0px, transparent 50%)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
+        heading: ['var(--font-heading)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
       },
       fontSize: {

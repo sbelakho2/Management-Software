@@ -60,7 +60,7 @@ export function EpicsList({ projectId }: EpicsListProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Epics</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Epics</h2>
           <p className="text-muted-foreground">High-level initiatives breaking down into user stories.</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -41,8 +41,8 @@ export default function NewProductPage() {
     e.preventDefault();
     if (!form.partNumber || !form.name) {
       toast({
-        title: 'Required Fields',
-        description: 'Please provide at least a Part Number and Product Name.',
+        title: 'Required Parameters missing',
+        description: 'Please provide at least a Part Node Identity and Product Name.',
         variant: 'destructive',
       });
       return;
@@ -64,14 +64,14 @@ export default function NewProductPage() {
       } as any);
       
       toast({
-        title: 'Product Created',
-        description: `${form.name} has been successfully created.`,
+        title: 'Node Synchronized',
+        description: `${form.name} has been successfully established in the catalog.`,
       });
       router.push('/products');
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to create product. Please try again.',
+        title: 'Synchronization Failed',
+        description: 'Failed to establish product node. Please re-authenticate.',
         variant: 'destructive',
       });
     } finally {
@@ -80,180 +80,164 @@ export default function NewProductPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto space-y-8 page-fade-in">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+            <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">New Product</h1>
-            <p className="text-muted-foreground">Add a new item to the product catalog</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Catalog Node</h1>
+            <p className="text-muted-foreground font-medium text-sm">Incorporate a new item into the global product intelligence mesh</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.back()} disabled={isSubmitting}>
-            <X className="h-4 w-4 mr-2" />
-            Cancel
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12 px-8" onClick={() => router.back()} disabled={isSubmitting}>
+            Abort
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8 font-bold" onClick={handleSubmit} disabled={isSubmitting}>
             <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Saving...' : 'Save Product'}
+            {isSubmitting ? 'Synchronizing...' : 'Establish Node'}
           </Button>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid gap-6">
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Basic Information</CardTitle>
-              <CardDescription>Primary identification and categorization</CardDescription>
+      <form onSubmit={handleSubmit} className="grid gap-8">
+        <div className="grid gap-8 md:grid-cols-2">
+          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
+            <CardHeader className="pb-8 border-b border-border/5 bg-muted/5 p-8">
+              <CardTitle className="text-lg font-heading">Basic Identification</CardTitle>
+              <CardDescription className="text-xs font-medium uppercase tracking-wider">Primary node parameters and categorization</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="partNumber">Part Number *</Label>
-                <Input
-                  id="partNumber"
-                  placeholder="e.g., BRK-2024-X"
-                  value={form.partNumber}
-                  onChange={(e) => setForm({ ...form, partNumber: e.target.value })}
-                  required
-                />
+            <CardContent className="space-y-8 p-8">
+              <div className="grid gap-8 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <Label htmlFor="partNumber" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Part Node Identity *</Label>
+                  <Input
+                    id="partNumber"
+                    value={form.partNumber}
+                    onChange={(e) => setForm({ ...form, partNumber: e.target.value })}
+                    placeholder="e.g. PN-2024-001"
+                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50"
+                    required
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="category" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Taxonomy Category</Label>
+                  <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                    <SelectTrigger id="category" className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+                      <SelectValue placeholder="Select node group" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl shadow-premium">
+                      <SelectItem value="electronics" className="rounded-xl m-1">Electronics</SelectItem>
+                      <SelectItem value="mechanical" className="rounded-xl m-1">Mechanical</SelectItem>
+                      <SelectItem value="assembly" className="rounded-xl m-1">Assembly</SelectItem>
+                      <SelectItem value="raw_material" className="rounded-xl m-1">Raw Material Node</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="name">Product Name *</Label>
+              <div className="space-y-3">
+                <Label htmlFor="name" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Name *</Label>
                 <Input
                   id="name"
-                  placeholder="e.g., Precision Bracket Series X"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Intelligence Node Description"
+                  className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(value) => setForm({ ...form, category: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="components">Components</SelectItem>
-                    <SelectItem value="assemblies">Assemblies</SelectItem>
-                    <SelectItem value="raw_materials">Raw Materials</SelectItem>
-                    <SelectItem value="tooling">Tooling</SelectItem>
-                    <SelectItem value="finished_goods">Finished Goods</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+              <div className="space-y-3">
+                <Label htmlFor="description" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Detailed Context</Label>
                 <Textarea
                   id="description"
-                  placeholder="Detailed product specifications..."
-                  rows={4}
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Incorporate technical specifications and required outcomes..."
+                  className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all min-h-[120px] resize-none"
+                  rows={4}
                 />
               </div>
             </CardContent>
           </Card>
 
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Status & Inventory</CardTitle>
-                <CardDescription>Lifecycle and stocking parameters</CardDescription>
+          <div className="space-y-8">
+            <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+              <CardHeader className="p-8 pb-4">
+                <CardTitle className="text-lg font-heading">Supply Dynamics</CardTitle>
+                <CardDescription className="text-xs font-medium uppercase tracking-wider">Inventory thresholds and temporal parameters</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select
-                      value={form.status}
-                      onValueChange={(value) => setForm({ ...form, status: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                        <SelectItem value="discontinued">Discontinued</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="uom">Unit of Measure</Label>
-                    <Select
-                      value={form.unitOfMeasure}
-                      onValueChange={(value) => setForm({ ...form, unitOfMeasure: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ea">Each (ea)</SelectItem>
-                        <SelectItem value="ft">Feet (ft)</SelectItem>
-                        <SelectItem value="lb">Pounds (lb)</SelectItem>
-                        <SelectItem value="kg">Kilograms (kg)</SelectItem>
-                        <SelectItem value="set">Set</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="reorderPoint">Reorder Point</Label>
+              <CardContent className="p-8 pt-0 space-y-8">
+                <div className="grid gap-8 sm:grid-cols-2">
+                  <div className="space-y-3">
+                    <Label htmlFor="uom" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Unit Protocol</Label>
                     <Input
-                      id="reorderPoint"
-                      type="number"
-                      value={form.reorderPoint}
-                      onChange={(e) => setForm({ ...form, reorderPoint: Number(e.target.value) })}
+                      id="uom"
+                      value={form.unitOfMeasure}
+                      onChange={(e) => setForm({ ...form, unitOfMeasure: e.target.value })}
+                      placeholder="ea, kg, etc."
+                      className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leadTime">Lead Time (Days)</Label>
+                  <div className="space-y-3">
+                    <Label htmlFor="leadTime" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Temporal Lead (Days)</Label>
                     <Input
                       id="leadTime"
                       type="number"
                       value={form.leadTimeDays}
                       onChange={(e) => setForm({ ...form, leadTimeDays: Number(e.target.value) })}
+                      className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
                     />
                   </div>
+                </div>
+                <div className="space-y-3">
+                  <Label htmlFor="reorderPoint" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Reorder Magnitude</Label>
+                  <Input
+                    id="reorderPoint"
+                    type="number"
+                    value={form.reorderPoint}
+                    onChange={(e) => setForm({ ...form, reorderPoint: Number(e.target.value) })}
+                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                  />
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Financials</CardTitle>
-                <CardDescription>Cost and pricing data</CardDescription>
+            <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+              <CardHeader className="p-8 pb-4">
+                <CardTitle className="text-lg font-heading">Financial Parameters</CardTitle>
+                <CardDescription className="text-xs font-medium uppercase tracking-wider">Magnitude valuation and cost architecture</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="standardCost">Standard Cost ($)</Label>
-                    <Input
-                      id="standardCost"
-                      type="number"
-                      step="0.01"
-                      value={form.standardCost}
-                      onChange={(e) => setForm({ ...form, standardCost: Number(e.target.value) })}
-                    />
+              <CardContent className="p-8 pt-0 space-y-8">
+                <div className="grid gap-8 sm:grid-cols-2">
+                  <div className="space-y-3">
+                    <Label htmlFor="standardCost" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Standard Cost Protocol</Label>
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/30 text-sm">$</div>
+                      <Input
+                        id="standardCost"
+                        type="number"
+                        step="0.01"
+                        value={form.standardCost}
+                        onChange={(e) => setForm({ ...form, standardCost: Number(e.target.value) })}
+                        className="pl-8 h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="listPrice">List Price ($)</Label>
-                    <Input
-                      id="listPrice"
-                      type="number"
-                      step="0.01"
-                      value={form.listPrice}
-                      onChange={(e) => setForm({ ...form, listPrice: Number(e.target.value) })}
-                    />
+                  <div className="space-y-3">
+                    <Label htmlFor="listPrice" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic List Price</Label>
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/30 text-sm">$</div>
+                      <Input
+                        id="listPrice"
+                        type="number"
+                        step="0.01"
+                        value={form.listPrice}
+                        onChange={(e) => setForm({ ...form, listPrice: Number(e.target.value) })}
+                        className="pl-8 h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                      />
+                    </div>
                   </div>
                 </div>
               </CardContent>

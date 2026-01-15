@@ -4,27 +4,27 @@
 
 @layer base {
   :root {
-    /* Premium Enterprise Palette - Light */
-    --background: 210 50% 98.5%;
-    --foreground: 224 71% 4%;
+    /* Sensei Modern - Premium Enterprise Palette - Light */
+    --background: 240 20% 99%;
+    --foreground: 240 10% 4%;
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card-foreground: 240 10% 4%;
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
-    --primary: 226 100% 50%; /* Authoritative Indigo */
+    --popover-foreground: 240 10% 4%;
+    --primary: 263 70% 50%; /* Sensei Violet */
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 44%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 142 70% 45%; /* Action Mint */
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91%;
-    --input: 214.3 31.8% 91%;
-    --ring: 226 100% 50%;
-    --radius: 0.8rem;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 263 70% 50%;
+    --radius: 1rem;
 
     /* Status colors - Refined */
     --success: 142.1 76.2% 36.3%;
@@ -36,26 +36,26 @@
   }
 
   .dark {
-    /* Premium Enterprise Palette - Dark - Deeper Navy */
-    --background: 224 71% 2%;
-    --foreground: 210 40% 98%;
-    --card: 224 71% 3.5%;
-    --card-foreground: 210 40% 98%;
-    --popover: 224 71% 3.5%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 222.2 47.4% 10%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222.2 47.4% 10%;
-    --muted-foreground: 215 20.2% 55.1%;
-    --accent: 222.2 47.4% 10%;
-    --accent-foreground: 210 40% 98%;
+    /* Sensei Modern - Dark */
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 6%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 263 70% 65%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 142 70% 55%;
+    --accent-foreground: 240 5.9% 10%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222.2 47.4% 8%;
-    --input: 222.2 47.4% 8%;
-    --ring: 224.3 76.3% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263 70% 65%;
   }
 }
 
@@ -75,12 +75,14 @@
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.015em;
     background-image: 
-      radial-gradient(at 0% 0%, hsla(226, 100%, 50%, 0.03) 0, transparent 50%),
-      radial-gradient(at 100% 0%, hsla(142, 76%, 36%, 0.02) 0, transparent 50%);
+      radial-gradient(at 0% 0%, hsla(263, 70%, 50%, 0.05) 0, transparent 50%),
+      radial-gradient(at 100% 0%, hsla(142, 70%, 45%, 0.05) 0, transparent 50%),
+      radial-gradient(at 50% 100%, hsla(263, 70%, 50%, 0.03) 0, transparent 50%);
+    background-attachment: fixed;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight font-bold text-foreground/90;
+    @apply tracking-tight font-heading font-bold text-foreground/90;
   }
 
   /* Custom Scrollbar */
@@ -101,19 +103,15 @@
   }
 
   .premium-glass {
-    @apply bg-white/60 dark:bg-black/60 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-glass;
+    @apply bg-white/40 dark:bg-black/40 backdrop-blur-2xl border border-white/20 dark:border-white/10 shadow-glass;
   }
 
-  .soft-glow {
-    @apply shadow-[0_0_20px_rgba(var(--primary),0.15)];
+  .quirky-card {
+    @apply transition-all duration-300 hover:shadow-quirky-hover hover:-translate-x-1 hover:-translate-y-1 active:translate-x-0 active:translate-y-0;
   }
 
-  .subtle-shine {
-    @apply relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent before:transition-transform before:duration-1000 hover:before:translate-x-full;
-  }
-
-  .premium-shimmer {
-    @apply relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent;
+  .floating-element {
+    @apply animate-float;
   }
 }
 
@@ -121,21 +119,21 @@
 @layer components {
   /* Enterprise Table Refinements - Premium Style */
   table {
-    @apply w-full border-collapse text-left text-sm;
+    @apply w-full border-separate border-spacing-0 text-left text-sm;
   }
   th {
-    @apply px-4 py-4 font-bold text-muted-foreground/60 border-b bg-muted/5 uppercase tracking-widest text-[10px];
+    @apply px-4 py-4 font-heading font-bold text-muted-foreground/60 border-b bg-muted/5 uppercase tracking-widest text-[10px];
   }
   td {
     @apply px-4 py-4 border-b border-border/20 text-foreground/80 transition-colors;
   }
   tr {
-    @apply transition-all duration-300 hover:bg-muted/10;
+    @apply transition-all duration-300 hover:bg-primary/5;
   }
 
   /* Premium Surfaces - Card Refinements */
   .rounded-2xl.border.bg-card {
-    @apply shadow-premium transition-all duration-700 hover:shadow-premium-hover border-border/30 backdrop-blur-[2px] hover:-translate-y-1;
+    @apply shadow-premium transition-all duration-500 hover:shadow-premium-hover border-border/40 backdrop-blur-[4px] hover:-translate-y-1 hover:border-primary/20;
   }
 
   /* Premium Skeleton */

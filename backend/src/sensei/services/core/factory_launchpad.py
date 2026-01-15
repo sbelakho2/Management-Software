@@ -511,7 +511,7 @@ class UIVisibilityConfig:
 # =============================================================================
 
 
-class MaturityManager:
+class AsyncMaturityManager:
     """
     Manages deployment maturity levels for factory sites with DB persistence.
     """
@@ -607,6 +607,118 @@ class MaturityManager:
         
         await db.commit()
         await db.refresh(checklist)
+        return checklist
+
+
+class MaturityManager:
+    """
+    Manages deployment maturity levels for factory sites in memory.
+    """
+    
+    def __init__(self):
+        self._sites: dict[str, SiteConfig] = {}
+        self._checklists: dict[str, LevelUpChecklist] = {}
+        self._level_change_callbacks: list[Callable[[str, MaturityLevel, MaturityLevel], None]] = []
+    
+    def register_site(
+        self,
+        site_id: str,
+        site_name: str,
+        initial_level: MaturityLevel = MaturityLevel.L0_STRATEGIC,
+        timezone: str = "UTC",
+        metadata: dict[str, Any] | None = None,
+    ) -> SiteConfig:
+        """Register a new site with initial maturity level in memory."""
+        target_level = None
+        if initial_level < MaturityLevel.L5_TPS:
+            target_level = MaturityLevel(initial_level.value + 1)
+
+        site = SiteConfig(
+            site_id=site_id,
+            site_name=site_name,
+            current_level=initial_level,
+            target_level=target_level,
+            timezone=timezone,
+            metadata=metadata or {},
+        )
+        self._sites[site_id] = site
+        return site
+    
+    def get_site(self, site_id: str) -> SiteConfig | None:
+        """Get site configuration from memory."""
+        return self._sites.get(site_id)
+    
+    def get_all_sites(self) -> list[SiteConfig]:
+        """Get all registered sites."""
+        return list(self._sites.values())
+    
+    def get_current_level(self, site_id: str) -> MaturityLevel | None:
+        """Get current maturity level for a site."""
+        site = self.get_site(site_id)
+        return site.current_level if site else None
+    
+    def get_enabled_features(self, site_id: str) -> set[FeatureModule]:
+        """Get enabled features for a site."""
+        site = self.get_site(site_id)
+        return site.get_enabled_features() if site else set()
+    
+    def is_feature_enabled(self, site_id: str, feature: FeatureModule) -> bool:
+        """Check if a specific feature is enabled for a site."""
+        site = self.get_site(site_id)
+        return site.is_feature_enabled(feature) if site else False
+    
+    def create_level_up_checklist(
+        self,
+        site_id: str,
+        target_level: MaturityLevel | None = None,
+    ) -> LevelUpChecklist | None:
+        """Create a checklist for level-up transition in memory."""
+        site = self.get_site(site_id)
+        if not site:
+            return None
+        
+        from_level = site.current_level
+        
+        # Check if already at max level
+        if from_level >= MaturityLevel.L5_TPS:
+            return None
+        
+        # Calculate target level
+        if target_level is None:
+            to_level = MaturityLevel(from_level.value + 1)
+        else:
+            to_level = target_level
+        
+        if to_level <= from_level or to_level > MaturityLevel.L5_TPS:
+            return None
+        
+        # Get default items
+        default_items = DEFAULT_LEVEL_UP_CHECKLISTS.get((from_level, to_level), [])
+        
+        items = [
+            ChecklistItem(
+                item_id=item["id"],
+                title=item["title"],
+                description=item.get("description", ""),
+                required=item.get("required", True),
+            )
+            for item in default_items
+        ]
+        
+        checklist = LevelUpChecklist(
+            checklist_id=str(uuid.uuid4()),
+            site_id=site_id,
+            from_level=from_level,
+            to_level=to_level,
+            items=items,
+        )
+        
+        self._checklists[checklist.checklist_id] = checklist
+        
+        # Update site target level
+        site.target_level = to_level
+        site.updated_at = datetime.now()
+        
         return checklist
     
     def get_checklist(self, checklist_id: str) -> LevelUpChecklist | None:

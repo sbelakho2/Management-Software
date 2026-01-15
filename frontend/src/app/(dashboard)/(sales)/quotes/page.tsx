@@ -91,7 +91,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
               <Clock className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.pending}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.pending}</p>
               <p className="text-sm text-muted-foreground">Pending Approval</p>
             </div>
           </div>
@@ -104,7 +104,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
               <Send className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.sent}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.sent}</p>
               <p className="text-sm text-muted-foreground">Sent to Customers</p>
             </div>
           </div>
@@ -117,7 +117,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
               <DollarSign className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{formatCurrency(stats.totalValue)}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalValue)}</p>
               <p className="text-sm text-muted-foreground">Pipeline Value</p>
             </div>
           </div>
@@ -130,7 +130,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
               <TrendingUp className="h-5 w-5 text-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{stats.avgMargin.toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgMargin.toFixed(1)}%</p>
               <p className="text-sm text-muted-foreground">Avg. Margin</p>
             </div>
           </div>
@@ -300,17 +300,21 @@ export default function QuotesPage() {
   }, [mappedQuotes, searchQuery, statusFilter]);
 
   return (
-    <div className="space-y-6" data-testid="quotes-page">
+    <div className="space-y-8 page-fade-in" data-testid="quotes-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Quotes</h1>
-          <p className="text-muted-foreground">Manage quotes and track approval status</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Commercial Quotes
+          </h1>
+          <p className="text-muted-foreground font-medium">Manage quotations, track approvals, and monitor win rates</p>
         </div>
-        <Button onClick={() => router.push('/quotes/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Quote
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/quotes/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Quotation
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}

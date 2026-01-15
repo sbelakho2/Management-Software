@@ -110,54 +110,54 @@ function QualityStats() {
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-warning/10">
-              <ClipboardCheck className="h-5 w-5 text-warning" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{totalInspections}</p>
-              <p className="text-sm text-muted-foreground">Active Inspections</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Active Sync Gates</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{totalInspections}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+              <ClipboardCheck className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-danger/10">
-              <AlertTriangle className="h-5 w-5 text-danger" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{totalNcrs}</p>
-              <p className="text-sm text-muted-foreground">Open NCRs</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Global Anomalies</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70 mt-1">{totalNcrs}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
+              <AlertTriangle className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{totalCapas}</p>
-              <p className="text-sm text-muted-foreground">Active CAPAs</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Resolution Protocols</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{totalCapas}</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <Shield className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/10">
-              <TrendingUp className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold">{currentFPY}%</p>
-              <p className="text-sm text-muted-foreground">First Pass Yield</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">First Pass Velocity</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{currentFPY}%</p>
+            </div>
+            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
@@ -553,22 +553,24 @@ function QualityPageContent() {
   };
 
   return (
-    <div className="space-y-6" data-testid="quality-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Quality Management</h1>
-          <p className="text-muted-foreground">Track inspections, NCRs, and corrective actions</p>
+    <div className="space-y-8 page-fade-in" data-testid="quality-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Quality Assurance
+          </h1>
+          <p className="text-muted-foreground font-medium">Track inspections, NCRs, and corrective actions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.push('/quality/analytics')}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/quality/analytics')}>
             <TrendingUp className="mr-2 h-4 w-4" />
             Analytics
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
+              <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
                 <Plus className="mr-2 h-4 w-4" />
-                New
+                New Protocol
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -593,51 +595,68 @@ function QualityPageContent() {
       <QualityStats />
 
       {/* Tabs */}
-      <div className="border-b">
-        <nav className="flex gap-4">
-          <button
-            onClick={() => handleTabChange('inspections')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'inspections'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <ClipboardCheck className="inline-block mr-2 h-4 w-4" />
-            Inspections
-          </button>
-          <button
-            onClick={() => handleTabChange('ncrs')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'ncrs'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <AlertTriangle className="inline-block mr-2 h-4 w-4" />
-            NCRs
-          </button>
-          <button
-            onClick={() => handleTabChange('capas')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'capas'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Shield className="inline-block mr-2 h-4 w-4" />
-            CAPAs
-          </button>
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'inspections' && <InspectionsTab />}
-      {activeTab === 'ncrs' && <NCRsTab />}
-      {activeTab === 'capas' && <CAPAsTab />}
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+        <CardHeader className="pb-0 border-b border-border/10 bg-muted/5">
+          <div className="flex gap-8">
+            <button
+              onClick={() => handleTabChange('inspections')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'inspections'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4" />
+                Sync Gates
+              </div>
+              {activeTab === 'inspections' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('ncrs')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'ncrs'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Anomalies (NCR)
+              </div>
+              {activeTab === 'ncrs' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('capas')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'capas'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Protocols (CAPA)
+              </div>
+              {activeTab === 'capas' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-8">
+          {activeTab === 'inspections' && <InspectionsTab />}
+          {activeTab === 'ncrs' && <NCRsTab />}
+          {activeTab === 'capas' && <CAPAsTab />}
+        </CardContent>
+      </Card>
     </div>
   );
 }

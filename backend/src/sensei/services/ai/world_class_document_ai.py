@@ -84,11 +84,13 @@ class ProcessingStrategy(str, Enum):
 
 
 class VisionLLMProvider(str, Enum):
-    """Vision LLM providers (On-device only)."""
+    """Vision LLM providers."""
+    GPT4_VISION = "gpt4_vision"
+    CLAUDE_VISION = "claude_vision"
+    GEMINI_PRO_VISION = "gemini_pro_vision"
     LLAVA = "llava"
     MOONDREAM = "moondream"
     QWEN_VL = "qwen_vl"
-    LOCAL_ONNX = "local_onnx"
 
 
 class GDTSymbol(str, Enum):

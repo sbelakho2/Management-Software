@@ -1,10 +1,17 @@
 from typing import Any
+import inspect
 from sensei.services.core.pii_controls import PIIControlsService, PIICategory, MaskingType
 
 _pii_service = PIIControlsService()
 
 def get_pii_service() -> PIIControlsService:
     return _pii_service
+
+
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
     """Mask PII in analytics data based on user roles with granular control."""
@@ -26,7 +33,7 @@ async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
                 if is_top_exec or is_hr:
                     new_data[k] = v
                 else:
-                    new_data[k] = await service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
+                    new_data[k] = await _maybe_await(service.mask_value(str(v), masking_type=MaskingType.PARTIAL))
             
             # Finance related PII
             elif k in ["salary", "budget_remaining", "unit_cost"]:
@@ -40,7 +47,7 @@ async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
                 if is_top_exec or any(r in ["sales", "exec"] for r in roles):
                     new_data[k] = v
                 else:
-                    new_data[k] = await service.mask_value(str(v), masking_type=MaskingType.PARTIAL)
+                    new_data[k] = await _maybe_await(service.mask_value(str(v), masking_type=MaskingType.PARTIAL))
                     
             elif isinstance(v, (dict, list)):
                 new_data[k] = await mask_analytics_data(v, roles)

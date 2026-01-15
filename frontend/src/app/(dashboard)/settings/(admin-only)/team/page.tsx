@@ -260,107 +260,113 @@ export default function TeamSettingsPage() {
   const invitedCount = mockMembers.filter(m => m.status === 'invited').length;
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-8 page-fade-in max-w-5xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/settings')}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Team Members</h1>
-          <p className="text-muted-foreground">Manage users and their access</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              Personnel Directory
+            </h1>
+            <p className="text-muted-foreground font-medium text-sm">Manage organizational hierarchy, access layers, and identity nodes</p>
+          </div>
         </div>
-        <Button onClick={() => setInviteOpen(true)}>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Invite Member
+        <Button onClick={() => setInviteOpen(true)} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
+          <UserPlus className="mr-2 h-5 w-5" />
+          Invite Protocol
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Users className="h-5 w-5 text-primary" />
+      <div className="grid gap-6 sm:grid-cols-3">
+        <Card className="hover:border-primary/20 transition-colors">
+          <CardContent className="p-6 flex items-center gap-5">
+            <div className="p-3 bg-primary/10 rounded-2xl shadow-sm">
+              <Users className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{mockMembers.length}</p>
-              <p className="text-sm text-muted-foreground">Total Members</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{mockMembers.length}</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Total Intelligence Nodes</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-success/10 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-success" />
+        <Card className="hover:border-success/20 transition-colors">
+          <CardContent className="p-6 flex items-center gap-5">
+            <div className="p-3 bg-success/10 rounded-2xl shadow-sm">
+              <CheckCircle className="h-6 w-6 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{activeCount}</p>
-              <p className="text-sm text-muted-foreground">Active Users</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{activeCount}</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Active Operatives</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-warning/10 rounded-lg">
-              <Clock className="h-5 w-5 text-warning" />
+        <Card className="hover:border-warning/20 transition-colors">
+          <CardContent className="p-6 flex items-center gap-5">
+            <div className="p-3 bg-warning/10 rounded-2xl shadow-sm">
+              <Clock className="h-6 w-6 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{invitedCount}</p>
-              <p className="text-sm text-muted-foreground">Pending Invitations</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70">{invitedCount}</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Pending Sync</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Filters & Table */}
-      <Card>
-        <CardHeader className="border-b">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border/40 bg-muted/5 p-6">
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="relative flex-1 group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
               <Input
-                placeholder="Search members..."
-                className="pl-9"
+                placeholder="Search operatives by name or intelligence tag..."
+                className="pl-11 h-12 bg-background/50 border-border/50"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
-                {Object.entries(roleConfig).map(([key, cfg]) => (
-                  <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                {Object.entries(statusConfig).map(([key, cfg]) => (
-                  <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-3">
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-40 h-12 rounded-xl bg-background border-border/50">
+                  <SelectValue placeholder="Access Role" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Roles</SelectItem>
+                  {Object.entries(roleConfig).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key} className="rounded-xl m-1">{cfg.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-40 h-12 rounded-xl bg-background border-border/50">
+                  <SelectValue placeholder="Node Status" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl shadow-premium">
+                  <SelectItem value="all" className="rounded-xl m-1">All Status</SelectItem>
+                  {Object.entries(statusConfig).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key} className="rounded-xl m-1">{cfg.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-muted/50">
+              <thead>
                 <tr>
-                  <th className="text-left p-3 font-medium text-sm">Member</th>
-                  <th className="text-left p-3 font-medium text-sm">Role</th>
-                  <th className="text-left p-3 font-medium text-sm">Department</th>
-                  <th className="text-left p-3 font-medium text-sm">Status</th>
-                  <th className="text-left p-3 font-medium text-sm">Last Active</th>
-                  <th className="p-3 w-10"></th>
+                  <th>Operative Identity</th>
+                  <th>Access Authorization</th>
+                  <th>Department Node</th>
+                  <th>Sync Status</th>
+                  <th>Last Pulse</th>
+                  <th className="w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -371,9 +377,11 @@ export default function TeamSettingsPage() {
             </table>
           </div>
           {filtered.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No members found</p>
+            <div className="text-center py-20 bg-muted/5">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6 shadow-inner-soft">
+                <Users className="h-10 w-10 text-muted-foreground/30" />
+              </div>
+              <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No operatives identified within current search parameters</p>
             </div>
           )}
         </CardContent>
@@ -382,18 +390,18 @@ export default function TeamSettingsPage() {
       {/* Roles Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Role Permissions
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Shield className="h-5 w-5 text-primary/60" />
+            Access Layer Definitions
           </CardTitle>
-          <CardDescription>Overview of what each role can do</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Parameters for organizational permission nodes</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Object.entries(roleConfig).map(([key, cfg]) => (
-              <div key={key} className="p-3 border rounded-lg">
-                <Badge variant={cfg.variant} size="sm" className="mb-2">{cfg.label}</Badge>
-                <p className="text-sm text-muted-foreground">{cfg.description}</p>
+              <div key={key} className="p-5 rounded-2xl border border-border/40 bg-muted/30 group hover:border-primary/20 transition-all">
+                <Badge variant={cfg.variant} size="lg" className="mb-4">{cfg.label}</Badge>
+                <p className="text-xs font-medium text-muted-foreground/80 leading-relaxed">{cfg.description}</p>
               </div>
             ))}
           </div>

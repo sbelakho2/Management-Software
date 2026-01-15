@@ -115,7 +115,7 @@ export default function AnalyticsPage() {
     <div className="space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
             <Shield className="h-10 w-10 text-primary" />
             North Star Intelligence
           </h1>
@@ -149,7 +149,7 @@ export default function AnalyticsPage() {
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{currentOEE}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{currentOEE}%</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               {oeeTrend ? (
                 <>
@@ -168,7 +168,7 @@ export default function AnalyticsPage() {
             <Shield className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-success">LOW</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">LOW</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               Stable Gradient
             </div>
@@ -189,7 +189,7 @@ export default function AnalyticsPage() {
             <Brain className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{insights.length}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{insights.length}</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-warning mt-1">
               {insights.filter(i => i.impact === 'high').length} High Impact
             </div>
@@ -209,7 +209,7 @@ export default function AnalyticsPage() {
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{systemHealth}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{systemHealth}%</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               {parseFloat(systemHealth) > 90 ? "OPTIMAL VELOCITY" : "DEGRADED"}
             </div>
@@ -373,47 +373,50 @@ export default function AnalyticsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="insights" className="space-y-4">
-          <div className="grid gap-4">
+        <TabsContent value="insights" className="space-y-6 animate-in fade-in duration-700">
+          <div className="grid gap-6">
             {insightsList.map((insight) => {
               const Icon = getInsightIcon(insight.type);
               return (
-                <Card key={insight.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="p-3 bg-primary/10 rounded-lg">
-                        <Icon className="h-6 w-6 text-primary" />
+                <Card key={insight.id} className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1 group">
+                  <CardContent className="p-8">
+                    <div className="flex flex-col md:flex-row items-start gap-8">
+                      <div className="p-5 rounded-[1.5rem] bg-primary/10 text-primary shadow-inner-soft transition-transform duration-500 group-hover:scale-110">
+                        <Icon className="h-8 w-8" />
                       </div>
-                      <div className="flex-1 space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-semibold text-lg">{insight.title}</h3>
-                            <Badge variant="outline" className="mt-1 capitalize">{insight.type}</Badge>
+                      <div className="flex-1 space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                          <div className="space-y-1.5">
+                            <h3 className="font-heading font-bold text-xl tracking-tight group-hover:text-primary transition-colors">{insight.title}</h3>
+                            <Badge variant="outline" className="rounded-md text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border-primary/20 text-primary/60">{insight.type}</Badge>
                           </div>
-                          <Badge className={getImpactColor(insight.impact)}>
-                            {insight.impact} impact
+                          <Badge className={cn("rounded-lg px-3 py-1 font-black uppercase tracking-widest text-[9px]", getImpactColor(insight.impact))}>
+                            {insight.impact} IMPACT PROTOCOL
                           </Badge>
                         </div>
-                        <p className="text-muted-foreground">{insight.description}</p>
-                        <div className="flex items-center gap-6 text-sm">
-                          <div className="flex items-center gap-2">
-                            <Eye className="h-4 w-4 text-muted-foreground" />
-                            <span>Confidence: {(insight.confidence * 100).toFixed(0)}%</span>
+                        <p className="text-sm text-muted-foreground/80 leading-relaxed font-medium">{insight.description}</p>
+                        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+                          <div className="flex items-center gap-2.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>Confidence Signal: {(insight.confidence * 100).toFixed(0)}%</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Brain className="h-4 w-4 text-muted-foreground" />
-                            <span>{insight.model_name}</span>
+                          <div className="flex items-center gap-2.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                            <Brain className="h-3.5 w-3.5" />
+                            <span>Model Node: {insight.model_name}</span>
                           </div>
-                          <Badge variant="secondary">{insight.category}</Badge>
+                          <Badge variant="secondary" className="rounded-md bg-muted/10 text-muted-foreground/60 text-[9px] font-black uppercase tracking-widest border-none px-2">{insight.category}</Badge>
                         </div>
                         {insight.action_items && (
-                          <div className="mt-4 p-4 bg-muted rounded-lg">
-                            <div className="font-medium mb-3">Recommended Actions:</div>
-                            <ul className="space-y-2">
+                          <div className="mt-8 p-6 rounded-[1.5rem] bg-primary/5 border border-primary/10 space-y-4">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 flex items-center gap-2">
+                              <Target className="h-3.5 w-3.5" />
+                              Strategic Countermeasures
+                            </div>
+                            <ul className="grid gap-3">
                               {insight.action_items.map((action, idx) => (
-                                <li key={idx} className="flex items-start gap-2">
-                                  <CheckCircle2 className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
-                                  <span>{action}</span>
+                                <li key={idx} className="flex items-start gap-3">
+                                  <div className="h-1.5 w-1.5 rounded-full bg-primary/40 mt-1.5" />
+                                  <span className="text-sm font-medium text-foreground/80 leading-snug">{action}</span>
                                 </li>
                               ))}
                             </ul>
@@ -425,103 +428,147 @@ export default function AnalyticsPage() {
                 </Card>
               );
             })}
-            {insightsList.length === 0 && <div className="text-center py-12 text-muted-foreground">No insights found.</div>}
+            {insightsList.length === 0 && (
+              <div className="text-center py-20 bg-muted/5 rounded-[3rem] border-2 border-dashed border-border/20">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6">
+                  <Brain className="h-10 w-10 text-muted-foreground/30" />
+                </div>
+                <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">Sensei AI is synthesizing new intelligence nodes...</p>
+              </div>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="trends" className="space-y-4">
-          <div className="grid gap-4">
+        <TabsContent value="trends" className="space-y-8 animate-in fade-in duration-700">
+          <div className="grid gap-6">
             {trendsList.map((trend) => (
-              <Card key={trend.metric}>
-                <CardHeader>
+              <Card key={trend.metric} className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-premium-hover group">
+                <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
                   <div className="flex items-center justify-between">
-                    <CardTitle>{trend.metric}</CardTitle>
+                    <CardTitle className="font-heading font-bold text-lg tracking-tight group-hover:text-primary transition-colors">{trend.metric} Protocol</CardTitle>
                     <Badge
                       variant={trend.trend === 'up' ? 'default' : trend.trend === 'down' ? 'destructive' : 'secondary'}
-                      className="gap-1"
+                      className="gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-widest border-none"
                     >
                       {trend.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : 
-                       trend.trend === 'down' ? <TrendingDown className="h-3 w-3" /> : null}
-                      {trend.change_percent > 0 ? '+' : ''}{trend.change_percent.toFixed(1)}%
+                       trend.trend === 'down' ? <TrendingUp className="h-3 w-3 rotate-180" /> : null}
+                      {trend.change_percent > 0 ? '+' : ''}{trend.change_percent.toFixed(1)}% ALPHA
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-4 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">Current</div>
-                      <div className="text-2xl font-bold">{trend.current_value}%</div>
+                <CardContent className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="p-6 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Current Magnitude</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{trend.current_value}%</div>
                     </div>
-                    <div className="text-center p-4 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">7-Day Forecast</div>
-                      <div className="text-2xl font-bold">{trend.prediction_7d}%</div>
+                    <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40">7-Day Projection</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70">{trend.prediction_7d}%</div>
                     </div>
-                    <div className="text-center p-4 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">30-Day Forecast</div>
-                      <div className="text-2xl font-bold">{trend.prediction_7d}%</div>
+                    <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40">30-Day Projection</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70">{trend.prediction_30d}%</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span>Progress to 30-day target</span>
-                      <span className={trend.prediction_7d > trend.current_value ? 'text-green-600' : 'text-red-600'}>
-                        {((trend.prediction_7d - trend.current_value) / trend.current_value * 100).toFixed(1)}% change expected
-                      </span>
+                  
+                  <div className="mt-8 pt-8 border-t border-border/5">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Inference Stream Visualization</span>
+                      <span className="text-[9px] font-mono font-bold text-primary/40">MODEL: TEMPORAL-CONV-04</span>
                     </div>
-                    <Progress value={(trend.current_value / (trend as any).prediction_30d) * 100} className="h-3" />
+                    <div className="h-24 w-full bg-muted/5 rounded-[1.5rem] border border-border/5 flex items-center justify-center">
+                       <Sparkline 
+                         data={[trend.previous_value, trend.current_value, trend.prediction_7d, trend.prediction_30d]} 
+                         width={800} 
+                         height={60} 
+                         color={KPI_COLORS.VOLUME} 
+                         showArea 
+                         className="opacity-60"
+                       />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {trendsList.length === 0 && <div className="text-center py-12 text-muted-foreground">No predictive trends found.</div>}
+            {trendsList.length === 0 && (
+              <div className="text-center py-20 bg-muted/5 rounded-[3rem] border-2 border-dashed border-border/20">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6">
+                  <TrendingUp className="h-10 w-10 text-muted-foreground/30" />
+                </div>
+                <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No predictive trends established in current cycle.</p>
+              </div>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="models" className="space-y-4">
-          <div className="grid gap-4">
+        <TabsContent value="models" className="space-y-8 animate-in fade-in duration-700">
+          <div className="grid gap-6">
             {models.map((model) => (
-              <Card key={model.model_name}>
-                <CardHeader>
+              <Card key={model.model_name} className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-premium-hover group">
+                <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="capitalize">{model.model_name.replace('_', ' ')}</CardTitle>
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-xl bg-primary/10 text-primary shadow-sm transition-transform duration-500 group-hover:scale-110">
+                        <Brain className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <CardTitle className="font-heading font-bold text-lg tracking-tight capitalize group-hover:text-primary transition-colors">{model.model_name.replace('_', ' ')} Intelligence</CardTitle>
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">
+                          {model.predictions_today || 0} INFERENCES TODAY • {model.latency_ms || 0}MS LATENCY
+                        </p>
+                      </div>
+                    </div>
                     <Badge
-                      variant={model.status === 'healthy' ? 'default' : model.status === 'warning' ? 'secondary' : 'destructive'}
-                      className="capitalize"
+                      variant={model.status === 'healthy' ? 'success' : model.status === 'warning' ? 'warning' : 'destructive'}
+                      className="rounded-md text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border-none"
                     >
-                      {model.status || 'healthy'}
+                      {model.status?.toUpperCase() || 'OPTIMAL'}
                     </Badge>
                   </div>
-                  <CardDescription>
-                    {model.predictions_today || 0} predictions today • {model.latency_ms || 0}ms avg latency
-                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-3 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">Accuracy</div>
-                      <div className="text-xl font-bold">{((model.accuracy || 0) * 100).toFixed(1)}%</div>
-                      <Progress value={(model.accuracy || 0) * 100} className="h-1 mt-2" />
+                <CardContent className="p-8">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Accuracy</div>
+                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.accuracy || 0) * 100).toFixed(1)}%</div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
+                        <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.accuracy || 0) * 100}%` }} />
+                      </div>
                     </div>
-                    <div className="text-center p-3 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">Precision</div>
-                      <div className="text-xl font-bold">{((model.precision || 0) * 100).toFixed(1)}%</div>
-                      <Progress value={(model.precision || 0) * 100} className="h-1 mt-2" />
+                    <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Precision</div>
+                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.precision || 0) * 100).toFixed(1)}%</div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
+                        <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.precision || 0) * 100}%` }} />
+                      </div>
                     </div>
-                    <div className="text-center p-3 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">Recall</div>
-                      <div className="text-xl font-bold">{((model.recall || 0) * 100).toFixed(1)}%</div>
-                      <Progress value={(model.recall || 0) * 100} className="h-1 mt-2" />
+                    <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Recall</div>
+                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.recall || 0) * 100).toFixed(1)}%</div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
+                        <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.recall || 0) * 100}%` }} />
+                      </div>
                     </div>
-                    <div className="text-center p-3 bg-muted rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">F1 Score</div>
-                      <div className="text-xl font-bold">{((model.f1_score || 0) * 100).toFixed(1)}%</div>
-                      <Progress value={(model.f1_score || 0) * 100} className="h-1 mt-2" />
+                    <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
+                      <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">F1 Score</div>
+                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.f1_score || 0) * 100).toFixed(1)}%</div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
+                        <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.f1_score || 0) * 100}%` }} />
+                      </div>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {models.length === 0 && <div className="text-center py-12 text-muted-foreground">No model performance data found.</div>}
+            {models.length === 0 && (
+              <div className="text-center py-20 bg-muted/5 rounded-[3rem] border-2 border-dashed border-border/20">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6">
+                  <Cpu className="h-10 w-10 text-muted-foreground/30" />
+                </div>
+                <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">Warming up distributed ML compute clusters...</p>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>

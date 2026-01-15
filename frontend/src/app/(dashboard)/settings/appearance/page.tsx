@@ -103,26 +103,30 @@ export default function AppearanceSettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-8 page-fade-in max-w-4xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push('/settings')}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Appearance</h1>
-          <p className="text-muted-foreground">Customize the look and feel of the application</p>
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+              Appearance
+            </h1>
+            <p className="text-muted-foreground font-medium text-sm">Customize your personal viewing experience and interface aesthetics</p>
+          </div>
         </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button onClick={handleSave} disabled={isSaving} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Applying...
             </>
           ) : (
             <>
-              <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              <Save className="mr-2 h-5 w-5" />
+              Save Configuration
             </>
           )}
         </Button>
@@ -131,11 +135,11 @@ export default function AppearanceSettingsPage() {
       {/* Theme */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Sun className="h-4 w-4" />
-            Theme
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Sun className="h-5 w-5 text-primary/60" />
+            Interface Theme
           </CardTitle>
-          <CardDescription>Choose your preferred color scheme</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Choose your preferred organizational lighting mode</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -147,29 +151,29 @@ export default function AppearanceSettingsPage() {
                   key={option.value}
                   onClick={() => handleChange('theme', option.value as ThemeMode)}
                   className={cn(
-                    'relative flex flex-col items-center gap-3 p-4 border rounded-lg transition-colors',
+                    'relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all duration-300 group',
                     isSelected 
-                      ? 'border-primary bg-primary/5' 
-                      : 'hover:bg-muted'
+                      ? 'border-primary bg-primary/5 shadow-glow' 
+                      : 'border-border/40 hover:border-primary/20 hover:bg-muted/50'
                   )}
                 >
                   {isSelected && (
-                    <div className="absolute top-2 right-2 p-1 bg-primary text-primary-foreground rounded-full">
+                    <div className="absolute top-3 right-3 p-1.5 bg-primary text-primary-foreground rounded-full shadow-glow">
                       <Check className="h-3 w-3" />
                     </div>
                   )}
                   <div className={cn(
-                    'p-3 rounded-lg',
-                    option.value === 'dark' ? 'bg-gray-800' : 'bg-gray-100'
+                    'p-4 rounded-2xl transition-transform duration-500 group-hover:scale-110 shadow-sm',
+                    option.value === 'dark' ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-200'
                   )}>
                     <Icon className={cn(
-                      'h-6 w-6',
-                      option.value === 'dark' ? 'text-gray-100' : 'text-gray-800'
+                      'h-8 w-8',
+                      option.value === 'dark' ? 'text-slate-100' : 'text-slate-900'
                     )} />
                   </div>
                   <div className="text-center">
-                    <p className="font-medium text-sm">{option.label}</p>
-                    <p className="text-xs text-muted-foreground">{option.description}</p>
+                    <p className="font-heading font-bold text-sm tracking-tight">{option.label}</p>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60 mt-1">{option.description}</p>
                   </div>
                 </button>
               );
@@ -181,14 +185,14 @@ export default function AppearanceSettingsPage() {
       {/* Accent Color */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Palette className="h-4 w-4" />
-            Accent Color
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Palette className="h-5 w-5 text-primary/60" />
+            Accent Parameters
           </CardTitle>
-          <CardDescription>Primary color used throughout the interface</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Define the primary signature color for your intelligence layer</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-4">
             {accentColors.map((color) => {
               const isSelected = settings.accentColor === color.value;
               return (
@@ -196,21 +200,21 @@ export default function AppearanceSettingsPage() {
                   key={color.value}
                   onClick={() => handleChange('accentColor', color.value)}
                   className={cn(
-                    'relative flex flex-col items-center gap-2 p-3 border rounded-lg transition-all',
+                    'relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-300 group',
                     isSelected 
-                      ? 'border-foreground scale-105' 
-                      : 'hover:border-muted-foreground'
+                      ? 'border-foreground bg-foreground/5 shadow-premium' 
+                      : 'border-border/40 hover:border-primary/20'
                   )}
                   title={color.label}
                 >
-                  <div className={cn('w-8 h-8 rounded-full', color.color)}>
+                  <div className={cn('w-10 h-10 rounded-full shadow-inner-soft transition-transform duration-300 group-hover:scale-110', color.color)}>
                     {isSelected && (
                       <div className="flex items-center justify-center h-full">
-                        <Check className="h-4 w-4 text-white" />
+                        <Check className="h-5 w-5 text-white" />
                       </div>
                     )}
                   </div>
-                  <span className="text-xs">{color.label}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{color.label}</span>
                 </button>
               );
             })}
@@ -221,17 +225,17 @@ export default function AppearanceSettingsPage() {
       {/* Typography */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Type className="h-4 w-4" />
-            Typography
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Type className="h-5 w-5 text-primary/60" />
+            Visual Hierarchy
           </CardTitle>
-          <CardDescription>Adjust font size for better readability</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Calibrate data density and information legibility</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
-              <Label className="text-sm font-medium mb-3 block">Font Size</Label>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1 mb-4 block">Information Scale</Label>
+              <div className="grid gap-4 sm:grid-cols-3">
                 {fontSizeOptions.map((option) => {
                   const isSelected = settings.fontSize === option.value;
                   return (
@@ -239,24 +243,25 @@ export default function AppearanceSettingsPage() {
                       key={option.value}
                       onClick={() => handleChange('fontSize', option.value as FontSize)}
                       className={cn(
-                        'flex items-center justify-between p-3 border rounded-lg transition-colors',
+                        'flex items-center justify-between p-5 rounded-2xl border-2 transition-all duration-300',
                         isSelected 
-                          ? 'border-primary bg-primary/5' 
-                          : 'hover:bg-muted'
+                          ? 'border-primary bg-primary/5 shadow-sm' 
+                          : 'border-border/40 hover:border-primary/20'
                       )}
                     >
                       <div className="text-left">
                         <p className={cn(
-                          'font-medium',
+                          'font-heading font-bold tracking-tight',
                           option.value === 'small' && 'text-sm',
+                          option.value === 'medium' && 'text-base',
                           option.value === 'large' && 'text-lg'
                         )}>
                           {option.label}
                         </p>
-                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                        <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{option.description}</p>
                       </div>
                       {isSelected && (
-                        <div className="p-1 bg-primary text-primary-foreground rounded-full">
+                        <div className="p-1.5 bg-primary text-primary-foreground rounded-full shadow-glow">
                           <Check className="h-3 w-3" />
                         </div>
                       )}
@@ -272,16 +277,16 @@ export default function AppearanceSettingsPage() {
       {/* Layout */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Layout className="h-4 w-4" />
-            Layout
+          <CardTitle className="text-lg font-heading flex items-center gap-3">
+            <Layout className="h-5 w-5 text-primary/60" />
+            Spatial Orchestration
           </CardTitle>
-          <CardDescription>Control spacing and layout preferences</CardDescription>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Optimize the physical distribution of interface components</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-8">
           <div>
-            <Label className="text-sm font-medium mb-3 block">Display Density</Label>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1 mb-4 block">Interface Density</Label>
+            <div className="grid gap-4 sm:grid-cols-2">
               {densityOptions.map((option) => {
                 const isSelected = settings.density === option.value;
                 return (
@@ -289,18 +294,18 @@ export default function AppearanceSettingsPage() {
                     key={option.value}
                     onClick={() => handleChange('density', option.value as DensityMode)}
                     className={cn(
-                      'flex items-center justify-between p-3 border rounded-lg transition-colors',
+                      'flex items-center justify-between p-5 rounded-2xl border-2 transition-all duration-300',
                       isSelected 
-                        ? 'border-primary bg-primary/5' 
-                        : 'hover:bg-muted'
+                        ? 'border-primary bg-primary/5 shadow-sm' 
+                        : 'border-border/40 hover:border-primary/20'
                     )}
                   >
                     <div className="text-left">
-                      <p className="font-medium text-sm">{option.label}</p>
-                      <p className="text-xs text-muted-foreground">{option.description}</p>
+                      <p className="font-heading font-bold tracking-tight">{option.label}</p>
+                      <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">{option.description}</p>
                     </div>
                     {isSelected && (
-                      <div className="p-1 bg-primary text-primary-foreground rounded-full">
+                      <div className="p-1.5 bg-primary text-primary-foreground rounded-full shadow-glow">
                         <Check className="h-3 w-3" />
                       </div>
                     )}
@@ -310,14 +315,15 @@ export default function AppearanceSettingsPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between py-2 border-t">
+          <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/30 border border-border/40">
             <div>
-              <p className="font-medium text-sm">Collapse Sidebar by Default</p>
-              <p className="text-xs text-muted-foreground">Start with a minimized sidebar</p>
+              <p className="font-heading font-bold tracking-tight">Compact Navigation</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Minimize sidebar footprint by default</p>
             </div>
             <Switch 
               checked={settings.sidebarCollapsed} 
               onCheckedChange={(v) => handleChange('sidebarCollapsed', v)}
+              className="data-[state=checked]:bg-primary"
             />
           </div>
         </CardContent>
@@ -326,53 +332,58 @@ export default function AppearanceSettingsPage() {
       {/* Accessibility */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Accessibility</CardTitle>
-          <CardDescription>Settings for improved accessibility</CardDescription>
+          <CardTitle className="text-lg font-heading">Inclusion & Access</CardTitle>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Calibrate the interface for universal operational access</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between py-2">
+          <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/30 border border-border/40">
             <div>
-              <p className="font-medium text-sm">Reduce Motion</p>
-              <p className="text-xs text-muted-foreground">Minimize animations throughout the interface</p>
+              <p className="font-heading font-bold tracking-tight">Kinetic Reduction</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Minimize interface motion and transitions</p>
             </div>
             <Switch 
               checked={settings.reducedMotion} 
               onCheckedChange={(v) => handleChange('reducedMotion', v)}
+              className="data-[state=checked]:bg-primary"
             />
           </div>
         </CardContent>
       </Card>
 
       {/* Preview */}
-      <Card className="border-dashed">
+      <Card className="border-dashed border-primary/20 bg-primary/[0.02]">
         <CardHeader>
-          <CardTitle className="text-base">Preview</CardTitle>
-          <CardDescription>See how your settings look</CardDescription>
+          <CardTitle className="text-lg font-heading">Operational Preview</CardTitle>
+          <CardDescription className="text-xs font-medium uppercase tracking-wider">Simulated environment with current parameters</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="border rounded-lg p-4 bg-muted/30">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={cn('w-10 h-10 rounded-full', accentColors.find(c => c.value === settings.accentColor)?.color)} />
+          <div className="border border-border/40 rounded-[2rem] p-8 bg-background/50 backdrop-blur-md shadow-premium overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-4 opacity-5">
+              <Shield className="h-24 w-24 text-primary" />
+            </div>
+            <div className="flex items-center gap-5 mb-8">
+              <div className={cn('w-14 h-14 rounded-2xl shadow-glow subtle-shine transition-all duration-500', accentColors.find(c => c.value === settings.accentColor)?.color)} />
               <div>
                 <p className={cn(
-                  'font-medium',
+                  'font-heading font-bold tracking-tight',
                   settings.fontSize === 'small' && 'text-sm',
-                  settings.fontSize === 'large' && 'text-lg'
+                  settings.fontSize === 'medium' && 'text-xl',
+                  settings.fontSize === 'large' && 'text-2xl'
                 )}>
-                  Sample Text
+                  Intelligence Module 04
                 </p>
-                <p className="text-sm text-muted-foreground">This is how your content will appear</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Live Operational Stream</p>
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Button size={settings.density === 'compact' ? 'sm' : 'default'}>
-                Primary Button
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Button className="rounded-xl shadow-glow" size={settings.density === 'compact' ? 'sm' : 'default'}>
+                Execute Command
               </Button>
-              <Button variant="outline" size={settings.density === 'compact' ? 'sm' : 'default'}>
-                Secondary
+              <Button variant="outline" className="rounded-xl" size={settings.density === 'compact' ? 'sm' : 'default'}>
+                View Analytics
               </Button>
-              <Button variant="ghost" size={settings.density === 'compact' ? 'sm' : 'default'}>
-                Ghost
+              <Button variant="ghost" className="rounded-xl" size={settings.density === 'compact' ? 'sm' : 'default'}>
+                Dismiss
               </Button>
             </div>
           </div>

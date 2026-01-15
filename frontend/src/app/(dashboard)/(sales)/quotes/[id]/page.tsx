@@ -239,7 +239,7 @@ export default function QuoteDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{quote.quoteNumber}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{quote.quoteNumber}</h1>
               <Badge variant={config.variant} className="gap-1">
                 <StatusIcon className="h-3 w-3" />
                 {config.label}
@@ -337,7 +337,7 @@ export default function QuoteDetailPage() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Total</span>
                 </div>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(quote.total)}</p>
+                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(quote.total)}</p>
               </CardContent>
             </Card>
             <Card>
@@ -347,7 +347,7 @@ export default function QuoteDetailPage() {
                   <span className="text-sm text-muted-foreground">Margin</span>
                 </div>
                 <p className={cn(
-                  'text-2xl font-bold mt-1',
+                  'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1',
                   quote.margin >= 30 ? 'text-success' : quote.margin >= 20 ? 'text-warning' : 'text-danger'
                 )}>
                   {quote.margin.toFixed(1)}%
@@ -360,7 +360,7 @@ export default function QuoteDetailPage() {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Valid Until</span>
                 </div>
-                <p className={cn('text-2xl font-bold mt-1', isExpiringSoon && 'text-warning')}>
+                <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1', isExpiringSoon && 'from-warning to-warning/70')}>
                   {formatDate(new Date(quote.validUntil), { month: 'short', day: 'numeric' })}
                 </p>
               </CardContent>
@@ -371,7 +371,7 @@ export default function QuoteDetailPage() {
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Line Items</span>
                 </div>
-                <p className="text-2xl font-bold mt-1">{quote.lineItems.length}</p>
+                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{quote.lineItems.length}</p>
               </CardContent>
             </Card>
           </div>

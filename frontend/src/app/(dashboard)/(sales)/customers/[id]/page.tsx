@@ -279,7 +279,7 @@ export default function CustomerDetailPage() {
           </Avatar>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{customer.name}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.name}</h1>
               <Badge variant={config.variant}>{config.label}</Badge>
             </div>
             <p className="text-muted-foreground">{customer.code} • {customer.industry}</p>
@@ -330,32 +330,32 @@ export default function CustomerDetailPage() {
       <div className="grid gap-4 sm:grid-cols-5">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{customer.stats.totalRFQs}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.stats.totalRFQs}</p>
             <p className="text-sm text-muted-foreground">Total RFQs</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{customer.stats.openRFQs}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.stats.openRFQs}</p>
             <p className="text-sm text-muted-foreground">Open RFQs</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrency(customer.stats.totalRevenue)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(customer.stats.totalRevenue)}</p>
             <p className="text-sm text-muted-foreground">Total Revenue</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrency(customer.stats.avgOrderValue)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(customer.stats.avgOrderValue)}</p>
             <p className="text-sm text-muted-foreground">Avg Order</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className={cn(
-              'text-2xl font-bold',
+              'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70',
               customer.stats.winRate >= 70 ? 'text-success' : 
               customer.stats.winRate >= 50 ? 'text-warning' : 'text-danger'
             )}>

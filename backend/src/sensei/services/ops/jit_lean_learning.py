@@ -240,7 +240,7 @@ class BestPracticeSuggestion:
 # =============================================================================
 
 
-class MicroLessonEngine:
+class AsyncMicroLessonEngine:
     """
     Contextual Lean Micro-Lesson Engine with DB persistence.
     
@@ -575,6 +575,93 @@ class MicroLessonEngine:
         }
 
 
+class MicroLessonEngine(AsyncMicroLessonEngine):
+    """In-memory micro-lesson engine for sync use cases and tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.deliveries: dict[str, LessonDelivery] = {}
+
+    def get_lesson_for_trigger(
+        self,
+        trigger: TriggerType,
+        recipient_id: str,
+        context: dict[str, Any] | None = None,
+    ) -> LessonDelivery | None:
+        lesson_id = self.get_lesson_id_for_trigger(trigger)
+        if not lesson_id:
+            return None
+
+        delivery = LessonDelivery(
+            delivery_id=str(uuid.uuid4()),
+            lesson_id=lesson_id,
+            trigger_type=trigger,
+            trigger_context=context or {},
+            recipient_id=recipient_id,
+            delivered_at=datetime.now(timezone.utc),
+            status=LessonStatus.DELIVERED,
+        )
+        self.deliveries[delivery.delivery_id] = delivery
+        return delivery
+
+    def mark_viewed(self, delivery_id: str) -> bool:
+        delivery = self.deliveries.get(delivery_id)
+        if not delivery:
+            return False
+        delivery.status = LessonStatus.VIEWED
+        delivery.viewed_at = datetime.now(timezone.utc)
+        return True
+
+    def mark_completed(
+        self,
+        delivery_id: str,
+        rating: int | None = None,
+        comment: str = "",
+    ) -> bool:
+        delivery = self.deliveries.get(delivery_id)
+        if not delivery:
+            return False
+        delivery.status = LessonStatus.COMPLETED
+        delivery.completed_at = datetime.now(timezone.utc)
+        if delivery.viewed_at is None:
+            delivery.viewed_at = datetime.now(timezone.utc)
+        if rating is not None:
+            delivery.feedback_rating = min(5, max(1, rating))
+        if comment:
+            delivery.feedback_comment = comment
+        return True
+
+    def get_delivery_stats(self, recipient_id: str | None = None) -> dict[str, Any]:
+        deliveries = list(self.deliveries.values())
+        if recipient_id:
+            deliveries = [d for d in deliveries if d.recipient_id == recipient_id]
+
+        total = len(deliveries)
+        if total == 0:
+            return {
+                "total_delivered": 0,
+                "viewed": 0,
+                "completed": 0,
+                "view_rate": 0,
+                "completion_rate": 0,
+                "average_rating": 0,
+            }
+
+        viewed = len([d for d in deliveries if d.status in [LessonStatus.VIEWED, LessonStatus.COMPLETED]])
+        completed = len([d for d in deliveries if d.status == LessonStatus.COMPLETED])
+        ratings = [d.feedback_rating for d in deliveries if d.feedback_rating]
+        avg_rating = sum(ratings) / len(ratings) if ratings else 0
+
+        return {
+            "total_delivered": total,
+            "viewed": viewed,
+            "completed": completed,
+            "view_rate": viewed / total,
+            "completion_rate": completed / total,
+            "average_rating": avg_rating,
+        }
+
+
 # =============================================================================
 # KNOWLEDGE RETRIEVAL ENGINE
 # =============================================================================
@@ -750,7 +837,7 @@ class KnowledgeRetrievalEngine:
 # =============================================================================
 
 
-class StandardWorkEvolutionEngine:
+class AsyncStandardWorkEvolutionEngine:
     """
     Standard Work Evolution Engine with DB persistence.
     
@@ -984,12 +1071,126 @@ class StandardWorkEvolutionEngine:
         return [s for s in self.best_practice_suggestions if s.status == "pending"]
 
 
+class StandardWorkEvolutionEngine(AsyncStandardWorkEvolutionEngine):
+    """In-memory Standard Work Evolution Engine for sync use cases and tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.drafts: dict[str, StandardWorkDraft] = {}
+
+    def register_standard(self, standard: StandardWork) -> str:
+        self.standards[standard.standard_id] = standard
+        return standard.standard_id
+
+    def create_standard(
+        self,
+        title: str,
+        process_name: str,
+        work_center_id: str,
+        steps: list[dict[str, Any]],
+        cycle_time_seconds: int,
+        key_points: list[str] | None = None,
+        safety_notes: list[str] | None = None,
+        quality_checks: list[str] | None = None,
+    ) -> StandardWork:
+        standard_id = str(uuid.uuid4())
+        standard = StandardWork(
+            standard_id=standard_id,
+            title=title,
+            process_name=process_name,
+            work_center_id=work_center_id,
+            version="1.0",
+            content="",
+            steps=steps,
+            cycle_time_seconds=cycle_time_seconds,
+            key_points=key_points or [],
+            safety_notes=safety_notes or [],
+            quality_checks=quality_checks or [],
+            status=StandardWorkStatus.DRAFT,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        self.standards[standard_id] = standard
+        return standard
+
+    def draft_update_from_a3(
+        self,
+        a3_id: str,
+        countermeasure: str,
+        target_standard_id: str | None = None,
+        process_name: str = "",
+        work_center_id: str = "",
+    ) -> StandardWorkDraft:
+        proposed_changes = self._parse_countermeasure(countermeasure)
+
+        if not target_standard_id and work_center_id:
+            for std in self.standards.values():
+                if std.work_center_id == work_center_id:
+                    target_standard_id = std.standard_id
+                    break
+
+        draft = StandardWorkDraft(
+            draft_id=str(uuid.uuid4()),
+            source_a3_id=a3_id,
+            source_countermeasure=countermeasure,
+            target_standard_id=target_standard_id,
+            proposed_changes=proposed_changes,
+            rationale=f"A3 {a3_id} countermeasure: {countermeasure}",
+            created_at=datetime.now(),
+            status="pending",
+        )
+        self.drafts[draft.draft_id] = draft
+        return draft
+
+    def approve_draft(self, draft_id: str, reviewer: str) -> bool:
+        draft = self.drafts.get(draft_id)
+        if not draft:
+            return False
+
+        draft.status = "approved"
+        draft.reviewed_by = reviewer
+        draft.approved_at = datetime.now()
+
+        if draft.target_standard_id and draft.target_standard_id in self.standards:
+            self._apply_draft_to_standard(draft)
+        return True
+
+    def _apply_draft_to_standard(self, draft: StandardWorkDraft) -> None:
+        standard = self.standards.get(draft.target_standard_id or "")
+        if not standard:
+            return
+
+        changes = draft.proposed_changes
+
+        if changes.get("new_steps"):
+            for step in changes["new_steps"]:
+                standard.steps.append({"step": len(standard.steps) + 1, "action": step})
+
+        if changes.get("new_key_points"):
+            standard.key_points.extend(changes["new_key_points"])
+
+        if changes.get("new_quality_checks"):
+            standard.quality_checks.extend(changes["new_quality_checks"])
+
+        try:
+            major, minor = standard.version.split(".")
+            standard.version = f"{major}.{int(minor) + 1}"
+        except (ValueError, AttributeError):
+            standard.version = "1.1"
+
+        standard.updated_at = datetime.now()
+        standard.source_a3_id = draft.source_a3_id
+
+    def get_pending_drafts(self) -> list[StandardWorkDraft]:
+        return [d for d in self.drafts.values() if d.status == "pending"]
+
+
 # =============================================================================
 # JIT LEAN LEARNING ORCHESTRATOR
 # =============================================================================
 
 
-class JITLeanLearning:
+class AsyncJITLeanLearning:
     """
     Just-in-Time Lean Learning & Knowledge Synthesis.
     
@@ -998,14 +1199,14 @@ class JITLeanLearning:
     
     def __init__(
         self,
-        lesson_engine: MicroLessonEngine | None = None,
+        lesson_engine: AsyncMicroLessonEngine | None = None,
         knowledge_engine: KnowledgeRetrievalEngine | None = None,
-        evolution_engine: StandardWorkEvolutionEngine | None = None,
+        evolution_engine: AsyncStandardWorkEvolutionEngine | None = None,
     ):
         """Initialize JIT Lean Learning."""
-        self.lesson_engine = lesson_engine or MicroLessonEngine()
+        self.lesson_engine = lesson_engine or AsyncMicroLessonEngine()
         self.knowledge_engine = knowledge_engine or KnowledgeRetrievalEngine()
-        self.evolution_engine = evolution_engine or StandardWorkEvolutionEngine()
+        self.evolution_engine = evolution_engine or AsyncStandardWorkEvolutionEngine()
     
     async def process_operational_data(
         self,
@@ -1187,6 +1388,178 @@ class JITLeanLearning:
         lesson_stats = await self.lesson_engine.get_delivery_stats(db, operator_id)
         pending_drafts = await self.evolution_engine.get_pending_drafts(db)
         
+        return {
+            "lessons": lesson_stats,
+            "knowledge": {
+                "total_documents": len(self.knowledge_engine.documents),
+                "total_links": len(self.knowledge_engine.links),
+            },
+            "standards": {
+                "total_standards": len(self.evolution_engine.standards),
+                "pending_drafts": len(pending_drafts),
+                "pending_suggestions": len(self.evolution_engine.get_pending_suggestions()),
+                "super_performers": len(self.evolution_engine.identify_super_performers()),
+            },
+        }
+
+
+class JITLeanLearning:
+    """Sync JIT Lean Learning orchestrator for in-memory workflows."""
+
+    def __init__(
+        self,
+        lesson_engine: MicroLessonEngine | None = None,
+        knowledge_engine: KnowledgeRetrievalEngine | None = None,
+        evolution_engine: StandardWorkEvolutionEngine | None = None,
+    ):
+        self.lesson_engine = lesson_engine or MicroLessonEngine()
+        self.knowledge_engine = knowledge_engine or KnowledgeRetrievalEngine()
+        self.evolution_engine = evolution_engine or StandardWorkEvolutionEngine()
+
+    def process_operational_data(
+        self,
+        data: dict[str, Any],
+        operator_id: str,
+    ) -> dict[str, Any]:
+        result = {
+            "trigger_detected": None,
+            "lesson_delivered": None,
+        }
+
+        trigger = self.lesson_engine.detect_trigger(data)
+        if trigger:
+            result["trigger_detected"] = trigger.value
+            delivery = self.lesson_engine.get_lesson_for_trigger(trigger, operator_id, data)
+            if delivery:
+                lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id)
+                result["lesson_delivered"] = {
+                    "delivery_id": delivery.delivery_id,
+                    "lesson_id": delivery.lesson_id,
+                    "title": lesson.title if lesson else "",
+                    "summary": lesson.summary if lesson else "",
+                }
+
+        return result
+
+    def get_lesson_content(self, lesson_id: str) -> dict[str, Any] | None:
+        lesson = self.lesson_engine.get_lesson_content(lesson_id)
+        if not lesson:
+            return None
+
+        return {
+            "lesson_id": lesson.lesson_id,
+            "category": lesson.category.value,
+            "title": lesson.title,
+            "summary": lesson.summary,
+            "content": lesson.content,
+            "duration_seconds": lesson.duration_seconds,
+            "key_takeaways": lesson.key_takeaways,
+            "related_tools": lesson.related_tools,
+            "examples": lesson.examples,
+        }
+
+    def link_a3_to_knowledge(
+        self,
+        a3_id: str,
+        problem_statement: str = "",
+        root_cause: str = "",
+        countermeasure: str = "",
+    ) -> dict[str, Any]:
+        links = {}
+
+        if problem_statement:
+            link = self.knowledge_engine.link_to_a3(a3_id, "problem_statement", problem_statement)
+            links["problem_statement"] = {
+                "link_id": link.link_id,
+                "documents": link.document_ids,
+                "relevance": link.relevance_score,
+            }
+
+        if root_cause:
+            link = self.knowledge_engine.link_to_a3(a3_id, "root_cause", root_cause)
+            links["root_cause"] = {
+                "link_id": link.link_id,
+                "documents": link.document_ids,
+                "relevance": link.relevance_score,
+            }
+
+        if countermeasure:
+            link = self.knowledge_engine.link_to_a3(a3_id, "countermeasure", countermeasure)
+            links["countermeasure"] = {
+                "link_id": link.link_id,
+                "documents": link.document_ids,
+                "relevance": link.relevance_score,
+            }
+
+        recommended = self.knowledge_engine.get_recommended_documents(a3_id)
+        recommended_docs = [
+            {
+                "document_id": doc.document_id,
+                "title": doc.title,
+                "category": doc.category.value,
+                "summary": doc.summary,
+            }
+            for doc in recommended
+        ]
+
+        return {
+            "a3_id": a3_id,
+            "links": links,
+            "recommended_documents": recommended_docs,
+        }
+
+    def close_a3_with_standard_update(
+        self,
+        a3_id: str,
+        countermeasure: str,
+        work_center_id: str = "",
+        process_name: str = "",
+    ) -> dict[str, Any]:
+        draft = self.evolution_engine.draft_update_from_a3(
+            a3_id=a3_id,
+            countermeasure=countermeasure,
+            work_center_id=work_center_id,
+            process_name=process_name,
+        )
+
+        return {
+            "a3_id": a3_id,
+            "draft_id": draft.draft_id,
+            "target_standard": draft.target_standard_id,
+            "proposed_changes": draft.proposed_changes,
+            "status": draft.status,
+        }
+
+    def analyze_best_practices(self, work_center_id: str) -> dict[str, Any]:
+        suggestions = self.evolution_engine.suggest_best_practice_codification(work_center_id)
+        super_performers = self.evolution_engine.identify_super_performers(work_center_id)
+
+        return {
+            "work_center_id": work_center_id,
+            "super_performers": [
+                {
+                    "operator_id": p.operator_id,
+                    "name": p.name,
+                    "overall_score": p.overall_score,
+                    "techniques": p.techniques,
+                }
+                for p in super_performers
+            ],
+            "suggestions": [
+                {
+                    "suggestion_id": s.suggestion_id,
+                    "technique": s.technique,
+                    "performer": s.super_performer_name,
+                    "improvement_potential": s.improvement_potential,
+                }
+                for s in suggestions
+            ],
+        }
+
+    def get_learning_dashboard(self, operator_id: str | None = None) -> dict[str, Any]:
+        lesson_stats = self.lesson_engine.get_delivery_stats(operator_id)
+        pending_drafts = self.evolution_engine.get_pending_drafts()
+
         return {
             "lessons": lesson_stats,
             "knowledge": {

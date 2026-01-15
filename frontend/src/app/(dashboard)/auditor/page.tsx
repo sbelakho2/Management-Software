@@ -86,7 +86,7 @@ function StatCard({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{value}</p>
             {subtitle && (
               <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
             )}
@@ -129,23 +129,25 @@ export default function AuditorDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 page-fade-in" data-testid="auditor-page">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Auditor Dashboard</h1>
-          <p className="text-muted-foreground">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            Audit Intelligence
+          </h1>
+          <p className="text-muted-foreground font-medium">
             Audit tracking, findings management, and compliance monitoring
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <Download className="h-4 w-4 mr-2" />
-            Export Report
+            Export Intelligence
           </Button>
-          <Button>
+          <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
             <FileSearch className="h-4 w-4 mr-2" />
-            New Audit
+            New Protocol
           </Button>
         </div>
       </div>
@@ -175,30 +177,30 @@ export default function AuditorDashboard() {
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Audits (YTD)"
+          title="Audit Protocols (YTD)"
           value={auditStats.completedThisYear}
           icon={CheckCircle2}
-          subtitle={`of ${auditStats.totalAudits} planned`}
+          subtitle={`of ${auditStats.totalAudits} INITIATED`}
           variant="success"
         />
         <StatCard
-          title="Open Findings"
+          title="Unresolved Findings"
           value={auditStats.openFindings}
           icon={AlertTriangle}
-          subtitle={`${auditStats.criticalFindings} critical`}
+          subtitle={`${auditStats.criticalFindings} CRITICAL THRESHOLD`}
           variant="warning"
         />
         <StatCard
-          title="Upcoming Audits"
+          title="Scheduled Protocols"
           value={auditStats.upcomingAudits}
           icon={Calendar}
-          subtitle="Next 30 days"
+          subtitle="Strategic synchronization"
         />
         <StatCard
-          title="Avg Days to Close"
+          title="Resolution Velocity"
           value="12"
           icon={Clock}
-          subtitle="Finding resolution"
+          subtitle="Mean days to closure"
         />
       </div>
 

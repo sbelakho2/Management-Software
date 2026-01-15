@@ -73,7 +73,7 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Milestones</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Milestones</h2>
           <p className="text-muted-foreground">Key project events and deadlines.</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

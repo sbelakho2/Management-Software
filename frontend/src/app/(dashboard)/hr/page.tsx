@@ -46,16 +46,16 @@ function StatCard({
   };
 
   return (
-    <Card>
+    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
       <CardContent className="pt-6">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
-            {trend && <p className="text-xs text-muted-foreground mt-1">{trend}</p>}
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{title}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{value}</p>
+            {trend && <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2">{trend}</p>}
           </div>
-          <div className={`p-3 rounded-full ${variantStyles[variant]}`}>
-            <Icon className="h-5 w-5" />
+          <div className={`p-4 rounded-2xl shadow-sm ${variantStyles[variant]}`}>
+            <Icon className="h-6 w-6" />
           </div>
         </div>
       </CardContent>
@@ -115,7 +115,7 @@ export default function HRDashboard() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
             People & Talent
           </h1>
           <p className="text-muted-foreground font-medium">
@@ -143,25 +143,25 @@ export default function HRDashboard() {
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Employees"
+          title="Organizational Headcount"
           value={stats?.total_employees || 0}
           icon={Users}
-          trend={`+${stats?.new_hires_this_month || 0} this month`}
+          trend={`+${stats?.new_hires_this_month || 0} vs LAST CYCLE`}
           variant="success"
         />
         <StatCard
-          title="Open Positions"
+          title="Active Opportunity Pulse"
           value={stats?.open_positions || 0}
           icon={UserPlus}
         />
         <StatCard
-          title="Pending Time Off"
+          title="Capacity Synchronization"
           value={stats?.pending_time_off || 0}
           icon={Calendar}
           variant="warning"
         />
         <StatCard
-          title="Expiring Certs"
+          title="Intelligence Thresholds"
           value={stats?.expiring_certifications || 0}
           icon={Award}
           variant="danger"
@@ -169,72 +169,79 @@ export default function HRDashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Pending Time Off Requests */}
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Pending Requests
+            <CardTitle className="text-lg font-heading flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <Clock className="h-5 w-5" />
+              </div>
+              Strategic Availability
             </CardTitle>
-            <CardDescription>Time off awaiting approval</CardDescription>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Capacity synchronization requests</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Mocking pending requests for now as they aren't in store yet */}
+          <CardContent className="pt-2">
+            <div className="space-y-3">
               {[
                 { id: 1, employee: 'John Smith', type: 'PTO', dates: 'Dec 23-27' },
                 { id: 2, employee: 'Sarah Johnson', type: 'Sick', dates: 'Dec 18' },
               ].map((request) => (
                 <div
                   key={request.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0"
+                  className="flex items-center justify-between p-4 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-4">
                     <Avatar
                       alt={request.employee}
                       fallback={request.employee}
                       size="sm"
+                      className="ring-2 ring-background shadow-sm"
                     />
                     <div>
-                      <p className="font-medium text-sm">{request.employee}</p>
-                      <p className="text-xs text-muted-foreground">{request.dates}</p>
+                      <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-primary transition-colors">{request.employee}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{request.dates}</p>
                     </div>
                   </div>
-                  <Badge variant="outline">{request.type}</Badge>
+                  <Badge variant="secondary" className="text-[9px] font-bold uppercase tracking-widest bg-background/50">{request.type}</Badge>
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 mt-4">
-              <Button size="sm" className="flex-1">Approve All</Button>
-              <Button size="sm" variant="outline" className="flex-1">View All</Button>
+            <div className="flex gap-3 mt-6">
+              <Button size="sm" className="flex-1 rounded-xl shadow-glow">Commit Sync</Button>
+              <Button size="sm" variant="outline" className="flex-1 rounded-xl border-primary/20 hover:bg-primary/5 text-primary">Review All</Button>
             </div>
           </CardContent>
         </Card>
 
         {/* Expiring Certifications */}
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-500" />
-              Expiring Certifications
+            <CardTitle className="text-lg font-heading flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-danger/10 text-danger">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              Intelligence Thresholds
             </CardTitle>
-            <CardDescription>Renewals needed soon</CardDescription>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Renewals required for compliance</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="pt-2">
+            <div className="space-y-3">
               {expiringCerts.map((cert) => (
                 <div
                   key={cert.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0"
+                  className="flex items-center justify-between p-4 rounded-2xl bg-danger/5 border border-danger/5 group transition-all hover:bg-danger/10"
                 >
                   <div>
-                    <p className="font-medium text-sm">{cert.employee}</p>
-                    <p className="text-xs text-muted-foreground">{cert.cert}</p>
+                    <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-danger transition-colors">{cert.employee}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-danger/40">{cert.cert}</p>
                   </div>
                   <Badge 
                     variant={cert.priority === 'high' ? 'destructive' : 'outline'}
-                    className={cert.priority === 'medium' ? 'border-amber-500 text-amber-600' : ''}
+                    className={cn(
+                      "text-[9px] font-bold uppercase tracking-widest rounded-md",
+                      cert.priority === 'medium' ? 'border-amber-500/20 text-amber-600 bg-amber-500/5' : ''
+                    )}
                   >
                     {cert.expires}
                   </Badge>
@@ -242,10 +249,10 @@ export default function HRDashboard() {
               ))}
             </div>
             {hasPageAccess('/training/matrix', userRoles) && (
-              <Button variant="outline" className="w-full mt-4" asChild>
+              <Button variant="outline" className="w-full mt-6 rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-11" asChild>
                 <Link href="/training/matrix">
                   <FileText className="h-4 w-4 mr-2" />
-                  View Training Matrix
+                  Access Training Matrix
                 </Link>
               </Button>
             )}
@@ -253,23 +260,30 @@ export default function HRDashboard() {
         </Card>
 
         {/* Department Headcount */}
-        <Card>
+        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Headcount by Department
+            <CardTitle className="text-lg font-heading flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <Building2 className="h-5 w-5" />
+              </div>
+              Node Distribution
             </CardTitle>
-            <CardDescription>Employee distribution</CardDescription>
+            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Headcount by department node</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="pt-2">
+            <div className="space-y-6">
               {headcount.map((dept) => (
-                <div key={dept.name} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{dept.name}</span>
-                    <span className="text-muted-foreground">{dept.count}</span>
+                <div key={dept.name} className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-widest text-foreground/70">{dept.name}</span>
+                    <span className="text-[10px] font-mono font-bold text-primary/60 bg-primary/5 px-2 py-0.5 rounded-full">{dept.count} NODES</span>
                   </div>
-                  <Progress value={dept.percentage} className="h-2" />
+                  <div className="h-2 rounded-full bg-muted/20 overflow-hidden shadow-inner-soft">
+                    <div 
+                      className="h-full bg-gradient-to-r from-primary to-primary/60 transition-all duration-1000" 
+                      style={{ width: `${dept.percentage}%` }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

@@ -753,7 +753,7 @@ function NewQuotePageRefinedContent() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">New Quote</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Quote</h1>
               {formData.quoteNumber && (
                 <Badge variant="outline" className="text-sm">
                   {formData.quoteNumber} v{formData.version}
@@ -897,20 +897,20 @@ function NewQuotePageRefinedContent() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <p className="text-sm text-muted-foreground">Total Revenue</p>
-                      <p className="text-2xl font-bold">{formatCurrency(calculations.total)}</p>
+                      <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(calculations.total)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <p className="text-sm text-muted-foreground">Total Cost</p>
-                      <p className="text-2xl font-bold">{formatCurrency(calculations.totalCost)}</p>
+                      <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(calculations.totalCost)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <p className="text-sm text-muted-foreground">Gross Profit</p>
-                      <p className="text-2xl font-bold">{formatCurrency(calculations.total - calculations.totalCost)}</p>
+                      <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(calculations.total - calculations.totalCost)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <p className="text-sm text-muted-foreground">Margin %</p>
                       <p className={cn(
-                        'text-2xl font-bold',
+                        'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70',
                         calculations.margin >= 30 ? 'text-success' : 
                         calculations.margin >= 15 ? 'text-warning' : 'text-danger'
                       )}>

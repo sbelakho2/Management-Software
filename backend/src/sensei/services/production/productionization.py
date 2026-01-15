@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Generic, Iterable, Protocol, TypeVar
+from uuid import UUID, uuid4
 from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sensei.models.finance import GLAccount as GLAccountModel, OpeningBalance as OpeningBalanceModel
@@ -307,7 +308,7 @@ class Repository(Protocol[T]):
 # ============================================================
 
 
-class ProductionizationService:
+class AsyncProductionizationService:
     """Service for DB persistence simulation and data migration."""
 
     def __init__(self) -> None:
@@ -1145,3 +1146,582 @@ class ProductionizationService:
         stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(100)
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+
+class ProductionizationService:
+    """In-memory productionization service for tests and local usage."""
+
+    def __init__(self) -> None:
+        self._gl_accounts: dict[UUID, GLAccountModel] = {}
+        self._opening_balances: dict[UUID, OpeningBalanceModel] = {}
+        self._suppliers: dict[UUID, SupplierModel] = {}
+        self._customers: dict[UUID, CustomerModel] = {}
+        self._inventory_items: dict[UUID, InventoryItemModel] = {}
+        self._inventory_levels: dict[UUID, InventoryLevelModel] = {}
+        self._import_batches: dict[UUID, ImportBatch] = {}
+        self._audit: list[AuditEvent] = []
+
+    # ----------------------------------------------------------------
+    # Helpers
+    # ----------------------------------------------------------------
+
+    def _record_audit(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        correlation_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        event = AuditEvent(
+            id=uuid4(),
+            ts=_utcnow(),
+            actor_id=actor_id,
+            actor_roles=tuple(sorted(_norm_roles(actor_roles))),
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            correlation_id=correlation_id,
+            metadata=metadata or {},
+        )
+        self._audit.append(event)
+
+    def _paginate(self, items: list[Any], page: PageRequest) -> PageResponse:
+        total = len(items)
+        total_pages = max(1, (total + page.page_size - 1) // page.page_size)
+        start = (page.page - 1) * page.page_size
+        end = start + page.page_size
+        page_items = items[start:end]
+        return PageResponse(
+            items=page_items,
+            total_count=total,
+            page=page.page,
+            page_size=page.page_size,
+            total_pages=total_pages,
+            has_next=page.page < total_pages,
+            has_prev=page.page > 1,
+        )
+
+    def _apply_filters(self, items: list[dict[str, Any]], filters: list[FilterSpec]) -> list[dict[str, Any]]:
+        result = items
+        for f in filters:
+            if f.operator == "eq":
+                result = [i for i in result if i.get(f.field) == f.value]
+            elif f.operator == "ne":
+                result = [i for i in result if i.get(f.field) != f.value]
+            elif f.operator == "gt":
+                result = [i for i in result if i.get(f.field, 0) > f.value]
+            elif f.operator == "gte":
+                result = [i for i in result if i.get(f.field, 0) >= f.value]
+            elif f.operator == "lt":
+                result = [i for i in result if i.get(f.field, 0) < f.value]
+            elif f.operator == "lte":
+                result = [i for i in result if i.get(f.field, 0) <= f.value]
+            elif f.operator == "like":
+                result = [i for i in result if f.value.lower() in str(i.get(f.field, "")).lower()]
+            elif f.operator == "in":
+                result = [i for i in result if i.get(f.field) in f.value]
+        return result
+
+    # ----------------------------------------------------------------
+    # GL Accounts
+    # ----------------------------------------------------------------
+
+    def create_gl_account(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        account_code: str,
+        account_name: str,
+        account_type: str,
+        parent_id: UUID | None = None,
+        normal_balance: str = "debit",
+    ) -> GLAccountModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
+
+        if any(a.account_code == account_code for a in self._gl_accounts.values()):
+            raise ValueError(f"Account code {account_code} already exists")
+
+        account = GLAccountModel(
+            id=uuid4(),
+            account_code=account_code,
+            account_name=account_name,
+            account_type=account_type,
+            parent_id=parent_id,
+            normal_balance=normal_balance,
+            is_active=True,
+            created_at=_utcnow(),
+            updated_at=_utcnow(),
+        )
+        self._gl_accounts[account.id] = account
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="gl_account.create",
+            entity_type="gl_account",
+            entity_id=str(account.id),
+            correlation_id=correlation_id,
+        )
+        return account
+
+    def list_gl_accounts(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        page: PageRequest | None = None,
+        filters: list[FilterSpec] | None = None,
+    ) -> PageResponse:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
+
+        items = [
+            {
+                "id": str(a.id),
+                "account_code": a.account_code,
+                "account_name": a.account_name,
+                "account_type": a.account_type,
+                "is_active": a.is_active,
+            }
+            for a in self._gl_accounts.values()
+        ]
+        if filters:
+            items = self._apply_filters(items, filters)
+        items.sort(key=lambda x: x["account_code"])
+        return self._paginate(items, page or PageRequest())
+
+    # ----------------------------------------------------------------
+    # Suppliers
+    # ----------------------------------------------------------------
+
+    def create_supplier(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        supplier_code: str,
+        name: str,
+        contact_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        address: str | None = None,
+        city: str | None = None,
+        country: str | None = None,
+        tax_id: str | None = None,
+        payment_terms_days: int = 30,
+    ) -> SupplierModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
+
+        supplier = SupplierModel(
+            id=uuid4(),
+            supplier_code=supplier_code,
+            name=name,
+            contact_name=contact_name,
+            email=email,
+            phone=phone,
+            address=address,
+            city=city,
+            country=country,
+            tax_id=tax_id,
+            payment_terms_days=payment_terms_days,
+            is_active=True,
+        )
+        self._suppliers[supplier.id] = supplier
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="supplier.create",
+            entity_type="supplier",
+            entity_id=str(supplier.id),
+            correlation_id=correlation_id,
+        )
+        return supplier
+
+    def list_suppliers(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        page: PageRequest | None = None,
+        filters: list[FilterSpec] | None = None,
+    ) -> PageResponse:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
+
+        items = [
+            {
+                "id": str(s.id),
+                "supplier_code": s.supplier_code,
+                "name": s.name,
+                "email": s.email,
+                "is_active": s.is_active,
+            }
+            for s in self._suppliers.values()
+        ]
+        if filters:
+            items = self._apply_filters(items, filters)
+        items.sort(key=lambda x: x["supplier_code"])
+        return self._paginate(items, page or PageRequest())
+
+    # ----------------------------------------------------------------
+    # Customers
+    # ----------------------------------------------------------------
+
+    def create_customer(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        customer_code: str,
+        name: str,
+        contact_name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+        address: str | None = None,
+        city: str | None = None,
+        country: str | None = None,
+        tax_id: str | None = None,
+        credit_limit: Decimal = Decimal("0"),
+        payment_terms_days: int = 30,
+    ) -> CustomerModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
+
+        customer = CustomerModel(
+            id=uuid4(),
+            customer_code=customer_code,
+            name=name,
+            contact_name=contact_name,
+            email=email,
+            phone=phone,
+            address=address,
+            city=city,
+            country=country,
+            tax_id=tax_id,
+            credit_limit=credit_limit,
+            payment_terms_days=payment_terms_days,
+            is_active=True,
+        )
+        self._customers[customer.id] = customer
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="customer.create",
+            entity_type="customer",
+            entity_id=str(customer.id),
+            correlation_id=correlation_id,
+        )
+        return customer
+
+    def list_customers(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        page: PageRequest | None = None,
+        filters: list[FilterSpec] | None = None,
+    ) -> PageResponse:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
+
+        items = [
+            {
+                "id": str(c.id),
+                "customer_code": c.customer_code,
+                "name": c.name,
+                "is_active": c.is_active,
+                "credit_limit": c.credit_limit,
+            }
+            for c in self._customers.values()
+        ]
+        if filters:
+            items = self._apply_filters(items, filters)
+        items.sort(key=lambda x: x["customer_code"])
+        return self._paginate(items, page or PageRequest())
+
+    # ----------------------------------------------------------------
+    # Inventory
+    # ----------------------------------------------------------------
+
+    def create_inventory_item(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        item_code: str,
+        description: str,
+        category: str | None = None,
+        unit_of_measure: str = "EA",
+        unit_cost: Decimal = Decimal("0"),
+        reorder_point: Decimal = Decimal("0"),
+        reorder_quantity: Decimal = Decimal("0"),
+        lead_time_days: int = 0,
+    ) -> InventoryItemModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _MES_WRITE_ROLES, "MES write access required")
+
+        item = InventoryItemModel(
+            id=uuid4(),
+            item_code=item_code,
+            description=description,
+            category=category,
+            unit_of_measure=unit_of_measure,
+            unit_cost=unit_cost,
+            reorder_point=reorder_point,
+            reorder_quantity=reorder_quantity,
+            lead_time_days=lead_time_days,
+            is_active=True,
+        )
+        self._inventory_items[item.id] = item
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="inventory_item.create",
+            entity_type="inventory_item",
+            entity_id=str(item.id),
+            correlation_id=correlation_id,
+        )
+        return item
+
+    def set_inventory_level(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        item_id: UUID,
+        location_id: str,
+        quantity_on_hand: Decimal,
+        quantity_reserved: Decimal = Decimal("0"),
+    ) -> InventoryLevelModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _MES_WRITE_ROLES, "MES write access required")
+
+        if item_id not in self._inventory_items:
+            raise ValueError("item_id not found")
+
+        level = InventoryLevelModel(
+            id=uuid4(),
+            item_id=item_id,
+            location_id=location_id,
+            quantity_on_hand=quantity_on_hand,
+            quantity_reserved=quantity_reserved,
+            quantity_available=quantity_on_hand - quantity_reserved,
+            updated_at=_utcnow(),
+        )
+        self._inventory_levels[level.id] = level
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="inventory_level.set",
+            entity_type="inventory_level",
+            entity_id=str(level.id),
+            correlation_id=correlation_id,
+        )
+        return level
+
+    # ----------------------------------------------------------------
+    # Import/Migration
+    # ----------------------------------------------------------------
+
+    def validate_import_data(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        entity_type: EntityType,
+        records: list[dict[str, Any]],
+    ) -> tuple[list[ImportValidation], int, int]:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _ADMIN_ROLES, "Admin role required")
+
+        validations: list[ImportValidation] = []
+        valid_count = 0
+        error_count = 0
+
+        for idx, record in enumerate(records, start=1):
+            messages: list[str] = []
+            result = ValidationResult.VALID
+
+            if entity_type == EntityType.CHART_OF_ACCOUNTS:
+                if not record.get("account_code"):
+                    messages.append("account_code is required")
+                if not record.get("account_name"):
+                    messages.append("account_name is required")
+                if not record.get("account_type"):
+                    messages.append("account_type is required")
+            elif entity_type == EntityType.SUPPLIER:
+                if not record.get("supplier_code"):
+                    messages.append("supplier_code is required")
+                if not record.get("name"):
+                    messages.append("name is required")
+
+            if messages:
+                result = ValidationResult.ERROR
+                error_count += 1
+            else:
+                valid_count += 1
+
+            validations.append(
+                ImportValidation(
+                    row_number=idx,
+                    result=result,
+                    messages=messages,
+                    data=record,
+                )
+            )
+
+        return validations, valid_count, error_count
+
+    def execute_import(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        entity_type: EntityType,
+        source_file: str,
+        records: list[dict[str, Any]],
+    ) -> ImportBatch:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _ADMIN_ROLES, "Admin role required")
+
+        validations, valid_count, error_count = self.validate_import_data(
+            actor_id=actor_id,
+            actor_roles=roles,
+            correlation_id=correlation_id,
+            entity_type=entity_type,
+            records=records,
+        )
+
+        error_log = [
+            f"Row {v.row_number}: {', '.join(v.messages)}"
+            for v in validations
+            if v.result == ValidationResult.ERROR
+        ]
+
+        status = ImportStatus.COMPLETED if error_count == 0 else ImportStatus.FAILED
+        batch = ImportBatch(
+            id=uuid4(),
+            entity_type=entity_type,
+            source_file=source_file,
+            total_records=len(records),
+            valid_records=valid_count,
+            error_records=error_count,
+            status=status,
+            imported_by=actor_id,
+            error_log=error_log,
+            completed_at=_utcnow(),
+        )
+        self._import_batches[batch.id] = batch
+
+        if status == ImportStatus.COMPLETED:
+            for record in records:
+                if entity_type == EntityType.CHART_OF_ACCOUNTS:
+                    self.create_gl_account(
+                        actor_id=actor_id,
+                        actor_roles=roles,
+                        correlation_id=correlation_id,
+                        account_code=record["account_code"],
+                        account_name=record["account_name"],
+                        account_type=record["account_type"],
+                    )
+                elif entity_type == EntityType.SUPPLIER:
+                    self.create_supplier(
+                        actor_id=actor_id,
+                        actor_roles=roles,
+                        correlation_id=correlation_id,
+                        supplier_code=record["supplier_code"],
+                        name=record["name"],
+                        email=record.get("email"),
+                    )
+
+        return batch
+
+    def list_import_batches(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        entity_type: EntityType | None = None,
+    ) -> list[ImportBatch]:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _ADMIN_ROLES, "Admin role required")
+
+        batches = list(self._import_batches.values())
+        if entity_type:
+            batches = [b for b in batches if b.entity_type == entity_type]
+        return batches
+
+    # ----------------------------------------------------------------
+    # Opening balances
+    # ----------------------------------------------------------------
+
+    def set_opening_balance(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        account_id: UUID,
+        period_start: datetime,
+        debit_amount: Decimal,
+        credit_amount: Decimal = Decimal("0"),
+        currency: str = "USD",
+    ) -> OpeningBalanceModel:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
+
+        if account_id not in self._gl_accounts:
+            raise ValueError("account_id not found")
+
+        net_amount = debit_amount - credit_amount
+        balance = OpeningBalanceModel(
+            id=uuid4(),
+            account_id=account_id,
+            period_start=period_start,
+            debit_amount=debit_amount,
+            credit_amount=credit_amount,
+            net_amount=net_amount,
+            currency=currency,
+        )
+        self._opening_balances[balance.id] = balance
+        self._record_audit(
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="opening_balance.set",
+            entity_type="opening_balance",
+            entity_id=str(balance.id),
+            correlation_id=correlation_id,
+        )
+        return balance
+
+    def list_opening_balances(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        account_id: UUID | None = None,
+    ) -> list[OpeningBalanceModel]:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
+
+        balances = list(self._opening_balances.values())
+        if account_id:
+            balances = [b for b in balances if b.account_id == account_id]
+        return balances
+
+    # ----------------------------------------------------------------
+    # Audit
+    # ----------------------------------------------------------------
+
+    def list_audit_events(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, frozenset({"admin", "auditor", "ceo"}), "Audit access required")
+        return list(self._audit)

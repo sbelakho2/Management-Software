@@ -72,7 +72,7 @@ export default function NewA3Page() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">New A3 Report</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New A3 Report</h1>
             <p className="text-muted-foreground">Initialize a new structured problem-solving report</p>
           </div>
         </div>

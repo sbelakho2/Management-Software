@@ -163,56 +163,59 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="space-y-6" data-testid="admin-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">System Administration</h1>
-          <p className="text-muted-foreground">
-            Configure gates, approvals, templates, roles, and system features
+    <div className="space-y-8 page-fade-in" data-testid="admin-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            System Administration
+          </h1>
+          <p className="text-muted-foreground font-medium">
+            Orchestrate gates, approvals, templates, and enterprise-grade intelligence
           </p>
         </div>
-        <Button variant="outline" className="gap-2">
-          <Save className="h-4 w-4" />
-          Save All Changes
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-11">
+            <Save className="mr-2 h-4 w-4" />
+            Save Configuration
+          </Button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-9">
-          <TabsTrigger value="gates" className="gap-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8 animate-in fade-in duration-700">
+        <TabsList className="flex h-14 w-full justify-start gap-3 bg-muted/10 p-1.5 rounded-2xl backdrop-blur-md border border-border/5 overflow-x-auto no-scrollbar shadow-inner-soft">
+          <TabsTrigger value="gates" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <Shield className="h-4 w-4" />
             Gates
           </TabsTrigger>
-          <TabsTrigger value="approvals" className="gap-2">
+          <TabsTrigger value="approvals" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <CheckCircle2 className="h-4 w-4" />
             Approvals
           </TabsTrigger>
-          <TabsTrigger value="templates" className="gap-2">
+          <TabsTrigger value="templates" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <FileText className="h-4 w-4" />
             Templates
           </TabsTrigger>
-          <TabsTrigger value="roles" className="gap-2">
+          <TabsTrigger value="roles" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <Users className="h-4 w-4" />
             Roles
           </TabsTrigger>
-          <TabsTrigger value="learning" className="gap-2">
+          <TabsTrigger value="learning" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <GraduationCap className="h-4 w-4" />
             Learning
           </TabsTrigger>
-          <TabsTrigger value="features" className="gap-2">
+          <TabsTrigger value="features" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <Flag className="h-4 w-4" />
             Features
           </TabsTrigger>
-          <TabsTrigger value="lineage" className="gap-2">
+          <TabsTrigger value="lineage" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <GitBranch className="h-4 w-4" />
             Lineage
           </TabsTrigger>
-          <TabsTrigger value="audit" className="gap-2">
+          <TabsTrigger value="audit" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <History className="h-4 w-4" />
             Audit
           </TabsTrigger>
-          <TabsTrigger value="security" className="gap-2">
+          <TabsTrigger value="security" className="gap-2.5 rounded-xl px-6 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
             <Lock className="h-4 w-4" />
             Security
           </TabsTrigger>

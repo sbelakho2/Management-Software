@@ -259,6 +259,8 @@ class AIProviderConfig:
     
     provider: str = "local"
     model: str = "local-llm"
+    api_key: Optional[str] = None
+    endpoint: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 1000
     top_p: float = 0.9
