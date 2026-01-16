@@ -113,19 +113,20 @@ class AIReadinessService:
                 tier=ModelTier.LIGHTWEIGHT
             ))
         except ImportError:
-            pass
+            logger.debug("Text embedding service not available")
 
         try:
             from sensei.services.ai.ai_reasoning import AIReasoningService
-            # Logic to check reasoning service
+            reasoning_service = AIReasoningService()
+            reasoning_ready = reasoning_service.is_ready()
             components.append(AIComponentStatus(
                 name="AI Reasoning Service",
-                status="green",
-                ready=True,
+                status="green" if reasoning_ready else "red",
+                ready=reasoning_ready,
                 tier=ModelTier.BALANCED
             ))
         except ImportError:
-            pass
+            logger.debug("AI reasoning service not available")
 
     async def verify_performance(self) -> Dict[str, Any]:
         """

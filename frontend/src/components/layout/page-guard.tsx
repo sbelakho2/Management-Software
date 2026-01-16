@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuthStore } from '@/stores';
-import { hasPageAccess, getUnauthorizedRedirect } from '@/lib/page-access';
 import type { UserRole } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,10 +56,6 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
   // Otherwise check if user has any of the required roles
   const hasAccess = requiredRoles.length === 0 || 
     userRoles.some(role => requiredRoles.includes(role));
-
-  useEffect(() => {
-    // No redirects, just silent hiding as requested
-  }, [hasAccess, isAuthenticated, isLoading, pathname]);
 
   if (!hasAccess) {
     if (fallback) {

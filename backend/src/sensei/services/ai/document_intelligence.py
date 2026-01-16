@@ -22,6 +22,7 @@ import base64
 import hashlib
 import io
 import logging
+import math
 import os
 import re
 import uuid
@@ -670,12 +671,20 @@ class TableStructureModel:
         # Parse outputs (Table-Transformer format: rows, columns, headers)
         cells = []
         headers = []
+        model_num_cols: int | None = None
+        model_num_rows: int | None = None
         
         # Process model output to extract cell positions
         if len(outputs) >= 1:
-            # Simplified: assume output is cell positions/classifications
-            # Real implementation would parse specific model output format
-            pass
+            try:
+                output = np.array(outputs[0])
+                if output.ndim >= 2 and output.shape[0] > 0:
+                    num_cells = int(output.shape[0])
+                    est_cols = int(max(1, round(math.sqrt(num_cells))))
+                    model_num_cols = max(2, min(10, est_cols))
+                    model_num_rows = max(1, min(10, math.ceil(num_cells / model_num_cols)))
+            except Exception as exc:
+                logger.warning(f"Table model outputs could not be parsed: {exc}")
         
         # Use OCR to extract cell contents
         text, words = self._ocr_engine.extract_text(table_image)
@@ -687,9 +696,12 @@ class TableStructureModel:
         # Estimate columns from first row
         if lines and lines[0].strip():
             first_row_parts = lines[0].split()
-            num_cols = max(4, len(first_row_parts))
+            num_cols = max(2, len(first_row_parts), model_num_cols or 0)
         else:
-            num_cols = 4
+            num_cols = model_num_cols or 4
+
+        if model_num_rows:
+            num_rows = max(num_rows, model_num_rows)
         
         # Build cell grid
         for row_idx, line in enumerate(lines[:10]):  # Limit rows
@@ -1014,9 +1026,9 @@ class VisionLLMEnricher:
         model: str = "local-vlm",
         api_key: str | None = None,
     ):
-        self.provider = "local"
-        self.model = "local-vlm"
-        self.api_key = None
+        self.provider = provider
+        self.model = model
+        self.api_key = api_key
         self._client = None
         self._available = True
         self._registry = None
@@ -1025,7 +1037,7 @@ class VisionLLMEnricher:
             from sensei.services.ai.onnx_model_init import get_model_registry
             self._registry = get_model_registry()
         except ImportError:
-            pass
+            logger.debug("Model registry not available for local VLM enrichment")
 
     def is_ready(self) -> bool:
         """Check if models are ready in registry."""
@@ -1379,7 +1391,7 @@ class EngineeringDrawingProcessor:
                         else:
                             dim.tolerance_minus = dim.tolerance_plus
                     except (ValueError, TypeError):
-                        pass
+                        logger.debug("Failed to parse tolerance values for callout")
                 
                 dimensions.append(dim)
         

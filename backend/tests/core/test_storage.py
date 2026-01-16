@@ -101,12 +101,13 @@ class TestComputeFileHash:
 class TestUploadFile:
     """Tests for file upload functionality."""
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_upload_success(self, mock_client):
+    async def test_upload_success(self, mock_client):
         """Test successful file upload."""
         mock_client.put_object.return_value = {}
         
-        result = upload_file(
+        result = await upload_file(
             file_content=b"Test content",
             key="test/file.txt",
             content_type="text/plain",
@@ -118,12 +119,13 @@ class TestUploadFile:
         assert "hash" in result
         mock_client.put_object.assert_called_once()
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_upload_with_metadata(self, mock_client):
+    async def test_upload_with_metadata(self, mock_client):
         """Test upload with custom metadata."""
         mock_client.put_object.return_value = {}
         
-        result = upload_file(
+        result = await upload_file(
             file_content=b"Data",
             key="test/data.bin",
             metadata={"author": "test_user", "version": "1"},
@@ -133,12 +135,13 @@ class TestUploadFile:
         assert "author" in call_args.kwargs["Metadata"]
         assert "version" in call_args.kwargs["Metadata"]
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_upload_empty_file(self, mock_client):
+    async def test_upload_empty_file(self, mock_client):
         """Test uploading empty file."""
         mock_client.put_object.return_value = {}
         
-        result = upload_file(
+        result = await upload_file(
             file_content=b"",
             key="test/empty.txt",
         )
@@ -149,39 +152,42 @@ class TestUploadFile:
 class TestDownloadFile:
     """Tests for file download functionality."""
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_download_success(self, mock_client):
+    async def test_download_success(self, mock_client):
         """Test successful file download."""
         mock_response = {"Body": MagicMock()}
         mock_response["Body"].read.return_value = b"File content"
         mock_client.get_object.return_value = mock_response
         
-        result = download_file("test/file.txt")
+        result = await download_file("test/file.txt")
         
         assert result == b"File content"
         mock_client.get_object.assert_called_once()
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_download_not_found(self, mock_client):
+    async def test_download_not_found(self, mock_client):
         """Test download of non-existent file."""
         mock_client.get_object.side_effect = ClientError(
             {"Error": {"Code": "NoSuchKey"}},
             "GetObject"
         )
         
-        result = download_file("nonexistent/file.txt")
+        result = await download_file("nonexistent/file.txt")
         
         assert result is None
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_download_access_denied(self, mock_client):
+    async def test_download_access_denied(self, mock_client):
         """Test download with access denied."""
         mock_client.get_object.side_effect = ClientError(
             {"Error": {"Code": "AccessDenied"}},
             "GetObject"
         )
         
-        result = download_file("restricted/file.txt")
+        result = await download_file("restricted/file.txt")
         
         assert result is None
 
@@ -189,25 +195,27 @@ class TestDownloadFile:
 class TestDeleteFile:
     """Tests for file deletion functionality."""
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_delete_success(self, mock_client):
+    async def test_delete_success(self, mock_client):
         """Test successful file deletion."""
         mock_client.delete_object.return_value = {}
         
-        result = delete_file("test/file.txt")
+        result = await delete_file("test/file.txt")
         
         assert result is True
         mock_client.delete_object.assert_called_once()
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_delete_failure(self, mock_client):
+    async def test_delete_failure(self, mock_client):
         """Test failed file deletion."""
         mock_client.delete_object.side_effect = ClientError(
             {"Error": {"Code": "InternalError"}},
             "DeleteObject"
         )
         
-        result = delete_file("test/file.txt")
+        result = await delete_file("test/file.txt")
         
         assert result is False
 
@@ -264,8 +272,9 @@ class TestGeneratePresignedUrl:
 class TestListFiles:
     """Tests for file listing functionality."""
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_list_files_success(self, mock_client):
+    async def test_list_files_success(self, mock_client):
         """Test successful file listing."""
         mock_client.list_objects_v2.return_value = {
             "Contents": [
@@ -274,26 +283,28 @@ class TestListFiles:
             ]
         }
         
-        result = list_files("test/")
+        result = await list_files("test/")
         
         assert len(result) == 2
         assert result[0]["Key"] == "test/file1.txt"
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_list_files_empty(self, mock_client):
+    async def test_list_files_empty(self, mock_client):
         """Test listing with no files."""
         mock_client.list_objects_v2.return_value = {}
         
-        result = list_files("empty/")
+        result = await list_files("empty/")
         
         assert result == []
     
+    @pytest.mark.asyncio
     @patch("sensei.core.storage.storage_client")
-    def test_list_files_with_max_keys(self, mock_client):
+    async def test_list_files_with_max_keys(self, mock_client):
         """Test listing with max keys limit."""
         mock_client.list_objects_v2.return_value = {"Contents": []}
         
-        list_files("test/", max_keys=50)
+        await list_files("test/", max_keys=50)
         
         call_args = mock_client.list_objects_v2.call_args
         assert call_args.kwargs["MaxKeys"] == 50

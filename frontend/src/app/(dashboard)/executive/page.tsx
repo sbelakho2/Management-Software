@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useExecutiveStore, useQualityStore, useTodayStore } from '@/stores';
-import { Loader2, Download, Search, Send, Users, AlertTriangle } from 'lucide-react';
+import { Loader2, Download, Search, Send, Users, AlertTriangle, TrendingUp, Shield } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { PageGuard } from '@/components/layout/page-guard';
 import { EXECUTIVE_ROLES } from '@/lib/page-access';

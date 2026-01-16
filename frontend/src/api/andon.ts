@@ -16,17 +16,17 @@ export interface AndonAnalytics {
 
 export const andonApi = {
   getAnalytics: (days: number = 30): Promise<AndonAnalytics> =>
-    apiClient.get<any>('/andon/analytics', { params: { days } }).then(res => res.data),
+    apiClient.get<AndonAnalytics>('/andon/analytics', { params: { days } }),
 
   acknowledgeEvent: (eventId: string): Promise<AndonEvent> =>
-    apiClient.post<AndonEvent>(`/andon/${eventId}/acknowledge`).then(res => res.data),
+    apiClient.post<AndonEvent>(`/andon/${eventId}/acknowledge`),
 
   resolveEvent: (eventId: string, data: { resolution: string; root_cause?: string }): Promise<AndonEvent> =>
-    apiClient.post<AndonEvent>(`/andon/${eventId}/resolve`, data).then(res => res.data),
+    apiClient.post<AndonEvent>(`/andon/${eventId}/resolve`, data),
 
   escalateEvent: (eventId: string): Promise<AndonEvent> =>
-    apiClient.post<AndonEvent>(`/andon/${eventId}/escalate`).then(res => res.data),
+    apiClient.post<AndonEvent>(`/andon/${eventId}/escalate`),
 
   triggerAndon: (data: { work_center_id: string; type: string; severity: string; description: string }): Promise<AndonEvent> =>
-    apiClient.post<AndonEvent>('/andon', data).then(res => res.data),
+    apiClient.post<AndonEvent>('/andon', data),
 };

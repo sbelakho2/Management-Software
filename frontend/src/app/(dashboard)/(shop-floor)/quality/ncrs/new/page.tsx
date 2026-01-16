@@ -51,11 +51,8 @@ export default function NewNCRPage() {
         title: form.title,
         description: form.description,
         severity: form.severity as any,
-        product_id: form.productId ? Number(form.productId) : undefined,
-        work_order_id: form.workOrderId ? Number(form.workOrderId) : undefined,
-        nc_number: `NCR-${Date.now()}`,
-        nc_type: 'product' as any, // Default type
-        source: 'in_process' as any, // Default source
+        product_id: form.productId || undefined,
+        work_order_id: form.workOrderId || undefined,
       });
       toast({
         title: 'NCR Created',

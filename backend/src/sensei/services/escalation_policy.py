@@ -14,8 +14,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+import logging
 from typing import Any, Callable, Coroutine
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -525,7 +528,7 @@ class EscalationPolicyService:
                         if level_order.index(current) >= level_order.index(escalation_level):
                             continue
                     except ValueError:
-                        pass  # Invalid level, proceed with escalation
+                        logger.warning("Invalid escalation level '%s' for approval %s", current_level, approval.get("id"))
                 
                 # Determine priority based on value and age
                 value = approval.get("value", Decimal("0")) or Decimal("0")
@@ -613,7 +616,7 @@ class EscalationPolicyService:
                         if level_order.index(current) >= level_order.index(required_level):
                             continue
                     except ValueError:
-                        pass
+                        logger.warning("Invalid escalation level '%s' for approval %s", current_level, approval.get("id"))
                 
                 # High-value approvals are always high priority
                 priority = EscalationPriority.HIGH
@@ -703,7 +706,7 @@ class EscalationPolicyService:
                         if level_order.index(current) >= level_order.index(required_level):
                             continue
                     except ValueError:
-                        pass
+                        logger.warning("Invalid escalation level '%s' for risk %s", current_level, risk.get("id"))
                 
                 # Determine reason and priority
                 if risk_level == "critical":
@@ -815,7 +818,7 @@ class EscalationPolicyService:
                         if level_order.index(current) >= level_order.index(escalation_level):
                             continue
                     except ValueError:
-                        pass
+                        logger.warning("Invalid escalation level '%s' for risk %s", current_level, risk.get("id"))
                 
                 # Priority based on days overdue
                 if days_overdue >= 30:
@@ -940,7 +943,7 @@ class EscalationPolicyService:
                         if level_order.index(current) >= level_order.index(escalation_level):
                             continue
                     except ValueError:
-                        pass
+                        logger.warning("Invalid escalation level '%s' for andon %s", current_level, andon.get("id"))
                 
                 # Priority based on severity and SLA breach
                 if severity == "red":

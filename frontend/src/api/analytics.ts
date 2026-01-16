@@ -19,6 +19,7 @@ export interface PerformanceTrend {
   change_percent: number;
   trend: 'up' | 'down' | 'stable';
   prediction_7d: number;
+  prediction_30d?: number;
 }
 
 export const analyticsApi = {

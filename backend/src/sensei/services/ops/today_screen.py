@@ -1944,7 +1944,7 @@ class AsyncTodayScreenService:
                     if (now - last_agg_dt).total_seconds() < 300: # 5 minutes
                         should_aggregate = False
                 except ValueError:
-                    pass
+                    self.logger.warning("Invalid cached aggregation timestamp for %s", cache_key)
             
             if should_aggregate:
                 await self._aggregate_project_data(db, user_id)
@@ -2046,7 +2046,7 @@ class AsyncTodayScreenService:
             .join(Project, ProjectMilestone.project_id == Project.id)
             .where(
                 ProjectMilestone.owner_id == user_id,
-                ProjectMilestone.status != "completed",
+                ProjectMilestone.is_closed.is_(False),
                 ProjectMilestone.deleted_at.is_(None)
             )
         )
@@ -2170,7 +2170,7 @@ class AsyncTodayScreenService:
 
 
 class TodayScreenService:
-    """Synchronous wrapper around AsyncTodayScreenService using in-memory Redis."""
+    """Async-friendly wrapper around AsyncTodayScreenService using in-memory Redis."""
 
     def __init__(self) -> None:
         self._redis = InMemoryRedis()
@@ -2182,27 +2182,40 @@ class TodayScreenService:
 
     def _run(self, coro):
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
-            loop = None
+            return asyncio.run(coro)
+        return coro
 
-        if loop and loop.is_running():
-            return loop.run_until_complete(coro)
-        return asyncio.run(coro)
-
-    def get_todays_drills(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
-        drills_data = self._run(self._async._get_store(user_id, "micro_drills"))
+    async def _get_todays_drills_async(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
+        drills_data = await self._async._get_store(user_id, "micro_drills")
         if not drills_data:
-            drills_data = self._run(self._async._get_store(self._default_user_id, "micro_drills"))
+            drills_data = await self._async._get_store(self._default_user_id, "micro_drills")
 
         drills = [MicroDrill(**d) for d in drills_data.values()]
-        progress = self._run(self._async._get_store(user_id, "drill_progress"))
+        progress = await self._async._get_store(user_id, "drill_progress")
         completed_today = progress.get("completed_today", []) if isinstance(progress, dict) else []
         available = [d for d in drills if str(d.id) not in completed_today]
         return available[:count]
 
-    def get_today_screen(self, user_id: UUID, user_name: str) -> TodayScreenData:
-        screen = self._run(self._async.get_today_screen(user_id, user_name))
+    def get_todays_drills(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
+        return self._run(self._get_todays_drills_async(user_id, count=count))
+
+    async def _get_today_screen_async(
+        self,
+        user_id: UUID,
+        user_name: str,
+        db: AsyncSession | None = None,
+    ) -> TodayScreenData:
+        screen = await self._async.get_today_screen(user_id, user_name, db=db)
+        if screen.total_risk_count == 0 and user_id != self._default_user_id:
+            fallback_risks_data = await self._async._get_store(self._default_user_id, "risks")
+            if fallback_risks_data:
+                screen.top_risks = await self._async.get_risks_by_category(self._default_user_id, top_n=3)
+                screen.total_risk_count = len(fallback_risks_data)
+                screen.critical_risk_count = sum(
+                    1 for r in fallback_risks_data.values() if r.get("severity", 0) >= 8
+                )
         has_data = any(
             [
                 screen.top_priorities,
@@ -2215,19 +2228,30 @@ class TodayScreenService:
             ]
         )
         if not has_data:
-            fallback = self._run(self._async.get_today_screen(self._default_user_id, user_name))
+            fallback = await self._async.get_today_screen(self._default_user_id, user_name, db=db)
             fallback.user_id = user_id
             fallback.user_name = user_name
             return fallback
         return screen
 
+    def get_today_screen(
+        self,
+        user_id: UUID,
+        user_name: str,
+        db: AsyncSession | None = None,
+    ) -> TodayScreenData:
+        return self._run(self._get_today_screen_async(user_id, user_name, db=db))
+
+    async def _complete_capa_verification_async(self, capa_id: UUID) -> bool:
+        return await self._async.resolve_capa_verification(capa_id)
+
     def complete_capa_verification(self, capa_id: UUID) -> bool:
-        return self._run(self._async.resolve_capa_verification(capa_id))
+        return self._run(self._complete_capa_verification_async(capa_id))
 
     def __getattr__(self, name: str):
         attr = getattr(self._async, name)
         if asyncio.iscoroutinefunction(attr):
-            def wrapper(*args, **kwargs):
+            async def async_wrapper(*args, **kwargs):
                 try:
                     import inspect
                     id_only_methods = {
@@ -2271,8 +2295,8 @@ class TodayScreenService:
                     if name in id_only_methods and "user_id" not in kwargs and len(args) == 1:
                         args = (self._default_user_id, *args)
                 except Exception:
-                    pass
-                result = self._run(attr(*args, **kwargs))
+                    self.logger.exception("Failed to infer user_id for TodayScreenService method %s", name)
+                result = await attr(*args, **kwargs)
                 try:
                     if name in read_methods and user_id_value and user_id_value != self._default_user_id:
                         empty = result is None
@@ -2280,10 +2304,16 @@ class TodayScreenService:
                             empty = len(result) == 0
                         if empty:
                             fallback_args = (self._default_user_id, *args[1:]) if args else (self._default_user_id,)
-                            result = self._run(attr(*fallback_args, **kwargs))
+                            fallback_kwargs = dict(kwargs)
+                            fallback_kwargs.pop("user_id", None)
+                            result = await attr(*fallback_args, **fallback_kwargs)
                 except Exception:
-                    pass
+                    self.logger.exception("TodayScreenService fallback failed for method %s", name)
                 return result
+
+            def wrapper(*args, **kwargs):
+                return self._run(async_wrapper(*args, **kwargs))
+
             return wrapper
         return attr
 

@@ -2,6 +2,14 @@ import { render, screen } from '@testing-library/react';
 
 // Mock Next.js navigation
 jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    prefetch: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+    refresh: jest.fn(),
+  }),
   usePathname: () => '/today',
 }));
 
@@ -41,6 +49,8 @@ jest.mock('@/stores', () => ({
       id: '1',
       email: 'test@example.com',
       full_name: 'Test User',
+      role: 'gm',
+      roles: ['gm'],
     },
   }),
 }));
@@ -51,7 +61,7 @@ import { Sidebar } from '../sidebar';
 describe('Sidebar', () => {
   it('should render the sidebar', () => {
     render(<Sidebar />);
-    expect(screen.getByText('Sensei')).toBeInTheDocument();
+    expect(screen.getByText('Sensei OS')).toBeInTheDocument();
   });
 
   it('should render navigation items', () => {
@@ -87,6 +97,6 @@ describe('Sidebar', () => {
     expect(todayLink).toHaveAttribute('href', '/today');
     
     const pipelineLink = screen.getByText('Pipeline').closest('a');
-    expect(pipelineLink).toHaveAttribute('href', '/pipeline');
+    expect(pipelineLink).toHaveAttribute('href', '/rfqs');
   });
 });

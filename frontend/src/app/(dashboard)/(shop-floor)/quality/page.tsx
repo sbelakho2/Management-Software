@@ -20,6 +20,12 @@ import {
   TrendingUp,
   AlertCircle,
   FileText,
+  Ruler,
+  Gauge,
+  Smile,
+  FileCheck,
+  ClipboardList,
+  FlaskConical,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,7 +60,7 @@ import {
   CAPAType,
 } from '@/types';
 
-type TabType = 'inspections' | 'ncrs' | 'capas';
+type TabType = 'inspections' | 'ncrs' | 'capas' | 'msa' | 'capability' | 'customer' | 'fai' | 'self' | 'lab' | 'aql' | 'traceability' | 'change-point' | 'management-review';
 
 const inspectionStatusConfig: Record<string, any> = {
   pending: { label: 'Pending', variant: 'secondary' as const, icon: Clock },
@@ -93,6 +99,47 @@ const priorityConfig = {
   high: { label: 'High', variant: 'danger' as const },
   medium: { label: 'Medium', variant: 'warning' as const },
   low: { label: 'Low', variant: 'secondary' as const },
+};
+
+const msaStatusConfig: Record<string, any> = {
+  in_progress: { label: 'In Progress', variant: 'warning' as const },
+  completed: { label: 'Completed', variant: 'success' as const },
+  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+};
+
+const msaStudyTypeLabels: Record<string, string> = {
+  grr: 'GRR',
+  bias: 'Bias',
+  linearity: 'Linearity',
+  stability: 'Stability',
+};
+
+const capabilityStatusConfig: Record<string, any> = {
+  in_progress: { label: 'In Progress', variant: 'warning' as const },
+  completed: { label: 'Completed', variant: 'success' as const },
+  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+};
+
+const complaintStatusConfig: Record<string, any> = {
+  received: { label: 'New', variant: 'warning' as const },
+  under_review: { label: 'Review', variant: 'secondary' as const },
+  investigation: { label: 'Investigate', variant: 'default' as const },
+  containment: { label: 'Contain', variant: 'secondary' as const },
+  capa: { label: 'CAPA', variant: 'default' as const },
+  closed: { label: 'Closed', variant: 'success' as const },
+  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+};
+
+const faiStatusConfig: Record<string, any> = {
+  in_progress: { label: 'In Progress', variant: 'warning' as const },
+  completed: { label: 'Completed', variant: 'success' as const },
+  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+};
+
+const selfInspectionStatusConfig: Record<string, any> = {
+  in_progress: { label: 'In Progress', variant: 'warning' as const },
+  completed: { label: 'Completed', variant: 'success' as const },
+  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
 };
 
 function QualityStats() {
@@ -273,6 +320,2865 @@ function InspectionsTab() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MSATab() {
+  const {
+    msaStudies,
+    fetchMsaStudies,
+    createMsaStudy,
+    addMsaMeasurement,
+    computeMsaStudy,
+    loading,
+  } = useQualityStore();
+  const [studyForm, setStudyForm] = React.useState({
+    gaugeId: '',
+    name: '',
+    studyType: 'grr',
+    partsCount: 10,
+    operatorsCount: 3,
+    trialsCount: 2,
+    notes: '',
+  });
+  const [measurementForm, setMeasurementForm] = React.useState({
+    studyId: '',
+    operatorId: '',
+    partId: '',
+    trialNumber: 1,
+    measuredValue: '',
+  });
+
+  React.useEffect(() => {
+    fetchMsaStudies();
+  }, [fetchMsaStudies]);
+
+  const handleCreateStudy = async () => {
+    if (!studyForm.gaugeId || !studyForm.name) {
+      return;
+    }
+    await createMsaStudy({
+      gauge_id: studyForm.gaugeId,
+      name: studyForm.name,
+      study_type: studyForm.studyType as any,
+      parts_count: Number(studyForm.partsCount),
+      operators_count: Number(studyForm.operatorsCount),
+      trials_count: Number(studyForm.trialsCount),
+      notes: studyForm.notes || undefined,
+    });
+    setStudyForm({
+      gaugeId: '',
+      name: '',
+      studyType: 'grr',
+      partsCount: 10,
+      operatorsCount: 3,
+      trialsCount: 2,
+      notes: '',
+    });
+  };
+
+  const handleAddMeasurement = async () => {
+    if (!measurementForm.studyId || !measurementForm.operatorId || !measurementForm.partId || measurementForm.measuredValue === '') {
+      return;
+    }
+    await addMsaMeasurement(measurementForm.studyId, {
+      operator_id: measurementForm.operatorId,
+      part_id: measurementForm.partId,
+      trial_number: Number(measurementForm.trialNumber),
+      measured_value: Number(measurementForm.measuredValue),
+    });
+    setMeasurementForm({
+      studyId: '',
+      operatorId: '',
+      partId: '',
+      trialNumber: 1,
+      measuredValue: '',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Create MSA Study</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Gauge ID</label>
+              <Input
+                value={studyForm.gaugeId}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, gaugeId: e.target.value }))}
+                placeholder="Gauge UUID"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+              <Input
+                value={studyForm.name}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., Line 2 CMM GRR"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Study Type</label>
+              <Select
+                value={studyForm.studyType}
+                onValueChange={(value) => setStudyForm((prev) => ({ ...prev, studyType: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="grr">GRR</SelectItem>
+                  <SelectItem value="bias">Bias</SelectItem>
+                  <SelectItem value="linearity">Linearity</SelectItem>
+                  <SelectItem value="stability">Stability</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Parts</label>
+              <Input
+                type="number"
+                value={studyForm.partsCount}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, partsCount: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Operators</label>
+              <Input
+                type="number"
+                value={studyForm.operatorsCount}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, operatorsCount: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Trials</label>
+              <Input
+                type="number"
+                value={studyForm.trialsCount}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, trialsCount: Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+            <Input
+              value={studyForm.notes}
+              onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Optional notes"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleCreateStudy} disabled={loading}>
+              Create Study
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Add Measurement</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Study</label>
+              <Select
+                value={measurementForm.studyId}
+                onValueChange={(value) => setMeasurementForm((prev) => ({ ...prev, studyId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select study" />
+                </SelectTrigger>
+                <SelectContent>
+                  {msaStudies.map((study) => (
+                    <SelectItem key={study.id} value={study.id}>
+                      {study.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Operator ID</label>
+              <Input
+                value={measurementForm.operatorId}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, operatorId: e.target.value }))}
+                placeholder="Operator UUID"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Part ID</label>
+              <Input
+                value={measurementForm.partId}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, partId: e.target.value }))}
+                placeholder="Part identifier"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Trial</label>
+              <Input
+                type="number"
+                value={measurementForm.trialNumber}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, trialNumber: Number(e.target.value) }))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Measured Value</label>
+              <Input
+                type="number"
+                value={measurementForm.measuredValue}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, measuredValue: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddMeasurement} disabled={loading}>
+              Add Measurement
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Study</th>
+                  <th className="py-3 px-4 text-left font-medium">Gauge</th>
+                  <th className="py-3 px-4 text-left font-medium">Type</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">Design</th>
+                  <th className="py-3 px-4 text-left font-medium">GRR %</th>
+                  <th className="py-3 px-4 text-left font-medium">NDC</th>
+                  <th className="py-3 px-4 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {msaStudies.map((study) => {
+                  const statusConfig = msaStatusConfig[study.status] || { label: study.status, variant: 'secondary' };
+                  const grrPercent = study.result?.grr_percent;
+                  return (
+                    <tr key={study.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{study.name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{study.gauge_id.slice(0, 8)}…</td>
+                      <td className="py-3 px-4">{msaStudyTypeLabels[study.study_type] || study.study_type}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={statusConfig.variant}>
+                          {statusConfig.label}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {study.parts_count}x{study.operators_count}x{study.trials_count}
+                      </td>
+                      <td className="py-3 px-4">
+                        {grrPercent !== undefined ? `${Number(grrPercent).toFixed(1)}%` : '—'}
+                      </td>
+                      <td className="py-3 px-4">{study.result?.ndc ?? '—'}</td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => computeMsaStudy(study.id)}
+                          disabled={loading}
+                          aria-label="Compute GRR"
+                        >
+                          <Ruler className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CapabilityTab() {
+  const {
+    capabilityStudies,
+    fetchCapabilityStudies,
+    createCapabilityStudy,
+    addCapabilityMeasurement,
+    computeCapabilityStudy,
+    loading,
+  } = useQualityStore();
+  const [studyForm, setStudyForm] = React.useState({
+    name: '',
+    processName: '',
+    characteristic: '',
+    lsl: '',
+    usl: '',
+    target: '',
+    unit: '',
+    notes: '',
+  });
+  const [measurementForm, setMeasurementForm] = React.useState({
+    studyId: '',
+    measuredValue: '',
+    sampleLabel: '',
+  });
+
+  React.useEffect(() => {
+    fetchCapabilityStudies();
+  }, [fetchCapabilityStudies]);
+
+  const handleCreateStudy = async () => {
+    if (!studyForm.name || !studyForm.processName || !studyForm.characteristic || studyForm.lsl === '' || studyForm.usl === '') {
+      return;
+    }
+    await createCapabilityStudy({
+      name: studyForm.name,
+      process_name: studyForm.processName,
+      characteristic: studyForm.characteristic,
+      lsl: Number(studyForm.lsl),
+      usl: Number(studyForm.usl),
+      target: studyForm.target !== '' ? Number(studyForm.target) : undefined,
+      unit: studyForm.unit || undefined,
+      notes: studyForm.notes || undefined,
+    });
+    setStudyForm({
+      name: '',
+      processName: '',
+      characteristic: '',
+      lsl: '',
+      usl: '',
+      target: '',
+      unit: '',
+      notes: '',
+    });
+  };
+
+  const handleAddMeasurement = async () => {
+    if (!measurementForm.studyId || measurementForm.measuredValue === '') {
+      return;
+    }
+    await addCapabilityMeasurement(measurementForm.studyId, {
+      measured_value: Number(measurementForm.measuredValue),
+      sample_label: measurementForm.sampleLabel || undefined,
+    });
+    setMeasurementForm({
+      studyId: '',
+      measuredValue: '',
+      sampleLabel: '',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Create Capability Study</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+              <Input
+                value={studyForm.name}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., CNC Mill 1 Diameter"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Process</label>
+              <Input
+                value={studyForm.processName}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, processName: e.target.value }))}
+                placeholder="e.g., CNC Mill 1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Characteristic</label>
+              <Input
+                value={studyForm.characteristic}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, characteristic: e.target.value }))}
+                placeholder="e.g., Bore Diameter"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">LSL</label>
+              <Input
+                type="number"
+                value={studyForm.lsl}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, lsl: e.target.value }))}
+                placeholder="Lower spec limit"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">USL</label>
+              <Input
+                type="number"
+                value={studyForm.usl}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, usl: e.target.value }))}
+                placeholder="Upper spec limit"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Target</label>
+              <Input
+                type="number"
+                value={studyForm.target}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, target: e.target.value }))}
+                placeholder="Optional target"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Unit</label>
+              <Input
+                value={studyForm.unit}
+                onChange={(e) => setStudyForm((prev) => ({ ...prev, unit: e.target.value }))}
+                placeholder="mm, in, etc."
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+            <Input
+              value={studyForm.notes}
+              onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Optional notes"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleCreateStudy} disabled={loading}>
+              Create Study
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Add Measurement</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Study</label>
+              <Select
+                value={measurementForm.studyId}
+                onValueChange={(value) => setMeasurementForm((prev) => ({ ...prev, studyId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select study" />
+                </SelectTrigger>
+                <SelectContent>
+                  {capabilityStudies.map((study) => (
+                    <SelectItem key={study.id} value={study.id}>
+                      {study.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Measured Value</label>
+              <Input
+                type="number"
+                value={measurementForm.measuredValue}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, measuredValue: e.target.value }))}
+                placeholder="Measurement"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Sample Label</label>
+              <Input
+                value={measurementForm.sampleLabel}
+                onChange={(e) => setMeasurementForm((prev) => ({ ...prev, sampleLabel: e.target.value }))}
+                placeholder="Optional label"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddMeasurement} disabled={loading}>
+              Add Measurement
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Study</th>
+                  <th className="py-3 px-4 text-left font-medium">Process</th>
+                  <th className="py-3 px-4 text-left font-medium">Characteristic</th>
+                  <th className="py-3 px-4 text-left font-medium">Specs</th>
+                  <th className="py-3 px-4 text-left font-medium">Cp</th>
+                  <th className="py-3 px-4 text-left font-medium">Cpk</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {capabilityStudies.map((study) => {
+                  const statusConfig = capabilityStatusConfig[study.status] || { label: study.status, variant: 'secondary' };
+                  return (
+                    <tr key={study.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{study.name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{study.process_name}</td>
+                      <td className="py-3 px-4">{study.characteristic}</td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {study.lsl} - {study.usl} {study.unit || ''}
+                      </td>
+                      <td className="py-3 px-4">{study.result?.cp !== undefined ? Number(study.result.cp).toFixed(2) : '—'}</td>
+                      <td className="py-3 px-4">{study.result?.cpk !== undefined ? Number(study.result.cpk).toFixed(2) : '—'}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => computeCapabilityStudy(study.id)}
+                          disabled={loading}
+                          aria-label="Compute Cp/Cpk"
+                        >
+                          <Gauge className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CustomerSatisfactionTab() {
+  const {
+    customerComplaints,
+    customerSurveys,
+    customerSatisfactionStats,
+    fetchCustomerComplaints,
+    fetchCustomerSurveys,
+    fetchCustomerSatisfactionStats,
+    createCustomerComplaint,
+    closeCustomerComplaint,
+    createCustomerSurvey,
+    addCustomerSurveyResponse,
+    loading,
+  } = useQualityStore();
+
+  const [complaintForm, setComplaintForm] = React.useState({
+    customerId: '',
+    title: '',
+    description: '',
+    status: 'received',
+    rmaNumber: '',
+  });
+  const [surveyForm, setSurveyForm] = React.useState({
+    title: '',
+    description: '',
+    targetResponses: '',
+  });
+  const [responseForm, setResponseForm] = React.useState({
+    surveyId: '',
+    respondentName: '',
+    respondentEmail: '',
+    npsScore: '9',
+    comment: '',
+  });
+
+  React.useEffect(() => {
+    fetchCustomerComplaints();
+    fetchCustomerSurveys();
+    fetchCustomerSatisfactionStats();
+  }, [fetchCustomerComplaints, fetchCustomerSurveys, fetchCustomerSatisfactionStats]);
+
+  const handleCreateComplaint = async () => {
+    if (!complaintForm.title || !complaintForm.description) {
+      return;
+    }
+    await createCustomerComplaint({
+      customer_id: complaintForm.customerId || undefined,
+      title: complaintForm.title,
+      description: complaintForm.description,
+      status: complaintForm.status,
+      rma_number: complaintForm.rmaNumber || undefined,
+    });
+    setComplaintForm({ customerId: '', title: '', description: '', status: 'received', rmaNumber: '' });
+  };
+
+  const handleCreateSurvey = async () => {
+    if (!surveyForm.title) {
+      return;
+    }
+    await createCustomerSurvey({
+      title: surveyForm.title,
+      description: surveyForm.description || undefined,
+      target_responses: surveyForm.targetResponses ? Number(surveyForm.targetResponses) : undefined,
+    });
+    setSurveyForm({ title: '', description: '', targetResponses: '' });
+  };
+
+  const handleAddResponse = async () => {
+    if (!responseForm.surveyId) {
+      return;
+    }
+    await addCustomerSurveyResponse(responseForm.surveyId, {
+      respondent_name: responseForm.respondentName || undefined,
+      respondent_email: responseForm.respondentEmail || undefined,
+      nps_score: Number(responseForm.npsScore),
+      comment: responseForm.comment || undefined,
+    });
+    setResponseForm({ surveyId: '', respondentName: '', respondentEmail: '', npsScore: '9', comment: '' });
+  };
+
+  const stats = customerSatisfactionStats?.nps;
+  const complaintStats = customerSatisfactionStats?.complaints;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="rounded-2xl border-border/40 bg-card/40">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">NPS Score</p>
+                <p className="text-3xl font-heading font-bold mt-1">{stats ? stats.nps_score : '—'}</p>
+              </div>
+              <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+                <Smile className="h-5 w-5" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-border/40 bg-card/40">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Open Complaints</p>
+                <p className="text-3xl font-heading font-bold mt-1">{complaintStats ? complaintStats.open : '—'}</p>
+              </div>
+              <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-border/40 bg-card/40">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Responses</p>
+                <p className="text-3xl font-heading font-bold mt-1">{stats ? stats.total_responses : '—'}</p>
+              </div>
+              <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+                <CheckCircle className="h-5 w-5" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Log Customer Complaint</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              placeholder="Customer ID (optional)"
+              value={complaintForm.customerId}
+              onChange={(e) => setComplaintForm((prev) => ({ ...prev, customerId: e.target.value }))}
+            />
+            <Input
+              placeholder="RMA Number (optional)"
+              value={complaintForm.rmaNumber}
+              onChange={(e) => setComplaintForm((prev) => ({ ...prev, rmaNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Complaint title"
+              value={complaintForm.title}
+              onChange={(e) => setComplaintForm((prev) => ({ ...prev, title: e.target.value }))}
+            />
+            <Select
+              value={complaintForm.status}
+              onValueChange={(value) => setComplaintForm((prev) => ({ ...prev, status: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="received">Received</SelectItem>
+                <SelectItem value="under_review">Under Review</SelectItem>
+                <SelectItem value="investigation">Investigation</SelectItem>
+                <SelectItem value="containment">Containment</SelectItem>
+                <SelectItem value="capa">CAPA</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Input
+            placeholder="Description"
+            value={complaintForm.description}
+            onChange={(e) => setComplaintForm((prev) => ({ ...prev, description: e.target.value }))}
+          />
+          <div className="flex justify-end">
+            <Button onClick={handleCreateComplaint} disabled={loading}>Create Complaint</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Complaint</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">Received</th>
+                  <th className="py-3 px-4 text-left font-medium">RMA</th>
+                  <th className="py-3 px-4 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {customerComplaints.map((complaint) => {
+                  const statusConfig = complaintStatusConfig[complaint.status] || { label: complaint.status, variant: 'secondary' };
+                  return (
+                    <tr key={complaint.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{complaint.title}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {new Date(complaint.received_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{complaint.rma_number || '—'}</td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => closeCustomerComplaint(complaint.id)}
+                          disabled={loading || complaint.status === 'closed'}
+                          aria-label="Close complaint"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Create NPS Survey</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              placeholder="Survey title"
+              value={surveyForm.title}
+              onChange={(e) => setSurveyForm((prev) => ({ ...prev, title: e.target.value }))}
+            />
+            <Input
+              placeholder="Target responses"
+              type="number"
+              value={surveyForm.targetResponses}
+              onChange={(e) => setSurveyForm((prev) => ({ ...prev, targetResponses: e.target.value }))}
+            />
+          </div>
+          <Input
+            placeholder="Description"
+            value={surveyForm.description}
+            onChange={(e) => setSurveyForm((prev) => ({ ...prev, description: e.target.value }))}
+          />
+          <div className="flex justify-end">
+            <Button onClick={handleCreateSurvey} disabled={loading}>Create Survey</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Add Survey Response</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={responseForm.surveyId}
+              onValueChange={(value) => setResponseForm((prev) => ({ ...prev, surveyId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select survey" />
+              </SelectTrigger>
+              <SelectContent>
+                {customerSurveys.map((survey) => (
+                  <SelectItem key={survey.id} value={survey.id}>
+                    {survey.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Respondent name"
+              value={responseForm.respondentName}
+              onChange={(e) => setResponseForm((prev) => ({ ...prev, respondentName: e.target.value }))}
+            />
+            <Input
+              placeholder="Respondent email"
+              value={responseForm.respondentEmail}
+              onChange={(e) => setResponseForm((prev) => ({ ...prev, respondentEmail: e.target.value }))}
+            />
+            <Input
+              type="number"
+              min={0}
+              max={10}
+              placeholder="NPS score (0-10)"
+              value={responseForm.npsScore}
+              onChange={(e) => setResponseForm((prev) => ({ ...prev, npsScore: e.target.value }))}
+            />
+            <Input
+              placeholder="Comment"
+              value={responseForm.comment}
+              onChange={(e) => setResponseForm((prev) => ({ ...prev, comment: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddResponse} disabled={loading}>Add Response</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function FAITab() {
+  const {
+    faiInspections,
+    fetchFAIInspections,
+    createFAIInspection,
+    addFAICharacteristic,
+    closeFAIInspection,
+    loading,
+  } = useQualityStore();
+
+  const [inspectionForm, setInspectionForm] = React.useState({
+    inspectionNumber: '',
+    partNumber: '',
+    revision: '',
+    drawingNumber: '',
+    productId: '',
+    workOrderId: '',
+    notes: '',
+  });
+  const [charForm, setCharForm] = React.useState({
+    inspectionId: '',
+    characteristicNumber: 1,
+    requirement: '',
+    nominal: '',
+    tolerance: '',
+    actual: '',
+    result: 'pending',
+    method: '',
+    toolId: '',
+  });
+
+  React.useEffect(() => {
+    fetchFAIInspections();
+  }, [fetchFAIInspections]);
+
+  const handleCreateInspection = async () => {
+    if (!inspectionForm.inspectionNumber || !inspectionForm.partNumber) {
+      return;
+    }
+    await createFAIInspection({
+      inspection_number: inspectionForm.inspectionNumber,
+      part_number: inspectionForm.partNumber,
+      revision: inspectionForm.revision || undefined,
+      drawing_number: inspectionForm.drawingNumber || undefined,
+      product_id: inspectionForm.productId || undefined,
+      work_order_id: inspectionForm.workOrderId || undefined,
+      notes: inspectionForm.notes || undefined,
+    });
+    setInspectionForm({
+      inspectionNumber: '',
+      partNumber: '',
+      revision: '',
+      drawingNumber: '',
+      productId: '',
+      workOrderId: '',
+      notes: '',
+    });
+  };
+
+  const handleAddCharacteristic = async () => {
+    if (!charForm.inspectionId || !charForm.requirement) {
+      return;
+    }
+    await addFAICharacteristic(charForm.inspectionId, {
+      characteristic_number: Number(charForm.characteristicNumber),
+      requirement: charForm.requirement,
+      nominal: charForm.nominal !== '' ? Number(charForm.nominal) : undefined,
+      tolerance: charForm.tolerance || undefined,
+      actual: charForm.actual !== '' ? Number(charForm.actual) : undefined,
+      result: charForm.result,
+      method: charForm.method || undefined,
+      tool_id: charForm.toolId || undefined,
+    });
+    setCharForm({
+      inspectionId: '',
+      characteristicNumber: 1,
+      requirement: '',
+      nominal: '',
+      tolerance: '',
+      actual: '',
+      result: 'pending',
+      method: '',
+      toolId: '',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Create FAI (AS9102)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Input
+              placeholder="Inspection Number"
+              value={inspectionForm.inspectionNumber}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, inspectionNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Part Number"
+              value={inspectionForm.partNumber}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, partNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Revision"
+              value={inspectionForm.revision}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, revision: e.target.value }))}
+            />
+            <Input
+              placeholder="Drawing Number"
+              value={inspectionForm.drawingNumber}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, drawingNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Product ID"
+              value={inspectionForm.productId}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, productId: e.target.value }))}
+            />
+            <Input
+              placeholder="Work Order ID"
+              value={inspectionForm.workOrderId}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
+            />
+          </div>
+          <Input
+            placeholder="Notes"
+            value={inspectionForm.notes}
+            onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
+          />
+          <div className="flex justify-end">
+            <Button onClick={handleCreateInspection} disabled={loading}>Create FAI</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Add Characteristic</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={charForm.inspectionId}
+              onValueChange={(value) => setCharForm((prev) => ({ ...prev, inspectionId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select FAI" />
+              </SelectTrigger>
+              <SelectContent>
+                {faiInspections.map((inspection) => (
+                  <SelectItem key={inspection.id} value={inspection.id}>
+                    {inspection.inspection_number}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              placeholder="Characteristic #"
+              value={charForm.characteristicNumber}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, characteristicNumber: Number(e.target.value) }))}
+            />
+            <Input
+              placeholder="Requirement"
+              value={charForm.requirement}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, requirement: e.target.value }))}
+            />
+            <Input
+              placeholder="Nominal"
+              type="number"
+              value={charForm.nominal}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, nominal: e.target.value }))}
+            />
+            <Input
+              placeholder="Tolerance"
+              value={charForm.tolerance}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, tolerance: e.target.value }))}
+            />
+            <Input
+              placeholder="Actual"
+              type="number"
+              value={charForm.actual}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, actual: e.target.value }))}
+            />
+            <Select
+              value={charForm.result}
+              onValueChange={(value) => setCharForm((prev) => ({ ...prev, result: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Result" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="pass">Pass</SelectItem>
+                <SelectItem value="fail">Fail</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Method"
+              value={charForm.method}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, method: e.target.value }))}
+            />
+            <Input
+              placeholder="Tool ID"
+              value={charForm.toolId}
+              onChange={(e) => setCharForm((prev) => ({ ...prev, toolId: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddCharacteristic} disabled={loading}>Add Characteristic</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">FAI</th>
+                  <th className="py-3 px-4 text-left font-medium">Part</th>
+                  <th className="py-3 px-4 text-left font-medium">Revision</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">Chars</th>
+                  <th className="py-3 px-4 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {faiInspections.map((inspection) => {
+                  const statusConfig = faiStatusConfig[inspection.status] || { label: inspection.status, variant: 'secondary' };
+                  return (
+                    <tr key={inspection.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{inspection.inspection_number}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{inspection.part_number}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{inspection.revision || '—'}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {inspection.characteristics?.length ?? 0}
+                      </td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => closeFAIInspection(inspection.id)}
+                          disabled={loading || inspection.status === 'completed'}
+                          aria-label="Close FAI"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SelfInspectionTab() {
+  const {
+    selfInspections,
+    fetchSelfInspections,
+    createSelfInspection,
+    addSelfInspectionCheck,
+    closeSelfInspection,
+    loading,
+  } = useQualityStore();
+
+  const [inspectionForm, setInspectionForm] = React.useState({
+    inspectionNumber: '',
+    workOrderId: '',
+    productId: '',
+    notes: '',
+  });
+  const [checkForm, setCheckForm] = React.useState({
+    inspectionId: '',
+    characteristic: '',
+    specification: '',
+    actualValue: '',
+    result: 'pending',
+    notes: '',
+  });
+
+  React.useEffect(() => {
+    fetchSelfInspections();
+  }, [fetchSelfInspections]);
+
+  const handleCreateInspection = async () => {
+    if (!inspectionForm.inspectionNumber) {
+      return;
+    }
+    await createSelfInspection({
+      inspection_number: inspectionForm.inspectionNumber,
+      work_order_id: inspectionForm.workOrderId || undefined,
+      product_id: inspectionForm.productId || undefined,
+      notes: inspectionForm.notes || undefined,
+    });
+    setInspectionForm({ inspectionNumber: '', workOrderId: '', productId: '', notes: '' });
+  };
+
+  const handleAddCheck = async () => {
+    if (!checkForm.inspectionId || !checkForm.characteristic) {
+      return;
+    }
+    await addSelfInspectionCheck(checkForm.inspectionId, {
+      characteristic: checkForm.characteristic,
+      specification: checkForm.specification || undefined,
+      actual_value: checkForm.actualValue || undefined,
+      result: checkForm.result,
+      notes: checkForm.notes || undefined,
+    });
+    setCheckForm({
+      inspectionId: '',
+      characteristic: '',
+      specification: '',
+      actualValue: '',
+      result: 'pending',
+      notes: '',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Start Self Inspection</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Input
+              placeholder="Inspection Number"
+              value={inspectionForm.inspectionNumber}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, inspectionNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Work Order ID"
+              value={inspectionForm.workOrderId}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
+            />
+            <Input
+              placeholder="Product ID"
+              value={inspectionForm.productId}
+              onChange={(e) => setInspectionForm((prev) => ({ ...prev, productId: e.target.value }))}
+            />
+          </div>
+          <Input
+            placeholder="Notes"
+            value={inspectionForm.notes}
+            onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
+          />
+          <div className="flex justify-end">
+            <Button onClick={handleCreateInspection} disabled={loading}>Start Inspection</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Add Self-Check</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={checkForm.inspectionId}
+              onValueChange={(value) => setCheckForm((prev) => ({ ...prev, inspectionId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select inspection" />
+              </SelectTrigger>
+              <SelectContent>
+                {selfInspections.map((inspection) => (
+                  <SelectItem key={inspection.id} value={inspection.id}>
+                    {inspection.inspection_number}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Characteristic"
+              value={checkForm.characteristic}
+              onChange={(e) => setCheckForm((prev) => ({ ...prev, characteristic: e.target.value }))}
+            />
+            <Input
+              placeholder="Specification"
+              value={checkForm.specification}
+              onChange={(e) => setCheckForm((prev) => ({ ...prev, specification: e.target.value }))}
+            />
+            <Input
+              placeholder="Actual"
+              value={checkForm.actualValue}
+              onChange={(e) => setCheckForm((prev) => ({ ...prev, actualValue: e.target.value }))}
+            />
+            <Select
+              value={checkForm.result}
+              onValueChange={(value) => setCheckForm((prev) => ({ ...prev, result: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Result" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="pass">Pass</SelectItem>
+                <SelectItem value="fail">Fail</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Notes"
+              value={checkForm.notes}
+              onChange={(e) => setCheckForm((prev) => ({ ...prev, notes: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddCheck} disabled={loading}>Add Check</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Inspection</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">Checks</th>
+                  <th className="py-3 px-4 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {selfInspections.map((inspection) => {
+                  const statusConfig = selfInspectionStatusConfig[inspection.status] || { label: inspection.status, variant: 'secondary' };
+                  return (
+                    <tr key={inspection.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{inspection.inspection_number}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{inspection.checks?.length ?? 0}</td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => closeSelfInspection(inspection.id)}
+                          disabled={loading || inspection.status === 'completed'}
+                          aria-label="Close self inspection"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function LabManagementTab() {
+  const {
+    labMethods,
+    labSamples,
+    fetchLabMethods,
+    fetchLabSamples,
+    createLabMethod,
+    createLabSample,
+    addLabTestRun,
+    loading,
+  } = useQualityStore();
+
+  const [methodForm, setMethodForm] = React.useState({
+    name: '',
+    standard: '',
+    unit: '',
+    lowerSpec: '',
+    upperSpec: '',
+    targetValue: '',
+  });
+  const [sampleForm, setSampleForm] = React.useState({
+    sampleNumber: '',
+    productId: '',
+    workOrderId: '',
+    lotNumber: '',
+  });
+  const [testForm, setTestForm] = React.useState({
+    sampleId: '',
+    methodId: '',
+    resultValue: '',
+    resultStatus: 'pending',
+    notes: '',
+  });
+
+  React.useEffect(() => {
+    fetchLabMethods();
+    fetchLabSamples();
+  }, [fetchLabMethods, fetchLabSamples]);
+
+  const handleCreateMethod = async () => {
+    if (!methodForm.name) {
+      return;
+    }
+    await createLabMethod({
+      name: methodForm.name,
+      standard: methodForm.standard || undefined,
+      unit: methodForm.unit || undefined,
+      lower_spec: methodForm.lowerSpec !== '' ? Number(methodForm.lowerSpec) : undefined,
+      upper_spec: methodForm.upperSpec !== '' ? Number(methodForm.upperSpec) : undefined,
+      target_value: methodForm.targetValue !== '' ? Number(methodForm.targetValue) : undefined,
+    });
+    setMethodForm({ name: '', standard: '', unit: '', lowerSpec: '', upperSpec: '', targetValue: '' });
+  };
+
+  const handleCreateSample = async () => {
+    if (!sampleForm.sampleNumber) {
+      return;
+    }
+    await createLabSample({
+      sample_number: sampleForm.sampleNumber,
+      product_id: sampleForm.productId || undefined,
+      work_order_id: sampleForm.workOrderId || undefined,
+      lot_number: sampleForm.lotNumber || undefined,
+    });
+    setSampleForm({ sampleNumber: '', productId: '', workOrderId: '', lotNumber: '' });
+  };
+
+  const handleAddTestRun = async () => {
+    if (!testForm.sampleId || !testForm.methodId) {
+      return;
+    }
+    await addLabTestRun(testForm.sampleId, {
+      method_id: testForm.methodId,
+      result_value: testForm.resultValue !== '' ? Number(testForm.resultValue) : undefined,
+      result_status: testForm.resultStatus,
+      notes: testForm.notes || undefined,
+    });
+    setTestForm({ sampleId: '', methodId: '', resultValue: '', resultStatus: 'pending', notes: '' });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Create Lab Method</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Input
+              placeholder="Method name"
+              value={methodForm.name}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+            <Input
+              placeholder="Standard (ASTM/ISO)"
+              value={methodForm.standard}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, standard: e.target.value }))}
+            />
+            <Input
+              placeholder="Unit"
+              value={methodForm.unit}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, unit: e.target.value }))}
+            />
+            <Input
+              type="number"
+              placeholder="Lower spec"
+              value={methodForm.lowerSpec}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, lowerSpec: e.target.value }))}
+            />
+            <Input
+              type="number"
+              placeholder="Upper spec"
+              value={methodForm.upperSpec}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, upperSpec: e.target.value }))}
+            />
+            <Input
+              type="number"
+              placeholder="Target value"
+              value={methodForm.targetValue}
+              onChange={(e) => setMethodForm((prev) => ({ ...prev, targetValue: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleCreateMethod} disabled={loading}>Create Method</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Register Lab Sample</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Input
+              placeholder="Sample number"
+              value={sampleForm.sampleNumber}
+              onChange={(e) => setSampleForm((prev) => ({ ...prev, sampleNumber: e.target.value }))}
+            />
+            <Input
+              placeholder="Product ID"
+              value={sampleForm.productId}
+              onChange={(e) => setSampleForm((prev) => ({ ...prev, productId: e.target.value }))}
+            />
+            <Input
+              placeholder="Work Order ID"
+              value={sampleForm.workOrderId}
+              onChange={(e) => setSampleForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
+            />
+            <Input
+              placeholder="Lot number"
+              value={sampleForm.lotNumber}
+              onChange={(e) => setSampleForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleCreateSample} disabled={loading}>Create Sample</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Record Test Run</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={testForm.sampleId}
+              onValueChange={(value) => setTestForm((prev) => ({ ...prev, sampleId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select sample" />
+              </SelectTrigger>
+              <SelectContent>
+                {labSamples.map((sample) => (
+                  <SelectItem key={sample.id} value={sample.id}>
+                    {sample.sample_number}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={testForm.methodId}
+              onValueChange={(value) => setTestForm((prev) => ({ ...prev, methodId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select method" />
+              </SelectTrigger>
+              <SelectContent>
+                {labMethods.map((method) => (
+                  <SelectItem key={method.id} value={method.id}>
+                    {method.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              placeholder="Result value"
+              value={testForm.resultValue}
+              onChange={(e) => setTestForm((prev) => ({ ...prev, resultValue: e.target.value }))}
+            />
+            <Select
+              value={testForm.resultStatus}
+              onValueChange={(value) => setTestForm((prev) => ({ ...prev, resultStatus: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="pass">Pass</SelectItem>
+                <SelectItem value="fail">Fail</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Notes"
+              value={testForm.notes}
+              onChange={(e) => setTestForm((prev) => ({ ...prev, notes: e.target.value }))}
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={handleAddTestRun} disabled={loading}>Add Test</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Method</th>
+                  <th className="py-3 px-4 text-left font-medium">Standard</th>
+                  <th className="py-3 px-4 text-left font-medium">Unit</th>
+                  <th className="py-3 px-4 text-left font-medium">Specs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {labMethods.map((method) => (
+                  <tr key={method.id} className="border-b hover:bg-muted/50">
+                    <td className="py-3 px-4 font-medium">{method.name}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{method.standard || '—'}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{method.unit || '—'}</td>
+                    <td className="py-3 px-4 text-muted-foreground">
+                      {method.lower_spec ?? '—'} - {method.upper_spec ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AQLSamplingTab() {
+  const {
+    aqlPlans,
+    aqlInspections,
+    fetchAqlPlans,
+    fetchAqlInspections,
+    createAqlPlan,
+    createAqlInspection,
+    loading,
+  } = useQualityStore();
+
+  const [planForm, setPlanForm] = React.useState({
+    planCode: '',
+    standard: 'ANSI/ASQ Z1.4',
+    inspectionLevel: 'II',
+    aqlLevel: '1.0',
+    lotSizeMin: '',
+    lotSizeMax: '',
+    sampleSize: '',
+    acceptLimit: '',
+    rejectLimit: '',
+    notes: '',
+  });
+
+  const [inspectionForm, setInspectionForm] = React.useState({
+    planId: '',
+    lotNumber: '',
+    lotSize: '',
+    sampleSize: '',
+    defectCount: '',
+    notes: '',
+  });
+
+  React.useEffect(() => {
+    fetchAqlPlans();
+  }, [fetchAqlPlans]);
+
+  React.useEffect(() => {
+    if (!inspectionForm.planId && aqlPlans.length > 0) {
+      setInspectionForm((prev) => ({ ...prev, planId: aqlPlans[0].id }));
+    }
+  }, [aqlPlans, inspectionForm.planId]);
+
+  React.useEffect(() => {
+    fetchAqlInspections(inspectionForm.planId || undefined);
+  }, [fetchAqlInspections, inspectionForm.planId]);
+
+  const planLookup = React.useMemo(() => {
+    return new Map(aqlPlans.map((plan) => [plan.id, plan.plan_code]));
+  }, [aqlPlans]);
+
+  const handleCreatePlan = async () => {
+    if (
+      !planForm.planCode ||
+      planForm.lotSizeMin === '' ||
+      planForm.lotSizeMax === '' ||
+      planForm.sampleSize === '' ||
+      planForm.acceptLimit === '' ||
+      planForm.rejectLimit === ''
+    ) {
+      return;
+    }
+
+    await createAqlPlan({
+      plan_code: planForm.planCode,
+      standard: planForm.standard,
+      inspection_level: planForm.inspectionLevel,
+      aql_level: planForm.aqlLevel,
+      lot_size_min: Number(planForm.lotSizeMin),
+      lot_size_max: Number(planForm.lotSizeMax),
+      sample_size: Number(planForm.sampleSize),
+      accept_limit: Number(planForm.acceptLimit),
+      reject_limit: Number(planForm.rejectLimit),
+      notes: planForm.notes || undefined,
+    });
+
+    setPlanForm({
+      planCode: '',
+      standard: 'ANSI/ASQ Z1.4',
+      inspectionLevel: 'II',
+      aqlLevel: '1.0',
+      lotSizeMin: '',
+      lotSizeMax: '',
+      sampleSize: '',
+      acceptLimit: '',
+      rejectLimit: '',
+      notes: '',
+    });
+  };
+
+  const handleCreateInspection = async () => {
+    if (!inspectionForm.planId || !inspectionForm.lotNumber || inspectionForm.lotSize === '' || inspectionForm.defectCount === '') {
+      return;
+    }
+
+    await createAqlInspection({
+      plan_id: inspectionForm.planId,
+      lot_number: inspectionForm.lotNumber,
+      lot_size: Number(inspectionForm.lotSize),
+      sample_size: inspectionForm.sampleSize === '' ? undefined : Number(inspectionForm.sampleSize),
+      defect_count: Number(inspectionForm.defectCount),
+      notes: inspectionForm.notes || undefined,
+    });
+
+    setInspectionForm((prev) => ({
+      ...prev,
+      lotNumber: '',
+      lotSize: '',
+      sampleSize: '',
+      defectCount: '',
+      notes: '',
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Create AQL Sampling Plan</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Plan Code</label>
+                <Input
+                  value={planForm.planCode}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, planCode: e.target.value }))}
+                  placeholder="e.g., AQL-II-1.0-80-125"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Standard</label>
+                <Input
+                  value={planForm.standard}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, standard: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Inspection Level</label>
+                <Input
+                  value={planForm.inspectionLevel}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, inspectionLevel: e.target.value }))}
+                  placeholder="II"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">AQL Level</label>
+                <Input
+                  value={planForm.aqlLevel}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, aqlLevel: e.target.value }))}
+                  placeholder="1.0"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Lot Size Min</label>
+                <Input
+                  type="number"
+                  value={planForm.lotSizeMin}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, lotSizeMin: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Lot Size Max</label>
+                <Input
+                  type="number"
+                  value={planForm.lotSizeMax}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, lotSizeMax: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Sample Size</label>
+                <Input
+                  type="number"
+                  value={planForm.sampleSize}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, sampleSize: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Accept / Reject</label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={planForm.acceptLimit}
+                    onChange={(e) => setPlanForm((prev) => ({ ...prev, acceptLimit: e.target.value }))}
+                    placeholder="Accept"
+                  />
+                  <Input
+                    type="number"
+                    value={planForm.rejectLimit}
+                    onChange={(e) => setPlanForm((prev) => ({ ...prev, rejectLimit: e.target.value }))}
+                    placeholder="Reject"
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+              <Input
+                value={planForm.notes}
+                onChange={(e) => setPlanForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+            <Button onClick={handleCreatePlan} disabled={loading} className="w-full">
+              Create Plan
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Record Lot Inspection</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Plan</label>
+                <Select
+                  value={inspectionForm.planId}
+                  onValueChange={(value) => setInspectionForm((prev) => ({ ...prev, planId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aqlPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id}>{plan.plan_code}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Lot Number</label>
+                <Input
+                  value={inspectionForm.lotNumber}
+                  onChange={(e) => setInspectionForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
+                  placeholder="LOT-2026-001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Lot Size</label>
+                <Input
+                  type="number"
+                  value={inspectionForm.lotSize}
+                  onChange={(e) => setInspectionForm((prev) => ({ ...prev, lotSize: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Sample Size (optional)</label>
+                <Input
+                  type="number"
+                  value={inspectionForm.sampleSize}
+                  onChange={(e) => setInspectionForm((prev) => ({ ...prev, sampleSize: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Defect Count</label>
+                <Input
+                  type="number"
+                  value={inspectionForm.defectCount}
+                  onChange={(e) => setInspectionForm((prev) => ({ ...prev, defectCount: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+              <Input
+                value={inspectionForm.notes}
+                onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Optional notes"
+              />
+            </div>
+            <Button onClick={handleCreateInspection} disabled={loading || aqlPlans.length === 0} className="w-full">
+              Record Inspection
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Sampling Plans</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Plan</th>
+                  <th className="py-3 px-4 text-left font-medium">AQL</th>
+                  <th className="py-3 px-4 text-left font-medium">Lot Range</th>
+                  <th className="py-3 px-4 text-left font-medium">Sample</th>
+                  <th className="py-3 px-4 text-left font-medium">Accept/Reject</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aqlPlans.length === 0 ? (
+                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No AQL plans yet.</td></tr>
+                ) : (
+                  aqlPlans.map((plan) => (
+                    <tr key={plan.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{plan.plan_code}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{plan.aql_level} / {plan.inspection_level}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{plan.lot_size_min} - {plan.lot_size_max}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{plan.sample_size}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{plan.accept_limit} / {plan.reject_limit}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={plan.status === 'active' ? 'success' : 'secondary'}>{plan.status}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Lot Inspections</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Lot</th>
+                  <th className="py-3 px-4 text-left font-medium">Plan</th>
+                  <th className="py-3 px-4 text-left font-medium">Sample</th>
+                  <th className="py-3 px-4 text-left font-medium">Defects</th>
+                  <th className="py-3 px-4 text-left font-medium">Result</th>
+                  <th className="py-3 px-4 text-left font-medium">Inspected</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aqlInspections.length === 0 ? (
+                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No inspections recorded.</td></tr>
+                ) : (
+                  aqlInspections.map((inspection) => (
+                    <tr key={inspection.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{inspection.lot_number}</td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {planLookup.get(inspection.plan_id) || inspection.plan_id.slice(0, 8)}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{inspection.sample_size}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{inspection.defect_count}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={inspection.result === 'accept' ? 'success' : inspection.result === 'reject' ? 'danger' : 'secondary'}>
+                          {inspection.result}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {new Date(inspection.inspected_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function TraceabilityTab() {
+  const {
+    traceabilityMatrices,
+    traceabilityLinks,
+    fetchTraceabilityMatrices,
+    fetchTraceabilityLinks,
+    createTraceabilityMatrix,
+    createTraceabilityLink,
+    loading,
+  } = useQualityStore();
+
+  const [matrixForm, setMatrixForm] = React.useState({
+    name: '',
+    description: '',
+    status: 'active',
+    productId: '',
+    workOrderId: '',
+    lotNumber: '',
+    batchId: '',
+    externalReference: '',
+  });
+
+  const [linkForm, setLinkForm] = React.useState({
+    matrixId: '',
+    linkType: '',
+    referenceId: '',
+    referenceTable: '',
+    notes: '',
+  });
+
+  React.useEffect(() => {
+    fetchTraceabilityMatrices();
+  }, [fetchTraceabilityMatrices]);
+
+  React.useEffect(() => {
+    if (!linkForm.matrixId && traceabilityMatrices.length > 0) {
+      setLinkForm((prev) => ({ ...prev, matrixId: traceabilityMatrices[0].id }));
+    }
+  }, [traceabilityMatrices, linkForm.matrixId]);
+
+  React.useEffect(() => {
+    fetchTraceabilityLinks(linkForm.matrixId || undefined);
+  }, [fetchTraceabilityLinks, linkForm.matrixId]);
+
+  const handleCreateMatrix = async () => {
+    if (!matrixForm.name) {
+      return;
+    }
+    await createTraceabilityMatrix({
+      name: matrixForm.name,
+      description: matrixForm.description || undefined,
+      status: matrixForm.status,
+      product_id: matrixForm.productId ? Number(matrixForm.productId) : undefined,
+      work_order_id: matrixForm.workOrderId ? Number(matrixForm.workOrderId) : undefined,
+      lot_number: matrixForm.lotNumber || undefined,
+      batch_id: matrixForm.batchId || undefined,
+      external_reference: matrixForm.externalReference || undefined,
+    });
+    setMatrixForm({
+      name: '',
+      description: '',
+      status: 'active',
+      productId: '',
+      workOrderId: '',
+      lotNumber: '',
+      batchId: '',
+      externalReference: '',
+    });
+  };
+
+  const handleCreateLink = async () => {
+    if (!linkForm.matrixId || !linkForm.linkType || !linkForm.referenceId) {
+      return;
+    }
+    await createTraceabilityLink({
+      matrix_id: linkForm.matrixId,
+      link_type: linkForm.linkType,
+      reference_id: linkForm.referenceId,
+      reference_table: linkForm.referenceTable || undefined,
+      notes: linkForm.notes || undefined,
+    });
+    setLinkForm((prev) => ({
+      ...prev,
+      linkType: '',
+      referenceId: '',
+      referenceTable: '',
+      notes: '',
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Create Traceability Matrix</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Name</label>
+                <Input
+                  value={matrixForm.name}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., WO-1001 Trace"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Product ID</label>
+                <Input
+                  value={matrixForm.productId}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, productId: e.target.value }))}
+                  placeholder="Product ID"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Work Order ID</label>
+                <Input
+                  value={matrixForm.workOrderId}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
+                  placeholder="Work Order ID"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Lot Number</label>
+                <Input
+                  value={matrixForm.lotNumber}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
+                  placeholder="LOT-2026-0001"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Batch ID</label>
+                <Input
+                  value={matrixForm.batchId}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, batchId: e.target.value }))}
+                  placeholder="BATCH-01"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">External Reference</label>
+                <Input
+                  value={matrixForm.externalReference}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, externalReference: e.target.value }))}
+                  placeholder="Customer PO / Shipment ID"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Description</label>
+                <Input
+                  value={matrixForm.description}
+                  onChange={(e) => setMatrixForm((prev) => ({ ...prev, description: e.target.value }))}
+                  placeholder="Optional description"
+                />
+              </div>
+            </div>
+            <Button onClick={handleCreateMatrix} disabled={loading} className="w-full">
+              Create Matrix
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Add Traceability Link</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Matrix</label>
+                <Select
+                  value={linkForm.matrixId}
+                  onValueChange={(value) => setLinkForm((prev) => ({ ...prev, matrixId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select matrix" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {traceabilityMatrices.map((matrix) => (
+                      <SelectItem key={matrix.id} value={matrix.id}>{matrix.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Link Type</label>
+                <Input
+                  value={linkForm.linkType}
+                  onChange={(e) => setLinkForm((prev) => ({ ...prev, linkType: e.target.value }))}
+                  placeholder="inspection / ncr / capa"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Reference ID</label>
+                <Input
+                  value={linkForm.referenceId}
+                  onChange={(e) => setLinkForm((prev) => ({ ...prev, referenceId: e.target.value }))}
+                  placeholder="Record ID"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Reference Table</label>
+                <Input
+                  value={linkForm.referenceTable}
+                  onChange={(e) => setLinkForm((prev) => ({ ...prev, referenceTable: e.target.value }))}
+                  placeholder="quality_inspections"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <Input
+                  value={linkForm.notes}
+                  onChange={(e) => setLinkForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Optional notes"
+                />
+              </div>
+            </div>
+            <Button onClick={handleCreateLink} disabled={loading || traceabilityMatrices.length === 0} className="w-full">
+              Add Link
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Traceability Matrices</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Name</th>
+                  <th className="py-3 px-4 text-left font-medium">Lot</th>
+                  <th className="py-3 px-4 text-left font-medium">Product</th>
+                  <th className="py-3 px-4 text-left font-medium">Work Order</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {traceabilityMatrices.length === 0 ? (
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No traceability matrices yet.</td></tr>
+                ) : (
+                  traceabilityMatrices.map((matrix) => (
+                    <tr key={matrix.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{matrix.name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{matrix.lot_number || '—'}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{matrix.product_id ?? '—'}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{matrix.work_order_id ?? '—'}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={matrix.status === 'active' ? 'success' : 'secondary'}>{matrix.status}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Traceability Links</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Type</th>
+                  <th className="py-3 px-4 text-left font-medium">Reference</th>
+                  <th className="py-3 px-4 text-left font-medium">Table</th>
+                  <th className="py-3 px-4 text-left font-medium">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {traceabilityLinks.length === 0 ? (
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No links for selected matrix.</td></tr>
+                ) : (
+                  traceabilityLinks.map((link) => (
+                    <tr key={link.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{link.link_type}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{link.reference_id}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{link.reference_table || '—'}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{link.notes || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ChangePointTab() {
+  const {
+    changePointStudies,
+    changePointObservations,
+    changePointEvents,
+    fetchChangePointStudies,
+    fetchChangePointObservations,
+    fetchChangePointEvents,
+    createChangePointStudy,
+    addChangePointObservation,
+    detectChangePoint,
+    loading,
+  } = useQualityStore();
+
+  const [studyForm, setStudyForm] = React.useState({
+    name: '',
+    processName: '',
+    characteristic: '',
+    method: 'mean_shift',
+    sensitivity: '',
+    notes: '',
+  });
+
+  const [observationForm, setObservationForm] = React.useState({
+    studyId: '',
+    value: '',
+    sampleLabel: '',
+  });
+
+  React.useEffect(() => {
+    fetchChangePointStudies();
+  }, [fetchChangePointStudies]);
+
+  React.useEffect(() => {
+    if (!observationForm.studyId && changePointStudies.length > 0) {
+      setObservationForm((prev) => ({ ...prev, studyId: changePointStudies[0].id }));
+    }
+  }, [changePointStudies, observationForm.studyId]);
+
+  React.useEffect(() => {
+    if (observationForm.studyId) {
+      fetchChangePointObservations(observationForm.studyId);
+      fetchChangePointEvents(observationForm.studyId);
+    }
+  }, [fetchChangePointObservations, fetchChangePointEvents, observationForm.studyId]);
+
+  const handleCreateStudy = async () => {
+    if (!studyForm.name || !studyForm.processName || !studyForm.characteristic) {
+      return;
+    }
+    await createChangePointStudy({
+      name: studyForm.name,
+      process_name: studyForm.processName,
+      characteristic: studyForm.characteristic,
+      method: studyForm.method || 'mean_shift',
+      sensitivity: studyForm.sensitivity === '' ? undefined : Number(studyForm.sensitivity),
+      notes: studyForm.notes || undefined,
+    });
+    setStudyForm({
+      name: '',
+      processName: '',
+      characteristic: '',
+      method: 'mean_shift',
+      sensitivity: '',
+      notes: '',
+    });
+  };
+
+  const handleAddObservation = async () => {
+    if (!observationForm.studyId || observationForm.value === '') {
+      return;
+    }
+    await addChangePointObservation(observationForm.studyId, {
+      value: Number(observationForm.value),
+      sample_label: observationForm.sampleLabel || undefined,
+    });
+    setObservationForm((prev) => ({
+      ...prev,
+      value: '',
+      sampleLabel: '',
+    }));
+  };
+
+  const handleDetect = async () => {
+    if (!observationForm.studyId) {
+      return;
+    }
+    await detectChangePoint(observationForm.studyId);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Create Change Point Study</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+                <Input
+                  value={studyForm.name}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Drill Press Drift"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Process Name</label>
+                <Input
+                  value={studyForm.processName}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, processName: e.target.value }))}
+                  placeholder="Drill Press"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Characteristic</label>
+                <Input
+                  value={studyForm.characteristic}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, characteristic: e.target.value }))}
+                  placeholder="Hole Diameter"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Method</label>
+                <Input
+                  value={studyForm.method}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, method: e.target.value }))}
+                  placeholder="mean_shift"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Sensitivity</label>
+                <Input
+                  type="number"
+                  value={studyForm.sensitivity}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, sensitivity: e.target.value }))}
+                  placeholder="0.5"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <Input
+                  value={studyForm.notes}
+                  onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Optional notes"
+                />
+              </div>
+            </div>
+            <Button onClick={handleCreateStudy} disabled={loading} className="w-full">
+              Create Study
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Add Observation</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Study</label>
+                <Select
+                  value={observationForm.studyId}
+                  onValueChange={(value) => setObservationForm((prev) => ({ ...prev, studyId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select study" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {changePointStudies.map((study) => (
+                      <SelectItem key={study.id} value={study.id}>{study.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Value</label>
+                <Input
+                  type="number"
+                  value={observationForm.value}
+                  onChange={(e) => setObservationForm((prev) => ({ ...prev, value: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Sample Label</label>
+                <Input
+                  value={observationForm.sampleLabel}
+                  onChange={(e) => setObservationForm((prev) => ({ ...prev, sampleLabel: e.target.value }))}
+                  placeholder="Sample ID"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleAddObservation} disabled={loading || changePointStudies.length === 0} className="flex-1">
+                Add Observation
+              </Button>
+              <Button onClick={handleDetect} disabled={loading || !observationForm.studyId} variant="outline" className="flex-1">
+                Detect Change Point
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Studies</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Study</th>
+                  <th className="py-3 px-4 text-left font-medium">Process</th>
+                  <th className="py-3 px-4 text-left font-medium">Characteristic</th>
+                  <th className="py-3 px-4 text-left font-medium">Method</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {changePointStudies.length === 0 ? (
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No studies yet.</td></tr>
+                ) : (
+                  changePointStudies.map((study) => (
+                    <tr key={study.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{study.name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{study.process_name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{study.characteristic}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{study.method}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={study.status === 'active' ? 'success' : 'secondary'}>{study.status}</Badge>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Observations</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="py-3 px-4 text-left font-medium">Value</th>
+                    <th className="py-3 px-4 text-left font-medium">Sample</th>
+                    <th className="py-3 px-4 text-left font-medium">Observed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changePointObservations.length === 0 ? (
+                    <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">No observations.</td></tr>
+                  ) : (
+                    changePointObservations.map((obs) => (
+                      <tr key={obs.id} className="border-b hover:bg-muted/50">
+                        <td className="py-3 px-4 font-medium">{obs.value}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{obs.sample_label || '—'}</td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {new Date(obs.observed_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Detected Events</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="py-3 px-4 text-left font-medium">Index</th>
+                    <th className="py-3 px-4 text-left font-medium">Magnitude</th>
+                    <th className="py-3 px-4 text-left font-medium">Confidence</th>
+                    <th className="py-3 px-4 text-left font-medium">Detected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changePointEvents.length === 0 ? (
+                    <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No events detected.</td></tr>
+                  ) : (
+                    changePointEvents.map((event) => (
+                      <tr key={event.id} className="border-b hover:bg-muted/50">
+                        <td className="py-3 px-4 font-medium">{event.index_position}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{event.change_magnitude}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{event.confidence ?? '—'}</td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {new Date(event.detected_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function ManagementReviewTab() {
+  const {
+    managementReviews,
+    managementReviewActions,
+    fetchManagementReviews,
+    fetchManagementReviewActions,
+    createManagementReview,
+    addManagementReviewAction,
+    closeManagementReview,
+    loading,
+  } = useQualityStore();
+
+  const [reviewForm, setReviewForm] = React.useState({
+    title: '',
+    periodStart: '',
+    periodEnd: '',
+    scheduledFor: '',
+    attendees: '',
+    notes: '',
+  });
+
+  const [actionForm, setActionForm] = React.useState({
+    reviewId: '',
+    title: '',
+    dueDate: '',
+    assigneeId: '',
+    notes: '',
+  });
+
+  React.useEffect(() => {
+    fetchManagementReviews();
+    fetchManagementReviewActions();
+  }, [fetchManagementReviewActions, fetchManagementReviews]);
+
+  React.useEffect(() => {
+    if (!actionForm.reviewId && managementReviews.length > 0) {
+      setActionForm((prev) => ({ ...prev, reviewId: managementReviews[0].id }));
+    }
+  }, [managementReviews, actionForm.reviewId]);
+
+  const handleCreateReview = async () => {
+    if (!reviewForm.title || !reviewForm.periodStart || !reviewForm.periodEnd || !reviewForm.scheduledFor) {
+      return;
+    }
+    const attendees = reviewForm.attendees
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    await createManagementReview({
+      title: reviewForm.title,
+      period_start: reviewForm.periodStart,
+      period_end: reviewForm.periodEnd,
+      scheduled_for: reviewForm.scheduledFor,
+      attendees: attendees.length ? attendees : undefined,
+      notes: reviewForm.notes || undefined,
+    });
+    setReviewForm({
+      title: '',
+      periodStart: '',
+      periodEnd: '',
+      scheduledFor: '',
+      attendees: '',
+      notes: '',
+    });
+  };
+
+  const handleAddAction = async () => {
+    if (!actionForm.reviewId || !actionForm.title) {
+      return;
+    }
+    await addManagementReviewAction(actionForm.reviewId, {
+      title: actionForm.title,
+      due_date: actionForm.dueDate || undefined,
+      assignee_id: actionForm.assigneeId || undefined,
+      notes: actionForm.notes || undefined,
+    });
+    setActionForm((prev) => ({
+      ...prev,
+      title: '',
+      dueDate: '',
+      assigneeId: '',
+      notes: '',
+    }));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Schedule Management Review</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                <Input
+                  value={reviewForm.title}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Q2 Management Review"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Period Start</label>
+                <Input
+                  type="date"
+                  value={reviewForm.periodStart}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, periodStart: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Period End</label>
+                <Input
+                  type="date"
+                  value={reviewForm.periodEnd}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, periodEnd: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Scheduled For</label>
+                <Input
+                  type="date"
+                  value={reviewForm.scheduledFor}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, scheduledFor: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Attendees</label>
+                <Input
+                  value={reviewForm.attendees}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, attendees: e.target.value }))}
+                  placeholder="CEO, Quality Lead"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <Input
+                  value={reviewForm.notes}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Optional notes"
+                />
+              </div>
+            </div>
+            <Button onClick={handleCreateReview} disabled={loading} className="w-full">
+              Schedule Review
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/40 bg-card/40">
+          <CardHeader>
+            <CardTitle className="text-base">Add Action Item</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Review</label>
+                <Select
+                  value={actionForm.reviewId}
+                  onValueChange={(value) => setActionForm((prev) => ({ ...prev, reviewId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select review" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {managementReviews.map((review) => (
+                      <SelectItem key={review.id} value={review.id}>{review.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                <Input
+                  value={actionForm.title}
+                  onChange={(e) => setActionForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Improve supplier audits"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Due Date</label>
+                <Input
+                  type="date"
+                  value={actionForm.dueDate}
+                  onChange={(e) => setActionForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Assignee ID</label>
+                <Input
+                  value={actionForm.assigneeId}
+                  onChange={(e) => setActionForm((prev) => ({ ...prev, assigneeId: e.target.value }))}
+                  placeholder="User ID"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <Input
+                  value={actionForm.notes}
+                  onChange={(e) => setActionForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Optional notes"
+                />
+              </div>
+            </div>
+            <Button onClick={handleAddAction} disabled={loading || managementReviews.length === 0} className="w-full">
+              Add Action Item
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Management Reviews</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Title</th>
+                  <th className="py-3 px-4 text-left font-medium">Period</th>
+                  <th className="py-3 px-4 text-left font-medium">Scheduled</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {managementReviews.length === 0 ? (
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No reviews scheduled.</td></tr>
+                ) : (
+                  managementReviews.map((review) => (
+                    <tr key={review.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 font-medium">{review.title}</td>
+                      <td className="py-3 px-4 text-muted-foreground">
+                        {review.period_start} - {review.period_end}
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{review.scheduled_for}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={review.status === 'closed' ? 'success' : 'secondary'}>{review.status}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => closeManagementReview(review.id)}
+                          disabled={loading || review.status === 'closed'}
+                        >
+                          Close
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/40 bg-card/40">
+        <CardHeader>
+          <CardTitle className="text-base">Action Items</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="py-3 px-4 text-left font-medium">Review</th>
+                  <th className="py-3 px-4 text-left font-medium">Title</th>
+                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {managementReviewActions.length === 0 ? (
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No action items recorded.</td></tr>
+                ) : (
+                  managementReviewActions.map((action) => (
+                    <tr key={action.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-4 text-muted-foreground">{action.review_id.slice(0, 8)}</td>
+                      <td className="py-3 px-4 font-medium">{action.title}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={action.status === 'closed' ? 'success' : 'warning'}>{action.status}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{action.due_date || '—'}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -649,12 +3555,192 @@ function QualityPageContent() {
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
               )}
             </button>
+            <button
+              onClick={() => handleTabChange('msa')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'msa'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Ruler className="h-4 w-4" />
+                MSA / GRR
+              </div>
+              {activeTab === 'msa' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('capability')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'capability'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Gauge className="h-4 w-4" />
+                Cp / Cpk
+              </div>
+              {activeTab === 'capability' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('customer')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'customer'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Smile className="h-4 w-4" />
+                Customer Satisfaction
+              </div>
+              {activeTab === 'customer' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('fai')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'fai'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <FileCheck className="h-4 w-4" />
+                FAI / AS9102
+              </div>
+              {activeTab === 'fai' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('self')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'self'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4" />
+                Self Inspection
+              </div>
+              {activeTab === 'self' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('lab')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'lab'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <FlaskConical className="h-4 w-4" />
+                Lab Management
+              </div>
+              {activeTab === 'lab' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('aql')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'aql'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                AQL Sampling
+              </div>
+              {activeTab === 'aql' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('traceability')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'traceability'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Traceability
+              </div>
+              {activeTab === 'traceability' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('change-point')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'change-point'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Change Point
+              </div>
+              {activeTab === 'change-point' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('management-review')}
+              className={cn(
+                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                activeTab === 'management-review'
+                  ? 'text-primary'
+                  : 'text-muted-foreground/60 hover:text-primary/80'
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Management Review
+              </div>
+              {activeTab === 'management-review' && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
+              )}
+            </button>
           </div>
         </CardHeader>
         <CardContent className="pt-8">
           {activeTab === 'inspections' && <InspectionsTab />}
           {activeTab === 'ncrs' && <NCRsTab />}
           {activeTab === 'capas' && <CAPAsTab />}
+          {activeTab === 'msa' && <MSATab />}
+          {activeTab === 'capability' && <CapabilityTab />}
+          {activeTab === 'customer' && <CustomerSatisfactionTab />}
+          {activeTab === 'fai' && <FAITab />}
+          {activeTab === 'self' && <SelfInspectionTab />}
+          {activeTab === 'lab' && <LabManagementTab />}
+          {activeTab === 'aql' && <AQLSamplingTab />}
+          {activeTab === 'traceability' && <TraceabilityTab />}
+          {activeTab === 'change-point' && <ChangePointTab />}
+          {activeTab === 'management-review' && <ManagementReviewTab />}
         </CardContent>
       </Card>
     </div>

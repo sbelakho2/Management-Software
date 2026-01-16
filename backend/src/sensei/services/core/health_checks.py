@@ -21,9 +21,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
+import logging
 
 import psutil
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 
 
@@ -210,7 +213,7 @@ class HealthCheckService:
                         ).scalar()
                         metadata["active_connections"] = conn_result
                     except Exception:
-                        pass
+                        logger.exception("Failed to fetch database connection count")
                 else:
                     status = HealthStatus.UNHEALTHY
                     error_msg = "Database query returned unexpected result"
@@ -263,7 +266,7 @@ class HealthCheckService:
                     metadata["connected_clients"] = info.get("connected_clients", 0)
                     metadata["used_memory_mb"] = info.get("used_memory", 0) / 1024 / 1024
                 except Exception:
-                    pass
+                    logger.exception("Failed to fetch Redis metrics")
             else:
                 status = HealthStatus.UNHEALTHY
                 error_msg = "Redis ping failed"

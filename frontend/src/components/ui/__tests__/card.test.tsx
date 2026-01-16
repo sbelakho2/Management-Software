@@ -16,7 +16,7 @@ describe('Card', () => {
   it('applies base card styles', () => {
     render(<Card data-testid="card">Content</Card>);
     const card = screen.getByTestId('card');
-    expect(card).toHaveClass('rounded-lg');
+    expect(card).toHaveClass('rounded-[2rem]');
     expect(card).toHaveClass('border');
   });
 });

@@ -20,6 +20,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
+import { cn } from '@/lib/utils';
 
 // =============================================================================
 // CONSTANTS
@@ -422,7 +423,7 @@ export function Sparkline({
         role="img"
         aria-label={ariaLabel}
       >
-        <span className="text-[8px] font-bold uppercase tracking-widest">Null</span>
+        <span className="text-[8px] font-bold uppercase tracking-widest">No data</span>
       </div>
     );
   }
@@ -545,13 +546,18 @@ export function BarChart({
         </div>
       )}
 
-      <div className={cn(
-        "relative flex items-end gap-3 h-48 px-2",
-        horizontal && "flex-col items-stretch h-auto"
-      )}>
+      <div
+        className={cn(
+          "relative flex items-end gap-3 h-48 px-2",
+          horizontal && "flex-col items-stretch h-auto"
+        )}
+        role="img"
+        aria-label={title || 'Bar chart'}
+      >
         {data.map((point, index) => {
           const percentage = ((point.value - minValue) / range) * 100;
           const barColor = point.color || KPI_COLORS.VOLUME;
+          const barLabel = `${point.label}: ${point.value}`;
 
           return (
             <div
@@ -560,9 +566,19 @@ export function BarChart({
                 "relative flex-1 group transition-all duration-500",
                 horizontal ? "flex items-center gap-4 h-10" : "flex flex-col items-center"
               )}
+              role={onBarClick ? 'button' : 'img'}
+              tabIndex={onBarClick ? 0 : -1}
+              aria-label={barLabel}
               onMouseEnter={(e) => handleBarMouseEnter(index, e)}
               onMouseLeave={handleBarMouseLeave}
               onClick={() => handleBarClick(point, index)}
+              onKeyDown={(event) => {
+                if (!onBarClick) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleBarClick(point, index);
+                }
+              }}
             >
               {horizontal ? (
                 <>
@@ -808,6 +824,7 @@ export function KPICard({
 }: KPICardProps) {
   const isPositive = change !== undefined && change >= 0;
   const changeColor = isPositive ? 'text-success' : 'text-danger';
+  const signedChange = change !== undefined ? `${isPositive ? '+' : '-'}${Math.abs(change)}%` : '';
 
   return (
     <div
@@ -845,7 +862,7 @@ export function KPICard({
             {change !== undefined && (
               <div className="flex items-center gap-1.5 ml-2">
                 <span className={cn("text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md", isPositive ? "text-success bg-success/5" : "text-danger bg-danger/5")}>
-                  {isPositive ? '↑' : '↓'} {Math.abs(change)}%
+                  {isPositive ? '↑' : '↓'} {signedChange}
                 </span>
                 {changeLabel && <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{changeLabel}</span>}
               </div>

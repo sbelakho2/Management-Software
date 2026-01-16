@@ -923,7 +923,7 @@ async def release_work_order(
         )
     except Exception:
         # Jidoka suggestions should never block release.
-        pass
+        logger.exception("Failed to generate Jidoka suggestions for work order %s", work_order_id)
 
     return build_updated_response(
         data=response_data,

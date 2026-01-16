@@ -814,7 +814,7 @@ class QMSQualityService:
         # Assume higher is better for most KPIs unless target indicates otherwise.
         if b.target is not None:
             # If target is an upper bound (defect rate), we can't infer direction reliably.
-            pass
+            return KPITrend.UNKNOWN
         return KPITrend.IMPROVING if b.value > a.value else KPITrend.DETERIORATING
 
     # -----------------------------

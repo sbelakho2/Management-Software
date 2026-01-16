@@ -629,11 +629,12 @@ ORDER BY month DESC;
         }
 
         # Check for skill stagnation (no new skills or verified tasks in 90 days)
+        skill_entries = self._skill_matrix.get(employee_id, [])
         recent_skills = [
-            s for s in self._skill_matrix.get(employee_id, [])
+            s for s in skill_entries
             if s.last_demonstrated and (datetime.now(timezone.utc) - s.last_demonstrated).days < 90
         ]
-        if not recent_skills and tenure_months > 6:
+        if skill_entries and not recent_skills and tenure_months > 6:
             factors["stagnation"] = 1.0
             risk_factors.append("Skill stagnation (no growth in 90 days)")
             recommendations.append("Assign to new PDCA or Cross-training project")

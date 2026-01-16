@@ -906,7 +906,7 @@ async def get_today_screen(
     user_id: UUID,
     db: DBSession,
     user: CurrentUser,
-    user_name: str | None = Query(None),
+    user_name: str = Query(..., min_length=1),
 ) -> TodayScreenDataSchema:
     """Get complete Today screen data for a user."""
     service = get_today_screen_service()

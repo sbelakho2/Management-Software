@@ -72,6 +72,8 @@ describe('usePipelineStore', () => {
     it('should handle fetch error', async () => {
       // Ensure cache is bypassed
       usePipelineStore.setState({ lastFetchedAt: null });
+
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
       
       mockApiClient.get.mockRejectedValue(new Error('Failed to fetch'));
 
@@ -80,6 +82,8 @@ describe('usePipelineStore', () => {
       await act(async () => {
         await result.current.fetchRFQs();
       });
+
+      consoleError.mockRestore();
 
       expect(result.current.error).toBe('Failed to fetch');
       expect(result.current.isLoading).toBe(false);

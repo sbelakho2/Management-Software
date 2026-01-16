@@ -18,8 +18,11 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class TaskType(str, Enum):
@@ -714,7 +717,7 @@ class RFQTimeTrackingService:
             try:
                 listener(alert)
             except Exception:
-                pass
+                logger.exception("RFQ time tracking listener failed for alert %s", alert.id)
         
         return alert
     

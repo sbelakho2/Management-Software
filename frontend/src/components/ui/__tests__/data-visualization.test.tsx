@@ -668,13 +668,13 @@ describe('KPICard', () => {
   it('should display positive change with green color', () => {
     render(<KPICard label="Revenue" value="$1.2M" change={15} />);
 
-    expect(screen.getByText('+15%')).toHaveClass('text-green-600');
+    expect(screen.getByText(/\+15%/)).toHaveClass('text-success');
   });
 
   it('should display negative change with red color', () => {
     render(<KPICard label="Cost" value="$500K" change={-10} />);
 
-    expect(screen.getByText('-10%')).toHaveClass('text-red-600');
+    expect(screen.getByText(/-10%/)).toHaveClass('text-danger');
   });
 
   it('should display change label', () => {

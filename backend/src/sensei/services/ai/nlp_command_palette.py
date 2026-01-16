@@ -691,8 +691,26 @@ class ActionParser:
         
         # Also inherit filters if query mentions filtering
         if "filter" in query and session.context.get("last_filters"):
-            # Merge with existing filters
-            pass
+            last_filters = session.context.get("last_filters")
+            if isinstance(last_filters, dict):
+                existing_types = {e.entity_type for e in entities}
+                for key, value in last_filters.items():
+                    try:
+                        entity_type = EntityType(key)
+                    except ValueError:
+                        continue
+                    if entity_type in existing_types:
+                        continue
+                    entities.append(
+                        Entity(
+                            entity_type=entity_type,
+                            value=str(value),
+                            normalized_value=value,
+                            start_pos=-1,
+                            end_pos=-1,
+                            confidence=0.3,
+                        )
+                    )
         
         return entities
     

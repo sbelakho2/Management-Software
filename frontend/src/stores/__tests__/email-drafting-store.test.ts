@@ -27,6 +27,41 @@ import {
   GenerationRequest,
 } from '../email-drafting-store';
 
+jest.mock('axios', () => {
+  const isAxiosError = (error: any) => Boolean(error?.isAxiosError);
+  return {
+    __esModule: true,
+    default: {
+      post: jest.fn().mockImplementation((_url: string, payload: any) => {
+        const ref = payload?.reference_number;
+        const name = payload?.recipient?.name || 'there';
+        const keyPoints = payload?.key_points || [];
+        return Promise.resolve({
+          data: {
+            id: 'draft-1',
+            subject: ref ? `Update on ${ref}` : 'Subject',
+            salutation: `Hello ${name}`,
+            body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
+            opening: 'Opening',
+            main_content: keyPoints.length ? keyPoints : ['Point 1'],
+            closing: 'Regards',
+            signature: 'Signature',
+            alternatives: [],
+            compliance_issues: [],
+            suggestions: [],
+            tokens_used: 0,
+            generation_time_ms: 1,
+            model_version: 'v1.0',
+            confidence_score: 0.9,
+          },
+        });
+      }),
+      isAxiosError,
+    },
+    isAxiosError,
+  };
+});
+
 // Reset store before each test
 beforeEach(() => {
   const { result } = renderHook(() => useEmailDraftingStore());

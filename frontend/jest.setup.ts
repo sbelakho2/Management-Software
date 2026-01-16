@@ -1,5 +1,18 @@
 import '@testing-library/jest-dom';
 
+// Mock Next.js Image to avoid src parsing errors in tests
+jest.mock('next/image', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const React = require('react');
+  return {
+    __esModule: true,
+    default: (props: any) => {
+      const { unoptimized, priority, placeholder, blurDataURL, ...rest } = props;
+      return React.createElement('img', rest);
+    },
+  };
+});
+
 // Mock next/link to behave like Next.js client navigation:
 // prevent default browser navigation and delegate to router.push.
 jest.mock('next/link', () => {

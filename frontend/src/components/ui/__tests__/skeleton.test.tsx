@@ -21,9 +21,7 @@ describe('Skeleton', () => {
     render(<Skeleton data-testid="skeleton" />);
     const skeleton = screen.getByTestId('skeleton');
     
-    expect(skeleton).toHaveClass('animate-pulse');
-    expect(skeleton).toHaveClass('rounded-md');
-    expect(skeleton).toHaveClass('bg-muted');
+    expect(skeleton).toHaveClass('skeleton');
   });
 
   it('should apply custom className', () => {
@@ -54,13 +52,13 @@ describe('Skeleton', () => {
 describe('SkeletonText', () => {
   it('renders default 3 lines', () => {
     const { container } = render(<SkeletonText />);
-    const lines = container.querySelectorAll('.animate-pulse');
+    const lines = container.querySelectorAll('.skeleton');
     expect(lines).toHaveLength(3);
   });
 
   it('renders custom number of lines', () => {
     const { container } = render(<SkeletonText lines={5} />);
-    const lines = container.querySelectorAll('.animate-pulse');
+    const lines = container.querySelectorAll('.skeleton');
     expect(lines).toHaveLength(5);
   });
 

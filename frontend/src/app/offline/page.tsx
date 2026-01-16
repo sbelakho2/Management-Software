@@ -3,11 +3,13 @@
 import { WifiOff, RefreshCw, Home } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { SkipToContent } from '@/components/ui/accessibility';
 
 export default function OfflinePage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4 page-fade-in">
-      <div className="text-center max-w-md w-full">
+      <SkipToContent targetId="main-content" />
+      <main id="main-content" className="text-center max-w-md w-full">
         <div className="premium-glass p-10 rounded-[2.5rem] shadow-premium border border-white/20 dark:border-white/5 space-y-8 transition-all duration-500 hover:shadow-premium-hover">
           <div className="inline-flex items-center justify-center w-24 h-24 bg-primary/10 rounded-[2rem] mb-2 shadow-glow">
             <WifiOff className="h-12 w-12 text-primary animate-pulse" />
@@ -69,7 +71,7 @@ export default function OfflinePage() {
             Sensei OS • Precision Continuity
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

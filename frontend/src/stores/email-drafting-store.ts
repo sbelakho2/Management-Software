@@ -697,10 +697,38 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
             
             const drafts = new Map(get().drafts);
             drafts.set(draft.id, draft);
+
+            const history = [...get().history];
+            history.push({
+              draftId: draft.id,
+              action: 'generated',
+              actorId: request.requestedBy,
+              timestamp: new Date(),
+            });
+
+            const recentRecipients = [...get().recentRecipients];
+            const existingIdx = recentRecipients.findIndex(
+              (r) => r.recipient.email === request.context.recipient.email
+            );
+            if (existingIdx >= 0) {
+              recentRecipients[existingIdx] = {
+                recipient: request.context.recipient,
+                lastUsed: new Date(),
+                usageCount: recentRecipients[existingIdx].usageCount + 1,
+              };
+            } else {
+              recentRecipients.unshift({
+                recipient: request.context.recipient,
+                lastUsed: new Date(),
+                usageCount: 1,
+              });
+            }
             
             set({
               drafts,
               activeDraftId: draft.id,
+              history,
+              recentRecipients: recentRecipients.slice(0, 20),
               isGenerating: false,
             });
             

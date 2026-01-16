@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 // Demo data
 const systemStatus = {

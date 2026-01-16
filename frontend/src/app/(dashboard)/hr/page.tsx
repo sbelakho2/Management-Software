@@ -24,6 +24,7 @@ import Link from 'next/link';
 import { hasPageAccess } from '@/lib/page-access';
 import { useAuthStore, useHRStore } from '@/stores';
 import type { UserRole } from '@/types';
+import { cn } from '@/lib/utils';
 
 function StatCard({
   title,

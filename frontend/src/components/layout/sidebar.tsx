@@ -28,6 +28,7 @@ import { UserRole } from '@/types';
 import { MobileBottomNav } from './mobile-nav';
 import { hasPageAccess } from '@/lib/page-access';
 import { NAV_SECTIONS, type NavItem, type NavSection } from '@/lib/navigation';
+import { SkipToContent } from '@/components/ui/accessibility';
 
 const bottomNavItems: NavItem[] = [
   { label: 'Settings', href: '/settings', icon: Shield },
@@ -110,7 +111,7 @@ export function Sidebar() {
           </Link>
         )}
         {isCollapsed && (
-          <Link href="/today" className="mx-auto transition-transform hover:scale-110 active:scale-90">
+          <Link href="/today" className="mx-auto transition-transform hover:scale-110 active:scale-90" aria-label="Sensei OS home">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
               S
             </div>
@@ -127,6 +128,7 @@ export function Sidebar() {
             isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto rounded-xl' : 'px-4 h-11 rounded-2xl'
           )}
           onClick={() => setCommandPaletteOpen(true)}
+          aria-label="Open search"
         >
           <Search className={cn("h-4 w-4", isCollapsed ? "h-5 w-5" : "")} />
           {!isCollapsed && (
@@ -165,6 +167,8 @@ export function Sidebar() {
                                 ? 'bg-primary text-primary-foreground shadow-glow scale-105' 
                                 : 'text-muted-foreground hover:bg-primary/10 hover:text-primary hover:scale-110'
                             )}
+                            aria-label={item.label}
+                            aria-current={isActive ? 'page' : undefined}
                           >
                             <item.icon className="h-5 w-5" />
                           </Link>
@@ -224,6 +228,8 @@ export function Sidebar() {
                             ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
                             : 'hover:bg-accent/80 hover:text-accent-foreground'
                         )}
+                        aria-label={item.label}
+                        aria-current={isActive ? 'page' : undefined}
                       >
                         <item.icon className="h-5 w-5" />
                       </Link>
@@ -306,6 +312,7 @@ export function Sidebar() {
                     await logout();
                     router.push('/login');
                   }}
+                  aria-label="Logout"
                 >
                   <LogOut className="h-5 w-5" />
                 </Button>
@@ -335,6 +342,7 @@ export function Sidebar() {
           size="icon"
           className={cn('mt-2 h-10 transition-all rounded-xl hover:bg-primary/5 hover:text-primary', isCollapsed ? 'mx-auto w-12' : 'w-full px-4 justify-start')}
           onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -367,6 +375,7 @@ export function Header() {
         size="icon"
         className="md:hidden hover:bg-primary/10 hover:text-primary transition-colors rounded-xl"
         onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
+        aria-label={sidebarState === 'hidden' ? 'Open menu' : 'Close menu'}
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -383,6 +392,7 @@ export function Header() {
               size="icon"
               className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
               onClick={toggleCommandPalette}
+              aria-label="Open command palette"
             >
               <Command className="h-5 w-5" />
             </Button>
@@ -401,6 +411,7 @@ export function Header() {
               size="icon"
               className="relative rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
               onClick={toggleNotificationPanel}
+              aria-label="Open notifications"
             >
               <Bell className="h-5 w-5" />
               {unreadCount > 0 && (
@@ -434,6 +445,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/20">
+      <SkipToContent targetId="main-content" />
       {/* Mesh Gradient Background (handled by globals.css body) */}
       
       {/* Mobile overlay when sidebar is open */}
@@ -458,7 +470,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         )}
       >
         <Header />
-        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 page-fade-in max-w-[1600px] w-full mx-auto">
+        <main id="main-content" className="flex-1 p-4 md:p-8 pb-24 md:pb-8 page-fade-in max-w-[1600px] w-full mx-auto">
           {children}
         </main>
       </div>

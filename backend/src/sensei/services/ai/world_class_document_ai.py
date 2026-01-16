@@ -21,6 +21,7 @@ References:
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -28,6 +29,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, BinaryIO
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -839,7 +842,7 @@ class VisionLLMEnricher:
             self._registry = get_model_registry()
             self._check_readiness()
         except ImportError:
-            pass
+            logger.debug("Model registry not available for VisionLLMEnricher")
 
     def _check_readiness(self) -> bool:
         """Check if VLM models are ready in registry."""
@@ -864,7 +867,7 @@ class VisionLLMEnricher:
         if self._ready:
             # Placeholder for actual local VLM inference logic
             # In production, this would call onnxruntime with the 'vlm' model
-            pass
+            logger.warning("Vision LLM registry is ready, but local VLM inference is not wired. Falling back to simulation.")
 
         # Simulated VLM response
         hash_val = hashlib.md5(image_data).hexdigest()

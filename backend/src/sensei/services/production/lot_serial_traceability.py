@@ -887,7 +887,10 @@ class LotSerialTraceabilityService:
             lot = self._lots.get(lot_id_affected)
             if lot and lot.status == LotStatus.SHIPPED:
                 # Would query shipment data in real implementation
-                pass
+                logger.warning(
+                    "Shipment data lookup not implemented for shipped lot %s",
+                    lot_id_affected,
+                )
         
         return result
     

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Header
@@ -32,6 +32,18 @@ from sensei.api.utils import (
     build_updated_response,
     now_utc,
 )
+from sensei.models.quality_qms import QMSDocument, QualityAudit, AuditFinding, Gauge, CalibrationEvent, SCAR
+from sensei.services.quality.msa_service import MSAService
+from sensei.services.quality.customer_satisfaction_service import CustomerSatisfactionService
+from sensei.services.quality.process_capability_service import ProcessCapabilityService
+from sensei.services.quality.first_article_service import FirstArticleService
+from sensei.services.quality.self_inspection_service import SelfInspectionService
+from sensei.services.quality.lab_management_service import LabManagementService
+from sensei.services.quality.aql_sampling_service import AQLSamplingService
+from sensei.services.quality.traceability_service import TraceabilityService
+from sensei.services.quality.change_point_service import ChangePointService
+from sensei.services.quality.management_review_service import ManagementReviewService
+from sensei.services.quality.persistent_qms import PersistentQMSService
 from sensei.models.quality import (
     CAPA,
     CAPAAction,
@@ -63,6 +75,653 @@ from sensei.services.quality.quality_certification_gate import get_quality_certi
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# =============================================================================
+# MSA / GRR Schemas
+# =============================================================================
+
+
+class MSAStudyCreate(BaseModel):
+    gauge_id: UUID
+    name: str = Field(..., min_length=1, max_length=255)
+    study_type: str = Field(default="grr")
+    parts_count: int = Field(default=10, ge=2)
+    operators_count: int = Field(default=3, ge=2)
+    trials_count: int = Field(default=2, ge=2)
+    notes: Optional[str] = None
+
+
+class MSAMeasurementCreate(BaseModel):
+    operator_id: UUID
+    part_id: str = Field(..., min_length=1, max_length=100)
+    trial_number: int = Field(default=1, ge=1)
+    measured_value: Decimal
+
+
+class MSAResultResponse(BaseModel):
+    repeatability_ev: Decimal
+    reproducibility_av: Decimal
+    grr: Decimal
+    part_variation_pv: Decimal
+    total_variation_tv: Decimal
+    grr_percent: Decimal
+    ndc: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MSAMeasurementResponse(BaseModel):
+    id: UUID
+    study_id: UUID
+    operator_id: UUID
+    part_id: str
+    trial_number: int
+    measured_value: Decimal
+    measured_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MSAStudyResponse(BaseModel):
+    id: UUID
+    gauge_id: UUID
+    name: str
+    study_type: str
+    status: str
+    parts_count: int
+    operators_count: int
+    trials_count: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    result: Optional[MSAResultResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Process Capability (Cp/Cpk) Schemas
+# =============================================================================
+
+
+class ProcessCapabilityStudyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    process_name: str = Field(..., min_length=1, max_length=255)
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    lsl: Decimal
+    usl: Decimal
+    target: Optional[Decimal] = None
+    unit: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ProcessCapabilityMeasurementCreate(BaseModel):
+    measured_value: Decimal
+    sample_label: Optional[str] = None
+
+
+class ProcessCapabilityResultResponse(BaseModel):
+    mean: Decimal
+    std_dev: Decimal
+    cp: Decimal
+    cpk: Decimal
+    cpu: Decimal
+    cpl: Decimal
+    sample_size: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProcessCapabilityMeasurementResponse(BaseModel):
+    id: UUID
+    study_id: UUID
+    sample_label: Optional[str] = None
+    measured_value: Decimal
+    measured_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProcessCapabilityStudyResponse(BaseModel):
+    id: UUID
+    name: str
+    process_name: str
+    characteristic: str
+    status: str
+    lsl: Decimal
+    usl: Decimal
+    target: Optional[Decimal] = None
+    unit: Optional[str] = None
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    result: Optional[ProcessCapabilityResultResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Customer Satisfaction Schemas
+# =============================================================================
+
+
+class CustomerComplaintCreate(BaseModel):
+    customer_id: Optional[UUID] = None
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    received_at: Optional[datetime] = None
+    status: Optional[str] = Field(default="received")
+    lot_id: Optional[str] = Field(None, max_length=100)
+    related_nc_id: Optional[int] = None
+    related_capa_id: Optional[int] = None
+    rma_number: Optional[str] = Field(None, max_length=50)
+    root_cause: Optional[str] = None
+    containment_actions: Optional[list[str]] = None
+    corrective_actions: Optional[list[str]] = None
+
+
+class CustomerComplaintUpdate(BaseModel):
+    status: Optional[str] = None
+    root_cause: Optional[str] = None
+    containment_actions: Optional[list[str]] = None
+    corrective_actions: Optional[list[str]] = None
+    closed_at: Optional[datetime] = None
+
+
+class CustomerComplaintResponse(BaseModel):
+    id: UUID
+    customer_id: Optional[UUID] = None
+    title: str
+    description: str
+    received_at: datetime
+    status: str
+    lot_id: Optional[str] = None
+    related_nc_id: Optional[int] = None
+    related_capa_id: Optional[int] = None
+    rma_number: Optional[str] = None
+    root_cause: Optional[str] = None
+    containment_actions: Optional[list[str]] = None
+    corrective_actions: Optional[list[str]] = None
+    closed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerSurveyCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    status: Optional[str] = Field(default="active")
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    target_responses: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class CustomerSurveyResponseCreate(BaseModel):
+    customer_id: Optional[UUID] = None
+    respondent_name: Optional[str] = None
+    respondent_email: Optional[str] = None
+    nps_score: int = Field(..., ge=0, le=10)
+    comment: Optional[str] = None
+
+
+class CustomerSurveyResponseOut(BaseModel):
+    id: UUID
+    survey_id: UUID
+    customer_id: Optional[UUID] = None
+    respondent_name: Optional[str] = None
+    respondent_email: Optional[str] = None
+    nps_score: int
+    comment: Optional[str] = None
+    submitted_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerSurveyOut(BaseModel):
+    id: UUID
+    title: str
+    description: Optional[str] = None
+    status: str
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    target_responses: Optional[int] = None
+    notes: Optional[str] = None
+    responses: Optional[list[CustomerSurveyResponseOut]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# FAI / AS9102 Schemas
+# =============================================================================
+
+
+class FAIInspectionCreate(BaseModel):
+    inspection_number: str = Field(..., min_length=1, max_length=50)
+    product_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
+    part_number: str = Field(..., min_length=1, max_length=100)
+    revision: Optional[str] = None
+    drawing_number: Optional[str] = None
+    inspector_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class FAIInspectionUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FAICharacteristicCreate(BaseModel):
+    characteristic_number: int = Field(..., ge=1)
+    requirement: str = Field(..., min_length=1, max_length=255)
+    nominal: Optional[Decimal] = None
+    tolerance: Optional[str] = None
+    actual: Optional[Decimal] = None
+    result: str = Field(default="pending")
+    method: Optional[str] = None
+    tool_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class FAICharacteristicResponse(BaseModel):
+    id: UUID
+    inspection_id: UUID
+    characteristic_number: int
+    requirement: str
+    nominal: Optional[Decimal] = None
+    tolerance: Optional[str] = None
+    actual: Optional[Decimal] = None
+    result: str
+    method: Optional[str] = None
+    tool_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FAIInspectionResponse(BaseModel):
+    id: UUID
+    inspection_number: str
+    product_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
+    part_number: str
+    revision: Optional[str] = None
+    drawing_number: Optional[str] = None
+    status: str
+    inspector_id: Optional[UUID] = None
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    characteristics: Optional[list[FAICharacteristicResponse]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Operator Self-Inspection Schemas
+# =============================================================================
+
+
+class SelfInspectionCreate(BaseModel):
+    inspection_number: str = Field(..., min_length=1, max_length=50)
+    work_order_id: Optional[UUID] = None
+    product_id: Optional[UUID] = None
+    operator_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class SelfInspectionUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SelfInspectionCheckCreate(BaseModel):
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    specification: Optional[str] = None
+    actual_value: Optional[str] = None
+    result: str = Field(default="pending")
+    notes: Optional[str] = None
+
+
+class SelfInspectionCheckResponse(BaseModel):
+    id: UUID
+    inspection_id: UUID
+    characteristic: str
+    specification: Optional[str] = None
+    actual_value: Optional[str] = None
+    result: str
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfInspectionResponse(BaseModel):
+    id: UUID
+    inspection_number: str
+    work_order_id: Optional[UUID] = None
+    product_id: Optional[UUID] = None
+    operator_id: UUID
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    checks: Optional[list[SelfInspectionCheckResponse]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Lab Management Schemas
+# =============================================================================
+
+
+class LabTestMethodCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    standard: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    lower_spec: Optional[Decimal] = None
+    upper_spec: Optional[Decimal] = None
+    target_value: Optional[Decimal] = None
+    status: Optional[str] = Field(default="active")
+
+
+class LabTestMethodResponse(BaseModel):
+    id: UUID
+    name: str
+    standard: Optional[str] = None
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    lower_spec: Optional[Decimal] = None
+    upper_spec: Optional[Decimal] = None
+    target_value: Optional[Decimal] = None
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LabSampleCreate(BaseModel):
+    sample_number: str = Field(..., min_length=1, max_length=50)
+    product_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
+    lot_number: Optional[str] = None
+    collected_at: Optional[datetime] = None
+    collected_by_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class LabSampleResponse(BaseModel):
+    id: UUID
+    sample_number: str
+    product_id: Optional[UUID] = None
+    work_order_id: Optional[UUID] = None
+    lot_number: Optional[str] = None
+    collected_at: datetime
+    collected_by_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LabTestRunCreate(BaseModel):
+    method_id: UUID
+    result_value: Optional[Decimal] = None
+    result_text: Optional[str] = None
+    result_status: str = Field(default="pending")
+    tester_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class LabTestRunResponse(BaseModel):
+    id: UUID
+    sample_id: UUID
+    method_id: UUID
+    result_value: Optional[Decimal] = None
+    result_text: Optional[str] = None
+    result_status: str
+    tested_at: datetime
+    tester_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# AQL Sampling Schemas
+# =============================================================================
+
+
+class AQLSamplingPlanCreate(BaseModel):
+    plan_code: str = Field(..., min_length=1, max_length=50)
+    standard: Optional[str] = Field(default="ANSI/ASQ Z1.4")
+    inspection_level: str = Field(default="II", max_length=10)
+    aql_level: str = Field(default="1.0", max_length=10)
+    lot_size_min: int = Field(..., ge=1)
+    lot_size_max: int = Field(..., ge=1)
+    sample_size: int = Field(..., ge=1)
+    accept_limit: int = Field(..., ge=0)
+    reject_limit: int = Field(..., ge=0)
+    status: Optional[str] = Field(default="active")
+    notes: Optional[str] = None
+
+
+class AQLSamplingPlanResponse(BaseModel):
+    id: UUID
+    plan_code: str
+    standard: str
+    inspection_level: str
+    aql_level: str
+    lot_size_min: int
+    lot_size_max: int
+    sample_size: int
+    accept_limit: int
+    reject_limit: int
+    status: str
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AQLLotInspectionCreate(BaseModel):
+    plan_id: UUID
+    lot_number: str = Field(..., min_length=1, max_length=100)
+    lot_size: int = Field(..., ge=1)
+    sample_size: Optional[int] = Field(default=None, ge=1)
+    defect_count: int = Field(..., ge=0)
+    inspected_at: Optional[datetime] = None
+    inspector_id: Optional[UUID] = None
+    defects_json: Optional[list[dict]] = None
+    notes: Optional[str] = None
+
+
+class AQLLotInspectionResponse(BaseModel):
+    id: UUID
+    plan_id: UUID
+    lot_number: str
+    lot_size: int
+    sample_size: int
+    defect_count: int
+    accept_limit: int
+    reject_limit: int
+    result: str
+    inspected_at: datetime
+    inspector_id: Optional[UUID] = None
+    inspection_level: str
+    aql_level: str
+    defects_json: Optional[list[dict]] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Traceability Schemas
+# =============================================================================
+
+
+class TraceabilityMatrixCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    status: Optional[str] = Field(default="active")
+    product_id: Optional[int] = None
+    work_order_id: Optional[int] = None
+    lot_number: Optional[str] = Field(None, max_length=100)
+    batch_id: Optional[str] = Field(None, max_length=100)
+    external_reference: Optional[str] = Field(None, max_length=100)
+    metadata_json: Optional[dict] = None
+
+
+class TraceabilityMatrixResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    status: str
+    product_id: Optional[int] = None
+    work_order_id: Optional[int] = None
+    lot_number: Optional[str] = None
+    batch_id: Optional[str] = None
+    external_reference: Optional[str] = None
+    metadata_json: Optional[dict] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TraceabilityLinkCreate(BaseModel):
+    matrix_id: UUID
+    link_type: str = Field(..., min_length=1, max_length=50)
+    reference_id: str = Field(..., min_length=1, max_length=100)
+    reference_table: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+    metadata_json: Optional[dict] = None
+
+
+class TraceabilityLinkResponse(BaseModel):
+    id: UUID
+    matrix_id: UUID
+    link_type: str
+    reference_id: str
+    reference_table: Optional[str] = None
+    notes: Optional[str] = None
+    metadata_json: Optional[dict] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Change Point Control Schemas
+# =============================================================================
+
+
+class ChangePointStudyCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    process_name: str = Field(..., min_length=1, max_length=255)
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    method: Optional[str] = Field(default="mean_shift")
+    sensitivity: Optional[Decimal] = None
+    status: Optional[str] = Field(default="active")
+    started_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    metadata_json: Optional[dict] = None
+
+
+class ChangePointObservationCreate(BaseModel):
+    observed_at: Optional[datetime] = None
+    value: Decimal
+    sample_label: Optional[str] = None
+
+
+class ChangePointEventResponse(BaseModel):
+    id: UUID
+    study_id: UUID
+    detected_at: datetime
+    index_position: int
+    change_magnitude: Decimal
+    confidence: Optional[Decimal] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChangePointObservationResponse(BaseModel):
+    id: UUID
+    study_id: UUID
+    observed_at: datetime
+    value: Decimal
+    sample_label: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChangePointStudyResponse(BaseModel):
+    id: UUID
+    name: str
+    process_name: str
+    characteristic: str
+    method: str
+    sensitivity: Optional[Decimal] = None
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    metadata_json: Optional[dict] = None
+    observations: Optional[list[ChangePointObservationResponse]] = None
+    events: Optional[list[ChangePointEventResponse]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Management Review Schemas
+# =============================================================================
+
+
+class ManagementReviewCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    period_start: datetime
+    period_end: datetime
+    scheduled_for: datetime
+    status: Optional[str] = Field(default="scheduled")
+    notes: Optional[str] = None
+    attendees: Optional[list[str]] = None
+    metrics_snapshot: Optional[dict] = None
+
+
+class ManagementReviewActionCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    status: Optional[str] = Field(default="open")
+    due_date: Optional[datetime] = None
+    assignee_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+
+class ManagementReviewActionResponse(BaseModel):
+    id: UUID
+    review_id: UUID
+    title: str
+    status: str
+    due_date: Optional[datetime] = None
+    assignee_id: Optional[UUID] = None
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ManagementReviewResponse(BaseModel):
+    id: UUID
+    title: str
+    period_start: datetime
+    period_end: datetime
+    status: str
+    scheduled_for: datetime
+    held_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    attendees: Optional[list[str]] = None
+    metrics_snapshot: Optional[dict] = None
+    actions: Optional[list[ManagementReviewActionResponse]] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =============================================================================
@@ -2654,3 +3313,1248 @@ async def delete_inspection(
     await db.commit()
 
     return build_deleted_response(resource_name="Inspection record")
+
+# =============================================================================
+# Advanced QMS Endpoints
+# =============================================================================
+
+
+@router.get("/documents", response_model=List[dict])
+async def list_qms_documents(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> Any:
+    """List all QMS documents."""
+    svc = PersistentQMSService(db)
+    docs = await svc.list_documents()
+    return [d.to_dict() for d in docs]
+
+
+@router.get("/audits", response_model=List[dict])
+async def list_qms_audits(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> Any:
+    """List all quality audits."""
+    svc = PersistentQMSService(db)
+    audits = await svc.list_audits()
+    return [a.to_dict() for a in audits]
+
+
+@router.get("/gauges", response_model=List[dict])
+async def list_qms_gauges(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> Any:
+    """List all measurement equipment."""
+    svc = PersistentQMSService(db)
+    gauges = await svc.list_gauges()
+    return [g.to_dict() for g in gauges]
+
+
+@router.get("/qms-stats", response_model=dict)
+async def get_qms_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> Any:
+    """Get advanced QMS statistics."""
+    svc = PersistentQMSService(db)
+    return await svc.get_qms_stats()
+
+
+# =============================================================================
+# MSA / GRR Endpoints
+# =============================================================================
+
+
+@router.get("/msa-studies", response_model=APIResponse[list[MSAStudyResponse]])
+async def list_msa_studies(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[MSAStudyResponse]]:
+    """List MSA studies."""
+    svc = MSAService(db)
+    studies = await svc.list_studies()
+    response = [MSAStudyResponse.model_validate(study) for study in studies]
+    return build_response(data=response)
+
+
+@router.get("/msa-studies/{study_id}", response_model=APIResponse[MSAStudyResponse])
+async def get_msa_study(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[MSAStudyResponse]:
+    """Get MSA study details."""
+    svc = MSAService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("MSA study", str(study_id))
+    return build_response(data=MSAStudyResponse.model_validate(study))
+
+
+@router.post("/msa-studies", response_model=APIResponse[MSAStudyResponse])
+async def create_msa_study(
+    data: MSAStudyCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[MSAStudyResponse]:
+    """Create a new MSA study."""
+    svc = MSAService(db)
+    study = await svc.create_study(
+        gauge_id=data.gauge_id,
+        name=data.name,
+        study_type=data.study_type,
+        parts_count=data.parts_count,
+        operators_count=data.operators_count,
+        trials_count=data.trials_count,
+        started_at=now_utc(),
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(study)
+    return build_created_response(
+        data=MSAStudyResponse.model_validate(study),
+        resource_name="MSA study",
+    )
+
+
+@router.post("/msa-studies/{study_id}/measurements", response_model=APIResponse[MSAMeasurementResponse])
+async def add_msa_measurement(
+    study_id: UUID,
+    data: MSAMeasurementCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[MSAMeasurementResponse]:
+    """Add measurement to an MSA study."""
+    svc = MSAService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("MSA study", str(study_id))
+    measurement = await svc.add_measurement(
+        study_id=study_id,
+        operator_id=data.operator_id,
+        part_id=data.part_id,
+        trial_number=data.trial_number,
+        measured_value=data.measured_value,
+    )
+    await db.commit()
+    await db.refresh(measurement)
+    return build_created_response(
+        data=MSAMeasurementResponse.model_validate(measurement),
+        resource_name="MSA measurement",
+    )
+
+
+@router.post("/msa-studies/{study_id}/compute", response_model=APIResponse[MSAResultResponse])
+async def compute_msa_grr(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[MSAResultResponse]:
+    """Compute GRR results for an MSA study."""
+    svc = MSAService(db)
+    result = await svc.compute_grr(study_id)
+    if not result:
+        raise NotFoundError("MSA study", str(study_id))
+    await db.commit()
+    await db.refresh(result)
+    return build_response(data=MSAResultResponse.model_validate(result))
+
+
+# =============================================================================
+# Process Capability (Cp/Cpk) Endpoints
+# =============================================================================
+
+
+@router.get("/capability-studies", response_model=APIResponse[list[ProcessCapabilityStudyResponse]])
+async def list_capability_studies(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ProcessCapabilityStudyResponse]]:
+    """List process capability studies."""
+    svc = ProcessCapabilityService(db)
+    studies = await svc.list_studies()
+    response = [ProcessCapabilityStudyResponse.model_validate(study) for study in studies]
+    return build_response(data=response)
+
+
+@router.get("/capability-studies/{study_id}", response_model=APIResponse[ProcessCapabilityStudyResponse])
+async def get_capability_study(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ProcessCapabilityStudyResponse]:
+    """Get process capability study details."""
+    svc = ProcessCapabilityService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Process capability study", str(study_id))
+    return build_response(data=ProcessCapabilityStudyResponse.model_validate(study))
+
+
+@router.post("/capability-studies", response_model=APIResponse[ProcessCapabilityStudyResponse])
+async def create_capability_study(
+    data: ProcessCapabilityStudyCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ProcessCapabilityStudyResponse]:
+    """Create a new process capability study."""
+    svc = ProcessCapabilityService(db)
+    study = await svc.create_study(
+        name=data.name,
+        process_name=data.process_name,
+        characteristic=data.characteristic,
+        lsl=data.lsl,
+        usl=data.usl,
+        target=data.target,
+        unit=data.unit,
+        notes=data.notes,
+        started_at=now_utc(),
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(study)
+    return build_created_response(
+        data=ProcessCapabilityStudyResponse.model_validate(study),
+        resource_name="Process capability study",
+    )
+
+
+@router.post(
+    "/capability-studies/{study_id}/measurements",
+    response_model=APIResponse[ProcessCapabilityMeasurementResponse],
+)
+async def add_capability_measurement(
+    study_id: UUID,
+    data: ProcessCapabilityMeasurementCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ProcessCapabilityMeasurementResponse]:
+    """Add measurement to a process capability study."""
+    svc = ProcessCapabilityService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Process capability study", str(study_id))
+    measurement = await svc.add_measurement(
+        study_id=study_id,
+        measured_value=data.measured_value,
+        sample_label=data.sample_label,
+    )
+    await db.commit()
+    await db.refresh(measurement)
+    return build_created_response(
+        data=ProcessCapabilityMeasurementResponse.model_validate(measurement),
+        resource_name="Process capability measurement",
+    )
+
+
+@router.post(
+    "/capability-studies/{study_id}/compute",
+    response_model=APIResponse[ProcessCapabilityResultResponse],
+)
+async def compute_process_capability(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ProcessCapabilityResultResponse]:
+    """Compute Cp/Cpk results for a process capability study."""
+    svc = ProcessCapabilityService(db)
+    result = await svc.compute_capability(study_id)
+    if not result:
+        raise NotFoundError("Process capability study", str(study_id))
+    await db.commit()
+    await db.refresh(result)
+    return build_response(data=ProcessCapabilityResultResponse.model_validate(result))
+
+
+# =============================================================================
+# Customer Satisfaction Endpoints
+# =============================================================================
+
+
+@router.get("/customer-complaints", response_model=APIResponse[list[CustomerComplaintResponse]])
+async def list_customer_complaints(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[CustomerComplaintResponse]]:
+    svc = CustomerSatisfactionService(db)
+    complaints = await svc.list_complaints()
+    response = [CustomerComplaintResponse.model_validate(c) for c in complaints]
+    return build_response(data=response)
+
+
+@router.get("/customer-complaints/{complaint_id}", response_model=APIResponse[CustomerComplaintResponse])
+async def get_customer_complaint(
+    complaint_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerComplaintResponse]:
+    svc = CustomerSatisfactionService(db)
+    complaint = await svc.get_complaint(complaint_id)
+    if not complaint:
+        raise NotFoundError("Customer complaint", str(complaint_id))
+    return build_response(data=CustomerComplaintResponse.model_validate(complaint))
+
+
+@router.post("/customer-complaints", response_model=APIResponse[CustomerComplaintResponse])
+async def create_customer_complaint(
+    data: CustomerComplaintCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerComplaintResponse]:
+    svc = CustomerSatisfactionService(db)
+    complaint = await svc.create_complaint(
+        customer_id=data.customer_id,
+        title=data.title,
+        description=data.description,
+        received_at=data.received_at or now_utc(),
+        status=data.status or "received",
+        lot_id=data.lot_id,
+        related_nc_id=data.related_nc_id,
+        related_capa_id=data.related_capa_id,
+        rma_number=data.rma_number,
+        root_cause=data.root_cause,
+        containment_actions=data.containment_actions,
+        corrective_actions=data.corrective_actions,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(complaint)
+    return build_created_response(
+        data=CustomerComplaintResponse.model_validate(complaint),
+        resource_name="Customer complaint",
+    )
+
+
+@router.patch("/customer-complaints/{complaint_id}", response_model=APIResponse[CustomerComplaintResponse])
+async def update_customer_complaint(
+    complaint_id: UUID,
+    data: CustomerComplaintUpdate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerComplaintResponse]:
+    svc = CustomerSatisfactionService(db)
+    complaint = await svc.get_complaint(complaint_id)
+    if not complaint:
+        raise NotFoundError("Customer complaint", str(complaint_id))
+
+    update_payload = data.model_dump(exclude_unset=True)
+    if "closed_at" in update_payload and update_payload["closed_at"] is None:
+        update_payload.pop("closed_at")
+    update_payload["updated_by_id"] = getattr(current_user, "id", None)
+    update_payload["updated_at"] = now_utc()
+
+    complaint = await svc.update_complaint(complaint, **update_payload)
+    await db.commit()
+    await db.refresh(complaint)
+    return build_updated_response(
+        data=CustomerComplaintResponse.model_validate(complaint),
+        resource_name="Customer complaint",
+    )
+
+
+@router.post("/customer-complaints/{complaint_id}/close", response_model=APIResponse[CustomerComplaintResponse])
+async def close_customer_complaint(
+    complaint_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerComplaintResponse]:
+    svc = CustomerSatisfactionService(db)
+    complaint = await svc.get_complaint(complaint_id)
+    if not complaint:
+        raise NotFoundError("Customer complaint", str(complaint_id))
+    complaint.updated_by_id = getattr(current_user, "id", None)
+    complaint.updated_at = now_utc()
+    complaint = await svc.close_complaint(complaint)
+    await db.commit()
+    await db.refresh(complaint)
+    return build_updated_response(
+        data=CustomerComplaintResponse.model_validate(complaint),
+        resource_name="Customer complaint",
+    )
+
+
+@router.get("/customer-surveys", response_model=APIResponse[list[CustomerSurveyOut]])
+async def list_customer_surveys(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[CustomerSurveyOut]]:
+    svc = CustomerSatisfactionService(db)
+    surveys = await svc.list_surveys()
+    response = [CustomerSurveyOut.model_validate(s) for s in surveys]
+    return build_response(data=response)
+
+
+@router.get("/customer-surveys/{survey_id}", response_model=APIResponse[CustomerSurveyOut])
+async def get_customer_survey(
+    survey_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerSurveyOut]:
+    svc = CustomerSatisfactionService(db)
+    survey = await svc.get_survey(survey_id)
+    if not survey:
+        raise NotFoundError("Customer survey", str(survey_id))
+    return build_response(data=CustomerSurveyOut.model_validate(survey))
+
+
+@router.post("/customer-surveys", response_model=APIResponse[CustomerSurveyOut])
+async def create_customer_survey(
+    data: CustomerSurveyCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerSurveyOut]:
+    svc = CustomerSatisfactionService(db)
+    survey = await svc.create_survey(
+        title=data.title,
+        description=data.description,
+        status=data.status or "active",
+        period_start=data.period_start,
+        period_end=data.period_end,
+        target_responses=data.target_responses,
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(survey)
+    return build_created_response(
+        data=CustomerSurveyOut.model_validate(survey),
+        resource_name="Customer survey",
+    )
+
+
+@router.post("/customer-surveys/{survey_id}/responses", response_model=APIResponse[CustomerSurveyResponseOut])
+async def add_customer_survey_response(
+    survey_id: UUID,
+    data: CustomerSurveyResponseCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CustomerSurveyResponseOut]:
+    svc = CustomerSatisfactionService(db)
+    survey = await svc.get_survey(survey_id)
+    if not survey:
+        raise NotFoundError("Customer survey", str(survey_id))
+    response = await svc.add_response(
+        survey_id=survey_id,
+        nps_score=data.nps_score,
+        customer_id=data.customer_id,
+        respondent_name=data.respondent_name,
+        respondent_email=data.respondent_email,
+        comment=data.comment,
+    )
+    await db.commit()
+    await db.refresh(response)
+    return build_created_response(
+        data=CustomerSurveyResponseOut.model_validate(response),
+        resource_name="Customer survey response",
+    )
+
+
+@router.get("/customer-satisfaction/stats", response_model=APIResponse[dict])
+async def get_customer_satisfaction_stats(
+    survey_id: Optional[UUID] = None,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[dict]:
+    svc = CustomerSatisfactionService(db)
+    nps = await svc.compute_nps_stats(survey_id)
+    complaints = await svc.complaint_stats()
+    return build_response(data={"nps": nps, "complaints": complaints})
+
+
+# =============================================================================
+# FAI / AS9102 Endpoints
+# =============================================================================
+
+
+@router.get("/fai-inspections", response_model=APIResponse[list[FAIInspectionResponse]])
+async def list_fai_inspections(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[FAIInspectionResponse]]:
+    svc = FirstArticleService(db)
+    inspections = await svc.list_inspections()
+    response = [FAIInspectionResponse.model_validate(i) for i in inspections]
+    return build_response(data=response)
+
+
+@router.get("/fai-inspections/{inspection_id}", response_model=APIResponse[FAIInspectionResponse])
+async def get_fai_inspection(
+    inspection_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[FAIInspectionResponse]:
+    svc = FirstArticleService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("FAI inspection", str(inspection_id))
+    return build_response(data=FAIInspectionResponse.model_validate(inspection))
+
+
+@router.post("/fai-inspections", response_model=APIResponse[FAIInspectionResponse])
+async def create_fai_inspection(
+    data: FAIInspectionCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[FAIInspectionResponse]:
+    svc = FirstArticleService(db)
+    inspection = await svc.create_inspection(
+        inspection_number=data.inspection_number,
+        product_id=data.product_id,
+        work_order_id=data.work_order_id,
+        part_number=data.part_number,
+        revision=data.revision,
+        drawing_number=data.drawing_number,
+        status="in_progress",
+        inspector_id=data.inspector_id or getattr(current_user, "id", None),
+        started_at=now_utc(),
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(inspection)
+    return build_created_response(
+        data=FAIInspectionResponse.model_validate(inspection),
+        resource_name="FAI inspection",
+    )
+
+
+@router.patch("/fai-inspections/{inspection_id}", response_model=APIResponse[FAIInspectionResponse])
+async def update_fai_inspection(
+    inspection_id: UUID,
+    data: FAIInspectionUpdate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[FAIInspectionResponse]:
+    svc = FirstArticleService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("FAI inspection", str(inspection_id))
+
+    update_payload = data.model_dump(exclude_unset=True)
+    update_payload["updated_by_id"] = getattr(current_user, "id", None)
+    update_payload["updated_at"] = now_utc()
+    inspection = await svc.update_inspection(inspection, **update_payload)
+    await db.commit()
+    await db.refresh(inspection)
+    return build_updated_response(
+        data=FAIInspectionResponse.model_validate(inspection),
+        resource_name="FAI inspection",
+    )
+
+
+@router.post(
+    "/fai-inspections/{inspection_id}/characteristics",
+    response_model=APIResponse[FAICharacteristicResponse],
+)
+async def add_fai_characteristic(
+    inspection_id: UUID,
+    data: FAICharacteristicCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[FAICharacteristicResponse]:
+    svc = FirstArticleService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("FAI inspection", str(inspection_id))
+    characteristic = await svc.add_characteristic(
+        inspection_id=inspection_id,
+        characteristic_number=data.characteristic_number,
+        requirement=data.requirement,
+        nominal=data.nominal,
+        tolerance=data.tolerance,
+        actual=data.actual,
+        result=data.result,
+        method=data.method,
+        tool_id=data.tool_id,
+        notes=data.notes,
+    )
+    await db.commit()
+    await db.refresh(characteristic)
+    return build_created_response(
+        data=FAICharacteristicResponse.model_validate(characteristic),
+        resource_name="FAI characteristic",
+    )
+
+
+@router.post("/fai-inspections/{inspection_id}/close", response_model=APIResponse[FAIInspectionResponse])
+async def close_fai_inspection(
+    inspection_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[FAIInspectionResponse]:
+    svc = FirstArticleService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("FAI inspection", str(inspection_id))
+    inspection.updated_by_id = getattr(current_user, "id", None)
+    inspection.updated_at = now_utc()
+    inspection = await svc.close_inspection(inspection)
+    await db.commit()
+    await db.refresh(inspection)
+    return build_updated_response(
+        data=FAIInspectionResponse.model_validate(inspection),
+        resource_name="FAI inspection",
+    )
+
+
+# =============================================================================
+# Operator Self-Inspection Endpoints
+# =============================================================================
+
+
+@router.get("/self-inspections", response_model=APIResponse[list[SelfInspectionResponse]])
+async def list_self_inspections(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[SelfInspectionResponse]]:
+    svc = SelfInspectionService(db)
+    inspections = await svc.list_inspections()
+    response = [SelfInspectionResponse.model_validate(i) for i in inspections]
+    return build_response(data=response)
+
+
+@router.get("/self-inspections/{inspection_id}", response_model=APIResponse[SelfInspectionResponse])
+async def get_self_inspection(
+    inspection_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SelfInspectionResponse]:
+    svc = SelfInspectionService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("Self inspection", str(inspection_id))
+    return build_response(data=SelfInspectionResponse.model_validate(inspection))
+
+
+@router.post("/self-inspections", response_model=APIResponse[SelfInspectionResponse])
+async def create_self_inspection(
+    data: SelfInspectionCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SelfInspectionResponse]:
+    svc = SelfInspectionService(db)
+    inspection = await svc.create_inspection(
+        inspection_number=data.inspection_number,
+        work_order_id=data.work_order_id,
+        product_id=data.product_id,
+        operator_id=data.operator_id or getattr(current_user, "id", None),
+        status="in_progress",
+        started_at=now_utc(),
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(inspection)
+    return build_created_response(
+        data=SelfInspectionResponse.model_validate(inspection),
+        resource_name="Self inspection",
+    )
+
+
+@router.patch("/self-inspections/{inspection_id}", response_model=APIResponse[SelfInspectionResponse])
+async def update_self_inspection(
+    inspection_id: UUID,
+    data: SelfInspectionUpdate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SelfInspectionResponse]:
+    svc = SelfInspectionService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("Self inspection", str(inspection_id))
+    update_payload = data.model_dump(exclude_unset=True)
+    update_payload["updated_by_id"] = getattr(current_user, "id", None)
+    update_payload["updated_at"] = now_utc()
+    inspection = await svc.update_inspection(inspection, **update_payload)
+    await db.commit()
+    await db.refresh(inspection)
+    return build_updated_response(
+        data=SelfInspectionResponse.model_validate(inspection),
+        resource_name="Self inspection",
+    )
+
+
+@router.post(
+    "/self-inspections/{inspection_id}/checks",
+    response_model=APIResponse[SelfInspectionCheckResponse],
+)
+async def add_self_inspection_check(
+    inspection_id: UUID,
+    data: SelfInspectionCheckCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SelfInspectionCheckResponse]:
+    svc = SelfInspectionService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("Self inspection", str(inspection_id))
+    check = await svc.add_check(
+        inspection_id=inspection_id,
+        characteristic=data.characteristic,
+        specification=data.specification,
+        actual_value=data.actual_value,
+        result=data.result,
+        notes=data.notes,
+    )
+    await db.commit()
+    await db.refresh(check)
+    return build_created_response(
+        data=SelfInspectionCheckResponse.model_validate(check),
+        resource_name="Self inspection check",
+    )
+
+
+@router.post("/self-inspections/{inspection_id}/close", response_model=APIResponse[SelfInspectionResponse])
+async def close_self_inspection(
+    inspection_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SelfInspectionResponse]:
+    svc = SelfInspectionService(db)
+    inspection = await svc.get_inspection(inspection_id)
+    if not inspection:
+        raise NotFoundError("Self inspection", str(inspection_id))
+    inspection.updated_by_id = getattr(current_user, "id", None)
+    inspection.updated_at = now_utc()
+    inspection = await svc.close_inspection(inspection)
+    await db.commit()
+    await db.refresh(inspection)
+    return build_updated_response(
+        data=SelfInspectionResponse.model_validate(inspection),
+        resource_name="Self inspection",
+    )
+
+
+# =============================================================================
+# Lab Management Endpoints
+# =============================================================================
+
+
+@router.get("/lab-methods", response_model=APIResponse[list[LabTestMethodResponse]])
+async def list_lab_methods(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[LabTestMethodResponse]]:
+    svc = LabManagementService(db)
+    methods = await svc.list_methods()
+    response = [LabTestMethodResponse.model_validate(m) for m in methods]
+    return build_response(data=response)
+
+
+@router.post("/lab-methods", response_model=APIResponse[LabTestMethodResponse])
+async def create_lab_method(
+    data: LabTestMethodCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[LabTestMethodResponse]:
+    svc = LabManagementService(db)
+    method = await svc.create_method(
+        name=data.name,
+        standard=data.standard,
+        description=data.description,
+        unit=data.unit,
+        lower_spec=data.lower_spec,
+        upper_spec=data.upper_spec,
+        target_value=data.target_value,
+        status=data.status or "active",
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(method)
+    return build_created_response(
+        data=LabTestMethodResponse.model_validate(method),
+        resource_name="Lab test method",
+    )
+
+
+@router.get("/lab-samples", response_model=APIResponse[list[LabSampleResponse]])
+async def list_lab_samples(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[LabSampleResponse]]:
+    svc = LabManagementService(db)
+    samples = await svc.list_samples()
+    response = [LabSampleResponse.model_validate(s) for s in samples]
+    return build_response(data=response)
+
+
+@router.post("/lab-samples", response_model=APIResponse[LabSampleResponse])
+async def create_lab_sample(
+    data: LabSampleCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[LabSampleResponse]:
+    svc = LabManagementService(db)
+    sample = await svc.create_sample(
+        sample_number=data.sample_number,
+        product_id=data.product_id,
+        work_order_id=data.work_order_id,
+        lot_number=data.lot_number,
+        collected_at=data.collected_at or now_utc(),
+        collected_by_id=data.collected_by_id or getattr(current_user, "id", None),
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(sample)
+    return build_created_response(
+        data=LabSampleResponse.model_validate(sample),
+        resource_name="Lab sample",
+    )
+
+
+@router.post("/lab-samples/{sample_id}/tests", response_model=APIResponse[LabTestRunResponse])
+async def add_lab_test_run(
+    sample_id: UUID,
+    data: LabTestRunCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[LabTestRunResponse]:
+    svc = LabManagementService(db)
+    sample = await svc.get_sample(sample_id)
+    if not sample:
+        raise NotFoundError("Lab sample", str(sample_id))
+    test_run = await svc.add_test_run(
+        sample_id=sample_id,
+        method_id=data.method_id,
+        result_value=data.result_value,
+        result_text=data.result_text,
+        result_status=data.result_status,
+        tester_id=data.tester_id or getattr(current_user, "id", None),
+        notes=data.notes,
+    )
+    await db.commit()
+    await db.refresh(test_run)
+    return build_created_response(
+        data=LabTestRunResponse.model_validate(test_run),
+        resource_name="Lab test run",
+    )
+
+
+# =============================================================================
+# AQL Sampling Endpoints
+# =============================================================================
+
+
+@router.get("/aql/plans", response_model=APIResponse[list[AQLSamplingPlanResponse]])
+async def list_aql_plans(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[AQLSamplingPlanResponse]]:
+    svc = AQLSamplingService(db)
+    plans = await svc.list_plans()
+    response = [AQLSamplingPlanResponse.model_validate(plan) for plan in plans]
+    return build_response(data=response)
+
+
+@router.post("/aql/plans", response_model=APIResponse[AQLSamplingPlanResponse])
+async def create_aql_plan(
+    data: AQLSamplingPlanCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[AQLSamplingPlanResponse]:
+    if data.lot_size_min > data.lot_size_max:
+        raise ConflictError("lot_size_min cannot exceed lot_size_max")
+    svc = AQLSamplingService(db)
+    plan = await svc.create_plan(
+        plan_code=data.plan_code,
+        standard=data.standard or "ANSI/ASQ Z1.4",
+        inspection_level=data.inspection_level,
+        aql_level=data.aql_level,
+        lot_size_min=data.lot_size_min,
+        lot_size_max=data.lot_size_max,
+        sample_size=data.sample_size,
+        accept_limit=data.accept_limit,
+        reject_limit=data.reject_limit,
+        status=data.status or "active",
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(plan)
+    return build_created_response(
+        data=AQLSamplingPlanResponse.model_validate(plan),
+        resource_name="AQL sampling plan",
+    )
+
+
+@router.get("/aql/inspections", response_model=APIResponse[list[AQLLotInspectionResponse]])
+async def list_aql_inspections(
+    plan_id: Optional[UUID] = Query(default=None),
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[AQLLotInspectionResponse]]:
+    svc = AQLSamplingService(db)
+    inspections = await svc.list_inspections(plan_id=plan_id)
+    response = [AQLLotInspectionResponse.model_validate(i) for i in inspections]
+    return build_response(data=response)
+
+
+@router.post("/aql/inspections", response_model=APIResponse[AQLLotInspectionResponse])
+async def create_aql_inspection(
+    data: AQLLotInspectionCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[AQLLotInspectionResponse]:
+    svc = AQLSamplingService(db)
+    plan = await svc.get_plan(data.plan_id)
+    if not plan:
+        raise NotFoundError("AQL sampling plan", str(data.plan_id))
+    try:
+        inspection = await svc.create_inspection(
+            plan=plan,
+            lot_number=data.lot_number,
+            lot_size=data.lot_size,
+            sample_size=data.sample_size,
+            defect_count=data.defect_count,
+            inspected_at=data.inspected_at or now_utc(),
+            inspector_id=data.inspector_id or getattr(current_user, "id", None),
+            defects_json=data.defects_json,
+            notes=data.notes,
+            created_by_id=getattr(current_user, "id", None),
+            updated_by_id=getattr(current_user, "id", None),
+            owner_id=getattr(current_user, "id", None),
+        )
+    except ValueError as exc:
+        raise ConflictError(str(exc))
+    await db.commit()
+    await db.refresh(inspection)
+    return build_created_response(
+        data=AQLLotInspectionResponse.model_validate(inspection),
+        resource_name="AQL lot inspection",
+    )
+
+
+# =============================================================================
+# Traceability Endpoints
+# =============================================================================
+
+
+@router.get("/traceability/matrices", response_model=APIResponse[list[TraceabilityMatrixResponse]])
+async def list_traceability_matrices(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[TraceabilityMatrixResponse]]:
+    svc = TraceabilityService(db)
+    matrices = await svc.list_matrices()
+    response = [TraceabilityMatrixResponse.model_validate(m) for m in matrices]
+    return build_response(data=response)
+
+
+@router.post("/traceability/matrices", response_model=APIResponse[TraceabilityMatrixResponse])
+async def create_traceability_matrix(
+    data: TraceabilityMatrixCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[TraceabilityMatrixResponse]:
+    svc = TraceabilityService(db)
+    matrix = await svc.create_matrix(
+        name=data.name,
+        description=data.description,
+        status=data.status or "active",
+        product_id=data.product_id,
+        work_order_id=data.work_order_id,
+        lot_number=data.lot_number,
+        batch_id=data.batch_id,
+        external_reference=data.external_reference,
+        metadata_json=data.metadata_json,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(matrix)
+    return build_created_response(
+        data=TraceabilityMatrixResponse.model_validate(matrix),
+        resource_name="Traceability matrix",
+    )
+
+
+@router.get("/traceability/links", response_model=APIResponse[list[TraceabilityLinkResponse]])
+async def list_traceability_links(
+    matrix_id: Optional[UUID] = Query(default=None),
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[TraceabilityLinkResponse]]:
+    svc = TraceabilityService(db)
+    links = await svc.list_links(matrix_id=matrix_id)
+    response = [TraceabilityLinkResponse.model_validate(l) for l in links]
+    return build_response(data=response)
+
+
+@router.post("/traceability/links", response_model=APIResponse[TraceabilityLinkResponse])
+async def create_traceability_link(
+    data: TraceabilityLinkCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[TraceabilityLinkResponse]:
+    svc = TraceabilityService(db)
+    matrix = await svc.get_matrix(data.matrix_id)
+    if not matrix:
+        raise NotFoundError("Traceability matrix", str(data.matrix_id))
+    link = await svc.add_link(
+        matrix_id=data.matrix_id,
+        link_type=data.link_type,
+        reference_id=data.reference_id,
+        reference_table=data.reference_table,
+        notes=data.notes,
+        metadata_json=data.metadata_json,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(link)
+    return build_created_response(
+        data=TraceabilityLinkResponse.model_validate(link),
+        resource_name="Traceability link",
+    )
+
+
+# =============================================================================
+# Change Point Control Endpoints
+# =============================================================================
+
+
+@router.get("/change-point/studies", response_model=APIResponse[list[ChangePointStudyResponse]])
+async def list_change_point_studies(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ChangePointStudyResponse]]:
+    svc = ChangePointService(db)
+    studies = await svc.list_studies()
+    response = [ChangePointStudyResponse.model_validate(s) for s in studies]
+    return build_response(data=response)
+
+
+@router.post("/change-point/studies", response_model=APIResponse[ChangePointStudyResponse])
+async def create_change_point_study(
+    data: ChangePointStudyCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ChangePointStudyResponse]:
+    svc = ChangePointService(db)
+    study = await svc.create_study(
+        name=data.name,
+        process_name=data.process_name,
+        characteristic=data.characteristic,
+        method=data.method or "mean_shift",
+        sensitivity=data.sensitivity,
+        status=data.status or "active",
+        started_at=data.started_at or now_utc(),
+        notes=data.notes,
+        metadata_json=data.metadata_json,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(study)
+    return build_created_response(
+        data=ChangePointStudyResponse.model_validate(study),
+        resource_name="Change point study",
+    )
+
+
+@router.post("/change-point/studies/{study_id}/observations", response_model=APIResponse[ChangePointObservationResponse])
+async def add_change_point_observation(
+    study_id: UUID,
+    data: ChangePointObservationCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ChangePointObservationResponse]:
+    svc = ChangePointService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Change point study", str(study_id))
+    obs = await svc.add_observation(
+        study_id=study_id,
+        observed_at=data.observed_at or now_utc(),
+        value=data.value,
+        sample_label=data.sample_label,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(obs)
+    return build_created_response(
+        data=ChangePointObservationResponse.model_validate(obs),
+        resource_name="Change point observation",
+    )
+
+
+@router.get("/change-point/studies/{study_id}/observations", response_model=APIResponse[list[ChangePointObservationResponse]])
+async def list_change_point_observations(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ChangePointObservationResponse]]:
+    svc = ChangePointService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Change point study", str(study_id))
+    observations = await svc.list_observations(study_id)
+    response = [ChangePointObservationResponse.model_validate(o) for o in observations]
+    return build_response(data=response)
+
+
+@router.get("/change-point/studies/{study_id}/events", response_model=APIResponse[list[ChangePointEventResponse]])
+async def list_change_point_events(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ChangePointEventResponse]]:
+    svc = ChangePointService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Change point study", str(study_id))
+    events = await svc.list_events(study_id)
+    response = [ChangePointEventResponse.model_validate(e) for e in events]
+    return build_response(data=response)
+
+
+@router.post("/change-point/studies/{study_id}/detect", response_model=APIResponse[ChangePointEventResponse | None])
+async def detect_change_point(
+    study_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ChangePointEventResponse | None]:
+    svc = ChangePointService(db)
+    study = await svc.get_study(study_id)
+    if not study:
+        raise NotFoundError("Change point study", str(study_id))
+    event = await svc.detect_change_points(study)
+    await db.commit()
+    if event:
+        await db.refresh(event)
+    response = ChangePointEventResponse.model_validate(event) if event else None
+    return build_response(data=response)
+
+
+# =============================================================================
+# Management Review Endpoints
+# =============================================================================
+
+
+@router.get("/management-reviews", response_model=APIResponse[list[ManagementReviewResponse]])
+async def list_management_reviews(
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ManagementReviewResponse]]:
+    svc = ManagementReviewService(db)
+    reviews = await svc.list_reviews()
+    response = [ManagementReviewResponse.model_validate(r) for r in reviews]
+    return build_response(data=response)
+
+
+@router.post("/management-reviews", response_model=APIResponse[ManagementReviewResponse])
+async def create_management_review(
+    data: ManagementReviewCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ManagementReviewResponse]:
+    svc = ManagementReviewService(db)
+    review = await svc.create_review(
+        title=data.title,
+        period_start=data.period_start,
+        period_end=data.period_end,
+        status=data.status or "scheduled",
+        scheduled_for=data.scheduled_for,
+        notes=data.notes,
+        attendees=data.attendees,
+        metrics_snapshot=data.metrics_snapshot,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(review)
+    return build_created_response(
+        data=ManagementReviewResponse.model_validate(review),
+        resource_name="Management review",
+    )
+
+
+@router.post("/management-reviews/{review_id}/actions", response_model=APIResponse[ManagementReviewActionResponse])
+async def add_management_review_action(
+    review_id: UUID,
+    data: ManagementReviewActionCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ManagementReviewActionResponse]:
+    svc = ManagementReviewService(db)
+    review = await svc.get_review(review_id)
+    if not review:
+        raise NotFoundError("Management review", str(review_id))
+    action = await svc.add_action(
+        review_id=review_id,
+        title=data.title,
+        status=data.status or "open",
+        due_date=data.due_date,
+        assignee_id=data.assignee_id,
+        notes=data.notes,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    await db.commit()
+    await db.refresh(action)
+    return build_created_response(
+        data=ManagementReviewActionResponse.model_validate(action),
+        resource_name="Management review action",
+    )
+
+
+@router.get("/management-reviews/actions", response_model=APIResponse[list[ManagementReviewActionResponse]])
+async def list_management_review_actions(
+    review_id: Optional[UUID] = Query(default=None),
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[list[ManagementReviewActionResponse]]:
+    svc = ManagementReviewService(db)
+    actions = await svc.list_actions(review_id=review_id)
+    response = [ManagementReviewActionResponse.model_validate(a) for a in actions]
+    return build_response(data=response)
+
+
+@router.post("/management-reviews/{review_id}/close", response_model=APIResponse[ManagementReviewResponse])
+async def close_management_review(
+    review_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[ManagementReviewResponse]:
+    svc = ManagementReviewService(db)
+    review = await svc.get_review(review_id)
+    if not review:
+        raise NotFoundError("Management review", str(review_id))
+    review.updated_by_id = getattr(current_user, "id", None)
+    review.updated_at = now_utc()
+    review = await svc.close_review(review)
+    await db.commit()
+    await db.refresh(review)
+    return build_updated_response(
+        data=ManagementReviewResponse.model_validate(review),
+        resource_name="Management review",
+    )

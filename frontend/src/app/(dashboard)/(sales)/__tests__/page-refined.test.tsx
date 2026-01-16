@@ -23,32 +23,51 @@ describe('PipelinePage - Refined Version', () => {
   const mockRFQs = [
     {
       id: '1',
-      rfqNumber: 'RFQ-2024-001',
-      customerName: 'Acme Corp',
-      customerId: 'c1',
+      rfq_number: 'RFQ-2024-001',
+      customer_id: 'c1',
+      customer: {
+        id: 'c1',
+        name: 'Acme Corp',
+        email: 'contact@acme.test',
+      },
       title: 'Custom parts order',
       description: 'High-precision components',
-      dueDate: new Date(Date.now() + 86400000).toISOString(),
-      receivedDate: new Date(Date.now() - 86400000).toISOString(),
-      estimatedValue: 50000,
+      due_date: new Date(Date.now() + 86400000).toISOString(),
+      received_date: new Date(Date.now() - 86400000).toISOString(),
+      estimated_value: 50000,
       priority: 'high' as const,
       status: 'new' as const,
-      assignee: { id: 'u1', name: 'John Doe', avatar: 'avatar.jpg' },
+      assigned_user: {
+        id: 'u1',
+        full_name: 'John Doe',
+        email: 'john.doe@test.com',
+        avatar_url: '/avatar.jpg',
+        role: 'sales',
+      },
       tags: ['precision', 'urgent'],
       version: 1,
       attachmentCount: 3,
       commentCount: 5,
       lastActivityAt: new Date().toISOString(),
+      attachments: [],
+      line_items: [],
+      currency: 'MAD',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
     {
       id: '2',
-      rfqNumber: 'RFQ-2024-002',
-      customerName: 'TechStart Inc',
-      customerId: 'c2',
+      rfq_number: 'RFQ-2024-002',
+      customer_id: 'c2',
+      customer: {
+        id: 'c2',
+        name: 'TechStart Inc',
+        email: 'hello@techstart.test',
+      },
       title: 'Prototype development',
-      dueDate: new Date(Date.now() + 172800000).toISOString(),
-      receivedDate: new Date(Date.now() - 172800000).toISOString(),
-      estimatedValue: 25000,
+      due_date: new Date(Date.now() + 172800000).toISOString(),
+      received_date: new Date(Date.now() - 172800000).toISOString(),
+      estimated_value: 25000,
       priority: 'medium' as const,
       status: 'reviewing' as const,
       tags: ['prototype'],
@@ -56,6 +75,11 @@ describe('PipelinePage - Refined Version', () => {
       attachmentCount: 1,
       commentCount: 2,
       lastActivityAt: new Date().toISOString(),
+      attachments: [],
+      line_items: [],
+      currency: 'MAD',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
   ];
 
@@ -163,7 +187,7 @@ describe('PipelinePage - Refined Version', () => {
 
       render(<PipelinePage />);
       // Skeletons or loading indicators should be present
-      const skeletons = document.querySelectorAll('.animate-pulse, [role="status"]');
+      const skeletons = document.querySelectorAll('.skeleton, [role="status"]');
       expect(skeletons.length).toBeGreaterThan(0);
     });
 

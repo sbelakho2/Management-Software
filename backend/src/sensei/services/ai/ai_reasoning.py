@@ -13,12 +13,15 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import logging
 from sensei.services.ai.onnx_text_embeddings import ONNXTextEmbedder
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 class RerankerModel(str, Enum):
@@ -129,7 +132,7 @@ class AIReasoningService:
             from sensei.services.ai.onnx_model_init import get_model_registry
             self._registry = get_model_registry()
         except ImportError:
-            pass
+            logger.debug("Model registry not available for AIReasoningService")
 
     def is_ready(self) -> bool:
         """Check if service and underlying models are ready."""

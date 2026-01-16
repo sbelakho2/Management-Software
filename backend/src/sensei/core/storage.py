@@ -13,6 +13,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 import structlog
+import anyio
 
 from sensei.core.config import settings
 

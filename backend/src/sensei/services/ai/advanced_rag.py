@@ -1474,13 +1474,13 @@ Summary:"""
                 )
                 self._fallback_embedder = ONNXTextEmbedder(config)
             except Exception:
-                pass
+                logger.exception("Failed to initialize fallback embedder")
         
         if self._fallback_embedder:
             try:
                 return self._fallback_embedder.embed_text(text)
             except Exception:
-                pass
+                logger.exception("Fallback embedder failed; using hash embedding")
         
         # Final fallback: deterministic hash-based embedding
         import hashlib

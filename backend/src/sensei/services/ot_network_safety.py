@@ -15,8 +15,11 @@ import ipaddress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
+import logging
 from typing import TYPE_CHECKING, Sequence
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -121,7 +124,7 @@ class OTNetworkSafetyService:
                 if ip_obj in ipaddress.ip_network(cidr, strict=False):
                     return True
         except ValueError:
-            pass
+            logger.warning("Invalid IP address provided: %s", ip)
         return False
     
     def _find_zone_for_ip(self, ip: str) -> NetworkZone | None:

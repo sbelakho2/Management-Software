@@ -11,7 +11,9 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable
 from uuid import UUID, uuid4
+import logging
 
+logger = logging.getLogger(__name__)
 
 class TestResult(str, Enum):
     """Test execution result."""
@@ -1255,7 +1257,7 @@ class IntegrationTestService:
             try:
                 test.teardown_func(ctx)
             except Exception:
-                pass  # Log but don't fail test
+                logger.exception("Integration test teardown failed for %s", test.name)
 
         completed_at = datetime.now(timezone.utc)
         duration_ms = int((completed_at - started_at).total_seconds() * 1000)

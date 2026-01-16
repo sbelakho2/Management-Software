@@ -8,8 +8,11 @@ including setup wizards, progress tracking, and guided tours.
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class OnboardingStatus(str, Enum):
@@ -732,7 +735,7 @@ class GMOnboardingService:
             try:
                 listener(progress)
             except Exception:
-                pass
+                logger.exception("Onboarding listener failed")
     
     def reset_onboarding(self, user_id: str) -> bool:
         """Reset onboarding for a user (for testing/re-onboarding)."""

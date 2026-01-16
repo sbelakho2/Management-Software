@@ -107,7 +107,7 @@ describe('Table', () => {
       );
 
       const row = container.querySelector('tr');
-      expect(row).toHaveClass('hover:bg-muted/50');
+      expect(row).toHaveClass('hover:bg-primary/5');
     });
 
     it('renders non-hoverable row when specified', () => {
@@ -118,7 +118,7 @@ describe('Table', () => {
       );
 
       const row = container.querySelector('tr');
-      expect(row?.className).not.toContain('hover:bg-muted/50');
+      expect(row?.className).not.toContain('hover:bg-primary/5');
     });
 
     it('applies selected state', () => {
@@ -129,7 +129,7 @@ describe('Table', () => {
       );
 
       const row = container.querySelector('tr');
-      expect(row).toHaveClass('bg-muted');
+      expect(row).toHaveClass('bg-primary/10');
     });
   });
 

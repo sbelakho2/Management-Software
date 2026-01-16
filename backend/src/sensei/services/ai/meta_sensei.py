@@ -10,9 +10,10 @@ Implements:
 
 from __future__ import annotations
 
-import hashlib
-import re
 import ast
+import hashlib
+import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,6 +21,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -693,7 +696,7 @@ class DocImplementationSync:
                 feature = match.group(1) or match.group(2)
                 self._documented_features.add(feature)
         except Exception:
-            pass
+            logger.exception("Failed to read documented features from %s", self.doc_file)
         
         return self._documented_features
     
@@ -933,10 +936,10 @@ class OnDeviceCodeAuditor:
                     tree = ast.parse(content)
                     issues.extend(self._analyze_complexity(file_path, tree))
                 except SyntaxError:
-                    pass
+                    logger.warning("Syntax error parsing %s", file_path)
         
         except Exception:
-            pass
+            logger.exception("Failed to analyze code issues for %s", file_path)
         
         return issues
     
@@ -1107,7 +1110,7 @@ class AutonomousRefactoringSuggestor:
                             break
         
         except Exception:
-            pass
+            logger.exception("Failed to generate refactoring suggestions for %s", file_path)
         
         return suggestions
     

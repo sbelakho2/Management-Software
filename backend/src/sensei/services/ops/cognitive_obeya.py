@@ -7,6 +7,7 @@ Provides causal linking, predictive warnings, cross-functional synergy, and Heij
 
 from __future__ import annotations
 
+import logging
 import statistics
 import uuid
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ from sensei.models.cognitive_obeya import (
     ResourceRebalanceRecord,
     HeijunkaSuggestionRecord,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -1381,7 +1384,7 @@ class AsyncCognitiveObeya:
             if loop.is_running():
                 loop.create_task(manager.broadcast({"type": type, "payload": payload}))
         except Exception:
-            pass
+            logger.exception("Failed to broadcast Cognitive Obeya update")
 
     async def record_metric(
         self,

@@ -76,6 +76,7 @@ export function MobileBottomNav() {
               isActive && 'text-primary bg-primary/10 shadow-glow'
             )}
             aria-current={isActive ? 'page' : undefined}
+            aria-label={item.label}
           >
             <item.icon 
               className={cn('h-5 w-5 transition-transform duration-300', isActive && 'text-primary scale-110')} 

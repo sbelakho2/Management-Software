@@ -23,7 +23,7 @@ def reset_service():
     original_definitions = _service._definitions.copy()
     original_values = {k: list(v) for k, v in _service._values.items()}
     original_dashboards = _service._dashboards.copy()
-    original_deliveries = list(_muda_lesson_engine.deliveries)
+    original_deliveries = dict(_muda_lesson_engine.deliveries)
     
     yield
     

@@ -351,7 +351,7 @@ describe('CommandPalette Keyboard Navigation', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/dashboard');
+      expect(mockPush).toHaveBeenCalledWith('/today');
     });
   });
 });
@@ -399,7 +399,7 @@ describe('CommandPalette Mouse Interaction', () => {
       await userEvent.click(commandButton);
       
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith('/dashboard');
+        expect(mockPush).toHaveBeenCalledWith('/today');
       });
     }
   });
@@ -440,7 +440,7 @@ describe('CommandPalette Command Execution', () => {
       await userEvent.click(commandButton);
       
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith('/rfq');
+        expect(mockPush).toHaveBeenCalledWith('/pipeline');
         expect(useCommandPaletteStore.getState().isOpen).toBe(false);
       });
     }
@@ -788,7 +788,7 @@ describe('CommandPalette Integration', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/dashboard');
+      expect(mockPush).toHaveBeenCalledWith('/today');
       expect(useCommandPaletteStore.getState().isOpen).toBe(false);
     });
   });

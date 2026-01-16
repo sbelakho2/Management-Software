@@ -61,12 +61,17 @@ from sensei.api.v1.endpoints import (
     executive_intel,
     cognitive_obeya,
     maintenance,
+    finance,
+    purchase,
+    sales,
+    mrp,
     supply_chain,
     analytics,
     websockets,
     factory_launchpad,
     edge_ai,
     ai_health,
+    sites,
 )
 
 api_router = APIRouter()
@@ -129,9 +134,14 @@ api_router.include_router(common_thread.router, prefix="/common-thread", tags=["
 api_router.include_router(executive_intel.router, prefix="/executive", tags=["Executive"])
 api_router.include_router(cognitive_obeya.router, prefix="/cognitive-obeya", tags=["Cognitive Obeya"])
 api_router.include_router(maintenance.router, prefix="/maintenance", tags=["Maintenance"])
+api_router.include_router(finance.router, prefix="/finance", tags=["Finance"])
+api_router.include_router(purchase.router, prefix="/purchase", tags=["Purchase"])
+api_router.include_router(sales.router, prefix="/sales", tags=["Sales"])
+api_router.include_router(mrp.router, prefix="/mrp", tags=["MRP"])
 api_router.include_router(supply_chain.router, prefix="/supply-chain", tags=["Supply Chain"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(websockets.router, tags=["WebSockets"])
 api_router.include_router(factory_launchpad.router, prefix="/launchpad", tags=["Factory Launchpad"])
 api_router.include_router(edge_ai.router, prefix="/edge-ai", tags=["Edge AI"])
 api_router.include_router(ai_health.router, prefix="/ai", tags=["AI Readiness"])
+api_router.include_router(sites.router, tags=["Sites"])

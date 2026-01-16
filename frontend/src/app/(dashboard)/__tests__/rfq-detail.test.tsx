@@ -4,9 +4,11 @@ import RFQDetailPage from '../pipeline/[id]/page';
 
 // Mock next/link
 jest.mock('next/link', () => {
-  return ({ children, href }: { children: React.ReactNode; href: string }) => (
+  const LinkMock = ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href}>{children}</a>
   );
+  LinkMock.displayName = 'LinkMock';
+  return LinkMock;
 });
 
 // Mock next/navigation

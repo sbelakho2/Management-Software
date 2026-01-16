@@ -325,10 +325,8 @@ export function TourOverlay(): React.ReactElement | null {
     }
   }, [isActive, step]);
 
-  if (!isActive || !step) return null;
-
-  const spotlightStyle = getSpotlightStyle(targetElement, step.spotlightPadding);
-  const tooltipStyle = getTooltipStyle(targetElement, step.position || TOUR_POSITION.BOTTOM);
+  const spotlightStyle = getSpotlightStyle(targetElement, step?.spotlightPadding);
+  const tooltipStyle = getTooltipStyle(targetElement, step?.position || TOUR_POSITION.BOTTOM);
 
   const getClipPath = useCallback(() => {
     if (!targetElement) return undefined;
@@ -353,6 +351,8 @@ export function TourOverlay(): React.ReactElement | null {
       100% 0%
     )`;
   }, [targetElement, spotlightStyle]);
+
+  if (!isActive || !step) return null;
 
   return (
     <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-label="Product tour">

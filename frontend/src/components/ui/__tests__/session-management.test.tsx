@@ -1,3 +1,4 @@
+import { render, screen, within, waitFor, fireEvent, act } from '@testing-library/react';
 /**
  * Tests for Multi-Tab, Session & State Management Components
  * 
@@ -5,7 +6,6 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import {
@@ -606,10 +606,21 @@ describe('ToastProvider', () => {
     );
 
     await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Add'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
 
     expect(screen.getByTestId('count')).toHaveTextContent('3');
   });
@@ -927,7 +938,9 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('Notifications')).toBeInTheDocument();
@@ -942,7 +955,9 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByText('No notifications')).toBeInTheDocument();
   });
@@ -956,8 +971,12 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByText('Sensei Suggestion')).toBeInTheDocument();
     expect(screen.getByText('Try this approach')).toBeInTheDocument();
@@ -972,9 +991,15 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByText('2 unread')).toBeInTheDocument();
   });
@@ -1002,10 +1027,14 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    await user.click(screen.getByLabelText('Close notification center'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Close notification center'));
+    });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -1018,8 +1047,12 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByText('Mark all read')).toBeInTheDocument();
   });
@@ -1033,8 +1066,12 @@ describe('NotificationCenter', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
-    await user.click(screen.getByText('Open'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Open'));
+    });
 
     expect(screen.getByText('Clear all notifications')).toBeInTheDocument();
   });
@@ -1094,7 +1131,9 @@ describe('NotificationBell', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
 
     expect(screen.getByText('1')).toBeInTheDocument();
   });
@@ -1130,7 +1169,9 @@ describe('NotificationBell', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add Many'));
+    await act(async () => {
+      await user.click(screen.getByText('Add Many'));
+    });
 
     expect(screen.getByText('99+')).toBeInTheDocument();
   });
@@ -1144,7 +1185,9 @@ describe('NotificationBell', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByText('Add'));
+    await act(async () => {
+      await user.click(screen.getByText('Add'));
+    });
 
     expect(screen.getByLabelText('Notifications, 1 unread')).toBeInTheDocument();
   });
@@ -1159,7 +1202,9 @@ describe('NotificationBell', () => {
       </NotificationProvider>
     );
 
-    await user.click(screen.getByLabelText('Notifications'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Notifications'));
+    });
 
     expect(onClick).toHaveBeenCalled();
   });
@@ -1220,10 +1265,14 @@ describe('Session Management Integration', () => {
 
     expect(screen.getByTestId('session')).toHaveTextContent('active');
 
-    await user.click(screen.getByText('Add Toast'));
+    await act(async () => {
+      await user.click(screen.getByText('Add Toast'));
+    });
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    await user.click(screen.getByText('Add Notification'));
+    await act(async () => {
+      await user.click(screen.getByText('Add Notification'));
+    });
     // Notification added but not visible without center
   });
 });

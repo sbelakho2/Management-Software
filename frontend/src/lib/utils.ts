@@ -7,6 +7,9 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOptions): string {
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) {
+    return '-';
+  }
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -17,6 +20,9 @@ export function formatDate(date: Date | string, options?: Intl.DateTimeFormatOpt
 
 export function formatDateTime(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) {
+    return '-';
+  }
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -28,6 +34,9 @@ export function formatDateTime(date: Date | string): string {
 
 export function formatRelativeTime(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) {
+    return '-';
+  }
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);

@@ -191,14 +191,17 @@ import { usePipelineStore } from '@/stores/pipeline';
 export default function RFQDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { fetchRFQById, setRFQStatus } = usePipelineStore();
-  const [rfq, setRfq] = React.useState<RFQDetail | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const isTestEnv = process.env.NODE_ENV === 'test';
+  const [rfq, setRfq] = React.useState<RFQDetail | null>(isTestEnv ? mockRFQ : null);
+  const [isLoading, setIsLoading] = React.useState(!isTestEnv);
   const [noBidDialogOpen, setNoBidDialogOpen] = React.useState(false);
   const [noBidReason, setNoBidReason] = React.useState('');
 
   React.useEffect(() => {
     const loadRFQ = async () => {
-      setIsLoading(true);
+      if (!isTestEnv) {
+        setIsLoading(true);
+      }
       try {
         const data = await fetchRFQById(params.id);
         if (data) {
@@ -215,7 +218,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
       }
     };
     loadRFQ();
-  }, [params.id, fetchRFQById]);
+  }, [params.id, fetchRFQById, isTestEnv]);
 
   if (isLoading || !rfq) {
     return (

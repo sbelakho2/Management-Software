@@ -13,13 +13,13 @@ describe('Badge', () => {
     expect(screen.getByText('Default')).toHaveClass('bg-primary');
 
     rerender(<Badge variant="secondary">Secondary</Badge>);
-    expect(screen.getByText('Secondary')).toHaveClass('bg-secondary');
+    expect(screen.getByText('Secondary')).toHaveClass('bg-secondary/80');
 
     rerender(<Badge variant="destructive">Destructive</Badge>);
     expect(screen.getByText('Destructive')).toHaveClass('bg-destructive');
 
     rerender(<Badge variant="outline">Outline</Badge>);
-    expect(screen.getByText('Outline')).toHaveClass('border');
+    expect(screen.getByText('Outline')).toHaveClass('border-primary/20');
 
     rerender(<Badge variant="success">Success</Badge>);
     expect(screen.getByText('Success')).toHaveClass('text-success');
@@ -33,13 +33,13 @@ describe('Badge', () => {
 
   it('renders different sizes', () => {
     const { rerender } = render(<Badge size="default">Default Size</Badge>);
-    expect(screen.getByText('Default Size')).toHaveClass('px-2.5');
+    expect(screen.getByText('Default Size')).toHaveClass('px-3');
 
     rerender(<Badge size="sm">Small</Badge>);
     expect(screen.getByText('Small')).toHaveClass('px-2');
 
     rerender(<Badge size="lg">Large</Badge>);
-    expect(screen.getByText('Large')).toHaveClass('px-3');
+    expect(screen.getByText('Large')).toHaveClass('px-4');
   });
 
   it('applies custom className', () => {

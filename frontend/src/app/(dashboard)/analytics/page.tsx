@@ -21,6 +21,7 @@ import {
   Shield,
   Loader2,
   Download,
+  Cpu,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,6 +39,7 @@ import { useAnalyticsStore } from '@/stores';
 import { cn } from '@/lib/utils';
 import { PageGuard } from '@/components/layout/page-guard';
 import { ANALYTICS_ROLES } from '@/lib/page-access';
+import { KPI_COLORS, Sparkline } from '@/components/ui/data-visualization';
 
 // Types
 interface MLInsight {
@@ -479,7 +481,7 @@ export default function AnalyticsPage() {
                     </div>
                     <div className="h-24 w-full bg-muted/5 rounded-[1.5rem] border border-border/5 flex items-center justify-center">
                        <Sparkline 
-                         data={[trend.previous_value, trend.current_value, trend.prediction_7d, trend.prediction_30d]} 
+                         data={[trend.previous_value, trend.current_value, trend.prediction_7d, trend.prediction_30d ?? trend.prediction_7d]} 
                          width={800} 
                          height={60} 
                          color={KPI_COLORS.VOLUME} 

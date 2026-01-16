@@ -18,6 +18,48 @@ import {
   useAppState,
 } from '../use-capacitor';
 
+jest.mock('@capacitor/camera', () => ({
+  Camera: {
+    getPhoto: jest.fn().mockResolvedValue({
+      dataUrl: 'data:image/png;base64,mocked',
+      format: 'png',
+      webPath: 'mock://photo',
+    }),
+  },
+  CameraResultType: { DataUrl: 'dataUrl' },
+  CameraSource: { Camera: 'camera', Photos: 'photos', Prompt: 'prompt' },
+}));
+
+jest.mock('@capacitor/filesystem', () => ({
+  Filesystem: {
+    writeFile: jest.fn().mockResolvedValue(undefined),
+    readFile: jest.fn().mockResolvedValue({ data: 'mock-file-contents' }),
+    deleteFile: jest.fn().mockResolvedValue(undefined),
+  },
+  Directory: { Documents: 'Documents' },
+  Encoding: { UTF8: 'utf8' },
+}));
+
+jest.mock('@capacitor/push-notifications', () => ({
+  PushNotifications: {
+    requestPermissions: jest.fn().mockResolvedValue({ receive: 'granted' }),
+    register: jest.fn().mockResolvedValue(undefined),
+    addListener: jest.fn((event: string, callback: (data: { value: string }) => void) => {
+      if (event === 'registration') {
+        callback({ value: 'mock-device-token-for-testing' });
+      }
+      return { remove: jest.fn() };
+    }),
+  },
+}));
+
+jest.mock('capacitor-native-biometric', () => ({
+  NativeBiometric: {
+    isAvailable: jest.fn().mockResolvedValue({ isAvailable: true, biometryType: 1 }),
+    verifyIdentity: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
 // =============================================================================
 // Mocks
 // =============================================================================
@@ -849,6 +891,8 @@ describe('useAppState', () => {
     const removeEventListenerSpy = jest.spyOn(document, 'removeEventListener');
 
     const { unmount } = renderHook(() => useAppState());
+
+    act(() => {});
 
     unmount();
 

@@ -1161,23 +1161,23 @@ async def create_project(payload: ProjectCreate, db: DBSession, user: CurrentUse
         enable_issues=payload.enable_issues,
         enable_sprints=payload.enable_sprints,
         custom_user_story_statuses=payload.custom_user_story_statuses or [
-            {"id": "new", "name": "New", "color": "#94a3b8", "is_closed": false},
-            {"id": "ready", "name": "Ready", "color": "#3b82f6", "is_closed": false},
-            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": false},
-            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": false},
-            {"id": "done", "name": "Done", "color": "#10b981", "is_closed": true}
+            {"id": "new", "name": "New", "color": "#94a3b8", "is_closed": False},
+            {"id": "ready", "name": "Ready", "color": "#3b82f6", "is_closed": False},
+            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": False},
+            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": False},
+            {"id": "done", "name": "Done", "color": "#10b981", "is_closed": True}
         ],
         custom_task_statuses=payload.custom_task_statuses or [
-            {"id": "open", "name": "Open", "color": "#94a3b8", "is_closed": false},
-            {"id": "in_progress", "name": "In Progress", "color": "#3b82f6", "is_closed": false},
-            {"id": "completed", "name": "Completed", "color": "#10b981", "is_closed": true}
+            {"id": "open", "name": "Open", "color": "#94a3b8", "is_closed": False},
+            {"id": "in_progress", "name": "In Progress", "color": "#3b82f6", "is_closed": False},
+            {"id": "completed", "name": "Completed", "color": "#10b981", "is_closed": True}
         ],
         custom_issue_statuses=payload.custom_issue_statuses or [
-            {"id": "new", "name": "New", "color": "#ef4444", "is_closed": false},
-            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": false},
-            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": false},
-            {"id": "closed", "name": "Closed", "color": "#10b981", "is_closed": true},
-            {"id": "rejected", "name": "Rejected", "color": "#64748b", "is_closed": true}
+            {"id": "new", "name": "New", "color": "#ef4444", "is_closed": False},
+            {"id": "in_progress", "name": "In Progress", "color": "#8b5cf6", "is_closed": False},
+            {"id": "ready_for_test", "name": "Ready for Test", "color": "#f59e0b", "is_closed": False},
+            {"id": "closed", "name": "Closed", "color": "#10b981", "is_closed": True},
+            {"id": "rejected", "name": "Rejected", "color": "#64748b", "is_closed": True}
         ],
         created_by_id=getattr(user, "id", None),
         updated_by_id=getattr(user, "id", None),

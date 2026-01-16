@@ -1,3 +1,40 @@
+import { act } from 'react-dom/test-utils';
+
+jest.mock('axios', () => {
+  const isAxiosError = (error: any) => Boolean(error?.isAxiosError);
+  return {
+    __esModule: true,
+    default: {
+      post: jest.fn().mockImplementation((_url: string, payload: any) => {
+        const name = payload?.recipient?.name || 'there';
+        const keyPoints = payload?.key_points || [];
+        return Promise.resolve({
+          data: {
+            id: 'draft-1',
+            subject: payload?.reference_number ? `Update on ${payload.reference_number}` : 'Subject',
+            salutation: `Hello ${name}`,
+            body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
+            opening: 'Opening',
+            main_content: keyPoints.length ? keyPoints : ['Point 1'],
+            closing: 'Regards',
+            signature: 'Signature',
+            alternatives: [],
+            compliance_issues: [],
+            suggestions: [],
+            tokens_used: 0,
+            generation_time_ms: 1,
+            model_version: 'v1.0',
+            confidence_score: 0.9,
+          },
+        });
+      }),
+      isAxiosError,
+    },
+    isAxiosError,
+  };
+});
+
+const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
 /**
  * Tests for Email Composer Components
  */
@@ -50,11 +87,13 @@ describe('PurposeSelector', () => {
     const user = userEvent.setup();
     render(<PurposeSelector value={null} onChange={jest.fn()} />);
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
 
-    expect(screen.getByText('Missing Information Request')).toBeInTheDocument();
-    expect(screen.getByText('Quote Follow-up')).toBeInTheDocument();
-    expect(screen.getByText('Meeting Request')).toBeInTheDocument();
+    expect(await screen.findByText('Missing Information Request')).toBeInTheDocument();
+    expect(await screen.findByText('Quote Follow-up')).toBeInTheDocument();
+    expect(await screen.findByText('Meeting Request')).toBeInTheDocument();
   });
 
   it('should call onChange when option selected', async () => {
@@ -62,8 +101,13 @@ describe('PurposeSelector', () => {
     const onChange = jest.fn();
     render(<PurposeSelector value={null} onChange={onChange} />);
 
-    await user.click(screen.getByRole('button'));
-    await user.click(screen.getByText('Quote Follow-up'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
 
     expect(onChange).toHaveBeenCalledWith('quote_followup');
   });
@@ -72,8 +116,13 @@ describe('PurposeSelector', () => {
     const user = userEvent.setup();
     render(<PurposeSelector value={null} onChange={jest.fn()} />);
 
-    await user.click(screen.getByRole('button'));
-    await user.click(screen.getByText('Quote Follow-up'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
 
     expect(screen.queryByText('Missing Information Request')).not.toBeInTheDocument();
   });
@@ -88,7 +137,9 @@ describe('PurposeSelector', () => {
     const user = userEvent.setup();
     render(<PurposeSelector value="quote_followup" onChange={jest.fn()} />);
 
-    await user.click(screen.getByRole('button'));
+    await act(async () => {
+      await user.click(screen.getByRole('button'));
+    });
 
     // Get all elements with that text and find the one in the dropdown
     const selectedOptions = screen.getAllByText('Quote Follow-up');
@@ -123,7 +174,9 @@ describe('ToneSelector', () => {
     const onChange = jest.fn();
     render(<ToneSelector value="professional" onChange={onChange} />);
 
-    await user.click(screen.getByText('Formal'));
+    await act(async () => {
+      await user.click(screen.getByText('Formal'));
+    });
 
     expect(onChange).toHaveBeenCalledWith('formal');
   });
@@ -219,7 +272,9 @@ describe('RecipientInput', () => {
     const onEmailChange = jest.fn();
     render(<RecipientInput {...defaultProps} onEmailChange={onEmailChange} />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
+    });
 
     expect(onEmailChange).toHaveBeenCalled();
   });
@@ -229,7 +284,9 @@ describe('RecipientInput', () => {
     const onNameChange = jest.fn();
     render(<RecipientInput {...defaultProps} onNameChange={onNameChange} />);
 
-    await user.type(screen.getByLabelText('Recipient name'), 'John Doe');
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient name'), 'John Doe');
+    });
 
     expect(onNameChange).toHaveBeenCalled();
   });
@@ -266,10 +323,12 @@ describe('RecipientInput', () => {
 
     render(<RecipientInput {...defaultProps} recentRecipients={recentRecipients} />);
 
-    await user.click(screen.getByLabelText('Recipient email'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Recipient email'));
+    });
 
-    expect(screen.getByText('Recent User')).toBeInTheDocument();
-    expect(screen.getByText('recent@example.com')).toBeInTheDocument();
+    expect(await screen.findByText('Recent User')).toBeInTheDocument();
+    expect(await screen.findByText('recent@example.com')).toBeInTheDocument();
   });
 
   it('should call onSelectRecent when clicking recent recipient', async () => {
@@ -292,8 +351,13 @@ describe('RecipientInput', () => {
       />
     );
 
-    await user.click(screen.getByLabelText('Recipient email'));
-    await user.click(screen.getByText('Recent'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Recipient email'));
+    });
+    const recentRecipient = await screen.findByText('Recent');
+    await act(async () => {
+      await user.click(recentRecipient);
+    });
 
     expect(onSelectRecent).toHaveBeenCalledWith(recipient);
   });
@@ -323,8 +387,12 @@ describe('KeyPointsEditor', () => {
     const onChange = jest.fn();
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
-    await user.type(screen.getByLabelText('Add key point'), 'New point');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Add key point'), 'New point');
+    });
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+    });
 
     expect(onChange).toHaveBeenCalledWith(['New point']);
   });
@@ -335,7 +403,9 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
     const input = screen.getByLabelText('Add key point');
-    await user.type(input, 'Enter pressed{enter}');
+    await act(async () => {
+      await user.type(input, 'Enter pressed{enter}');
+    });
 
     expect(onChange).toHaveBeenCalledWith(['Enter pressed']);
   });
@@ -345,8 +415,12 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={[]} onChange={jest.fn()} />);
 
     const input = screen.getByLabelText('Add key point');
-    await user.type(input, 'Test point');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await act(async () => {
+      await user.type(input, 'Test point');
+    });
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+    });
 
     expect(input).toHaveValue('');
   });
@@ -363,7 +437,9 @@ describe('KeyPointsEditor', () => {
     const onChange = jest.fn();
     render(<KeyPointsEditor points={['Point 1', 'Point 2']} onChange={onChange} />);
 
-    await user.click(screen.getByLabelText('Remove: Point 1'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Remove: Point 1'));
+    });
 
     expect(onChange).toHaveBeenCalledWith(['Point 2']);
   });
@@ -373,7 +449,9 @@ describe('KeyPointsEditor', () => {
     const onChange = jest.fn();
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+    });
 
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -383,8 +461,12 @@ describe('KeyPointsEditor', () => {
     const onChange = jest.fn();
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
-    await user.type(screen.getByLabelText('Add key point'), '  Trimmed  ');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Add key point'), '  Trimmed  ');
+    });
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Add' }));
+    });
 
     expect(onChange).toHaveBeenCalledWith(['Trimmed']);
   });
@@ -812,9 +894,16 @@ describe('EmailComposer', () => {
     const user = userEvent.setup();
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
 
     expect(screen.getByText('Generate Draft')).not.toBeDisabled();
   });
@@ -870,10 +959,20 @@ describe('EmailComposer', () => {
     const user = userEvent.setup();
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
-    await user.click(screen.getByText('Generate Draft'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Generate Draft'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Draft Preview')).toBeInTheDocument();
@@ -884,10 +983,20 @@ describe('EmailComposer', () => {
     const user = userEvent.setup();
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
-    await user.click(screen.getByText('Generate Draft'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Generate Draft'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.queryByText('No Draft Yet')).not.toBeInTheDocument();
@@ -898,10 +1007,20 @@ describe('EmailComposer', () => {
     const user = userEvent.setup();
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
-    await user.click(screen.getByText('Generate Draft'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Generate Draft'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Regenerate')).toBeInTheDocument();
@@ -912,10 +1031,20 @@ describe('EmailComposer', () => {
     const user = userEvent.setup();
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
-    await user.click(screen.getByText('Generate Draft'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Generate Draft'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Send')).toBeInTheDocument();
@@ -935,16 +1064,29 @@ describe('EmailComposer', () => {
 
     render(<EmailComposer />);
 
-    await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
-    await user.click(screen.getByText('Select purpose...'));
-    await user.click(screen.getByText('Quote Follow-up'));
-    await user.click(screen.getByText('Generate Draft'));
+    await act(async () => {
+      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Select purpose...'));
+    });
+    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    await act(async () => {
+      await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.click(screen.getByText('Generate Draft'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Copy to clipboard')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText('Copy to clipboard'));
+    await act(async () => {
+      await user.click(screen.getByLabelText('Copy to clipboard'));
+      await flushPromises();
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Copied to clipboard!')).toBeInTheDocument();

@@ -150,9 +150,11 @@ class AuditLog(Base):
         if new_values and "status" in new_values:
             new_status = new_values["status"]
         
+        resolved_entity_id = entity_id if isinstance(entity_id, PyUUID) else str(entity_id)
+
         return cls(
             entity_type=entity_type,
-            entity_id=str(entity_id),
+            entity_id=resolved_entity_id,
             action=action,
             user_id=user_id,
             user_email=user_email,

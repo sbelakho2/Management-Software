@@ -17,3 +17,6 @@ export { useHRStore } from './hr';
 export { useCustomersStore } from './customers';
 export { useTasksStore } from './tasks';
 export { useTrainingStore } from './training';
+export { useFinanceStore } from './finance';
+export { useSitesStore } from './sites';
+export { useMrpStore } from './mrp';

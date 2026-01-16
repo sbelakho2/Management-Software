@@ -14,13 +14,15 @@ Tests cover all API endpoints for the Today Screen dashboard:
 """
 
 import pytest
+from types import SimpleNamespace
 from datetime import date, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
+from sensei.api import deps
 from sensei.services.ops.today_screen import (
     RiskCategory,
     AbnormalityType,
@@ -32,11 +34,23 @@ from sensei.services.ops.today_screen import (
 
 
 @pytest.fixture
-def client():
+def client(sample_user_id):
     """Provide a test client with fresh service."""
     reset_today_screen_service()
+    dummy_user = SimpleNamespace(id=UUID(sample_user_id))
+
+    async def override_get_current_user():
+        return dummy_user
+
+    async def override_get_db():
+        yield None
+
+    app.dependency_overrides[deps.get_current_user] = override_get_current_user
+    app.dependency_overrides[deps.get_db] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
+    app.dependency_overrides.pop(deps.get_current_user, None)
+    app.dependency_overrides.pop(deps.get_db, None)
 
 
 @pytest.fixture

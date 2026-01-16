@@ -40,6 +40,7 @@ export function CommandPalette() {
   const [search, setSearch] = React.useState('');
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const listboxId = React.useId();
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
@@ -117,6 +118,10 @@ export function CommandPalette() {
     return groups;
   }, [filteredCommands]);
 
+  const activeDescendantId = filteredCommands[selectedIndex]
+    ? `${listboxId}-item-${selectedIndex}`
+    : undefined;
+
   // Keyboard navigation
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -192,22 +197,28 @@ export function CommandPalette() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Type a command or search..."
             className="flex h-12 w-full rounded-md bg-transparent py-3 text-sm outline-none border-0 focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={listboxId}
+            aria-expanded={commandPaletteOpen}
+            aria-activedescendant={activeDescendantId}
           />
         </div>
-        <div className="max-h-[400px] overflow-y-auto p-2">
+        <div className="max-h-[400px] overflow-y-auto p-2" role="listbox" id={listboxId} aria-label="Command results">
           {filteredCommands.length === 0 ? (
             <p className="p-4 text-center text-sm text-muted-foreground">
               No results found.
             </p>
           ) : (
             Object.entries(groupedCommands).map(([group, items]) => (
-              <div key={group} className="mb-4">
-                <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+              <div key={group} className="mb-4" role="presentation">
+                <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground" role="presentation">
                   {group}
                 </p>
                 {items.map((cmd) => {
                   flatIndex++;
                   const currentIndex = flatIndex;
+                  const itemId = `${listboxId}-item-${currentIndex}`;
                   return (
                     <button
                       key={cmd.id}
@@ -216,6 +227,9 @@ export function CommandPalette() {
                         setCommandPaletteOpen(false);
                         setSearch('');
                       }}
+                      id={itemId}
+                      role="option"
+                      aria-selected={currentIndex === selectedIndex}
                       className={cn(
                         'relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-2 text-sm outline-none',
                         currentIndex === selectedIndex && 'bg-accent text-accent-foreground'

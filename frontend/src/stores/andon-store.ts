@@ -315,6 +315,48 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
   },
 
   triggerAndon: async (workCenterId, type, severity, description) => {
+    const now = new Date().toISOString();
+    const optimisticId = `andon-${Date.now()}`;
+    const optimisticEvent: AndonEvent = {
+      id: optimisticId,
+      andon_number: `AND-${Math.floor(Math.random() * 1000)}`,
+      work_center_id: workCenterId,
+      work_center: {
+        id: workCenterId,
+        name: 'Work Center',
+        code: 'WC',
+        type: 'assembly',
+        capacity: 0,
+        capacity_unit: 'units',
+        efficiency_percentage: 0,
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      },
+      type,
+      status: 'triggered',
+      severity,
+      description,
+      triggered_by: 'system',
+      triggered_user: {
+        id: 'system',
+        email: 'system@local',
+        full_name: 'System',
+        role: 'admin',
+        roles: ['admin'],
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      },
+      escalation_level: 0,
+      created_at: now,
+      updated_at: now,
+      created_by: 'system',
+      updated_by: 'system',
+    };
+
+    get().addEvent(optimisticEvent);
+
     try {
       const newEvent = await andonApi.triggerAndon({
         work_center_id: workCenterId,
@@ -323,7 +365,13 @@ export const useAndonStore = create<AndonStoreState & AndonStoreActions>((set, g
         description,
       });
 
-      get().addEvent(newEvent);
+      set((state) => {
+        const events = new Map(state.events);
+        events.delete(optimisticId);
+        events.set(newEvent.id, newEvent);
+        return { events };
+      });
+      get().recalculateMetrics();
     } catch (error) {
       console.error('Error triggering Andon event:', error);
     }

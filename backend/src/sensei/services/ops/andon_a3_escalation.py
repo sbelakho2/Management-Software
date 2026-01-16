@@ -13,8 +13,11 @@ Key features:
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class RecurrencePatternType(str, Enum):
@@ -417,7 +420,7 @@ class AndonA3EscalationService:
             try:
                 return datetime.fromisoformat(dt.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                pass
+                    logger.warning("Invalid event datetime: %s", dt)
         if isinstance(dt, datetime):
             return dt
         return datetime.min

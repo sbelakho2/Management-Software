@@ -95,36 +95,34 @@ const TableRow = React.forwardRef<
     selected?: boolean;
     hoverable?: boolean;
   }
->(({ className, selected = false, hoverable = true, ...props }, ref) => (
-  (() => {
-    const ctx = React.useContext(TableContext);
-    const row = (
-      <tr
-        ref={ref}
-        className={cn(
-          'border-b border-border/10 transition-all duration-300',
-          hoverable && 'hover:bg-primary/5',
-          selected && 'bg-primary/10',
-          'data-[state=selected]:bg-primary/10',
-          className
-        )}
-        {...props}
-      />
+>(({ className, selected = false, hoverable = true, ...props }, ref) => {
+  const ctx = React.useContext(TableContext);
+  const row = (
+    <tr
+      ref={ref}
+      className={cn(
+        'border-b border-border/10 transition-all duration-300',
+        hoverable && 'hover:bg-primary/5',
+        selected && 'bg-primary/10',
+        'data-[state=selected]:bg-primary/10',
+        className
+      )}
+      {...props}
+    />
+  );
+
+  // When rendered outside a <table>, wrap to keep HTML valid and avoid
+  // validateDOMNesting warnings in tests.
+  if (!ctx?.inTable) {
+    return (
+      <table className="w-full">
+        <tbody>{row}</tbody>
+      </table>
     );
+  }
 
-    // When rendered outside a <table>, wrap to keep HTML valid and avoid
-    // validateDOMNesting warnings in tests.
-    if (!ctx?.inTable) {
-      return (
-        <table className="w-full">
-          <tbody>{row}</tbody>
-        </table>
-      );
-    }
-
-    return row;
-  })()
-));
+  return row;
+});
 TableRow.displayName = 'TableRow';
 
 const TableHead = React.forwardRef<
@@ -134,46 +132,44 @@ const TableHead = React.forwardRef<
     sortDirection?: 'asc' | 'desc' | null;
     onSort?: () => void;
   }
->(({ className, sortable = false, sortDirection = null, onSort, children, ...props }, ref) => (
-  (() => {
-    const ctx = React.useContext(TableContext);
-    const head = (
-      <th
-        ref={ref}
-        className={cn(
-          'h-12 px-4 text-left align-middle font-heading font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60',
-          sortable && 'cursor-pointer select-none hover:text-primary transition-colors',
-          className
+>(({ className, sortable = false, sortDirection = null, onSort, children, ...props }, ref) => {
+  const ctx = React.useContext(TableContext);
+  const head = (
+    <th
+      ref={ref}
+      className={cn(
+        'h-12 px-4 text-left align-middle font-heading font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60',
+        sortable && 'cursor-pointer select-none hover:text-primary transition-colors',
+        className
+      )}
+      onClick={sortable && onSort ? onSort : undefined}
+      {...props}
+    >
+      <div className="flex items-center gap-2">
+        {children}
+        {sortable && (
+          <span className="text-xs opacity-50">
+            {sortDirection === 'asc' && '↑'}
+            {sortDirection === 'desc' && '↓'}
+            {!sortDirection && '⇅'}
+          </span>
         )}
-        onClick={sortable && onSort ? onSort : undefined}
-        {...props}
-      >
-        <div className="flex items-center gap-2">
-          {children}
-          {sortable && (
-            <span className="text-xs opacity-50">
-              {sortDirection === 'asc' && '↑'}
-              {sortDirection === 'desc' && '↓'}
-              {!sortDirection && '⇅'}
-            </span>
-          )}
-        </div>
-      </th>
+      </div>
+    </th>
+  );
+
+  if (!ctx?.inTable) {
+    return (
+      <table className="w-full">
+        <thead>
+          <tr>{head}</tr>
+        </thead>
+      </table>
     );
+  }
 
-    if (!ctx?.inTable) {
-      return (
-        <table className="w-full">
-          <thead>
-            <tr>{head}</tr>
-          </thead>
-        </table>
-      );
-    }
-
-    return head;
-  })()
-));
+  return head;
+});
 TableHead.displayName = 'TableHead';
 
 const TableCell = React.forwardRef<

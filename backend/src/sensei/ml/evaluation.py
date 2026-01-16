@@ -113,8 +113,8 @@ class ModelEvaluator:
         if y_pred_proba is not None:
             try:
                 roc_auc = roc_auc_score(y_true, y_pred_proba[:, 1])
-            except:
-                pass
+            except Exception:
+                logger.exception("Failed to compute ROC AUC")
         
         # Confusion matrix
         cm = confusion_matrix(y_true, y_pred, labels=labels)

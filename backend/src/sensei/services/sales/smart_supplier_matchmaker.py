@@ -13,6 +13,7 @@ Features:
 """
 
 from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any
@@ -592,16 +593,17 @@ class SemanticMatcher:
 # Criteria Scorers
 # =============================================================================
 
-class CriteriaScorer:
+class CriteriaScorer(ABC):
     """Base class for criteria scoring."""
     
+    @abstractmethod
     def score(
         self,
         supplier: Supplier,
         requirement: RFQRequirement,
     ) -> MatchScore:
         """Score supplier on this criteria."""
-        raise NotImplementedError
+        ...
 
 
 class CapabilityScorer(CriteriaScorer):

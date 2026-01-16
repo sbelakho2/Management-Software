@@ -250,13 +250,9 @@ export function useDeviceInfo(): DeviceInfo {
  */
 export function useResponsive(): DeviceInfo {
   const context = useContext(ResponsiveContext);
-  
-  if (!context) {
-    // Fallback to direct hook if not in provider
-    return useDeviceInfo();
-  }
-  
-  return context;
+  const deviceInfo = useDeviceInfo();
+
+  return context ?? deviceInfo;
 }
 
 /**

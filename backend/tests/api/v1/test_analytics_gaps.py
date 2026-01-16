@@ -3,7 +3,10 @@ from httpx import ASGITransport, AsyncClient
 from fastapi import FastAPI, Depends
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from sensei.api.v1.endpoints.analytics import router as analytics_router
+from sensei.api.v1.endpoints.analytics import (
+    router as analytics_router,
+    get_analytics_warehouse_service,
+)
 from sensei.api.v1.endpoints.executive_intel import router as executive_router
 from sensei.api.v1.endpoints.andon import router as andon_router
 from sensei.api import deps
@@ -52,6 +55,12 @@ async def mock_get_current_user():
 async def test_analytics_rbac_admin(app):
     app.dependency_overrides[deps.get_token_data] = mock_get_token_data_admin
     app.dependency_overrides[deps.get_current_user] = mock_get_current_user
+    mock_db = MagicMock()
+    mock_db.execute = AsyncMock(return_value=MagicMock())
+    app.dependency_overrides[deps.get_db] = lambda: mock_db
+    mock_warehouse = MagicMock()
+    mock_warehouse.get_exported_records = AsyncMock(return_value=[])
+    app.dependency_overrides[get_analytics_warehouse_service] = lambda: mock_warehouse
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/v1/analytics/trends")
     assert response.status_code == 200

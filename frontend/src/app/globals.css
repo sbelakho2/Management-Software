@@ -113,6 +113,10 @@
   .floating-element {
     @apply animate-float;
   }
+
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 /* Focus visible styles */
@@ -139,5 +143,28 @@
   /* Premium Skeleton */
   .skeleton {
     @apply animate-pulse rounded bg-muted/50 premium-shimmer;
+  }
+
+  .premium-shimmer {
+    @apply relative overflow-hidden before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse,
+  .animate-bounce,
+  .animate-float,
+  .animate-in,
+  .page-fade-in {
+    animation: none !important;
   }
 }

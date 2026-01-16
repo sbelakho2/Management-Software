@@ -18,8 +18,11 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class Locale(str, Enum):
@@ -457,7 +460,7 @@ class I18nBackendService:
             try:
                 namespace = TranslationNamespace(ns_part)
             except ValueError:
-                pass
+                logger.debug("Unknown translation namespace: %s", ns_part)
         
         missing = MissingTranslation(
             id=uuid4(),

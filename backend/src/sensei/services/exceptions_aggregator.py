@@ -7,6 +7,7 @@ to surface critical issues immediately.
 """
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,8 @@ from sensei.models.exception import ExceptionRecord
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
 from sensei.core.redis import redis_client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -243,7 +246,7 @@ class ExceptionsAggregator:
             try:
                 listener(summary)
             except Exception:
-                pass  # Don't let listener errors break the flow
+                logger.exception("Exception listener failed")
     
     async def refresh(self, db: AsyncSession, force: bool = False) -> None:
         """Refresh exceptions from all sources and database."""
@@ -307,7 +310,7 @@ class ExceptionsAggregator:
                 all_exceptions.extend(exceptions)
             except Exception:
                 # Log error but continue with other sources
-                pass
+                logger.exception("Exception source '%s' failed", source_name)
         
         # Sort by priority score (highest first)
         all_exceptions.sort(key=lambda e: e.priority_score, reverse=True)

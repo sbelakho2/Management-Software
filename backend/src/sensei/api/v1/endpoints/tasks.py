@@ -1120,6 +1120,13 @@ async def get_blocked_tasks(
     total = count_result.scalar_one()
 
     offset = (page - 1) * page_size
+    data_stmt = (
+        select(Task)
+        .where(and_(*base_conditions))
+        .order_by(Task.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     data_result = await db.execute(data_stmt)
     tasks = data_result.scalars().all()
 

@@ -10,6 +10,7 @@ Provides infrastructure for:
 - Model rollback
 """
 
+import asyncio
 import json
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,7 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
 import io
+import anyio
 
 from sensei.core.storage import upload_file, download_file, delete_file, list_files
 
@@ -72,10 +74,11 @@ class ModelRegistry:
     - Deployment tracking
     """
 
-    def __init__(self, registry_path: Path):
+    def __init__(self, registry_path: Path, *, use_remote_storage: bool = False):
         self.registry_path = registry_path
         self.registry_path.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.registry_path / "registry.json"
+        self.use_remote_storage = use_remote_storage
         self._load_registry()
     
     def _load_registry(self) -> None:
@@ -91,7 +94,7 @@ class ModelRegistry:
         with open(self.metadata_file, 'w') as f:
             json.dump(self.registry, f, indent=2, default=str)
     
-    async def register_model(
+    async def _register_model_async(
         self,
         metadata: ModelMetadata,
         model_artifacts_path: Path,
@@ -102,39 +105,76 @@ class ModelRegistry:
         Returns: model_id
         """
         logger.info(f"Registering model: {metadata.model_name} v{metadata.version}")
-        
+
         # Create unique model ID
         model_id = f"{metadata.model_name}_v{metadata.version}_{int(_utcnow().timestamp())}"
         metadata.model_id = model_id
-        
-        # Upload model artifacts to S3
+
+        model_dir = self.registry_path / model_id
+        artifacts_dir = model_dir / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
         if model_artifacts_path.is_dir():
             for file_path in model_artifacts_path.glob("**/*"):
                 if file_path.is_file():
                     relative_path = file_path.relative_to(model_artifacts_path)
-                    key = f"ml/models/{model_id}/artifacts/{relative_path}"
-                    with open(file_path, "rb") as f:
-                        await upload_file(f.read(), key, metadata={"model_id": model_id})
+                    destination = artifacts_dir / relative_path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(file_path, destination)
+
+                    if self.use_remote_storage:
+                        key = f"ml/models/{model_id}/artifacts/{relative_path}"
+                        with open(file_path, "rb") as f:
+                            await upload_file(f.read(), key, metadata={"model_id": model_id})
         else:
-            key = f"ml/models/{model_id}/model.pkl"
-            with open(model_artifacts_path, "rb") as f:
-                await upload_file(f.read(), key, metadata={"model_id": model_id})
-        
+            destination = artifacts_dir / model_artifacts_path.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(model_artifacts_path, destination)
+
+            if self.use_remote_storage:
+                key = f"ml/models/{model_id}/model.pkl"
+                with open(model_artifacts_path, "rb") as f:
+                    await upload_file(f.read(), key, metadata={"model_id": model_id})
+
         # Save metadata
         metadata_dict = asdict(metadata)
         metadata_dict['created_at'] = metadata.created_at.isoformat()
         metadata_dict['status'] = metadata.status.value
-        
-        # Upload metadata to S3
-        metadata_key = f"ml/models/{model_id}/metadata.json"
-        await upload_file(json.dumps(metadata_dict, indent=2).encode(), metadata_key, metadata={"model_id": model_id})
-        
+
+        metadata_file = model_dir / "metadata.json"
+        with open(metadata_file, "w") as f:
+            json.dump(metadata_dict, f, indent=2)
+
+        if self.use_remote_storage:
+            metadata_key = f"ml/models/{model_id}/metadata.json"
+            await upload_file(
+                json.dumps(metadata_dict, indent=2).encode(),
+                metadata_key,
+                metadata={"model_id": model_id},
+            )
+
         # Update registry
         self.registry[model_id] = metadata_dict
         self._save_registry()
-        
+
         logger.info(f"Model registered: {model_id}")
         return model_id
+
+    def register_model(
+        self,
+        metadata: ModelMetadata,
+        model_artifacts_path: Path,
+    ) -> str:
+        """Register a new model version.
+
+        Returns: model_id
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return anyio.run(self._register_model_async, metadata, model_artifacts_path)
+
+        return self._register_model_async(metadata, model_artifacts_path)
     
     def get_model(self, model_id: str) -> Optional[ModelMetadata]:
         """Get model metadata by ID."""

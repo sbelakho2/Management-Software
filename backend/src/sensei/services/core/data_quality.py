@@ -7,6 +7,7 @@ business rule validation, and validation error reporting for all entities.
 Ensures data quality consistent with workflow gates (RFQ completeness, qualification rationale, etc.).
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +17,8 @@ from typing import Any, Callable, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationType(str, Enum):
@@ -604,7 +607,7 @@ class DataQualityService:
                             expected=f">= {min_margin}%"
                         ))
             except (ValueError, TypeError, ZeroDivisionError):
-                pass
+                logger.debug("Failed to compute margin for quote pricing")
         
         return result
     

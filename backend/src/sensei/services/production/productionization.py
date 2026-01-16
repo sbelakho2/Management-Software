@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+import logging
 from typing import Any, Generic, Iterable, Protocol, TypeVar
 from uuid import UUID, uuid4
 from sqlalchemy import select, and_, delete
@@ -23,6 +24,8 @@ from sensei.models.product import Product as ProductModel
 from sensei.models.account import Account as AccountModel, AccountType
 from sensei.models.migration import ImportBatch as ImportBatchModel
 from sensei.models.audit_log import AuditLog, AuditAction
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -952,6 +955,7 @@ class AsyncProductionizationService:
 
         # Import valid records
         imported = 0
+        error_log: list[dict[str, Any]] = []
         for v in validations:
             if v.result != ValidationResult.VALID:
                 continue
@@ -1005,18 +1009,31 @@ class AsyncProductionizationService:
                         unit_cost=Decimal(str(v.data.get("unit_cost", "0"))),
                     )
                 imported += 1
-            except Exception:
-                pass # Log errors in production
+            except Exception as exc:
+                logger.exception(
+                    "Import failed for %s row %s",
+                    entity_type.value,
+                    v.row_number,
+                )
+                error_log.append(
+                    {
+                        "row": v.row_number,
+                        "error": str(exc),
+                        "entity_type": entity_type.value,
+                    }
+                )
 
+        error_records = len(records) - imported
         batch = ImportBatchModel(
             id=batch_id,
             entity_type=entity_type.value,
             source_file=source_file,
             total_records=len(records),
             valid_records=imported,
-            error_records=len(records) - imported,
-            status=ImportStatus.COMPLETED.value,
+            error_records=error_records,
+            status=(ImportStatus.FAILED.value if error_records else ImportStatus.COMPLETED.value),
             imported_by=actor_id,
+            error_log=error_log or None,
             completed_at=_utcnow(),
         )
         db.add(batch)
@@ -1030,7 +1047,7 @@ class AsyncProductionizationService:
             entity_type=entity_type.value,
             entity_id=str(batch.id),
             correlation_id=correlation_id,
-            metadata={"imported": imported},
+            metadata={"imported": imported, "errors": error_records},
         )
 
         return batch

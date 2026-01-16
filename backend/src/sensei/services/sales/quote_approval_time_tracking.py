@@ -17,8 +17,11 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class ApprovalDecision(str, Enum):
@@ -781,7 +784,7 @@ class QuoteApprovalTimeTrackingService:
             try:
                 listener(alert)
             except Exception:
-                pass
+                logger.exception("Quote approval listener failed for alert %s", alert.id)
         
         return alert
     

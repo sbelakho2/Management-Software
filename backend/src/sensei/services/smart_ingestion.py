@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import mimetypes
 import re
 import uuid
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from sensei.models.rfq import RFQ
     from sensei.models.opportunity import Opportunity
     from sensei.models.account import Account, Contact
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -589,9 +592,9 @@ def _extract_pdf_text(content: bytes) -> tuple[str, list[OCRPage], str]:
         return "\n\n".join(full_text_parts), pages, "pymupdf"
     
     except ImportError:
-        pass  # PyMuPDF not installed
-    except Exception:
-        pass  # PyMuPDF failed
+        logger.debug("PyMuPDF not installed; falling back")
+    except Exception as exc:
+        logger.warning("PyMuPDF extraction failed: %s", exc)
     
     # Try pdfplumber
     try:
@@ -616,9 +619,9 @@ def _extract_pdf_text(content: bytes) -> tuple[str, list[OCRPage], str]:
         return "\n\n".join(full_text_parts), pages, "pdfplumber"
     
     except ImportError:
-        pass  # pdfplumber not installed
-    except Exception:
-        pass  # pdfplumber failed
+        logger.debug("pdfplumber not installed; falling back")
+    except Exception as exc:
+        logger.warning("pdfplumber extraction failed: %s", exc)
     
     # Fallback: attempt basic text extraction
     try:
@@ -1064,7 +1067,7 @@ class SmartIngestionService:
                     self._known_contacts[contact.email.lower()] = str(contact.id)
         
         except ImportError:
-            pass  # Models not available
+            logger.debug("Smart ingestion models not available for cache warmup")
     
     # =========================================================================
     # Job Management

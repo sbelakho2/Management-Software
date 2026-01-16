@@ -21,6 +21,8 @@ export interface ProductDetail extends Product {
   dimensions?: string;
   standard_labor_hours?: number;
   setup_time_hours?: number;
+  list_price?: number;
+  reorder_point?: number;
   is_active: boolean;
   bom_item_count: number;
   routing_step_count: number;

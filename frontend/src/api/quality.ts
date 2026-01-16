@@ -12,6 +12,37 @@ import type {
   CAPAStatus,
   CAPAType,
   PaginatedResponse,
+  MSAStudy,
+  MSAMeasurement,
+  MSAResult,
+  MSAStudyStatus,
+  MSAStudyType,
+  ProcessCapabilityStudy,
+  ProcessCapabilityMeasurement,
+  ProcessCapabilityResult,
+  ProcessCapabilityStatus,
+  CustomerComplaint,
+  CustomerSurvey,
+  CustomerSurveyResponse,
+  CustomerSatisfactionStats,
+  FAIInspection,
+  FAICharacteristic,
+  FAIStatus,
+  SelfInspection,
+  SelfInspectionCheck,
+  SelfInspectionStatus,
+  LabTestMethod,
+  LabSample,
+  LabTestRun,
+  AQLSamplingPlan,
+  AQLLotInspection,
+  TraceabilityMatrix,
+  TraceabilityLink,
+  ChangePointStudy,
+  ChangePointObservation,
+  ChangePointEvent,
+  ManagementReview,
+  ManagementReviewAction,
 } from '@/types';
 
 // ============================================================================
@@ -422,10 +453,572 @@ export const capaApi = {
   },
 };
 
+// =============================================================================
+// MSA / GRR API
+// =============================================================================
+
+export interface MSAStudyListParams extends PaginationParams {
+  gauge_id?: string;
+  status?: MSAStudyStatus | MSAStudyStatus[];
+  study_type?: MSAStudyType | MSAStudyType[];
+  search?: string;
+}
+
+export interface CreateMSAStudyData {
+  gauge_id: string;
+  name: string;
+  study_type?: MSAStudyType;
+  parts_count?: number;
+  operators_count?: number;
+  trials_count?: number;
+  notes?: string;
+}
+
+export interface AddMSAMeasurementData {
+  operator_id: string;
+  part_id: string;
+  trial_number?: number;
+  measured_value: number;
+}
+
+export const msaApi = {
+  /**
+   * List MSA studies
+   */
+  async list(params?: MSAStudyListParams): Promise<MSAStudy[]> {
+    return apiClient.get('/quality/msa-studies', { params });
+  },
+
+  /**
+   * Get an MSA study
+   */
+  async get(id: string): Promise<MSAStudy> {
+    return apiClient.get(`/quality/msa-studies/${id}`);
+  },
+
+  /**
+   * Create an MSA study
+   */
+  async create(data: CreateMSAStudyData): Promise<MSAStudy> {
+    return apiClient.post('/quality/msa-studies', data);
+  },
+
+  /**
+   * Add measurement to MSA study
+   */
+  async addMeasurement(studyId: string, data: AddMSAMeasurementData): Promise<MSAMeasurement> {
+    return apiClient.post(`/quality/msa-studies/${studyId}/measurements`, data);
+  },
+
+  /**
+   * Compute GRR results
+   */
+  async compute(studyId: string): Promise<MSAResult> {
+    return apiClient.post(`/quality/msa-studies/${studyId}/compute`);
+  },
+};
+
+// =============================================================================
+// Process Capability (Cp/Cpk) API
+// =============================================================================
+
+export interface CapabilityStudyListParams extends PaginationParams {
+  status?: ProcessCapabilityStatus | ProcessCapabilityStatus[];
+  search?: string;
+}
+
+export interface CreateCapabilityStudyData {
+  name: string;
+  process_name: string;
+  characteristic: string;
+  lsl: number;
+  usl: number;
+  target?: number;
+  unit?: string;
+  notes?: string;
+}
+
+export interface AddCapabilityMeasurementData {
+  measured_value: number;
+  sample_label?: string;
+}
+
+export const capabilityApi = {
+  /**
+   * List capability studies
+   */
+  async list(params?: CapabilityStudyListParams): Promise<ProcessCapabilityStudy[]> {
+    return apiClient.get('/quality/capability-studies', { params });
+  },
+
+  /**
+   * Get a capability study
+   */
+  async get(id: string): Promise<ProcessCapabilityStudy> {
+    return apiClient.get(`/quality/capability-studies/${id}`);
+  },
+
+  /**
+   * Create a capability study
+   */
+  async create(data: CreateCapabilityStudyData): Promise<ProcessCapabilityStudy> {
+    return apiClient.post('/quality/capability-studies', data);
+  },
+
+  /**
+   * Add measurement to capability study
+   */
+  async addMeasurement(studyId: string, data: AddCapabilityMeasurementData): Promise<ProcessCapabilityMeasurement> {
+    return apiClient.post(`/quality/capability-studies/${studyId}/measurements`, data);
+  },
+
+  /**
+   * Compute Cp/Cpk results
+   */
+  async compute(studyId: string): Promise<ProcessCapabilityResult> {
+    return apiClient.post(`/quality/capability-studies/${studyId}/compute`);
+  },
+};
+
+// =============================================================================
+// Customer Satisfaction API
+// =============================================================================
+
+export interface CreateCustomerComplaintData {
+  customer_id?: string;
+  title: string;
+  description: string;
+  received_at?: string;
+  status?: string;
+  lot_id?: string;
+  related_nc_id?: number;
+  related_capa_id?: number;
+  rma_number?: string;
+  root_cause?: string;
+  containment_actions?: string[];
+  corrective_actions?: string[];
+}
+
+export interface UpdateCustomerComplaintData {
+  status?: string;
+  root_cause?: string;
+  containment_actions?: string[];
+  corrective_actions?: string[];
+  closed_at?: string;
+}
+
+export interface CreateCustomerSurveyData {
+  title: string;
+  description?: string;
+  status?: string;
+  period_start?: string;
+  period_end?: string;
+  target_responses?: number;
+  notes?: string;
+}
+
+export interface CreateCustomerSurveyResponseData {
+  customer_id?: string;
+  respondent_name?: string;
+  respondent_email?: string;
+  nps_score: number;
+  comment?: string;
+}
+
+export const customerSatisfactionApi = {
+  async listComplaints(): Promise<CustomerComplaint[]> {
+    return apiClient.get('/quality/customer-complaints');
+  },
+
+  async getComplaint(id: string): Promise<CustomerComplaint> {
+    return apiClient.get(`/quality/customer-complaints/${id}`);
+  },
+
+  async createComplaint(data: CreateCustomerComplaintData): Promise<CustomerComplaint> {
+    return apiClient.post('/quality/customer-complaints', data);
+  },
+
+  async updateComplaint(id: string, data: UpdateCustomerComplaintData): Promise<CustomerComplaint> {
+    return apiClient.patch(`/quality/customer-complaints/${id}`, data);
+  },
+
+  async closeComplaint(id: string): Promise<CustomerComplaint> {
+    return apiClient.post(`/quality/customer-complaints/${id}/close`);
+  },
+
+  async listSurveys(): Promise<CustomerSurvey[]> {
+    return apiClient.get('/quality/customer-surveys');
+  },
+
+  async getSurvey(id: string): Promise<CustomerSurvey> {
+    return apiClient.get(`/quality/customer-surveys/${id}`);
+  },
+
+  async createSurvey(data: CreateCustomerSurveyData): Promise<CustomerSurvey> {
+    return apiClient.post('/quality/customer-surveys', data);
+  },
+
+  async addSurveyResponse(surveyId: string, data: CreateCustomerSurveyResponseData): Promise<CustomerSurveyResponse> {
+    return apiClient.post(`/quality/customer-surveys/${surveyId}/responses`, data);
+  },
+
+  async getStats(surveyId?: string): Promise<CustomerSatisfactionStats> {
+    return apiClient.get('/quality/customer-satisfaction/stats', {
+      params: surveyId ? { survey_id: surveyId } : undefined,
+    });
+  },
+};
+
+// =============================================================================
+// FAI / AS9102 API
+// =============================================================================
+
+export interface CreateFAIInspectionData {
+  inspection_number: string;
+  product_id?: string;
+  work_order_id?: string;
+  part_number: string;
+  revision?: string;
+  drawing_number?: string;
+  inspector_id?: string;
+  notes?: string;
+}
+
+export interface UpdateFAIInspectionData {
+  status?: FAIStatus;
+  notes?: string;
+}
+
+export interface CreateFAICharacteristicData {
+  characteristic_number: number;
+  requirement: string;
+  nominal?: number;
+  tolerance?: string;
+  actual?: number;
+  result?: string;
+  method?: string;
+  tool_id?: string;
+  notes?: string;
+}
+
+export const faiApi = {
+  async list(): Promise<FAIInspection[]> {
+    return apiClient.get('/quality/fai-inspections');
+  },
+
+  async get(id: string): Promise<FAIInspection> {
+    return apiClient.get(`/quality/fai-inspections/${id}`);
+  },
+
+  async create(data: CreateFAIInspectionData): Promise<FAIInspection> {
+    return apiClient.post('/quality/fai-inspections', data);
+  },
+
+  async update(id: string, data: UpdateFAIInspectionData): Promise<FAIInspection> {
+    return apiClient.patch(`/quality/fai-inspections/${id}`, data);
+  },
+
+  async addCharacteristic(inspectionId: string, data: CreateFAICharacteristicData): Promise<FAICharacteristic> {
+    return apiClient.post(`/quality/fai-inspections/${inspectionId}/characteristics`, data);
+  },
+
+  async close(inspectionId: string): Promise<FAIInspection> {
+    return apiClient.post(`/quality/fai-inspections/${inspectionId}/close`);
+  },
+};
+
+// =============================================================================
+// Operator Self-Inspection API
+// =============================================================================
+
+export interface CreateSelfInspectionData {
+  inspection_number: string;
+  work_order_id?: string;
+  product_id?: string;
+  operator_id?: string;
+  notes?: string;
+}
+
+export interface UpdateSelfInspectionData {
+  status?: SelfInspectionStatus;
+  notes?: string;
+}
+
+export interface CreateSelfInspectionCheckData {
+  characteristic: string;
+  specification?: string;
+  actual_value?: string;
+  result?: string;
+  notes?: string;
+}
+
+export const selfInspectionApi = {
+  async list(): Promise<SelfInspection[]> {
+    return apiClient.get('/quality/self-inspections');
+  },
+
+  async get(id: string): Promise<SelfInspection> {
+    return apiClient.get(`/quality/self-inspections/${id}`);
+  },
+
+  async create(data: CreateSelfInspectionData): Promise<SelfInspection> {
+    return apiClient.post('/quality/self-inspections', data);
+  },
+
+  async update(id: string, data: UpdateSelfInspectionData): Promise<SelfInspection> {
+    return apiClient.patch(`/quality/self-inspections/${id}`, data);
+  },
+
+  async addCheck(inspectionId: string, data: CreateSelfInspectionCheckData): Promise<SelfInspectionCheck> {
+    return apiClient.post(`/quality/self-inspections/${inspectionId}/checks`, data);
+  },
+
+  async close(inspectionId: string): Promise<SelfInspection> {
+    return apiClient.post(`/quality/self-inspections/${inspectionId}/close`);
+  },
+};
+
+// =============================================================================
+// Lab Management API
+// =============================================================================
+
+export interface CreateLabMethodData {
+  name: string;
+  standard?: string;
+  description?: string;
+  unit?: string;
+  lower_spec?: number;
+  upper_spec?: number;
+  target_value?: number;
+  status?: string;
+}
+
+export interface CreateLabSampleData {
+  sample_number: string;
+  product_id?: string;
+  work_order_id?: string;
+  lot_number?: string;
+  collected_at?: string;
+  collected_by_id?: string;
+  notes?: string;
+}
+
+export interface CreateLabTestRunData {
+  method_id: string;
+  result_value?: number;
+  result_text?: string;
+  result_status?: string;
+  tester_id?: string;
+  notes?: string;
+}
+
+export interface CreateAQLPlanData {
+  plan_code: string;
+  standard?: string;
+  inspection_level?: string;
+  aql_level?: string;
+  lot_size_min: number;
+  lot_size_max: number;
+  sample_size: number;
+  accept_limit: number;
+  reject_limit: number;
+  status?: string;
+  notes?: string;
+}
+
+export interface CreateAQLInspectionData {
+  plan_id: string;
+  lot_number: string;
+  lot_size: number;
+  sample_size?: number;
+  defect_count: number;
+  inspected_at?: string;
+  inspector_id?: string;
+  defects_json?: Array<Record<string, unknown>>;
+  notes?: string;
+}
+
+export interface CreateTraceabilityMatrixData {
+  name: string;
+  description?: string;
+  status?: string;
+  product_id?: number;
+  work_order_id?: number;
+  lot_number?: string;
+  batch_id?: string;
+  external_reference?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface CreateTraceabilityLinkData {
+  matrix_id: string;
+  link_type: string;
+  reference_id: string;
+  reference_table?: string;
+  notes?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface CreateChangePointStudyData {
+  name: string;
+  process_name: string;
+  characteristic: string;
+  method?: string;
+  sensitivity?: number;
+  status?: string;
+  started_at?: string;
+  notes?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface CreateChangePointObservationData {
+  observed_at?: string;
+  value: number;
+  sample_label?: string;
+}
+
+export interface CreateManagementReviewData {
+  title: string;
+  period_start: string;
+  period_end: string;
+  scheduled_for: string;
+  status?: string;
+  notes?: string;
+  attendees?: string[];
+  metrics_snapshot?: Record<string, unknown>;
+}
+
+export interface CreateManagementReviewActionData {
+  title: string;
+  status?: string;
+  due_date?: string;
+  assignee_id?: string;
+  notes?: string;
+}
+
+export const labApi = {
+  async listMethods(): Promise<LabTestMethod[]> {
+    return apiClient.get('/quality/lab-methods');
+  },
+
+  async createMethod(data: CreateLabMethodData): Promise<LabTestMethod> {
+    return apiClient.post('/quality/lab-methods', data);
+  },
+
+  async listSamples(): Promise<LabSample[]> {
+    return apiClient.get('/quality/lab-samples');
+  },
+
+  async createSample(data: CreateLabSampleData): Promise<LabSample> {
+    return apiClient.post('/quality/lab-samples', data);
+  },
+
+  async addTestRun(sampleId: string, data: CreateLabTestRunData): Promise<LabTestRun> {
+    return apiClient.post(`/quality/lab-samples/${sampleId}/tests`, data);
+  },
+};
+
+export const aqlApi = {
+  async listPlans(): Promise<AQLSamplingPlan[]> {
+    return apiClient.get('/quality/aql/plans');
+  },
+
+  async createPlan(data: CreateAQLPlanData): Promise<AQLSamplingPlan> {
+    return apiClient.post('/quality/aql/plans', data);
+  },
+
+  async listInspections(planId?: string): Promise<AQLLotInspection[]> {
+    const params = planId ? { plan_id: planId } : undefined;
+    return apiClient.get('/quality/aql/inspections', { params });
+  },
+
+  async createInspection(data: CreateAQLInspectionData): Promise<AQLLotInspection> {
+    return apiClient.post('/quality/aql/inspections', data);
+  },
+};
+
+export const traceabilityApi = {
+  async listMatrices(): Promise<TraceabilityMatrix[]> {
+    return apiClient.get('/quality/traceability/matrices');
+  },
+
+  async createMatrix(data: CreateTraceabilityMatrixData): Promise<TraceabilityMatrix> {
+    return apiClient.post('/quality/traceability/matrices', data);
+  },
+
+  async listLinks(matrixId?: string): Promise<TraceabilityLink[]> {
+    const params = matrixId ? { matrix_id: matrixId } : undefined;
+    return apiClient.get('/quality/traceability/links', { params });
+  },
+
+  async createLink(data: CreateTraceabilityLinkData): Promise<TraceabilityLink> {
+    return apiClient.post('/quality/traceability/links', data);
+  },
+};
+
+export const changePointApi = {
+  async listStudies(): Promise<ChangePointStudy[]> {
+    return apiClient.get('/quality/change-point/studies');
+  },
+
+  async createStudy(data: CreateChangePointStudyData): Promise<ChangePointStudy> {
+    return apiClient.post('/quality/change-point/studies', data);
+  },
+
+  async listObservations(studyId: string): Promise<ChangePointObservation[]> {
+    return apiClient.get(`/quality/change-point/studies/${studyId}/observations`);
+  },
+
+  async addObservation(studyId: string, data: CreateChangePointObservationData): Promise<ChangePointObservation> {
+    return apiClient.post(`/quality/change-point/studies/${studyId}/observations`, data);
+  },
+
+  async listEvents(studyId: string): Promise<ChangePointEvent[]> {
+    return apiClient.get(`/quality/change-point/studies/${studyId}/events`);
+  },
+
+  async detect(studyId: string): Promise<ChangePointEvent | null> {
+    return apiClient.post(`/quality/change-point/studies/${studyId}/detect`, {});
+  },
+};
+
+export const managementReviewApi = {
+  async listReviews(): Promise<ManagementReview[]> {
+    return apiClient.get('/quality/management-reviews');
+  },
+
+  async createReview(data: CreateManagementReviewData): Promise<ManagementReview> {
+    return apiClient.post('/quality/management-reviews', data);
+  },
+
+  async addAction(reviewId: string, data: CreateManagementReviewActionData): Promise<ManagementReviewAction> {
+    return apiClient.post(`/quality/management-reviews/${reviewId}/actions`, data);
+  },
+
+  async listActions(reviewId?: string): Promise<ManagementReviewAction[]> {
+    const params = reviewId ? { review_id: reviewId } : undefined;
+    return apiClient.get('/quality/management-reviews/actions', { params });
+  },
+
+  async closeReview(reviewId: string): Promise<ManagementReview> {
+    return apiClient.post(`/quality/management-reviews/${reviewId}/close`, {});
+  },
+};
+
 export const qualityApi = {
   inspectionApi,
   ncrApi,
   capaApi,
+  msaApi,
+  capabilityApi,
+  customerSatisfactionApi,
+  faiApi,
+  selfInspectionApi,
+  labApi,
+  aqlApi,
+  traceabilityApi,
+  changePointApi,
+  managementReviewApi,
 };
 
 export interface CAPAStats {

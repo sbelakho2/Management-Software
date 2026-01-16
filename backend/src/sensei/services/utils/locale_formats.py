@@ -9,8 +9,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, date, time
 from decimal import Decimal
 from enum import Enum
+import logging
 from typing import Any, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class Locale(Enum):
@@ -415,7 +418,7 @@ class LocaleFormatsService:
                         year += 2000
                     return date(year, month, day)
         except (ValueError, IndexError):
-            pass
+            logger.debug("Failed to parse date '%s' for locale %s", value, loc.value)
         return None
 
     # --- Time Formatting ---

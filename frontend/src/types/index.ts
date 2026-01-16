@@ -493,6 +493,352 @@ export type CAPAStatus =
   | 'verified'
   | 'closed';
 
+export type MSAStudyType = 'grr' | 'bias' | 'linearity' | 'stability';
+
+export type MSAStudyStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export interface MSAResult extends AuditableEntity {
+  study_id: UUID;
+  repeatability_ev: number;
+  reproducibility_av: number;
+  grr: number;
+  part_variation_pv: number;
+  total_variation_tv: number;
+  grr_percent: number;
+  ndc: number;
+}
+
+export interface MSAMeasurement extends AuditableEntity {
+  study_id: UUID;
+  operator_id: UUID;
+  operator?: User;
+  part_id: string;
+  trial_number: number;
+  measured_value: number;
+  measured_at: string;
+}
+
+export interface MSAStudy extends AuditableEntity {
+  gauge_id: UUID;
+  name: string;
+  study_type: MSAStudyType;
+  status: MSAStudyStatus;
+  parts_count: number;
+  operators_count: number;
+  trials_count: number;
+  started_at: string;
+  completed_at?: string;
+  notes?: string;
+  measurements?: MSAMeasurement[];
+  result?: MSAResult;
+}
+
+export type ProcessCapabilityStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export interface ProcessCapabilityResult extends AuditableEntity {
+  study_id: UUID;
+  mean: number;
+  std_dev: number;
+  cp: number;
+  cpk: number;
+  cpu: number;
+  cpl: number;
+  sample_size: number;
+}
+
+export interface ProcessCapabilityMeasurement extends AuditableEntity {
+  study_id: UUID;
+  sample_label?: string;
+  measured_value: number;
+  measured_at: string;
+}
+
+export interface ProcessCapabilityStudy extends AuditableEntity {
+  name: string;
+  process_name: string;
+  characteristic: string;
+  status: ProcessCapabilityStatus;
+  lsl: number;
+  usl: number;
+  target?: number;
+  unit?: string;
+  started_at: string;
+  completed_at?: string;
+  notes?: string;
+  measurements?: ProcessCapabilityMeasurement[];
+  result?: ProcessCapabilityResult;
+}
+
+export interface CustomerComplaint extends AuditableEntity {
+  customer_id?: UUID;
+  title: string;
+  description: string;
+  received_at: string;
+  status: string;
+  lot_id?: string;
+  related_nc_id?: number;
+  related_capa_id?: number;
+  rma_number?: string;
+  root_cause?: string;
+  containment_actions?: string[];
+  corrective_actions?: string[];
+  closed_at?: string;
+}
+
+export interface CustomerSurveyResponse extends AuditableEntity {
+  survey_id: UUID;
+  customer_id?: UUID;
+  respondent_name?: string;
+  respondent_email?: string;
+  nps_score: number;
+  comment?: string;
+  submitted_at: string;
+}
+
+export interface CustomerSurvey extends AuditableEntity {
+  title: string;
+  description?: string;
+  status: string;
+  period_start?: string;
+  period_end?: string;
+  target_responses?: number;
+  notes?: string;
+  responses?: CustomerSurveyResponse[];
+}
+
+export interface CustomerSatisfactionStats {
+  nps: {
+    total_responses: number;
+    promoters: number;
+    passives: number;
+    detractors: number;
+    nps_score: number;
+    average_score: number;
+  };
+  complaints: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+}
+
+export type FAIStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export interface FAICharacteristic extends AuditableEntity {
+  inspection_id: UUID;
+  characteristic_number: number;
+  requirement: string;
+  nominal?: number;
+  tolerance?: string;
+  actual?: number;
+  result: string;
+  method?: string;
+  tool_id?: UUID;
+  notes?: string;
+}
+
+export interface FAIInspection extends AuditableEntity {
+  inspection_number: string;
+  product_id?: UUID;
+  work_order_id?: UUID;
+  part_number: string;
+  revision?: string;
+  drawing_number?: string;
+  status: FAIStatus;
+  inspector_id?: UUID;
+  started_at: string;
+  completed_at?: string;
+  notes?: string;
+  characteristics?: FAICharacteristic[];
+}
+
+export type SelfInspectionStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export interface SelfInspectionCheck extends AuditableEntity {
+  inspection_id: UUID;
+  characteristic: string;
+  specification?: string;
+  actual_value?: string;
+  result: string;
+  notes?: string;
+}
+
+export interface SelfInspection extends AuditableEntity {
+  inspection_number: string;
+  work_order_id?: UUID;
+  product_id?: UUID;
+  operator_id: UUID;
+  status: SelfInspectionStatus;
+  started_at: string;
+  completed_at?: string;
+  notes?: string;
+  checks?: SelfInspectionCheck[];
+}
+
+export interface LabTestMethod extends AuditableEntity {
+  name: string;
+  standard?: string;
+  description?: string;
+  unit?: string;
+  lower_spec?: number;
+  upper_spec?: number;
+  target_value?: number;
+  status: string;
+}
+
+export interface LabSample extends AuditableEntity {
+  sample_number: string;
+  product_id?: UUID;
+  work_order_id?: UUID;
+  lot_number?: string;
+  collected_at: string;
+  collected_by_id?: UUID;
+  notes?: string;
+}
+
+export interface LabTestRun extends AuditableEntity {
+  sample_id: UUID;
+  method_id: UUID;
+  result_value?: number;
+  result_text?: string;
+  result_status: string;
+  tested_at: string;
+  tester_id?: UUID;
+  notes?: string;
+}
+
+export type AQLInspectionResult = 'accept' | 'reject' | 'pending';
+
+export interface AQLSamplingPlan extends AuditableEntity {
+  plan_code: string;
+  standard: string;
+  inspection_level: string;
+  aql_level: string;
+  lot_size_min: number;
+  lot_size_max: number;
+  sample_size: number;
+  accept_limit: number;
+  reject_limit: number;
+  status: string;
+  notes?: string;
+}
+
+export interface AQLLotInspection extends AuditableEntity {
+  plan_id: UUID;
+  lot_number: string;
+  lot_size: number;
+  sample_size: number;
+  defect_count: number;
+  accept_limit: number;
+  reject_limit: number;
+  result: AQLInspectionResult;
+  inspected_at: string;
+  inspector_id?: UUID;
+  inspection_level: string;
+  aql_level: string;
+  defects_json?: Array<Record<string, unknown>>;
+  notes?: string;
+}
+
+export interface TraceabilityMatrix extends AuditableEntity {
+  name: string;
+  description?: string;
+  status: string;
+  product_id?: number;
+  work_order_id?: number;
+  lot_number?: string;
+  batch_id?: string;
+  external_reference?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface TraceabilityLink extends AuditableEntity {
+  matrix_id: UUID;
+  link_type: string;
+  reference_id: string;
+  reference_table?: string;
+  notes?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface ChangePointStudy extends AuditableEntity {
+  name: string;
+  process_name: string;
+  characteristic: string;
+  method: string;
+  sensitivity?: number;
+  status: string;
+  started_at: string;
+  completed_at?: string;
+  notes?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface ChangePointObservation extends AuditableEntity {
+  study_id: UUID;
+  observed_at: string;
+  value: number;
+  sample_label?: string;
+}
+
+export interface ChangePointEvent extends AuditableEntity {
+  study_id: UUID;
+  detected_at: string;
+  index_position: number;
+  change_magnitude: number;
+  confidence?: number;
+  notes?: string;
+}
+
+export interface ManagementReview extends AuditableEntity {
+  title: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+  scheduled_for: string;
+  held_at?: string;
+  notes?: string;
+  attendees?: string[];
+  metrics_snapshot?: Record<string, unknown>;
+}
+
+export interface ManagementReviewAction extends AuditableEntity {
+  review_id: UUID;
+  title: string;
+  status: string;
+  due_date?: string;
+  assignee_id?: UUID;
+  notes?: string;
+}
+
+export interface Site extends AuditableEntity {
+  site_code: string;
+  name: string;
+  status: string;
+  timezone?: string;
+  country?: string;
+  address?: string;
+  default_currency?: string;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface MPSPlan extends AuditableEntity {
+  name: string;
+  status: string;
+  period_start: string;
+  period_end: string;
+  horizon_days: number;
+  notes?: string;
+}
+
+export interface MPSPlanLine extends AuditableEntity {
+  plan_id: UUID;
+  product_id: number;
+  bucket_date: string;
+  quantity: number;
+  source_type?: string;
+}
+
 // ============================================================================
 // A3 Problem Solving
 // ============================================================================

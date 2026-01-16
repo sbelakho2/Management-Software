@@ -480,6 +480,7 @@ export function KanbanToolbar({
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
             aria-label="Kanban view"
+            title="Kanban view"
             aria-pressed={currentView === 'kanban'}
           >
             <KanbanIcon className="h-4 w-4" aria-hidden="true" />
@@ -493,6 +494,7 @@ export function KanbanToolbar({
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
             aria-label="List view"
+            title="List view"
             aria-pressed={currentView === 'list'}
           >
             <ListIcon className="h-4 w-4" aria-hidden="true" />
@@ -506,6 +508,7 @@ export function KanbanToolbar({
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
             aria-label="Calendar view"
+            title="Calendar view"
             aria-pressed={currentView === 'calendar'}
           >
             <CalendarIcon className="h-4 w-4" aria-hidden="true" />
@@ -520,6 +523,7 @@ export function KanbanToolbar({
             }
             className="rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
             aria-label={config.compactMode ? 'Expand cards' : 'Compact cards'}
+            title={config.compactMode ? 'Expand cards' : 'Compact cards'}
             aria-pressed={config.compactMode}
           >
             <SettingsIcon className="h-4 w-4" aria-hidden="true" />

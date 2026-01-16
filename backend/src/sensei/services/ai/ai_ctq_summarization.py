@@ -23,12 +23,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+import logging
 from typing import Optional, Any
 from uuid import UUID, uuid4
 import math
 import statistics
 
 from sensei.core.time import utcnow_naive
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -596,7 +599,7 @@ class AICTQSummarizationService:
                     cv = (std / abs(mean_val)) * 100
                     analysis.volatility = Decimal(str(cv)).quantize(Decimal("0.01"))
             except statistics.StatisticsError:
-                pass
+                logger.debug("Insufficient data for volatility calculation")
         
         # Simple linear regression for trend
         n = len(values)

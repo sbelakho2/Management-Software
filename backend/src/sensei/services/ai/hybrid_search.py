@@ -798,7 +798,7 @@ class InMemorySemanticSearcher(SemanticSearcher):
             try:
                 return embedder.embed_text(query)
             except Exception:
-                pass
+                logger.exception("Embedder failed for query; using hash embedding")
         
         # Fallback: deterministic hash-based embedding
         import hashlib

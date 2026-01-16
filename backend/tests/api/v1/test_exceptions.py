@@ -5,13 +5,15 @@ Tests the exceptions-first navigation API.
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from sensei.api.v1.endpoints import exceptions as exceptions_api
+from sensei.api import deps
 from sensei.services.exceptions_aggregator import (
     ExceptionCategory,
     ExceptionSeverity,
@@ -47,9 +49,20 @@ def mock_aggregator() -> ExceptionsAggregator:
 
 
 @pytest.fixture
+def mock_db() -> MagicMock:
+    """Create a mock async DB session."""
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.commit = AsyncMock()
+    return db
+
+
+@pytest.fixture
 def sample_exceptions(mock_aggregator: ExceptionsAggregator) -> list:
     """Create sample exceptions in aggregator."""
     now = datetime.now(timezone.utc)
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
     
     exceptions = [
         create_exception(
@@ -83,7 +96,7 @@ def sample_exceptions(mock_aggregator: ExceptionsAggregator) -> list:
     ]
     
     for e in exceptions:
-        mock_aggregator.add_exception(e)
+        asyncio.run(mock_aggregator.add_exception(mock_db, e))
     
     return exceptions
 
@@ -288,9 +301,10 @@ class TestCreateException:
     """Tests for POST /exceptions endpoint."""
 
     def test_create_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, mock_db: MagicMock
     ):
         """Test creating a new exception."""
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -309,6 +323,7 @@ class TestCreateException:
             data = response.json()
             assert data["title"] == "New Exception"
             assert data["category"] == "production"
+        client.app.dependency_overrides.clear()
 
 
 # =============================================================================
@@ -320,11 +335,11 @@ class TestStatusChanges:
     """Tests for exception status change endpoints."""
 
     def test_acknowledge_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test acknowledging an exception."""
         exception_id = sample_exceptions[0].id
-        
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -334,13 +349,14 @@ class TestStatusChanges:
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "acknowledged"
+        client.app.dependency_overrides.clear()
 
     def test_escalate_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test escalating an exception."""
         exception_id = sample_exceptions[0].id
-        
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -354,13 +370,14 @@ class TestStatusChanges:
             data = response.json()
             assert data["status"] == "escalated"
             assert data["escalated_to"] == "manager@example.com"
+        client.app.dependency_overrides.clear()
 
     def test_resolve_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test resolving an exception."""
         exception_id = sample_exceptions[0].id
-        
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -373,13 +390,14 @@ class TestStatusChanges:
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "resolved"
+        client.app.dependency_overrides.clear()
 
     def test_block_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test blocking an exception."""
         exception_id = sample_exceptions[0].id
-        
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -393,13 +411,14 @@ class TestStatusChanges:
             data = response.json()
             assert data["status"] == "blocked"
             assert data["blocked_reason"] == "Waiting for parts"
+        client.app.dependency_overrides.clear()
 
     def test_start_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test starting work on an exception."""
         exception_id = sample_exceptions[0].id
-        
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -409,6 +428,7 @@ class TestStatusChanges:
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "in_progress"
+        client.app.dependency_overrides.clear()
 
 
 # =============================================================================
@@ -420,9 +440,10 @@ class TestErrorCases:
     """Tests for error handling."""
 
     def test_get_nonexistent_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, mock_db: MagicMock
     ):
         """Test getting a non-existent exception."""
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -430,11 +451,13 @@ class TestErrorCases:
             response = client.get("/api/v1/exceptions/nonexistent-id")
             
             assert response.status_code == 404
+        client.app.dependency_overrides.clear()
 
     def test_acknowledge_nonexistent_exception(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, mock_db: MagicMock
     ):
         """Test acknowledging a non-existent exception."""
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -442,6 +465,7 @@ class TestErrorCases:
             response = client.post("/api/v1/exceptions/nonexistent-id/acknowledge")
             
             assert response.status_code == 404
+        client.app.dependency_overrides.clear()
 
     def test_invalid_category_filter(
         self, client: TestClient, mock_aggregator: ExceptionsAggregator
@@ -484,9 +508,10 @@ class TestOverdueExceptions:
     """Tests for GET /exceptions/overdue endpoint."""
 
     def test_get_overdue_exceptions(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test getting overdue exceptions."""
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -497,6 +522,7 @@ class TestOverdueExceptions:
             data = response.json()
             assert len(data["items"]) == 1
             assert data["items"][0]["is_overdue"] is True
+        client.app.dependency_overrides.clear()
 
 
 # =============================================================================
@@ -508,9 +534,10 @@ class TestEscalatedExceptions:
     """Tests for GET /exceptions/escalated endpoint."""
 
     def test_get_escalated_exceptions_initially_empty(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test getting escalated exceptions when none exist."""
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
             return_value=mock_aggregator,
@@ -520,13 +547,15 @@ class TestEscalatedExceptions:
             assert response.status_code == 200
             data = response.json()
             assert len(data["items"]) == 0
+        client.app.dependency_overrides.clear()
 
     def test_get_escalated_after_escalation(
-        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list
+        self, client: TestClient, mock_aggregator: ExceptionsAggregator, sample_exceptions: list, mock_db: MagicMock
     ):
         """Test getting escalated exceptions after escalating one."""
         exception_id = sample_exceptions[0].id
-        mock_aggregator.escalate_exception(exception_id, "manager@example.com")
+        asyncio.run(mock_aggregator.escalate_exception(mock_db, exception_id, "manager@example.com"))
+        client.app.dependency_overrides[deps.get_db] = lambda: mock_db
         
         with patch(
             "sensei.api.v1.endpoints.exceptions.get_exceptions_aggregator",
@@ -538,3 +567,4 @@ class TestEscalatedExceptions:
             data = response.json()
             assert len(data["items"]) == 1
             assert data["items"][0]["status"] == "escalated"
+        client.app.dependency_overrides.clear()

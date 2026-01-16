@@ -188,9 +188,110 @@ from sensei.models.production import (
     CellPerformance,
     ShiftNumber,
 )
-from sensei.models.maintenance import ConditionReading, MaintenanceRecord
-from sensei.models.finance import GLAccount, OpeningBalance
-from sensei.models.inventory import InventoryLevel
+from sensei.models.finance import (
+    GLAccount,
+    OpeningBalance,
+    AccountingPeriod,
+    JournalEntry,
+    JournalLine,
+    FXRate,
+    CurrencySetting,
+    StandardCostRecord,
+    WorkOrderCostRollup,
+    TaxJurisdiction,
+    TaxRate,
+    TaxTransaction,
+)
+from sensei.models.site import Site
+from sensei.models.accounts_payable import (
+    PurchaseRequisition,
+    PRLine,
+    PurchaseOrder,
+    POLine,
+    GoodsReceipt,
+    ReceiptLine,
+    SupplierInvoice,
+    SupplierInvoiceLine,
+    PaymentRun,
+    Payment,
+    PaymentInvoiceLink,
+)
+from sensei.models.accounts_receivable import (
+    CustomerCreditProfile,
+    SalesOrder,
+    SalesOrderLine,
+    CustomerInvoice,
+    CustomerInvoiceLine,
+    PaymentReceipt,
+    PaymentAllocation,
+    InvoiceDispute,
+)
+from sensei.models.maintenance import (
+    Asset,
+    PMSchedule,
+    MaintenanceWorkOrder,
+    MaintenanceLaborEntry,
+    MaintenancePartUsed,
+    SparePart,
+    DowntimeEvent,
+    FailureRecord,
+    ConditionReading,
+    LOTOProcedure,
+    LOTOEnergySource,
+    LOTOLock,
+    ToolItem,
+    ToolCheckout,
+    AssetWarranty,
+    WarrantyClaim,
+    FieldReturn,
+    MaintenanceBudget,
+)
+from sensei.models.quality_qms import (
+    QMSDocument,
+    QMSDocumentRevision,
+    ExternalDocument,
+    SupplierScorecard,
+    SCAR,
+    QualityAudit,
+    AuditFinding,
+    Gauge,
+    CalibrationEvent,
+    CustomerComplaint,
+    MSAStudy,
+    MSAMeasurement,
+    MSAResult,
+    ProcessCapabilityStudy,
+    ProcessCapabilityMeasurement,
+    ProcessCapabilityResult,
+    CustomerSurvey,
+    CustomerSurveyResponse,
+    FirstArticleInspection,
+    FAICharacteristic,
+    SelfInspection,
+    SelfInspectionCheck,
+    LabTestMethod,
+    LabSample,
+    LabTestRun,
+    AQLSamplingPlan,
+    AQLLotInspection,
+    TraceabilityMatrix,
+    TraceabilityLink,
+    ChangePointStudy,
+    ChangePointObservation,
+    ChangePointEvent,
+    ManagementReview,
+    ManagementReviewAction,
+)
+from sensei.models.mrp import BOMComponent, MRPDemand, MRPSuggestion, MRPRun, MPSPlan, MPSPlanLine
+from sensei.models.hr import (
+    EmployeeProfile,
+    HRChecklist,
+    HRJobOpening,
+    HRJobApplication,
+    HRAppraisal,
+    HRLeaveRequest,
+)
+from sensei.models.inventory import Warehouse, Location, InventoryLevel, StockMove, ValuationLayer
 from sensei.models.migration import ImportBatch
 from sensei.models.analytics import (
     DailySnapshot,

@@ -80,11 +80,12 @@ export default function ProfileSettingsPage() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const { email, ...rest } = formData;
       await updateProfile({
         full_name: `${formData.firstName} ${formData.lastName}`,
-        email: formData.email,
+        email,
         // job_title, department, etc are not in User type yet, but we'll try to update them if API supports
-        ...formData
+        ...rest
       } as any);
       toast({
         title: 'Profile Updated',

@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 const reports = [
   { id: '1', name: 'Weekly Downtime Analysis', period: 'Jan 1 - Jan 7, 2024', type: 'PDF', size: '1.2 MB' },

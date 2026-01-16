@@ -2,6 +2,62 @@ import { act } from '@testing-library/react';
 import { useAndonStore, getSeverityColor, getSeverityLabel, getAndonTypeLabel, getAndonTypeIcon, getStatusLabel, getStatusColor, formatElapsedTime, formatDuration, calculateEscalationLevel } from '../andon-store';
 import type { AndonEvent, AndonType, AndonStatus, Severity } from '@/types';
 
+jest.mock('@/api/andon', () => ({
+  andonApi: {
+    getAnalytics: jest.fn().mockResolvedValue({
+      avg_response_time_minutes: 0,
+      avg_resolution_time_minutes: 0,
+      total_signals: 0,
+      uptime_impact_percent: 0,
+      signals_by_category: {},
+      top_problem_stations: [],
+    }),
+    acknowledgeEvent: jest.fn().mockResolvedValue({}),
+    resolveEvent: jest.fn().mockResolvedValue({}),
+    escalateEvent: jest.fn().mockResolvedValue({}),
+    triggerAndon: jest.fn().mockImplementation((data: any) => {
+      const now = new Date().toISOString();
+      return Promise.resolve({
+        id: 'andon-api-1',
+        andon_number: 'AND-API-1',
+        work_center_id: data.work_center_id,
+        work_center: {
+          id: data.work_center_id,
+          name: 'Work Center',
+          code: 'WC',
+          type: 'assembly',
+          capacity: 0,
+          capacity_unit: 'units',
+          efficiency_percentage: 0,
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        type: data.type,
+        status: 'triggered',
+        severity: data.severity,
+        description: data.description,
+        triggered_by: 'system',
+        triggered_user: {
+          id: 'system',
+          email: 'system@local',
+          full_name: 'System',
+          role: 'admin',
+          roles: ['admin'],
+          is_active: true,
+          created_at: now,
+          updated_at: now,
+        },
+        escalation_level: 0,
+        created_at: now,
+        updated_at: now,
+        created_by: 'system',
+        updated_by: 'system',
+      });
+    }),
+  },
+}));
+
 // Mock Audio
 const mockPlay = jest.fn();
 const mockPause = jest.fn();
@@ -165,12 +221,12 @@ describe('andon-store', () => {
       expect(updatedEvent?.description).toBe('Updated description');
     });
 
-    test('acknowledgeEvent changes status to acknowledged', () => {
+    test('acknowledgeEvent changes status to acknowledged', async () => {
       const event = createMockAndonEvent({ status: 'triggered' });
       
-      act(() => {
+      await act(async () => {
         useAndonStore.getState().addEvent(event);
-        useAndonStore.getState().acknowledgeEvent(event.id, 'John Doe');
+        await useAndonStore.getState().acknowledgeEvent(event.id, 'John Doe');
       });
 
       const acknowledgedEvent = useAndonStore.getState().events.get(event.id);
@@ -179,12 +235,12 @@ describe('andon-store', () => {
       expect(acknowledgedEvent?.acknowledged_at).toBeDefined();
     });
 
-    test('resolveEvent changes status to resolved', () => {
+    test('resolveEvent changes status to resolved', async () => {
       const event = createMockAndonEvent({ status: 'acknowledged' });
       
-      act(() => {
+      await act(async () => {
         useAndonStore.getState().addEvent(event);
-        useAndonStore.getState().resolveEvent(event.id, 'Problem fixed');
+        await useAndonStore.getState().resolveEvent(event.id, 'Problem fixed');
       });
 
       const resolvedEvent = useAndonStore.getState().events.get(event.id);
@@ -193,12 +249,12 @@ describe('andon-store', () => {
       expect(resolvedEvent?.resolved_at).toBeDefined();
     });
 
-    test('escalateEvent increments escalation level', () => {
+    test('escalateEvent increments escalation level', async () => {
       const event = createMockAndonEvent({ escalation_level: 0 });
       
-      act(() => {
+      await act(async () => {
         useAndonStore.getState().addEvent(event);
-        useAndonStore.getState().escalateEvent(event.id);
+        await useAndonStore.getState().escalateEvent(event.id);
       });
 
       const escalatedEvent = useAndonStore.getState().events.get(event.id);
@@ -206,12 +262,12 @@ describe('andon-store', () => {
       expect(escalatedEvent?.status).toBe('escalated');
     });
 
-    test('escalateEvent updates escalation_level', () => {
+    test('escalateEvent updates escalation_level', async () => {
       const event = createMockAndonEvent({ escalation_level: 1 });
       
-      act(() => {
+      await act(async () => {
         useAndonStore.getState().addEvent(event);
-        useAndonStore.getState().escalateEvent(event.id);
+        await useAndonStore.getState().escalateEvent(event.id);
       });
 
       const escalatedEvent = useAndonStore.getState().events.get(event.id);
@@ -219,9 +275,9 @@ describe('andon-store', () => {
       expect(escalatedEvent?.status).toBe('escalated');
     });
 
-    test('triggerAndon creates a new event with pending status', () => {
-      act(() => {
-        useAndonStore.getState().triggerAndon('wc-1', 'safety', 'critical', 'Safety hazard detected');
+    test('triggerAndon creates a new event with pending status', async () => {
+      await act(async () => {
+        await useAndonStore.getState().triggerAndon('wc-1', 'safety', 'critical', 'Safety hazard detected');
       });
 
       const state = useAndonStore.getState();
@@ -750,28 +806,25 @@ describe('andon-store', () => {
       }).not.toThrow();
     });
 
-    test('acknowledging non-existent event does not throw', () => {
-      expect(() => {
-        act(() => {
-          useAndonStore.getState().acknowledgeEvent('non-existent', 'User');
-        });
-      }).not.toThrow();
+    test('acknowledging non-existent event does not throw', async () => {
+      await act(async () => {
+        await useAndonStore.getState().acknowledgeEvent('non-existent', 'User');
+      });
+      expect(true).toBe(true);
     });
 
-    test('resolving non-existent event does not throw', () => {
-      expect(() => {
-        act(() => {
-          useAndonStore.getState().resolveEvent('non-existent', 'Resolution');
-        });
-      }).not.toThrow();
+    test('resolving non-existent event does not throw', async () => {
+      await act(async () => {
+        await useAndonStore.getState().resolveEvent('non-existent', 'Resolution');
+      });
+      expect(true).toBe(true);
     });
 
-    test('escalating non-existent event does not throw', () => {
-      expect(() => {
-        act(() => {
-          useAndonStore.getState().escalateEvent('non-existent');
-        });
-      }).not.toThrow();
+    test('escalating non-existent event does not throw', async () => {
+      await act(async () => {
+        await useAndonStore.getState().escalateEvent('non-existent');
+      });
+      expect(true).toBe(true);
     });
 
     test('getFilteredEvents returns empty array when no events', () => {
