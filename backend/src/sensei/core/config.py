@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
     DATABASE_POOL_TIMEOUT: int = 30
+    DATABASE_POOL_RECYCLE: int = 3600
+    DATABASE_STATEMENT_CACHE_SIZE: int = 1000
+    DATABASE_STATEMENT_TIMEOUT_MS: int = 10000
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -66,8 +69,10 @@ class Settings(BaseSettings):
     BCRYPT_ROUNDS: int = 12
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
+    SKIP_EMAIL_VERIFICATION: bool = False  # Set to True only in development/testing
     
     # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True  # Set to False to disable rate limiting
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     
@@ -82,6 +87,7 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
+    SLOW_REQUEST_THRESHOLD_MS: int = 1000
     
     # Feature Flags
     FEATURE_PHASE_2_NPI: bool = False

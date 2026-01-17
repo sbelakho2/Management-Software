@@ -15,6 +15,7 @@ Key features:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from html import escape as html_escape
 from typing import Any, Callable
 from uuid import UUID
 import re
@@ -608,16 +609,32 @@ class FullTextSearchService:
         return previous_row[-1]
     
     def _highlight(self, text: str, query: str) -> str:
-        """Highlight query matches in text."""
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
-        return pattern.sub(f"<mark>{query}</mark>", text)
+        """
+        Highlight query matches in text.
+        
+        SECURITY: Text and query are HTML-escaped to prevent XSS attacks.
+        """
+        # HTML-escape both the text and query to prevent XSS
+        safe_text = html_escape(text)
+        safe_query = html_escape(query)
+        
+        pattern = re.compile(re.escape(safe_query), re.IGNORECASE)
+        return pattern.sub(f"<mark>{safe_query}</mark>", safe_text)
     
     def _highlight_tokens(self, text: str, tokens: list[str]) -> str:
-        """Highlight token matches in text."""
-        result = text
+        """
+        Highlight token matches in text.
+        
+        SECURITY: Text and tokens are HTML-escaped to prevent XSS attacks.
+        """
+        # HTML-escape the text first
+        result = html_escape(text)
+        
         for token in tokens:
-            pattern = re.compile(re.escape(token), re.IGNORECASE)
-            result = pattern.sub(f"<mark>{token}</mark>", result)
+            # HTML-escape each token
+            safe_token = html_escape(token)
+            pattern = re.compile(re.escape(safe_token), re.IGNORECASE)
+            result = pattern.sub(f"<mark>{safe_token}</mark>", result)
         return result
     
     def _sort_results(

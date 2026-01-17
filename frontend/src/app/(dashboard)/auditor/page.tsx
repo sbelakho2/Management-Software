@@ -19,8 +19,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
 // Demo data
 const auditStats = {
@@ -60,74 +61,7 @@ const recentAudits = [
   { id: 4, name: 'Process Audit - Welding', date: 'Dec 5, 2024', findings: 1, status: 'closed' },
 ];
 
-function StatCard({ 
-  title, 
-  value, 
-  icon: Icon, 
-  subtitle,
-  variant = 'default' 
-}: { 
-  title: string; 
-  value: string | number; 
-  icon: React.ElementType;
-  subtitle?: string;
-  variant?: 'default' | 'warning' | 'danger' | 'success';
-}) {
-  const variantStyles = {
-    default: 'bg-primary/10 text-primary',
-    warning: 'bg-amber-500/10 text-amber-600',
-    danger: 'bg-destructive/10 text-destructive',
-    success: 'bg-emerald-500/10 text-emerald-600',
-  };
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{value}</p>
-            {subtitle && (
-              <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
-            )}
-          </div>
-          <div className={`p-3 rounded-full ${variantStyles[variant]}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function AuditorDashboard() {
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 page-fade-in" data-testid="auditor-page">
       {/* Header */}
@@ -166,43 +100,51 @@ export default function AuditorDashboard() {
                 </Badge>
               </div>
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden sm:flex items-center gap-3">
+              <AmbientStatus 
+                status={auditStats.criticalFindings > 0 ? 'warning' : 'operational'} 
+                label={auditStats.criticalFindings > 0 ? `${auditStats.criticalFindings} Critical Findings` : 'Compliance Optimal'}
+              />
               <Shield className="h-16 w-16 text-emerald-600/20" />
             </div>
           </div>
-          <Progress value={auditStats.complianceScore} className="mt-4 h-2" />
+          <div className="goal-progress-track mt-4">
+            <div className="goal-progress-fill bg-emerald-500" style={{ width: `${auditStats.complianceScore}%` }} />
+          </div>
         </CardContent>
       </Card>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Stats Grid - Using Shared StatCard */}
+      <StatSection label="Audit Metrics" columns={4}>
         <StatCard
-          title="Audit Protocols (YTD)"
           value={auditStats.completedThisYear}
+          label="Audit Protocols (YTD)"
           icon={CheckCircle2}
-          subtitle={`of ${auditStats.totalAudits} INITIATED`}
-          variant="success"
+          iconColor="success"
+          goal={{ current: auditStats.completedThisYear, target: auditStats.totalAudits }}
         />
         <StatCard
-          title="Unresolved Findings"
           value={auditStats.openFindings}
+          label="Unresolved Findings"
           icon={AlertTriangle}
-          subtitle={`${auditStats.criticalFindings} CRITICAL THRESHOLD`}
-          variant="warning"
+          iconColor="warning"
+          critical={auditStats.criticalFindings > 2}
         />
         <StatCard
-          title="Scheduled Protocols"
           value={auditStats.upcomingAudits}
+          label="Scheduled Protocols"
           icon={Calendar}
-          subtitle="Strategic synchronization"
+          iconColor="info"
         />
         <StatCard
-          title="Resolution Velocity"
-          value="12"
+          value={12}
+          label="Resolution Velocity"
           icon={Clock}
-          subtitle="Mean days to closure"
+          iconColor="primary"
+          trend="down"
+          trendValue="Mean days to closure"
         />
-      </div>
+      </StatSection>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-2">

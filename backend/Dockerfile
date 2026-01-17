@@ -56,5 +56,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "sensei.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application (multi-worker for concurrency)
+CMD ["/bin/sh", "-c", "gunicorn sensei.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers ${WEB_CONCURRENCY:-4} --timeout ${WORKER_TIMEOUT:-120} --keep-alive ${KEEP_ALIVE:-5} --log-level info --access-logfile - --error-logfile -"]

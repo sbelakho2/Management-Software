@@ -43,6 +43,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { useCustomersStore } from '@/stores/customers';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 const statusConfig = {
   active: { label: 'Active', variant: 'success' as const },

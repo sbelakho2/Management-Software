@@ -45,6 +45,7 @@ import type { RFQStatus, Priority, UserRole, RFQ } from '@/types';
 import { usePipelineStore } from '@/stores/pipeline';
 import { useAuthStore } from '@/stores';
 import { hasPageAccess } from '@/lib/page-access';
+import { AmbientStatus } from '@/components/ui/stat-card';
 
 // Use RFQ type directly from the types
 type RFQItem = RFQ;

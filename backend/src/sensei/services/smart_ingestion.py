@@ -34,6 +34,16 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _escape_like_pattern(value: str) -> str:
+    """Escape special characters in LIKE/ILIKE patterns to prevent SQL injection."""
+    if not value:
+        return value
+    value = value.replace("\\", "\\\\")
+    value = value.replace("%", "\\%")
+    value = value.replace("_", "\\_")
+    return value
+
+
 # =============================================================================
 # Enums
 # =============================================================================
@@ -1615,8 +1625,9 @@ class SmartIngestionService:
             # Find or create account
             account_id = None
             if company_name:
+                escaped_name = _escape_like_pattern(company_name)
                 result = await self.db.execute(
-                    select(Account).where(Account.name.ilike(f"%{company_name}%")).limit(1)
+                    select(Account).where(Account.name.ilike(f"%{escaped_name}%")).limit(1)
                 )
                 account = result.scalar_one_or_none()
                 if account:
@@ -1719,8 +1730,9 @@ class SmartIngestionService:
             # Find or create account
             account_id = None
             if company_name:
+                escaped_name = _escape_like_pattern(company_name)
                 result = await self.db.execute(
-                    select(Account).where(Account.name.ilike(f"%{company_name}%")).limit(1)
+                    select(Account).where(Account.name.ilike(f"%{escaped_name}%")).limit(1)
                 )
                 account = result.scalar_one_or_none()
                 if account:

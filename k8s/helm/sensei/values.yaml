@@ -15,15 +15,20 @@ replicaCount:
   worker: 1
 
 # Image configuration
+# IMPORTANT: Always use specific version tags in production, never "latest"
+# If tag is empty, defaults to Chart.appVersion (see Chart.yaml)
+# Override via: --set image.backend.tag=v1.0.0 during deployment
 image:
   backend:
     repository: sensei/backend
     pullPolicy: IfNotPresent
-    tag: "latest"
+    # Tag defaults to Chart.appVersion if empty - set explicitly for version pinning
+    tag: ""
   frontend:
     repository: sensei/frontend
     pullPolicy: IfNotPresent
-    tag: "latest"
+    # Tag defaults to Chart.appVersion if empty - set explicitly for version pinning
+    tag: ""
 
 # Service configuration
 service:

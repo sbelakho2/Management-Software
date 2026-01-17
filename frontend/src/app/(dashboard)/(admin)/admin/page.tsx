@@ -77,6 +77,8 @@ import {
   type LineageEdge as LayoutLineageEdge,
   type LineageNode as LayoutLineageNode,
 } from '@/lib/lineage-layout';
+import { AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -174,6 +176,7 @@ export default function AdminPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <AmbientStatus status="operational" label="System Configured" />
           <Button variant="outline" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-11">
             <Save className="mr-2 h-4 w-4" />
             Save Configuration
@@ -731,12 +734,12 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            {role.permissions.slice(0, 2).map((perm, idx) => (
+                            {(role.permissions ?? []).slice(0, 2).map((perm, idx) => (
                               <Badge key={idx} variant="secondary" className="text-xs">
                                 {perm}
                               </Badge>
                             ))}
-                            {role.permissions.length > 2 && (
+                            {(role.permissions?.length ?? 0) > 2 && (
                               <Badge variant="secondary" className="text-xs">
                                 +{role.permissions.length - 2}
                               </Badge>
@@ -830,12 +833,12 @@ export default function AdminPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {cadence.target_roles.slice(0, 2).map((role) => (
+                          {(cadence.target_roles ?? []).slice(0, 2).map((role) => (
                             <Badge key={role} variant="secondary" className="text-xs">
                               {role}
                             </Badge>
                           ))}
-                          {cadence.target_roles.length > 2 && (
+                          {(cadence.target_roles?.length ?? 0) > 2 && (
                             <Badge variant="secondary" className="text-xs">
                               +{cadence.target_roles.length - 2}
                             </Badge>
@@ -844,7 +847,7 @@ export default function AdminPage() {
                       </TableCell>
                       <TableCell>
                         <div className="text-xs text-muted-foreground">
-                          {cadence.topics.length} topic{cadence.topics.length !== 1 ? 's' : ''}
+                          {(cadence.topics?.length ?? 0)} topic{(cadence.topics?.length ?? 0) !== 1 ? 's' : ''}
                         </div>
                       </TableCell>
                       <TableCell>

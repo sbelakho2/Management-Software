@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn, formatDate } from '@/lib/utils';
 import { useMaintenanceStore } from '@/stores';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 type TabType = 'assets' | 'work-orders' | 'pm-schedules' | 'loto' | 'tool-crib' | 'warranty' | 'field-returns' | 'budget';
 
@@ -698,23 +699,6 @@ function BudgetTab() {
                   <td className="py-3 px-4 text-muted-foreground">{budget.currency} {budget.actual_amount}</td>
                   <td className="py-3 px-4">
                     <Badge variant={budget.variance_amount <= 0 ? 'success' : 'warning'}>
-            <button
-              onClick={() => setActiveTab('field-returns')}
-              className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
-                activeTab === 'field-returns'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Field Returns
-              </div>
-              {activeTab === 'field-returns' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
-            </button>
                       {budget.currency} {budget.variance_amount}
                     </Badge>
                   </td>

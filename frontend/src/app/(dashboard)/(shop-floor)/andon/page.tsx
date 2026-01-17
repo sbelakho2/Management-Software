@@ -37,6 +37,7 @@ import {
 import { cn, formatDate } from '@/lib/utils';
 import { useAndonStore, formatElapsedTime } from '@/stores/andon-store';
 import type { AndonEvent, AndonStatus, Severity, WorkCenter } from '@/types';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 export default function AndonBoardPage() {
   const router = useRouter();

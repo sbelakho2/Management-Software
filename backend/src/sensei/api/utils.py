@@ -6,6 +6,7 @@ Common utilities for API endpoints including:
 - Query parameter parsing
 - File handling
 - Data transformation
+- Security utilities
 """
 
 from datetime import datetime, timezone
@@ -26,6 +27,41 @@ from sensei.core.config import settings
 
 T = TypeVar("T")
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+
+
+# =============================================================================
+# Security Utilities
+# =============================================================================
+
+
+def escape_like_pattern(value: str) -> str:
+    """
+    Escape special characters in LIKE/ILIKE patterns to prevent SQL injection.
+    
+    PostgreSQL LIKE patterns treat '%', '_', and '\\' as special characters.
+    This function escapes them so they are treated literally.
+    
+    Args:
+        value: The search string to escape
+        
+    Returns:
+        Escaped string safe for use in LIKE/ILIKE patterns
+        
+    Example:
+        >>> escape_like_pattern("test%value")
+        'test\\%value'
+        >>> escape_like_pattern("user_name")
+        'user\\_name'
+    """
+    if not value:
+        return value
+    # Escape backslash first (since it's the escape character)
+    value = value.replace("\\", "\\\\")
+    # Escape percent sign
+    value = value.replace("%", "\\%")
+    # Escape underscore
+    value = value.replace("_", "\\_")
+    return value
 
 
 # =============================================================================

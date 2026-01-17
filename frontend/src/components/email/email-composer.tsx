@@ -37,6 +37,7 @@ import {
   createRecipient,
   validateRecipient,
 } from '@/stores/email-drafting-store';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 // ============================================================================
 // Icons
@@ -733,7 +734,8 @@ export function EmailComposer({
   }, [purpose, recipientEmail]);
 
   return (
-    <div className={`flex h-full flex-col bg-gray-50 ${className}`}>
+    <ErrorBoundary>
+      <div className={`flex h-full flex-col bg-gray-50 ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center gap-2">
@@ -913,7 +915,8 @@ export function EmailComposer({
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

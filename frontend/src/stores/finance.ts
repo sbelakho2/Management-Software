@@ -8,6 +8,9 @@ interface FinanceState {
   fxRates: any[];
   standardCosts: any[];
   costRollups: any[];
+  taxJurisdictions: any[];
+  taxRates: any[];
+  taxTransactions: any[];
   loading: boolean;
   error: string | null;
 
@@ -22,6 +25,12 @@ interface FinanceState {
   upsertStandardCost: (payload: any) => Promise<void>;
   fetchCostRollups: (workOrderId?: string) => Promise<void>;
   createCostRollup: (payload: any) => Promise<void>;
+  fetchTaxJurisdictions: () => Promise<void>;
+  createTaxJurisdiction: (payload: any) => Promise<void>;
+  fetchTaxRates: (jurisdictionId?: string) => Promise<void>;
+  createTaxRate: (payload: any) => Promise<void>;
+  fetchTaxTransactions: (referenceId?: string) => Promise<void>;
+  createTaxTransaction: (payload: any) => Promise<void>;
 }
 
 export const useFinanceStore = create<FinanceState>((set) => ({
@@ -31,13 +40,16 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   fxRates: [],
   standardCosts: [],
   costRollups: [],
+  taxJurisdictions: [],
+  taxRates: [],
+  taxTransactions: [],
   loading: false,
   error: null,
 
   fetchAccounts: async () => {
     set({ loading: true });
     try {
-      const response = await apiClient.get('/finance/accounts');
+      const response = await apiClient.get<any[]>('/finance/accounts');
       set({ accounts: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -47,7 +59,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   fetchJournalEntries: async () => {
     set({ loading: true });
     try {
-      const response = await apiClient.get('/finance/journal-entries');
+      const response = await apiClient.get<any[]>('/finance/journal-entries');
       set({ journalEntries: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -58,7 +70,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       await apiClient.post('/finance/accounts', account);
-      const response = await apiClient.get('/finance/accounts');
+      const response = await apiClient.get<any[]>('/finance/accounts');
       set({ accounts: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -68,7 +80,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   fetchCurrencySettings: async () => {
     set({ loading: true });
     try {
-      const response = await apiClient.get('/finance/currency-settings');
+      const response = await apiClient.get<any>('/finance/currency-settings');
       set({ currencySettings: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -78,7 +90,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   updateCurrencySettings: async (settings) => {
     set({ loading: true });
     try {
-      const response = await apiClient.post('/finance/currency-settings', settings);
+      const response = await apiClient.post<any>('/finance/currency-settings', settings);
       set({ currencySettings: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -89,7 +101,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       const params = asOf ? { as_of: asOf } : undefined;
-      const response = await apiClient.get('/finance/fx-rates', { params });
+      const response = await apiClient.get<any[]>('/finance/fx-rates', { params });
       set({ fxRates: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -100,7 +112,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       await apiClient.post('/finance/fx-rates', rate);
-      const response = await apiClient.get('/finance/fx-rates');
+      const response = await apiClient.get<any[]>('/finance/fx-rates');
       set({ fxRates: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -111,7 +123,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       const params = sku ? { sku } : undefined;
-      const response = await apiClient.get('/finance/costing/standard-costs', { params });
+      const response = await apiClient.get<any[]>('/finance/costing/standard-costs', { params });
       set({ standardCosts: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -122,7 +134,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       await apiClient.post('/finance/costing/standard-costs', payload);
-      const response = await apiClient.get('/finance/costing/standard-costs');
+      const response = await apiClient.get<any[]>('/finance/costing/standard-costs');
       set({ standardCosts: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -133,7 +145,7 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       const params = workOrderId ? { work_order_id: workOrderId } : undefined;
-      const response = await apiClient.get('/finance/costing/rollups', { params });
+      const response = await apiClient.get<any[]>('/finance/costing/rollups', { params });
       set({ costRollups: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -144,8 +156,73 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     set({ loading: true });
     try {
       await apiClient.post('/finance/costing/rollups', payload);
-      const response = await apiClient.get('/finance/costing/rollups');
+      const response = await apiClient.get<any[]>('/finance/costing/rollups');
       set({ costRollups: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchTaxJurisdictions: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<any[]>('/finance/tax/jurisdictions');
+      set({ taxJurisdictions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createTaxJurisdiction: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/tax/jurisdictions', payload);
+      const response = await apiClient.get<any[]>('/finance/tax/jurisdictions');
+      set({ taxJurisdictions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchTaxRates: async (jurisdictionId) => {
+    set({ loading: true });
+    try {
+      const params = jurisdictionId ? { jurisdiction_id: jurisdictionId } : undefined;
+      const response = await apiClient.get<any[]>('/finance/tax/rates', { params });
+      set({ taxRates: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createTaxRate: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/tax/rates', payload);
+      const response = await apiClient.get<any[]>('/finance/tax/rates');
+      set({ taxRates: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchTaxTransactions: async (referenceId) => {
+    set({ loading: true });
+    try {
+      const params = referenceId ? { reference_id: referenceId } : undefined;
+      const response = await apiClient.get<any[]>('/finance/tax/transactions', { params });
+      set({ taxTransactions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createTaxTransaction: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/tax/transactions', payload);
+      const response = await apiClient.get<any[]>('/finance/tax/transactions');
+      set({ taxTransactions: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }

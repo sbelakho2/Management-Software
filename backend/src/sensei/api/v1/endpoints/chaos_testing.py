@@ -18,6 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from sensei.api.deps import CurrentSuperuser
 from sensei.services.utils.chaos_testing import (
     CircuitState,
     ComponentType,
@@ -291,7 +292,7 @@ def validate_circuit_state(value: str) -> CircuitState:
     response_model=ScenarioResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_scenario(request: CreateScenarioRequest):
+def create_scenario(request: CreateScenarioRequest, current_user: CurrentSuperuser):
     """Create a new failure scenario."""
     service = get_chaos_testing_service()
     
@@ -328,7 +329,7 @@ def create_scenario(request: CreateScenarioRequest):
 
 
 @router.get("/scenarios", response_model=list[ScenarioResponse])
-def list_scenarios():
+def list_scenarios(current_user: CurrentSuperuser):
     """List all failure scenarios."""
     service = get_chaos_testing_service()
     scenarios = service.list_scenarios()
@@ -350,7 +351,7 @@ def list_scenarios():
 
 
 @router.get("/scenarios/{scenario_id}", response_model=ScenarioResponse)
-def get_scenario(scenario_id: str):
+def get_scenario(scenario_id: str, current_user: CurrentSuperuser):
     """Get a failure scenario by ID."""
     service = get_chaos_testing_service()
     scenario = service.get_scenario(scenario_id)
@@ -375,7 +376,7 @@ def get_scenario(scenario_id: str):
 
 
 @router.delete("/scenarios/{scenario_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_scenario(scenario_id: str):
+def delete_scenario(scenario_id: str, current_user: CurrentSuperuser):
     """Delete a failure scenario."""
     service = get_chaos_testing_service()
     
@@ -400,7 +401,7 @@ def delete_scenario(scenario_id: str):
     "/failures/{scenario_id}/inject",
     response_model=FailureInjectionResponse,
 )
-def inject_failure(scenario_id: str):
+def inject_failure(scenario_id: str, current_user: CurrentSuperuser):
     """Inject a failure based on a scenario."""
     service = get_chaos_testing_service()
     
@@ -424,7 +425,7 @@ def inject_failure(scenario_id: str):
 
 
 @router.post("/failures/{scenario_id}/remove")
-def remove_failure(scenario_id: str):
+def remove_failure(scenario_id: str, current_user: CurrentSuperuser):
     """Remove an injected failure."""
     service = get_chaos_testing_service()
     
@@ -444,14 +445,14 @@ def remove_failure(scenario_id: str):
 
 
 @router.get("/failures/active")
-def get_active_failures():
+def get_active_failures(current_user: CurrentSuperuser):
     """Get all active failure injections."""
     service = get_chaos_testing_service()
     return service.get_active_failures()
 
 
 @router.get("/state", response_model=SystemStateResponse)
-def get_system_state():
+def get_system_state(current_user: CurrentSuperuser):
     """Get current simulated system state."""
     service = get_chaos_testing_service()
     state = service.get_system_state()
@@ -466,7 +467,7 @@ def get_system_state():
     response_model=JobRetryTestResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_job_retry_test(request: CreateJobRetryTestRequest):
+def create_job_retry_test(request: CreateJobRetryTestRequest, current_user: CurrentSuperuser):
     """Create a job retry test."""
     service = get_chaos_testing_service()
     
@@ -493,7 +494,7 @@ def create_job_retry_test(request: CreateJobRetryTestRequest):
 
 
 @router.get("/job-retry-tests", response_model=list[JobRetryTestResponse])
-def list_job_retry_tests():
+def list_job_retry_tests(current_user: CurrentSuperuser):
     """List all job retry tests."""
     service = get_chaos_testing_service()
     tests = service.list_job_retry_tests()
@@ -516,7 +517,7 @@ def list_job_retry_tests():
 
 
 @router.get("/job-retry-tests/{test_id}", response_model=JobRetryTestResponse)
-def get_job_retry_test(test_id: str):
+def get_job_retry_test(test_id: str, current_user: CurrentSuperuser):
     """Get a job retry test by ID."""
     service = get_chaos_testing_service()
     test = service.get_job_retry_test(test_id)
@@ -545,7 +546,7 @@ def get_job_retry_test(test_id: str):
     "/job-retry-tests/{test_id}/simulate",
     response_model=JobRetryTestResponse,
 )
-def simulate_job_execution(test_id: str, request: SimulateJobRequest):
+def simulate_job_execution(test_id: str, request: SimulateJobRequest, current_user: CurrentSuperuser):
     """Simulate job execution with failures."""
     service = get_chaos_testing_service()
     
@@ -575,7 +576,7 @@ def simulate_job_execution(test_id: str, request: SimulateJobRequest):
     "/job-retry-tests/{test_id}/validate",
     response_model=JobRetryValidationResponse,
 )
-def validate_job_retry(test_id: str):
+def validate_job_retry(test_id: str, current_user: CurrentSuperuser):
     """Validate job retry behavior."""
     service = get_chaos_testing_service()
     
@@ -598,7 +599,7 @@ def validate_job_retry(test_id: str):
     response_model=DegradationTestResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_degradation_test(scenario_id: str):
+def create_degradation_test(scenario_id: str, current_user: CurrentSuperuser):
     """Create a degradation test for a scenario."""
     service = get_chaos_testing_service()
     
@@ -622,7 +623,7 @@ def create_degradation_test(scenario_id: str):
 
 
 @router.get("/degradation-tests", response_model=list[DegradationTestResponse])
-def list_degradation_tests():
+def list_degradation_tests(current_user: CurrentSuperuser):
     """List all degradation tests."""
     service = get_chaos_testing_service()
     tests = service.list_degradation_tests()
@@ -645,7 +646,7 @@ def list_degradation_tests():
     "/degradation-tests/{test_id}/execute",
     response_model=DegradationTestResponse,
 )
-def execute_degradation_test(test_id: str):
+def execute_degradation_test(test_id: str, current_user: CurrentSuperuser):
     """Execute a degradation test."""
     service = get_chaos_testing_service()
     
@@ -676,7 +677,7 @@ def execute_degradation_test(test_id: str):
     response_model=CircuitBreakerResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register_circuit_breaker(request: RegisterCircuitBreakerRequest):
+def register_circuit_breaker(request: RegisterCircuitBreakerRequest, current_user: CurrentSuperuser):
     """Register a circuit breaker."""
     service = get_chaos_testing_service()
     
@@ -697,7 +698,7 @@ def register_circuit_breaker(request: RegisterCircuitBreakerRequest):
 
 
 @router.get("/circuit-breakers", response_model=list[CircuitBreakerResponse])
-def list_circuit_breakers():
+def list_circuit_breakers(current_user: CurrentSuperuser):
     """List all circuit breakers."""
     service = get_chaos_testing_service()
     breakers = service.list_circuit_breakers()
@@ -717,7 +718,7 @@ def list_circuit_breakers():
 
 
 @router.get("/circuit-breakers/{breaker_id}", response_model=CircuitBreakerResponse)
-def get_circuit_breaker(breaker_id: str):
+def get_circuit_breaker(breaker_id: str, current_user: CurrentSuperuser):
     """Get a circuit breaker by ID."""
     service = get_chaos_testing_service()
     breaker = service.get_circuit_breaker(breaker_id)
@@ -743,7 +744,7 @@ def get_circuit_breaker(breaker_id: str):
     "/circuit-breakers/{breaker_id}/failure",
     response_model=CircuitBreakerResponse,
 )
-def record_circuit_failure(breaker_id: str):
+def record_circuit_failure(breaker_id: str, current_user: CurrentSuperuser):
     """Record a failure for a circuit breaker."""
     service = get_chaos_testing_service()
     
@@ -770,7 +771,7 @@ def record_circuit_failure(breaker_id: str):
     "/circuit-breakers/{breaker_id}/success",
     response_model=CircuitBreakerResponse,
 )
-def record_circuit_success(breaker_id: str):
+def record_circuit_success(breaker_id: str, current_user: CurrentSuperuser):
     """Record a success for a circuit breaker."""
     service = get_chaos_testing_service()
     
@@ -797,7 +798,7 @@ def record_circuit_success(breaker_id: str):
     "/circuit-breakers/{breaker_id}/reset",
     response_model=CircuitBreakerResponse,
 )
-def attempt_circuit_reset(breaker_id: str):
+def attempt_circuit_reset(breaker_id: str, current_user: CurrentSuperuser):
     """Attempt to reset circuit breaker to half-open."""
     service = get_chaos_testing_service()
     
@@ -825,7 +826,7 @@ def attempt_circuit_reset(breaker_id: str):
     response_model=CircuitBreakerTestResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_circuit_breaker_test(request: CreateCircuitBreakerTestRequest):
+def create_circuit_breaker_test(request: CreateCircuitBreakerTestRequest, current_user: CurrentSuperuser):
     """Create a circuit breaker test."""
     service = get_chaos_testing_service()
     
@@ -859,7 +860,7 @@ def create_circuit_breaker_test(request: CreateCircuitBreakerTestRequest):
     "/circuit-breaker-tests/{test_id}/execute/{breaker_id}",
     response_model=CircuitBreakerTestResponse,
 )
-def execute_circuit_breaker_test(test_id: str, breaker_id: str):
+def execute_circuit_breaker_test(test_id: str, breaker_id: str, current_user: CurrentSuperuser):
     """Execute a circuit breaker test."""
     service = get_chaos_testing_service()
     
@@ -891,7 +892,7 @@ def execute_circuit_breaker_test(test_id: str, breaker_id: str):
     response_model=TestRunResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_test_run(request: CreateTestRunRequest):
+def create_test_run(request: CreateTestRunRequest, current_user: CurrentSuperuser):
     """Create a new test run."""
     service = get_chaos_testing_service()
     
@@ -915,7 +916,7 @@ def create_test_run(request: CreateTestRunRequest):
 
 
 @router.get("/test-runs", response_model=list[TestRunResponse])
-def list_test_runs():
+def list_test_runs(current_user: CurrentSuperuser):
     """List all test runs."""
     service = get_chaos_testing_service()
     runs = service.list_test_runs()
@@ -937,7 +938,7 @@ def list_test_runs():
 
 
 @router.get("/test-runs/{run_id}", response_model=TestRunResponse)
-def get_test_run(run_id: str):
+def get_test_run(run_id: str, current_user: CurrentSuperuser):
     """Get a test run by ID."""
     service = get_chaos_testing_service()
     run = service.get_test_run(run_id)
@@ -962,7 +963,7 @@ def get_test_run(run_id: str):
 
 
 @router.post("/test-runs/{run_id}/start", response_model=TestRunResponse)
-def start_test_run(run_id: str):
+def start_test_run(run_id: str, current_user: CurrentSuperuser):
     """Start a test run."""
     service = get_chaos_testing_service()
     
@@ -988,7 +989,7 @@ def start_test_run(run_id: str):
 
 
 @router.post("/test-runs/{run_id}/abort", response_model=TestRunResponse)
-def abort_test_run(run_id: str):
+def abort_test_run(run_id: str, current_user: CurrentSuperuser):
     """Abort a running test run."""
     service = get_chaos_testing_service()
     
@@ -1021,7 +1022,7 @@ def abort_test_run(run_id: str):
     response_model=RecoveryMetricsResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def record_recovery_metrics(request: RecordRecoveryMetricsRequest):
+def record_recovery_metrics(request: RecordRecoveryMetricsRequest, current_user: CurrentSuperuser):
     """Record recovery metrics for a scenario."""
     service = get_chaos_testing_service()
     
@@ -1051,7 +1052,7 @@ def record_recovery_metrics(request: RecordRecoveryMetricsRequest):
 
 
 @router.get("/recovery-metrics", response_model=list[RecoveryMetricsResponse])
-def list_recovery_metrics():
+def list_recovery_metrics(current_user: CurrentSuperuser):
     """List all recovery metrics."""
     service = get_chaos_testing_service()
     metrics = service.list_recovery_metrics()
@@ -1073,7 +1074,7 @@ def list_recovery_metrics():
 
 
 @router.get("/recovery-metrics/{scenario_id}", response_model=RecoveryMetricsResponse)
-def get_recovery_metrics(scenario_id: str):
+def get_recovery_metrics(scenario_id: str, current_user: CurrentSuperuser):
     """Get recovery metrics for a scenario."""
     service = get_chaos_testing_service()
     metrics = service.get_recovery_metrics(scenario_id)
@@ -1101,7 +1102,7 @@ def get_recovery_metrics(scenario_id: str):
 
 
 @router.get("/summary", response_model=ChaosSummaryResponse)
-def get_chaos_summary():
+def get_chaos_summary(current_user: CurrentSuperuser):
     """Get chaos testing summary and recommendations."""
     service = get_chaos_testing_service()
     summary = service.get_summary()
@@ -1127,7 +1128,7 @@ def get_chaos_summary():
 
 
 @router.delete("/data", status_code=status.HTTP_204_NO_CONTENT)
-def clear_all_data():
+def clear_all_data(current_user: CurrentSuperuser):
     """Clear all chaos testing data."""
     service = get_chaos_testing_service()
     service.clear_all_data()

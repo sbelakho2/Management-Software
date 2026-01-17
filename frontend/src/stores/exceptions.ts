@@ -106,7 +106,11 @@ export const useExceptionsStore = create<ExceptionsState>()(
         // Actions
         fetchExceptions: async (filters = {}) => {
           const now = Date.now();
-          const { lastFetchedAt } = get();
+          const { lastFetchedAt, isLoading } = get();
+
+          if (isLoading) {
+            return;
+          }
           
           // Use cache if fresh and no filters
           if (!Object.keys(filters).length && lastFetchedAt && now - lastFetchedAt < CACHE_DURATION) {

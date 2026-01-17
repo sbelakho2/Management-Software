@@ -212,7 +212,11 @@ export const useAdminStore = create<AdminState>()(
         // Gates Actions
         fetchGates: async () => {
           const now = Date.now();
-          const { lastFetchedAt } = get();
+          const { lastFetchedAt, isLoading } = get();
+
+          if (isLoading) {
+            return;
+          }
           
           if (lastFetchedAt && now - lastFetchedAt < CACHE_DURATION) {
             return;

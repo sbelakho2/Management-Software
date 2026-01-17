@@ -256,7 +256,26 @@ class JobHealthService:
         self._workers: dict[str, Worker] = {}
         self._alerts: dict[str, Alert] = {}
         self._health_checks: list[HealthCheck] = []
+        self._max_executions: int = 5000
+        self._execution_ttl: timedelta = timedelta(days=30)
         self._initialize_defaults()
+
+    def _prune_executions(self) -> None:
+        """Prune old job executions to prevent unbounded growth."""
+        cutoff = datetime.now(timezone.utc) - self._execution_ttl
+
+        stale_ids = [
+            eid for eid, execution in self._executions.items()
+            if execution.completed_at and execution.completed_at < cutoff
+        ]
+        for eid in stale_ids:
+            del self._executions[eid]
+
+        excess = len(self._executions) - self._max_executions
+        if excess > 0:
+            oldest = sorted(self._executions.items(), key=lambda item: item[1].created_at)
+            for eid, _ in oldest[:excess]:
+                del self._executions[eid]
 
     def _initialize_defaults(self) -> None:
         """Initialize default configuration."""
@@ -400,6 +419,7 @@ class JobHealthService:
             tags=list(job.tags),
         )
         self._executions[execution.id] = execution
+        self._prune_executions()
         return execution
 
     def get_execution(self, execution_id: str) -> Optional[JobExecution]:
@@ -582,6 +602,7 @@ class JobHealthService:
             tags=list(original.tags),
         )
         self._executions[new_execution.id] = new_execution
+        self._prune_executions()
         return new_execution
 
     # ========================================

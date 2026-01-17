@@ -57,6 +57,15 @@ const config: Config = {
           DEFAULT: 'hsl(var(--danger))',
           foreground: 'hsl(var(--danger-foreground))',
         },
+        // Sensei Modern 2.0 - Extended colors
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+        goal: {
+          track: 'hsl(var(--goal-track))',
+          fill: 'hsl(var(--goal-fill))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -73,8 +82,12 @@ const config: Config = {
         'elevation-3': '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
         'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
         'glow': '0 0 20px rgba(var(--primary), 0.15)',
+        'glow-success': '0 0 20px rgba(34, 197, 94, 0.15)',
+        'glow-danger': '0 0 20px rgba(239, 68, 68, 0.15)',
+        'glow-warning': '0 0 20px rgba(245, 158, 11, 0.15)',
         'quirky': '5px 5px 0px 0px rgba(var(--primary), 0.1)',
         'quirky-hover': '8px 8px 0px 0px rgba(var(--primary), 0.2)',
+        'spotlight': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.05)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
@@ -133,6 +146,18 @@ const config: Config = {
           from: { transform: 'scale(0.95)', opacity: '0' },
           to: { transform: 'scale(1)', opacity: '1' },
         },
+        'fade-slide-in': {
+          from: { transform: 'translateY(10px)', opacity: '0' },
+          to: { transform: 'translateY(0)', opacity: '1' },
+        },
+        'critical-pulse': {
+          '0%, 100%': { boxShadow: '0 0 0 0 hsl(var(--danger) / 0.4)' },
+          '50%': { boxShadow: '0 0 0 8px hsl(var(--danger) / 0)' },
+        },
+        'spotlight-shimmer': {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -144,6 +169,9 @@ const config: Config = {
         'shimmer': 'shimmer 2s infinite',
         'float': 'float 3s ease-in-out infinite',
         'scale-in': 'scale-in 0.2s ease-out',
+        'fade-slide-in': 'fade-slide-in 0.3s ease-out both',
+        'critical-pulse': 'critical-pulse 2s ease-in-out infinite',
+        'spotlight-shimmer': 'spotlight-shimmer 3s ease-in-out infinite',
       },
     },
   },

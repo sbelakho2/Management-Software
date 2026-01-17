@@ -112,3 +112,59 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2);
 }
+/**
+ * Validates and sanitizes a redirect path to prevent open redirect vulnerabilities.
+ * Only allows internal paths (starting with /) and blocks external URLs or protocol-relative URLs.
+ * 
+ * @param path - The path to validate
+ * @param fallback - Fallback path if the provided path is invalid (default: '/today')
+ * @returns A safe internal path
+ */
+export function getSafeRedirectPath(path: string | null | undefined, fallback: string = '/today'): string {
+  // If no path provided, return fallback
+  if (!path) {
+    return fallback;
+  }
+
+  // Trim whitespace
+  const trimmedPath = path.trim();
+
+  // Block empty paths
+  if (!trimmedPath) {
+    return fallback;
+  }
+
+  // Block protocol URLs (http://, https://, javascript:, data:, etc.)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmedPath)) {
+    return fallback;
+  }
+
+  // Block protocol-relative URLs (//evil.com)
+  if (trimmedPath.startsWith('//')) {
+    return fallback;
+  }
+
+  // Block backslash URLs (\\evil.com - IE quirk)
+  if (trimmedPath.startsWith('\\')) {
+    return fallback;
+  }
+
+  // Must start with a single forward slash for internal paths
+  if (!trimmedPath.startsWith('/')) {
+    return fallback;
+  }
+
+  // Block URLs with @ in path (could be parsed as credentials)
+  if (trimmedPath.includes('@')) {
+    return fallback;
+  }
+
+  // Block encoded characters that could bypass validation
+  // Check for encoded slashes, colons, or at signs
+  if (/%2f|%5c|%3a|%40/i.test(trimmedPath)) {
+    return fallback;
+  }
+
+  // Valid internal path
+  return trimmedPath;
+}

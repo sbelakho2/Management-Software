@@ -261,9 +261,9 @@ export default function TodayPage() {
 	}, [todayData, userRoles]);
 
 	const fallbackRfqs: RFQItem[] = React.useMemo(() => {
-		const base = [
-			{ id: 'r1', title: 'RFQ-2024-0089', customer: 'Acme Corp', priority: 'urgent', status: 'at_risk', href: '/pipeline/1' },
-			{ id: 'r2', title: 'RFQ-2024-0093', customer: 'TechStart Inc', priority: 'high', status: 'reviewing', href: '/pipeline/2' },
+		const base: RFQItem[] = [
+			{ id: 'r1', title: 'RFQ-2024-0089', customer: 'Acme Corp', priority: 'urgent' as PriorityLevel, status: 'at_risk', href: '/pipeline/1' },
+			{ id: 'r2', title: 'RFQ-2024-0093', customer: 'TechStart Inc', priority: 'high' as PriorityLevel, status: 'reviewing', href: '/pipeline/2' },
 		];
 		return isTestEnv ? base : base.filter(r => hasPageAccess(r.href, userRoles));
 	}, [userRoles, isTestEnv]);

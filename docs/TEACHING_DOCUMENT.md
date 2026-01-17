@@ -314,9 +314,22 @@ Drawing and revision control integration:
 
 ### 5.3 Accounting Integration
 
-- **Multi-currency**: EUR base with MAD/USD conversion
+- **Multi-currency**: Per-site base currency with consolidated reporting across MAD, TND, and USD
 - **Cost Tracking**: Scrap/rework cost attribution
 - **Labor Export**: Time-and-attendance to payroll
+- **Tax Compliance**: Jurisdiction-based tax rates with effective dates (VAT for Morocco/Tunisia, sales tax for US/Wyoming)
+
+### 5.4 Regionalization for Starz (Morocco, Tunisia, US/Wyoming)
+
+Starz operates in multiple jurisdictions, so Sensei OS is configured with explicit country and region settings per site.
+
+**Localization standards**:
+- **Currencies**: MAD (Morocco), TND (Tunisia), USD (US/Wyoming) with configurable base currency by site
+- **Tax regimes**: VAT for Morocco and Tunisia; US sales tax for Wyoming (state + local)
+- **Regulatory identifiers**: Country-specific tax IDs stored on customers, suppliers, and invoices
+- **Address formats**: Locale-specific fields and validation (postal code rules, province/state)
+- **Calendars**: Local holidays and fiscal calendars per site
+- **Time zones**: Site-level timezone for scheduling, work orders, and audit trails
 
 ---
 
@@ -660,5 +673,5 @@ The system follows Lean Manufacturing principles (TPS) and is designed to scale 
 ---
 
 *Document Version: 1.0*  
-*Last Updated: January 2025*  
+*Last Updated: January 2026*  
 *Total E2E Tests: 259 (all passing)*

@@ -20,9 +20,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
 // Demo data
 const systemStatus = {
@@ -76,91 +77,7 @@ function StatusIndicator({ status }: { status: 'healthy' | 'degraded' | 'down' }
   );
 }
 
-function StatCard({ 
-  title, 
-  value, 
-  icon: Icon, 
-  unit,
-  variant = 'default' 
-}: { 
-  title: string; 
-  value: number; 
-  icon: React.ElementType;
-  unit?: string;
-  variant?: 'default' | 'warning' | 'danger' | 'success';
-}) {
-  const getVariant = (val: number) => {
-    if (val > 80) return 'danger';
-    if (val > 60) return 'warning';
-    return 'success';
-  };
-
-  const actualVariant = variant === 'default' ? getVariant(value) : variant;
-
-  const variantStyles = {
-    default: 'bg-primary/10 text-primary',
-    warning: 'bg-amber-500/10 text-amber-600',
-    danger: 'bg-destructive/10 text-destructive',
-    success: 'bg-emerald-500/10 text-emerald-600',
-  };
-
-  return (
-    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{title}</p>
-          <div className={`p-3 rounded-2xl shadow-sm ${variantStyles[actualVariant]}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{value}</span>
-            {unit && <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{unit}</span>}
-          </div>
-          <div className="h-1.5 rounded-full bg-muted/20 overflow-hidden shadow-inner-soft">
-            <div 
-              className={cn(
-                "h-full transition-all duration-1000",
-                actualVariant === 'success' ? 'bg-emerald-500' : actualVariant === 'warning' ? 'bg-amber-500' : 'bg-destructive'
-              )} 
-              style={{ width: `${value}%` }} 
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function ITDashboard() {
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 page-fade-in">
       {/* Header */}
@@ -174,6 +91,10 @@ export default function ITDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <AmbientStatus 
+            status={systemStatus.queueHealth === 'degraded' ? 'warning' : 'operational'} 
+            label={systemStatus.queueHealth === 'degraded' ? 'Message Queue Degraded' : 'All Systems Nominal'}
+          />
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh Status
@@ -209,41 +130,37 @@ export default function ITDashboard() {
         </CardContent>
       </Card>
 
-      {/* Resource Usage */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Resource Usage - Using Shared StatCard */}
+      <StatSection label="Resource Metrics" columns={4}>
         <StatCard
-          title="CPU Usage"
           value={serverStats.cpuUsage}
+          label="CPU Usage"
           icon={Server}
-          unit="%"
+          iconColor={serverStats.cpuUsage > 80 ? 'danger' : serverStats.cpuUsage > 60 ? 'warning' : 'success'}
+          goal={{ current: serverStats.cpuUsage, target: 100 }}
         />
         <StatCard
-          title="Memory Usage"
           value={serverStats.memoryUsage}
+          label="Memory Usage"
           icon={HardDrive}
-          unit="%"
+          iconColor={serverStats.memoryUsage > 80 ? 'danger' : serverStats.memoryUsage > 60 ? 'warning' : 'success'}
+          goal={{ current: serverStats.memoryUsage, target: 100 }}
+          critical={serverStats.memoryUsage > 80}
         />
         <StatCard
-          title="Disk Usage"
           value={serverStats.diskUsage}
+          label="Disk Usage"
           icon={HardDrive}
-          unit="%"
+          iconColor={serverStats.diskUsage > 80 ? 'danger' : serverStats.diskUsage > 60 ? 'warning' : 'success'}
+          goal={{ current: serverStats.diskUsage, target: 100 }}
         />
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Active Connections</p>
-                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{serverStats.activeConnections}</p>
-                <p className="text-xs text-muted-foreground mt-1">Across all services</p>
-              </div>
-              <div className="p-3 rounded-full bg-primary/10 text-primary">
-                <Wifi className="h-5 w-5" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        <StatCard
+          value={serverStats.activeConnections}
+          label="Active Connections"
+          icon={Wifi}
+          iconColor="primary"
+        />
+      </StatSection>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-2">

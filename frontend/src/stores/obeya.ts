@@ -263,9 +263,13 @@ export const useObeyaStore = create<ObeyaState>()(
         },
 
         fetchItems: async (board?: ObeyaBoard) => {
-          const { lastFetchedAt, selectedBoard } = get();
+          const { lastFetchedAt, selectedBoard, isLoading } = get();
           const now = Date.now();
           const targetBoard = board || selectedBoard;
+
+          if (isLoading) {
+            return;
+          }
 
           // Cache for 30 seconds
           if (lastFetchedAt && now - lastFetchedAt < 30000) {

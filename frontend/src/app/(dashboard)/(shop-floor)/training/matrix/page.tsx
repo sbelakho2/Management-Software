@@ -119,8 +119,8 @@ export default function TrainingMatrixPage() {
               </thead>
               <tbody>
                 {employees.map(emp => {
-                  const scores = Object.values(emp.skills);
-                  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+                  const scores = Object.values(emp.skills ?? {});
+                  const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
                   
                   return (
                     <tr key={emp.id} className="group hover:bg-primary/5 transition-all duration-300">

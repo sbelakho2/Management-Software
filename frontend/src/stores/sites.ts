@@ -20,7 +20,7 @@ export const useSitesStore = create<SitesState>((set, get) => ({
   fetchSites: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get('/sites');
+      const response = await apiClient.get<Site[]>('/sites');
       set({ sites: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });

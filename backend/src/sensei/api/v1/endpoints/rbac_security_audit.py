@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api.deps import CurrentSuperuser
 from sensei.services.core.rbac_security_audit import (
     RBACSecurityAuditService,
     AuditSeverity,
@@ -273,7 +274,7 @@ def validate_category(category: str) -> AuditCategory:
     summary="Register a role",
     description="Register a role for security audit verification.",
 )
-def register_role(request: RegisterRoleRequest) -> RoleResponse:
+def register_role(request: RegisterRoleRequest, current_user: CurrentSuperuser) -> RoleResponse:
     """Register a role for audit."""
     service = get_service()
     
@@ -300,7 +301,7 @@ def register_role(request: RegisterRoleRequest) -> RoleResponse:
     summary="Get all roles",
     description="Get all registered roles.",
 )
-def get_roles() -> list[RoleResponse]:
+def get_roles(current_user: CurrentSuperuser) -> list[RoleResponse]:
     """Get all registered roles."""
     service = get_service()
     roles = service.get_all_roles()
@@ -313,7 +314,7 @@ def get_roles() -> list[RoleResponse]:
     summary="Get a role",
     description="Get a role by ID.",
 )
-def get_role(role_id: str) -> RoleResponse:
+def get_role(role_id: str, current_user: CurrentSuperuser) -> RoleResponse:
     """Get a role by ID."""
     service = get_service()
     
@@ -339,7 +340,7 @@ def get_role(role_id: str) -> RoleResponse:
     summary="Register a permission",
     description="Register a permission for security audit verification.",
 )
-def register_permission(request: RegisterPermissionRequest) -> PermissionResponse:
+def register_permission(request: RegisterPermissionRequest, current_user: CurrentSuperuser) -> PermissionResponse:
     """Register a permission for audit."""
     service = get_service()
     
@@ -364,7 +365,7 @@ def register_permission(request: RegisterPermissionRequest) -> PermissionRespons
     summary="Get all permissions",
     description="Get all registered permissions.",
 )
-def get_permissions() -> list[PermissionResponse]:
+def get_permissions(current_user: CurrentSuperuser) -> list[PermissionResponse]:
     """Get all registered permissions."""
     service = get_service()
     perms = service.get_all_permissions()
@@ -381,7 +382,7 @@ def get_permissions() -> list[PermissionResponse]:
     summary="Register a user-role assignment",
     description="Register a user-role assignment for audit.",
 )
-def register_user_role(request: RegisterUserRoleRequest) -> UserRoleResponse:
+def register_user_role(request: RegisterUserRoleRequest, current_user: CurrentSuperuser) -> UserRoleResponse:
     """Register a user-role assignment."""
     service = get_service()
     
@@ -412,7 +413,7 @@ def register_user_role(request: RegisterUserRoleRequest) -> UserRoleResponse:
     summary="Get all user-role assignments",
     description="Get all user-role assignments.",
 )
-def get_user_roles() -> list[UserRoleResponse]:
+def get_user_roles(current_user: CurrentSuperuser) -> list[UserRoleResponse]:
     """Get all user-role assignments."""
     service = get_service()
     assignments = service.get_all_user_roles()
@@ -425,7 +426,7 @@ def get_user_roles() -> list[UserRoleResponse]:
     summary="Get user roles",
     description="Get roles for a specific user.",
 )
-def get_user_role_assignments(user_id: str) -> list[UserRoleResponse]:
+def get_user_role_assignments(user_id: str, current_user: CurrentSuperuser) -> list[UserRoleResponse]:
     """Get role assignments for a user."""
     service = get_service()
     
@@ -445,7 +446,7 @@ def get_user_role_assignments(user_id: str) -> list[UserRoleResponse]:
     summary="Register an audit log",
     description="Register an audit log entry for verification.",
 )
-def register_audit_log(request: RegisterAuditLogRequest) -> AuditLogResponse:
+def register_audit_log(request: RegisterAuditLogRequest, current_user: CurrentSuperuser) -> AuditLogResponse:
     """Register an audit log entry."""
     service = get_service()
     
@@ -479,6 +480,7 @@ def register_audit_log(request: RegisterAuditLogRequest) -> AuditLogResponse:
     description="Get audit logs with optional filters.",
 )
 def get_audit_logs(
+    current_user: CurrentSuperuser,
     entity_type: Annotated[str | None, Query(description="Entity type filter")] = None,
     action: Annotated[str | None, Query(description="Action filter")] = None,
     user_id: Annotated[str | None, Query(description="User ID filter")] = None,
@@ -513,7 +515,7 @@ def get_audit_logs(
     summary="Record access pattern",
     description="Record an access event for pattern analysis.",
 )
-def record_access_pattern(request: RecordAccessRequest) -> AccessPatternResponse:
+def record_access_pattern(request: RecordAccessRequest, current_user: CurrentSuperuser) -> AccessPatternResponse:
     """Record an access pattern."""
     service = get_service()
     
@@ -540,6 +542,7 @@ def record_access_pattern(request: RecordAccessRequest) -> AccessPatternResponse
     description="Get access patterns, optionally filtered by user.",
 )
 def get_access_patterns(
+    current_user: CurrentSuperuser,
     user_id: Annotated[str | None, Query(description="User ID filter")] = None,
 ) -> list[AccessPatternResponse]:
     """Get access patterns."""
@@ -560,7 +563,7 @@ def get_access_patterns(
     summary="Verify role configuration",
     description="Verify role configuration for security issues.",
 )
-def verify_role_configuration() -> VerificationResultResponse:
+def verify_role_configuration(current_user: CurrentSuperuser) -> VerificationResultResponse:
     """Verify role configuration."""
     service = get_service()
     findings = service.verify_role_configuration()
@@ -578,7 +581,7 @@ def verify_role_configuration() -> VerificationResultResponse:
     summary="Verify permission configuration",
     description="Verify permission configuration for security issues.",
 )
-def verify_permission_configuration() -> VerificationResultResponse:
+def verify_permission_configuration(current_user: CurrentSuperuser) -> VerificationResultResponse:
     """Verify permission configuration."""
     service = get_service()
     findings = service.verify_permission_configuration()
@@ -596,7 +599,7 @@ def verify_permission_configuration() -> VerificationResultResponse:
     summary="Verify user assignments",
     description="Verify user-role assignments for security issues.",
 )
-def verify_user_assignments() -> VerificationResultResponse:
+def verify_user_assignments(current_user: CurrentSuperuser) -> VerificationResultResponse:
     """Verify user assignments."""
     service = get_service()
     findings = service.verify_user_assignments()
@@ -614,7 +617,7 @@ def verify_user_assignments() -> VerificationResultResponse:
     summary="Verify audit log integrity",
     description="Verify audit log integrity and completeness.",
 )
-def verify_audit_logs() -> VerificationResultResponse:
+def verify_audit_logs(current_user: CurrentSuperuser) -> VerificationResultResponse:
     """Verify audit log integrity."""
     service = get_service()
     findings = service.verify_audit_log_integrity()
@@ -633,6 +636,7 @@ def verify_audit_logs() -> VerificationResultResponse:
     description="Detect anomalies in access patterns.",
 )
 def detect_access_anomalies(
+    current_user: CurrentSuperuser,
     threshold_multiplier: Annotated[float, Query(ge=1.0, le=10.0, description="Threshold multiplier")] = 3.0,
 ) -> VerificationResultResponse:
     """Detect access anomalies."""
@@ -656,6 +660,7 @@ def detect_access_anomalies(
     description="Get all audit findings with optional filters.",
 )
 def get_findings(
+    current_user: CurrentSuperuser,
     severity: Annotated[str | None, Query(description="Severity filter")] = None,
     category: Annotated[str | None, Query(description="Category filter")] = None,
     resolved: Annotated[bool | None, Query(description="Resolved filter")] = None,
@@ -681,7 +686,7 @@ def get_findings(
     summary="Get findings summary",
     description="Get summary of unresolved findings by severity.",
 )
-def get_findings_summary() -> FindingsSummaryResponse:
+def get_findings_summary(current_user: CurrentSuperuser) -> FindingsSummaryResponse:
     """Get findings summary."""
     service = get_service()
     summary = service.get_findings_summary()
@@ -695,7 +700,7 @@ def get_findings_summary() -> FindingsSummaryResponse:
     summary="Resolve a finding",
     description="Mark a finding as resolved.",
 )
-def resolve_finding(finding_id: str, request: ResolveFindingRequest) -> FindingResponse:
+def resolve_finding(finding_id: str, request: ResolveFindingRequest, current_user: CurrentSuperuser) -> FindingResponse:
     """Resolve a finding."""
     service = get_service()
     
@@ -719,7 +724,7 @@ def resolve_finding(finding_id: str, request: ResolveFindingRequest) -> FindingR
     summary="Generate compliance report",
     description="Run a full security audit and generate a compliance report.",
 )
-def generate_compliance_report() -> ComplianceReportResponse:
+def generate_compliance_report(current_user: CurrentSuperuser) -> ComplianceReportResponse:
     """Generate compliance report."""
     service = get_service()
     report = service.run_full_audit()
@@ -736,7 +741,7 @@ def generate_compliance_report() -> ComplianceReportResponse:
     summary="Clear all data",
     description="Clear all registered data and findings. Use with caution.",
 )
-def clear_all_data() -> None:
+def clear_all_data(current_user: CurrentSuperuser) -> None:
     """Clear all data."""
     service = get_service()
     service.clear_data()

@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Building2,
   ArrowUpRight,
+  Target,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,49 +21,14 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar } from '@/components/ui/avatar';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
+import { QuickActionItem, QuickActionList } from '@/components/ui/quick-action';
 import Link from 'next/link';
 import { hasPageAccess } from '@/lib/page-access';
 import { useAuthStore, useHRStore } from '@/stores';
 import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  trend,
-  variant = 'default',
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  trend?: string;
-  variant?: 'default' | 'warning' | 'danger' | 'success';
-}) {
-  const variantStyles = {
-    default: 'bg-primary/10 text-primary',
-    warning: 'bg-amber-500/10 text-amber-600',
-    danger: 'bg-destructive/10 text-destructive',
-    success: 'bg-emerald-500/10 text-emerald-600',
-  };
-
-  return (
-    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{title}</p>
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{value}</p>
-            {trend && <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2">{trend}</p>}
-          </div>
-          <div className={`p-4 rounded-2xl shadow-sm ${variantStyles[variant]}`}>
-            <Icon className="h-6 w-6" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function HRDashboard() {
   const { user } = useAuthStore();
@@ -141,33 +107,46 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Organizational Headcount"
-          value={stats?.total_employees || 0}
-          icon={Users}
-          trend={`+${stats?.new_hires_this_month || 0} vs LAST CYCLE`}
-          variant="success"
-        />
-        <StatCard
-          title="Active Opportunity Pulse"
-          value={stats?.open_positions || 0}
-          icon={UserPlus}
-        />
-        <StatCard
-          title="Capacity Synchronization"
-          value={stats?.pending_time_off || 0}
-          icon={Calendar}
-          variant="warning"
-        />
-        <StatCard
-          title="Intelligence Thresholds"
-          value={stats?.expiring_certifications || 0}
-          icon={Award}
-          variant="danger"
-        />
+      {/* System Status */}
+      <div className="flex items-center justify-end">
+        <AmbientStatus status="operational" label="HR Systems Online" />
       </div>
+
+      {/* Stats Grid - Using Stat Sections (Miller's Law) */}
+      <StatSection label="Workforce Metrics" columns={4}>
+        <StatCard
+          value={stats?.total_employees || 0}
+          label="Organizational Headcount"
+          icon={Users}
+          iconColor="success"
+          trend="up"
+          trendValue={`+${stats?.new_hires_this_month || 0} this cycle`}
+          goal={{
+            current: stats?.total_employees || 0,
+            target: 150,
+            label: 'Target headcount'
+          }}
+        />
+        <StatCard
+          value={stats?.open_positions || 0}
+          label="Active Opportunity Pulse"
+          icon={UserPlus}
+          iconColor="primary"
+        />
+        <StatCard
+          value={stats?.pending_time_off || 0}
+          label="Capacity Synchronization"
+          icon={Calendar}
+          iconColor="warning"
+        />
+        <StatCard
+          value={stats?.expiring_certifications || 0}
+          label="Intelligence Thresholds"
+          icon={Award}
+          iconColor="danger"
+          critical={stats?.expiring_certifications ? stats.expiring_certifications > 5 : false}
+        />
+      </StatSection>
 
       {/* Main Content */}
       <div className="grid gap-8 lg:grid-cols-3">

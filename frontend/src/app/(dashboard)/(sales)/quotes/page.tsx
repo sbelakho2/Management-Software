@@ -41,6 +41,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { useQuoteStore } from '@/stores/quotes';
 import type { QuoteStatus } from '@/types';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 interface Quote {
   id: string;
@@ -84,54 +85,54 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-warning/10">
-              <Clock className="h-5 w-5 text-warning" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.pending}</p>
-              <p className="text-sm text-muted-foreground">Pending Approval</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pending Approval</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.pending}</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-warning/10 text-warning">
+              <Clock className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Send className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.sent}</p>
-              <p className="text-sm text-muted-foreground">Sent to Customers</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Sent to Customers</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.sent}</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
+              <Send className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/10">
-              <DollarSign className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalValue)}</p>
-              <p className="text-sm text-muted-foreground">Pipeline Value</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pipeline Value</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalValue)}</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-emerald-500/10 text-emerald-600">
+              <DollarSign className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-secondary/50">
-              <TrendingUp className="h-5 w-5 text-foreground" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgMargin.toFixed(1)}%</p>
-              <p className="text-sm text-muted-foreground">Avg. Margin</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg. Margin</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgMargin.toFixed(1)}%</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </div>
         </CardContent>

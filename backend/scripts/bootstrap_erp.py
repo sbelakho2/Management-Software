@@ -7,6 +7,11 @@ sys.path.append(os.path.join(os.getcwd(), "src"))
 
 from sensei.core.database import async_session_factory
 from sensei.services.finance.persistent_accounting import PersistentAccountingLedgerService
+from scripts.bootstrap_starz_regions import (
+    _ensure_sites,
+    _ensure_currency_settings,
+    _ensure_jurisdictions_and_rates,
+)
 
 async def main():
     async with async_session_factory() as db:
@@ -17,6 +22,10 @@ async def main():
         await svc.upsert_account("2000", "Accounts Payable", "liability")
         await svc.upsert_account("4000", "Sales Revenue", "revenue")
         await svc.upsert_account("5000", "Cost of Goods Sold", "expense")
+        print("Seeding Starz regional configuration...")
+        await _ensure_sites(db)
+        await _ensure_currency_settings(db)
+        await _ensure_jurisdictions_and_rates(db)
         await db.commit()
         print("ERP Bootstrapped successfully")
 

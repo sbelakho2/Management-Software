@@ -28,6 +28,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    escape_like_pattern,
 )
 from sensei.models.standard_work import (
     StandardWork,
@@ -338,10 +339,11 @@ async def list_standard_works(
     if station_id is not None and isinstance(station_id, int):
         base_conditions.append(StandardWork.station_id == station_id)
     if search and isinstance(search, str):
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            StandardWork.document_number.ilike(f"%{search}%"),
-            StandardWork.title.ilike(f"%{search}%"),
-            StandardWork.description.ilike(f"%{search}%"),
+            StandardWork.document_number.ilike(f"%{escaped_search}%"),
+            StandardWork.title.ilike(f"%{escaped_search}%"),
+            StandardWork.description.ilike(f"%{escaped_search}%"),
         )
         base_conditions.append(search_filter)
 

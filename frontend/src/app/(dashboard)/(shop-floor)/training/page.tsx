@@ -38,6 +38,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatDate, getInitials } from '@/lib/utils';
 import { useTrainingStore } from '@/stores/training';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 type TabType = 'certifications' | 'programs' | 'records';
 

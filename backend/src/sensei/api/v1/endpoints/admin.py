@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 
-from sensei.api.deps import DBSession, CurrentUser
+from sensei.api.deps import DBSession, CurrentUser, CurrentSuperuser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response, now_utc
 from sensei.models.admin import AdminGate, ApprovalWorkflow, Template, LearningCadence, FeatureFlag
@@ -76,8 +76,8 @@ class ReorderGatesRequest(BaseModel):
 # =============================================================================
 
 @router.get("/stats", response_model=AdminStatsResponse)
-async def get_admin_stats(db: DBSession) -> Any:
-    """Get system-wide admin statistics."""
+async def get_admin_stats(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get system-wide admin statistics. Requires superuser access."""
     # This is a simplified implementation. In a real app, you'd use count() queries.
     total_gates = db.query(AdminGate).count()
     active_gates = db.query(AdminGate).filter(AdminGate.status == "active").count()
@@ -112,14 +112,14 @@ async def get_admin_stats(db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/gates", response_model=APIResponse[dict])
-async def get_gates(db: DBSession) -> Any:
-    """Get all admin gates."""
+async def get_gates(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all admin gates. Requires superuser access."""
     gates = db.query(AdminGate).order_by(AdminGate.order).all()
     return build_response(data={"items": gates})
 
 @router.post("/gates", response_model=AdminGateResponse)
-async def create_gate(gate_in: AdminGateCreate, db: DBSession) -> Any:
-    """Create a new admin gate."""
+async def create_gate(gate_in: AdminGateCreate, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Create a new admin gate. Requires superuser access."""
     gate = AdminGate(
         id=str(uuid.uuid4()),
         **gate_in.model_dump()
@@ -130,16 +130,16 @@ async def create_gate(gate_in: AdminGateCreate, db: DBSession) -> Any:
     return gate
 
 @router.get("/gates/{gate_id}", response_model=AdminGateResponse)
-async def get_gate(gate_id: str, db: DBSession) -> Any:
-    """Get a specific admin gate."""
+async def get_gate(gate_id: str, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get a specific admin gate. Requires superuser access."""
     gate = db.query(AdminGate).filter(AdminGate.id == gate_id).first()
     if not gate:
         raise HTTPException(status_code=404, detail="Gate not found")
     return gate
 
 @router.patch("/gates/{gate_id}", response_model=AdminGateResponse)
-async def update_gate(gate_id: str, gate_in: AdminGateUpdate, db: DBSession) -> Any:
-    """Update an admin gate."""
+async def update_gate(gate_id: str, gate_in: AdminGateUpdate, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Update an admin gate. Requires superuser access."""
     gate = db.query(AdminGate).filter(AdminGate.id == gate_id).first()
     if not gate:
         raise HTTPException(status_code=404, detail="Gate not found")
@@ -153,8 +153,8 @@ async def update_gate(gate_id: str, gate_in: AdminGateUpdate, db: DBSession) -> 
     return gate
 
 @router.delete("/gates/{gate_id}")
-async def delete_gate(gate_id: str, db: DBSession) -> Any:
-    """Delete an admin gate."""
+async def delete_gate(gate_id: str, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Delete an admin gate. Requires superuser access."""
     gate = db.query(AdminGate).filter(AdminGate.id == gate_id).first()
     if not gate:
         raise HTTPException(status_code=404, detail="Gate not found")
@@ -164,8 +164,8 @@ async def delete_gate(gate_id: str, db: DBSession) -> Any:
     return {"success": True}
 
 @router.post("/gates/reorder")
-async def reorder_gates(request: ReorderGatesRequest, db: DBSession) -> Any:
-    """Reorder gates."""
+async def reorder_gates(request: ReorderGatesRequest, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Reorder gates. Requires superuser access."""
     for index, gate_id in enumerate(request.gate_ids):
         db.execute(
             update(AdminGate)
@@ -180,14 +180,14 @@ async def reorder_gates(request: ReorderGatesRequest, db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/approvals", response_model=APIResponse[dict])
-async def get_approvals(db: DBSession) -> Any:
-    """Get all approval workflows."""
+async def get_approvals(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all approval workflows. Requires superuser access."""
     approvals = db.query(ApprovalWorkflow).all()
     return build_response(data={"items": approvals})
 
 @router.post("/approvals", response_model=Any)
-async def create_approval(approval_in: Any, db: DBSession) -> Any:
-    """Create a new approval workflow."""
+async def create_approval(approval_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Create a new approval workflow. Requires superuser access."""
     approval = ApprovalWorkflow(
         id=str(uuid.uuid4()),
         **approval_in.model_dump() if hasattr(approval_in, "model_dump") else approval_in
@@ -198,8 +198,8 @@ async def create_approval(approval_in: Any, db: DBSession) -> Any:
     return approval
 
 @router.patch("/approvals/{approval_id}", response_model=Any)
-async def update_approval(approval_id: str, approval_in: Any, db: DBSession) -> Any:
-    """Update an approval workflow."""
+async def update_approval(approval_id: str, approval_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Update an approval workflow. Requires superuser access."""
     approval = db.query(ApprovalWorkflow).filter(ApprovalWorkflow.id == approval_id).first()
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
@@ -213,8 +213,8 @@ async def update_approval(approval_id: str, approval_in: Any, db: DBSession) -> 
     return approval
 
 @router.delete("/approvals/{approval_id}")
-async def delete_approval(approval_id: str, db: DBSession) -> Any:
-    """Delete an approval workflow."""
+async def delete_approval(approval_id: str, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Delete an approval workflow. Requires superuser access."""
     approval = db.query(ApprovalWorkflow).filter(ApprovalWorkflow.id == approval_id).first()
     if not approval:
         raise HTTPException(status_code=404, detail="Approval not found")
@@ -228,14 +228,14 @@ async def delete_approval(approval_id: str, db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/templates", response_model=APIResponse[dict])
-async def get_templates(db: DBSession) -> Any:
-    """Get all templates."""
+async def get_templates(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all templates. Requires superuser access."""
     templates = db.query(Template).all()
     return build_response(data={"items": templates})
 
 @router.post("/templates", response_model=Any)
-async def create_template(template_in: Any, db: DBSession) -> Any:
-    """Create a new template."""
+async def create_template(template_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Create a new template. Requires superuser access."""
     template = Template(
         id=str(uuid.uuid4()),
         **template_in.model_dump() if hasattr(template_in, "model_dump") else template_in
@@ -246,8 +246,8 @@ async def create_template(template_in: Any, db: DBSession) -> Any:
     return template
 
 @router.patch("/templates/{template_id}", response_model=Any)
-async def update_template(template_id: str, template_in: Any, db: DBSession) -> Any:
-    """Update a template."""
+async def update_template(template_id: str, template_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Update a template. Requires superuser access."""
     template = db.query(Template).filter(Template.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -261,8 +261,8 @@ async def update_template(template_id: str, template_in: Any, db: DBSession) -> 
     return template
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str, db: DBSession) -> Any:
-    """Delete a template."""
+async def delete_template(template_id: str, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Delete a template. Requires superuser access."""
     template = db.query(Template).filter(Template.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -276,14 +276,14 @@ async def delete_template(template_id: str, db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/learning-cadences", response_model=APIResponse[dict])
-async def get_learning_cadences(db: DBSession) -> Any:
-    """Get all learning cadences."""
+async def get_learning_cadences(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all learning cadences. Requires superuser access."""
     cadences = db.query(LearningCadence).all()
     return build_response(data={"items": cadences})
 
 @router.post("/learning-cadences", response_model=Any)
-async def create_learning_cadence(cadence_in: Any, db: DBSession) -> Any:
-    """Create a new learning cadence."""
+async def create_learning_cadence(cadence_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Create a new learning cadence. Requires superuser access."""
     cadence = LearningCadence(
         id=str(uuid.uuid4()),
         **cadence_in.model_dump() if hasattr(cadence_in, "model_dump") else cadence_in
@@ -294,8 +294,8 @@ async def create_learning_cadence(cadence_in: Any, db: DBSession) -> Any:
     return cadence
 
 @router.patch("/learning-cadences/{cadence_id}", response_model=Any)
-async def update_learning_cadence(cadence_id: str, cadence_in: Any, db: DBSession) -> Any:
-    """Update a learning cadence."""
+async def update_learning_cadence(cadence_id: str, cadence_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Update a learning cadence. Requires superuser access."""
     cadence = db.query(LearningCadence).filter(LearningCadence.id == cadence_id).first()
     if not cadence:
         raise HTTPException(status_code=404, detail="Learning cadence not found")
@@ -309,8 +309,8 @@ async def update_learning_cadence(cadence_id: str, cadence_in: Any, db: DBSessio
     return cadence
 
 @router.delete("/learning-cadences/{cadence_id}")
-async def delete_learning_cadence(cadence_id: str, db: DBSession) -> Any:
-    """Delete a learning cadence."""
+async def delete_learning_cadence(cadence_id: str, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Delete a learning cadence. Requires superuser access."""
     cadence = db.query(LearningCadence).filter(LearningCadence.id == cadence_id).first()
     if not cadence:
         raise HTTPException(status_code=404, detail="Learning cadence not found")
@@ -324,14 +324,14 @@ async def delete_learning_cadence(cadence_id: str, db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/feature-flags", response_model=APIResponse[dict])
-async def get_feature_flags(db: DBSession) -> Any:
-    """Get all feature flags."""
+async def get_feature_flags(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all feature flags. Requires superuser access."""
     flags = db.query(FeatureFlag).all()
     return build_response(data={"items": flags})
 
 @router.patch("/feature-flags/{flag_id}", response_model=Any)
-async def update_feature_flag(flag_id: str, flag_in: Any, db: DBSession) -> Any:
-    """Update a feature flag."""
+async def update_feature_flag(flag_id: str, flag_in: Any, db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Update a feature flag. Requires superuser access."""
     flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
     if not flag:
         raise HTTPException(status_code=404, detail="Feature flag not found")
@@ -349,8 +349,8 @@ async def update_feature_flag(flag_id: str, flag_in: Any, db: DBSession) -> Any:
 # =============================================================================
 
 @router.get("/roles", response_model=APIResponse[dict])
-async def get_roles(db: DBSession) -> Any:
-    """Get all roles with member counts."""
+async def get_roles(db: DBSession, current_user: CurrentSuperuser) -> Any:
+    """Get all roles with member counts. Requires superuser access."""
     roles = db.query(Role).all()
     role_list = []
     for r in roles:

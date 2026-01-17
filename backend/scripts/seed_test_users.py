@@ -5,14 +5,40 @@ Seed database with roles and test users for each role.
 This script creates:
 1. All predefined roles with appropriate permissions
 2. One test user for each role with a standard password
+
+WARNING: This script is for DEVELOPMENT and TESTING environments ONLY.
+         It will NOT run in production environments.
 """
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
 # Add backend src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+
+def check_environment():
+    """Verify we're not running in production."""
+    env = os.environ.get("ENVIRONMENT", os.environ.get("SENSEI_ENV", "development"))
+    
+    if env.lower() in ("production", "prod"):
+        print("❌ ERROR: This script cannot run in production environment!")
+        print("   Set ENVIRONMENT to 'development' or 'test' to run this script.")
+        sys.exit(1)
+    
+    if env.lower() not in ("development", "dev", "test", "testing", "local"):
+        print(f"⚠️  WARNING: Running in unknown environment '{env}'")
+        response = input("   Are you sure you want to continue? (yes/no): ")
+        if response.lower() != "yes":
+            print("   Aborted.")
+            sys.exit(1)
+    
+    print(f"✅ Environment check passed: {env}")
+
+
+check_environment()
 
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -50,10 +76,20 @@ ALL_ROLES = [
 ]
 
 # Standard test password (hashed with bcrypt)
-# Password: "TestPassword123!"
+# NOTE: This hash corresponds to a test password. Never use in production.
+# The password is intentionally not stored in plaintext in source code.
 TEST_PASSWORD_HASH = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.0E8o/CjZmV6kNK"
 
-DATABASE_URL = "postgresql+asyncpg://sensei:sensei_dev_password@localhost:5432/sensei"
+# Get database URL from environment, with development fallback
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    os.environ.get("SENSEI_DATABASE_URL", "")
+)
+
+if not DATABASE_URL:
+    print("❌ ERROR: DATABASE_URL environment variable is required")
+    print("   Example: postgresql+asyncpg://user:password@localhost:5432/sensei")
+    sys.exit(1)
 
 
 async def main():
@@ -132,7 +168,7 @@ async def main():
         print(f"\n✅ Seeding complete!")
         print(f"   Roles created: {roles_created}")
         print(f"   Users created: {users_created}")
-        print(f"\n📧 Test accounts created with password: TestPassword123!")
+        print(f"\n📧 Test accounts created. Check documentation for test credentials.")
         print("   Format: test_<role>@sensei.test")
 
 

@@ -6,6 +6,7 @@ and disaster recovery monitoring.
 """
 
 from datetime import datetime
+import asyncio
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -152,9 +153,10 @@ async def create_backup(
     - **database_name**: Database to backup (optional, defaults to main database)
     """
     try:
-        backup = service.create_backup(
+        backup = await asyncio.to_thread(
+            service.create_backup,
             strategy=request.strategy,
-            database_name=request.database_name
+            database_name=request.database_name,
         )
         
         return BackupResponse(

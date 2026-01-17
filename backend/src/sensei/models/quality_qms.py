@@ -269,7 +269,7 @@ class MSAMeasurement(Base, TimestampMixin, AuditMixin):
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     study: Mapped["MSAStudy"] = relationship("MSAStudy", back_populates="measurements")
-    operator: Mapped["User"] = relationship("User")
+    operator: Mapped["User"] = relationship("User", foreign_keys=[operator_id])
 
 
 class MSAResult(Base, TimestampMixin, AuditMixin):

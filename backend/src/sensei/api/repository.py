@@ -17,6 +17,28 @@ from sensei.api.exceptions import NotFoundError
 from sensei.api.schemas import FilterOperator, SortOrder
 from sensei.models.base import Base as SenseiBaseModel
 
+
+def escape_like_pattern(value: str) -> str:
+    """
+    Escape special characters in LIKE/ILIKE patterns to prevent SQL injection.
+    
+    PostgreSQL LIKE patterns treat '%', '_', and '\\' as special characters.
+    This function escapes them so they are treated literally.
+    
+    Args:
+        value: The search string to escape
+        
+    Returns:
+        Escaped string safe for use in LIKE/ILIKE patterns
+    """
+    # Escape backslash first (since it's the escape character)
+    value = value.replace("\\", "\\\\")
+    # Escape percent sign
+    value = value.replace("%", "\\%")
+    # Escape underscore
+    value = value.replace("_", "\\_")
+    return value
+
 # Type variable for the model class
 ModelT = TypeVar("ModelT", bound=SenseiBaseModel)
 
@@ -234,10 +256,11 @@ class BaseRepository(Generic[ModelT]):
         # Apply search
         if search and search_fields:
             search_conditions = []
+            escaped_search = escape_like_pattern(search)
             for field_name in search_fields:
                 if hasattr(self.model, field_name):
                     field = getattr(self.model, field_name)
-                    search_conditions.append(field.ilike(f"%{search}%"))
+                    search_conditions.append(field.ilike(f"%{escaped_search}%"))
             
             if search_conditions:
                 query = query.where(or_(*search_conditions))
@@ -632,15 +655,15 @@ class BaseRepository(Generic[ModelT]):
             "gte": lambda f, v: f >= v,
             "lt": lambda f, v: f < v,
             "lte": lambda f, v: f <= v,
-            "like": lambda f, v: f.like(f"%{v}%"),
-            "ilike": lambda f, v: f.ilike(f"%{v}%"),
+            "like": lambda f, v: f.like(f"%{escape_like_pattern(str(v))}%"),
+            "ilike": lambda f, v: f.ilike(f"%{escape_like_pattern(str(v))}%"),
             "in": lambda f, v: f.in_(v if isinstance(v, list) else [v]),
             "notin": lambda f, v: ~f.in_(v if isinstance(v, list) else [v]),
             "isnull": lambda f, v: f.is_(None) if v else f.isnot(None),
             "isnotnull": lambda f, v: f.isnot(None) if v else f.is_(None),
-            "startswith": lambda f, v: f.like(f"{v}%"),
-            "endswith": lambda f, v: f.like(f"%{v}"),
-            "contains": lambda f, v: f.ilike(f"%{v}%"),
+            "startswith": lambda f, v: f.like(f"{escape_like_pattern(str(v))}%"),
+            "endswith": lambda f, v: f.like(f"%{escape_like_pattern(str(v))}"),
+            "contains": lambda f, v: f.ilike(f"%{escape_like_pattern(str(v))}%"),
         }
         
         if operator in operators:

@@ -23,7 +23,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
+
+# Role-based access for RFQ outcome decisions (win/lose/no-bid require elevated privileges)
+AllowRFQDecision = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (
@@ -891,10 +895,13 @@ async def mark_rfq_won(
     rfq_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
+    _: AllowRFQDecision,
     win_reason: Optional[str] = Query(default=None, max_length=255),
 ):
     """
     Mark RFQ as won.
+    
+    Requires one of the following roles: admin, gm, ceo, finance, sales_engineer.
     """
     result = await db.execute(
         select(RFQ).where(
@@ -930,11 +937,14 @@ async def mark_rfq_lost(
     rfq_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
+    _: AllowRFQDecision,
     loss_reason: Optional[str] = Query(default=None, max_length=255),
     competitor_id: Optional[UUID] = Query(default=None),
 ):
     """
     Mark RFQ as lost.
+    
+    Requires one of the following roles: admin, gm, ceo, finance, sales_engineer.
     """
     result = await db.execute(
         select(RFQ).where(
@@ -971,10 +981,13 @@ async def mark_rfq_no_bid(
     rfq_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
+    _: AllowRFQDecision,
     reason: str = Query(..., max_length=255),
 ):
     """
     Mark RFQ as no-bid (declining to quote).
+    
+    Requires one of the following roles: admin, gm, ceo, finance, sales_engineer.
     """
     result = await db.execute(
         select(RFQ).where(

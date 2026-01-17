@@ -248,7 +248,7 @@ export default function ProductDetailPage() {
   const winRate = product.stats.quotedCount > 0 
     ? (product.stats.wonCount / product.stats.quotedCount) * 100 
     : 0;
-  const bomCost = product.bom.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+  const bomCost = (product.bom ?? []).reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
 
   return (
     <div className="space-y-8 page-fade-in">

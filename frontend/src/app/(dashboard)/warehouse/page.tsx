@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import Link from 'next/link';
 import { hasPageAccess } from '@/lib/page-access';
 import { useAuthStore } from '@/stores';
@@ -48,85 +48,13 @@ const lowStockItems = [
   { id: 4, name: 'Welding Wire 1.2mm', current: 3, reorder: 15, unit: 'kg' },
 ];
 
-function StatCard({ 
-  title, 
-  value, 
-  icon: Icon, 
-  trend, 
-  trendLabel,
-  variant = 'default' 
-}: { 
-  title: string; 
-  value: string | number; 
-  icon: React.ElementType;
-  trend?: 'up' | 'down';
-  trendLabel?: string;
-  variant?: 'default' | 'warning' | 'danger' | 'success';
-}) {
-  const variantStyles = {
-    default: 'bg-primary/10 text-primary',
-    warning: 'bg-amber-500/10 text-amber-600',
-    danger: 'bg-destructive/10 text-destructive',
-    success: 'bg-emerald-500/10 text-emerald-600',
-  };
-
-  return (
-    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1 hover:border-primary/20">
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{title}</p>
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{value}</p>
-            {trend && trendLabel && (
-              <div className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-widest mt-2 ${trend === 'up' ? 'text-emerald-600' : 'text-danger'}`}>
-                {trend === 'up' ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                {trendLabel}
-              </div>
-            )}
-          </div>
-          <div className={`p-3 rounded-2xl shadow-sm ${variantStyles[variant]}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function WarehouseDashboard() {
-  const [isLoading, setIsLoading] = React.useState(true);
   const { user } = useAuthStore();
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
     return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
   }, [user]);
-
-  React.useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-80" />
-          <Skeleton className="h-80" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8 page-fade-in">
@@ -158,32 +86,44 @@ export default function WarehouseDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Inventory Nodes (SKUs)"
-          value={inventoryStats.totalItems.toLocaleString()}
-          icon={Box}
-          trend="up"
-          trendLabel="+124 vs LAST CYCLE"
-        />
-        <StatCard
-          title="Abnormal Stock Levels"
-          value={inventoryStats.lowStock}
-          icon={AlertTriangle}
-          variant="warning"
-        />
-        <StatCard
-          title="Inbound Synchronization"
-          value={inventoryStats.pendingReceipts}
-          icon={Truck}
-        />
-        <StatCard
-          title="Outbound Velocity"
-          value={inventoryStats.pendingShipments}
-          icon={Package}
+      {/* System Status */}
+      <div className="flex items-center justify-end">
+        <AmbientStatus 
+          status={inventoryStats.outOfStock > 0 ? 'warning' : 'operational'} 
+          label={inventoryStats.outOfStock > 0 ? `${inventoryStats.outOfStock} Items Out of Stock` : 'All Stock Levels Normal'}
         />
       </div>
+
+      {/* Stats Grid - Using Shared StatCard */}
+      <StatSection label="Inventory Metrics" columns={4}>
+        <StatCard
+          value={inventoryStats.totalItems.toLocaleString()}
+          label="Inventory Nodes (SKUs)"
+          icon={Box}
+          iconColor="primary"
+          trend="up"
+          trendValue="+124 this cycle"
+        />
+        <StatCard
+          value={inventoryStats.lowStock}
+          label="Abnormal Stock Levels"
+          icon={AlertTriangle}
+          iconColor="warning"
+          critical={inventoryStats.lowStock > 20}
+        />
+        <StatCard
+          value={inventoryStats.pendingReceipts}
+          label="Inbound Synchronization"
+          icon={Truck}
+          iconColor="info"
+        />
+        <StatCard
+          value={inventoryStats.pendingShipments}
+          label="Outbound Velocity"
+          icon={Package}
+          iconColor="success"
+        />
+      </StatSection>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-2">

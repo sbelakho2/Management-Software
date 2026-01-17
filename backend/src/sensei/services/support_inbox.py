@@ -5,7 +5,7 @@ Manages support tickets, feedback collection, and issue routing.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
@@ -224,6 +224,8 @@ class SupportInboxService:
         self._feedback: dict[UUID, UserFeedback] = {}
         self._routing_rules: dict[UUID, RoutingRule] = {}
         self._a3_lite_records: dict[UUID, A3LiteRecord] = {}
+        self._max_tickets: int = 5000
+        self._ticket_ttl: timedelta = timedelta(days=90)
         self._default_sla_hours: dict[TicketPriority, int] = {
             TicketPriority.CRITICAL: 2,
             TicketPriority.HIGH: 8,
@@ -231,6 +233,35 @@ class SupportInboxService:
             TicketPriority.LOW: 72,
         }
         self._setup_default_rules()
+
+    def _prune_tickets(self) -> None:
+        """Prune old tickets to prevent unbounded memory growth."""
+        cutoff = datetime.now(timezone.utc) - self._ticket_ttl
+        resolved_statuses = {TicketStatus.RESOLVED, TicketStatus.CLOSED}
+
+        stale_ids = [
+            tid for tid, ticket in self._tickets.items()
+            if ticket.status in resolved_statuses and ticket.updated_at < cutoff
+        ]
+        for tid in stale_ids:
+            del self._tickets[tid]
+
+        excess = len(self._tickets) - self._max_tickets
+        if excess > 0:
+            # Prefer pruning resolved/closed tickets first
+            resolved = [
+                (tid, t) for tid, t in self._tickets.items()
+                if t.status in resolved_statuses
+            ]
+            resolved_sorted = sorted(resolved, key=lambda item: item[1].updated_at)
+            for tid, _ in resolved_sorted[:excess]:
+                del self._tickets[tid]
+
+            excess = len(self._tickets) - self._max_tickets
+            if excess > 0:
+                oldest = sorted(self._tickets.items(), key=lambda item: item[1].updated_at)
+                for tid, _ in oldest[:excess]:
+                    del self._tickets[tid]
 
     def _setup_default_rules(self) -> None:
         """Set up default routing rules."""
@@ -328,6 +359,7 @@ class SupportInboxService:
         )
 
         self._tickets[ticket.id] = ticket
+        self._prune_tickets()
 
         if auto_route:
             self._apply_routing(ticket)
@@ -347,6 +379,7 @@ class SupportInboxService:
         submitted_by: Optional[UUID] = None,
     ) -> list[SupportTicket]:
         """Get tickets with optional filters."""
+        self._prune_tickets()
         tickets = list(self._tickets.values())
 
         if status:

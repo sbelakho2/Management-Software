@@ -23,7 +23,7 @@ export const useMrpStore = create<MRPState>((set, get) => ({
   fetchMpsPlans: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get('/mrp/mps/plans');
+      const response = await apiClient.get<MPSPlan[]>('/mrp/mps/plans');
       set({ mpsPlans: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -43,7 +43,7 @@ export const useMrpStore = create<MRPState>((set, get) => ({
   fetchMpsLines: async (planId) => {
     set({ loading: true, error: null });
     try {
-      const response = await apiClient.get(`/mrp/mps/plans/${planId}/lines`);
+      const response = await apiClient.get<MPSPlanLine[]>(`/mrp/mps/plans/${planId}/lines`);
       set({ mpsLines: response, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });

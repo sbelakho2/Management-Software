@@ -30,7 +30,7 @@ from sensei.api.utils import (
     build_deleted_response,
     build_paginated_response,
 )
-from sensei.core.storage import upload_file, generate_presigned_url, delete_file
+from sensei.core.storage import upload_file_stream, generate_presigned_url, delete_file
 from sensei.models.attachment import (
     Attachment,
     AttachmentVersion,
@@ -134,7 +134,6 @@ class VersionCreate(BaseModel):
     change_notes: str | None = None
     revision: str | None = None
 
-
 class VersionResponse(BaseModel):
     """Response schema for an attachment version."""
 
@@ -237,10 +236,6 @@ async def create_attachment(
     extension = get_file_extension(original_filename)
     mime_type = file.content_type or "application/octet-stream"
 
-    # Read file to get size (in production, this would stream to storage)
-    file_content = await file.read()
-    file_size = len(file_content)
-
     # Auto-detect category if not provided
     if category is None:
         category = detect_category(mime_type, extension)
@@ -248,9 +243,9 @@ async def create_attachment(
     # Generate storage key
     storage_key = generate_storage_key(entity_type, entity_id, original_filename)
 
-    # Upload to storage
-    await upload_file(
-        file_content=file_content,
+    # Upload to storage (streamed)
+    upload_result = await upload_file_stream(
+        file_obj=file.file,
         key=storage_key,
         content_type=mime_type,
         metadata={
@@ -258,7 +253,7 @@ async def create_attachment(
             "entity_id": str(entity_id),
             "original_filename": original_filename,
             "uploaded_by": str(current_user.id),
-        }
+        },
     )
 
     # Parse tags
@@ -266,6 +261,7 @@ async def create_attachment(
     if tags:
         try:
             import json
+
             parsed_tags = json.loads(tags)
         except json.JSONDecodeError:
             parsed_tags = [t.strip() for t in tags.split(",") if t.strip()]
@@ -278,7 +274,7 @@ async def create_attachment(
         original_filename=original_filename,
         file_extension=extension,
         mime_type=mime_type,
-        file_size=file_size,
+        file_size=upload_result["size"],
         storage_bucket="attachments",
         storage_key=storage_key,
         category=category.value if isinstance(category, AttachmentCategory) else category,
@@ -291,6 +287,7 @@ async def create_attachment(
         uploaded_by_id=current_user.id,
         uploaded_at=datetime.now(timezone.utc),
         is_confidential=is_confidential,
+        checksum_sha256=upload_result["hash"],
         tags=parsed_tags,
     )
 
@@ -606,8 +603,7 @@ async def create_version(
     if inspect.isawaitable(maybe_awaitable):
         await maybe_awaitable
 
-    # Read new file
-    file_content = await file.read()
+    # Stream new file to storage
     new_filename = file.filename or attachment.original_filename
     new_extension = get_file_extension(new_filename)
     new_mime_type = file.content_type or attachment.mime_type
@@ -622,7 +618,6 @@ async def create_version(
     attachment.original_filename = new_filename
     attachment.file_extension = new_extension
     attachment.mime_type = new_mime_type
-    attachment.file_size = len(file_content)
     attachment.storage_key = new_storage_key
     attachment.current_version += 1
     attachment.revision = revision
@@ -630,8 +625,8 @@ async def create_version(
     attachment.uploaded_by_id = current_user.id
 
     # Upload new version to storage
-    await upload_file(
-        file_content=file_content,
+    upload_result = await upload_file_stream(
+        file_obj=file.file,
         key=new_storage_key,
         content_type=new_mime_type,
         metadata={
@@ -641,6 +636,8 @@ async def create_version(
             "uploaded_by": str(current_user.id),
         }
     )
+    attachment.file_size = upload_result["size"]
+    attachment.checksum_sha256 = upload_result["hash"]
 
     await db.commit()
     await db.refresh(attachment)

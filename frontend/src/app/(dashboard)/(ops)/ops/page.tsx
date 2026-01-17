@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarGroup } from '@/components/ui/avatar';
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import { cn, formatDate, formatCurrency, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores';
 import { useTodayStore } from '@/stores/today';
@@ -81,45 +82,13 @@ interface RFQSummary {
   status: string;
 }
 
-// Components
-function KPICard({ data }: { data: KPICardData }) {
-  const TrendIcon = data.trend === 'up' ? TrendingUp : data.trend === 'down' ? TrendingDown : null;
-  const trendColor = data.trendIsGood ? 'text-success' : 'text-danger';
-
-  const content = (
-    <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md hover:shadow-premium-hover hover:-translate-y-1 transition-all duration-500 group">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm transition-transform duration-500 group-hover:scale-110">
-              <data.icon className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{data.label}</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{data.value}</p>
-            </div>
-          </div>
-          {TrendIcon && data.change !== undefined && (
-            <div className={cn('flex flex-col items-end gap-1', trendColor)}>
-              <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest">
-                <TrendIcon className="h-3 w-3" />
-                <span>{data.change > 0 ? '+' : ''}{data.change}%</span>
-              </div>
-            </div>
-          )}
-        </div>
-        {data.changeLabel && (
-          <p className="mt-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{data.changeLabel}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  if (data.href) {
-    return <Link href={data.href}>{content}</Link>;
-  }
-  return content;
-}
+// Icon color mapping for KPI data
+const getIconColor = (label: string, trendIsGood?: boolean): 'primary' | 'success' | 'warning' | 'danger' => {
+  if (label.includes('RFQ')) return 'primary';
+  if (label.includes('NCR') || label.includes('Alert')) return trendIsGood ? 'success' : 'danger';
+  if (label.includes('Pending')) return 'warning';
+  return 'primary';
+};
 
 function TaskCard({ task }: { task: TaskItem }) {
   const priorityConfig = {
@@ -325,12 +294,29 @@ export default function TodayPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <KPICard key={kpi.id} data={kpi} />
-        ))}
+      {/* System Status */}
+      <div className="flex items-center justify-end">
+        <AmbientStatus 
+          status={(data?.abnormalities || []).length > 0 ? 'warning' : 'operational'} 
+          label={(data?.abnormalities || []).length > 0 ? 'Issues Detected' : 'All Systems Operational'}
+        />
       </div>
+
+      {/* KPI Cards - Using Shared StatCard */}
+      <StatSection label="Production Metrics" columns={4}>
+        {kpis.map((kpi) => (
+          <StatCard
+            key={kpi.id}
+            value={kpi.value}
+            label={kpi.label}
+            icon={kpi.icon}
+            iconColor={getIconColor(kpi.label, kpi.trendIsGood)}
+            trend={kpi.trend}
+            trendValue={kpi.change !== undefined ? `${kpi.change > 0 ? '+' : ''}${kpi.change}%` : undefined}
+            onClick={kpi.href ? () => window.location.href = kpi.href! : undefined}
+          />
+        ))}
+      </StatSection>
 
       {/* Main Content */}
       <div className="grid gap-6 lg:grid-cols-3">

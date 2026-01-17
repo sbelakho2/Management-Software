@@ -71,6 +71,7 @@ class ApiClient {
   private client: AxiosInstance;
   private accessToken: string | null = null;
   private pendingRequests: Map<string, AbortController> = new Map();
+  private refreshPromise: Promise<void> | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -113,13 +114,16 @@ class ApiClient {
           try {
             await this.refreshToken();
             return this.client(originalRequest);
-          } catch {
+          } catch (refreshError) {
             this.clearToken();
             // Clear all pending requests on auth failure
             this.cancelAllRequests();
-            if (typeof window !== 'undefined') {
+            // Only redirect if not already on an auth page
+            if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
               window.location.href = '/login';
             }
+            // Reject the promise so callers know the request failed
+            return Promise.reject({ message: 'Session expired', code: 'AUTH_EXPIRED' });
           }
         }
 
@@ -216,6 +220,9 @@ class ApiClient {
   }
 
   async refreshToken(): Promise<void> {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
     let refreshToken: string | null = null;
     
     if (typeof window !== 'undefined') {
@@ -230,18 +237,25 @@ class ApiClient {
       throw new Error('No refresh token');
     }
 
-    const response = await axios.post(`${API_ROOT}/api/v1/auth/refresh`, {
-      refresh_token: refreshToken,
-    });
+    this.refreshPromise = axios
+      .post(`${API_ROOT}/api/v1/auth/refresh`, {
+        refresh_token: refreshToken,
+      })
+      .then((response) => {
+        this.setToken(response.data.access_token);
+        if (response.data.refresh_token && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('refresh_token', response.data.refresh_token);
+          } catch {
+            // localStorage not available
+          }
+        }
+      })
+      .finally(() => {
+        this.refreshPromise = null;
+      });
 
-    this.setToken(response.data.access_token);
-    if (response.data.refresh_token && typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('refresh_token', response.data.refresh_token);
-      } catch {
-        // localStorage not available
-      }
-    }
+    return this.refreshPromise;
   }
 
   // Response type for wrapped API responses

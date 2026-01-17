@@ -14,6 +14,7 @@ import {
 } from '@/stores/andon-store';
 import type { AndonEvent, AndonType, AndonStatus, Severity } from '@/types';
 import { cn } from '@/lib/utils';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 // ============================================================================
 // Icons
@@ -724,57 +725,59 @@ export function AndonDashboard({
   const workCenterList = Array.from(workCenters.values());
 
   return (
-    <div className={cn('flex h-full flex-col bg-gray-100 dark:bg-gray-950', className)}>
-      <AndonDashboardHeader onRefresh={onRefresh} />
-      <AndonMetricsBar />
-      <AndonFilterBar
-        currentType={filterType}
-        currentSeverity={filterSeverity}
-        onTypeChange={setFilterType}
-        onSeverityChange={setFilterSeverity}
-      />
+    <ErrorBoundary>
+      <div className={cn('flex h-full flex-col bg-gray-100 dark:bg-gray-950', className)}>
+        <AndonDashboardHeader onRefresh={onRefresh} />
+        <AndonMetricsBar />
+        <AndonFilterBar
+          currentType={filterType}
+          currentSeverity={filterSeverity}
+          onTypeChange={setFilterType}
+          onSeverityChange={setFilterSeverity}
+        />
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Events panel */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Active Alerts ({filteredEvents.length})
-            </h2>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Events panel */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Active Alerts ({filteredEvents.length})
+              </h2>
+            </div>
+            <AndonEventList
+              events={filteredEvents}
+              onEventClick={(event) => {
+                selectEvent(event.id);
+                onEventClick?.(event);
+              }}
+              onAcknowledge={(eventId) => acknowledgeEvent(eventId, 'Current User')}
+              onEscalate={(eventId) => escalateEvent(eventId)}
+              onResolve={(eventId) => resolveEvent(eventId, 'Issue resolved')}
+              selectedEventId={selectedEventId}
+            />
           </div>
-          <AndonEventList
-            events={filteredEvents}
-            onEventClick={(event) => {
-              selectEvent(event.id);
-              onEventClick?.(event);
-            }}
-            onAcknowledge={(eventId) => acknowledgeEvent(eventId, 'Current User')}
-            onEscalate={(eventId) => escalateEvent(eventId)}
-            onResolve={(eventId) => resolveEvent(eventId, 'Issue resolved')}
-            selectedEventId={selectedEventId}
-          />
-        </div>
 
-        {/* Work centers panel */}
-        <div className="w-96 border-l border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-            Work Centers
-          </h2>
-          <div className="space-y-4">
-            {workCenterList.map((workCenter) => (
-              <WorkCenterStatusCard
-                key={workCenter.id}
-                workCenter={workCenter}
-              />
-            ))}
-            {workCenterList.length === 0 && (
-              <p className="text-center text-gray-500 dark:text-gray-400">
-                No work centers configured
-              </p>
-            )}
+          {/* Work centers panel */}
+          <div className="w-96 border-l border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+              Work Centers
+            </h2>
+            <div className="space-y-4">
+              {workCenterList.map((workCenter) => (
+                <WorkCenterStatusCard
+                  key={workCenter.id}
+                  workCenter={workCenter}
+                />
+              ))}
+              {workCenterList.length === 0 && (
+                <p className="text-center text-gray-500 dark:text-gray-400">
+                  No work centers configured
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

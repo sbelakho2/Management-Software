@@ -25,6 +25,7 @@ from sensei.middleware.logging import StructuredLoggingMiddleware
 from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
 from sensei.middleware.secure_headers import SecureHeadersASGIMiddleware, SecureHeadersMiddleware
+from sensei.middleware.rate_limit import RateLimitMiddleware
 from sensei.services.core.backup_scheduler import BackupSchedulerService
 from sensei.services.core.database_backup import DatabaseBackupService
 from sensei.services.ops.kpi_app_services import muda_nudging_service
@@ -203,6 +204,13 @@ def create_application() -> FastAPI:
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)
+    
+    # Rate limiting - enabled in production, configurable otherwise
+    rate_limit_enabled = settings.ENVIRONMENT == "production" or settings.RATE_LIMIT_ENABLED
+    app.add_middleware(
+        RateLimitMiddleware,
+        enabled=rate_limit_enabled,
+    )
     
     # Include API routers
     app.include_router(api_router, prefix="/api/v1")

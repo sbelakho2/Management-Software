@@ -14,8 +14,9 @@ import { Loader2, Download, Search, Send, Users, AlertTriangle, TrendingUp, Shie
 import { Progress } from '@/components/ui/progress';
 import { PageGuard } from '@/components/layout/page-guard';
 import { EXECUTIVE_ROLES } from '@/lib/page-access';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
+import { API_ROOT } from '@/api/client';
 
 function RiskBadge({ value }: { value: string }) {
   const v = (value || '').toLowerCase();
@@ -74,7 +75,7 @@ export default function ExecutivePage() {
     });
   };
 
-  const exportUrl = `${API_URL}/api/v1/executive/strategic-report/export`;
+  const exportUrl = `${API_ROOT}/api/v1/executive/strategic-report/export`;
 
   return (
     <PageGuard requiredRoles={EXECUTIVE_ROLES}>
@@ -89,6 +90,10 @@ export default function ExecutivePage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <AmbientStatus 
+              status={totalNcrs > 5 ? 'critical' : totalNcrs > 0 ? 'warning' : 'operational'} 
+              label={totalNcrs > 5 ? 'Anomalies Detected' : totalNcrs > 0 ? 'Monitoring Active' : 'All Systems Nominal'}
+            />
             <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" asChild>
               <a href={exportUrl}>
                 <Download className="mr-2 h-4 w-4" />
@@ -112,56 +117,44 @@ export default function ExecutivePage() {
           </TabsList>
 
           <TabsContent value="north-star" data-testid="north-star" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium hover:shadow-premium-hover transition-all duration-500">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Revenue Intelligence (MTD)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">${(((todayData as any)?.metrics?.revenue || 0) / 1000000).toFixed(1)}M</div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2 flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    +2.1% ALPHA TREND
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium hover:shadow-premium-hover transition-all duration-500">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active Anomalies</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-destructive to-destructive/70">{totalNcrs}</div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-destructive mt-2">Quality Health Critical</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium hover:shadow-premium-hover transition-all duration-500">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Open Resolutions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-amber-500 to-amber-500/70">{totalCapas}</div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mt-2">CAPA Velocity Required</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium hover:shadow-premium-hover transition-all duration-500">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Operational Uptime</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-emerald-500 to-emerald-500/70">99.9%</div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2">System Resilience Optimal</p>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Executive KPIs - Miller's Law Grouping */}
+            <StatSection label="Strategic Metrics" columns={4}>
+              <StatCard
+                value={`$${(((todayData as any)?.metrics?.revenue || 0) / 1000000).toFixed(1)}M`}
+                label="Revenue Intelligence (MTD)"
+                icon={TrendingUp}
+                iconColor="success"
+                trend="up"
+                trendValue="+2.1% ALPHA TREND"
+                spotlight
+              />
+              <StatCard
+                value={totalNcrs.toString()}
+                label="Active Anomalies"
+                icon={AlertTriangle}
+                iconColor="danger"
+                critical={totalNcrs > 5}
+              />
+              <StatCard
+                value={totalCapas.toString()}
+                label="Open Resolutions"
+                icon={Shield}
+                iconColor="warning"
+              />
+              <StatCard
+                value="99.9%"
+                label="Operational Uptime"
+                icon={TrendingUp}
+                iconColor="success"
+                trend="up"
+                trendValue="System Resilience Optimal"
+              />
+            </StatSection>
 
             <div className="grid gap-8 md:grid-cols-2">
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-                <CardHeader>
-                  <CardTitle className="text-lg font-heading">Strategic Directives</CardTitle>
-                  <CardDescription className="text-xs font-medium uppercase tracking-wider">Automated priorities from Sensei AI</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                   <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 space-y-2 group hover:bg-primary/10 transition-all duration-300">
+              <ContentCard title="Strategic Directives" subtitle="Automated priorities from Sensei AI">
+                <div className="space-y-4 stagger-list">
+                   <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 space-y-2 group hover:bg-primary/10 transition-all duration-300 stat-card-spotlight" style={{ '--stagger-index': 0 } as React.CSSProperties}>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Priority Alpha</span>
                         <Badge variant="destructive" className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">Critical</Badge>
@@ -169,7 +162,7 @@ export default function ExecutivePage() {
                       <p className="font-heading font-bold text-base tracking-tight">Address Margin Leakage in Tier 2 Suppliers</p>
                       <p className="text-xs text-muted-foreground font-medium leading-relaxed">AI detected 4.2% variance in Q3 procurement vs budget protocols.</p>
                    </div>
-                   <div className="p-5 rounded-2xl bg-muted/30 border border-border/10 space-y-2 group hover:bg-primary/5 transition-all duration-300">
+                   <div className="p-5 rounded-2xl bg-muted/30 border border-border/10 space-y-2 group hover:bg-primary/5 transition-all duration-300" style={{ '--stagger-index': 1 } as React.CSSProperties}>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Priority Beta</span>
                         <Badge className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">Strategic</Badge>
@@ -177,15 +170,10 @@ export default function ExecutivePage() {
                       <p className="font-heading font-bold text-base tracking-tight">Accelerate Level 4 Maturity Training</p>
                       <p className="text-xs text-muted-foreground font-medium leading-relaxed">Operations bottlenecking at specialized inspection gates requiring sync.</p>
                    </div>
-                </CardContent>
-              </Card>
+                </div>
+              </ContentCard>
 
-              <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-                <CardHeader>
-                  <CardTitle className="text-lg font-heading">Operational Overview</CardTitle>
-                  <CardDescription className="text-xs font-medium uppercase tracking-wider">Live feed from shop floor gates</CardDescription>
-                </CardHeader>
-                <CardContent>
+              <ContentCard title="Operational Overview" subtitle="Live feed from shop floor gates">
                    <div className="h-56 flex items-center justify-center border-2 border-dashed border-border/20 rounded-[2rem] bg-muted/5">
                       <div className="text-center space-y-3">
                         <div className="p-4 rounded-full bg-primary/10 inline-block animate-pulse">
@@ -194,8 +182,7 @@ export default function ExecutivePage() {
                         <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Aggregating Global Metrics...</p>
                       </div>
                    </div>
-                </CardContent>
-              </Card>
+              </ContentCard>
             </div>
           </TabsContent>
 
@@ -389,7 +376,7 @@ export default function ExecutivePage() {
                             <CardTitle className="text-sm uppercase tracking-widest">Risk Factors identified</CardTitle>
                           </CardHeader>
                           <CardContent>
-                            {riskResult.risk_factors.length > 0 ? (
+                            {(riskResult.risk_factors?.length ?? 0) > 0 ? (
                               <ul className="space-y-2">
                                 {riskResult.risk_factors.map((r) => (
                                   <li key={r} className="flex items-center gap-3 text-sm font-medium">

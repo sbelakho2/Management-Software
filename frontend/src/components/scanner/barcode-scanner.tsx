@@ -9,6 +9,7 @@ import {
   type BarcodeFormat,
 } from '@/hooks/use-camera-scanner';
 import { cn } from '@/lib/utils';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 interface BarcodeScannerProps {
   className?: string;
@@ -154,6 +155,7 @@ export function BarcodeScanner({
   }
 
   return (
+    <ErrorBoundary>
     <div className={cn('flex flex-col', className)}>
       {/* Camera viewfinder */}
       <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
@@ -285,6 +287,7 @@ export function BarcodeScanner({
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
 

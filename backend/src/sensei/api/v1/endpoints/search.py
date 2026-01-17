@@ -9,9 +9,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api.deps import CurrentActiveUser, CurrentSuperuser
 from sensei.services.core.search import (
     FullTextSearchService,
     SearchableEntityType,
@@ -234,6 +235,7 @@ def _parse_sort_order(value: str) -> SearchSortOrder:
 
 @router.get("", response_model=SearchResultSetResponse)
 async def search(
+    current_user: CurrentActiveUser,
     q: str = Query(..., description="Search query"),
     entity_types: str | None = Query(None, description="Comma-separated entity types to filter"),
     status: str | None = Query(None, description="Comma-separated status values to filter"),
@@ -308,6 +310,7 @@ async def search(
 
 @router.get("/quick", response_model=QuickSearchResultResponse)
 async def quick_search(
+    current_user: CurrentActiveUser,
     q: str = Query(..., description="Search query"),
     limit: int = Query(10, ge=1, le=50, description="Maximum results"),
     entity_types: str | None = Query(None, description="Comma-separated entity types to filter"),
@@ -353,6 +356,7 @@ async def quick_search(
 
 @router.get("/suggestions", response_model=SuggestionsResponse)
 async def get_suggestions(
+    current_user: CurrentActiveUser,
     prefix: str = Query(..., description="Search prefix for autocomplete"),
     limit: int = Query(10, ge=1, le=20, description="Maximum suggestions"),
     entity_types: str | None = Query(None, description="Comma-separated entity types to filter"),
@@ -381,9 +385,9 @@ async def get_suggestions(
 
 
 @router.get("/entity-types")
-async def list_entity_types() -> list[dict[str, str]]:
+async def list_entity_types(current_user: CurrentActiveUser) -> list[dict[str, str]]:
     """
-    List all searchable entity types.
+    List all searchable entity types. Requires authentication.
     """
     return [
         {"value": et.value, "name": et.name}
@@ -392,9 +396,9 @@ async def list_entity_types() -> list[dict[str, str]]:
 
 
 @router.get("/stats", response_model=IndexStatsResponse)
-async def get_index_stats() -> IndexStatsResponse:
+async def get_index_stats(current_user: CurrentActiveUser) -> IndexStatsResponse:
     """
-    Get statistics about the search index.
+    Get statistics about the search index. Requires authentication.
     """
     service = get_service()
     
@@ -416,9 +420,9 @@ async def get_index_stats() -> IndexStatsResponse:
 # --------------------------------------------------------------------------
 
 @router.post("/index", status_code=status.HTTP_201_CREATED)
-async def index_document(request: IndexDocumentRequest) -> dict[str, Any]:
+async def index_document(request: IndexDocumentRequest, current_user: CurrentSuperuser) -> dict[str, Any]:
     """
-    Index a document for searching.
+    Index a document for searching. Requires superuser access.
     """
     service = get_service()
     
@@ -453,9 +457,9 @@ async def index_document(request: IndexDocumentRequest) -> dict[str, Any]:
 
 
 @router.post("/index/account", status_code=status.HTTP_201_CREATED)
-async def index_account_endpoint(request: IndexAccountRequest) -> dict[str, Any]:
+async def index_account_endpoint(request: IndexAccountRequest, current_user: CurrentSuperuser) -> dict[str, Any]:
     """
-    Index an account for searching.
+    Index an account for searching. Requires superuser access.
     """
     service = get_service()
     
@@ -477,9 +481,9 @@ async def index_account_endpoint(request: IndexAccountRequest) -> dict[str, Any]
 
 
 @router.post("/index/rfq", status_code=status.HTTP_201_CREATED)
-async def index_rfq_endpoint(request: IndexRFQRequest) -> dict[str, Any]:
+async def index_rfq_endpoint(request: IndexRFQRequest, current_user: CurrentSuperuser) -> dict[str, Any]:
     """
-    Index an RFQ for searching.
+    Index an RFQ for searching. Requires superuser access.
     """
     service = get_service()
     
@@ -503,9 +507,9 @@ async def index_rfq_endpoint(request: IndexRFQRequest) -> dict[str, Any]:
 
 
 @router.post("/index/quote", status_code=status.HTTP_201_CREATED)
-async def index_quote_endpoint(request: IndexQuoteRequest) -> dict[str, Any]:
+async def index_quote_endpoint(request: IndexQuoteRequest, current_user: CurrentSuperuser) -> dict[str, Any]:
     """
-    Index a quote for searching.
+    Index a quote for searching. Requires superuser access.
     """
     service = get_service()
     
@@ -530,9 +534,9 @@ async def index_quote_endpoint(request: IndexQuoteRequest) -> dict[str, Any]:
 
 
 @router.post("/index/task", status_code=status.HTTP_201_CREATED)
-async def index_task_endpoint(request: IndexTaskRequest) -> dict[str, Any]:
+async def index_task_endpoint(request: IndexTaskRequest, current_user: CurrentSuperuser) -> dict[str, Any]:
     """
-    Index a task for searching.
+    Index a task for searching. Requires superuser access.
     """
     service = get_service()
     
@@ -559,9 +563,10 @@ async def index_task_endpoint(request: IndexTaskRequest) -> dict[str, Any]:
 async def remove_document(
     entity_type: str,
     entity_id: str,
+    current_user: CurrentSuperuser,
 ) -> dict[str, Any]:
     """
-    Remove a document from the search index.
+    Remove a document from the search index. Requires superuser access.
     """
     service = get_service()
     
@@ -583,10 +588,11 @@ async def remove_document(
 
 @router.delete("/index/clear")
 async def clear_index(
+    current_user: CurrentSuperuser,
     entity_type: str | None = Query(None, description="Entity type to clear (all if not specified)"),
 ) -> dict[str, Any]:
     """
-    Clear the search index.
+    Clear the search index. Requires superuser access.
     
     If entity_type is provided, only clears documents of that type.
     """

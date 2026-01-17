@@ -144,9 +144,23 @@ class IntegrationTestService:
         self._tests: dict[UUID, IntegrationTest] = {}
         self._suites: dict[UUID, TestSuite] = {}
         self._executions: list[TestExecution] = []
+        self._max_executions: int = 1000
+        self._execution_ttl: timedelta = timedelta(days=30)
 
         # Initialize default test suites
         self._initialize_default_tests()
+
+    def _prune_executions(self) -> None:
+        """Prune old execution records to prevent unbounded growth."""
+        cutoff = datetime.now(timezone.utc) - self._execution_ttl
+        self._executions = [
+            e for e in self._executions
+            if not e.completed_at or e.completed_at >= cutoff
+        ]
+
+        excess = len(self._executions) - self._max_executions
+        if excess > 0:
+            self._executions = sorted(self._executions, key=lambda e: e.started_at)[excess:]
 
     def _initialize_default_tests(self) -> None:
         """Initialize default integration test definitions."""
@@ -1276,6 +1290,7 @@ class IntegrationTestService:
         )
 
         self._executions.append(execution)
+        self._prune_executions()
         return execution
 
     def execute_suite(

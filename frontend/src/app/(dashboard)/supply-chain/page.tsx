@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useSupplyChainStore } from '@/stores';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 function SupplyChainStats() {
   const { stats, riskAnalysis } = useSupplyChainStore();

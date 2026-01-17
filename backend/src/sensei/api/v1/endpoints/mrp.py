@@ -1,17 +1,38 @@
-from typing import Any, List
+"""
+MRP (Material Requirements Planning) Endpoints.
+
+Provides endpoints for:
+- BOM (Bill of Materials) management
+- MRP Demands
+- MRP Suggestions and their conversion to Purchase Requisitions
+- MPS (Master Production Schedule) Plans
+"""
+
+import logging
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from typing import Any, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 
 from sensei.api import deps
+from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.exceptions import NotFoundError, ConflictError
+from sensei.api.schemas import APIResponse
+from sensei.api.utils import build_response, build_created_response, now_utc
 from sensei.core.database import get_db_session
 from sensei.models.mrp import BOMComponent, MRPDemand, MRPSuggestion, MRPRun
+from sensei.models.accounts_payable import PurchaseRequisition, PRLine
+from sensei.models.product import Product
 from sensei.services.production.mps_service import MPSService
 from sensei.services.production.persistent_mrp import PersistentMRPService
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class MPSPlanSchema(BaseModel):
@@ -137,3 +158,264 @@ async def create_mps_line(
     await db.commit()
     await db.refresh(line)
     return line.to_dict()
+
+
+# =============================================================================
+# MRP Suggestion Management & Conversion to PR
+# =============================================================================
+
+
+class SuggestionApprovalSchema(BaseModel):
+    """Approve an MRP suggestion."""
+    suggestion_ids: List[UUID] = Field(..., min_length=1)
+    notes: Optional[str] = None
+
+
+class SuggestionRejectionSchema(BaseModel):
+    """Reject MRP suggestions."""
+    suggestion_ids: List[UUID] = Field(..., min_length=1)
+    rejection_reason: str = Field(..., min_length=1)
+
+
+class SuggestionToPRSchema(BaseModel):
+    """Convert MRP suggestions to Purchase Requisition."""
+    suggestion_ids: List[UUID] = Field(..., min_length=1)
+    supplier_id: Optional[UUID] = None  # Optional preferred supplier
+    justification: str = "Auto-generated from MRP suggestions"
+
+
+class PRConversionResult(BaseModel):
+    """Result of MRP to PR conversion."""
+    requisition_id: UUID
+    pr_number: str
+    line_count: int
+    total_quantity: Decimal
+    suggestion_ids: List[UUID]
+    converted_at: datetime
+
+
+async def _generate_pr_number(db: AsyncSession) -> str:
+    """Generate next PR number."""
+    result = await db.execute(select(func.count(PurchaseRequisition.id)))
+    count = result.scalar() or 0
+    return f"PR-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+
+
+@router.get("/suggestions/pending", response_model=APIResponse[List[dict]])
+async def list_pending_suggestions(
+    requirement_type: Optional[str] = Query(None, enum=["buy", "build"]),
+    db: DBSession = None,
+    current_user: CurrentUser = None,
+):
+    """List pending MRP suggestions that need action."""
+    stmt = select(MRPSuggestion).options(
+        selectinload(MRPSuggestion.product)
+    ).where(MRPSuggestion.status == "pending")
+    
+    if requirement_type:
+        stmt = stmt.where(MRPSuggestion.requirement_type == requirement_type)
+    
+    stmt = stmt.order_by(MRPSuggestion.needed_date.asc())
+    result = await db.execute(stmt)
+    suggestions = result.scalars().all()
+    
+    return build_response([{
+        **s.to_dict(),
+        "product_name": s.product.name if s.product else None,
+        "product_sku": s.product.sku if s.product else None,
+    } for s in suggestions])
+
+
+@router.post("/suggestions/approve", response_model=APIResponse[List[dict]])
+async def approve_suggestions(
+    payload: SuggestionApprovalSchema,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """Approve MRP suggestions."""
+    result = await db.execute(
+        select(MRPSuggestion)
+        .where(and_(
+            MRPSuggestion.id.in_(payload.suggestion_ids),
+            MRPSuggestion.status == "pending"
+        ))
+    )
+    suggestions = list(result.scalars().all())
+    
+    if len(suggestions) != len(payload.suggestion_ids):
+        raise ConflictError("Some suggestions not found or not in pending status")
+    
+    approved = []
+    for s in suggestions:
+        s.status = "approved"
+        s.approved_at = now_utc()
+        s.approved_by_id = current_user.id
+        if payload.notes:
+            s.notes = payload.notes
+        approved.append(s.to_dict())
+    
+    await db.commit()
+    return build_response(approved)
+
+
+@router.post("/suggestions/reject", response_model=APIResponse[List[dict]])
+async def reject_suggestions(
+    payload: SuggestionRejectionSchema,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """Reject MRP suggestions."""
+    result = await db.execute(
+        select(MRPSuggestion)
+        .where(and_(
+            MRPSuggestion.id.in_(payload.suggestion_ids),
+            MRPSuggestion.status == "pending"
+        ))
+    )
+    suggestions = list(result.scalars().all())
+    
+    if len(suggestions) != len(payload.suggestion_ids):
+        raise ConflictError("Some suggestions not found or not in pending status")
+    
+    rejected = []
+    for s in suggestions:
+        s.status = "rejected"
+        s.rejection_reason = payload.rejection_reason
+        rejected.append(s.to_dict())
+    
+    await db.commit()
+    return build_response(rejected)
+
+
+@router.post("/suggestions/convert-to-pr", response_model=APIResponse[PRConversionResult])
+async def convert_suggestions_to_pr(
+    payload: SuggestionToPRSchema,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Convert approved MRP 'buy' suggestions to a Purchase Requisition.
+    
+    This creates a new PR with line items for each approved suggestion.
+    Only 'buy' type suggestions can be converted to PRs.
+    """
+    # Fetch approved 'buy' suggestions
+    result = await db.execute(
+        select(MRPSuggestion).options(
+            selectinload(MRPSuggestion.product)
+        ).where(and_(
+            MRPSuggestion.id.in_(payload.suggestion_ids),
+            MRPSuggestion.status == "approved",
+            MRPSuggestion.requirement_type == "buy"
+        ))
+    )
+    suggestions = list(result.scalars().all())
+    
+    if not suggestions:
+        raise NotFoundError("No approved 'buy' suggestions found with the provided IDs")
+    
+    if len(suggestions) != len(payload.suggestion_ids):
+        raise ConflictError(
+            f"Found {len(suggestions)} approved buy suggestions, "
+            f"but {len(payload.suggestion_ids)} IDs provided. "
+            "Ensure all suggestions are approved and of type 'buy'."
+        )
+    
+    # Generate PR number
+    pr_number = await _generate_pr_number(db)
+    
+    # Create Purchase Requisition
+    pr = PurchaseRequisition(
+        pr_number=pr_number,
+        status="draft",
+        justification=payload.justification,
+        requested_by_id=current_user.id,
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id,
+        owner_id=current_user.id,
+    )
+    db.add(pr)
+    await db.flush()
+    
+    # Create PR lines from suggestions
+    total_qty = Decimal("0")
+    for suggestion in suggestions:
+        product = suggestion.product
+        pr_line = PRLine(
+            pr_id=pr.id,
+            product_name=product.name if product else f"Product-{suggestion.product_id}",
+            sku=product.sku if product else None,
+            quantity=suggestion.quantity,
+            estimated_unit_price=product.unit_cost if product else Decimal("0"),
+            required_date=suggestion.needed_date,
+            notes=f"From MRP suggestion. Lead time: {suggestion.lead_time_days} days.",
+        )
+        db.add(pr_line)
+        total_qty += suggestion.quantity
+        
+        # Mark suggestion as released
+        suggestion.status = "released"
+    
+    await db.commit()
+    
+    return build_created_response(PRConversionResult(
+        requisition_id=pr.id,
+        pr_number=pr.pr_number,
+        line_count=len(suggestions),
+        total_quantity=total_qty,
+        suggestion_ids=[s.id for s in suggestions],
+        converted_at=now_utc(),
+    ))
+
+
+@router.get("/stats", response_model=APIResponse[dict])
+async def get_mrp_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """Get MRP dashboard statistics."""
+    # Count suggestions by status
+    pending_count = await db.scalar(
+        select(func.count(MRPSuggestion.id)).where(MRPSuggestion.status == "pending")
+    )
+    approved_count = await db.scalar(
+        select(func.count(MRPSuggestion.id)).where(MRPSuggestion.status == "approved")
+    )
+    released_count = await db.scalar(
+        select(func.count(MRPSuggestion.id)).where(MRPSuggestion.status == "released")
+    )
+    
+    # Count by type
+    buy_count = await db.scalar(
+        select(func.count(MRPSuggestion.id)).where(
+            and_(MRPSuggestion.requirement_type == "buy", MRPSuggestion.status == "pending")
+        )
+    )
+    build_count = await db.scalar(
+        select(func.count(MRPSuggestion.id)).where(
+            and_(MRPSuggestion.requirement_type == "build", MRPSuggestion.status == "pending")
+        )
+    )
+    
+    # Get last run info
+    last_run_result = await db.execute(
+        select(MRPRun).order_by(MRPRun.run_at.desc()).limit(1)
+    )
+    last_run = last_run_result.scalar_one_or_none()
+    
+    return build_response({
+        "suggestions": {
+            "pending": pending_count or 0,
+            "approved": approved_count or 0,
+            "released": released_count or 0,
+        },
+        "pending_by_type": {
+            "buy": buy_count or 0,
+            "build": build_count or 0,
+        },
+        "last_run": {
+            "run_at": last_run.run_at.isoformat() if last_run else None,
+            "suggestions_count": last_run.suggestions_count if last_run else 0,
+            "shortages_count": last_run.shortages_count if last_run else 0,
+        } if last_run else None,
+    })

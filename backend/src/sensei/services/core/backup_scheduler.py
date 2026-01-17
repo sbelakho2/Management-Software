@@ -95,7 +95,13 @@ class BackupSchedulerService:
         scheduler: Optional[BackgroundScheduler] = None
     ):
         self.backup_service = backup_service
-        self.scheduler = scheduler or BackgroundScheduler()
+        self.scheduler = scheduler or BackgroundScheduler(
+            job_defaults={
+                "max_instances": 1,
+                "coalesce": True,
+                "misfire_grace_time": 60,
+            }
+        )
         self.schedules: Dict[str, BackupSchedule] = {}
         self.executions: List[ScheduleExecution] = []
         self._is_running = False
@@ -233,6 +239,9 @@ class BackupSchedulerService:
             name=schedule.name,
             args=[schedule.id],
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=60,
         )
     
     def _execute_backup(self, schedule_id: str):

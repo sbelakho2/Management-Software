@@ -31,7 +31,15 @@ def create_engine() -> AsyncEngine:
         pool_size=settings.DATABASE_POOL_SIZE,
         max_overflow=settings.DATABASE_MAX_OVERFLOW,
         pool_timeout=settings.DATABASE_POOL_TIMEOUT,
+        pool_recycle=settings.DATABASE_POOL_RECYCLE,
+        pool_use_lifo=True,
         pool_pre_ping=True,
+        connect_args={
+            "statement_cache_size": settings.DATABASE_STATEMENT_CACHE_SIZE,
+            "server_settings": {
+                "statement_timeout": str(settings.DATABASE_STATEMENT_TIMEOUT_MS),
+            },
+        },
         echo=settings.DEBUG,
     )
 

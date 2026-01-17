@@ -31,6 +31,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    escape_like_pattern,
 )
 from sensei.models.kanban import (
     KanbanBoard,
@@ -489,10 +490,11 @@ async def list_kanban_boards(
         query = query.where(KanbanBoard.is_active == is_active)
 
     if search and isinstance(search, str):
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            KanbanBoard.name.ilike(f"%{search}%"),
-            KanbanBoard.code.ilike(f"%{search}%"),
-            KanbanBoard.description.ilike(f"%{search}%"),
+            KanbanBoard.name.ilike(f"%{escaped_search}%"),
+            KanbanBoard.code.ilike(f"%{escaped_search}%"),
+            KanbanBoard.description.ilike(f"%{escaped_search}%"),
         )
         query = query.where(search_filter)
 
@@ -719,10 +721,11 @@ async def list_kanban_cards(
         )
 
     if search and isinstance(search, str):
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            KanbanCard.card_number.ilike(f"%{search}%"),
-            KanbanCard.title.ilike(f"%{search}%"),
-            KanbanCard.description.ilike(f"%{search}%"),
+            KanbanCard.card_number.ilike(f"%{escaped_search}%"),
+            KanbanCard.title.ilike(f"%{escaped_search}%"),
+            KanbanCard.description.ilike(f"%{escaped_search}%"),
         )
         query = query.where(search_filter)
 

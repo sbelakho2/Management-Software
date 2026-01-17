@@ -85,6 +85,19 @@ def compute_file_hash(file_content: bytes) -> str:
     return hashlib.sha256(file_content).hexdigest()
 
 
+def compute_file_hash_stream(file_obj: BinaryIO, chunk_size: int = 1024 * 1024) -> tuple[str, int]:
+    """Compute SHA-256 hash and size for a stream without loading into memory."""
+    hasher = hashlib.sha256()
+    total_size = 0
+    while True:
+        chunk = file_obj.read(chunk_size)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        hasher.update(chunk)
+    return hasher.hexdigest(), total_size
+
+
 async def upload_file(
     file_content: bytes,
     key: str,
@@ -125,6 +138,57 @@ async def upload_file(
         content_type=content_type,
     )
     
+    return {
+        "key": key,
+        "size": file_size,
+        "hash": file_hash,
+        "content_type": content_type,
+    }
+
+
+async def upload_file_stream(
+    file_obj: BinaryIO,
+    key: str,
+    content_type: str = "application/octet-stream",
+    metadata: Optional[dict] = None,
+) -> dict:
+    """
+    Upload a file-like stream to S3 storage without loading into memory.
+
+    Returns:
+        Dictionary with key, size, hash, and url.
+    """
+    file_obj.seek(0)
+    file_hash, file_size = compute_file_hash_stream(file_obj)
+    file_obj.seek(0)
+
+    upload_metadata = {
+        "sha256": file_hash,
+        "uploaded_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+    }
+    if metadata:
+        upload_metadata.update(metadata)
+
+    def _do_upload():
+        storage_client.upload_fileobj(
+            Fileobj=file_obj,
+            Bucket=settings.S3_BUCKET,
+            Key=key,
+            ExtraArgs={
+                "ContentType": content_type,
+                "Metadata": upload_metadata,
+            },
+        )
+
+    await anyio.to_thread.run_sync(_do_upload)
+
+    logger.info(
+        "File uploaded",
+        key=key,
+        size=file_size,
+        content_type=content_type,
+    )
+
     return {
         "key": key,
         "size": file_size,

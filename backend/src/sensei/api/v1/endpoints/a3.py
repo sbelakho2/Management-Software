@@ -27,6 +27,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    escape_like_pattern,
 )
 from sensei.models.a3 import (
     A3,
@@ -400,10 +401,11 @@ async def list_a3s(
             A3.status.notin_([A3Status.CLOSED.value, A3Status.CANCELLED.value])
         )
     if search and isinstance(search, str):
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            A3.title.ilike(f"%{search}%"),
-            A3.a3_number.ilike(f"%{search}%"),
-            A3.summary.ilike(f"%{search}%"),
+            A3.title.ilike(f"%{escaped_search}%"),
+            A3.a3_number.ilike(f"%{escaped_search}%"),
+            A3.summary.ilike(f"%{escaped_search}%"),
         )
         base_conditions.append(search_filter)
 

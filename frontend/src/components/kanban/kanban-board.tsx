@@ -12,6 +12,7 @@ import {
 } from '@/stores/kanban-store';
 import type { RFQ, RFQStatus, Priority } from '@/types';
 import { cn } from '@/lib/utils';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 // ============================================================================
 // Kanban Board Component
@@ -42,17 +43,19 @@ export function KanbanBoard({
   }, [rfqs, initializeFromRFQs]);
 
   return (
-    <div className={cn('flex h-full gap-4 overflow-x-auto p-4', className)}>
-      {config.columns.map((column) => (
-        <KanbanColumnComponent
-          key={column.id}
-          column={column}
-          onCardClick={onCardClick}
-          onCardMove={onCardMove}
-          isDragTarget={dragState.targetColumn === column.id}
-        />
-      ))}
-    </div>
+    <ErrorBoundary>
+      <div className={cn('flex h-full gap-4 overflow-x-auto p-4', className)}>
+        {config.columns.map((column) => (
+          <KanbanColumnComponent
+            key={column.id}
+            column={column}
+            onCardClick={onCardClick}
+            onCardMove={onCardMove}
+            isDragTarget={dragState.targetColumn === column.id}
+          />
+        ))}
+      </div>
+    </ErrorBoundary>
   );
 }
 

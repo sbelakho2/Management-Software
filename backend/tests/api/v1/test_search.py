@@ -5,8 +5,10 @@ Tests for Search API endpoints.
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
 from uuid import uuid4
 
+from sensei.api import deps
 from sensei.api.v1.endpoints.search import router, get_service, _service
 from sensei.services.core.search import (
     FullTextSearchService,
@@ -39,6 +41,30 @@ def clear_service():
     _service.clear_index()
     yield
     _service.clear_index()
+
+
+@pytest.fixture(autouse=True)
+def override_auth(app: FastAPI):
+    """Force an authenticated user for search endpoints."""
+    async def _mock_get_current_active_user():
+        user = MagicMock()
+        user.id = uuid4()
+        user.is_superuser = True
+        user.status = "active"
+        return user
+
+    async def _mock_get_current_superuser():
+        user = MagicMock()
+        user.id = uuid4()
+        user.is_superuser = True
+        user.status = "active"
+        return user
+
+    app.dependency_overrides[deps.get_current_active_user] = _mock_get_current_active_user
+    app.dependency_overrides[deps.get_current_superuser] = _mock_get_current_superuser
+    yield
+    app.dependency_overrides.pop(deps.get_current_active_user, None)
+    app.dependency_overrides.pop(deps.get_current_superuser, None)
 
 
 # --------------------------------------------------------------------------

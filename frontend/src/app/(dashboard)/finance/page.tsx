@@ -19,6 +19,8 @@ import { useAuthStore } from '@/stores';
 import { PageGuard } from '@/components/layout/page-guard';
 import { FINANCE_ROLES } from '@/lib/page-access';
 import { cn } from '@/lib/utils';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
 export default function FinancePage() {
   const { isAuthenticated } = useAuthStore();
@@ -34,6 +36,7 @@ export default function FinancePage() {
             <p className="text-muted-foreground font-medium">Revenue forecasting, operational expenditures, and margin intelligence</p>
           </div>
           <div className="flex items-center gap-3">
+            <AmbientStatus status="operational" label="All Systems Nominal" />
             <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
               <Calendar className="mr-2 h-4 w-4" />
               Q1 2026
@@ -45,37 +48,46 @@ export default function FinancePage() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          {[
-            { label: 'Total Revenue (MTD)', value: '$1.24M', trend: '+8.2% vs last month', icon: TrendingUp, status: 'success' },
-            { label: 'Gross Margin', value: '32.4%', trend: '-1.5% vs target', icon: TrendingDown, status: 'danger' },
-            { label: 'OpEx (Actual vs Budget)', value: '$420K', trend: '92% of quarterly budget used', icon: DollarSign, status: 'default' },
-            { label: 'Cash on Hand', value: '$2.8M', trend: 'Strong liquidity position', icon: CheckCircle2, status: 'success' },
-          ].map((stat, i) => (
-            <Card key={i} className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{stat.label}</p>
-                  <stat.icon className={cn("h-4 w-4", stat.status === 'success' ? "text-emerald-500" : stat.status === 'danger' ? "text-danger" : "text-primary")} />
-                </div>
-                <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stat.value}</div>
-                <div className={cn("text-[10px] font-bold uppercase tracking-widest mt-2", stat.status === 'success' ? "text-emerald-600" : stat.status === 'danger' ? "text-danger" : "text-muted-foreground")}>
-                  {stat.trend}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Financial KPIs - Miller's Law Grouping */}
+        <StatSection label="Financial Metrics" columns={4}>
+          <StatCard
+            value="$1.24M"
+            label="Total Revenue (MTD)"
+            icon={TrendingUp}
+            iconColor="success"
+            trend="up"
+            trendValue="+8.2% vs last month"
+            spotlight
+          />
+          <StatCard
+            value="32.4%"
+            label="Gross Margin"
+            icon={TrendingDown}
+            iconColor="danger"
+            trend="down"
+            trendValue="-1.5% vs target"
+            critical
+          />
+          <StatCard
+            value="$420K"
+            label="OpEx (Actual vs Budget)"
+            icon={DollarSign}
+            iconColor="primary"
+            goal={{ current: 92, target: 100 }}
+          />
+          <StatCard
+            value="$2.8M"
+            label="Cash on Hand"
+            icon={CheckCircle2}
+            iconColor="success"
+            trend="up"
+            trendValue="Strong liquidity"
+          />
+        </StatSection>
 
         <div className="grid gap-6 md:grid-cols-2">
-          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
-            <CardHeader>
-              <CardTitle className="text-xl font-heading font-bold flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                Revenue by Product Line
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          <ContentCard title="Revenue by Product Line" icon={BarChart3}>
+            <div className="space-y-6">
               {[
                 { label: 'Precision Components', value: 580000, color: 'bg-primary' },
                 { label: 'Assembly Systems', value: 420000, color: 'bg-indigo-500' },
@@ -86,44 +98,38 @@ export default function FinancePage() {
                     <span className="text-sm font-bold uppercase tracking-wider">{item.label}</span>
                     <span className="text-sm font-bold font-heading">${(item.value / 1000).toFixed(0)}K</span>
                   </div>
-                  <Progress value={(item.value / 1240000) * 100} className="h-2.5" indicatorClassName={item.color} />
+                  <div className="goal-progress-track">
+                    <div className={cn("goal-progress-fill", item.color)} style={{ width: `${(item.value / 1240000) * 100}%` }} />
+                  </div>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+            </div>
+          </ContentCard>
 
-          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
-            <CardHeader>
-              <CardTitle className="text-xl font-heading font-bold flex items-center gap-2">
-                <PieChart className="h-5 w-5 text-primary" />
-                Top Cost Drivers
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[
-                  { label: 'Raw Materials (Steel/Aluminum)', trend: 'up', impact: 'High' },
-                  { label: 'Energy Consumption', trend: 'up', impact: 'Medium' },
-                  { label: 'Overtime Labor', trend: 'down', impact: 'Medium' },
-                  { label: 'Logistics/Freight', trend: 'stable', impact: 'Low' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className={cn("p-2.5 rounded-xl", item.trend === 'up' ? "bg-danger/10 text-danger" : item.trend === 'down' ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground")}>
-                        {item.trend === 'up' ? <TrendingUp className="h-4 w-4" /> : 
-                        item.trend === 'down' ? <TrendingDown className="h-4 w-4" /> :
-                        <BarChart3 className="h-4 w-4" />}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold">{item.label}</div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{item.impact} impact on margin</div>
-                      </div>
+          <ContentCard title="Top Cost Drivers" icon={PieChart}>
+            <div className="space-y-4 stagger-list">
+              {[
+                { label: 'Raw Materials (Steel/Aluminum)', trend: 'up', impact: 'High' },
+                { label: 'Energy Consumption', trend: 'up', impact: 'Medium' },
+                { label: 'Overtime Labor', trend: 'down', impact: 'Medium' },
+                { label: 'Logistics/Freight', trend: 'stable', impact: 'Low' },
+              ].map((item, i) => (
+                <div key={item.label} className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors" style={{ '--stagger-index': i } as React.CSSProperties}>
+                  <div className="flex items-center gap-4">
+                    <div className={cn("p-2.5 rounded-xl", item.trend === 'up' ? "bg-danger/10 text-danger" : item.trend === 'down' ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground")}>
+                      {item.trend === 'up' ? <TrendingUp className="h-4 w-4" /> : 
+                      item.trend === 'down' ? <TrendingDown className="h-4 w-4" /> :
+                      <BarChart3 className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">{item.label}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{item.impact} impact on margin</div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              ))}
+            </div>
+          </ContentCard>
         </div>
       </div>
     </PageGuard>

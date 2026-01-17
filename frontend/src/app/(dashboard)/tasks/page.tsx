@@ -219,8 +219,8 @@ function TaskCard({ task }: { task: Task }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
-              <DropdownMenuItem onClick={() => router.push(`/tasks/${task.id}`)} className="rounded-xl m-1">View Node</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push(`/tasks/${task.id}?mode=edit`)} className="rounded-xl m-1">Refine Protocol</DropdownMenuItem>
+              <DropdownMenuItem className="rounded-xl m-1">View Node</DropdownMenuItem>
+              <DropdownMenuItem className="rounded-xl m-1">Refine Protocol</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-danger rounded-xl m-1">De-authorize</DropdownMenuItem>
             </DropdownMenuContent>

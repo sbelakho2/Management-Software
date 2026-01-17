@@ -29,6 +29,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    escape_like_pattern,
 )
 from sensei.models.task import (
     Task,
@@ -309,9 +310,10 @@ async def list_tasks(
     if related_entity_id:
         base_conditions.append(Task.related_entity_id == related_entity_id)
     if search:
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            Task.title.ilike(f"%{search}%"),
-            Task.description.ilike(f"%{search}%"),
+            Task.title.ilike(f"%{escaped_search}%"),
+            Task.description.ilike(f"%{escaped_search}%"),
         )
         base_conditions.append(search_filter)
 

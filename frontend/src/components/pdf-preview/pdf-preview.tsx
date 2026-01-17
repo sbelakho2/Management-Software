@@ -25,6 +25,7 @@ import {
   ZOOM_LEVELS,
 } from '@/stores/pdf-preview-store';
 import { cn } from '@/lib/utils';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 // =============================================================================
 // Icons
@@ -539,17 +540,18 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
   }
   
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        'fixed inset-0 z-50 flex flex-col bg-background',
-        isFullscreen && 'bg-black',
-        className
-      )}
-      role="dialog"
-      aria-modal="true"
-      aria-label="PDF Preview"
-    >
+    <ErrorBoundary>
+      <div
+        ref={containerRef}
+        className={cn(
+          'fixed inset-0 z-50 flex flex-col bg-background',
+          isFullscreen && 'bg-black',
+          className
+        )}
+        role="dialog"
+        aria-modal="true"
+        aria-label="PDF Preview"
+      >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
         <div className="flex items-center gap-3">
@@ -862,7 +864,8 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
           </span>
         </div>
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

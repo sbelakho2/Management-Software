@@ -48,6 +48,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn, formatDate, formatNumber, getInitials } from '@/lib/utils';
 import { useProductionStore } from '@/stores/production';
 import { WorkOrderStatus, WorkOrderPriority } from '@/api/production';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 const statusConfig = {
   planned: { label: 'Planned', variant: 'secondary' as const, icon: Calendar },

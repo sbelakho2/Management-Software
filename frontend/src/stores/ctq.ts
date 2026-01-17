@@ -95,8 +95,12 @@ export const useCTQStore = create<CTQState>()(
         lastFetchedAt: null,
 
         fetchCTQs: async () => {
-          const { lastFetchedAt } = get();
+          const { lastFetchedAt, isLoading } = get();
           const now = Date.now();
+
+          if (isLoading) {
+            return;
+          }
 
           // Cache for 30 seconds
           if (lastFetchedAt && now - lastFetchedAt < 30000) {

@@ -85,7 +85,8 @@ export const useAuthStore = create<AuthState>()(
 
       loadUser: async () => {
         if (!authApi.isAuthenticated()) {
-          set({ isLoading: false });
+          // No token in localStorage - clear any stale persisted state
+          set({ user: null, isAuthenticated: false, isLoading: false });
           return;
         }
 
@@ -98,6 +99,16 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
         } catch {
+          // Auth failed - clear tokens and persisted state
+          // This prevents "session expired" flash on next visit
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('refresh_token');
+            } catch {
+              // localStorage not available
+            }
+          }
           set({
             user: null,
             isAuthenticated: false,

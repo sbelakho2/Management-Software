@@ -37,6 +37,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAnalyticsStore } from '@/stores';
 import { cn } from '@/lib/utils';
+import { StatCard, StatSection, AmbientStatus, ConfidenceIndicator } from '@/components/ui/stat-card';
 import { PageGuard } from '@/components/layout/page-guard';
 import { ANALYTICS_ROLES } from '@/lib/page-access';
 import { KPI_COLORS, Sparkline } from '@/components/ui/data-visualization';
@@ -191,9 +192,9 @@ export default function AnalyticsPage() {
             <Brain className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{insights.length}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{insightsList.length}</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-warning mt-1">
-              {insights.filter(i => i.impact === 'high').length} High Impact
+              {insightsList.filter(i => i.impact === 'high').length} High Impact
             </div>
             <div className="mt-4 flex -space-x-2">
               {[1, 2, 3].map(i => (
@@ -316,7 +317,7 @@ export default function AnalyticsPage() {
                 <CardDescription>Current trajectory vs AI forecasted outcome</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {trends.slice(0, 3).map((trend) => (
+                {trendsList.slice(0, 3).map((trend) => (
                   <div key={trend.metric} className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/80">{trend.metric}</span>

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays, addDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 export interface GanttTask {
   id: string;
@@ -40,8 +41,9 @@ export function GanttChart({ tasks, className }: GanttChartProps) {
   const totalHeight = (tasks.length + 1) * rowHeight;
 
   return (
-    <div className={cn("overflow-x-auto border rounded-xl bg-background", className)}>
-      <div style={{ width: totalWidth, height: totalHeight }} className="relative font-sans text-xs">
+    <ErrorBoundary>
+      <div className={cn("overflow-x-auto border rounded-xl bg-background", className)}>
+        <div style={{ width: totalWidth, height: totalHeight }} className="relative font-sans text-xs">
         {/* Header - Days */}
         <div className="flex sticky top-0 z-20 bg-muted/50 border-b h-[40px]">
           <div style={{ width: labelWidth }} className="flex-shrink-0 border-r p-2 font-bold flex items-center">Task Name</div>
@@ -129,7 +131,8 @@ export function GanttChart({ tasks, className }: GanttChartProps) {
             <div className="absolute top-0 -translate-x-1/2 bg-danger text-white px-1 rounded-sm text-[8px] font-bold">TODAY</div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

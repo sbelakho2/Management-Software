@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-sensei}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sensei_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}
       POSTGRES_DB: ${POSTGRES_DB:-sensei}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -20,6 +20,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - sensei-network
 
@@ -28,16 +36,24 @@ services:
     image: redis:7-alpine
     container_name: sensei-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
     volumes:
       - redis_data:/data
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
     networks:
       - sensei-network
 
@@ -49,7 +65,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sensei}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sensei_minio_password}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
     volumes:
       - minio_data:/data
     ports:
@@ -60,6 +76,14 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     networks:
       - sensei-network
 
@@ -71,14 +95,14 @@ services:
     container_name: sensei-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sensei}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sensei_minio_password}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
       S3_BUCKET: ${S3_BUCKET:-sensei-files}
-      SECRET_KEY: ${SECRET_KEY:-change_this_in_production_please_change_me}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
@@ -100,6 +124,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
     networks:
       - sensei-network
 
@@ -112,14 +144,14 @@ services:
     restart: unless-stopped
     command: celery -A sensei.core.celery_app:celery_app worker --loglevel=info --concurrency=4
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sensei}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-sensei_minio_password}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
       S3_BUCKET: ${S3_BUCKET:-sensei-files}
-      SECRET_KEY: ${SECRET_KEY:-change_this_in_production_please_change_me}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     volumes:
       - ./backend/src:/app/src:ro
@@ -128,6 +160,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - sensei-network
 
@@ -140,16 +180,24 @@ services:
     restart: unless-stopped
     command: celery -A sensei.core.celery_app:celery_app beat --loglevel=info
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:-sensei_dev_password}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change_this_in_production_please_change_me}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
     networks:
       - sensei-network
 
@@ -168,6 +216,14 @@ services:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - sensei-network
 
@@ -186,11 +242,14 @@ services:
     depends_on:
       - api
       - web
-    networks:
-      - sensei-network
-    profiles:
-      - production
-
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 volumes:
   postgres_data:
   redis_data:

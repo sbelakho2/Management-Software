@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { useQualityStore, useAnalyticsStore } from '@/stores';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import {
   QualityInspection,
   NonConformanceReport,

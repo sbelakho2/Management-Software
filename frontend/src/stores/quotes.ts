@@ -80,8 +80,12 @@ export const useQuoteStore = create<QuoteState>()(
         lastFetchedAt: null,
 
         fetchQuotes: async () => {
-          const { lastFetchedAt } = get();
+          const { lastFetchedAt, isLoading } = get();
           const now = Date.now();
+
+          if (isLoading) {
+            return;
+          }
 
           if (lastFetchedAt && now - lastFetchedAt < 30000) {
             return;

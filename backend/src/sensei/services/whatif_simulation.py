@@ -9,7 +9,7 @@ Allows users to explore "what-if" scenarios like:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
@@ -189,6 +189,36 @@ class WhatIfSimulationService:
         self._scenarios: dict[UUID, SimulationScenario] = {}
         self._results: dict[UUID, SimulationResult] = {}
         self._quotes: dict[UUID, QuoteData] = {}
+        self._max_results: int = 1000
+        self._result_ttl: timedelta = timedelta(days=30)
+        self._max_scenarios: int = 1000
+        self._scenario_ttl: timedelta = timedelta(days=90)
+
+    def _prune_results(self) -> None:
+        """Prune old simulation results to avoid unbounded growth."""
+        cutoff = datetime.now(timezone.utc) - self._result_ttl
+        stale_ids = [
+            sid for sid, result in self._results.items()
+            if result.calculated_at < cutoff
+        ]
+        for sid in stale_ids:
+            del self._results[sid]
+
+        excess = len(self._results) - self._max_results
+        if excess > 0:
+            oldest = sorted(self._results.items(), key=lambda item: item[1].calculated_at)
+            for sid, _ in oldest[:excess]:
+                del self._results[sid]
+
+    def _prune_scenarios(self) -> None:
+        """Prune old scenarios to avoid unbounded growth."""
+        cutoff = datetime.now(timezone.utc) - self._scenario_ttl
+        stale_ids = [
+            sid for sid, scenario in self._scenarios.items()
+            if scenario.created_at < cutoff
+        ]
+        for sid in stale_ids:
+            del self._scenarios[sid]
     
     # =========================================================================
     # Scenario Management
@@ -215,6 +245,7 @@ class WhatIfSimulationService:
             parent_scenario_id=parent_scenario_id,
         )
         self._scenarios[scenario_id] = scenario
+        self._prune_scenarios()
         return scenario
     
     def get_scenario(self, scenario_id: UUID) -> SimulationScenario | None:
@@ -370,6 +401,7 @@ class WhatIfSimulationService:
         )
         
         self._results[scenario_id] = result
+        self._prune_results()
         return result
     
     def _simulate_line_item(

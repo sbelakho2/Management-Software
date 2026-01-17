@@ -42,6 +42,7 @@ import {
 import { cn, formatCurrency, formatNumber } from '@/lib/utils';
 import { useProductStore } from '@/stores/products';
 import type { Product as APIProduct } from '@/api/products';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 interface Product {
   id: string;
@@ -80,56 +81,56 @@ function ProductStats({ products }: { products: Product[] }) {
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/10">
-              <Package className="h-5 w-5 text-success" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.active}</p>
-              <p className="text-sm text-muted-foreground">Active Products</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Products</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.active}</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-success/10 text-success">
+              <Package className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className={cn('p-2 rounded-lg', stats.lowStock > 0 ? 'bg-warning/10' : 'bg-muted')}>
-              <Boxes className={cn('h-5 w-5', stats.lowStock > 0 ? 'text-warning' : 'text-muted-foreground')} />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70', stats.lowStock > 0 && 'from-warning to-warning/70')}>
+              <p className={cn("text-[10px] font-bold uppercase tracking-widest", stats.lowStock > 0 ? "text-warning/60" : "text-muted-foreground/60")}>Low Stock</p>
+              <p className={cn("text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1", stats.lowStock > 0 ? "from-warning to-warning/70" : "from-foreground to-foreground/70")}>
                 {stats.lowStock}
               </p>
-              <p className="text-sm text-muted-foreground">Low Stock</p>
+            </div>
+            <div className={cn("p-3 rounded-2xl shadow-sm", stats.lowStock > 0 ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground")}>
+              <Boxes className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <DollarSign className="h-5 w-5 text-primary" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalRevenue)}</p>
-              <p className="text-sm text-muted-foreground">Total Revenue</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Total Revenue</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalRevenue)}</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
+              <DollarSign className="h-5 w-5" />
             </div>
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-secondary/50">
-              <TrendingUp className="h-5 w-5 text-foreground" />
-            </div>
+      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgMargin.toFixed(1)}%</p>
-              <p className="text-sm text-muted-foreground">Avg. Margin</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg. Margin</p>
+              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgMargin.toFixed(1)}%</p>
+            </div>
+            <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </div>
         </CardContent>

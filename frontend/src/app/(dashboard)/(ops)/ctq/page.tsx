@@ -244,11 +244,9 @@ export default function CTQPage() {
             Export Intel
           </Button>
           {hasPageAccess('/ctq/new', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
-              <Link href="/ctq/new">
-                <Plus className="mr-2 h-4 w-4" />
-                New Specification
-              </Link>
+            <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
+              <Plus className="mr-2 h-4 w-4" />
+              New Specification
             </Button>
           )}
         </div>

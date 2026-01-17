@@ -7,8 +7,11 @@ Tests REST API for chaos/failure mode testing.
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from unittest.mock import MagicMock
+from uuid import uuid4
 
 from sensei.main import app
+from sensei.api import deps
 from sensei.services.utils.chaos_testing import reset_chaos_testing_service
 
 
@@ -24,6 +27,21 @@ def reset_service():
     reset_chaos_testing_service()
     yield
     reset_chaos_testing_service()
+
+
+@pytest.fixture(autouse=True)
+def override_superuser():
+    """Force superuser access for chaos testing endpoints."""
+    async def _mock_get_current_superuser():
+        user = MagicMock()
+        user.id = uuid4()
+        user.is_superuser = True
+        user.status = "active"
+        return user
+
+    app.dependency_overrides[deps.get_current_superuser] = _mock_get_current_superuser
+    yield
+    app.dependency_overrides.pop(deps.get_current_superuser, None)
 
 
 # ===== Scenario Tests =====

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
+import { getSafeRedirectPath } from '@/lib/utils';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,7 +21,21 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
 
-  const from = searchParams.get('from') || '/today';
+  // Use safe redirect to prevent open redirect vulnerability
+  const from = getSafeRedirectPath(searchParams.get('from'), '/today');
+
+  // Clear any stale tokens when landing on login page
+  // This prevents "session expired" flash when tokens are invalid
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      } catch {
+        // localStorage not available
+      }
+    }
+  }, []);
 
   React.useEffect(() => {
     return () => clearError();

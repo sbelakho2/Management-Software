@@ -16,7 +16,11 @@ export function MyWorkDashboard() {
     fetchMyWork();
   }, [fetchMyWork]);
 
-  if (isLoading && myWork.stories.length === 0 && myWork.issues.length === 0) {
+  // Guard against undefined myWork during hydration
+  const stories = myWork?.stories ?? [];
+  const issues = myWork?.issues ?? [];
+
+  if (isLoading && stories.length === 0 && issues.length === 0) {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -24,7 +28,7 @@ export function MyWorkDashboard() {
     );
   }
 
-  const hasWork = myWork.stories.length > 0 || myWork.issues.length > 0;
+  const hasWork = stories.length > 0 || issues.length > 0;
 
   if (!hasWork) {
     return (
@@ -40,14 +44,14 @@ export function MyWorkDashboard() {
 
   return (
     <div className="space-y-8">
-      {myWork.stories.length > 0 && (
+      {stories.length > 0 && (
         <section className="space-y-4">
           <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 flex items-center gap-2 px-1">
             <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
             Strategic User Stories
           </h3>
           <div className="grid gap-3">
-            {myWork.stories.slice(0, 5).map(story => (
+            {stories.slice(0, 5).map(story => (
               <Link key={story.id} href={`/project-management/${story.project_id}?tab=backlog&story=${story.id}`} className="block group">
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300">
                   <div className="flex items-center gap-4 min-w-0">
@@ -65,14 +69,14 @@ export function MyWorkDashboard() {
         </section>
       )}
 
-      {myWork.issues.length > 0 && (
+      {issues.length > 0 && (
         <section className="space-y-4">
           <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-danger/50 flex items-center gap-2 px-1">
             <div className="h-1.5 w-1.5 rounded-full bg-danger/40" />
             Critical Anomalies
           </h3>
           <div className="grid gap-3">
-            {myWork.issues.slice(0, 5).map(issue => (
+            {issues.slice(0, 5).map(issue => (
               <Link key={issue.id} href={`/project-management/${issue.project_id}?tab=issues&issue=${issue.id}`} className="block group">
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-danger/5 border border-danger/5 hover:bg-danger/10 transition-all duration-300">
                   <div className="flex items-center gap-4 min-w-0">

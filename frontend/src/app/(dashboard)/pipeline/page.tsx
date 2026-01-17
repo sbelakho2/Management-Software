@@ -47,7 +47,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
-import type { RFQStatus, Priority } from '@/types';
+import type { RFQStatus, Priority, RFQ } from '@/types';
+import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 const STAGES: Array<{ id: RFQStatus; label: string }> = [
   { id: 'new', label: 'New' },
@@ -84,7 +85,7 @@ export default function PipelinePage() {
     }
   }, [fetchRFQs, isTestEnv]);
 
-  const fallbackRfqs = useMemo(() => {
+  const fallbackRfqs = useMemo((): RFQ[] => {
     if (!isTestEnv) return [];
     const now = new Date();
     const iso = (offsetDays: number) => new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000).toISOString();
@@ -199,7 +200,7 @@ export default function PipelinePage() {
       return (
         rfq.rfq_number.toLowerCase().includes(q) ||
         rfq.customer?.name?.toLowerCase().includes(q) ||
-        rfq.assigned_user?.full_name?.toLowerCase().includes(q) ||
+        (rfq as any).assigned_user?.full_name?.toLowerCase().includes(q) ||
         rfq.title?.toLowerCase().includes(q)
       );
     });

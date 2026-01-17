@@ -20,6 +20,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuthStore } from '@/stores';
 import { cn } from '@/lib/utils';
+import { SectionHeader } from '@/components/ui/content-card';
 
 interface SettingsSection {
   id: string;

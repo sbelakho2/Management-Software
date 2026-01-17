@@ -28,6 +28,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    escape_like_pattern,
 )
 from sensei.models.ctq import (
     CTQ,
@@ -411,10 +412,11 @@ async def list_ctqs(
     if is_customer_critical is not None:
         base_conditions.append(CTQ.is_customer_critical == is_customer_critical)
     if search:
+        escaped_search = escape_like_pattern(search)
         search_filter = or_(
-            CTQ.name.ilike(f"%{search}%"),
-            CTQ.ctq_number.ilike(f"%{search}%"),
-            CTQ.description.ilike(f"%{search}%"),
+            CTQ.name.ilike(f"%{escaped_search}%"),
+            CTQ.ctq_number.ilike(f"%{escaped_search}%"),
+            CTQ.description.ilike(f"%{escaped_search}%"),
         )
         base_conditions.append(search_filter)
 

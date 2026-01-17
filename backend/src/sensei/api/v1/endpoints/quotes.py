@@ -22,7 +22,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
+
+# Role-based access for quote approval (approvers must have elevated privileges)
+AllowQuoteApproval = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (
@@ -1107,9 +1111,12 @@ async def handle_quote_approval(
     request: ApprovalRequest,
     db: DBSession,
     current_user: CurrentUser,
+    _: AllowQuoteApproval,
 ):
     """
     Approve or reject a quote.
+    
+    Requires one of the following roles: admin, gm, ceo, finance, sales_engineer.
     """
     result = await db.execute(
         select(Quote).where(
@@ -1252,15 +1259,18 @@ async def accept_quote(
     quote_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
+    convert_to_order: bool = Query(default=False, description="Automatically create Sales Order from accepted quote"),
 ):
     """
     Mark quote as accepted by customer.
+    
+    If convert_to_order=True, automatically creates a Sales Order from the quote.
     """
     result = await db.execute(
         select(Quote).where(
             Quote.id == quote_id,
             Quote.deleted_at.is_(None),
-        )
+        ).options(selectinload(Quote.line_items))
     )
     quote = result.scalar_one_or_none()
     
@@ -1274,18 +1284,69 @@ async def accept_quote(
     quote.accepted_at = now_utc()
     quote.updated_by_id = current_user.id
     
+    sales_order_info = None
+    if convert_to_order:
+        # Import here to avoid circular imports
+        from sensei.models.accounts_receivable import SalesOrder, SalesOrderLine
+        
+        # Generate SO number
+        so_count_result = await db.execute(select(func.count(SalesOrder.id)))
+        so_count = so_count_result.scalar() or 0
+        try:
+            so_count_value = int(so_count)
+        except (TypeError, ValueError):
+            so_count_value = 0
+        so_number = f"SO-{datetime.now(timezone.utc).year}-{so_count_value + 1:05d}"
+        
+        # Create Sales Order
+        so = SalesOrder(
+            so_number=so_number,
+            account_id=quote.account_id,
+            currency=quote.currency,
+            status="draft",
+            payment_terms_days=30,  # Could parse from quote.payment_terms
+            source_quote_id=quote.id,
+            source_quote_version=quote.current_version,
+            created_by_id=current_user.id,
+            updated_by_id=current_user.id,
+            owner_id=current_user.id,
+        )
+        db.add(so)
+        await db.flush()
+        
+        # Copy line items
+        for quote_line in quote.line_items:
+            so_line = SalesOrderLine(
+                so_id=so.id,
+                sku=quote_line.sku or quote_line.part_number or "ITEM",
+                description=quote_line.description or quote_line.product_name or "",
+                quantity=quote_line.quantity,
+                unit_price=quote_line.unit_price,
+            )
+            db.add(so_line)
+        
+        sales_order_info = {
+            "sales_order_id": str(so.id),
+            "so_number": so.so_number,
+        }
+    
     await db.commit()
     await db.refresh(quote)
 
     line_item_count, version_count = await get_quote_line_item_and_version_counts(db, quote.id)
     
+    response_data = quote_to_response(
+        quote,
+        line_item_count=line_item_count,
+        version_count=version_count,
+    )
+    
+    if sales_order_info:
+        response_data = {**response_data.model_dump(), "sales_order": sales_order_info}
+    
     return build_response(
-        data=quote_to_response(
-            quote,
-            line_item_count=line_item_count,
-            version_count=version_count,
-        ),
-        message="Quote accepted",
+        data=response_data,
+        message="Quote accepted" + (" and Sales Order created" if sales_order_info else ""),
     )
 
 

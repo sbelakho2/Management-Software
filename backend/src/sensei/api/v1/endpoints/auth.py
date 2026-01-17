@@ -253,9 +253,13 @@ async def register(
     first_name, last_name = _split_full_name(request.full_name)
     username = await _generate_unique_username(db, email)
 
-    # NOTE: This registers users as ACTIVE so they can authenticate immediately.
-    # If you want email verification gating, set status=PENDING and email_verified=False,
-    # and adjust frontend to handle verification before login.
+    # SECURITY: In production, users should verify their email before accessing the system.
+    # Set email_verified=False and require verification flow.
+    # For development/testing, this can be overridden via SKIP_EMAIL_VERIFICATION env var.
+    skip_verification = settings.ENVIRONMENT != "production" and getattr(
+        settings, "SKIP_EMAIL_VERIFICATION", False
+    )
+    
     user = User(
         email=email,
         username=username,
@@ -263,13 +267,25 @@ async def register(
         first_name=first_name or "",
         last_name=last_name or "",
         display_name=request.full_name.strip(),
-        status=UserStatus.ACTIVE.value,
-        email_verified=True,
+        status=UserStatus.ACTIVE.value if skip_verification else UserStatus.PENDING.value,
+        email_verified=skip_verification,
         is_superuser=False,
     )
 
     db.add(user)
     await db.commit()
+    
+    # If email verification is required, send verification email and return message
+    if not skip_verification:
+        # TODO: Send verification email here
+        # await send_verification_email(user.email, user.id)
+        return TokenResponse(
+            access_token="",
+            refresh_token="",
+            token_type="bearer",
+            expires_in=0,
+            message="Please check your email to verify your account before logging in.",
+        )
 
     # Authenticate to produce tokens and update last_login
     auth_service = get_auth_service(db)

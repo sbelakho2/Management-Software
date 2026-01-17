@@ -22,10 +22,12 @@ const config = {
   ],
   coverageThreshold: {
     global: {
-      branches: 5,
-      functions: 5,
-      lines: 5,
-      statements: 5,
+      // Minimum coverage thresholds for quality assurance
+      // Start with 40% and progressively increase as tests are added
+      branches: 40,
+      functions: 40,
+      lines: 40,
+      statements: 40,
     },
   },
   testMatch: [

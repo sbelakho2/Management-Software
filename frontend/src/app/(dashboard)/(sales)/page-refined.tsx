@@ -354,9 +354,9 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
               <span className="text-xs text-muted-foreground">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
             </div>
           )}
-          {rfq.tags.length > 0 && (
+          {(rfq.tags?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {rfq.tags.slice(0, 3).map((tag) => (
+              {(rfq.tags ?? []).slice(0, 3).map((tag) => (
                 <span key={tag} className="px-1.5 py-0.5 bg-muted text-muted-foreground text-xs rounded">
                   {tag}
                 </span>

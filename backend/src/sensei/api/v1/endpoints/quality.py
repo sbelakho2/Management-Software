@@ -3762,9 +3762,9 @@ async def add_customer_survey_response(
 
 @router.get("/customer-satisfaction/stats", response_model=APIResponse[dict])
 async def get_customer_satisfaction_stats(
-    survey_id: Optional[UUID] = None,
     db: DBSession,
     current_user: CurrentUser,
+    survey_id: Optional[UUID] = None,
 ) -> APIResponse[dict]:
     svc = CustomerSatisfactionService(db)
     nps = await svc.compute_nps_stats(survey_id)
@@ -4201,9 +4201,9 @@ async def create_aql_plan(
 
 @router.get("/aql/inspections", response_model=APIResponse[list[AQLLotInspectionResponse]])
 async def list_aql_inspections(
-    plan_id: Optional[UUID] = Query(default=None),
     db: DBSession,
     current_user: CurrentUser,
+    plan_id: Optional[UUID] = Query(default=None),
 ) -> APIResponse[list[AQLLotInspectionResponse]]:
     svc = AQLSamplingService(db)
     inspections = await svc.list_inspections(plan_id=plan_id)
@@ -4293,9 +4293,9 @@ async def create_traceability_matrix(
 
 @router.get("/traceability/links", response_model=APIResponse[list[TraceabilityLinkResponse]])
 async def list_traceability_links(
-    matrix_id: Optional[UUID] = Query(default=None),
     db: DBSession,
     current_user: CurrentUser,
+    matrix_id: Optional[UUID] = Query(default=None),
 ) -> APIResponse[list[TraceabilityLinkResponse]]:
     svc = TraceabilityService(db)
     links = await svc.list_links(matrix_id=matrix_id)
@@ -4529,9 +4529,9 @@ async def add_management_review_action(
 
 @router.get("/management-reviews/actions", response_model=APIResponse[list[ManagementReviewActionResponse]])
 async def list_management_review_actions(
-    review_id: Optional[UUID] = Query(default=None),
     db: DBSession,
     current_user: CurrentUser,
+    review_id: Optional[UUID] = Query(default=None),
 ) -> APIResponse[list[ManagementReviewActionResponse]]:
     svc = ManagementReviewService(db)
     actions = await svc.list_actions(review_id=review_id)

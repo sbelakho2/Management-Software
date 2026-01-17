@@ -1,0 +1,107 @@
+# Production Caddyfile for HTTPS deployment
+# Usage: Copy this file to Caddyfile and set DOMAIN environment variable
+# Example: DOMAIN=app.starzmorocco.com docker-compose up
+
+{
+    # Admin email for ACME (Let's Encrypt) certificates
+    email {$TLS_EMAIL:admin@starzmorocco.com}
+    
+    # Enable HTTP/2 and HTTP/3
+    servers {
+        protocols h1 h2 h2c h3
+    }
+}
+
+# Redirect HTTP to HTTPS
+http:// {
+    redir https://{host}{uri} permanent
+}
+
+# Main HTTPS configuration
+{$DOMAIN:localhost} {
+    encode gzip zstd
+
+    # Automatic HTTPS with Let's Encrypt
+    tls {$TLS_EMAIL:admin@starzmorocco.com}
+
+    # Security headers
+    header {
+        # HSTS - 1 year
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent clickjacking
+        X-Frame-Options "DENY"
+        # XSS protection
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Permissions policy
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        # Content Security Policy
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none';"
+        # Remove server identification
+        -Server
+    }
+
+    # API routes with health checks and timeouts
+    route /api/* {
+        reverse_proxy api:8000 {
+            # Health checks
+            health_uri /api/v1/health
+            health_interval 30s
+            health_timeout 5s
+            health_status 200
+            
+            # Timeouts
+            transport http {
+                read_timeout 60s
+                write_timeout 60s
+                dial_timeout 10s
+            }
+            
+            # Load balancing (if multiple backends)
+            lb_policy round_robin
+            
+            # Header manipulation
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # WebSocket support for frontend (Next.js hot reload in dev, real-time features)
+    route /ws/* {
+        reverse_proxy web:3000 {
+            transport http {
+                # WebSocket support
+            }
+        }
+    }
+
+    # Frontend routes
+    route /* {
+        reverse_proxy web:3000 {
+            # Health checks
+            health_uri /
+            health_interval 30s
+            health_timeout 5s
+            
+            # Header manipulation
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+            roll_keep_for 720h
+        }
+        format json
+    }
+}

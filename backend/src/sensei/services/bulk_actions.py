@@ -17,7 +17,7 @@ Features:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any, Callable
 from uuid import UUID, uuid4
@@ -252,6 +252,8 @@ class BulkActionsService:
         self._results: dict[UUID, BulkActionResult] = {}
         self._handlers: dict[tuple[EntityType, BulkActionType], EntityHandler] = {}
         self._validators: dict[tuple[EntityType, BulkActionType], Callable] = {}
+        self._max_results: int = 1000
+        self._result_ttl: timedelta = timedelta(days=7)
         
         # Mock entity storage for testing
         self._mock_entities: dict[EntityType, dict[UUID, dict[str, Any]]] = {
@@ -260,6 +262,24 @@ class BulkActionsService:
         
         # Register default handlers
         self._register_default_handlers()
+
+    def _store_result(self, result: BulkActionResult) -> None:
+        """Store a result and prune old entries to avoid unbounded growth."""
+        self._results[result.id] = result
+        self._prune_results()
+
+    def _prune_results(self) -> None:
+        """Remove expired or excess results."""
+        cutoff = datetime.now(timezone.utc) - self._result_ttl
+        stale_ids = [rid for rid, res in self._results.items() if res.created_at < cutoff]
+        for rid in stale_ids:
+            del self._results[rid]
+
+        excess = len(self._results) - self._max_results
+        if excess > 0:
+            oldest = sorted(self._results.items(), key=lambda item: item[1].created_at)
+            for rid, _ in oldest[:excess]:
+                del self._results[rid]
     
     def _register_default_handlers(self) -> None:
         """Register default handlers for common actions."""
@@ -612,7 +632,7 @@ class BulkActionsService:
                 total_count=len(request.entity_ids),
                 error_message="; ".join(e["message"] for e in validation.errors),
             )
-            self._results[result.id] = result
+            self._store_result(result)
             return result
         
         # If validate only, return success without executing
@@ -627,7 +647,7 @@ class BulkActionsService:
                 total_count=len(request.entity_ids),
             )
             result.error_message = "Validation passed (dry run)"
-            self._results[result.id] = result
+            self._store_result(result)
             return result
         
         # Create result
@@ -706,7 +726,7 @@ class BulkActionsService:
             else:
                 result.status = BulkActionStatus.PARTIAL
         
-        self._results[result.id] = result
+        self._store_result(result)
         return result
     
     def execute_async(
@@ -730,13 +750,13 @@ class BulkActionsService:
             total_count=len(request.entity_ids),
         )
         
-        self._results[result.id] = result
+        self._store_result(result)
         
         # In a real implementation, we'd queue this
         # For now, execute synchronously
         final_result = self.execute(request)
         final_result.id = result.id
-        self._results[result.id] = final_result
+        self._store_result(final_result)
         
         return result.id
     

@@ -7,12 +7,22 @@ from sensei.models.user import User
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.websocket("/ws/{token}")
+@router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str,
     manager: ConnectionManager = Depends(get_websocket_manager)
 ):
+    auth_header = websocket.headers.get("authorization")
+    token = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = websocket.query_params.get("token")
+
+    if not token:
+        await websocket.close(code=1008)
+        return
+
     user: User = await get_current_user_from_token(token)
     if not user:
         await websocket.close(code=1008)
@@ -29,7 +39,7 @@ async def websocket_endpoint(
             # Echo back for heartbeat testing
             await websocket.send_text(f"Message received: {data}")
     except WebSocketDisconnect:
-        manager.disconnect(websocket, user_id)
+        await manager.disconnect(websocket, user_id)
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {e}")
-        manager.disconnect(websocket, user_id)
+        await manager.disconnect(websocket, user_id)
