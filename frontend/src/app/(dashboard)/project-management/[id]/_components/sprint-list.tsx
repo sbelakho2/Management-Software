@@ -54,7 +54,7 @@ export function SprintList({ projectId }: SprintListProps) {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Sprints</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">Sprints</h2>
           <p className="text-muted-foreground">Manage your iterative delivery cycles.</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

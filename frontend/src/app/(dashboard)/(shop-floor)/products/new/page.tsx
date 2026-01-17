@@ -17,8 +17,10 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useProductStore } from '@/stores/products';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function NewProductPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const { createProduct } = useProductStore();
@@ -87,7 +89,7 @@ export default function NewProductPage() {
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Catalog Node</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Catalog Node</h1>
             <p className="text-muted-foreground font-medium text-sm">Incorporate a new item into the global product intelligence mesh</p>
           </div>
         </div>

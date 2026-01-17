@@ -14,7 +14,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 export default function EnrollTrainingPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -42,7 +44,7 @@ export default function EnrollTrainingPage() {
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Enrollment Protocol</h1>
+          <h1 className="text-3xl font-heading font-bold tracking-tight ">Enrollment Protocol</h1>
           <p className="text-muted-foreground font-medium text-sm">Join a new organizational development program</p>
         </div>
       </div>

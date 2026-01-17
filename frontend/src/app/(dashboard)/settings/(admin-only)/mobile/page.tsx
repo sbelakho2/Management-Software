@@ -3,8 +3,10 @@ import React from 'react';
 import { SettingsPageShell } from '@/components/settings-page-shell';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function MobileSettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="Mobile App" description="Manage mobile app access and push notifications">
       <div className="space-y-6 max-w-md">

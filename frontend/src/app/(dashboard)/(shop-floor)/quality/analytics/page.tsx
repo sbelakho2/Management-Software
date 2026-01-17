@@ -20,8 +20,10 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useQualityStore, useAnalyticsStore } from '@/stores';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function QualityAnalyticsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { totalInspections, totalNcrs, totalCapas, fetchInspections, fetchNCRs, fetchCAPAs } = useQualityStore();
   const { trends, fetchTrends, loading: analyticsLoading } = useAnalyticsStore();
@@ -43,7 +45,7 @@ export default function QualityAnalyticsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Quality Intelligence</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Quality Intelligence</h1>
             <p className="text-muted-foreground font-medium text-sm">Performance metrics and prescriptive organizational insights</p>
           </div>
         </div>
@@ -63,7 +65,7 @@ export default function QualityAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">First Pass Yield</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{fpyTrend?.current_value || '94.2'}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{fpyTrend?.current_value || '94.2'}%</div>
           </CardHeader>
           <CardContent>
             <div className={cn(
@@ -78,7 +80,7 @@ export default function QualityAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active NCRs</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">{totalNcrs}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">{totalNcrs}</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
@@ -89,7 +91,7 @@ export default function QualityAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active CAPAs</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70">{totalCapas}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{totalCapas}</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
@@ -100,7 +102,7 @@ export default function QualityAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Inspection Time</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">18.5m</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">18.5m</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-success flex items-center gap-1">

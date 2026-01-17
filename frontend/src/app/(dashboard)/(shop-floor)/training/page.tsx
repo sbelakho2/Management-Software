@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -108,7 +109,7 @@ function TrainingStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Active Skill Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{skills.length}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{skills.length}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <Award className="h-5 w-5" />
@@ -121,7 +122,7 @@ function TrainingStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Intelligence Protocols</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{trainings.length}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{trainings.length}</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <GraduationCap className="h-5 w-5" />
@@ -134,7 +135,7 @@ function TrainingStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Synchronization Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{records.filter(r => r.status === 'in_progress').length}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{records.filter(r => r.status === 'in_progress').length}</p>
             </div>
             <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
               <Clock className="h-5 w-5" />
@@ -147,7 +148,7 @@ function TrainingStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className={cn("text-[10px] font-bold uppercase tracking-widest", expiringCount > 0 ? 'text-danger/60' : 'text-muted-foreground/60')}>Threshold Alerts</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{expiringCount}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{expiringCount}</p>
             </div>
             <div className={cn('p-3 rounded-2xl shadow-sm', expiringCount > 0 ? 'bg-danger/10 text-danger' : 'bg-muted text-muted-foreground')}>
               <AlertTriangle className="h-5 w-5" />
@@ -451,6 +452,7 @@ function RecordsTab() {
 }
 
 function TrainingPageContent() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { fetchSkills, fetchTrainings, fetchRecords } = useTrainingStore();
@@ -476,10 +478,10 @@ function TrainingPageContent() {
     <div className="space-y-8 page-fade-in" data-testid="training-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Training & Certifications
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.training.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Manage employee training and track certifications</p>
+          <p className="text-muted-foreground font-medium">{t('pages.training.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/training/matrix')}>

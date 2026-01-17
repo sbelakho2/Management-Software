@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -106,6 +107,7 @@ const typeConfig: Record<A3Type, { label: string; color: string }> = {
 };
 
 export default function A3Page() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -190,11 +192,11 @@ export default function A3Page() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            A3 Strategic Resolutions
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.a3.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Structured problem solving and cross-functional continuous improvement
+            {t('pages.a3.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -215,7 +217,7 @@ export default function A3Page() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.total}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
               {stats.by_status.in_progress || 0} in progress
             </p>
@@ -228,7 +230,7 @@ export default function A3Page() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.approval_pending}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.approval_pending}</div>
             <p className="text-xs text-muted-foreground">Awaiting approval</p>
           </CardContent>
         </Card>
@@ -239,7 +241,7 @@ export default function A3Page() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <div className="text-3xl font-heading font-bold tracking-tight ">
               {(stats.by_status.approved || 0) + (stats.by_status.implemented || 0) + (stats.by_status.closed || 0)}
             </div>
             <p className="text-xs text-muted-foreground">Approved or closed</p>
@@ -252,7 +254,7 @@ export default function A3Page() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">{stats.overdue_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">{stats.overdue_count}</div>
             <p className="text-xs text-muted-foreground">Past target date</p>
           </CardContent>
         </Card>

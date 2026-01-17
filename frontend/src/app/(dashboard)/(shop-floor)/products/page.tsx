@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -86,7 +87,7 @@ function ProductStats({ products }: { products: Product[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Products</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.active}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.active}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-success/10 text-success">
               <Package className="h-5 w-5" />
@@ -99,7 +100,7 @@ function ProductStats({ products }: { products: Product[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className={cn("text-[10px] font-bold uppercase tracking-widest", stats.lowStock > 0 ? "text-warning/60" : "text-muted-foreground/60")}>Low Stock</p>
-              <p className={cn("text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1", stats.lowStock > 0 ? "from-warning to-warning/70" : "from-foreground to-foreground/70")}>
+              <p className={cn("text-3xl font-heading font-bold tracking-tight mt-1", stats.lowStock > 0 ? "text-amber-600 dark:text-amber-500" : "text-foreground")}>
                 {stats.lowStock}
               </p>
             </div>
@@ -114,7 +115,7 @@ function ProductStats({ products }: { products: Product[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Total Revenue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalRevenue)}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(stats.totalRevenue)}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
               <DollarSign className="h-5 w-5" />
@@ -127,7 +128,7 @@ function ProductStats({ products }: { products: Product[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg. Margin</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgMargin.toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.avgMargin.toFixed(1)}%</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
               <TrendingUp className="h-5 w-5" />
@@ -227,6 +228,7 @@ function ProductRow({ product }: { product: Product }) {
 }
 
 export default function ProductsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { products, loading, fetchProducts } = useProductStore();
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -281,10 +283,10 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Product Portfolio
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.products.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Manage manufacturing specifications and master data intelligence</p>
+          <p className="text-muted-foreground font-medium">{t('pages.products.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <DropdownMenu>

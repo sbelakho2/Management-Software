@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Settings,
   Shield,
@@ -101,6 +102,7 @@ type LineageGraph = {
 };
 
 export default function AdminPage() {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = React.useState('gates');
 
   // Store Hooks
@@ -168,11 +170,11 @@ export default function AdminPage() {
     <div className="space-y-8 page-fade-in" data-testid="admin-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            System Administration
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.admin.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Orchestrate gates, approvals, templates, and enterprise-grade intelligence
+            {t('pages.admin.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   AlertTriangle,
   CheckCircle,
@@ -40,6 +41,7 @@ import type { AndonEvent, AndonStatus, Severity, WorkCenter } from '@/types';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 export default function AndonBoardPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { 
     activeEvents, 
@@ -94,9 +96,9 @@ export default function AndonBoardPage() {
     <div className="space-y-8 page-fade-in" data-testid="andon-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
+          <h1 className="text-4xl font-heading font-bold tracking-tight  flex items-center gap-3">
             <Zap className="h-10 w-10 text-primary" />
-            Andon Intelligence
+            {t('pages.andon.title')}
           </h1>
           <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
             <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -147,7 +149,7 @@ export default function AndonBoardPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{activeEvents.length}</p>
+                <p className="text-3xl font-heading font-bold tracking-tight ">{activeEvents.length}</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Active Signals</p>
               </div>
               <div className={cn("p-3 rounded-2xl shadow-sm", criticalAlerts.length > 0 ? "bg-danger/10 text-danger animate-pulse" : "bg-muted/10 text-muted-foreground")}>
@@ -166,7 +168,7 @@ export default function AndonBoardPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{runningMachines}/{workCenters.size}</p>
+                <p className="text-3xl font-heading font-bold tracking-tight ">{runningMachines}/{workCenters.size}</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Operational Pulse</p>
               </div>
               <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 shadow-sm">
@@ -181,8 +183,8 @@ export default function AndonBoardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className={cn(
-                  'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1',
-                  metrics.avgResponseTime < 300 ? 'from-success to-success/70' : 'from-warning to-warning/70'
+                  'text-3xl font-heading font-bold tracking-tight mt-1',
+                  metrics.avgResponseTime < 300 ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'
                 )}>
                   {Math.round(metrics.avgResponseTime / 60)}m
                 </p>
@@ -199,7 +201,7 @@ export default function AndonBoardPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{metrics.totalResolved}</p>
+                <p className="text-3xl font-heading font-bold tracking-tight ">{metrics.totalResolved}</p>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Resolved Nodes</p>
               </div>
               <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">

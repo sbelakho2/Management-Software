@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Suspense, useEffect } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Search,
   Filter,
@@ -32,7 +33,7 @@ function SupplyChainStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Global Risk Index</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70 mt-1">{(riskAnalysis?.global_risk_index * 100).toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500 mt-1">{(riskAnalysis?.global_risk_index * 100).toFixed(1)}%</p>
             </div>
             <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
               <Activity className="h-5 w-5" />
@@ -45,7 +46,7 @@ function SupplyChainStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Active Intelligence Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats?.supply_chain_nodes || 0}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats?.supply_chain_nodes || 0}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <Globe className="h-5 w-5" />
@@ -58,7 +59,7 @@ function SupplyChainStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Mitigation Readiness</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{(riskAnalysis?.mitigation_readiness * 100).toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">{(riskAnalysis?.mitigation_readiness * 100).toFixed(1)}%</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <Shield className="h-5 w-5" />
@@ -71,7 +72,7 @@ function SupplyChainStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Simulation Protocols</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats?.simulation_runs || 0}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats?.simulation_runs || 0}</p>
             </div>
             <div className="p-3 rounded-2xl bg-indigo-500/10 text-indigo-500 shadow-sm">
               <BarChart className="h-5 w-5" />
@@ -155,6 +156,7 @@ function ScenariosTab() {
 }
 
 function SupplyChainPageContent() {
+  const { t } = useI18n();
   const { fetchStats, fetchRiskAnalysis } = useSupplyChainStore();
 
   useEffect(() => {
@@ -166,10 +168,10 @@ function SupplyChainPageContent() {
     <div className="space-y-8 page-fade-in" data-testid="supply-chain-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Supply Chain Intelligence
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.supplyChain.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Global disruption simulation and risk stress-testing</p>
+          <p className="text-muted-foreground font-medium">{t('pages.supplyChain.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button size="lg" className="rounded-xl shadow-glow subtle-shine">

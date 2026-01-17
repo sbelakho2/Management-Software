@@ -2,12 +2,14 @@
 
 import * as React from 'react';
 import { useFinanceStore } from '@/stores';
+import { useI18n } from '@/contexts/i18n-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
 export default function CurrencySettingsPage() {
+  const { t } = useI18n();
   const {
     currencySettings,
     fxRates,

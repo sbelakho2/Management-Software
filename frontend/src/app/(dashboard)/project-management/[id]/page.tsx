@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Calendar, Layout, ListTodo, Layers, AlertCircle, Settings, FileText, Flag, History, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 import { EpicsList } from './_components/epics-list';
 import { SprintList } from './_components/sprint-list';
@@ -24,6 +25,7 @@ import { ProjectActivityTimeline } from './_components/project-activity';
 import { ProjectDashboard } from './_components/project-dashboard';
 
 export default function ProjectDetailPage() {
+  const { t } = useI18n();
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
@@ -82,7 +84,7 @@ export default function ProjectDetailPage() {
   if (!selectedProject && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
-        <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Project Not Found</h2>
+        <h2 className="text-3xl font-heading font-bold tracking-tight ">Project Not Found</h2>
         <Button onClick={() => router.push('/project-management')}>Back to Projects</Button>
       </div>
     );
@@ -97,7 +99,7 @@ export default function ProjectDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{selectedProject?.name}</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{selectedProject?.name}</h1>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>{selectedProject?.slug}</span>
               <span>•</span>

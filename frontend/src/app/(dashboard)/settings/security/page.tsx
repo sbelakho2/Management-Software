@@ -45,6 +45,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn, formatDate } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface Session {
   id: string;
@@ -187,6 +188,7 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 }
 
 export default function SecuritySettingsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [is2FAEnabled, setIs2FAEnabled] = React.useState(true);
   const [passwordDialogOpen, setPasswordDialogOpen] = React.useState(false);
@@ -213,7 +215,7 @@ export default function SecuritySettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Security Protocol
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Manage authentication layers and active organizational sessions</p>

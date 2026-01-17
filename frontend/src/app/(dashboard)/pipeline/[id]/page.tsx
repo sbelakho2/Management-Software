@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { cn, formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import type { RFQStatus, Priority } from '@/types';
 
 // Types
@@ -189,6 +190,7 @@ function formatFileSize(bytes: number): string {
 import { usePipelineStore } from '@/stores/pipeline';
 
 export default function RFQDetailPage({ params }: { params: { id: string } }) {
+  const { t } = useI18n();
   const router = useRouter();
   const { fetchRFQById, setRFQStatus } = usePipelineStore();
   const isTestEnv = process.env.NODE_ENV === 'test';
@@ -251,7 +253,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{rfq.rfq_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{rfq.rfq_number}</h1>
               <Badge className={statusConfig[rfq.status].color}>
                 {statusConfig[rfq.status].label}
               </Badge>

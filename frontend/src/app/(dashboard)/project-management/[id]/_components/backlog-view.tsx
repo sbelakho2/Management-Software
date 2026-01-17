@@ -402,7 +402,7 @@ export function BacklogView({ projectId }: BacklogViewProps) {
                           className="h-8 text-xs"
                         />
                         {selectedStory.related_work_order_id && (
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/production/work-orders/${selectedStory.related_work_order_id}`, '_blank')}>
+                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/production/${selectedStory.related_work_order_id}`, '_blank')}>
                             <ExternalLink className="h-3 w-3" />
                           </Button>
                         )}

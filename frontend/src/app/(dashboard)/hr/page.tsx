@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import { 
   Users, 
   UserPlus, 
@@ -31,6 +32,7 @@ import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
 
 export default function HRDashboard() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const { 
     stats, 
@@ -82,11 +84,11 @@ export default function HRDashboard() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            People & Talent
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.hr.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Manage organizational headcount, certifications, and human capital velocity
+            {t('pages.hr.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">

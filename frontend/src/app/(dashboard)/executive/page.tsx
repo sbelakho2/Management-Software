@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import { useAuthStore } from '@/stores';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,6 +26,7 @@ function RiskBadge({ value }: { value: string }) {
 }
 
 export default function ExecutivePage() {
+  const { t } = useI18n();
   const { user, isAuthenticated } = useAuthStore();
   const [nl2sqlQuestion, setNl2sqlQuestion] = React.useState('How many open CAPAs are there?');
   
@@ -82,7 +84,7 @@ export default function ExecutivePage() {
       <div className="space-y-8 page-fade-in" data-testid="executive-page">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-1">
-            <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-4xl font-heading font-bold tracking-tight ">
               Executive Control Plane
             </h1>
             <p className="text-muted-foreground font-medium">
@@ -336,7 +338,7 @@ export default function ExecutivePage() {
                   <div className="space-y-8 animate-in fade-in zoom-in-95 duration-700" data-testid="risk-result">
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-8 rounded-[2rem] bg-muted/20 border border-border/10 shadow-premium gap-6">
                       <div className="space-y-1">
-                        <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{riskResult.employee_name}</div>
+                        <div className="text-3xl font-heading font-bold tracking-tight ">{riskResult.employee_name}</div>
                         <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground/40">Predictive Score Confidence: 94.8%</div>
                       </div>
                       <div className="flex gap-6">

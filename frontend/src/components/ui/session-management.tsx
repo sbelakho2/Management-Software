@@ -20,6 +20,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -960,6 +961,7 @@ export function NotificationCenter({
 }: NotificationCenterProps) {
   const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } =
     useNotifications();
+  const { t } = useI18n();
 
   if (!isOpen) {
     return null;
@@ -980,10 +982,10 @@ export function NotificationCenter({
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
+    if (minutes < 1) return t('time.now');
+    if (minutes < 60) return t('time.minutes', { count: minutes });
+    if (hours < 24) return t('time.hours', { count: hours });
+    return t('time.days', { count: days });
   };
 
   return (
@@ -999,10 +1001,10 @@ export function NotificationCenter({
             id="notification-center-title"
             className="text-lg font-bold text-gray-900"
           >
-            Notifications
+            {t('notifications.title')}
           </h2>
           {unreadCount > 0 && (
-            <p className="text-sm text-gray-500">{unreadCount} unread</p>
+            <p className="text-sm text-gray-500">{unreadCount} {t('common.unread')}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -1012,14 +1014,14 @@ export function NotificationCenter({
               onClick={markAllAsRead}
               className="text-sm text-blue-600 hover:underline"
             >
-              Mark all read
+              {t('notifications.markAllRead')}
             </button>
           )}
           <button
             type="button"
             onClick={onClose}
             className="p-1 text-gray-400 hover:text-gray-600"
-            aria-label="Close notification center"
+            aria-label={t('common.close')}
           >
             ✕
           </button>
@@ -1032,7 +1034,7 @@ export function NotificationCenter({
             <span className="text-4xl mb-2" aria-hidden="true">
               📭
             </span>
-            <p>No notifications</p>
+            <p>{t('notifications.noNotifications')}</p>
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">

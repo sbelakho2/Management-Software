@@ -20,10 +20,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 import { useA3Store } from '@/stores/a3';
 
 export default function NewA3Page() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const createA3 = useA3Store(state => state.createA3);
@@ -72,7 +74,7 @@ export default function NewA3Page() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New A3 Report</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">New A3 Report</h1>
             <p className="text-muted-foreground">Initialize a new structured problem-solving report</p>
           </div>
         </div>

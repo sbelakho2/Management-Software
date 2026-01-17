@@ -30,7 +30,7 @@ export function SettingsPageShell({ title, description, children }: SettingsPage
     <div className="space-y-8 page-fade-in max-w-4xl">
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-3xl font-heading font-bold tracking-tight ">
             {title}
           </h1>
           <p className="text-muted-foreground font-medium text-sm">{description}</p>

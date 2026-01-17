@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useI18n } from '@/contexts/i18n-context';
 
 const reports = [
   { id: '1', name: 'Weekly Downtime Analysis', period: 'Jan 1 - Jan 7, 2024', type: 'PDF', size: '1.2 MB' },
@@ -22,6 +23,7 @@ const reports = [
 ];
 
 export default function AndonReportsPage() {
+  const { t } = useI18n();
   const router = useRouter();
 
   return (
@@ -32,7 +34,7 @@ export default function AndonReportsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Intelligence Reports</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Intelligence Reports</h1>
             <p className="text-muted-foreground font-medium">Generated summaries and organizational performance documents</p>
           </div>
         </div>

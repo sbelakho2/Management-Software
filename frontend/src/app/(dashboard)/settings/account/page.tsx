@@ -4,8 +4,10 @@ import { SettingsPageShell } from '@/components/settings-page-shell';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function AccountSettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="Account Node" description="Manage your primary identity credentials and authentication layers">
       <div className="space-y-10 max-w-xl">

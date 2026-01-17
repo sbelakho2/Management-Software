@@ -21,8 +21,10 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useAndonStore } from '@/stores/andon-store';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function AndonAnalyticsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { analytics, analyticsLoading, fetchAnalytics } = useAndonStore();
   const [days, setDays] = React.useState(30);
@@ -49,7 +51,7 @@ export default function AndonAnalyticsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Signal Intelligence</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Signal Intelligence</h1>
             <p className="text-muted-foreground font-medium text-sm">Operational performance telemetry and predictive response trends</p>
           </div>
         </div>
@@ -69,7 +71,7 @@ export default function AndonAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Acknowledge Pulse</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{analytics?.avg_response_time_minutes || 0}m</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{analytics?.avg_response_time_minutes || 0}m</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
@@ -80,7 +82,7 @@ export default function AndonAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Resolution Velocity</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{analytics?.avg_resolution_time_minutes || 0}m</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{analytics?.avg_resolution_time_minutes || 0}m</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
@@ -91,7 +93,7 @@ export default function AndonAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Total Intelligence Signals</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{signals}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{signals}</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
@@ -102,7 +104,7 @@ export default function AndonAnalyticsPage() {
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardHeader className="pb-2">
             <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Global Uptime Impact</CardDescription>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">-{analytics?.uptime_impact_percent || 0}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">-{analytics?.uptime_impact_percent || 0}%</div>
           </CardHeader>
           <CardContent>
             <div className="text-[10px] font-bold uppercase tracking-widest text-danger/40">
@@ -158,7 +160,7 @@ export default function AndonAnalyticsPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-heading font-bold text-danger bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">{item.downtime_hours}h</div>
+                    <div className="text-lg font-heading font-bold text-danger text-red-600 dark:text-red-500">{item.downtime_hours}h</div>
                   </div>
                 </div>
               ))}

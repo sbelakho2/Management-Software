@@ -32,6 +32,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useCTQStore } from '@/stores/ctq';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Table,
   TableBody,
@@ -146,6 +147,7 @@ const resultIcons: Record<MeasurementResult, React.ReactNode> = {
 };
 
 export default function CTQDetailPage() {
+  const { t } = useI18n();
   const params = useParams();
   const router = useRouter();
   const { id } = params;
@@ -325,7 +327,7 @@ export default function CTQDetailPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <FileText className="h-16 w-16 text-muted-foreground" />
         <div className="text-center">
-          <h2 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">CTQ Not Found</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">CTQ Not Found</h2>
           <p className="text-muted-foreground mt-2">
             The CTQ you're looking for doesn't exist or has been deleted.
           </p>
@@ -350,7 +352,7 @@ export default function CTQDetailPage() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.ctq_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{ctq.ctq_number}</h1>
               <Badge variant="outline" className={cn('rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider gap-1', categoryColors[ctq.category])}>
                 {categoryIcons[ctq.category]}
                 {ctq.category}
@@ -394,7 +396,7 @@ export default function CTQDetailPage() {
             <CheckCircle className="h-4 w-4 text-success/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.pass_rate.toFixed(1)}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{ctq.pass_rate.toFixed(1)}%</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
               {Math.round((ctq.measurement_count * ctq.pass_rate) / 100)} of {ctq.measurement_count} PASSED
             </p>
@@ -407,7 +409,7 @@ export default function CTQDetailPage() {
             <ClipboardCheck className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ctq.measurement_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{ctq.measurement_count}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
               Total Recorded Samples
             </p>
@@ -420,7 +422,7 @@ export default function CTQDetailPage() {
             {resultIcons[ctq.measurements[0]?.result || 'not_measured']}
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <div className="text-3xl font-heading font-bold tracking-tight ">
               {ctq.measurements[0]?.measured_value?.toFixed(3) || '-'} <span className="text-base text-muted-foreground/60">{ctq.unit_of_measure}</span>
             </div>
             <div className="mt-2">
@@ -440,7 +442,7 @@ export default function CTQDetailPage() {
              <Minus className="h-4 w-4 text-muted-foreground/60" />}
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 capitalize">{trend}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight  capitalize">{trend}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
               Velocity over last 3 samples
             </p>

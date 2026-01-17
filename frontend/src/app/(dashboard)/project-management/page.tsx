@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
 import { Plus, Search, FolderKanban, Lock, Globe, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ const typeLabel: Record<ProjectType, string> = {
 import { BarChart, CHART_TYPE } from '@/components/ui/data-visualization';
 
 export default function ProjectManagementPage() {
+  const { t } = useI18n();
   const { toast } = useToast();
   const {
     projects: projectsRaw,
@@ -113,10 +115,10 @@ export default function ProjectManagementPage() {
     <div className="space-y-8 page-fade-in" data-testid="pm-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Project Engineering
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.projectManagement.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Strategic orchestration of complex initiatives and milestones</p>
+          <p className="text-muted-foreground font-medium">{t('pages.projectManagement.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-[200px]">
@@ -152,7 +154,7 @@ export default function ProjectManagementPage() {
           </Card>
           <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md flex flex-col items-center justify-center p-12">
             <div className="relative">
-              <div className="text-6xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">
+              <div className="text-6xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">
                 {projects.length > 0 ? Math.round((projects.filter(p => p.status === 'active' || p.status === 'completed').length / projects.length) * 100) : 0}%
               </div>
               <div className="absolute -inset-8 border-2 border-success/10 rounded-full animate-pulse" />

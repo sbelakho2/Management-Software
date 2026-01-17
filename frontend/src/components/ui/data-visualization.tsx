@@ -854,7 +854,7 @@ export function KPICard({
           </div>
           <div className="flex items-baseline gap-2 mt-6">
             <span
-              className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
+              className="text-3xl font-heading font-bold tracking-tight "
               style={{ color: color === KPI_COLORS.NEUTRAL ? undefined : color }}
             >
               {value}

@@ -4,9 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Search,
   Bell,
-  Command,
   Menu,
   LogOut,
   ChevronLeft,
@@ -29,6 +27,7 @@ import { MobileBottomNav } from './mobile-nav';
 import { hasPageAccess } from '@/lib/page-access';
 import { NAV_SECTIONS, type NavItem, type NavSection } from '@/lib/navigation';
 import { SkipToContent } from '@/components/ui/accessibility';
+import { useI18n } from '@/contexts/i18n-context';
 
 const bottomNavItems: NavItem[] = [
   { label: 'Settings', href: '/settings', icon: Shield },
@@ -40,6 +39,7 @@ export function Sidebar() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
   const [mounted, setMounted] = React.useState(false);
+  const { t, isRTL } = useI18n();
 
   React.useEffect(() => {
     setMounted(true);
@@ -105,7 +105,7 @@ export function Sidebar() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
               S
             </div>
-            <span className="font-heading font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/60">
+            <span className="font-heading font-bold text-xl tracking-tight ">
               Sensei OS
             </span>
           </Link>
@@ -128,13 +128,13 @@ export function Sidebar() {
             isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto rounded-xl' : 'px-4 h-11 rounded-2xl'
           )}
           onClick={() => setCommandPaletteOpen(true)}
-          aria-label="Open search"
+          aria-label={t('navigation.search')}
         >
           <Search className={cn("h-4 w-4", isCollapsed ? "h-5 w-5" : "")} />
           {!isCollapsed && (
             <>
-              <span className="ml-3 flex-1 text-left text-sm">Search...</span>
-              <kbd className="ml-auto pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground/60">
+              <span className={cn("flex-1 text-sm", isRTL ? "mr-3 text-right" : "ml-3 text-left")}>{t('common.search')}...</span>
+              <kbd className={cn("pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground/60", isRTL ? "mr-auto" : "ml-auto")}>
                 <span className="text-xs">⌘</span>K
               </kbd>
             </>
@@ -312,13 +312,13 @@ export function Sidebar() {
                     await logout();
                     router.push('/login');
                   }}
-                  aria-label="Logout"
+                  aria-label={t('auth.logout')}
                 >
-                  <LogOut className="h-5 w-5" />
+                  <LogOut className={cn("h-5 w-5", isRTL && "rtl-flip")} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="font-heading">
-                Logout Protocol
+              <TooltipContent side={isRTL ? "left" : "right"} className="font-heading">
+                {t('auth.logout')}
               </TooltipContent>
             </Tooltip>
           ) : (
@@ -330,8 +330,8 @@ export function Sidebar() {
                 router.push('/login');
               }}
             >
-              <LogOut className="h-5 w-5 shrink-0" />
-              <span className="font-medium tracking-tight">Logout Protocol</span>
+              <LogOut className={cn("h-5 w-5 shrink-0", isRTL && "rtl-flip")} />
+              <span className="font-medium tracking-tight">{t('auth.logout')}</span>
             </Button>
           )}
         </div>
@@ -342,14 +342,14 @@ export function Sidebar() {
           size="icon"
           className={cn('mt-2 h-10 transition-all rounded-xl hover:bg-primary/5 hover:text-primary', isCollapsed ? 'mx-auto w-12' : 'w-full px-4 justify-start')}
           onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isCollapsed ? t('accessibility.expandSection') : t('accessibility.collapseSection')}
         >
           {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className={cn("h-4 w-4", isRTL && "rtl-flip")} />
           ) : (
             <div className="flex items-center gap-3">
-              <ChevronLeft className="h-4 w-4" />
-              <span className="text-xs font-bold uppercase tracking-widest opacity-60">Collapse</span>
+              <ChevronLeft className={cn("h-4 w-4", isRTL && "rtl-flip")} />
+              <span className="text-xs font-bold uppercase tracking-widest opacity-60">{t('accessibility.collapseSection')}</span>
             </div>
           )}
         </Button>
@@ -358,74 +358,55 @@ export function Sidebar() {
   );
 }
 
-export function Header() {
-  const { 
-    toggleCommandPalette, 
-    toggleNotificationPanel, 
-    unreadCount,
-    setSidebarState,
-    sidebarState,
-  } = useUIStore();
+export function FloatingNotifications() {
+  const { toggleNotificationPanel, unreadCount } = useUIStore();
+  const { t, isRTL } = useI18n();
 
   return (
-    <header className="sticky top-4 z-30 flex h-16 items-center gap-4 px-6 mx-4 rounded-2xl border premium-glass transition-all duration-500 ease-in-out shadow-premium hover:shadow-premium-hover">
-      {/* Mobile menu button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="md:hidden hover:bg-primary/10 hover:text-primary transition-colors rounded-xl"
-        onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
-        aria-label={sidebarState === 'hidden' ? 'Open menu' : 'Close menu'}
-      >
-        <Menu className="h-5 w-5" />
-      </Button>
-
-      <div className="flex-1" />
-
-      {/* Actions */}
-      <div className="flex items-center gap-3">
-        {/* Command Palette */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
-              onClick={toggleCommandPalette}
-              aria-label="Open command palette"
-            >
-              <Command className="h-5 w-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent className="font-heading">
-            <p>Command Palette</p>
-            <kbd className="ml-2 text-xs text-muted-foreground">⌘K</kbd>
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Notifications */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative rounded-xl hover:bg-primary/10 hover:text-primary transition-all duration-300"
-              onClick={toggleNotificationPanel}
-              aria-label="Open notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-glow">
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent className="font-heading">Notifications</TooltipContent>
-        </Tooltip>
-      </div>
-    </header>
+    <div className={cn("fixed top-4 z-40", isRTL ? "left-4" : "right-4")}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative rounded-xl h-10 w-10 border premium-glass shadow-premium hover:shadow-premium-hover hover:bg-primary/10 hover:text-primary transition-all duration-300"
+            onClick={toggleNotificationPanel}
+            aria-label={t('navigation.notifications')}
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className={cn("absolute -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-glow", isRTL ? "-left-1" : "-right-1")}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="font-heading">{t('navigation.notifications')}</TooltipContent>
+      </Tooltip>
+    </div>
   );
+}
+
+export function MobileMenuButton() {
+  const { sidebarState, setSidebarState } = useUIStore();
+  const { t } = useI18n();
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="fixed top-4 left-4 z-40 md:hidden rounded-xl h-10 w-10 border premium-glass shadow-premium hover:shadow-premium-hover hover:bg-primary/10 hover:text-primary transition-all duration-300"
+      onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
+      aria-label={sidebarState === 'hidden' ? t('accessibility.openMenu') : t('accessibility.closeMenu')}
+    >
+      <Menu className="h-5 w-5" />
+    </Button>
+  );
+}
+
+// Keep Header export for backward compatibility (but it's now empty)
+export function Header() {
+  return null;
 }
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
@@ -448,6 +429,10 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <SkipToContent targetId="main-content" />
       {/* Mesh Gradient Background (handled by globals.css body) */}
       
+      {/* Floating UI Elements */}
+      <FloatingNotifications />
+      <MobileMenuButton />
+      
       {/* Mobile overlay when sidebar is open */}
       <div 
         className={cn(
@@ -469,7 +454,6 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
           isHidden && 'md:pl-0'
         )}
       >
-        <Header />
         <main id="main-content" className="flex-1 p-4 md:p-8 pb-24 md:pb-8 page-fade-in max-w-[1600px] w-full mx-auto">
           {children}
         </main>

@@ -5,8 +5,10 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Key, Copy, Plus } from 'lucide-react';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function ApiSettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="API Key Management" description="Manage access keys for external integrations">
       <div className="space-y-6">

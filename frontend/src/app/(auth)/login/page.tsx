@@ -10,11 +10,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { getSafeRedirectPath } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
+import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, isLoading, error, clearError } = useAuthStore();
+  const { t, isRTL } = useI18n();
   
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -60,13 +63,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className={cn("space-y-8", isRTL && "text-right")}>
       <div>
-        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-          Welcome back
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground ">
+          {t('auth.welcomeBack')}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
-          Enter your credentials to access the command center
+          {t('auth.loginSubtitle')}
         </p>
       </div>
 
@@ -78,11 +81,17 @@ export default function LoginPage() {
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
-            Email address
+          <Label htmlFor="email" className={cn(
+            "text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('auth.email')}
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -91,7 +100,7 @@ export default function LoginPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-11"
+              className={isRTL ? "pr-11" : "pl-11"}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -100,19 +109,22 @@ export default function LoginPage() {
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between ml-1">
+          <div className={cn("flex items-center justify-between", isRTL ? "mr-1" : "ml-1")}>
             <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
-              Password
+              {t('auth.password')}
             </Label>
             <Link
               href="/forgot-password"
               className="text-[10px] font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-[0.2em]"
             >
-              Forgot?
+              {t('auth.forgotPassword')}
             </Link>
           </div>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -121,16 +133,19 @@ export default function LoginPage() {
               placeholder="••••••••"
               autoComplete="current-password"
               required
-              className="pl-11 pr-11"
+              className={isRTL ? "pr-11 pl-11" : "pl-11 pr-11"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
             <button
               type="button"
-              className="absolute inset-y-0 right-0 pr-4 flex items-center text-muted-foreground/30 hover:text-primary transition-colors"
+              className={cn(
+                "absolute inset-y-0 flex items-center text-muted-foreground/30 hover:text-primary transition-colors",
+                isRTL ? "left-0 pl-4" : "right-0 pr-4"
+              )}
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('accessibility.hidePassword') : t('accessibility.showPassword')}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -147,7 +162,7 @@ export default function LoginPage() {
           loading={isLoading}
           size="xl"
         >
-          {isLoading ? 'Authenticating...' : 'Sign In'}
+          {isLoading ? t('auth.authenticating') : t('auth.signIn')}
         </Button>
       </form>
 
@@ -157,7 +172,7 @@ export default function LoginPage() {
         </div>
         <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] font-bold">
           <span className="bg-transparent px-4 text-muted-foreground/40">
-            Secure Access
+            {t('auth.secureAccess')}
           </span>
         </div>
       </div>
@@ -167,8 +182,13 @@ export default function LoginPage() {
           href="/register"
           className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
         >
-          <span>Need access?</span>
-          <span className="text-primary group-hover:translate-x-1 transition-transform">Contact Administrator &rarr;</span>
+          <span>{t('auth.needAccess')}</span>
+          <span className={cn(
+            "text-primary transition-transform",
+            isRTL ? "group-hover:-translate-x-1" : "group-hover:translate-x-1"
+          )}>
+            {t('auth.contactAdmin')} {isRTL ? '←' : '→'}
+          </span>
         </Link>
       </div>
     </div>

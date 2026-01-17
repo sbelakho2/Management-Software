@@ -8,8 +8,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { authApi } from '@/api';
+import { useI18n } from '@/contexts/i18n-context';
+import { cn } from '@/lib/utils';
 
 export default function ForgotPasswordPage() {
+  const { t, isRTL } = useI18n();
   const [email, setEmail] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -24,7 +27,7 @@ export default function ForgotPasswordPage() {
       await authApi.requestPasswordReset({ email });
       setIsSubmitted(true);
     } catch (err) {
-      setError((err as Error).message || 'Failed to send reset email');
+      setError((err as Error).message || t('auth.resetEmailFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -32,18 +35,18 @@ export default function ForgotPasswordPage() {
 
   if (isSubmitted) {
     return (
-      <div className="space-y-8 text-center animate-in fade-in zoom-in-95 duration-500">
+      <div className={cn("space-y-8 text-center animate-in fade-in zoom-in-95 duration-500", isRTL && "text-right")}>
         <div className="flex justify-center">
           <div className="rounded-full bg-success/10 p-5 border border-success/20 shadow-glow">
             <CheckCircle2 className="h-10 w-10 text-success" />
           </div>
         </div>
         <div>
-          <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Verification Sent
+          <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground ">
+            {t('auth.verificationSent')}
           </h2>
           <p className="mt-2 text-sm text-muted-foreground font-medium max-w-[280px] mx-auto">
-            Instructions have been dispatched to <span className="text-foreground font-bold">{email}</span>
+            {t('auth.instructionsDispatched')} <span className="text-foreground font-bold">{email}</span>
           </p>
         </div>
         <div className="pt-4">
@@ -51,8 +54,8 @@ export default function ForgotPasswordPage() {
             href="/login"
             className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
           >
-            <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-            <span>Back to sign in</span>
+            <ArrowLeft className={cn("h-4 w-4 transition-transform", isRTL ? "rotate-180 group-hover:translate-x-1" : "group-hover:-translate-x-1")} />
+            <span>{t('auth.backToSignIn')}</span>
           </Link>
         </div>
       </div>
@@ -60,13 +63,13 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className={cn("space-y-8", isRTL && "text-right")}>
       <div>
-        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-          Reset Access
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground ">
+          {t('auth.resetAccess')}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
-          Enter your email to receive recovery instructions
+          {t('auth.enterEmailForRecovery')}
         </p>
       </div>
 
@@ -78,11 +81,17 @@ export default function ForgotPasswordPage() {
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
-            Email address
+          <Label htmlFor="email" className={cn(
+            "text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('auth.email')}
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -90,7 +99,7 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="name@company.com"
               required
-              className="pl-11"
+              className={isRTL ? "pr-11" : "pl-11"}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -105,7 +114,7 @@ export default function ForgotPasswordPage() {
           disabled={!email}
           size="xl"
         >
-          {isLoading ? 'Dispatching...' : 'Send Instructions'}
+          {isLoading ? t('auth.dispatching') : t('auth.sendInstructions')}
         </Button>
       </form>
 
@@ -114,8 +123,8 @@ export default function ForgotPasswordPage() {
           href="/login"
           className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
         >
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Return to sign in</span>
+          <ArrowLeft className={cn("h-4 w-4 transition-transform", isRTL ? "rotate-180 group-hover:translate-x-1" : "group-hover:-translate-x-1")} />
+          <span>{t('auth.returnToSignIn')}</span>
         </Link>
       </div>
     </div>

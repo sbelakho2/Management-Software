@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { usePipelineStore } from '@/stores/pipeline';
 import { useToast } from '@/hooks/use-toast';
 import { generateId } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import type { Priority } from '@/types';
 
 interface RFQLineItem {
@@ -58,6 +59,7 @@ interface RFQFormData {
 }
 
 export default function NewRFQPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const { createRFQ } = usePipelineStore();
@@ -154,7 +156,7 @@ export default function NewRFQPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               New Intelligence Opportunity
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Initiate a new Request for Quote protocol</p>

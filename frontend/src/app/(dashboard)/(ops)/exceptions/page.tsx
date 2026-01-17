@@ -35,9 +35,11 @@ import {
 } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { useExceptionsStore } from '@/stores/exceptions';
+import { useI18n } from '@/contexts/i18n-context';
 import type { ExceptionSeverity, ExceptionCategory, ExceptionStatus } from '@/stores/exceptions';
 
 export default function ExceptionsPage() {
+  const { t } = useI18n();
   const { 
     exceptions, 
     stats, 
@@ -170,7 +172,7 @@ export default function ExceptionsPage() {
               />
             ))}
           </div>
-          <h2 className="text-2xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mb-2">
+          <h2 className="text-2xl font-heading font-bold tracking-tight  mb-2">
             Auditing Anomalies
           </h2>
           <p className="text-muted-foreground font-medium text-sm">Synchronizing operational exceptions...</p>
@@ -185,7 +187,7 @@ export default function ExceptionsPage() {
     <div className="space-y-8 page-fade-in" data-testid="exceptions-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
             Anomalous Node Registry
           </h1>
           <p className="text-muted-foreground font-medium">Real-time exception tracking, escalation velocity, and resolution protocol</p>
@@ -210,7 +212,7 @@ export default function ExceptionsPage() {
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-destructive to-destructive/70">{stats.critical_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-destructive">{stats.critical_count}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
               {stats.total_open} total open nodes
             </p>
@@ -223,7 +225,7 @@ export default function ExceptionsPage() {
             <Clock className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-amber-500 to-amber-500/70">{stats.overdue_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{stats.overdue_count}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mt-2">
               SLA Variance Detected
             </p>
@@ -236,7 +238,7 @@ export default function ExceptionsPage() {
             <TrendingUp className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.escalated_count}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.escalated_count}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
               Management Sync Required
             </p>
@@ -249,7 +251,7 @@ export default function ExceptionsPage() {
             <Target className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-emerald-500 to-emerald-500/70">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2">
               {stats.resolved_today} nodes resolved today
             </p>
@@ -550,7 +552,7 @@ export default function ExceptionsPage() {
                     <CategoryIcon className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{count}</div>
+                    <div className="text-3xl font-heading font-bold tracking-tight ">{count}</div>
                     <p className="text-xs text-muted-foreground">
                       {((count / stats.total_open) * 100).toFixed(1)}% of total
                     </p>

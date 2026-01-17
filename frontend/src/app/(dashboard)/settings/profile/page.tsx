@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface ProfileFormData {
   firstName: string;
@@ -57,6 +58,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useToast } from '@/hooks/use-toast';
 
 export default function ProfileSettingsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const { user, updateProfile } = useAuthStore();
@@ -113,7 +115,7 @@ export default function ProfileSettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Profile Settings
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Manage your personal identity and organizational role</p>

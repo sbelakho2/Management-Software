@@ -23,8 +23,10 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQualityStore } from '@/stores/quality';
 import { cn, formatDate } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function InspectionDetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { inspections, fetchInspections } = useQualityStore();
@@ -71,7 +73,7 @@ export default function InspectionDetailsPage() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{inspection.inspection_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{inspection.inspection_number}</h1>
               <Badge variant={statusConfig[inspection.status as keyof typeof statusConfig]?.variant || 'default'} className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                 {statusConfig[inspection.status as keyof typeof statusConfig]?.label || inspection.status}
               </Badge>

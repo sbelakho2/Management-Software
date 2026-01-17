@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -90,7 +91,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pending Approval</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.pending}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.pending}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-warning/10 text-warning">
               <Clock className="h-5 w-5" />
@@ -103,7 +104,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Sent to Customers</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.sent}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.sent}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
               <Send className="h-5 w-5" />
@@ -116,7 +117,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pipeline Value</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalValue)}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(stats.totalValue)}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-emerald-500/10 text-emerald-600">
               <DollarSign className="h-5 w-5" />
@@ -129,7 +130,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg. Margin</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgMargin.toFixed(1)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.avgMargin.toFixed(1)}%</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
               <TrendingUp className="h-5 w-5" />
@@ -264,6 +265,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
 }
 
 export default function QuotesPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { quotes, isLoading, fetchQuotes } = useQuoteStore();
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -305,10 +307,10 @@ export default function QuotesPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Commercial Quotes
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.quotes.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Manage quotations, track approvals, and monitor win rates</p>
+          <p className="text-muted-foreground font-medium">{t('pages.quotes.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/quotes/new')}>

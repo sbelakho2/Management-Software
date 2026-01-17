@@ -9,10 +9,13 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
+import { cn } from '@/lib/utils';
 
 export default function RegisterPage() {
   const router = useRouter();
   const { register, isLoading, error, clearError } = useAuthStore();
+  const { t, isRTL } = useI18n();
   
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -29,12 +32,12 @@ export default function RegisterPage() {
     clearError();
 
     if (!email || !password || !fullName) {
-      setLocalError('Please fill in all fields');
+      setLocalError(t('validation.fillAllFields'));
       return;
     }
 
     if (password.length < 8) {
-      setLocalError('Password must be at least 8 characters long');
+      setLocalError(t('validation.passwordMinLength'));
       return;
     }
 
@@ -47,13 +50,13 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className={cn("space-y-8", isRTL && "text-right")}>
       <div>
-        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-          Create Account
+        <h2 className="text-3xl font-heading font-bold tracking-tight text-foreground ">
+          {t('auth.createAccount')}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground font-medium">
-          Request access to the Sensei OS enterprise platform
+          {t('auth.requestAccessSubtitle')}
         </p>
       </div>
 
@@ -65,19 +68,25 @@ export default function RegisterPage() {
 
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <Label htmlFor="fullName" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
-            Full Name
+          <Label htmlFor="fullName" className={cn(
+            "text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('forms.fullName')}
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <User className="h-4 w-4" />
             </div>
             <Input
               id="fullName"
               type="text"
-              placeholder="John Doe"
+              placeholder={t('forms.fullNamePlaceholder')}
               required
-              className="pl-11"
+              className={isRTL ? "pr-11" : "pl-11"}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               disabled={isLoading}
@@ -86,11 +95,17 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
-            Email address
+          <Label htmlFor="email" className={cn(
+            "text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('auth.email')}
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <Mail className="h-4 w-4" />
             </div>
             <Input
@@ -99,7 +114,7 @@ export default function RegisterPage() {
               placeholder="name@company.com"
               autoComplete="email"
               required
-              className="pl-11"
+              className={isRTL ? "pr-11" : "pl-11"}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -108,11 +123,17 @@ export default function RegisterPage() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50 ml-1">
-            Password
+          <Label htmlFor="password" className={cn(
+            "text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('auth.password')}
           </Label>
           <div className="relative group">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors">
+            <div className={cn(
+              "absolute inset-y-0 flex items-center pointer-events-none text-muted-foreground/30 group-focus-within:text-primary transition-colors",
+              isRTL ? "right-0 pr-4" : "left-0 pl-4"
+            )}>
               <Lock className="h-4 w-4" />
             </div>
             <Input
@@ -121,14 +142,17 @@ export default function RegisterPage() {
               placeholder="••••••••"
               autoComplete="new-password"
               required
-              className="pl-11"
+              className={isRTL ? "pr-11" : "pl-11"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
             />
           </div>
-          <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground/30 ml-1">
-            Minimum 8 characters with enterprise complexity
+          <p className={cn(
+            "text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground/30",
+            isRTL ? "mr-1" : "ml-1"
+          )}>
+            {t('auth.passwordRequirements')}
           </p>
         </div>
 
@@ -138,7 +162,7 @@ export default function RegisterPage() {
           loading={isLoading}
           size="xl"
         >
-          {isLoading ? 'Processing...' : 'Request Access'}
+          {isLoading ? t('auth.processing') : t('auth.requestAccess')}
         </Button>
       </form>
 
@@ -147,8 +171,8 @@ export default function RegisterPage() {
           href="/login"
           className="text-sm font-bold text-muted-foreground hover:text-primary transition-all group inline-flex items-center gap-2"
         >
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Back to sign in</span>
+          <ArrowLeft className={cn("h-4 w-4 transition-transform", isRTL ? "rotate-180 group-hover:translate-x-1" : "group-hover:-translate-x-1")} />
+          <span>{t('auth.backToSignIn')}</span>
         </Link>
       </div>
     </div>

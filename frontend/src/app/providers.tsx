@@ -11,6 +11,7 @@ import { MaturityProvider } from '@/components/ui/deployment-maturity';
 import { OfflineProvider, ErrorBoundary } from '@/components/ui/error-experience';
 import { DesignSystemProvider } from '@/components/ui/design-system';
 import { RUMProvider } from '@/components/ui/performance-rum';
+import { I18nProvider } from '@/contexts/i18n-context';
 import { useAuthStore } from '@/stores';
 
 interface ProvidersProps {
@@ -51,20 +52,22 @@ export function Providers({ children }: ProvidersProps) {
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delayDuration={0}>
-            <DesignSystemProvider>
-              <RUMProvider>
-                <MaturityProvider>
-                  <OfflineProvider>
-                    <PWAProvider>
-                      {children}
-                    </PWAProvider>
-                  </OfflineProvider>
-                </MaturityProvider>
-              </RUMProvider>
-            </DesignSystemProvider>
-            <Toaster />
-          </TooltipProvider>
+          <I18nProvider>
+            <TooltipProvider delayDuration={0}>
+              <DesignSystemProvider>
+                <RUMProvider>
+                  <MaturityProvider>
+                    <OfflineProvider>
+                      <PWAProvider>
+                        {children}
+                      </PWAProvider>
+                    </OfflineProvider>
+                  </MaturityProvider>
+                </RUMProvider>
+              </DesignSystemProvider>
+              <Toaster />
+            </TooltipProvider>
+          </I18nProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'development' && !isE2E && (
           <ReactQueryDevtools initialIsOpen={false} />

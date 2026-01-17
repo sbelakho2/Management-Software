@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,7 @@ function StatsCards({ stats }: { stats: POStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Open Requisitions</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.requisitions.submitted}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.requisitions.submitted}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
               <ClipboardList className="h-5 w-5" />
@@ -124,7 +125,7 @@ function StatsCards({ stats }: { stats: POStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pending POs</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.orders.pending_approval + stats.orders.approved}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.pending_approval + stats.orders.approved}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-warning/10 text-warning">
               <ShoppingCart className="h-5 w-5" />
@@ -137,7 +138,7 @@ function StatsCards({ stats }: { stats: POStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Sent to Suppliers</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.orders.sent}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.sent}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
               <Send className="h-5 w-5" />
@@ -150,7 +151,7 @@ function StatsCards({ stats }: { stats: POStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Receipts Today</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.receipts.today}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.receipts.today}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-emerald-500/10 text-emerald-600">
               <Truck className="h-5 w-5" />
@@ -233,6 +234,7 @@ function PORow({ order, onApprove, onSend }: {
 }
 
 export default function PurchasePage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [orders, setOrders] = React.useState<PurchaseOrder[]>([]);
   const [requisitions, setRequisitions] = React.useState<PurchaseRequisition[]>([]);
@@ -305,8 +307,8 @@ export default function PurchasePage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Purchase Orders</h1>
-          <p className="text-muted-foreground font-medium">Manage supplier relations and procurement cycles</p>
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">{t('pages.purchase.title')}</h1>
+          <p className="text-muted-foreground font-medium">{t('pages.purchase.subtitle')}</p>
         </div>
         <div className="flex gap-3">
           <Button 
@@ -319,7 +321,7 @@ export default function PurchasePage() {
           </Button>
           <Button 
             className="rounded-xl shadow-glow"
-            onClick={() => setView('requisitions')}
+            onClick={() => router.push('/purchase/requisitions/new')}
           >
             <Plus className="mr-2 h-4 w-4" />
             New Requisition
@@ -471,10 +473,10 @@ export default function PurchasePage() {
                       </div>
                       <Button 
                         className="mt-2 rounded-xl"
-                        onClick={() => setView('requisitions')}
+                        onClick={() => router.push('/purchase/requisitions/new')}
                       >
                         <Plus className="mr-2 h-4 w-4" />
-                        View Requisitions
+                        New Requisition
                       </Button>
                     </div>
                   </TableCell>

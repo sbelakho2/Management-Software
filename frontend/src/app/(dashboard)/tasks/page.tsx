@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -53,6 +54,7 @@ const priorityConfig: Record<string, { label: string; color: string }> = {
 };
 
 export default function TasksPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { tasks: tasksRaw, loading, fetchTasks, moveTask } = useTasksStore();
   const tasks = tasksRaw ?? [];
@@ -90,10 +92,10 @@ export default function TasksPage() {
     <div className="space-y-8 page-fade-in" data-testid="tasks-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Mission Control
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.tasks.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Manage and track your operational assignments</p>
+          <p className="text-muted-foreground font-medium">{t('pages.tasks.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Tabs value={view} onValueChange={(v: any) => setView(v)}>

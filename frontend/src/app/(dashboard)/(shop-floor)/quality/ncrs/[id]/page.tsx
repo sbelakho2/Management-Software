@@ -24,8 +24,10 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQualityStore } from '@/stores/quality';
 import { cn, formatDate } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function NCRDetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { ncrs, fetchNCRs } = useQualityStore();
@@ -71,7 +73,7 @@ export default function NCRDetailsPage() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{ncr.ncr_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{ncr.ncr_number}</h1>
               <Badge variant={statusConfig[ncr.status as keyof typeof statusConfig]?.variant || 'default'}>
                 {statusConfig[ncr.status as keyof typeof statusConfig]?.label || ncr.status}
               </Badge>

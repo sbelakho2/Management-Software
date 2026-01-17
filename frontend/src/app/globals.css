@@ -96,7 +96,7 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight font-heading font-bold text-foreground/90;
+    @apply tracking-tight font-heading font-bold text-foreground;
   }
 
   /* Custom Scrollbar */
@@ -222,25 +222,26 @@
     @apply row-span-2;
   }
   
-  /* Gradient text shortcuts */
+  /* Gradient text shortcuts - DISABLED for crisp rendering */
+  /* Use solid colors instead of gradients to prevent fuzzy text */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70;
+    @apply text-foreground;
   }
   
   .text-gradient-success {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-emerald-600 to-emerald-600/70;
+    @apply text-emerald-600 dark:text-emerald-500;
   }
   
   .text-gradient-danger {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-red-600 to-red-600/70;
+    @apply text-red-600 dark:text-red-500;
   }
   
   .text-gradient-warning {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-amber-600 to-amber-600/70;
+    @apply text-amber-600 dark:text-amber-500;
   }
   
   .text-gradient-primary {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70;
+    @apply text-primary;
   }
 }
 
@@ -254,7 +255,7 @@
     @apply px-4 py-4 font-heading font-bold text-muted-foreground/60 border-b bg-muted/5 uppercase tracking-widest text-[10px];
   }
   td {
-    @apply px-4 py-4 border-b border-border/20 text-foreground/80 transition-colors;
+    @apply px-4 py-4 border-b border-border/20 text-foreground transition-colors;
   }
   tr {
     @apply transition-all duration-300 hover:bg-primary/5;
@@ -451,5 +452,286 @@
       flex-direction: column;
       text-align: center;
     }
+  }
+}
+
+/* =============================================================================
+   RTL (Right-to-Left) Support for Arabic
+   ============================================================================= */
+
+/* Base RTL styles - applied when html[dir="rtl"] */
+html[dir="rtl"] {
+  /* Text alignment */
+  text-align: right;
+}
+
+html[dir="rtl"] body {
+  direction: rtl;
+}
+
+/* Flip margins and paddings */
+html[dir="rtl"] .ml-auto { margin-right: auto; margin-left: 0; }
+html[dir="rtl"] .mr-auto { margin-left: auto; margin-right: 0; }
+
+/* Flip flex directions */
+html[dir="rtl"] .flex-row { flex-direction: row-reverse; }
+html[dir="rtl"] .flex-row-reverse { flex-direction: row; }
+
+/* Keep certain elements LTR (like code, numbers) */
+html[dir="rtl"] code,
+html[dir="rtl"] pre,
+html[dir="rtl"] kbd,
+html[dir="rtl"] .ltr-force,
+html[dir="rtl"] .font-mono {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Icons and images - flip transform */
+html[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+
+/* Don't flip certain icons that should stay the same */
+html[dir="rtl"] .rtl-no-flip {
+  transform: none;
+}
+
+/* Navigation sidebar - flip */
+html[dir="rtl"] .sidebar {
+  border-right: none;
+  border-left: 1px solid hsl(var(--border));
+}
+
+/* Inputs - handle placeholder and text alignment */
+html[dir="rtl"] input[type="text"],
+html[dir="rtl"] input[type="email"],
+html[dir="rtl"] input[type="password"],
+html[dir="rtl"] input[type="search"],
+html[dir="rtl"] input[type="tel"],
+html[dir="rtl"] input[type="url"],
+html[dir="rtl"] input[type="number"],
+html[dir="rtl"] textarea {
+  text-align: right;
+}
+
+/* Allow numbers to remain LTR for readability */
+html[dir="rtl"] input[type="number"] {
+  direction: ltr;
+  text-align: right;
+}
+
+/* Tables - RTL support */
+html[dir="rtl"] table {
+  direction: rtl;
+}
+
+html[dir="rtl"] th,
+html[dir="rtl"] td {
+  text-align: right;
+}
+
+/* Dropdown and select arrows - flip */
+html[dir="rtl"] .select-trigger::after,
+html[dir="rtl"] [data-radix-select-trigger]::after {
+  right: auto;
+  left: 0.75rem;
+}
+
+/* Breadcrumbs - flip separators */
+html[dir="rtl"] .breadcrumb-separator {
+  transform: scaleX(-1);
+}
+
+/* Progress bars - flip direction */
+html[dir="rtl"] .progress-bar {
+  direction: rtl;
+}
+
+/* Sliders - flip */
+html[dir="rtl"] [role="slider"] {
+  direction: ltr; /* Keep slider logic LTR but visually flip */
+}
+
+/* Checkboxes and radios - keep consistent */
+html[dir="rtl"] input[type="checkbox"],
+html[dir="rtl"] input[type="radio"] {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* Labels with checkboxes/radios */
+html[dir="rtl"] label input[type="checkbox"],
+html[dir="rtl"] label input[type="radio"] {
+  margin-right: 0;
+  margin-left: 0.75rem;
+}
+
+/* Toast notifications - position */
+html[dir="rtl"] .toast-container {
+  left: 1rem;
+  right: auto;
+}
+
+/* Modal close buttons */
+html[dir="rtl"] .modal-close-btn {
+  left: 1rem;
+  right: auto;
+}
+
+/* Scrollbars - flip for RTL */
+html[dir="rtl"] ::-webkit-scrollbar {
+  direction: rtl;
+}
+
+/* Calendar and date pickers - handle carefully */
+html[dir="rtl"] .calendar {
+  direction: rtl;
+}
+
+/* Keep time displays LTR for readability */
+html[dir="rtl"] .time-display,
+html[dir="rtl"] time {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Currency and prices - keep number LTR */
+html[dir="rtl"] .currency,
+html[dir="rtl"] .price {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Search input placeholder */
+html[dir="rtl"] input::placeholder {
+  text-align: right;
+}
+
+/* Lists */
+html[dir="rtl"] ul,
+html[dir="rtl"] ol {
+  padding-right: 1.5rem;
+  padding-left: 0;
+}
+
+/* Tabs - flip order */
+html[dir="rtl"] [role="tablist"] {
+  flex-direction: row-reverse;
+}
+
+/* Button groups */
+html[dir="rtl"] .btn-group {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .btn-group > button:first-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+html[dir="rtl"] .btn-group > button:last-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+/* Card actions - flip position */
+html[dir="rtl"] .card-actions {
+  left: 1rem;
+  right: auto;
+}
+
+/* Form labels with required asterisk */
+html[dir="rtl"] .required::after {
+  content: none;
+}
+
+html[dir="rtl"] .required::before {
+  content: " *";
+  color: hsl(var(--destructive));
+}
+
+/* Pagination */
+html[dir="rtl"] .pagination {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .pagination-prev svg,
+html[dir="rtl"] .pagination-next svg {
+  transform: scaleX(-1);
+}
+
+/* Tooltips - adjust positioning */
+html[dir="rtl"] [data-side="right"] {
+  --radix-tooltip-content-transform-origin: left center;
+}
+
+html[dir="rtl"] [data-side="left"] {
+  --radix-tooltip-content-transform-origin: right center;
+}
+
+/* Arabic Typography Enhancements */
+html[dir="rtl"] {
+  font-feature-settings: "kern" 1;
+}
+
+/* Ensure proper line height for Arabic text */
+html[dir="rtl"] p,
+html[dir="rtl"] span,
+html[dir="rtl"] div {
+  line-height: 1.8;
+}
+
+/* Arabic heading adjustments */
+html[dir="rtl"] h1, 
+html[dir="rtl"] h2, 
+html[dir="rtl"] h3, 
+html[dir="rtl"] h4, 
+html[dir="rtl"] h5, 
+html[dir="rtl"] h6 {
+  line-height: 1.5;
+}
+
+/* Bidirectional text isolation */
+.bidi-isolate {
+  unicode-bidi: isolate;
+}
+
+.bidi-override-rtl {
+  unicode-bidi: bidi-override;
+  direction: rtl;
+}
+
+.bidi-override-ltr {
+  unicode-bidi: bidi-override;
+  direction: ltr;
+}
+
+/* Animation direction for RTL */
+html[dir="rtl"] .animate-slide-in-right {
+  animation-name: slide-in-left;
+}
+
+html[dir="rtl"] .animate-slide-in-left {
+  animation-name: slide-in-right;
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }

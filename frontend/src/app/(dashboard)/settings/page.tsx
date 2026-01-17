@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   User,
   Bell,
@@ -125,6 +126,7 @@ function SettingsCard({ section }: { section: SettingsSection }) {
 }
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin';
   
@@ -137,10 +139,10 @@ export default function SettingsPage() {
     <div className="space-y-10 page-fade-in max-w-6xl mx-auto">
       {/* Header */}
       <div className="space-y-1">
-        <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-          Control Center
+        <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          {t('pages.settings.title')}
         </h1>
-        <p className="text-muted-foreground font-medium">Configure your personal interface and enterprise parameters</p>
+        <p className="text-muted-foreground font-medium">{t('pages.settings.subtitle')}</p>
       </div>
 
       <div className="space-y-12">

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -70,7 +71,7 @@ function CustomerStats({ customers }: { customers: any[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Intelligence Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.active}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.active}</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <Building2 className="h-5 w-5" />
@@ -83,7 +84,7 @@ function CustomerStats({ customers }: { customers: any[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Prospective Partners</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.prospects}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.prospects}</p>
             </div>
             <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
               <Users className="h-5 w-5" />
@@ -96,7 +97,7 @@ function CustomerStats({ customers }: { customers: any[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Aggregated Revenue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{formatCurrency(stats.totalRevenue)}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(stats.totalRevenue)}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <DollarSign className="h-5 w-5" />
@@ -109,7 +110,7 @@ function CustomerStats({ customers }: { customers: any[] }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Conversion Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.avgWinRate.toFixed(0)}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.avgWinRate.toFixed(0)}%</p>
             </div>
             <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">
               <TrendingUp className="h-5 w-5" />
@@ -264,6 +265,7 @@ function CustomerRow({ customer }: { customer: any }) {
 }
 
 export default function CustomersPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { customers, loading, fetchCustomers } = useCustomersStore();
   const customersList = React.useMemo(() => (Array.isArray(customers) ? customers : []), [customers]);
@@ -305,10 +307,10 @@ export default function CustomersPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Account Management
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.customers.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Strategic customer relationships and account intelligence</p>
+          <p className="text-muted-foreground font-medium">{t('pages.customers.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/customers/new')}>

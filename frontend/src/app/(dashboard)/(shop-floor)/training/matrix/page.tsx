@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn, getInitials } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 const employees = [
   { id: 'E001', name: 'John Doe', role: 'Production Lead', skills: { 'CNC': 4, 'AS9100': 4, 'Quality': 3, 'Safety': 4 } },
@@ -39,6 +40,7 @@ const levelConfig = {
 };
 
 export default function TrainingMatrixPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [search, setSearch] = React.useState('');
 
@@ -50,7 +52,7 @@ export default function TrainingMatrixPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Skills Architecture</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Skills Architecture</h1>
             <p className="text-muted-foreground font-medium text-sm">Visualize and manage organizational competency nodes</p>
           </div>
         </div>

@@ -25,8 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { useProductionStore } from '@/stores/production';
 import { cn, formatDate, formatCurrency } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function WorkOrderDetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { workOrders, fetchWorkOrders } = useProductionStore();
@@ -72,7 +74,7 @@ export default function WorkOrderDetailsPage() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{workOrder.work_order_number}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{workOrder.work_order_number}</h1>
               <Badge className={cn('rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', statusConfig[workOrder.status as keyof typeof statusConfig]?.color)}>
                 {statusConfig[workOrder.status as keyof typeof statusConfig]?.label}
               </Badge>
@@ -116,15 +118,15 @@ export default function WorkOrderDetailsPage() {
 
               <div className="grid gap-6 sm:grid-cols-3">
                 <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 text-center">
-                  <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{(workOrder as any).quantity}</p>
+                  <p className="text-3xl font-heading font-bold tracking-tight ">{(workOrder as any).quantity}</p>
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Target Units</p>
                 </div>
                 <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 text-center">
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{(workOrder as any).quantity_completed}</div>
+                  <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{(workOrder as any).quantity_completed}</div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Passed Gate</p>
                 </div>
                 <div className="p-5 rounded-2xl bg-rose-500/5 border border-rose-500/10 text-center">
-                  <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70">0</div>
+                  <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">0</div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Rejected</p>
                 </div>
               </div>

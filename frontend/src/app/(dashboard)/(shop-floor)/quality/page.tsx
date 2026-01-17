@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -163,7 +164,7 @@ function QualityStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Active Sync Gates</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{totalInspections}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{totalInspections}</p>
             </div>
             <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
               <ClipboardCheck className="h-5 w-5" />
@@ -176,7 +177,7 @@ function QualityStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Global Anomalies</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70 mt-1">{totalNcrs}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500 mt-1">{totalNcrs}</p>
             </div>
             <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
               <AlertTriangle className="h-5 w-5" />
@@ -189,7 +190,7 @@ function QualityStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Resolution Protocols</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{totalCapas}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{totalCapas}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <Shield className="h-5 w-5" />
@@ -202,7 +203,7 @@ function QualityStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">First Pass Velocity</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{currentFPY}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">{currentFPY}%</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <TrendingUp className="h-5 w-5" />
@@ -3448,6 +3449,7 @@ function CAPAsTab() {
 }
 
 function QualityPageContent() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = React.useState<TabType>(
@@ -3463,10 +3465,10 @@ function QualityPageContent() {
     <div className="space-y-8 page-fade-in" data-testid="quality-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Quality Assurance
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.quality.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Track inspections, NCRs, and corrective actions</p>
+          <p className="text-muted-foreground font-medium">{t('pages.quality.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/quality/analytics')}>

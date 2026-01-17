@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn, formatDate } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 const historyEvents = [
   { id: '1', type: 'Quality', station: 'CNC-04', issue: 'Tension out of spec', resolvedBy: 'Sarah Johnson', duration: '45m', date: '2024-01-12 14:30' },
@@ -26,6 +27,7 @@ const historyEvents = [
 ];
 
 export default function AndonHistoryPage() {
+  const { t } = useI18n();
   const router = useRouter();
 
   return (
@@ -36,7 +38,7 @@ export default function AndonHistoryPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Anomalous History</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Anomalous History</h1>
             <p className="text-muted-foreground font-medium text-sm">Historical log of organizational signal events and resolution protocols</p>
           </div>
         </div>

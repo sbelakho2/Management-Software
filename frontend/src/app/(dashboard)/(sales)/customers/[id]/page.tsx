@@ -48,6 +48,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatDate, formatDateTime, formatRelativeTime, getInitials } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { useToast } from '@/hooks/use-toast';
 
 interface Contact {
@@ -196,6 +197,7 @@ function CustomerDetailSkeleton() {
 import { useCustomersStore } from '@/stores/customers';
 
 export default function CustomerDetailPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
@@ -279,7 +281,7 @@ export default function CustomerDetailPage() {
           </Avatar>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.name}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{customer.name}</h1>
               <Badge variant={config.variant}>{config.label}</Badge>
             </div>
             <p className="text-muted-foreground">{customer.code} • {customer.industry}</p>
@@ -330,32 +332,32 @@ export default function CustomerDetailPage() {
       <div className="grid gap-4 sm:grid-cols-5">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.stats.totalRFQs}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{customer.stats.totalRFQs}</p>
             <p className="text-sm text-muted-foreground">Total RFQs</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{customer.stats.openRFQs}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{customer.stats.openRFQs}</p>
             <p className="text-sm text-muted-foreground">Open RFQs</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(customer.stats.totalRevenue)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(customer.stats.totalRevenue)}</p>
             <p className="text-sm text-muted-foreground">Total Revenue</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(customer.stats.avgOrderValue)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(customer.stats.avgOrderValue)}</p>
             <p className="text-sm text-muted-foreground">Avg Order</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className={cn(
-              'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70',
+              'text-3xl font-heading font-bold tracking-tight ',
               customer.stats.winRate >= 70 ? 'text-success' : 
               customer.stats.winRate >= 50 ? 'text-warning' : 'text-danger'
             )}>

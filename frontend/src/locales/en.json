@@ -1,0 +1,1235 @@
+{
+  "meta": {
+    "locale": "en",
+    "name": "English",
+    "nativeName": "English",
+    "flag": "🇺🇸",
+    "direction": "ltr"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "update": "Update",
+    "search": "Search",
+    "filter": "Filter",
+    "clear": "Clear",
+    "close": "Close",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "reset": "Reset",
+    "noData": "No data available",
+    "noResults": "No results found",
+    "unread": "unread",
+    "add": "Add",
+    "remove": "Remove",
+    "view": "View",
+    "details": "Details",
+    "actions": "Actions",
+    "status": "Status",
+    "date": "Date",
+    "time": "Time",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "category": "Category",
+    "priority": "Priority",
+    "select": "Select",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "showMore": "Show More",
+    "showLess": "Show Less",
+    "seeAll": "See All",
+    "refresh": "Refresh",
+    "export": "Export",
+    "import": "Import",
+    "download": "Download",
+    "upload": "Upload",
+    "print": "Print",
+    "copy": "Copy",
+    "paste": "Paste",
+    "duplicate": "Duplicate",
+    "archive": "Archive",
+    "restore": "Restore",
+    "approve": "Approve",
+    "reject": "Reject",
+    "pending": "Pending",
+    "active": "Active",
+    "inactive": "Inactive",
+    "draft": "Draft",
+    "published": "Published",
+    "completed": "Completed",
+    "inProgress": "In Progress",
+    "notStarted": "Not Started",
+    "onHold": "On Hold",
+    "cancelled": "Cancelled",
+    "total": "Total",
+    "amount": "Amount",
+    "quantity": "Quantity",
+    "price": "Price",
+    "discount": "Discount",
+    "tax": "Tax",
+    "subtotal": "Subtotal",
+    "required": "Required",
+    "optional": "Optional",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "all": "All",
+    "none": "None",
+    "other": "Other",
+    "new": "New",
+    "old": "Old",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "critical": "Critical",
+    "urgent": "Urgent"
+  },
+  "auth": {
+    "login": "Log In",
+    "logout": "Logout",
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "forgotPassword": "Forgot Password?",
+    "resetPassword": "Reset Password",
+    "changePassword": "Change Password",
+    "currentPassword": "Current Password",
+    "newPassword": "New Password",
+    "rememberMe": "Remember Me",
+    "stayLoggedIn": "Stay logged in",
+    "invalidCredentials": "Invalid email or password",
+    "accountLocked": "Account locked. Please contact support.",
+    "sessionExpired": "Your session has expired. Please log in again.",
+    "welcomeBack": "Welcome back",
+    "loginSubtitle": "Enter your credentials to access the command center",
+    "authenticating": "Authenticating...",
+    "secureAccess": "Secure Access",
+    "needAccess": "Need access?",
+    "contactAdmin": "Contact Administrator",
+    "verificationSent": "Verification Sent",
+    "instructionsDispatched": "Instructions have been dispatched to",
+    "backToSignIn": "Back to sign in",
+    "resetAccess": "Reset Access",
+    "enterEmailForRecovery": "Enter your email to receive recovery instructions",
+    "resetEmailFailed": "Failed to send reset email",
+    "dispatching": "Dispatching...",
+    "sendInstructions": "Send Instructions",
+    "returnToSignIn": "Return to sign in",
+    "requestAccessSubtitle": "Request access to the Sensei OS enterprise platform",
+    "passwordRequirements": "Minimum 8 characters with enterprise complexity",
+    "processing": "Processing...",
+    "requestAccess": "Request Access",
+    "createAccount": "Create Account",
+    "alreadyHaveAccount": "Already have an account?",
+    "dontHaveAccount": "Don't have an account?",
+    "termsAgreement": "By signing up, you agree to our Terms of Service and Privacy Policy",
+    "twoFactorAuth": "Two-Factor Authentication",
+    "enterCode": "Enter verification code",
+    "verifyIdentity": "Verify your identity"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "dashboards": "Dashboards",
+    "today": "Today",
+    "tasks": "Tasks",
+    "executive": "Executive",
+    "analytics": "Analytics",
+    "hr": "HR",
+    "it": "IT",
+    "warehouse": "Warehouse",
+    "auditor": "Auditor",
+    "salesCRM": "Sales & CRM",
+    "salesOverview": "Sales Overview",
+    "pipeline": "Pipeline",
+    "quotes": "Quotes",
+    "customers": "Customers",
+    "operations": "Operations",
+    "opsOverview": "Ops Overview",
+    "production": "Production",
+    "projects": "Projects",
+    "products": "Products",
+    "obeya": "Obeya",
+    "a3Reports": "A3 Reports",
+    "ctqTracking": "CTQ Tracking",
+    "exceptions": "Exceptions",
+    "qualitySupport": "Quality & Support",
+    "quality": "Quality",
+    "andon": "Andon",
+    "maintenance": "Maintenance",
+    "supplyChain": "Supply Chain",
+    "purchase": "Purchase",
+    "training": "Training",
+    "trainingMatrix": "Training Matrix",
+    "accounting": "Accounting",
+    "taxCompliance": "Tax Compliance",
+    "finance": "Finance",
+    "settings": "Settings",
+    "help": "Help",
+    "profile": "Profile",
+    "notifications": "Notifications",
+    "search": "Search",
+    "menu": "Menu",
+    "home": "Home"
+  },
+  "quickActions": {
+    "createNewRFQ": "Create New RFQ",
+    "createNewQuote": "Create New Quote",
+    "createNewCustomer": "Create New Customer",
+    "createNewTask": "Create New Task",
+    "createWorkOrder": "Create Work Order",
+    "newRequisition": "New Requisition"
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "profile": "Profile",
+    "account": "Account",
+    "security": "Security",
+    "notifications": "Notifications",
+    "appearance": "Appearance",
+    "language": "Language",
+    "preferences": "Preferences",
+    "organization": "Organization",
+    "system": "System",
+    "integrations": "Integrations",
+    "billing": "Billing",
+    "team": "Team",
+    "permissions": "Permissions",
+    "audit": "Audit Log",
+    "backup": "Backup & Restore",
+    "api": "API Keys",
+    "webhooks": "Webhooks",
+    "localization": {
+      "title": "Localization Protocol",
+      "description": "Calibrate organizational language and regional data structures",
+      "intelligenceLanguage": "Intelligence Language",
+      "temporalFormat": "Temporal Format",
+      "dateFormat": "Date Format",
+      "timeFormat": "Time Format",
+      "timezone": "Timezone",
+      "currency": "Currency",
+      "measurementUnits": "Measurement Units"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme": "Theme",
+      "lightMode": "Light Mode",
+      "darkMode": "Dark Mode",
+      "systemDefault": "System Default",
+      "accentColor": "Accent Color",
+      "fontSize": "Font Size",
+      "density": "Display Density",
+      "compact": "Compact",
+      "comfortable": "Comfortable",
+      "spacious": "Spacious"
+    }
+  },
+  "errors": {
+    "networkError": "Network error. Please check your connection.",
+    "sessionExpired": "Your session has expired. Please log in again.",
+    "permissionDenied": "You don't have permission to perform this action.",
+    "notFound": "The requested resource was not found.",
+    "serverError": "An unexpected error occurred. Please try again.",
+    "validationError": "Please check your input and try again.",
+    "rateLimitExceeded": "Too many requests. Please wait a moment.",
+    "serviceUnavailable": "Service temporarily unavailable. Please try again later.",
+    "badRequest": "Invalid request. Please check your input.",
+    "unauthorized": "You must be logged in to perform this action.",
+    "forbidden": "Access denied.",
+    "conflict": "This resource has been modified by another user.",
+    "timeout": "Request timed out. Please try again.",
+    "unknown": "An unknown error occurred."
+  },
+  "confirmations": {
+    "deleteTitle": "Delete {item}?",
+    "deleteDescription": "This action cannot be undone. {item} will be permanently deleted.",
+    "discardTitle": "Discard changes?",
+    "discardDescription": "You have unsaved changes. Are you sure you want to discard them?",
+    "logoutTitle": "Logout?",
+    "logoutDescription": "You will be logged out of your account.",
+    "archiveTitle": "Archive {item}?",
+    "archiveDescription": "{item} will be moved to the archive.",
+    "restoreTitle": "Restore {item}?",
+    "restoreDescription": "{item} will be restored from the archive."
+  },
+  "time": {
+    "now": "just now",
+    "seconds": "{count} seconds ago",
+    "minutes": "{count} minutes ago",
+    "hours": "{count} hours ago",
+    "days": "{count} days ago",
+    "weeks": "{count} weeks ago",
+    "months": "{count} months ago",
+    "years": "{count} years ago",
+    "second": "second",
+    "minute": "minute",
+    "hour": "hour",
+    "day": "day",
+    "week": "week",
+    "month": "month",
+    "year": "year",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "tomorrow": "Tomorrow",
+    "thisWeek": "This Week",
+    "lastWeek": "Last Week",
+    "nextWeek": "Next Week",
+    "thisMonth": "This Month",
+    "lastMonth": "Last Month",
+    "nextMonth": "Next Month"
+  },
+  "validation": {
+    "required": "This field is required",
+    "email": "Please enter a valid email address",
+    "minLength": "Must be at least {min} characters",
+    "maxLength": "Must be no more than {max} characters",
+    "pattern": "Invalid format",
+    "number": "Must be a valid number",
+    "positiveNumber": "Must be a positive number",
+    "integer": "Must be a whole number",
+    "url": "Please enter a valid URL",
+    "phone": "Please enter a valid phone number",
+    "date": "Please enter a valid date",
+    "dateRange": "End date must be after start date",
+    "passwordMatch": "Passwords do not match",
+    "passwordStrength": "Password is too weak",
+    "unique": "This value is already in use",
+    "fillAllFields": "Please fill in all fields",
+    "passwordMinLength": "Password must be at least 8 characters long"
+  },
+  "tables": {
+    "showing": "Showing",
+    "of": "of",
+    "entries": "entries",
+    "page": "Page",
+    "rowsPerPage": "Rows per page",
+    "noData": "No data to display",
+    "loading": "Loading data...",
+    "sortBy": "Sort by",
+    "ascending": "Ascending",
+    "descending": "Descending",
+    "filterBy": "Filter by",
+    "clearFilters": "Clear filters",
+    "columns": "Columns",
+    "exportCSV": "Export CSV",
+    "exportPDF": "Export PDF"
+  },
+  "forms": {
+    "submit": "Submit",
+    "saveChanges": "Save Changes",
+    "saveDraft": "Save Draft",
+    "cancel": "Cancel",
+    "reset": "Reset Form",
+    "requiredFields": "Required fields",
+    "optionalFields": "Optional fields",
+    "attachFile": "Attach File",
+    "removeFile": "Remove File",
+    "dragDropFile": "Drag and drop files here or click to browse",
+    "selectDate": "Select date",
+    "selectTime": "Select time",
+    "selectOption": "Select an option",
+    "typeToSearch": "Type to search...",
+    "addMore": "Add More",
+    "removeItem": "Remove Item",
+    "fullName": "Full Name",
+    "fullNamePlaceholder": "John Doe"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "clearAll": "Clear all",
+    "noNotifications": "No notifications",
+    "newNotification": "New notification",
+    "loadMore": "Load more"
+  },
+  "userMenu": {
+    "profile": "My Profile",
+    "settings": "Settings",
+    "help": "Help & Support",
+    "feedback": "Send Feedback",
+    "logout": "Logout",
+    "switchAccount": "Switch Account",
+    "manageAccounts": "Manage Accounts"
+  },
+  "accessibility": {
+    "skipToContent": "Skip to content",
+    "skipToNavigation": "Skip to navigation",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "expandSection": "Expand section",
+    "collapseSection": "Collapse section",
+    "toggleTheme": "Toggle theme",
+    "newWindow": "Opens in new window",
+    "externalLink": "External link",
+    "loading": "Loading content",
+    "loadingComplete": "Loading complete",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
+  },
+  "modules": {
+    "sales": {
+      "title": "Sales",
+      "rfqs": "RFQs",
+      "opportunities": "Opportunities",
+      "leads": "Leads",
+      "pipeline": "Pipeline",
+      "revenue": "Revenue",
+      "forecast": "Forecast",
+      "quota": "Quota",
+      "won": "Won",
+      "lost": "Lost",
+      "newDeal": "New Deal"
+    },
+    "production": {
+      "title": "Production",
+      "workOrders": "Work Orders",
+      "scheduling": "Scheduling",
+      "capacity": "Capacity",
+      "efficiency": "Efficiency",
+      "downtime": "Downtime",
+      "output": "Output",
+      "yield": "Yield",
+      "scrap": "Scrap"
+    },
+    "quality": {
+      "title": "Quality",
+      "inspections": "Inspections",
+      "ncr": "NCR",
+      "capa": "CAPA",
+      "compliance": "Compliance",
+      "certifications": "Certifications",
+      "audit": "Audit",
+      "defects": "Defects",
+      "passRate": "Pass Rate"
+    },
+    "inventory": {
+      "title": "Inventory",
+      "stock": "Stock",
+      "warehouse": "Warehouse",
+      "receiving": "Receiving",
+      "shipping": "Shipping",
+      "transfer": "Transfer",
+      "adjustment": "Adjustment",
+      "count": "Cycle Count",
+      "reorder": "Reorder"
+    },
+    "maintenance": {
+      "title": "Maintenance",
+      "assets": "Assets",
+      "preventive": "Preventive",
+      "corrective": "Corrective",
+      "workOrders": "Work Orders",
+      "parts": "Spare Parts",
+      "vendors": "Vendors",
+      "schedule": "Schedule",
+      "mttr": "MTTR",
+      "mtbf": "MTBF"
+    },
+    "hr": {
+      "title": "Human Resources",
+      "employees": "Employees",
+      "attendance": "Attendance",
+      "leave": "Leave",
+      "payroll": "Payroll",
+      "recruitment": "Recruitment",
+      "performance": "Performance",
+      "training": "Training",
+      "benefits": "Benefits"
+    },
+    "finance": {
+      "title": "Finance",
+      "accounting": "Accounting",
+      "invoices": "Invoices",
+      "payments": "Payments",
+      "expenses": "Expenses",
+      "budgets": "Budgets",
+      "reports": "Reports",
+      "taxes": "Taxes",
+      "ledger": "General Ledger"
+    },
+    "purchase": {
+      "title": "Purchase",
+      "requisitions": "Requisitions",
+      "orders": "Purchase Orders",
+      "suppliers": "Suppliers",
+      "receiving": "Receiving",
+      "returns": "Returns",
+      "mrp": "MRP",
+      "sourcing": "Sourcing"
+    }
+  },
+  "pages": {
+    "offline": {
+      "title": "Connection Lost",
+      "description": "The Sensei OS intelligence link has been interrupted. Some core features are currently unavailable.",
+      "reconnect": "Re-establish Link",
+      "returnHome": "Return to Base",
+      "capabilitiesTitle": "Offline Capabilities",
+      "cachedData": "Cached intelligence data",
+      "syncedPages": "Previously synchronized pages",
+      "draftSync": "Draft synchronization on reconnect",
+      "branding": "Sensei OS • Precision Continuity"
+    },
+    "analytics": {
+      "title": "North Star Intelligence",
+      "subtitle": "Unified organizational intelligence and strategic cross-gate analytics",
+      "stats": {
+        "oee": "Organizational OEE",
+        "risk": "Strategic Risk",
+        "insights": "AI Insights",
+        "healthIndex": "Health Index"
+      },
+      "gateAnalytics": "Gate Analytics",
+      "trendAnalysis": "Trend Analysis",
+      "crossGateFlow": "Cross-Gate Flow",
+      "exportIntel": "Export Intel",
+      "periods": {
+        "24h": "Last 24 Hours",
+        "7d": "Last 7 Days",
+        "30d": "Last 30 Days",
+        "90d": "Last 90 Days"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "mlInsights": "ML Insights",
+        "trends": "Trends",
+        "systemHealth": "System Health"
+      },
+      "mlInsights": {
+        "title": "ML Intelligence Insights",
+        "subtitle": "AI-powered predictions and anomaly detection",
+        "noInsights": "No ML insights available",
+        "confidence": "Confidence",
+        "impact": "Impact",
+        "model": "Model",
+        "actionItems": "Action Items"
+      },
+      "trends": {
+        "title": "Performance Trends",
+        "subtitle": "Historical metrics and predictions",
+        "noTrends": "No trend data available",
+        "current": "Current",
+        "previous": "Previous",
+        "change": "Change",
+        "prediction7d": "7-Day Prediction",
+        "prediction30d": "30-Day Prediction"
+      },
+      "systemHealth": {
+        "title": "ML System Health",
+        "subtitle": "Model performance and infrastructure status",
+        "overallHealth": "Overall Health Score",
+        "activeModels": "Active ML Models",
+        "modelName": "Model Name",
+        "status": "Status",
+        "accuracy": "Accuracy",
+        "lastTrained": "Last Trained"
+      },
+      "riskLevels": {
+        "low": "LOW",
+        "medium": "MEDIUM",
+        "high": "HIGH"
+      },
+      "stableGradient": "Stable Gradient",
+      "highImpact": "High Impact",
+      "alpha": "Alpha"
+    },
+    "auditor": {
+      "title": "Audit Intelligence",
+      "subtitle": "Audit tracking, findings management, and compliance monitoring",
+      "stats": {
+        "complianceScore": "Overall Compliance Score",
+        "openFindings": "Open Findings",
+        "pendingAudits": "Pending Audits",
+        "resolutionRate": "Resolution Rate"
+      },
+      "actions": {
+        "newAudit": "New Audit"
+      },
+      "filters": {
+        "allAreas": "All Areas",
+        "allStatuses": "All Statuses"
+      },
+      "tabs": {
+        "dashboard": "Dashboard",
+        "audits": "Audits",
+        "findings": "Findings",
+        "controls": "Controls"
+      }
+    },
+    "executive": {
+      "title": "Executive Control Plane",
+      "subtitle": "Strategic intelligence, predictive analysis, and command center oversight",
+      "stats": {
+        "revenuePulse": "Revenue Pulse",
+        "grossMargin": "Gross Margin",
+        "customerSat": "Customer Satisfaction",
+        "opsHealth": "Operations Health"
+      },
+      "sections": {
+        "strategicKpis": "Strategic KPIs",
+        "businessIntel": "Business Intelligence",
+        "aiStrategist": "AI Strategist"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "finance": "Finance",
+        "operations": "Operations",
+        "strategist": "AI Strategist"
+      }
+    },
+    "finance": {
+      "title": "Finance Control Plane",
+      "subtitle": "Revenue forecasting, operational expenditures, and margin intelligence",
+      "stats": {
+        "revenueYtd": "Revenue YTD",
+        "ebitdaMargin": "EBITDA Margin",
+        "cashPosition": "Cash Position",
+        "outstandingAr": "Outstanding AR"
+      },
+      "sections": {
+        "overview": "Financial Overview",
+        "accountsReceivable": "Accounts Receivable",
+        "budgetAnalysis": "Budget Analysis"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "receivables": "Receivables",
+        "payables": "Payables",
+        "budgets": "Budgets"
+      },
+      "costing": {
+        "title": "Cost Intelligence",
+        "subtitle": "Product costing analysis and margin optimization",
+        "standardCost": "Standard Cost",
+        "actualCost": "Actual Cost",
+        "varianceAnalysis": "Variance Analysis"
+      },
+      "currency": {
+        "title": "Currency Intelligence",
+        "subtitle": "Exchange rate monitoring and multi-currency management",
+        "baseCurrency": "Base Currency",
+        "exchangeRates": "Exchange Rates",
+        "conversion": "Currency Conversion"
+      },
+      "ledger": {
+        "title": "General Ledger Intelligence",
+        "subtitle": "Chart of accounts and journal entry management",
+        "totalAssets": "Total Assets",
+        "totalLiabilities": "Total Liabilities",
+        "netEquity": "Net Equity",
+        "journalEntries": "Journal Entries"
+      },
+      "tax": {
+        "title": "Tax Intelligence",
+        "subtitle": "Tax compliance, reporting, and rate management",
+        "taxLiability": "Tax Liability",
+        "taxRates": "Tax Rates",
+        "taxReports": "Tax Reports"
+      }
+    },
+    "hr": {
+      "title": "People & Talent",
+      "subtitle": "Manage organizational headcount, certifications, and human capital velocity",
+      "stats": {
+        "activeHeadcount": "Active Headcount",
+        "openPositions": "Open Positions",
+        "trainingCompliance": "Training Compliance",
+        "avgTenure": "Avg Tenure"
+      },
+      "sections": {
+        "directory": "Employee Directory",
+        "orgChart": "Org Chart",
+        "performance": "Performance"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "employees": "Employees",
+        "orgChart": "Org Chart",
+        "performance": "Performance"
+      }
+    },
+    "it": {
+      "title": "IT Command Center",
+      "subtitle": "System health, security, and infrastructure velocity monitoring",
+      "stats": {
+        "systemUptime": "System Uptime",
+        "activeIncidents": "Active Incidents",
+        "securityScore": "Security Score",
+        "pendingChanges": "Pending Changes"
+      },
+      "sections": {
+        "infrastructure": "Infrastructure",
+        "security": "Security",
+        "tickets": "Tickets"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "incidents": "Incidents",
+        "changes": "Changes",
+        "assets": "Assets"
+      }
+    },
+    "today": {
+      "greetings": {
+        "morning": "Good morning",
+        "afternoon": "Good afternoon",
+        "evening": "Good evening"
+      },
+      "subtitle": "Intelligence Command Center",
+      "sections": {
+        "priorityTasks": "Priority Tasks",
+        "quickActions": "Quick Actions",
+        "recentActivity": "Recent Activity",
+        "upcoming": "Upcoming",
+        "myWork": "My Work"
+      },
+      "lsw": {
+        "title": "Leader Standard Work",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly",
+        "overdue": "Overdue"
+      }
+    },
+    "tasks": {
+      "title": "Mission Control",
+      "subtitle": "Manage and track your operational assignments",
+      "stats": {
+        "pending": "Pending",
+        "inProgress": "In Progress",
+        "completedToday": "Completed Today",
+        "overdue": "Overdue"
+      },
+      "actions": {
+        "newTask": "New Task"
+      },
+      "tabs": {
+        "all": "All Tasks",
+        "my": "My Tasks",
+        "team": "Team Tasks"
+      },
+      "filters": {
+        "allPriorities": "All Priorities",
+        "allStatuses": "All Statuses"
+      }
+    },
+    "warehouse": {
+      "title": "Logistics & Inventory",
+      "subtitle": "Monitor global stock levels, track material flow, and optimize warehouse operations",
+      "stats": {
+        "totalSkus": "Total SKUs",
+        "lowStock": "Low Stock",
+        "pendingReceipts": "Pending Receipts",
+        "pendingShipments": "Pending Shipments"
+      },
+      "sections": {
+        "inventory": "Inventory Overview",
+        "locations": "Locations",
+        "movements": "Movements"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "inventory": "Inventory",
+        "receiving": "Receiving",
+        "shipping": "Shipping"
+      }
+    },
+    "pipeline": {
+      "title": "Revenue Pipeline",
+      "subtitle": "End-to-end RFQ lifecycle management and conversion intelligence",
+      "stats": {
+        "openRfqs": "Open RFQs",
+        "pipelineValue": "Pipeline Value",
+        "conversionRate": "Conversion Rate",
+        "avgResponseTime": "Avg Response Time"
+      },
+      "actions": {
+        "newRfq": "New RFQ"
+      },
+      "views": {
+        "kanban": "Kanban",
+        "table": "Table",
+        "timeline": "Timeline"
+      },
+      "stages": {
+        "received": "Received",
+        "quoting": "Quoting",
+        "quoted": "Quoted",
+        "negotiating": "Negotiating",
+        "won": "Won",
+        "lost": "Lost"
+      }
+    },
+    "customers": {
+      "title": "Customer Intelligence",
+      "subtitle": "Relationship management and revenue intelligence",
+      "stats": {
+        "activeNodes": "Active Intelligence Nodes",
+        "prospects": "Prospective Partners",
+        "revenue": "Aggregated Revenue",
+        "conversionRate": "Mean Conversion Pulse"
+      },
+      "labels": {
+        "rfqs": "RFQs",
+        "revenue": "Revenue",
+        "winRate": "Win Rate"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive",
+        "prospect": "Prospect"
+      },
+      "actions": {
+        "newCustomer": "New Customer"
+      }
+    },
+    "quotes": {
+      "title": "Quote Intelligence",
+      "subtitle": "Proposal management and pricing optimization",
+      "stats": {
+        "pendingApproval": "Pending Approval",
+        "sentToCustomers": "Sent to Customers",
+        "pipelineValue": "Pipeline Value",
+        "avgMargin": "Avg. Margin"
+      },
+      "status": {
+        "draft": "Draft",
+        "pendingApproval": "Pending Approval",
+        "approved": "Approved",
+        "sent": "Sent",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "expired": "Expired"
+      },
+      "labels": {
+        "expiresSoon": "expires soon"
+      },
+      "actions": {
+        "newQuote": "New Quote"
+      }
+    },
+    "orders": {
+      "title": "Order Intelligence",
+      "subtitle": "Order fulfillment and delivery tracking",
+      "stats": {
+        "activeOrders": "Active Orders",
+        "pendingShipment": "Pending Shipment",
+        "shipped": "Shipped",
+        "delivered": "Delivered"
+      },
+      "status": {
+        "pending": "Pending",
+        "confirmed": "Confirmed",
+        "processing": "Processing",
+        "shipped": "Shipped",
+        "delivered": "Delivered",
+        "cancelled": "Cancelled"
+      }
+    },
+    "sales": {
+      "title": "Sales Command",
+      "subtitle": "Revenue tracking and sales intelligence"
+    },
+    "production": {
+      "title": "Execution Pulse",
+      "subtitle": "Real-time manufacturing orchestration and production velocity tracking",
+      "stats": {
+        "activeOrders": "Active Orders",
+        "suspendedNodes": "Suspended Nodes",
+        "overdueHorizon": "Overdue Horizon",
+        "operationalVelocity": "Operational Velocity"
+      },
+      "views": {
+        "schedule": "Schedule",
+        "kanban": "Kanban",
+        "gantt": "Gantt"
+      },
+      "status": {
+        "pending": "Pending",
+        "inProgress": "In Progress",
+        "completed": "Completed",
+        "onHold": "On Hold"
+      },
+      "actions": {
+        "newWorkOrder": "New Work Order"
+      }
+    },
+    "quality": {
+      "title": "Quality Command",
+      "subtitle": "Defect tracking, inspection management, and continuous improvement",
+      "stats": {
+        "activeSyncGates": "Active Sync Gates",
+        "globalAnomalies": "Global Anomalies",
+        "resolutionProtocols": "Resolution Protocols",
+        "firstPassVelocity": "First Pass Velocity"
+      },
+      "tabs": {
+        "inspections": "Inspections",
+        "ncrs": "NCRs",
+        "capas": "CAPAs",
+        "analytics": "Analytics"
+      },
+      "inspections": {
+        "title": "Inspection Intelligence",
+        "subtitle": "Quality inspection tracking and reporting",
+        "newInspection": "New Inspection"
+      },
+      "ncrs": {
+        "title": "Non-Conformance Reports",
+        "subtitle": "Defect tracking and root cause analysis",
+        "newNcr": "New NCR"
+      },
+      "capas": {
+        "title": "Corrective Actions",
+        "subtitle": "CAPA management and effectiveness tracking",
+        "newCapa": "New CAPA"
+      }
+    },
+    "maintenance": {
+      "title": "Maintenance Command",
+      "subtitle": "Asset health monitoring, work orders, and predictive maintenance intelligence",
+      "stats": {
+        "assetNodes": "Asset Nodes",
+        "anomalousDown": "Anomalous Down",
+        "thresholdOverdue": "Threshold Overdue",
+        "efficiencyPulse": "Efficiency Pulse"
+      },
+      "tabs": {
+        "assets": "Assets",
+        "workOrders": "Work Orders",
+        "pmSchedule": "PM Schedule"
+      },
+      "actions": {
+        "newWorkOrder": "New Work Order"
+      }
+    },
+    "training": {
+      "title": "Training Intelligence",
+      "subtitle": "Skills matrix, certification tracking, and competency development",
+      "stats": {
+        "activeSkillNodes": "Active Skill Nodes",
+        "intelligenceProtocols": "Intelligence Protocols",
+        "synchronizationPulse": "Synchronization Pulse",
+        "thresholdAlerts": "Threshold Alerts"
+      },
+      "tabs": {
+        "skillsMatrix": "Skills Matrix",
+        "certifications": "Certifications",
+        "programs": "Programs",
+        "enroll": "Enroll"
+      },
+      "matrix": {
+        "title": "Skills Matrix",
+        "subtitle": "Team competency mapping and gap analysis"
+      },
+      "certifications": {
+        "title": "Certifications",
+        "subtitle": "Certification tracking and renewal management",
+        "newCertification": "New Certification"
+      },
+      "programs": {
+        "title": "Training Programs",
+        "subtitle": "Program management and enrollment tracking",
+        "newProgram": "New Program"
+      }
+    },
+    "products": {
+      "title": "Product Portfolio",
+      "subtitle": "Manage manufacturing specifications and master data intelligence",
+      "stats": {
+        "activeProducts": "Active Products",
+        "bomsDefined": "BOMs Defined",
+        "routingsActive": "Routings Active",
+        "avgLeadTime": "Avg Lead Time"
+      },
+      "actions": {
+        "newProduct": "New Product"
+      },
+      "tabs": {
+        "products": "Products",
+        "boms": "BOMs",
+        "routings": "Routings"
+      },
+      "details": {
+        "overview": "Overview",
+        "specifications": "Specifications",
+        "bom": "Bill of Materials",
+        "routing": "Routing",
+        "inventory": "Inventory",
+        "history": "History"
+      }
+    },
+    "andon": {
+      "title": "Andon Intelligence",
+      "subtitle": "Real-time monitoring and alert management",
+      "stats": {
+        "activeSignals": "Active Signals",
+        "criticalNodes": "CRITICAL NODES",
+        "operationalPulse": "Operational Pulse",
+        "meanResponse": "Mean Response"
+      },
+      "actions": {
+        "muteAlerts": "Mute alerts",
+        "enableAlerts": "Enable alert sounds",
+        "analytics": "Analytics",
+        "settings": "Settings",
+        "toggleFullscreen": "Toggle fullscreen"
+      },
+      "tabs": {
+        "live": "Live",
+        "history": "History",
+        "analytics": "Analytics",
+        "settings": "Settings"
+      },
+      "status": {
+        "active": "Active",
+        "acknowledged": "Acknowledged",
+        "resolved": "Resolved"
+      }
+    },
+    "purchase": {
+      "title": "Procurement Intelligence",
+      "subtitle": "Purchase order management and supplier collaboration",
+      "stats": {
+        "openRequisitions": "Open Requisitions",
+        "pendingPos": "Pending POs",
+        "sentToSuppliers": "Sent to Suppliers",
+        "receiptsToday": "Receipts Today"
+      },
+      "actions": {
+        "newRequisition": "New Requisition"
+      },
+      "tabs": {
+        "requisitions": "Requisitions",
+        "purchaseOrders": "Purchase Orders",
+        "suppliers": "Suppliers"
+      }
+    },
+    "supplyChain": {
+      "title": "Supply Chain Intelligence",
+      "subtitle": "Global disruption simulation and risk stress-testing",
+      "stats": {
+        "activeSuppliers": "Active Suppliers",
+        "atRisk": "At Risk",
+        "onTimeDelivery": "On-Time Delivery",
+        "qualityScore": "Quality Score"
+      },
+      "actions": {
+        "runSimulation": "Run Simulation"
+      },
+      "tabs": {
+        "networkMap": "Network Map",
+        "riskAnalysis": "Risk Analysis"
+      }
+    },
+    "settings": {
+      "title": "Control Center",
+      "subtitle": "Configure your personal interface and enterprise parameters",
+      "sections": {
+        "personal": "Personal Intelligence",
+        "organizational": "Organizational Parameters",
+        "system": "System Architecture"
+      },
+      "links": {
+        "profile": "Profile",
+        "account": "Account",
+        "appearance": "Appearance",
+        "notifications": "Notifications",
+        "security": "Security",
+        "language": "Language & Region"
+      },
+      "profile": {
+        "title": "Profile Settings",
+        "subtitle": "Manage your personal information",
+        "sections": {
+          "basicInfo": "Basic Information",
+          "avatar": "Avatar"
+        },
+        "labels": {
+          "firstName": "First Name",
+          "lastName": "Last Name",
+          "email": "Email",
+          "bio": "Bio",
+          "phone": "Phone"
+        },
+        "actions": {
+          "save": "Save Changes"
+        }
+      },
+      "account": {
+        "title": "Account Settings",
+        "subtitle": "Manage your account preferences"
+      },
+      "appearance": {
+        "title": "Appearance Settings",
+        "subtitle": "Customize your visual experience"
+      },
+      "notifications": {
+        "title": "Notification Settings",
+        "subtitle": "Configure your notification preferences"
+      },
+      "security": {
+        "title": "Security Settings",
+        "subtitle": "Manage your security preferences"
+      },
+      "language": {
+        "title": "Language & Region",
+        "subtitle": "Configure language and regional settings"
+      },
+      "sites": {
+        "title": "Site Management",
+        "subtitle": "Manage organizational sites and locations"
+      },
+      "team": {
+        "title": "Team Management",
+        "subtitle": "Manage users and permissions"
+      },
+      "integrations": {
+        "title": "Integrations",
+        "subtitle": "Connect third-party services"
+      },
+      "api": {
+        "title": "API Configuration",
+        "subtitle": "Manage API keys and webhooks"
+      },
+      "company": {
+        "title": "Company Settings",
+        "subtitle": "Configure organizational parameters"
+      },
+      "email": {
+        "title": "Email Settings",
+        "subtitle": "Configure email notifications and templates"
+      },
+      "data": {
+        "title": "Data Management",
+        "subtitle": "Import, export, and backup data"
+      },
+      "mobile": {
+        "title": "Mobile Settings",
+        "subtitle": "Configure mobile app settings"
+      }
+    },
+    "obeya": {
+      "title": "Cognitive Obeya",
+      "subtitle": "Prescriptive organizational intelligence & visual management",
+      "tabs": {
+        "overview": "Overview",
+        "metrics": "Metrics",
+        "actions": "Actions",
+        "problems": "Problems"
+      },
+      "sections": {
+        "hoshinKanri": "Hoshin Kanri",
+        "visualControls": "Visual Controls"
+      },
+      "actions": {
+        "newObeya": "New Obeya"
+      }
+    },
+    "a3": {
+      "title": "A3 Strategic Resolutions",
+      "subtitle": "Structured problem solving and cross-functional continuous improvement",
+      "stats": {
+        "activeA3s": "Active A3s",
+        "inReview": "In Review",
+        "closedThisMonth": "Closed This Month",
+        "avgResolutionTime": "Avg Resolution Time"
+      },
+      "actions": {
+        "newA3": "New A3"
+      },
+      "sections": {
+        "background": "Background",
+        "currentCondition": "Current Condition",
+        "goal": "Goal",
+        "rootCause": "Root Cause",
+        "countermeasures": "Countermeasures",
+        "followUp": "Follow-up"
+      }
+    },
+    "ctq": {
+      "title": "CTQ Intelligence",
+      "subtitle": "Critical-to-Quality tracking and process capability",
+      "stats": {
+        "activeCtqs": "Active CTQs",
+        "inControl": "In Control",
+        "outOfSpec": "Out of Spec",
+        "capability": "Process Capability"
+      },
+      "actions": {
+        "newCtq": "New CTQ"
+      }
+    },
+    "exceptions": {
+      "title": "Exception Management",
+      "subtitle": "Track and resolve operational exceptions",
+      "stats": {
+        "openExceptions": "Open Exceptions",
+        "critical": "Critical",
+        "resolvedToday": "Resolved Today"
+      }
+    },
+    "ops": {
+      "title": "Operations Overview",
+      "subtitle": "Unified operational intelligence"
+    },
+    "projectManagement": {
+      "title": "Project Engineering",
+      "subtitle": "Strategic orchestration of complex initiatives and milestones",
+      "status": {
+        "planning": "Planning",
+        "active": "Active",
+        "onHold": "On Hold",
+        "completed": "Completed",
+        "archived": "Archived",
+        "cancelled": "Cancelled"
+      },
+      "views": {
+        "list": "List",
+        "portfolio": "Portfolio"
+      },
+      "actions": {
+        "newInitiative": "New Initiative"
+      },
+      "sections": {
+        "distribution": "Initiative Distribution",
+        "healthIndex": "Portfolio Health Index"
+      },
+      "labels": {
+        "velocityOptimal": "Strategic Velocity Optimal"
+      },
+      "search": {
+        "placeholder": "Search initiatives..."
+      },
+      "emptyState": "No initiatives match current search parameters."
+    },
+    "mrp": {
+      "title": "MRP Intelligence",
+      "subtitle": "Material requirements planning and capacity analysis",
+      "mps": {
+        "title": "Master Production Schedule",
+        "subtitle": "Production planning and scheduling"
+      }
+    },
+    "admin": {
+      "title": "Administration",
+      "subtitle": "System administration and configuration"
+    }
+  }
+}

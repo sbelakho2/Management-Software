@@ -2,12 +2,14 @@
 
 import * as React from 'react';
 import { useFinanceStore } from '@/stores';
+import { useI18n } from '@/contexts/i18n-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Plus, Calculator } from 'lucide-react';
 
 export default function LedgerPage() {
+  const { t } = useI18n();
   const { accounts, fetchAccounts, loading } = useFinanceStore();
 
   React.useEffect(() => {

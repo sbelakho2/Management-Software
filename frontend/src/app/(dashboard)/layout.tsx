@@ -57,7 +57,7 @@ export default function DashboardLayout({
         </div>
         
         <div className="space-y-2 text-center animate-in fade-in slide-in-from-bottom-2 duration-1000">
-          <h2 className="text-xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/60">
+          <h2 className="text-xl font-heading font-bold tracking-tight ">
             Synchronizing Intelligence
           </h2>
           <div className="flex items-center justify-center gap-1.5">

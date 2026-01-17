@@ -7,8 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function ProgramDetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
 
@@ -40,7 +42,7 @@ export default function ProgramDetailsPage() {
         </Button>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{program.title}</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{program.title}</h1>
             <Badge variant="outline">{program.level}</Badge>
           </div>
           <p className="text-muted-foreground">{program.category}</p>

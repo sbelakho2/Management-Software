@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -23,6 +24,7 @@ import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card'
 import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
 export default function FinancePage() {
+  const { t } = useI18n();
   const { isAuthenticated } = useAuthStore();
 
   return (
@@ -30,7 +32,7 @@ export default function FinancePage() {
       <div className="space-y-8 page-fade-in" data-testid="finance-page">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="space-y-1">
-            <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-4xl font-heading font-bold tracking-tight ">
               Finance Control Plane
             </h1>
             <p className="text-muted-foreground font-medium">Revenue forecasting, operational expenditures, and margin intelligence</p>

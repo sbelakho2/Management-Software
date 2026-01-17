@@ -46,6 +46,7 @@ import { usePipelineStore } from '@/stores/pipeline';
 import { useAuthStore } from '@/stores';
 import { hasPageAccess } from '@/lib/page-access';
 import { AmbientStatus } from '@/components/ui/stat-card';
+import { useI18n } from '@/contexts/i18n-context';
 
 // Use RFQ type directly from the types
 type RFQItem = RFQ;
@@ -237,6 +238,7 @@ function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatu
 }
 
 function PipelinePageContent() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { rfqs, isLoading, fetchRFQs } = usePipelineStore();
@@ -300,7 +302,7 @@ function PipelinePageContent() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
             Pipeline Velocity
           </h1>
           <p className="text-muted-foreground font-medium">

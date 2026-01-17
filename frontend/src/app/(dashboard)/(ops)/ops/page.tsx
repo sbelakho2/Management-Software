@@ -28,6 +28,7 @@ import { useAuthStore } from '@/stores';
 import { useTodayStore } from '@/stores/today';
 import { hasPageAccess } from '@/lib/page-access';
 import { UserRole } from '@/types';
+import { useI18n } from '@/contexts/i18n-context';
 
 // Types
 interface KPICardData {
@@ -205,6 +206,7 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
 }
 
 export default function TodayPage() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const { data, loading, fetchTodayScreen } = useTodayStore();
 
@@ -274,7 +276,7 @@ export default function TodayPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
             Operations Command
           </h1>
           <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">

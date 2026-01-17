@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import { 
   FileSearch, 
   CheckCircle2, 
@@ -62,16 +63,17 @@ const recentAudits = [
 ];
 
 export default function AuditorDashboard() {
+  const { t } = useI18n();
   return (
     <div className="space-y-8 page-fade-in" data-testid="auditor-page">
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Audit Intelligence
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.auditor.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Audit tracking, findings management, and compliance monitoring
+            {t('pages.auditor.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">

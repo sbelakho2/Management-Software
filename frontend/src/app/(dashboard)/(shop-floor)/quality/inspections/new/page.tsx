@@ -15,7 +15,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 export default function NewInspectionPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -47,7 +49,7 @@ export default function NewInspectionPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">New Inspection</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Inspection</h1>
             <p className="text-muted-foreground">Start a new quality inspection</p>
           </div>
         </div>

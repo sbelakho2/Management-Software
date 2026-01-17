@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Suspense, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -54,7 +55,7 @@ function MaintenanceStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Asset Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats?.total_assets || 0}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats?.total_assets || 0}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <Box className="h-5 w-5" />
@@ -67,7 +68,7 @@ function MaintenanceStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Anomalous Down</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-danger to-danger/70 mt-1">{stats?.assets_by_status?.down || 0}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500 mt-1">{stats?.assets_by_status?.down || 0}</p>
             </div>
             <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
               <AlertTriangle className="h-5 w-5" />
@@ -80,7 +81,7 @@ function MaintenanceStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Threshold Overdue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70 mt-1">{stats?.overdue_pms || 0}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500 mt-1">{stats?.overdue_pms || 0}</p>
             </div>
             <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
               <Clock className="h-5 w-5" />
@@ -93,7 +94,7 @@ function MaintenanceStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Efficiency Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">88.5%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">88.5%</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <Activity className="h-5 w-5" />
@@ -713,6 +714,7 @@ function BudgetTab() {
 }
 
 function MaintenancePageContent() {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = React.useState<TabType>('assets');
   const { fetchStats } = useMaintenanceStore();
   const router = useRouter();
@@ -725,10 +727,10 @@ function MaintenancePageContent() {
     <div className="space-y-8 page-fade-in" data-testid="maintenance-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Maintenance & TPM
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.maintenance.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Asset reliability, preventive maintenance, and OEE tracking</p>
+          <p className="text-muted-foreground font-medium">{t('pages.maintenance.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="rounded-xl" onClick={() => router.push('/maintenance/mobile')}>

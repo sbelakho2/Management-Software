@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatDate, getInitials } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface TeamMember {
   id: string;
@@ -242,6 +243,7 @@ function MemberRow({ member }: { member: TeamMember }) {
 }
 
 export default function TeamSettingsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [search, setSearch] = React.useState('');
   const [roleFilter, setRoleFilter] = React.useState('all');
@@ -268,7 +270,7 @@ export default function TeamSettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Personnel Directory
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Manage organizational hierarchy, access layers, and identity nodes</p>
@@ -288,7 +290,7 @@ export default function TeamSettingsPage() {
               <Users className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{mockMembers.length}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight ">{mockMembers.length}</p>
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Total Intelligence Nodes</p>
             </div>
           </CardContent>
@@ -299,7 +301,7 @@ export default function TeamSettingsPage() {
               <CheckCircle className="h-6 w-6 text-success" />
             </div>
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">{activeCount}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{activeCount}</p>
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Active Operatives</p>
             </div>
           </CardContent>
@@ -310,7 +312,7 @@ export default function TeamSettingsPage() {
               <Clock className="h-6 w-6 text-warning" />
             </div>
             <div>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70">{invitedCount}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{invitedCount}</p>
               <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Pending Sync</p>
             </div>
           </CardContent>

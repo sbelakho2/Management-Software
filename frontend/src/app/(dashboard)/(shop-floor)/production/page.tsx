@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -84,7 +85,7 @@ function ProductionStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Execution Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{inProgress}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{inProgress}</p>
             </div>
             <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
               <Play className="h-5 w-5" />
@@ -97,7 +98,7 @@ function ProductionStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Suspended Nodes</p>
-              <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br mt-1', onHold > 0 ? 'from-danger to-danger/70' : 'from-foreground to-foreground/70')}>
+              <p className={cn('text-3xl font-heading font-bold tracking-tight mt-1', onHold > 0 ? 'text-red-600 dark:text-red-500' : 'text-foreground')}>
                 {onHold}
               </p>
             </div>
@@ -112,7 +113,7 @@ function ProductionStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Overdue Horizon</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{overdue}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{overdue}</p>
             </div>
             <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
               <Clock className="h-5 w-5" />
@@ -125,7 +126,7 @@ function ProductionStats() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Operational Velocity</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70 mt-1">{efficiency}%</p>
+              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">{efficiency}%</p>
             </div>
             <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
               <TrendingUp className="h-5 w-5" />
@@ -291,6 +292,7 @@ function WorkOrderCard({ workOrder }: { workOrder: any }) {
 }
 
 function ProductionPageContent() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { 
@@ -334,11 +336,11 @@ function ProductionPageContent() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Production Management
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.production.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Monitor shop floor velocity, work orders, and manufacturing execution
+            {t('pages.production.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -21,6 +21,7 @@ import { useUIStore, useAuthStore } from '@/stores';
 import { hasPageAccess } from '@/lib/page-access';
 import { NAV_SECTIONS, QUICK_ACTIONS } from '@/lib/navigation';
 import { UserRole } from '@/types';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface CommandItem {
   id: string;
@@ -37,6 +38,7 @@ export function CommandPalette() {
   const router = useRouter();
   const { commandPaletteOpen, setCommandPaletteOpen, theme, setTheme } = useUIStore();
   const { user, logout } = useAuthStore();
+  const { t, isRTL } = useI18n();
   const [search, setSearch] = React.useState('');
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -56,11 +58,11 @@ export function CommandPalette() {
         if (hasPageAccess(item.href, userRoles)) {
           allCommands.push({
             id: `nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-            label: `Go to ${item.label}`,
+            label: item.label,
             icon: item.icon,
             action: () => router.push(item.href),
             keywords: item.keywords,
-            group: 'Navigation'
+            group: t('navigation.menu')
           });
         }
       });
@@ -75,7 +77,7 @@ export function CommandPalette() {
           icon: action.icon,
           action: () => router.push(action.href),
           keywords: action.keywords,
-          group: 'Actions'
+          group: t('common.actions')
         });
       }
     });
@@ -84,18 +86,18 @@ export function CommandPalette() {
     allCommands.push(
       { 
         id: 'theme-toggle', 
-        label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', 
+        label: theme === 'dark' ? t('settings.appearance.lightMode') : t('settings.appearance.darkMode'), 
         icon: theme === 'dark' ? Sun : Moon, 
         action: () => setTheme(theme === 'dark' ? 'light' : 'dark'), 
         keywords: ['theme', 'dark', 'light', 'mode'], 
-        group: 'Preferences' 
+        group: t('settings.preferences')
       },
-      { id: 'account-profile', label: 'View Profile', icon: User, action: () => router.push('/settings/profile'), keywords: ['profile', 'account'], group: 'Account' },
-      { id: 'account-logout', label: 'Log Out', icon: LogOut, action: async () => { await logout(); router.push('/login'); }, keywords: ['logout', 'sign out'], group: 'Account' }
+      { id: 'account-profile', label: t('userMenu.profile'), icon: User, action: () => router.push('/settings/profile'), keywords: ['profile', 'account'], group: t('settings.account') },
+      { id: 'account-logout', label: t('auth.logout'), icon: LogOut, action: async () => { await logout(); router.push('/login'); }, keywords: ['logout', 'sign out'], group: t('settings.account') }
     );
 
     return allCommands;
-  }, [router, theme, setTheme, logout, userRoles]);
+  }, [router, theme, setTheme, logout, userRoles, t]);
 
   const filteredCommands = React.useMemo(() => {
     if (!search.trim()) return commands;
@@ -189,13 +191,13 @@ export function CommandPalette() {
       if (!open) setSearch('');
     }}>
       <DialogContent className="overflow-hidden p-0 shadow-lg max-w-2xl">
-        <div className="flex items-center border-b px-3">
-          <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+        <div className={cn("flex items-center border-b px-3", isRTL && "flex-row-reverse")}>
+          <Search className={cn("h-4 w-4 shrink-0 opacity-50", isRTL ? "ml-2" : "mr-2")} />
           <Input
             ref={inputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Type a command or search..."
+            placeholder={`${t('forms.typeToSearch')}`}
             className="flex h-12 w-full rounded-md bg-transparent py-3 text-sm outline-none border-0 focus-visible:ring-0 placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             role="combobox"
             aria-autocomplete="list"
@@ -204,10 +206,10 @@ export function CommandPalette() {
             aria-activedescendant={activeDescendantId}
           />
         </div>
-        <div className="max-h-[400px] overflow-y-auto p-2" role="listbox" id={listboxId} aria-label="Command results">
+        <div className="max-h-[400px] overflow-y-auto p-2" role="listbox" id={listboxId} aria-label={t('common.search')}>
           {filteredCommands.length === 0 ? (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              No results found.
+              {t('common.noResults')}
             </p>
           ) : (
             Object.entries(groupedCommands).map(([group, items]) => (

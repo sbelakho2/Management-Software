@@ -29,7 +29,7 @@ export default function AuthLayout({
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-bold text-2xl shadow-glow quirky-card">
               S
             </div>
-            <span className="font-heading font-bold text-3xl tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <span className="font-heading font-bold text-3xl tracking-tight ">
               Sensei OS
             </span>
           </Link>

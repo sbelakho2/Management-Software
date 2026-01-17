@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
 
 import { Calendar, ArrowRight, CheckCircle2, AlertCircle, Loader2, Plus, TrendingUp, Target, Zap, Layers } from 'lucide-react';
 
@@ -108,6 +109,7 @@ function formatDateLabel(rawDate?: string, rawTime?: string): string {
 }
 
 export default function TodayPage() {
+	const { t } = useI18n();
 	const { user } = useAuthStore();
 	const { data: todayData, loading, error, fetchTodayScreen } = useTodayStore();
 	const [headerDate, setHeaderDate] = React.useState('');
@@ -316,7 +318,7 @@ export default function TodayPage() {
 			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
 				<div className="space-y-1">
 					<h1
-						className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70"
+						className="text-4xl font-heading font-bold tracking-tight "
 						suppressHydrationWarning
 					>
 						{greeting}
@@ -346,7 +348,7 @@ export default function TodayPage() {
 						<CardHeader className="space-y-1">
 							<Link href={kpi.href} className="block group-hover:translate-x-1 transition-transform">
 								<CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{kpi.title}</CardTitle>
-								<div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{kpi.value}</div>
+								<div className="text-3xl font-heading font-bold tracking-tight  mt-1">{kpi.value}</div>
 								{Boolean(kpi.trendLabel) && (
 									<CardDescription className="font-medium text-success/80 mt-1 flex items-center gap-1">
 										<TrendingUp className="h-3 w-3" />

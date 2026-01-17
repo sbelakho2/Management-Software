@@ -22,8 +22,10 @@ import { Progress } from '@/components/ui/progress';
 import { useA3Store } from '@/stores/a3';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function A3DetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { id } = params;
@@ -89,7 +91,7 @@ export default function A3DetailsPage() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{a3.title}</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{a3.title}</h1>
               <Badge variant="outline" className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{a3.a3_number}</Badge>
             </div>
             <p className="text-muted-foreground font-medium text-sm mt-1">Author: {a3.author_name} • Intelligence Node: {a3.department || 'N/A'}</p>

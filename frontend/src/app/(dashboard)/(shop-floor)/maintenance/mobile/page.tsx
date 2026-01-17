@@ -8,8 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Wrench, Scan, AlertTriangle, Clock, ShieldAlert } from 'lucide-react';
 import { useMaintenanceStore } from '@/stores';
 import { BarcodeScanner, ScanFeedback, type BarcodeScanResult } from '@/components/ui/factory-floor';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function MaintenanceMobilePage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { stats, fetchStats } = useMaintenanceStore();
   const [scannerEnabled, setScannerEnabled] = React.useState(false);

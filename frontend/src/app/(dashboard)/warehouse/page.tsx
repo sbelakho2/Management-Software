@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 import { 
   Package, 
   Truck, 
@@ -49,6 +50,7 @@ const lowStockItems = [
 ];
 
 export default function WarehouseDashboard() {
+  const { t } = useI18n();
   const { user } = useAuthStore();
 
   const userRoles = React.useMemo(() => {
@@ -61,11 +63,11 @@ export default function WarehouseDashboard() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Logistics & Inventory
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.warehouse.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Monitor global stock levels, track material flow, and manage supply chain velocity
+            {t('pages.warehouse.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -62,8 +62,27 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
       return <>{fallback}</>;
     }
 
-    // Return null to "remove from view" instead of showing error or redirecting
-    return null;
+    // Show access denied message
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Card className="max-w-md">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+              <ShieldAlert className="h-7 w-7 text-destructive" />
+            </div>
+            <CardTitle>Access Restricted</CardTitle>
+            <CardDescription>
+              You don&apos;t have permission to view this page. Contact your administrator if you believe this is an error.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Button onClick={() => router.push('/today')} variant="outline">
+              Return to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return <>{children}</>;

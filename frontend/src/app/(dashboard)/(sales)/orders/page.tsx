@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -100,7 +101,7 @@ function OrderStats({ stats }: { stats: SOStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Draft Orders</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.orders.draft}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.draft}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-muted/20 text-muted-foreground">
               <FileText className="h-5 w-5" />
@@ -113,7 +114,7 @@ function OrderStats({ stats }: { stats: SOStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Approved</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.orders.approved}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.approved}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
               <CheckCircle className="h-5 w-5" />
@@ -126,7 +127,7 @@ function OrderStats({ stats }: { stats: SOStats | null }) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Released</p>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 mt-1">{stats.orders.released}</p>
+              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.released}</p>
             </div>
             <div className="p-3 rounded-2xl shadow-sm bg-warning/10 text-warning">
               <Package className="h-5 w-5" />
@@ -300,8 +301,8 @@ export default function SalesOrdersPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Sales Orders</h1>
-          <p className="text-muted-foreground font-medium">Manage customer orders and fulfillment</p>
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">{t('pages.orders.title')}</h1>
+          <p className="text-muted-foreground font-medium">{t('pages.orders.subtitle')}</p>
         </div>
         <div className="flex gap-3">
           <Button 

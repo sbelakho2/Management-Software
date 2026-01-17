@@ -3,8 +3,10 @@ import React from 'react';
 import { SettingsPageShell } from '@/components/settings-page-shell';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function CompanySettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="Company Settings" description="Manage your organization details and branding">
       <div className="space-y-4 max-w-2xl">

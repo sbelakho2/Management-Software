@@ -4,8 +4,10 @@ import { WifiOff, RefreshCw, Home } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { SkipToContent } from '@/components/ui/accessibility';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function OfflinePage() {
+  const { t } = useI18n();
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4 page-fade-in">
       <SkipToContent targetId="main-content" />
@@ -16,7 +18,7 @@ export default function OfflinePage() {
           </div>
           
           <div className="space-y-3">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Connection Lost
             </h1>
             

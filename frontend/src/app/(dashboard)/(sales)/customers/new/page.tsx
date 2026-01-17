@@ -31,6 +31,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, generateId } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface Contact {
   id: string;
@@ -161,6 +162,7 @@ function ContactCard({
 import { useCustomersStore } from '@/stores/customers';
 
 export default function CustomerFormPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
@@ -360,7 +362,7 @@ export default function CustomerFormPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               {isEditing ? 'Edit Customer' : 'New Customer'}
             </h1>
             <p className="text-muted-foreground">

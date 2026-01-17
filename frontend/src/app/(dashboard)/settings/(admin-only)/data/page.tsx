@@ -3,8 +3,10 @@ import React from 'react';
 import { SettingsPageShell } from '@/components/settings-page-shell';
 import { Button } from '@/components/ui/button';
 import { Database, Download, Trash2 } from 'lucide-react';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function DataSettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="Data Architecture" description="Manage high-level data protocols and organizational exports">
       <div className="space-y-6">

@@ -46,6 +46,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface BOMItem {
   id: string;
@@ -166,6 +167,7 @@ function ProductDetailSkeleton() {
 import { useProductStore } from '@/stores/products';
 
 export default function ProductDetailPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
@@ -269,7 +271,7 @@ export default function ProductDetailPage() {
                 </Badge>
               )}
             </div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{product.name}</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{product.name}</h1>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -321,15 +323,15 @@ export default function ProductDetailPage() {
       <div className="grid gap-4 sm:grid-cols-5">
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(product.listPrice)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(product.listPrice)}</p>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">List Price</p>
           </CardContent>
         </Card>
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardContent className="pt-6 text-center">
             <p className={cn(
-              'text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br',
-              margin >= 40 ? 'from-success to-success/70' : margin >= 25 ? 'from-warning to-warning/70' : 'from-danger to-danger/70'
+              'text-3xl font-heading font-bold tracking-tight',
+              margin >= 40 ? 'text-emerald-600 dark:text-emerald-500' : margin >= 25 ? 'text-amber-600 dark:text-amber-500' : 'text-red-600 dark:text-red-500'
             )}>
               {margin.toFixed(1)}%
             </p>
@@ -338,7 +340,7 @@ export default function ProductDetailPage() {
         </Card>
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardContent className="pt-6 text-center">
-            <p className={cn('text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70', isLowStock && 'from-warning to-warning/70')}>
+            <p className={cn('text-3xl font-heading font-bold tracking-tight', isLowStock && 'text-amber-600 dark:text-amber-500')}>
               {formatNumber(product.inventoryQty)}
             </p>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">In Stock</p>
@@ -346,13 +348,13 @@ export default function ProductDetailPage() {
         </Card>
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatNumber(product.stats.totalSold)}</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{formatNumber(product.stats.totalSold)}</p>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Total Sold</p>
           </CardContent>
         </Card>
         <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
           <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{winRate.toFixed(0)}%</p>
+            <p className="text-3xl font-heading font-bold tracking-tight ">{winRate.toFixed(0)}%</p>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Win Rate</p>
           </CardContent>
         </Card>
@@ -572,7 +574,7 @@ export default function ProductDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{product.leadTimeDays} days</p>
+              <p className="text-3xl font-heading font-bold tracking-tight ">{product.leadTimeDays} days</p>
               <p className="text-sm text-muted-foreground">Standard manufacturing time</p>
             </CardContent>
           </Card>

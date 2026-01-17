@@ -141,7 +141,7 @@ function PipelineAnalytics({ stats }: { stats: PipelineStats }) {
           <LayoutGrid className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.totalRFQs}</div>
+          <div className="text-3xl font-heading font-bold tracking-tight ">{stats.totalRFQs}</div>
           <p className="text-xs text-muted-foreground">
             {stats.activeRFQs} active
           </p>
@@ -154,7 +154,7 @@ function PipelineAnalytics({ stats }: { stats: PipelineStats }) {
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(stats.totalValue)}</div>
+          <div className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(stats.totalValue)}</div>
           <p className="text-xs text-muted-foreground">
             Est. pipeline value
           </p>
@@ -167,7 +167,7 @@ function PipelineAnalytics({ stats }: { stats: PipelineStats }) {
           <Clock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.avgResponseTime}h</div>
+          <div className="text-3xl font-heading font-bold tracking-tight ">{stats.avgResponseTime}h</div>
           <p className="text-xs text-muted-foreground">
             Time to first response
           </p>
@@ -180,7 +180,7 @@ function PipelineAnalytics({ stats }: { stats: PipelineStats }) {
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.conversionRate}%</div>
+          <div className="text-3xl font-heading font-bold tracking-tight ">{stats.conversionRate}%</div>
           <p className="text-xs text-muted-foreground">
             {stats.overdueCount} overdue
           </p>
@@ -572,7 +572,7 @@ function PipelinePageContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Pipeline</h1>
+          <h1 className="text-3xl font-heading font-bold tracking-tight ">Pipeline</h1>
           <p className="text-muted-foreground">
             Manage your RFQs and opportunities
           </p>

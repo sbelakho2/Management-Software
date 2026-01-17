@@ -6,8 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function SitesSettingsPage() {
+  const { t } = useI18n();
   const { sites, fetchSites, createSite, loading } = useSitesStore();
 
   const [form, setForm] = React.useState({

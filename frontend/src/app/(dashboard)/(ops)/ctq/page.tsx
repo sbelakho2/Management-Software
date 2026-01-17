@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Search,
@@ -160,6 +161,7 @@ const resultColors: Record<MeasurementResult, string> = {
 };
 
 export default function CTQPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -231,11 +233,11 @@ export default function CTQPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Critical to Quality (CTQ)
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.ctq.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Manage precision quality characteristics and automated gate specifications
+            {t('pages.ctq.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -260,7 +262,7 @@ export default function CTQPage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.total}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
               {stats.active} active
             </p>
@@ -273,7 +275,7 @@ export default function CTQPage() {
             <CheckCircle className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.approved}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.approved}</div>
             <p className="text-xs text-muted-foreground">
               {((stats.approved / stats.total) * 100).toFixed(1)}% of total
             </p>
@@ -286,7 +288,7 @@ export default function CTQPage() {
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.critical}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.critical}</div>
             <p className="text-xs text-muted-foreground">
               Highest priority
             </p>
@@ -299,7 +301,7 @@ export default function CTQPage() {
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.average_pass_rate.toFixed(1)}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.average_pass_rate.toFixed(1)}%</div>
             <p className="text-xs text-muted-foreground">
               Average across all CTQs
             </p>
@@ -312,7 +314,7 @@ export default function CTQPage() {
             <Gauge className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{stats.measured_today}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.measured_today}</div>
             <p className="text-xs text-muted-foreground">
               Measurements recorded
             </p>
@@ -325,7 +327,7 @@ export default function CTQPage() {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <div className="text-3xl font-heading font-bold tracking-tight ">
               {ctqs.reduce((sum, ctq) => sum + ctq.measurement_count, 0)}
             </div>
             <p className="text-xs text-muted-foreground">

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import {
   Plus,
   Settings,
@@ -97,6 +98,7 @@ function SQDCPCard({
 }
 
 export default function ObeyaPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const { 
     cognitiveInsights, 
@@ -151,10 +153,10 @@ export default function ObeyaPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Cognitive Obeya
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.obeya.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Prescriptive organizational intelligence & visual management</p>
+          <p className="text-muted-foreground font-medium">{t('pages.obeya.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => fetchCognitiveInsights()} disabled={isLoading}>
@@ -189,7 +191,7 @@ export default function ObeyaPage() {
                 <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Predictive Breaches</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-warning to-warning/70">{summary.metrics.warnings}</div>
+                <div className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{summary.metrics.warnings}</div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mt-2 flex items-center gap-1">
                   <TrendingDown className="h-3 w-3" /> Trending toward RED
                 </p>
@@ -200,7 +202,7 @@ export default function ObeyaPage() {
                 <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Silo Bottlenecks</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-destructive to-destructive/70">{summary.cross_functional.active_alerts}</div>
+                <div className="text-3xl font-heading font-bold tracking-tight text-destructive">{summary.cross_functional.active_alerts}</div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-destructive mt-2 flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" /> Inter-departmental friction
                 </p>
@@ -211,7 +213,7 @@ export default function ObeyaPage() {
                 <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Rebalance Ops</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70">{summary.cross_functional.pending_rebalances}</div>
+                <div className="text-3xl font-heading font-bold tracking-tight text-primary">{summary.cross_functional.pending_rebalances}</div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-primary mt-2 flex items-center gap-1">
                   <Users className="h-3 w-3" /> Skill gap opportunities
                 </p>
@@ -222,7 +224,7 @@ export default function ObeyaPage() {
                 <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Heijunka Tips</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-emerald-500 to-emerald-500/70">{summary.heijunka.pending_suggestions}</div>
+                <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{summary.heijunka.pending_suggestions}</div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2 flex items-center gap-1">
                   <Activity className="h-3 w-3" /> Smoothing possibilities
                 </p>

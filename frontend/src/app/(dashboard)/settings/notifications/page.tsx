@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface NotificationChannel {
   email: boolean;
@@ -141,6 +142,7 @@ function NotificationRow({ label, description, icon: Icon, value, onChange, crit
 }
 
 export default function NotificationsSettingsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [isSaving, setIsSaving] = React.useState(false);
   const [settings, setSettings] = React.useState<NotificationSettings>(defaultSettings);
@@ -167,7 +169,7 @@ export default function NotificationsSettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Notification Center
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Configure multi-channel intelligence dispatch parameters</p>

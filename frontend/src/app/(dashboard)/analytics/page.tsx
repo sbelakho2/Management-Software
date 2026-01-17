@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import { useAuthStore } from '@/stores';
 import {
   TrendingUp,
@@ -67,6 +68,7 @@ interface PerformanceTrend {
 }
 
 export default function AnalyticsPage() {
+  const { t } = useI18n();
   const [selectedPeriod, setSelectedPeriod] = React.useState('7d');
   const [activeTab, setActiveTab] = React.useState('overview');
   const { isAuthenticated } = useAuthStore();
@@ -118,12 +120,12 @@ export default function AnalyticsPage() {
     <div className="space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70 flex items-center gap-3">
+          <h1 className="text-4xl font-heading font-bold tracking-tight  flex items-center gap-3">
             <Shield className="h-10 w-10 text-primary" />
-            North Star Intelligence
+            {t('pages.analytics.title')}
           </h1>
           <p className="text-muted-foreground font-medium">
-            Unified organizational intelligence and strategic cross-gate analytics
+            {t('pages.analytics.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -140,7 +142,7 @@ export default function AnalyticsPage() {
           </Select>
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
             <Download className="h-4 w-4 mr-2" />
-            Export Intel
+            {t('pages.analytics.exportIntel')}
           </Button>
         </div>
       </div>
@@ -148,11 +150,11 @@ export default function AnalyticsPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="bg-primary/5 border-primary/20 hover:shadow-glow-primary transition-all">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Organizational OEE</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">{t('pages.analytics.stats.oee')}</CardTitle>
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{currentOEE}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{currentOEE}%</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               {oeeTrend ? (
                 <>
@@ -167,11 +169,11 @@ export default function AnalyticsPage() {
 
         <Card className="bg-success/5 border-success/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-success/60">Strategic Risk</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-success/60">{t('pages.analytics.stats.risk')}</CardTitle>
             <Shield className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-success to-success/70">LOW</div>
+            <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">LOW</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               Stable Gradient
             </div>
@@ -188,11 +190,11 @@ export default function AnalyticsPage() {
              <Brain className="h-24 w-24 text-primary" />
           </div>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">AI Insights</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-primary/60">{t('pages.analytics.stats.insights')}</CardTitle>
             <Brain className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{insightsList.length}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{insightsList.length}</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-warning mt-1">
               {insightsList.filter(i => i.impact === 'high').length} High Impact
             </div>
@@ -212,7 +214,7 @@ export default function AnalyticsPage() {
             <Activity className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{systemHealth}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{systemHealth}%</div>
             <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-success mt-1">
               {parseFloat(systemHealth) > 90 ? "OPTIMAL VELOCITY" : "DEGRADED"}
             </div>
@@ -463,15 +465,15 @@ export default function AnalyticsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div className="p-6 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Current Magnitude</div>
-                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{trend.current_value}%</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter ">{trend.current_value}%</div>
                     </div>
                     <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40">7-Day Projection</div>
-                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70">{trend.prediction_7d}%</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter text-primary">{trend.prediction_7d}%</div>
                     </div>
                     <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary/40">30-Day Projection</div>
-                      <div className="text-4xl font-heading font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/70">{trend.prediction_30d}%</div>
+                      <div className="text-4xl font-heading font-bold tracking-tighter text-primary">{trend.prediction_30d}%</div>
                     </div>
                   </div>
                   
@@ -534,28 +536,28 @@ export default function AnalyticsPage() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                     <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Accuracy</div>
-                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.accuracy || 0) * 100).toFixed(1)}%</div>
+                      <div className="text-2xl font-heading font-bold ">{((model.accuracy || 0) * 100).toFixed(1)}%</div>
                       <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
                         <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.accuracy || 0) * 100}%` }} />
                       </div>
                     </div>
                     <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Precision</div>
-                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.precision || 0) * 100).toFixed(1)}%</div>
+                      <div className="text-2xl font-heading font-bold ">{((model.precision || 0) * 100).toFixed(1)}%</div>
                       <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
                         <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.precision || 0) * 100}%` }} />
                       </div>
                     </div>
                     <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Recall</div>
-                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.recall || 0) * 100).toFixed(1)}%</div>
+                      <div className="text-2xl font-heading font-bold ">{((model.recall || 0) * 100).toFixed(1)}%</div>
                       <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
                         <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.recall || 0) * 100}%` }} />
                       </div>
                     </div>
                     <div className="p-4 rounded-2xl bg-muted/20 border border-border/10 text-center space-y-2">
                       <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">F1 Score</div>
-                      <div className="text-2xl font-heading font-bold bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{((model.f1_score || 0) * 100).toFixed(1)}%</div>
+                      <div className="text-2xl font-heading font-bold ">{((model.f1_score || 0) * 100).toFixed(1)}%</div>
                       <div className="h-1 rounded-full bg-muted/20 overflow-hidden mt-2">
                         <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${(model.f1_score || 0) * 100}%` }} />
                       </div>

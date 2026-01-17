@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 type AccentColor = 'blue' | 'green' | 'purple' | 'orange' | 'red';
@@ -71,6 +72,7 @@ const densityOptions = [
 ];
 
 export default function AppearanceSettingsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const [isSaving, setIsSaving] = React.useState(false);
   const [settings, setSettings] = React.useState<AppearanceSettings>(defaultSettings);
@@ -112,7 +114,7 @@ export default function AppearanceSettingsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">
               Appearance
             </h1>
             <p className="text-muted-foreground font-medium text-sm">Customize your personal viewing experience and interface aesthetics</p>

@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useI18n } from '@/contexts/i18n-context';
 import { 
   LayoutList, 
   LayoutGrid, 
@@ -58,6 +59,7 @@ const STAGES: Array<{ id: RFQStatus; label: string }> = [
 ];
 
 export default function PipelinePage() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -260,10 +262,10 @@ export default function PipelinePage() {
     <div className="space-y-8 page-fade-in" data-testid="pipeline-page">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">
-            Pipeline Intelligence
+          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            {t('pages.pipeline.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">Strategic RFQ management and opportunity velocity tracking</p>
+          <p className="text-muted-foreground font-medium">{t('pages.pipeline.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => exportRFQs()} disabled={isLoading}>
@@ -286,7 +288,7 @@ export default function PipelinePage() {
             <Clock className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{effectiveStats.activeRFQs}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.activeRFQs}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60 mt-2">{effectiveStats.overdueCount} Critical Thresholds</p>
           </CardContent>
         </Card>
@@ -296,7 +298,7 @@ export default function PipelinePage() {
             <span className="text-primary/60 text-[10px] font-bold">$</span>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{formatCurrency(effectiveStats.totalValue)}</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(effectiveStats.totalValue)}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">Across {effectiveStats.totalRFQs} RFQs</p>
           </CardContent>
         </Card>
@@ -306,7 +308,7 @@ export default function PipelinePage() {
             <Clock className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{effectiveStats.avgResponseTime}h</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.avgResponseTime}h</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">Target: &lt; 24h Protocol</p>
           </CardContent>
         </Card>
@@ -316,7 +318,7 @@ export default function PipelinePage() {
             <AlertCircle className="h-4 w-4 text-primary/60" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">{effectiveStats.conversionRate}%</div>
+            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.conversionRate}%</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">+2% ALPHA VARIANCE</p>
           </CardContent>
         </Card>
@@ -439,7 +441,7 @@ export default function PipelinePage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => router.push(`/rfqs/${rfq.id}`)}>View Details</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => router.push(`/rfqs/${rfq.id}/edit`)}>Edit</DropdownMenuItem>
+                        <DropdownMenuItem>Edit</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-destructive" onClick={() => deleteRFQ(rfq.id)}>Delete</DropdownMenuItem>
                       </DropdownMenuContent>

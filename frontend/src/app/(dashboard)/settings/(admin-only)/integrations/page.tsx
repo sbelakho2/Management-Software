@@ -3,8 +3,10 @@ import React from 'react';
 import { SettingsPageShell } from '@/components/settings-page-shell';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { useI18n } from '@/contexts/i18n-context';
 
 export default function IntegrationsSettingsPage() {
+  const { t } = useI18n();
   return (
     <SettingsPageShell title="Integrations" description="Connect Sensei with your existing manufacturing tools">
       <div className="grid gap-4 md:grid-cols-2">

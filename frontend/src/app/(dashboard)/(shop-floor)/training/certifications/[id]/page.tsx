@@ -5,7 +5,9 @@ import { ChevronLeft, Award, Calendar, User, FileCheck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useI18n } from '@/contexts/i18n-context';
 export default function CertificationDetailsPage() {
+  const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   // Mock data for display
@@ -28,7 +30,7 @@ export default function CertificationDetailsPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/70">Certification Details</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">Certification Details</h1>
           </div>
         </div>
         <Button variant="outline">Download Certificate</Button>
