@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  Search,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -88,44 +89,44 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-4 top-4 z-40 flex h-[calc(100vh-2rem)] flex-col rounded-3xl border premium-glass transition-all duration-500 ease-in-out shadow-premium hover:shadow-premium-hover',
+        'fixed left-6 top-6 z-40 flex h-[calc(100vh-6rem)] flex-col rounded-rams-sm border border-rams-border bg-rams-module transition-all duration-300 ease-in-out',
         // Mobile: slide in from left, always full width when visible
-        'max-md:-translate-x-[calc(100%+1rem)] max-md:w-64 max-md:left-4',
+        'max-md:-translate-x-[calc(100%+1.5rem)] max-md:w-64 max-md:left-6',
         isMobileVisible && 'max-md:translate-x-0',
         // Desktop: collapse/expand normally
         'md:translate-x-0',
-        desktopHidden && 'md:-translate-x-[calc(100%+2rem)]',
+        desktopHidden && 'md:-translate-x-[calc(100%+3rem)]',
         isCollapsed ? 'md:w-20' : 'md:w-64'
       )}
     >
-      {/* Logo */}
-      <div className="flex h-20 items-center justify-between px-6">
+      {/* Logo Area (Mechanical Feel) */}
+      <div className="flex h-20 items-center justify-between px-6 border-b border-rams-border">
         {!isCollapsed && (
-          <Link href="/today" className="flex items-center gap-3 transition-transform hover:scale-105 active:scale-95">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
+          <Link href="/today" className="flex items-center gap-3 group">
+            <div className="flex h-10 w-10 items-center justify-center rounded-rams-sm bg-rams-orange text-black font-mono font-black border border-black/10">
               S
             </div>
-            <span className="font-heading font-bold text-xl tracking-tight ">
+            <span className="font-sans font-black text-xs uppercase tracking-[0.2em] opacity-80 group-hover:opacity-100 transition-opacity">
               Sensei OS
             </span>
           </Link>
         )}
         {isCollapsed && (
-          <Link href="/today" className="mx-auto transition-transform hover:scale-110 active:scale-90" aria-label="Sensei OS home">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-glow quirky-card">
+          <Link href="/today" className="mx-auto" aria-label="Sensei OS home">
+            <div className="flex h-10 w-10 items-center justify-center rounded-rams-sm bg-rams-orange text-black font-mono font-black border border-black/10">
               S
             </div>
           </Link>
         )}
       </div>
 
-      {/* Search */}
-      <div className="px-4 py-2">
+      {/* Search (Module Inset) */}
+      <div className="px-4 py-4">
         <Button
           variant="outline"
           className={cn(
-            'w-full justify-start text-muted-foreground border-border/40 bg-background/50 backdrop-blur-sm hover:bg-background/80 transition-all duration-300',
-            isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto rounded-xl' : 'px-4 h-11 rounded-2xl'
+            'w-full justify-start text-muted-foreground border-rams-border bg-rams-panel hover:bg-rams-panel/80 transition-none rounded-rams-sm',
+            isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto' : 'px-4 h-11'
           )}
           onClick={() => setCommandPaletteOpen(true)}
           aria-label={t('navigation.search')}
@@ -133,25 +134,25 @@ export function Sidebar() {
           <Search className={cn("h-4 w-4", isCollapsed ? "h-5 w-5" : "")} />
           {!isCollapsed && (
             <>
-              <span className={cn("flex-1 text-sm", isRTL ? "mr-3 text-right" : "ml-3 text-left")}>{t('common.search')}...</span>
-              <kbd className={cn("pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground/60", isRTL ? "mr-auto" : "ml-auto")}>
-                <span className="text-xs">⌘</span>K
+              <span className={cn("flex-1 text-[10px] font-bold uppercase tracking-widest", isRTL ? "mr-3 text-right" : "ml-3 text-left")}>{t('common.search')}</span>
+              <kbd className={cn("pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded-sm border border-rams-border bg-rams-chassis px-1.5 font-mono text-[9px] font-bold text-muted-foreground/60", isRTL ? "mr-auto" : "ml-auto")}>
+                ⌘K
               </kbd>
             </>
           )}
         </Button>
       </div>
 
-      {/* Main Navigation */}
+      {/* Main Navigation (Racked Slots) */}
       <nav className="flex-1 overflow-y-auto p-2">
         {filteredSections.map((section, idx) => (
-          <div key={section.title} className={cn('mb-4', idx === 0 && 'mt-0')}>
+          <div key={section.title} className={cn('mb-6', idx === 0 && 'mt-2')}>
             {!isCollapsed && (
-              <h3 className="mb-2 px-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
+              <h3 className="mb-3 px-6 text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/40 border-l-2 border-rams-orange/20 ml-2">
                 {section.title}
               </h3>
             )}
-            <ul className="space-y-1 px-2">
+            <ul className="space-y-0.5 px-2">
               {section.items.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
                 return (
@@ -162,10 +163,10 @@ export function Sidebar() {
                           <Link
                             href={item.href}
                             className={cn(
-                              'flex h-12 w-12 items-center justify-center rounded-xl mx-auto transition-all duration-300 active:scale-[0.9]',
+                              'flex h-12 w-12 items-center justify-center rounded-rams-sm mx-auto transition-none border border-transparent',
                               isActive 
-                                ? 'bg-primary text-primary-foreground shadow-glow scale-105' 
-                                : 'text-muted-foreground hover:bg-primary/10 hover:text-primary hover:scale-110'
+                                ? 'bg-rams-orange text-black font-black border-black/10' 
+                                : 'text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                             )}
                             aria-label={item.label}
                             aria-current={isActive ? 'page' : undefined}
@@ -173,7 +174,7 @@ export function Sidebar() {
                             <item.icon className="h-5 w-5" />
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent side="right" className="font-heading">
+                        <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">
                           {item.label}
                         </TooltipContent>
                       </Tooltip>
@@ -181,21 +182,18 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-11 items-center gap-3 rounded-2xl px-4 transition-all duration-300 active:scale-[0.98] group relative overflow-hidden',
+                          'flex h-10 items-center gap-3 rounded-rams-sm px-4 transition-none group relative overflow-hidden border border-transparent',
                           isActive 
-                            ? 'bg-primary text-primary-foreground font-semibold shadow-glow' 
-                            : 'text-muted-foreground hover:bg-primary/5 hover:text-primary'
+                            ? 'bg-rams-panel text-foreground font-black border-rams-border shadow-[inset_2px_0_0_0_#FFBE00]' 
+                            : 'text-muted-foreground hover:bg-rams-panel/50 hover:text-foreground'
                         )}
                       >
-                        <item.icon className={cn("h-5 w-5 shrink-0 transition-transform duration-300 group-hover:scale-110", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
-                        <span className="truncate text-sm font-medium tracking-tight">{item.label}</span>
-                        {isActive && (
-                          <div className="absolute left-0 top-1/4 h-1/2 w-1 rounded-r-full bg-primary-foreground/40" />
-                        )}
+                        <item.icon className={cn("h-4 w-4 shrink-0 transition-none", isActive ? "text-rams-orange" : "text-muted-foreground group-hover:text-foreground")} />
+                        <span className="truncate text-[11px] font-bold uppercase tracking-wider">{item.label}</span>
                         {item.badge && item.badge > 0 && (
                           <span className={cn(
-                            "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold shadow-sm",
-                            isActive ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"
+                            "ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-rams-sm px-1 text-[9px] font-black border",
+                            isActive ? "bg-rams-orange text-black border-black/10" : "bg-rams-panel text-muted-foreground border-rams-border"
                           )}>
                             {item.badge}
                           </span>
@@ -210,9 +208,9 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom Navigation */}
-      <div className="border-t p-2">
-        <ul className="space-y-1 mb-2">
+      {/* Bottom Navigation (Service Module) */}
+      <div className="border-t border-rams-border bg-rams-panel/30 p-2">
+        <ul className="space-y-0.5 mb-4">
           {filteredBottomNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
             return (
@@ -223,18 +221,18 @@ export function Sidebar() {
                       <Link
                         href={item.href}
                         className={cn(
-                          'flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-all duration-200 active:scale-[0.98]',
+                          'flex h-10 w-10 items-center justify-center rounded-rams-sm mx-auto transition-none border',
                           isActive 
-                            ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm' 
-                            : 'hover:bg-accent/80 hover:text-accent-foreground'
+                            ? 'bg-rams-panel text-foreground border-rams-border' 
+                            : 'border-transparent text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                         )}
                         aria-label={item.label}
                         aria-current={isActive ? 'page' : undefined}
                       >
-                        <item.icon className="h-5 w-5" />
+                        <item.icon className="h-4 w-4" />
                       </Link>
                     </TooltipTrigger>
-                    <TooltipContent side="right">
+                    <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">
                       {item.label}
                     </TooltipContent>
                   </Tooltip>
@@ -242,14 +240,14 @@ export function Sidebar() {
                   <Link
                     href={item.href}
                     className={cn(
-                      'flex h-10 items-center gap-3 rounded-lg px-3 transition-all duration-200 active:scale-[0.98]',
+                      'flex h-9 items-center gap-3 rounded-rams-sm px-3 transition-none border',
                       isActive 
-                        ? 'bg-primary/10 text-primary font-semibold border border-primary/20 shadow-sm' 
-                        : 'text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground'
+                        ? 'bg-rams-panel text-foreground font-bold border-rams-border' 
+                        : 'border-transparent text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                     )}
                   >
-                    <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
-                    <span className="truncate">{item.label}</span>
+                    <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")} />
+                    <span className="truncate text-[10px] font-bold uppercase tracking-widest">{item.label}</span>
                   </Link>
                 )}
               </li>
@@ -257,102 +255,88 @@ export function Sidebar() {
           })}
         </ul>
 
-        {/* User Profile */}
+        {/* User Module */}
         {user && (
-          <div className="mt-2 pt-2 border-t">
+          <div className="mt-2 pt-2 border-t border-rams-border/50">
             {isCollapsed ? (
-              <Tooltip delayDuration={0}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href="/settings/profile"
-                    className="flex h-10 w-10 items-center justify-center rounded-md mx-auto hover:bg-accent"
-                  >
-                    <Avatar
-                      src={user.avatar_url}
-                      alt={user.full_name}
-                      fallback={user.full_name}
-                      size="sm"
-                    />
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  {user.full_name}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
               <Link
                 href="/settings/profile"
-                className="flex items-center gap-3 rounded-md p-2 hover:bg-accent"
+                className="flex h-10 w-10 items-center justify-center rounded-rams-sm mx-auto hover:bg-rams-panel"
               >
                 <Avatar
                   src={user.avatar_url}
                   alt={user.full_name}
                   fallback={user.full_name}
                   size="sm"
+                  className="rounded-rams-sm"
+                />
+              </Link>
+            ) : (
+              <Link
+                href="/settings/profile"
+                className="flex items-center gap-3 rounded-rams-sm p-2 hover:bg-rams-panel border border-transparent hover:border-rams-border transition-none"
+              >
+                <Avatar
+                  src={user.avatar_url}
+                  alt={user.full_name}
+                  fallback={user.full_name}
+                  size="sm"
+                  className="rounded-rams-sm border border-rams-border/20"
                 />
                 <div className="flex-1 overflow-hidden">
-                  <p className="truncate text-sm font-medium">{user.full_name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                  <p className="truncate text-[11px] font-black uppercase tracking-tight">{user.full_name}</p>
+                  <p className="truncate text-[9px] font-mono opacity-50 uppercase tracking-tighter">{user.email}</p>
                 </div>
               </Link>
             )}
           </div>
         )}
 
-        {/* Logout */}
-        <div className="mt-1">
+        {/* Control Buttons */}
+        <div className="mt-1 flex flex-col gap-1">
           {isCollapsed ? (
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="flex h-12 w-12 items-center justify-center rounded-xl mx-auto text-muted-foreground hover:text-danger hover:bg-danger/10 transition-all active:scale-90"
-                  onClick={async () => {
-                    await logout();
-                    router.push('/login');
-                  }}
-                  aria-label={t('auth.logout')}
-                >
-                  <LogOut className={cn("h-5 w-5", isRTL && "rtl-flip")} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isRTL ? "left" : "right"} className="font-heading">
-                {t('auth.logout')}
-              </TooltipContent>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="flex h-12 w-12 items-center justify-center rounded-rams-sm mx-auto text-muted-foreground hover:text-rams-red hover:bg-rams-red/5 transition-none"
+              onClick={async () => {
+                await logout();
+                router.push('/login');
+              }}
+              aria-label={t('auth.logout')}
+            >
+              <LogOut className={cn("h-5 w-5", isRTL && "rtl-flip")} />
+            </Button>
           ) : (
             <Button
               variant="ghost"
-              className="w-full justify-start gap-3 px-4 h-11 rounded-2xl text-muted-foreground hover:text-danger hover:bg-danger/5 transition-all active:scale-[0.98]"
+              className="w-full justify-start gap-3 px-4 h-10 rounded-rams-sm text-muted-foreground hover:text-rams-red hover:bg-rams-red/5 transition-none border border-transparent hover:border-rams-red/20"
               onClick={async () => {
                 await logout();
                 router.push('/login');
               }}
             >
-              <LogOut className={cn("h-5 w-5 shrink-0", isRTL && "rtl-flip")} />
-              <span className="font-medium tracking-tight">{t('auth.logout')}</span>
+              <LogOut className={cn("h-4 w-4 shrink-0", isRTL && "rtl-flip")} />
+              <span className="text-[10px] font-black uppercase tracking-widest">{t('auth.logout')}</span>
             </Button>
           )}
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn('h-8 transition-none rounded-rams-sm hover:bg-rams-panel hover:text-foreground border border-transparent hover:border-rams-border', isCollapsed ? 'mx-auto w-10' : 'w-full px-4 justify-start')}
+            onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
+          >
+            {isCollapsed ? (
+              <ChevronRight className={cn("h-4 w-4", isRTL && "rtl-flip")} />
+            ) : (
+              <div className="flex items-center gap-3">
+                <ChevronLeft className={cn("h-3 w-3", isRTL && "rtl-flip")} />
+                <span className="text-[9px] font-black uppercase tracking-[0.3em] opacity-40">{t('accessibility.collapseSection')}</span>
+              </div>
+            )}
+          </Button>
         </div>
-
-        {/* Collapse Toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn('mt-2 h-10 transition-all rounded-xl hover:bg-primary/5 hover:text-primary', isCollapsed ? 'mx-auto w-12' : 'w-full px-4 justify-start')}
-          onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
-          aria-label={isCollapsed ? t('accessibility.expandSection') : t('accessibility.collapseSection')}
-        >
-          {isCollapsed ? (
-            <ChevronRight className={cn("h-4 w-4", isRTL && "rtl-flip")} />
-          ) : (
-            <div className="flex items-center gap-3">
-              <ChevronLeft className={cn("h-4 w-4", isRTL && "rtl-flip")} />
-              <span className="text-xs font-bold uppercase tracking-widest opacity-60">{t('accessibility.collapseSection')}</span>
-            </div>
-          )}
-        </Button>
       </div>
     </aside>
   );
@@ -369,19 +353,19 @@ export function FloatingNotifications() {
           <Button
             variant="ghost"
             size="icon"
-            className="relative rounded-xl h-10 w-10 border premium-glass shadow-premium hover:shadow-premium-hover hover:bg-primary/10 hover:text-primary transition-all duration-300"
+            className="relative rounded-rams-sm h-10 w-10 border border-rams-border bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
             onClick={toggleNotificationPanel}
             aria-label={t('navigation.notifications')}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <span className={cn("absolute -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-glow", isRTL ? "-left-1" : "-right-1")}>
+              <span className={cn("absolute -top-1 flex h-4 min-w-4 items-center justify-center rounded-rams-sm bg-rams-orange px-1 text-[9px] font-black text-black border border-black/10", isRTL ? "-left-1" : "-right-1")}>
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent className="font-heading">{t('navigation.notifications')}</TooltipContent>
+        <TooltipContent className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">{t('navigation.notifications')}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -395,7 +379,7 @@ export function MobileMenuButton() {
     <Button
       variant="ghost"
       size="icon"
-      className="fixed top-4 left-4 z-40 md:hidden rounded-xl h-10 w-10 border premium-glass shadow-premium hover:shadow-premium-hover hover:bg-primary/10 hover:text-primary transition-all duration-300"
+      className="fixed top-4 left-4 z-40 md:hidden rounded-rams-sm h-10 w-10 border border-rams-border bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
       onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
       aria-label={sidebarState === 'hidden' ? t('accessibility.openMenu') : t('accessibility.closeMenu')}
     >
@@ -425,9 +409,8 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, setSidebarState]);
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20">
+    <div className="min-h-screen bg-rams-chassis selection:bg-rams-orange/30 selection:text-black">
       <SkipToContent targetId="main-content" />
-      {/* Mesh Gradient Background (handled by globals.css body) */}
       
       {/* Floating UI Elements */}
       <FloatingNotifications />
@@ -436,7 +419,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile overlay when sidebar is open */}
       <div 
         className={cn(
-          'fixed inset-0 z-30 bg-black/40 backdrop-blur-md transition-opacity duration-500 md:hidden',
+          'fixed inset-0 z-30 bg-black/60 transition-opacity duration-300 md:hidden',
           isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         )}
         onClick={() => setSidebarState('hidden')}
@@ -446,7 +429,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div
         className={cn(
-          'transition-all duration-500 ease-in-out min-h-screen flex flex-col',
+          'transition-all duration-300 ease-in-out min-h-screen flex flex-col',
           // On mobile (< md), no margin - sidebar overlays
           'md:pl-24',
           // On desktop, use sidebar state

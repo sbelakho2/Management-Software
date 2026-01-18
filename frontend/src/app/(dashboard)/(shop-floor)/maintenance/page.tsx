@@ -49,59 +49,23 @@ function MaintenanceStats() {
   const { stats } = useMaintenanceStore();
   
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Asset Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats?.total_assets || 0}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
-              <Box className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Anomalous Down</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500 mt-1">{stats?.assets_by_status?.down || 0}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Threshold Overdue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500 mt-1">{stats?.overdue_pms || 0}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
-              <Clock className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Efficiency Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">88.5%</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
-              <Activity className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Asset Nodes</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats?.total_assets || 0}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Anomalous Down</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats?.assets_by_status?.down || 0}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-4">Threshold Overdue</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats?.overdue_pms || 0}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-4">Efficiency Pulse</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">88.5%</p>
+      </div>
     </div>
   );
 }
@@ -724,123 +688,132 @@ function MaintenancePageContent() {
   }, [fetchStats]);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="maintenance-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="maintenance-page">
+      {/* Header */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.maintenance.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.maintenance.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.maintenance.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: FACILITY-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl" onClick={() => router.push('/maintenance/mobile')}>
-            Mobile Mode
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => router.push('/maintenance/mobile')}>
+            MOBILE_MODE
           </Button>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <History className="h-4 w-4 mr-2" />
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
+            <History className="h-3.5 w-3.5 mr-2" />
             History
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
-            <Plus className="h-4 w-4 mr-2" />
-            New Asset
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => {}}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Initialize Asset
           </Button>
         </div>
       </div>
 
       <MaintenanceStats />
 
-      <div className="border-b">
-        <nav className="flex gap-4">
-          <button
-            onClick={() => setActiveTab('assets')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'assets'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Assets
-          </button>
-          <button
-            onClick={() => setActiveTab('work-orders')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'work-orders'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Work Orders
-          </button>
-          <button
-            onClick={() => setActiveTab('pm-schedules')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'pm-schedules'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            PM Schedules
-          </button>
-          <button
-            onClick={() => setActiveTab('loto')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'loto'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            LOTO
-          </button>
-          <button
-            onClick={() => setActiveTab('tool-crib')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'tool-crib'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Tool Crib
-          </button>
-          <button
-            onClick={() => setActiveTab('warranty')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'warranty'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Warranty
-          </button>
-          <button
-            onClick={() => setActiveTab('budget')}
-            className={cn(
-              'pb-3 px-1 border-b-2 font-medium text-sm transition-colors',
-              activeTab === 'budget'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Budget
-          </button>
-        </nav>
-      </div>
-
-      <div className="mt-4">
-        {activeTab === 'assets' && <AssetsTab />}
-        {activeTab === 'work-orders' && <WorkOrdersTab />}
-        {activeTab === 'pm-schedules' && <PMSchedulesTab />}
-        {activeTab === 'loto' && <LotoTab />}
-        {activeTab === 'tool-crib' && <ToolCribTab />}
-        {activeTab === 'warranty' && <WarrantyTab />}
-        {activeTab === 'field-returns' && <FieldReturnsTab />}
-        {activeTab === 'budget' && <BudgetTab />}
-      </div>
+      {/* Main Content (Modular Rack) */}
+      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+        <CardHeader className="p-0 border-b border-rams-border bg-rams-panel/20">
+          <div className="flex overflow-x-auto scrollbar-hide">
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative',
+                activeTab === 'assets'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('assets')}
+            >
+              Assets
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'work-orders'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('work-orders')}
+            >
+              Work Orders
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'pm-schedules'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('pm-schedules')}
+            >
+              PM Schedules
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'loto'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('loto')}
+            >
+              LOTO
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'tool-crib'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('tool-crib')}
+            >
+              Tool Crib
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'warranty'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('warranty')}
+            >
+              Warranty
+            </button>
+            <button
+              className={cn(
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                activeTab === 'budget'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+              )}
+              onClick={() => setActiveTab('budget')}
+            >
+              Budget
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 bg-rams-module">
+          <div className="animate-in fade-in duration-300">
+            {activeTab === 'assets' && <AssetsTab />}
+            {activeTab === 'work-orders' && <WorkOrdersTab />}
+            {activeTab === 'pm-schedules' && <PMSchedulesTab />}
+            {activeTab === 'loto' && <LotoTab />}
+            {activeTab === 'tool-crib' && <ToolCribTab />}
+            {activeTab === 'warranty' && <WarrantyTab />}
+            {activeTab === 'field-returns' && <FieldReturnsTab />}
+            {activeTab === 'budget' && <BudgetTab />}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,17 +1,17 @@
 import type { Metadata, Viewport } from 'next';
-import { Plus_Jakarta_Sans, Bricolage_Grotesque } from 'next/font/google';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
-const jakarta = Plus_Jakarta_Sans({
+const inter = Inter({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
 });
 
-const bricolage = Bricolage_Grotesque({
+const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
-  variable: '--font-heading',
+  variable: '--font-mono',
   display: 'swap',
 });
 
@@ -59,18 +59,36 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${jakarta.variable} ${bricolage.variable} font-sans antialiased relative`}>
-        {/* Quirky Background Elements */}
-        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none opacity-50 dark:opacity-20">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[120px] rounded-full animate-pulse" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/20 blur-[120px] rounded-full animate-pulse [animation-delay:2s]" />
+      <body className={`${inter.variable} ${jetbrains.variable} font-sans antialiased relative bg-rams-chassis text-foreground`}>
+        {/* Industrial Bezel Frame */}
+        <div className="fixed inset-0 border-[8px] border-rams-chassis pointer-events-none z-[100] hidden md:block" aria-hidden="true" />
+        
+        {/* Screw Details */}
+        <div className="fixed top-2 left-2 z-[101] hidden md:block opacity-30 select-none">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
+        </div>
+        <div className="fixed top-2 right-2 z-[101] hidden md:block opacity-30 select-none">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
+        </div>
+        <div className="fixed bottom-2 left-2 z-[101] hidden md:block opacity-30 select-none">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
+        </div>
+        <div className="fixed bottom-2 right-2 z-[101] hidden md:block opacity-30 select-none">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
+        </div>
+
+        {/* System Metadata Bar (Bottom) */}
+        <div className="fixed bottom-0 left-0 right-0 h-8 bg-rams-chassis z-[100] border-t border-rams-border px-6 hidden md:flex items-center justify-between text-[10px] font-mono opacity-60 uppercase tracking-widest pointer-events-none">
+          <div className="flex gap-6">
+            <span>STATION: SENSEI-ALPHA-01</span>
+            <span>OS_VER: 3.0.0-RAMS</span>
+          </div>
+          <div className="flex gap-6">
+            <span>INTEGRITY: OPTIMAL</span>
+            <span>LATENCY: 14MS</span>
+          </div>
         </div>
         
-        {/* Grain Overlay */}
-        <div className="fixed inset-0 -z-5 pointer-events-none opacity-[0.4] mix-blend-soft-light" 
-             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} 
-        />
-
         <Providers>{children}</Providers>
       </body>
     </html>

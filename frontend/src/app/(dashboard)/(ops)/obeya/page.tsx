@@ -57,37 +57,38 @@ function SQDCPCard({
   status: 'green' | 'yellow' | 'red';
 }) {
   const statusColors = {
-    green: 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5',
-    yellow: 'border-amber-500/30 text-amber-500 bg-amber-500/5',
-    red: 'border-destructive/30 text-destructive bg-destructive/5',
+    green: 'border-rams-green/30 text-rams-green bg-rams-green/5',
+    yellow: 'border-rams-orange/30 text-rams-orange bg-rams-orange/5',
+    red: 'border-rams-red/30 text-rams-red bg-rams-red/5',
   };
 
-  const statusGlow = {
-    green: 'shadow-[0_0_20px_rgba(16,185,129,0.1)]',
-    yellow: 'shadow-[0_0_20px_rgba(245,158,11,0.1)]',
-    red: 'shadow-[0_0_20px_rgba(239,68,68,0.1)]',
+  const badgeVariants = {
+    green: 'success' as const,
+    yellow: 'warning' as const,
+    red: 'danger' as const,
   };
 
   return (
-    <Card className={cn('rounded-[2rem] border-2 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1', statusColors[status], statusGlow[status])}>
-      <CardHeader className="pb-4">
-        <CardTitle className="text-xl font-heading font-bold flex items-center gap-3">
-          <div className={cn("p-2 rounded-xl", status === 'green' ? "bg-emerald-500/20" : status === 'yellow' ? "bg-amber-500/20" : "bg-destructive/20")}>
-            <Icon className="h-5 w-5" />
+    <Card className={cn('rounded-rams-sm border border-rams-border bg-rams-module transition-none group', statusColors[status])}>
+      <CardHeader className="pb-4 border-b border-rams-border/30 bg-rams-panel/10">
+        <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Icon className="h-4 w-4" />
+            {title}
           </div>
-          {title}
+          <Badge variant={badgeVariants[status]} size="sm" className="h-4 px-1">{status.toUpperCase()}</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-4 space-y-1">
         {metrics.map((metric, idx) => (
-          <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
-            <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">{metric.label}</span>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-heading font-bold">{metric.value}</span>
+          <div key={idx} className="flex items-center justify-between p-3 bg-rams-panel/40 border border-rams-border/50 hover:bg-rams-panel transition-none">
+            <span className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/60">{metric.label}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-mono font-bold tabular-nums text-foreground/80">{metric.value}</span>
               {metric.trend && (
-                metric.trend === 'up' ? <TrendingUp className="h-4 w-4 text-emerald-500" /> :
-                metric.trend === 'down' ? <TrendingDown className="h-4 w-4 text-destructive" /> :
-                <Minus className="h-4 w-4 opacity-50" />
+                metric.trend === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-rams-green" /> :
+                metric.trend === 'down' ? <TrendingDown className="h-3.5 w-3.5 text-rams-red" /> :
+                <Minus className="h-3.5 w-3.5 opacity-30" />
               )}
             </div>
           </div>
@@ -149,153 +150,142 @@ export default function ObeyaPage() {
   const heijunkaSuggestions = cognitiveInsights?.heijunka_suggestions || [];
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="obeya-page">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="obeya-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90 flex items-center gap-3">
+            <Shield className="h-6 w-6 text-rams-orange" />
             {t('pages.obeya.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.obeya.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.obeya.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: COMMAND-CENTER-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => fetchCognitiveInsights()} disabled={isLoading}>
-            <RefreshCw className={cn("mr-2 h-4 w-4", isLoading && "animate-spin")} />
-            Sync AI
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={() => fetchCognitiveInsights()} disabled={isLoading}>
+            <RefreshCw className={cn("h-3.5 w-3.5 mr-2", isLoading && "animate-spin")} />
+            Sync Intel
           </Button>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <Settings className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+            <Settings className="h-3.5 w-3.5 mr-2" />
             Parameters
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/obeya/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Board
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => router.push('/obeya/new')}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Initialize Board
           </Button>
         </div>
       </div>
 
       {/* Tabs for different views */}
       <Tabs defaultValue="overview" className="space-y-8 animate-in fade-in duration-700">
-        <TabsList className="flex h-14 w-full justify-start gap-3 bg-muted/10 p-1.5 rounded-2xl backdrop-blur-md border border-border/5 overflow-x-auto no-scrollbar shadow-inner-soft">
-          <TabsTrigger value="overview" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Overview</TabsTrigger>
-          <TabsTrigger value="intelligence" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Sensei AI</TabsTrigger>
-          <TabsTrigger value="sqdcp" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">SQDCP Detail</TabsTrigger>
-          <TabsTrigger value="exceptions" className="rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">Exceptions</TabsTrigger>
+        <TabsList className="bg-rams-panel border border-rams-border p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
+          <TabsTrigger value="overview">OVERVIEW</TabsTrigger>
+          <TabsTrigger value="intelligence">SENSEI_AI</TabsTrigger>
+          <TabsTrigger value="sqdcp">SQDCP_DETAIL</TabsTrigger>
+          <TabsTrigger value="exceptions">EXCEPTIONS</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Predictive Breaches</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{summary.metrics.warnings}</div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mt-2 flex items-center gap-1">
-                  <TrendingDown className="h-3 w-3" /> Trending toward RED
-                </p>
-              </CardContent>
+          <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+            <Card className="rounded-none border-0 border-r border-b lg:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Predictive Breaches</p>
+              <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{summary.metrics.warnings}</div>
+              <p className="text-[9px] font-mono font-bold uppercase text-rams-orange mt-2 flex items-center gap-1">
+                <TrendingDown className="h-3 w-3" /> TRENDING_TOWARD_RED
+              </p>
             </Card>
-            <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Silo Bottlenecks</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight text-destructive">{summary.cross_functional.active_alerts}</div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-destructive mt-2 flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" /> Inter-departmental friction
-                </p>
-              </CardContent>
+            <Card className="rounded-none border-0 border-r border-b lg:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Silo Bottlenecks</p>
+              <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{summary.cross_functional.active_alerts}</div>
+              <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" /> INTER-DEPT_FRICTION
+              </p>
             </Card>
-            <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Rebalance Ops</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight text-primary">{summary.cross_functional.pending_rebalances}</div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary mt-2 flex items-center gap-1">
-                  <Users className="h-3 w-3" /> Skill gap opportunities
-                </p>
-              </CardContent>
+            <Card className="rounded-none border-0 border-r border-b md:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Rebalance Ops</p>
+              <div className="text-3xl font-mono font-bold tracking-tight text-rams-steel tabular-nums">{summary.cross_functional.pending_rebalances}</div>
+              <p className="text-[9px] font-mono font-bold uppercase text-rams-steel mt-2 flex items-center gap-1">
+                <Users className="h-3 w-3" /> SKILL_GAP_NODES
+              </p>
             </Card>
-            <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Heijunka Tips</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{summary.heijunka.pending_suggestions}</div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mt-2 flex items-center gap-1">
-                  <Activity className="h-3 w-3" /> Smoothing possibilities
-                </p>
-              </CardContent>
+            <Card className="rounded-none border-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Heijunka Tips</p>
+              <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{summary.heijunka.pending_suggestions}</div>
+              <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2 flex items-center gap-1">
+                <Activity className="h-3 w-3" /> SMOOTHING_PROTOCOLS
+              </p>
             </Card>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="h-4 w-4" />
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-rams-orange" />
                   Primary North Stars
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="p-6 space-y-6">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">First Pass Yield</span>
-                    <span className="text-sm font-bold text-success">98.1%</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">First Pass Yield</span>
+                    <span className="text-sm font-mono font-bold tabular-nums text-rams-green">98.1%</span>
                   </div>
-                  <Progress value={98.1} className="h-2" />
+                  <Progress value={98.1} className="h-1" indicatorClassName="bg-rams-green" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">On-Time Delivery</span>
-                    <span className="text-sm font-bold text-warning">94.2%</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">On-Time Delivery</span>
+                    <span className="text-sm font-mono font-bold tabular-nums text-rams-orange">94.2%</span>
                   </div>
-                  <Progress value={94.2} className="h-2" />
+                  <Progress value={94.2} className="h-1" indicatorClassName="bg-rams-orange" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Customer Satisfaction</span>
-                    <span className="text-sm font-bold text-success">4.6/5.0</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">Customer Satisfaction</span>
+                    <span className="text-sm font-mono font-bold tabular-nums text-rams-green">4.6/5.0</span>
                   </div>
-                  <Progress value={92} className="h-2" />
+                  <Progress value={92} className="h-1" indicatorClassName="bg-rams-green" />
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
+            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-rams-orange" />
                   Recent Silo Alerts
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
+              <CardContent className="p-0">
+                <div className="divide-y divide-rams-border/30">
                   {siloAlerts.map((alert: any) => (
-                    <div key={alert.alert_id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-transparent hover:border-border transition-all group">
+                    <div key={alert.alert_id} className="flex items-start gap-4 p-4 hover:bg-rams-panel transition-none group">
                       <div className={cn(
-                        "mt-0.5 p-1 rounded-full",
-                        alert.severity === 'critical' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'
+                        "mt-0.5 p-2 rounded-rams-sm border border-rams-border",
+                        alert.severity === 'critical' ? 'bg-rams-red/5 text-rams-red border-rams-red/20' : 'bg-rams-orange/5 text-rams-orange border-rams-orange/20'
                       )}>
                         <AlertTriangle className="h-4 w-4" />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">{alert.impact}</p>
-                          <Badge variant="outline" className="text-[10px] uppercase">{alert.severity}</Badge>
+                          <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{alert.impact}</p>
+                          <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'} size="sm" className="h-4">{alert.severity.toUpperCase()}</Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">Source: {alert.source} → Impacting: {alert.affected}</p>
-                        <p className="text-xs italic mt-2 opacity-0 group-hover:opacity-100 transition-opacity">"{alert.event}"</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">SOURCE: {alert.source.toUpperCase()} → IMPACTING: {alert.affected.toUpperCase()}</p>
+                        <p className="text-[9px] font-mono italic mt-2 opacity-0 group-hover:opacity-100 transition-opacity">"{alert.event}"</p>
                       </div>
                     </div>
                   ))}
                   {siloAlerts.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground">
+                    <div className="py-12 text-center text-muted-foreground/20">
                       <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                      <p className="text-sm">No active silo alerts detected</p>
+                      <p className="text-[9px] font-mono font-black uppercase tracking-widest">ZERO_ACTIVE_SILO_ALERTS</p>
                     </div>
                   )}
                 </div>
@@ -305,102 +295,100 @@ export default function ObeyaPage() {
         </TabsContent>
 
         {/* Intelligence Tab */}
-        <TabsContent value="intelligence" className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="border-primary/20 shadow-lg shadow-primary/5">
-              <CardHeader>
+        <TabsContent value="intelligence" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Users className="h-4 w-4 text-rams-orange" />
                     Resource Rebalancing
                   </CardTitle>
-                  <Badge variant="default" className="animate-pulse">AI Suggested</Badge>
+                  <Badge variant="default" className="animate-pulse h-4 px-1 text-[8px] font-black uppercase">AI_SYNC</Badge>
                 </div>
-                <CardDescription>Real-time skill gap analysis and labor leveling</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-6 space-y-4">
                 {rebalanceSuggestions.map((s: any) => (
-                  <div key={s.suggestion_id} className="p-4 border rounded-xl space-y-4 bg-gradient-to-br from-background to-muted/20">
+                  <div key={s.suggestion_id} className="p-4 bg-rams-panel/40 border border-rams-border/50 space-y-4 group hover:bg-rams-panel transition-none">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-mono">{s.from_work_center}</Badge>
-                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                        <Badge variant="default" className="font-mono">{s.to_work_center}</Badge>
+                        <Badge variant="outline" className="font-mono text-[9px] rounded-none border-rams-border h-4">{s.from_work_center}</Badge>
+                        <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+                        <Badge variant="default" className="font-mono text-[9px] rounded-none h-4">{s.to_work_center}</Badge>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground uppercase font-bold">Improvement</p>
-                        <p className="text-lg font-bold text-success">+{Math.round(s.expected_improvement * 100)}%</p>
+                        <p className="text-[8px] text-muted-foreground/40 uppercase font-black tracking-widest">IMPROVEMENT</p>
+                        <p className="text-lg font-mono font-bold text-rams-green tabular-nums">+{Math.round(s.expected_improvement * 100)}%</p>
                       </div>
                     </div>
-                    <p className="text-sm leading-relaxed">{s.reason}</p>
+                    <p className="text-xs font-medium leading-relaxed text-foreground/70 uppercase">{s.reason}</p>
                     <div className="space-y-2">
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">Recommended Operators</p>
+                      <p className="text-[8px] uppercase font-black tracking-widest text-muted-foreground/40">RECOMMENDED_OPERATORS</p>
                       <div className="flex flex-wrap gap-2">
                         {s.operators.map((op: string) => (
-                          <div key={op} className="flex items-center gap-1 bg-background border px-2 py-1 rounded-md text-xs font-medium">
-                            <Avatar className="h-4 w-4">
-                              <AvatarFallback className="text-[8px]">{getInitials(op)}</AvatarFallback>
+                          <div key={op} className="flex items-center gap-2 bg-rams-module border border-rams-border px-2 py-1 rounded-none text-[10px] font-bold uppercase">
+                            <Avatar className="h-4 w-4 rounded-none border border-rams-border/20">
+                              <AvatarFallback className="text-[8px] font-mono">{getInitials(op)}</AvatarFallback>
                             </Avatar>
                             {op}
                           </div>
                         ))}
                       </div>
                     </div>
-                    <Button size="sm" className="w-full shadow-md">Execute Move</Button>
+                    <Button size="sm" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">EXECUTE_DEPLOYMENT</Button>
                   </div>
                 ))}
                 {rebalanceSuggestions.length === 0 && (
-                  <div className="text-center py-16 text-muted-foreground">
+                  <div className="text-center py-16 text-muted-foreground/20">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-10" />
-                    <p>Skill profiles are currently optimized across all work centers</p>
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">Skill nodes optimized across all work centers</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="border-success/20 shadow-lg shadow-success/5">
-              <CardHeader>
+            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-success" />
+                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-rams-green" />
                     Heijunka Leveling
                   </CardTitle>
-                  <Badge variant="success">Prescriptive</Badge>
+                  <Badge variant="success" className="h-4 px-1 text-[8px] font-black uppercase">PRESCRIPTIVE</Badge>
                 </div>
-                <CardDescription>Minimizing Mura (Unevenness) in production schedule</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-6 space-y-4">
                 {heijunkaSuggestions.map((s: any) => (
-                  <div key={s.suggestion_id} className="p-4 border rounded-xl space-y-4 border-success/20 bg-success/5">
+                  <div key={s.suggestion_id} className="p-4 bg-rams-green/5 border border-rams-green/20 space-y-4 group hover:bg-rams-green/10 transition-none">
                     <div className="flex items-center justify-between">
-                      <Badge variant="success" className="uppercase tracking-tighter">{s.period} Horizon</Badge>
+                      <Badge variant="success" className="uppercase tracking-tighter text-[9px] rounded-none h-4">{s.period} HORIZON</Badge>
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground uppercase font-bold text-success/70">Mura Reduction</p>
-                        <p className="text-lg font-bold text-success">-{Math.round(s.mura_reduction)}%</p>
+                        <p className="text-[8px] text-rams-green/60 uppercase font-black tracking-widest">MURA_REDUCTION</p>
+                        <p className="text-lg font-mono font-bold text-rams-green tabular-nums">-{Math.round(s.mura_reduction)}%</p>
                       </div>
                     </div>
-                    <p className="text-sm font-medium leading-snug">{s.reasoning}</p>
+                    <p className="text-xs font-medium leading-relaxed text-foreground/70 uppercase">{s.reasoning}</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-muted-foreground">Current Pattern</p>
-                        <div className="h-12 w-full bg-muted rounded-md flex items-end gap-0.5 p-1">
-                          {[40, 80, 20, 90, 30].map((h, i) => <div key={i} className="flex-1 bg-muted-foreground/30 rounded-t-sm" style={{height: `${h}%`}} />)}
+                        <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Current Pattern</p>
+                        <div className="h-12 w-full bg-rams-panel rounded-none flex items-end gap-0.5 p-1 border border-rams-border/30">
+                          {[40, 80, 20, 90, 30].map((h, i) => <div key={i} className="flex-1 bg-rams-red/40" style={{height: `${h}%`}} />)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-success/70">Suggested Pattern</p>
-                        <div className="h-12 w-full bg-success/10 rounded-md flex items-end gap-0.5 p-1">
-                          {[50, 55, 48, 52, 53].map((h, i) => <div key={i} className="flex-1 bg-success/40 rounded-t-sm" style={{height: `${h}%`}} />)}
+                        <p className="text-[8px] font-black uppercase tracking-widest text-rams-green/60">Suggested Pattern</p>
+                        <div className="h-12 w-full bg-rams-green/10 rounded-none flex items-end gap-0.5 p-1 border border-rams-green/20">
+                          {[50, 55, 48, 52, 53].map((h, i) => <div key={i} className="flex-1 bg-rams-green/40" style={{height: `${h}%`}} />)}
                         </div>
                       </div>
                     </div>
-                    <Button size="sm" variant="success" className="w-full shadow-md">Smooth Schedule</Button>
+                    <Button size="sm" variant="success" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">APPLY_SMOOTHING</Button>
                   </div>
                 ))}
                 {heijunkaSuggestions.length === 0 && (
-                  <div className="text-center py-16 text-muted-foreground">
+                  <div className="text-center py-16 text-muted-foreground/20">
                     <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-10" />
-                    <p>Production mix is sufficiently leveled for the current horizon</p>
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">Production mix is sufficiently leveled</p>
                   </div>
                 )}
               </CardContent>
@@ -408,8 +396,8 @@ export default function ObeyaPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="sqdcp">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <TabsContent value="sqdcp" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             <SQDCPCard
               title="Quality"
               icon={Award}
@@ -429,36 +417,38 @@ export default function ObeyaPage() {
                 { label: 'Backlog Items', value: 23 },
               ]}
             />
-            <p className="text-muted-foreground p-8 text-center col-span-full italic">Switching to real-time shop floor sensor fusion...</p>
+            <div className="col-span-full py-12 text-center industrial-panel bg-rams-panel/20 border-dashed">
+              <RefreshCw className="h-8 w-8 mx-auto mb-4 animate-spin text-muted-foreground/20" />
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Switching to real-time shop floor sensor fusion...</p>
+            </div>
           </div>
         </TabsContent>
 
-        <TabsContent value="exceptions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Anomalies & Exceptions</CardTitle>
-              <CardDescription>AI-flagged deviations from standard work or performance targets</CardDescription>
+        <TabsContent value="exceptions" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Anomalies & Exceptions</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
+            <CardContent className="p-0">
+              <div className="divide-y divide-rams-border/30">
                 {items.filter(i => i.status === 'blocked' || i.is_escalated).map(item => (
-                  <div key={item.id} className="flex items-center gap-3 p-3 border rounded-lg bg-danger/5">
-                    <AlertTriangle className="h-5 w-5 text-danger flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.blocked_reason || item.escalation_reason || 'Pending action'}</p>
+                  <div key={item.id} className="flex items-center gap-4 p-4 hover:bg-rams-panel transition-none group">
+                    <div className="p-2 rounded-rams-sm bg-rams-red/5 text-rams-red border border-rams-red/20 group-hover:bg-rams-red group-hover:text-white transition-none">
+                      <AlertTriangle className="h-4 w-4" />
                     </div>
-                    <Badge variant="destructive">{item.status}</Badge>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{item.title}</p>
+                        <Badge variant="destructive" size="sm">{item.status.toUpperCase()}</Badge>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1 uppercase">{item.blocked_reason || item.escalation_reason || 'Pending action'}</p>
+                    </div>
                   </div>
                 ))}
                 {items.filter(i => i.status === 'blocked' || i.is_escalated).length === 0 && (
-                  <div className="flex items-center gap-3 p-3 border rounded-lg bg-success/5">
-                    <CheckCircle className="h-5 w-5 text-success flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">No critical exceptions</p>
-                      <p className="text-xs text-muted-foreground">System operating within normal parameters</p>
-                    </div>
-                    <Badge variant="success">Healthy</Badge>
+                  <div className="flex items-center gap-4 p-8 justify-center">
+                    <CheckCircle className="h-5 w-5 text-rams-green opacity-40" />
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/40">Zero critical exceptions identified</p>
                   </div>
                 )}
               </div>

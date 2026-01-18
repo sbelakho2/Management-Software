@@ -95,59 +95,23 @@ function OrderStats({ stats }: { stats: SOStats | null }) {
   if (!stats) return null;
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Draft Orders</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.draft}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-muted/20 text-muted-foreground">
-              <FileText className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Approved</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.approved}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
-              <CheckCircle className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Released</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.orders.released}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-warning/10 text-warning">
-              <Package className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Overdue Invoices</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-danger mt-1">{stats.invoices.overdue}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-danger/10 text-danger">
-              <CreditCard className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Draft Orders</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.orders.draft}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Approved Orders</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.orders.approved}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Issued Invoices</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.invoices.issued}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Overdue Invoices</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.invoices.overdue}</p>
+      </div>
     </div>
   );
 }
@@ -162,18 +126,18 @@ function OrderRow({ order, onApprove, onRelease }: {
 
   return (
     <TableRow 
-      className="transition-colors hover:bg-muted/50"
+      className="transition-none"
     >
       <TableCell>
         <div>
-          <p className="font-mono font-bold text-primary">{order.so_number}</p>
+          <p className="font-mono font-bold text-rams-orange tabular-nums">{order.so_number}</p>
           {order.source_quote_id && (
             <Link 
               href={`/quotes/${order.source_quote_id}`}
-              className="text-xs text-muted-foreground hover:underline"
+              className="text-[9px] font-mono uppercase tracking-tight text-muted-foreground/40 hover:text-rams-orange"
               onClick={(e) => e.stopPropagation()}
             >
-              From Quote
+              Protocol: Source_Quote
             </Link>
           )}
         </div>
@@ -181,57 +145,56 @@ function OrderRow({ order, onApprove, onRelease }: {
       <TableCell>
         <Link 
           href={`/customers/${order.account_id}`}
-          className="font-medium hover:underline"
+          className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 hover:text-rams-orange transition-none"
           onClick={(e) => e.stopPropagation()}
         >
           {order.account_name || 'Unknown'}
         </Link>
       </TableCell>
       <TableCell>
-        <Badge variant={config.variant} className="gap-1">
-          <StatusIcon className="h-3 w-3" />
+        <Badge variant={config.variant} size="sm">
           {config.label}
         </Badge>
       </TableCell>
       <TableCell className="text-right">
-        <span className="font-heading font-bold">
+        <span className="font-mono font-bold tabular-nums">
           {formatCurrency(order.total_amount, order.currency)}
         </span>
       </TableCell>
-      <TableCell className="text-center">
-        <span className="text-muted-foreground">{order.line_count}</span>
+      <TableCell className="text-center font-mono text-[10px] text-muted-foreground/40">
+        {order.line_count}
       </TableCell>
-      <TableCell>
+      <TableCell className="font-mono text-[10px] text-muted-foreground/60 uppercase">
         {formatDate(new Date(order.created_at))}
       </TableCell>
       <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-rams-sm">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem>
-              <Eye className="mr-2 h-4 w-4" />
-              View Details
+              <Eye className="mr-2 h-3.5 w-3.5" />
+              Analyze Details
             </DropdownMenuItem>
             {order.status === 'draft' && (
               <DropdownMenuItem onClick={() => onApprove(order.id)}>
-                <CheckCircle className="mr-2 h-4 w-4 text-success" />
-                Approve Order
+                <CheckCircle className="mr-2 h-3.5 w-3.5 text-rams-green" />
+                Approve Protocol
               </DropdownMenuItem>
             )}
             {order.status === 'approved' && (
               <DropdownMenuItem onClick={() => onRelease(order.id)}>
-                <Package className="mr-2 h-4 w-4 text-warning" />
-                Release to Production
+                <Package className="mr-2 h-3.5 w-3.5 text-rams-orange" />
+                Release to Station
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem>
-              <CreditCard className="mr-2 h-4 w-4" />
-              Create Invoice
+              <CreditCard className="mr-2 h-3.5 w-3.5" />
+              Generate Invoice
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -242,6 +205,7 @@ function OrderRow({ order, onApprove, onRelease }: {
 
 export default function SalesOrdersPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const [orders, setOrders] = React.useState<SalesOrder[]>([]);
   const [stats, setStats] = React.useState<SOStats | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -297,27 +261,31 @@ export default function SalesOrdersPage() {
   }, [orders, search, statusFilter]);
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">{t('pages.orders.title')}</h1>
-          <p className="text-muted-foreground font-medium">{t('pages.orders.subtitle')}</p>
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.orders.title')}</h1>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.orders.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: SALES-01</span>
+          </p>
         </div>
         <div className="flex gap-3">
           <Button 
             variant="outline" 
-            className="rounded-xl"
+            className="rounded-rams-sm"
             onClick={() => router.push('/quotes')}
           >
-            <FileText className="mr-2 h-4 w-4" />
+            <FileText className="mr-2 h-3.5 w-3.5" />
             Quotes
           </Button>
           <Button 
-            className="rounded-xl shadow-glow"
+            className="rounded-rams-sm"
             onClick={() => router.push('/quotes/new')}
           >
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 h-3.5 w-3.5" />
             New Order
           </Button>
         </div>
@@ -329,42 +297,42 @@ export default function SalesOrdersPage() {
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
           <Input 
-            placeholder="Search orders..."
+            placeholder="SEARCH_PROTOCOL..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 rounded-xl"
+            className="pl-10 h-10 text-[10px]"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px] rounded-xl">
-            <Filter className="mr-2 h-4 w-4" />
-            <SelectValue placeholder="All Statuses" />
+          <SelectTrigger className="w-[180px] h-10 text-[10px]">
+            <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+            <SelectValue placeholder="STATUS_FILTER" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="approved">Approved</SelectItem>
-            <SelectItem value="released">Released</SelectItem>
-            <SelectItem value="shipped">Shipped</SelectItem>
-            <SelectItem value="invoiced">Invoiced</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
+            <SelectItem value="all">ALL_STATUS</SelectItem>
+            <SelectItem value="draft">DRAFT</SelectItem>
+            <SelectItem value="approved">APPROVED</SelectItem>
+            <SelectItem value="released">RELEASED</SelectItem>
+            <SelectItem value="shipped">SHIPPED</SelectItem>
+            <SelectItem value="invoiced">INVOICED</SelectItem>
+            <SelectItem value="closed">CLOSED</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {/* Orders Table */}
-      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
+      <Card className="rounded-rams-sm overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Order</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-center">Lines</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead>ORDER_ID</TableHead>
+              <TableHead>CUSTOMER_ACCOUNT</TableHead>
+              <TableHead>STATUS_NODE</TableHead>
+              <TableHead className="text-right">TOTAL_VALUE</TableHead>
+              <TableHead className="text-center">LINES</TableHead>
+              <TableHead>TIMESTAMP</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -373,8 +341,8 @@ export default function SalesOrdersPage() {
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                    <p className="text-muted-foreground">Loading orders...</p>
+                    <div className="animate-spin rounded-none h-8 w-8 border border-rams-orange border-t-transparent"></div>
+                    <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Synchronizing Protocols...</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -382,21 +350,21 @@ export default function SalesOrdersPage() {
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-3">
-                    <Package className="h-12 w-12 text-muted-foreground/50" />
+                    <Package className="h-12 w-12 text-muted-foreground/20" />
                     <div>
-                      <p className="font-medium">No sales orders found</p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
+                      <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">
                         {search || statusFilter !== 'all' 
-                          ? 'Try adjusting your filters' 
-                          : 'Create your first order or convert a quote'}
+                          ? 'Adjust filtering parameters' 
+                          : 'Initialize your first order protocol'}
                       </p>
                     </div>
                     <Button 
-                      className="mt-2 rounded-xl"
+                      className="mt-4 rounded-rams-sm"
                       onClick={() => router.push('/quotes/new')}
                     >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create Order
+                      <Plus className="mr-2 h-3.5 w-3.5" />
+                      Initialize Order
                     </Button>
                   </div>
                 </TableCell>
@@ -405,7 +373,7 @@ export default function SalesOrdersPage() {
               filteredOrders.map((order) => (
                 <OrderRow 
                   key={order.id} 
-                  order={order}
+                  order={order} 
                   onApprove={handleApprove}
                   onRelease={handleRelease}
                 />
@@ -416,51 +384,53 @@ export default function SalesOrdersPage() {
       </Card>
 
       {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-0 md:grid-cols-3 border border-rams-border bg-rams-border">
         <div 
-          className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors cursor-pointer"
+          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-border cursor-pointer hover:bg-rams-panel transition-colors group"
           onClick={() => router.push('/quotes')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-              <FileText className="h-4 w-4" />
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <div className="text-sm font-bold">Convert Quotes</div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Turn accepted quotes into orders</div>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Quote_Repository</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Analyze source documents</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
         </div>
+        
         <div 
-          className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors cursor-pointer"
+          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-border cursor-pointer hover:bg-rams-panel transition-colors group"
           onClick={() => router.push('/customers')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
-              <TrendingUp className="h-4 w-4" />
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <div className="text-sm font-bold">Customer Credit</div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Check credit limits and balances</div>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Account_Intelligence</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Manage customer nodes</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
         </div>
+
         <div 
-          className="flex items-center justify-between p-4 rounded-2xl bg-muted/20 border border-border/10 hover:bg-muted/30 transition-colors cursor-pointer"
+          className="flex items-center justify-between p-6 bg-rams-module cursor-pointer hover:bg-rams-panel transition-colors group"
           onClick={() => router.push('/finance')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-xl bg-warning/10 text-warning">
-              <CreditCard className="h-4 w-4" />
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <div className="text-sm font-bold">Invoicing</div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Manage customer invoices</div>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Invoicing</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Manage customer invoices</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
         </div>
       </div>
     </div>

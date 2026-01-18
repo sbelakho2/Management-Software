@@ -38,20 +38,20 @@ function SkeletonCard({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('rounded-lg border bg-card p-4', className)}
+      className={cn('rounded-rams-sm border border-rams-border bg-rams-module p-5', className)}
       {...props}
     >
       <div className="flex items-center space-x-4">
-        <Skeleton className="h-12 w-12 rounded-full" />
+        <Skeleton className="h-10 w-10 rounded-rams-sm" />
         <div className="space-y-2 flex-1">
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-3 w-1/3" />
+          <Skeleton className="h-3 w-1/2 opacity-50" />
         </div>
       </div>
-      <div className="mt-4 space-y-2">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-2/3" />
+      <div className="mt-6 space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-2/3 opacity-50" />
       </div>
     </div>
   );
@@ -67,27 +67,29 @@ function SkeletonTable({
   columns?: number;
 }) {
   return (
-    <div className={cn('w-full', className)} {...props}>
+    <div className={cn('w-full border border-rams-border rounded-rams-sm overflow-hidden', className)} {...props}>
       {/* Header */}
-      <div className="flex gap-4 border-b pb-2 mb-4">
+      <div className="flex gap-4 border-b border-rams-border bg-rams-panel p-4">
         {Array.from({ length: columns }).map((_, i) => (
-          <Skeleton key={i} className="h-4 flex-1" />
+          <Skeleton key={i} className="h-2 flex-1 opacity-40" />
         ))}
       </div>
       {/* Rows */}
-      {Array.from({ length: rows }).map((_, rowIndex) => (
-        <div key={rowIndex} className="flex gap-4 py-3 border-b border-border/50">
-          {Array.from({ length: columns }).map((_, colIndex) => (
-            <Skeleton
-              key={colIndex}
-              className={cn(
-                'h-4 flex-1',
-                colIndex === 0 && 'w-1/4 flex-none'
-              )}
-            />
-          ))}
-        </div>
-      ))}
+      <div className="bg-rams-module">
+        {Array.from({ length: rows }).map((_, rowIndex) => (
+          <div key={rowIndex} className="flex gap-4 p-4 border-b border-rams-border/30 last:border-0">
+            {Array.from({ length: columns }).map((_, colIndex) => (
+              <Skeleton
+                key={colIndex}
+                className={cn(
+                  'h-2 flex-1',
+                  colIndex === 0 && 'w-1/4 flex-none'
+                )}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -98,15 +100,15 @@ function SkeletonList({
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { items?: number }) {
   return (
-    <div className={cn('space-y-4', className)} {...props}>
+    <div className={cn('space-y-1', className)} {...props}>
       {Array.from({ length: items }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-full" />
+        <div key={i} className="flex items-center gap-4 p-3 bg-rams-module border border-rams-border/50 rounded-rams-sm">
+          <Skeleton className="h-8 w-8 rounded-rams-sm" />
           <div className="flex-1 space-y-2">
-            <Skeleton className="h-4 w-1/3" />
-            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-2 w-1/3" />
+            <Skeleton className="h-2 w-1/2 opacity-50" />
           </div>
-          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-6 w-16" />
         </div>
       ))}
     </div>

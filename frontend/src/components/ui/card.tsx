@@ -11,11 +11,11 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'rounded-[2rem] text-card-foreground transition-all duration-500 ease-in-out',
+          'rounded-rams-sm text-card-foreground transition-none border border-rams-border',
           {
-            default: 'border bg-card/40 shadow-premium hover:shadow-premium-hover border-border/40 backdrop-blur-md hover:-translate-y-1.5 hover:border-primary/20',
-            elevated: 'bg-card shadow-elevation-3 border-none hover:shadow-glow hover:-translate-y-2',
-            outlined: 'border-2 border-border/50 bg-transparent hover:border-primary/40 quirky-card',
+            default: 'bg-rams-module shadow-none hover:border-rams-orange/30',
+            elevated: 'bg-rams-module shadow-none border-rams-border/80',
+            outlined: 'border border-rams-border bg-transparent',
           }[variant],
           className
         )}
@@ -32,7 +32,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('flex flex-col space-y-1.5 p-6', className)}
+    className={cn('flex flex-col space-y-1.5 p-5 border-b border-rams-border/30 bg-rams-panel/10', className)}
     {...props}
   />
 ));
@@ -44,7 +44,7 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h3
     ref={ref}
-    className={cn('font-semibold leading-none tracking-tight', className)}
+    className={cn('text-xs font-black uppercase tracking-[0.2em] text-foreground/80 leading-tight', className)}
     {...props}
   />
 ));
@@ -56,7 +56,7 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn('text-sm text-muted-foreground', className)}
+    className={cn('text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/60', className)}
     {...props}
   />
 ));
@@ -66,7 +66,7 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
+  <div ref={ref} className={cn('p-5', className)} {...props} />
 ));
 CardContent.displayName = 'CardContent';
 

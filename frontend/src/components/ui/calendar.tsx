@@ -121,13 +121,13 @@ export function Calendar({
             onClick={() => handleDateClick(cloneDay)}
             disabled={!isCurrentMonth}
             className={cn(
-              'h-9 w-9 text-center text-sm p-0 font-normal rounded-md',
-              !isCurrentMonth && 'text-muted-foreground opacity-50',
-              isCurrentMonth && 'hover:bg-accent hover:text-accent-foreground',
-              selected && 'bg-primary text-primary-foreground',
-              rangeStart && 'rounded-l-md',
-              rangeEnd && 'rounded-r-md',
-              selected && !rangeStart && !rangeEnd && mode === 'range' && 'rounded-none bg-primary/50'
+              'h-9 w-9 text-center text-[11px] p-0 font-mono font-bold rounded-none transition-none',
+              !isCurrentMonth && 'text-muted-foreground/30',
+              isCurrentMonth && 'hover:bg-rams-panel hover:text-foreground',
+              selected && 'bg-rams-orange text-black font-black border border-black/10',
+              rangeStart && 'bg-rams-orange text-black',
+              rangeEnd && 'bg-rams-orange text-black',
+              selected && !rangeStart && !rangeEnd && mode === 'range' && 'bg-rams-orange/20 text-rams-orange'
             )}
           >
             {format(day, 'd')}
@@ -146,16 +146,16 @@ export function Calendar({
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between px-1">
-          <h2 className="font-semibold text-sm">{format(monthDate, 'MMMM yyyy')}</h2>
+          <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/80">{format(monthDate, 'MMMM yyyy')}</h2>
         </div>
-        <div className="flex w-full">
+        <div className="flex w-full border-b border-rams-border/30 pb-2">
           {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((dayName) => (
-            <div key={dayName} className="h-9 w-9 text-center text-xs text-muted-foreground font-medium">
+            <div key={dayName} className="h-9 w-9 text-center text-[9px] text-muted-foreground/40 font-mono font-black uppercase tracking-tighter flex items-center justify-center">
               {dayName}
             </div>
           ))}
         </div>
-        <div className="space-y-1">{rows}</div>
+        <div className="space-y-0.5">{rows}</div>
       </div>
     );
   };

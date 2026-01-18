@@ -82,28 +82,28 @@ interface A3Stats {
   approval_pending: number;
 }
 
-const statusBadgeVariant: Record<A3Status, 'default' | 'secondary' | 'warning' | 'destructive' | 'success'> = {
+const statusBadgeVariant: Record<A3Status, 'default' | 'secondary' | 'warning' | 'destructive' | 'success' | 'outline'> = {
   draft: 'secondary',
   in_progress: 'default',
   review: 'warning',
   approved: 'success',
   implemented: 'success',
-  closed: 'secondary',
-  cancelled: 'secondary',
+  closed: 'outline',
+  cancelled: 'destructive',
 };
 
-const priorityBadgeVariant: Record<A3Priority, 'default' | 'secondary' | 'warning' | 'destructive'> = {
+const priorityBadgeVariant: Record<A3Priority, 'default' | 'secondary' | 'warning' | 'danger'> = {
   low: 'secondary',
   medium: 'default',
   high: 'warning',
-  critical: 'destructive',
+  critical: 'danger',
 };
 
 const typeConfig: Record<A3Type, { label: string; color: string }> = {
-  problem_solving: { label: 'Problem Solving', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-  proposal: { label: 'Proposal', color: 'bg-green-100 text-green-700 border-green-200' },
-  status_report: { label: 'Status Report', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  strategy: { label: 'Strategy', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  problem_solving: { label: 'Problem Solving', color: 'bg-rams-steel/10 text-rams-steel border-rams-steel/20' },
+  proposal: { label: 'Proposal', color: 'bg-rams-green/10 text-rams-green border-rams-green/20' },
+  status_report: { label: 'Status Report', color: 'bg-rams-panel text-muted-foreground border-rams-border' },
+  strategy: { label: 'Strategy', color: 'bg-rams-orange/10 text-rams-orange border-rams-orange/20' },
 };
 
 export default function A3Page() {
@@ -188,219 +188,187 @@ export default function A3Page() {
   }
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="a3-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.a3.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            {t('pages.a3.subtitle')}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.a3.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: PROBLEM-SOLVING-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+            <Download className="h-3.5 w-3.5 mr-2" />
+            Export Intel
+          </Button>
           {hasPageAccess('/a3/new', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/a3/new')}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Resolution
+            <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => router.push('/a3/new')}>
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              Initialize Resolution
             </Button>
           )}
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total A3s</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.by_status.in_progress || 0} in progress
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Review</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.approval_pending}</div>
-            <p className="text-xs text-muted-foreground">Awaiting approval</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">
-              {(stats.by_status.approved || 0) + (stats.by_status.implemented || 0) + (stats.by_status.closed || 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">Approved or closed</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">{stats.overdue_count}</div>
-            <p className="text-xs text-muted-foreground">Past target date</p>
-          </CardContent>
-        </Card>
+      {/* Stats Grid (Industrial Modules) */}
+      <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Total A3 Nodes</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats?.total || 0}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">Aggregated Registry</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Execution Pulse</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats?.by_status?.in_progress || 0}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">ACTIVE_PROTOCOLS</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Pending Approvals</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-steel tabular-nums">{stats?.approval_pending || 0}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">QUEUE_GATES</p>
+        </div>
+        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Horizon Overdue</p>
+          <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", (stats?.overdue_count || 0) > 0 ? "text-rams-red" : "text-foreground/90")}>
+            {stats?.overdue_count || 0}
+          </div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">THRESHOLD_EXCEPTIONS</p>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+      {/* Filters & Content */}
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 items-center gap-4 max-w-4xl">
+            <div className="relative flex-1 min-w-[240px] group">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
               <Input
-                placeholder="Search A3s..."
+                placeholder="SEARCH_RESOLUTION_NODES..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-10 h-10 text-[10px]"
               />
             </div>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Types" />
+              <SelectTrigger className="w-[160px] h-10 text-[10px]">
+                <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+                <SelectValue placeholder="TYPE_NODE" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="problem_solving">Problem Solving</SelectItem>
-                <SelectItem value="proposal">Proposal</SelectItem>
-                <SelectItem value="status_report">Status Report</SelectItem>
-                <SelectItem value="strategy">Strategy</SelectItem>
+                <SelectItem value="all">ALL_TYPES</SelectItem>
+                <SelectItem value="problem_solving">PROBLEM_SOLVING</SelectItem>
+                <SelectItem value="proposal">PROPOSAL</SelectItem>
+                <SelectItem value="status_report">STATUS_REPORT</SelectItem>
+                <SelectItem value="strategy">STRATEGY</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Status" />
+              <SelectTrigger className="w-[160px] h-10 text-[10px]">
+                <Clock className="mr-2 h-3.5 w-3.5 opacity-40" />
+                <SelectValue placeholder="STATUS_STATE" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="review">In Review</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="implemented">Implemented</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Priorities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priorities</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="all">ALL_STATUS</SelectItem>
+                <SelectItem value="draft">DRAFT</SelectItem>
+                <SelectItem value="in_progress">IN_PROGRESS</SelectItem>
+                <SelectItem value="review">UNDER_REVIEW</SelectItem>
+                <SelectItem value="approved">APPROVED</SelectItem>
+                <SelectItem value="implemented">IMPLEMENTED</SelectItem>
+                <SelectItem value="closed">CLOSED</SelectItem>
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* A3 Table */}
-      <Card>
-        <CardContent className="pt-6">
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>A3 Number</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Author</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead>Target Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>A3_IDENTIFIER</TableHead>
+                <TableHead>RESOLUTION_TITLE</TableHead>
+                <TableHead>PROTOCOL_TYPE</TableHead>
+                <TableHead>STATUS_NODE</TableHead>
+                <TableHead>PRIORITY</TableHead>
+                <TableHead>AUTHOR</TableHead>
+                <TableHead>PROGRESS_KPI</TableHead>
+                <TableHead>TARGET_HORIZON</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredA3s.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    No A3 reports found. Create your first A3 to get started.
+                  <TableCell colSpan={9} className="text-center py-24">
+                    <FileText className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero A3 protocols identified</p>
+                    <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new resolution protocol</p>
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredA3s.map((a3) => (
-                  <TableRow key={a3.id} className="cursor-pointer hover:bg-muted/50">
+                  <TableRow 
+                    key={a3.id} 
+                    className="group transition-none cursor-pointer"
+                    onClick={() => router.push(`/a3/${a3.id}`)}
+                  >
+                    <TableCell className="font-mono font-bold text-rams-orange tabular-nums">{a3.a3_number}</TableCell>
                     <TableCell>
-                      <Link href={`/a3/${a3.id}`} className="font-medium text-primary hover:underline">
-                        {a3.a3_number}
-                      </Link>
+                      <span className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{a3.title}</span>
                     </TableCell>
                     <TableCell>
-                      <div className="max-w-xs truncate">{a3.title}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn('gap-1', typeConfig[a3.a3_type].color)}>
-                        {typeConfig[a3.a3_type].label}
+                      <Badge variant="outline" className={cn("rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-4", typeConfig[a3.a3_type].color)}>
+                        {typeConfig[a3.a3_type].label.toUpperCase()}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant[a3.status]}>
-                        {a3.status.replace('_', ' ')}
+                      <Badge variant={statusBadgeVariant[a3.status]} size="sm">
+                        {a3.status.toUpperCase().replace('_', ' ')}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={priorityBadgeVariant[a3.priority]} className="capitalize">
-                        {a3.priority}
+                      <Badge variant={priorityBadgeVariant[a3.priority]} size="sm">
+                        {a3.priority.toUpperCase()}
                       </Badge>
                     </TableCell>
-                    <TableCell>{a3.author_name}</TableCell>
+                    <TableCell className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{a3.author_name}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Progress value={a3.progress_percentage} className="h-2 w-16" />
-                        <span className="text-xs text-muted-foreground">{a3.progress_percentage}%</span>
+                      <div className="w-24 space-y-1.5">
+                        <div className="flex justify-between text-[9px] font-mono font-bold tabular-nums">
+                          <span>{a3.progress_percentage}%</span>
+                        </div>
+                        <div className="h-1 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                          <div className="h-full bg-rams-orange transition-all duration-500" style={{ width: `${a3.progress_percentage}%` }} />
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {a3.target_completion_date && (
-                        <span className={cn(isOverdue(a3) && 'text-destructive font-medium')}>
-                          {formatDate(a3.target_completion_date)}
-                        </span>
-                      )}
+                      <div className={cn("font-mono text-[10px] uppercase tracking-tighter", isOverdue(a3) ? 'text-rams-red' : 'text-muted-foreground/60')}>
+                        {a3.target_completion_date ? formatDate(a3.target_completion_date) : 'N/A'}
+                        {isOverdue(a3) && <span className="text-[8px] ml-1 opacity-60">(OVERDUE)</span>}
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            Actions
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => router.push(`/a3/${a3.id}`)}>
-                            <FileText className="mr-2 h-4 w-4" />
-                            View Details
+                            <Eye className="mr-2 h-3.5 w-3.5" /> ANALYZE
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => router.push(`/a3/${a3.id}?mode=edit`)}>
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Download className="mr-2 h-4 w-4" />
-                            Export PDF
+                          <DropdownMenuItem onClick={() => router.push(`/a3/${a3.id}/edit`)}>
+                            <Edit className="mr-2 h-3.5 w-3.5" /> REFINE
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(a3.id)}>
-                            Delete
+                          <DropdownMenuItem className="text-rams-red" onClick={() => handleDelete(a3.id)}>
+                            TERMINATE_NODE
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -410,8 +378,8 @@ export default function A3Page() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -314,328 +314,179 @@ export default function TodayPage() {
 	const microDrillItems = microDrills.length ? microDrills : fallbackMicroDrills;
 
 	return (
-		<div className="space-y-8 page-fade-in">
-			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+		<div className="space-y-8 page-fade-in pb-12">
+			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
 				<div className="space-y-1">
 					<h1
-						className="text-4xl font-heading font-bold tracking-tight "
+						className="text-2xl font-sans font-black uppercase tracking-tight opacity-90"
 						suppressHydrationWarning
 					>
 						{greeting}
 					</h1>
-					<p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-						<Calendar className="h-4 w-4 text-primary/60" />
-						<span suppressHydrationWarning>{headerDate}</span> • Intelligence Command Center
+					<p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+						<span suppressHydrationWarning>{headerDate}</span>
+						<span className="opacity-30">|</span>
+						<span>STATION_STATUS: OPTIMAL</span>
 					</p>
 				</div>
 
 				<div className="flex items-center gap-3">
 					{(isTestEnv || hasPageAccess('/pipeline/new', userRoles)) && (
-						<Button asChild size="lg" className="rounded-xl shadow-glow subtle-shine">
+						<Button asChild size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-6 border border-black/10 hover:bg-rams-orange/90 transition-none">
 							<Link href="/pipeline/new">
-								<Plus className="mr-2 h-4 w-4" />
-								Create RFQ
+								<Plus className="mr-2 h-3.5 w-3.5" />
+								Initialize RFQ
 							</Link>
 						</Button>
 					)}
 				</div>
 			</div>
 
-			{/* KPI Cards */}
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+			{/* KPI Cards (Industrial Modules) */}
+			<div className="grid gap-px border border-rams-border bg-rams-border">
 				{kpis.map((kpi) => (
-					<Card key={kpi.id} className="group">
-						<CardHeader className="space-y-1">
-							<Link href={kpi.href} className="block group-hover:translate-x-1 transition-transform">
-								<CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{kpi.title}</CardTitle>
-								<div className="text-3xl font-heading font-bold tracking-tight  mt-1">{kpi.value}</div>
-								{Boolean(kpi.trendLabel) && (
-									<CardDescription className="font-medium text-success/80 mt-1 flex items-center gap-1">
-										<TrendingUp className="h-3 w-3" />
-										{kpi.trendLabel}
-									</CardDescription>
-								)}
-							</Link>
-						</CardHeader>
-					</Card>
+					<div key={kpi.id} className="bg-rams-module p-6 group">
+						<Link href={kpi.href} className="block group-hover:bg-rams-panel transition-none -m-6 p-6">
+							<div className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{kpi.title}</div>
+							<div className="text-4xl font-mono font-bold tracking-tighter text-foreground/90 tabular-nums">{kpi.value}</div>
+							{Boolean(kpi.trendLabel) && (
+								<div className="font-mono text-[10px] font-bold text-rams-green mt-2 flex items-center gap-1 uppercase tracking-tighter">
+									<TrendingUp className="h-3 w-3" />
+									{kpi.trendLabel}
+								</div>
+							)}
+						</Link>
+					</div>
 				))}
 			</div>
 
 			<div className="grid gap-8 lg:grid-cols-3">
-				<article className="lg:col-span-2">
-					<Card className="h-full">
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<div>
-									<CardTitle className="text-xl">Top Priorities</CardTitle>
-									<CardDescription>Strategic focus items for today</CardDescription>
-								</div>
-								<Target className="h-5 w-5 text-primary/40" />
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4">
+				<article className="lg:col-span-2 space-y-8">
+					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Top Priorities [Protocol-01]</h2>
+							<Target className="h-4 w-4 text-muted-foreground/40" />
+						</div>
+						<div className="p-1 space-y-1">
 							{priorities.map((p, idx) => (
-								<div key={p.id} className="flex items-center justify-between p-5 rounded-[1.5rem] bg-muted/20 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
-									<div className="flex items-center gap-5">
-										<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background border border-border/10 font-heading font-bold text-lg shadow-sm group-hover:scale-110 transition-transform duration-500">
-											{idx + 1}
+								<div key={p.id} className="flex items-center justify-between p-4 bg-rams-chassis border border-rams-border/50 group hover:border-rams-orange/40 transition-none">
+									<div className="flex items-center gap-6">
+										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-rams-sm bg-rams-panel border border-rams-border font-mono font-bold text-xs">
+											0{idx + 1}
 										</div>
-										<div className="space-y-1.5">
-											<Link href={p.href} className="font-heading font-bold text-base tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
+										<div className="space-y-1">
+											<Link href={p.href} className="font-sans font-black text-[13px] uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-colors">
 												{p.title}
 											</Link>
 											<div className="flex items-center gap-3">
-												<Badge role="status" variant={priorityBadgeVariant(p.priority)} className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">
+												<Badge role="status" variant="outline" className="rounded-none border-rams-border text-[9px] font-black uppercase tracking-widest px-1.5 py-0 h-4 bg-rams-panel">
 													{p.priority}
 												</Badge>
-												<span className="text-[9px] text-muted-foreground/60 font-bold uppercase tracking-[0.2em]">Target Today</span>
+												<span className="text-[9px] text-muted-foreground/40 font-mono font-bold uppercase tracking-widest">Target_Today</span>
 											</div>
 										</div>
 									</div>
-									<Button variant="ghost" size="sm" asChild className="rounded-xl group-hover:bg-primary/10 group-hover:text-primary transition-all">
+									<Button variant="ghost" size="sm" asChild className="rounded-rams-sm text-[10px] font-black uppercase tracking-widest hover:bg-rams-orange/10 hover:text-rams-orange transition-none">
 										<Link href={p.href}>
-											Execute <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+											Execute <ArrowRight className="ml-2 h-3 w-3" />
 										</Link>
 									</Button>
 								</div>
 							))}
-						</CardContent>
-					</Card>
-				</article>
-
-				<article>
-					<div className="space-y-8">
-						<Card>
-							<CardHeader>
-								<div className="flex items-center justify-between">
-									<div>
-										<CardTitle className="text-xl">My Tasks</CardTitle>
-										<CardDescription>Assigned commitments</CardDescription>
-									</div>
-									<CheckCircle2 className="h-5 w-5 text-primary/40" />
-								</div>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								{tasks.map((t) => (
-									<div key={t.id} className="flex items-start gap-4 p-3 rounded-2xl bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
-										<div className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground/20 group-hover:border-primary/40 transition-colors">
-											<div className="h-2 w-2 rounded-full bg-transparent group-hover:bg-primary group-hover:shadow-glow transition-all" />
-										</div>
-										<div className="space-y-1">
-											<Link href={t.href} className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-primary transition-colors">
-												{t.title}
-											</Link>
-											<p className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/40">{t.dueLabel}</p>
-										</div>
-									</div>
-								))}
-								{tasks.length === 0 && (
-									<p className="text-sm text-muted-foreground py-4 text-center italic">All clear for today</p>
-								)}
-								{hasPageAccess('/tasks', userRoles) && (
-									<div className="pt-2">
-										<Button variant="ghost" size="sm" asChild className="w-full justify-between text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl">
-											<Link href="/tasks" className="flex items-center w-full justify-between">
-												<span className="text-xs font-bold uppercase tracking-widest">View All Tasks</span>
-												<ArrowRight className="h-4 w-4" />
-											</Link>
-										</Button>
-									</div>
-								)}
-							</CardContent>
-						</Card>
-
-						<Card>
-							<CardHeader>
-								<div className="flex items-center justify-between">
-									<div>
-										<CardTitle className="text-xl">Project Work</CardTitle>
-										<CardDescription>Stories and Issues</CardDescription>
-									</div>
-									<Layers className="h-5 w-5 text-primary/40" />
-								</div>
-							</CardHeader>
-							<CardContent>
-								<MyWorkDashboard />
-							</CardContent>
-						</Card>
-
-						{lswSummary && (
-							<Card>
-								<CardHeader>
-									<div className="flex items-center justify-between">
-										<div>
-											<CardTitle className="text-xl">Leader Standard Work</CardTitle>
-											<CardDescription>Checklist completion</CardDescription>
-										</div>
-										<Target className="h-5 w-5 text-primary/40" />
-									</div>
-								</CardHeader>
-								<CardContent className="space-y-3">
-									<div className="text-sm text-muted-foreground">
-										Daily: <span className="font-semibold text-foreground">{lswSummary.daily_completed}/{lswSummary.daily_total}</span>
-									</div>
-									<div className="text-sm text-muted-foreground">
-										Weekly: <span className="font-semibold text-foreground">{lswSummary.weekly_completed}/{lswSummary.weekly_total}</span>
-									</div>
-									<div className="text-sm text-muted-foreground">
-										Monthly: <span className="font-semibold text-foreground">{lswSummary.monthly_completed}/{lswSummary.monthly_total}</span>
-									</div>
-									{lswSummary.overdue_count > 0 && (
-										<Badge role="status" variant="destructive" className="w-fit">Overdue: {lswSummary.overdue_count}</Badge>
-									)}
-									{lswSummary.next_due_item && (
-										<p className="text-xs text-muted-foreground">Next due: {lswSummary.next_due_item}</p>
-									)}
-								</CardContent>
-							</Card>
-						)}
+						</div>
 					</div>
-				</article>
 
-				<article className="lg:col-span-2">
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<div>
-									<CardTitle className="text-xl text-danger flex items-center gap-2">
-										<AlertCircle className="h-5 w-5" />
-										Anomalies & Activity
-									</CardTitle>
-									<CardDescription>Recent activity and factory floor updates</CardDescription>
-								</div>
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4">
+					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-rams-red">Critical Anomalies</h2>
+							<AlertCircle className="h-4 w-4 text-rams-red/40" />
+						</div>
+						<div className="p-1 space-y-1">
 							{activity.map((a) => (
-								<div key={a.id} className="flex items-start justify-between p-4 rounded-[1.5rem] bg-danger/5 border border-danger/5 hover:bg-danger/10 transition-all duration-300 group">
+								<div key={a.id} className="flex items-start justify-between p-4 bg-rams-red/5 border border-rams-red/10 group">
 									<div className="flex items-start gap-4">
-										<div className="mt-1.5 h-2 w-2 rounded-full bg-danger animate-pulse shadow-[0_0_8px_rgba(220,38,38,0.5)]" />
+										<div className="mt-1.5 h-1.5 w-1.5 rounded-none bg-rams-red rotate-45" />
 										<div className="space-y-1">
 											{a.href ? (
-												<Link href={a.href} className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-danger transition-colors">
+												<Link href={a.href} className="font-sans font-black text-[13px] uppercase tracking-tight text-foreground/80 group-hover:text-rams-red transition-colors">
 													{a.text}
 												</Link>
 											) : (
-												<span className="font-heading font-bold text-sm tracking-tight text-foreground/80">{a.text}</span>
+												<span className="font-sans font-black text-[13px] uppercase tracking-tight text-foreground/80">{a.text}</span>
 											)}
-											<p className="text-[9px] uppercase tracking-[0.2em] font-bold text-danger/40">{a.when}</p>
+											<p className="text-[9px] font-mono font-bold text-rams-red/60 uppercase tracking-widest">{a.when}</p>
 										</div>
 									</div>
-									<ArrowRight className="h-4 w-4 text-danger/30 group-hover:translate-x-1 transition-transform" />
+									<ArrowRight className="h-3 w-3 text-rams-red/30 group-hover:translate-x-1 transition-transform" />
 								</div>
 							))}
-							{activity.length === 0 && (
-								<div className="py-8 text-center space-y-2">
-									<CheckCircle2 className="h-8 w-8 text-success mx-auto" />
-									<p className="text-sm font-medium text-muted-foreground">System stable. No active anomalies.</p>
-								</div>
-							)}
-						</CardContent>
-					</Card>
-				</article>
-
-				<article>
-					<Card>
-						<CardHeader className="flex flex-row items-center justify-between space-y-0">
-							<div>
-								<CardTitle className="text-xl">Priority RFQs</CardTitle>
-								<CardDescription>Sales pipeline high-focus</CardDescription>
-							</div>
-							<Target className="h-5 w-5 text-primary/40" />
-						</CardHeader>
-						<CardContent className="space-y-4">
-							{priorityRfqs.map((r) => (
-								<div key={r.id} className="space-y-2.5 p-4 rounded-[1.5rem] bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
-									<Link href={r.href} className="font-heading font-bold text-sm tracking-tight block text-foreground/80 group-hover:text-primary transition-colors">
-										{r.customer} • {r.title}
-									</Link>
-									<div className="flex items-center gap-2">
-										<Badge role="status" variant={priorityBadgeVariant(r.priority)} className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0 bg-background/50">
-											{r.priority}
-										</Badge>
-										<Badge role="status" variant="secondary" className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0 bg-primary/5 text-primary border-primary/10">
-											{r.status}
-										</Badge>
-									</div>
-								</div>
-							))}
-							{priorityRfqs.length === 0 && (
-								<p className="text-sm text-muted-foreground py-4 text-center italic">No RFQs in focus</p>
-							)}
-							{(isTestEnv || hasPageAccess('/pipeline', userRoles)) && (
-								<div className="pt-1">
-									<Button variant="ghost" size="sm" asChild className="w-full justify-between text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl">
-										<Link href="/pipeline" className="flex items-center w-full justify-between">
-											<span className="text-xs font-bold uppercase tracking-widest">View Pipeline</span>
-											<ArrowRight className="h-4 w-4" />
-										</Link>
-									</Button>
-								</div>
-							)}
-							{hasPageAccess('/pipeline', userRoles) && (
-								<Button variant="ghost" size="sm" asChild className="w-full justify-between text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl">
-									<Link href="/pipeline" className="flex items-center w-full justify-between">
-										<span className="text-xs font-bold uppercase tracking-widest">Open Pipeline</span>
-										<ArrowRight className="h-4 w-4" />
-									</Link>
-								</Button>
-							)}
-						</CardContent>
-					</Card>
-				</article>
-
-				<article className="lg:col-span-3">
-					<Card className="bg-primary shadow-glow shadow-primary/20 border-none overflow-hidden relative group rounded-[3rem]">
-						<div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-110 transition-transform duration-1000 ease-out">
-							<Target className="h-48 w-48 text-white" />
 						</div>
-						<div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/80" />
-						<div className="absolute inset-0 opacity-[0.15] mix-blend-soft-light" 
-							 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }} 
-						/>
-						<CardHeader className="relative z-10 p-10 pb-6">
-							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-4">
-									<div className="p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-lg">
-										<Zap className="h-6 w-6 text-white fill-white animate-pulse" />
+					</div>
+				</article>
+
+				<article className="space-y-8">
+					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Assigned_Tasks</h2>
+							<CheckCircle2 className="h-4 w-4 text-muted-foreground/40" />
+						</div>
+						<div className="p-4 space-y-4">
+							{tasks.map((t) => (
+								<div key={t.id} className="flex items-start gap-3 group">
+									<div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center border border-rams-border group-hover:border-rams-orange transition-colors">
+										<div className="h-1.5 w-1.5 bg-transparent group-hover:bg-rams-orange transition-colors" />
 									</div>
-									<CardTitle className="text-white text-2xl font-heading tracking-tight">Sensei Daily Drill</CardTitle>
+									<div className="space-y-1">
+										<Link href={t.href} className="font-sans font-bold text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-colors">
+											{t.title}
+										</Link>
+										<p className="text-[9px] font-mono font-black text-muted-foreground/40 uppercase tracking-tighter">{t.dueLabel}</p>
+									</div>
 								</div>
-								<Badge className="bg-white/20 text-white border-white/20 hover:bg-white/30 backdrop-blur-md rounded-lg px-3 py-1 font-black uppercase tracking-widest text-[9px]">
-									LEVEL 4 MATURITY
-								</Badge>
-							</div>
-							<CardDescription className="text-white/60 font-bold uppercase tracking-[0.2em] mt-4 ml-1">Continuous Improvement Practice established</CardDescription>
-						</CardHeader>
-								<CardContent className="relative z-10 p-10 pt-0 flex flex-col md:flex-row items-center justify-between gap-10">
-									{microDrillItems.length > 0 ? (
-								<div className="space-y-3 flex-1">
-											<p className="text-white font-heading font-bold text-xl leading-relaxed tracking-tight">{microDrillItems[0].question}</p>
-											{microDrillItems[0].hint && (
-										<div className="flex items-center gap-2 text-white/50">
-											<div className="h-1 w-1 rounded-full bg-white/30" />
-													<p className="text-xs font-medium italic">Sensei Intelligence: {microDrillItems[0].hint}</p>
-										</div>
-									)}
-								</div>
-							) : (
-								<p className="text-white font-heading font-bold text-xl leading-relaxed tracking-tight flex-1">
-									"Run a 5-minute “5 Whys” on the top organizational abnormality to identify root causes before they cascade."
-								</p>
+							))}
+							{tasks.length === 0 && (
+								<p className="text-[10px] font-mono font-bold text-muted-foreground/40 text-center py-4 uppercase">Status: All_Clear</p>
 							)}
-									<div className="flex items-center gap-4 shrink-0">
-										<Button className="bg-white text-slate-900 hover:bg-white/95 shadow-xl rounded-[1.25rem] font-black uppercase tracking-widest h-14 px-10 active:scale-95 transition-all text-xs">
-											Submit Answer
-										</Button>
-								{hasPageAccess('/training', userRoles) && (
-									<Button asChild variant="secondary" className="bg-white text-primary hover:bg-white/95 shadow-xl rounded-[1.25rem] font-black uppercase tracking-widest h-14 px-10 active:scale-95 transition-all text-xs">
-										<Link href="/training">Execute Protocol</Link>
-									</Button>
-								)}
+						</div>
+					</div>
+
+					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Priority_RFQs</h2>
+							<Target className="h-4 w-4 text-muted-foreground/40" />
+						</div>
+						<div className="p-4 space-y-3">
+							{priorityRfqs.map((r) => (
+								<div key={r.id} className="p-3 border border-rams-border bg-rams-chassis hover:bg-rams-panel transition-none group">
+									<Link href={r.href} className="font-sans font-black text-[11px] uppercase tracking-tight block text-foreground/80 group-hover:text-rams-orange">
+										{r.customer} // {r.title}
+									</Link>
+									<div className="flex items-center gap-2 mt-2">
+										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-panel border border-rams-border">{r.priority}</span>
+										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-orange text-black">{r.status}</span>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+
+					<div className="bg-rams-orange p-8 rounded-rams-sm border border-black/10 relative overflow-hidden group">
+						<div className="absolute top-0 right-0 p-4 opacity-5 group-hover:rotate-12 transition-transform duration-500">
+							<Zap className="h-32 w-32 text-black" />
+						</div>
+						<div className="relative z-10 space-y-6">
+							<div className="flex items-center justify-between">
+								<h2 className="text-black font-black uppercase tracking-tighter text-lg leading-none">Sensei_Daily_Drill</h2>
+								<span className="text-[8px] font-black uppercase tracking-widest px-1 border border-black/20">Maturity_Lvl_4</span>
 							</div>
-						</CardContent>
-					</Card>
+							<p className="text-black/80 font-sans font-bold text-sm leading-tight uppercase">
+								{microDrillItems.length > 0 ? microDrillItems[0].question : "Initialize daily protocol analysis for risk mitigation."}
+							</p>
+							<Button className="w-full bg-black text-white hover:bg-black/90 rounded-none h-10 text-[10px] font-black uppercase tracking-widest transition-none">
+								Execute Answer
+							</Button>
+						</div>
+					</div>
 				</article>
 			</div>
 		</div>

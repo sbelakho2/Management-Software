@@ -3,42 +3,41 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-xl border font-bold transition-all focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 select-none',
+  'inline-flex items-center rounded-rams-sm border font-mono font-black transition-none focus:outline-none select-none',
   {
     variants: {
       variant: {
         default:
-          'border-transparent bg-primary text-primary-foreground shadow-glow hover:scale-105 active:scale-95',
+          'border-black/10 bg-rams-orange text-black',
         secondary:
-          'border-border/40 bg-secondary/80 text-secondary-foreground backdrop-blur-sm hover:bg-secondary hover:border-primary/20',
+          'border-rams-border bg-rams-panel text-muted-foreground',
         destructive:
-          'border-transparent bg-destructive text-destructive-foreground shadow-sm hover:opacity-90',
-        outline: 'text-foreground border-primary/20 bg-background/50 hover:bg-primary/5 hover:border-primary/40',
-        ghost: 'border-transparent bg-transparent text-foreground hover:bg-primary/10 hover:text-primary',
+          'border-transparent bg-rams-red text-white',
+        outline: 'text-foreground border-rams-border bg-transparent',
+        ghost: 'border-transparent bg-transparent text-foreground',
         primary:
-          'border-transparent bg-primary text-primary-foreground shadow-glow hover:opacity-90',
+          'border-black/10 bg-rams-orange text-black',
         success:
-          'border-transparent bg-success/10 text-success ring-1 ring-inset ring-success/20 dark:bg-success/20',
+          'border-rams-green/20 bg-rams-green/10 text-rams-green',
         warning:
-          'border-transparent bg-warning/10 text-warning ring-1 ring-inset ring-warning/20 dark:bg-warning/20',
+          'border-rams-orange/20 bg-rams-orange/10 text-rams-orange',
         danger:
-          'border-transparent bg-danger/10 text-danger ring-1 ring-inset ring-danger/20 dark:bg-danger/20',
-        // Status badges - Premium refined
+          'border-rams-red/20 bg-rams-red/10 text-rams-red',
         pending:
-          'border-transparent bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400',
+          'border-rams-orange/20 bg-rams-orange/10 text-rams-orange',
         active:
-          'border-transparent bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20 dark:bg-emerald-900/30 dark:text-emerald-400',
+          'border-rams-green/20 bg-rams-green/10 text-rams-green',
         inactive:
-          'border-transparent bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-600/20 dark:bg-slate-900/30 dark:text-slate-400',
+          'border-rams-border bg-rams-panel/50 text-muted-foreground/60',
         completed:
-          'border-transparent bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-600/20 dark:bg-sky-900/30 dark:text-sky-400',
+          'border-rams-steel/20 bg-rams-steel/10 text-rams-steel',
         failed:
-          'border-transparent bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/20 dark:bg-rose-900/30 dark:text-rose-400',
+          'border-rams-red/20 bg-rams-red/10 text-rams-red',
       },
       size: {
-        default: 'px-3 py-1 text-[10px] uppercase tracking-wider',
-        sm: 'px-2 py-0.5 text-[9px] uppercase tracking-widest',
-        lg: 'px-4 py-1.5 text-xs font-black uppercase tracking-[0.15em]',
+        default: 'px-1.5 py-0 h-4 text-[8px] uppercase tracking-widest',
+        sm: 'px-1 py-0 h-3.5 text-[7px] uppercase tracking-tighter',
+        lg: 'px-2.5 py-0.5 h-5 text-[10px] uppercase tracking-[0.2em]',
       },
     },
     defaultVariants: {

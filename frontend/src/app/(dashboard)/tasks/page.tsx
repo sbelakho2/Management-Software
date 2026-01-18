@@ -35,22 +35,22 @@ import { useTasksStore } from '@/stores/tasks';
 import { cn, formatDate } from '@/lib/utils';
 import type { Task, TaskStatus, Priority } from '@/types';
 
-const statusConfig: Record<string, { label: string; icon: any; color: string }> = {
-  todo: { label: 'To Do', icon: Circle, color: 'text-muted-foreground' },
-  in_progress: { label: 'In Progress', icon: Clock, color: 'text-blue-500' },
-  in_review: { label: 'Review', icon: AlertCircle, color: 'text-yellow-500' },
-  done: { label: 'Completed', icon: CheckCircle2, color: 'text-green-500' },
-  cancelled: { label: 'Cancelled', icon: XCircle, color: 'text-red-500' },
-  backlog: { label: 'Backlog', icon: Circle, color: 'text-gray-400' },
+const statusConfig: Record<string, { label: string; icon: any; color: string; variant: any }> = {
+  todo: { label: 'To Do', icon: Circle, color: 'text-muted-foreground', variant: 'secondary' },
+  in_progress: { label: 'In Progress', icon: Clock, color: 'text-rams-orange', variant: 'warning' },
+  in_review: { label: 'Review', icon: AlertCircle, color: 'text-rams-steel', variant: 'outline' },
+  done: { label: 'Completed', icon: CheckCircle2, color: 'text-rams-green', variant: 'success' },
+  cancelled: { label: 'Cancelled', icon: XCircle, color: 'text-rams-red', variant: 'destructive' },
+  backlog: { label: 'Backlog', icon: Circle, color: 'text-muted-foreground/40', variant: 'secondary' },
 };
 
-import { XCircle } from 'lucide-react';
+import { XCircle as XCircleIcon } from 'lucide-react';
 
-const priorityConfig: Record<string, { label: string; color: string }> = {
-  low: { label: 'Low', color: 'bg-slate-100 text-slate-800' },
-  medium: { label: 'Medium', color: 'bg-blue-100 text-blue-800' },
-  high: { label: 'High', color: 'bg-orange-100 text-orange-800' },
-  critical: { label: 'Critical', color: 'bg-red-100 text-red-800' },
+const priorityConfig: Record<string, { label: string; variant: any }> = {
+  low: { label: 'Low', variant: 'secondary' },
+  medium: { label: 'Medium', variant: 'default' },
+  high: { label: 'High', variant: 'warning' },
+  critical: { label: 'Critical', variant: 'danger' },
 };
 
 export default function TasksPage() {
@@ -89,71 +89,79 @@ export default function TasksPage() {
   }, [filteredTasks]);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="tasks-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="tasks-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.tasks.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.tasks.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.tasks.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: TASK-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Tabs value={view} onValueChange={(v: any) => setView(v)}>
-            <TabsList className="bg-background/50 border-border/50">
-              <TabsTrigger value="board">
-                <LayoutGrid className="h-4 w-4 mr-2" />
-                Board
-              </TabsTrigger>
-              <TabsTrigger value="list">
-                <List className="h-4 w-4 mr-2" />
-                List
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/tasks/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Assignment
+          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm mr-2">
+            <Button
+              variant={view === 'board' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('board')}
+              className={cn("h-8 px-3 rounded-none", view === 'board' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              <LayoutGrid className="mr-2 h-3.5 w-3.5" />
+              BOARD
+            </Button>
+            <Button
+              variant={view === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('list')}
+              className={cn("h-8 px-3 rounded-none", view === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              <List className="mr-2 h-3.5 w-3.5" />
+              LIST
+            </Button>
+          </div>
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => router.push('/tasks/new')}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Initialize Task
           </Button>
         </div>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-              <Input
-                placeholder="Search assignments by intelligence key..."
-                className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <Button variant="outline" size="lg" className="rounded-xl border-border/50 h-12">
-              <Filter className="h-4 w-4 mr-2" />
-              Strategic Filters
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="relative flex-1 group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
+          <Input
+            placeholder="SEARCH_TASK_PROTOCOLS..."
+            className="pl-10 h-10 text-[10px]"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border h-10">
+          <Filter className="h-3.5 w-3.5 mr-2" />
+          Strategic Filters
+        </Button>
+      </div>
 
       {view === 'board' ? (
-        <div className="grid gap-8 lg:grid-cols-4 overflow-x-auto pb-8 no-scrollbar">
+        <div className="grid gap-8 lg:grid-cols-4 overflow-x-auto pb-8 scrollbar-hide">
           {(['todo', 'in_progress', 'in_review', 'done'] as TaskStatus[]).map((status) => (
             <div key={status} className="flex flex-col gap-6 min-w-[300px]">
-              <div className="flex items-center justify-between px-2">
+              <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-3">
-                  <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{statusConfig[status].label}</h3>
-                  <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[9px] font-bold">{tasksByStatus[status].length}</Badge>
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">{statusConfig[status].label}</h3>
+                  <Badge variant="secondary" className="rounded-none border-rams-border font-mono text-[9px] font-bold">{tasksByStatus[status].length}</Badge>
                 </div>
               </div>
-              <div className="flex flex-col gap-4 min-h-[600px] bg-muted/10 rounded-[2.5rem] p-4 border border-border/5">
+              <div className="flex flex-col gap-1 min-h-[600px] bg-rams-panel/20 border border-rams-border/50 p-1">
                 {tasksByStatus[status].map((task) => (
                   <TaskCard key={task.id} task={task} />
                 ))}
                 {tasksByStatus[status].length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-border/20 rounded-[2rem] text-muted-foreground/40">
-                    <p className="text-xs font-bold uppercase tracking-widest">No Protocol Nodes</p>
+                  <div className="flex flex-col items-center justify-center h-40 border border-dashed border-rams-border/30 text-muted-foreground/20">
+                    <p className="text-[9px] font-black uppercase tracking-widest">Zero Protocol Nodes</p>
                   </div>
                 )}
               </div>
@@ -161,36 +169,34 @@ export default function TasksPage() {
           ))}
         </div>
       ) : (
-        <Card className="rounded-[2rem] border-border/40 overflow-hidden">
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
           <CardContent className="p-0">
-            <div className="divide-y divide-border/10">
+            <div className="divide-y divide-rams-border/30">
               {filteredTasks.map((task) => (
-                <div key={task.id} className="p-5 flex items-center justify-between hover:bg-primary/5 transition-all group">
-                  <div className="flex items-center gap-5">
+                <div key={task.id} className="p-4 flex items-center justify-between hover:bg-rams-panel transition-none group">
+                  <div className="flex items-center gap-4">
                     {(() => {
                       const Icon = statusConfig[task.status].icon;
                       return (
-                        <div className={cn("p-2.5 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110", statusConfig[task.status].color)}>
-                          <Icon className="h-5 w-5" />
+                        <div className={cn("p-2 rounded-rams-sm bg-rams-panel border border-rams-border", statusConfig[task.status].color)}>
+                          <Icon className="h-4 w-4" />
                         </div>
                       );
                     })()}
                     <div>
-                      <h4 className="font-heading font-bold text-base tracking-tight group-hover:text-primary transition-colors">{task.title}</h4>
-                      <div className="flex items-center gap-4 mt-1.5">
-                        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                      <h4 className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{task.title}</h4>
+                      <div className="flex items-center gap-4 mt-1">
+                        <span className="flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
                           <Calendar className="h-3 w-3" />
-                          {task.due_date ? formatDate(task.due_date) : 'Undetermined Horizon'}
+                          {task.due_date ? formatDate(task.due_date) : 'ASAP'}
                         </span>
-                        {task.priority !== 'medium' && (
-                          <Badge className={cn("text-[9px] font-bold uppercase tracking-wider", priorityConfig[task.priority].color)} variant="secondary">
-                            {priorityConfig[task.priority].label}
-                          </Badge>
-                        )}
+                        <Badge variant={priorityConfig[task.priority].variant} size="sm">
+                          {priorityConfig[task.priority].label.toUpperCase()}
+                        </Badge>
                       </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" className="rounded-xl group-hover:bg-primary/10">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-rams-sm">
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </div>
@@ -208,42 +214,46 @@ function TaskCard({ task }: { task: Task }) {
   const priority = priorityConfig[task.priority];
 
   return (
-    <Card className="cursor-pointer transition-all duration-500 hover:shadow-glow hover:-translate-y-1.5 group border-border/40 bg-card/60 backdrop-blur-sm rounded-[1.5rem]">
-      <CardContent className="p-5 space-y-4">
+    <Card className="cursor-pointer transition-none group border-rams-border bg-rams-module rounded-none hover:border-rams-orange/40">
+      <CardContent className="p-4 space-y-4">
         <div className="flex items-start justify-between">
-          <Badge className={cn("text-[9px] font-bold uppercase tracking-widest rounded-md", priority.color)} variant="secondary">
-            {priority.label}
+          <Badge variant={priority.variant} size="sm">
+            {priority.label.toUpperCase()}
           </Badge>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10">
-                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-rams-sm opacity-0 group-hover:opacity-100 transition-none hover:bg-rams-panel">
+                <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
-              <DropdownMenuItem className="rounded-xl m-1">View Node</DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl m-1">Refine Protocol</DropdownMenuItem>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>VIEW_NODE</DropdownMenuItem>
+              <DropdownMenuItem>REFINE_PROTOCOL</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-danger rounded-xl m-1">De-authorize</DropdownMenuItem>
+              <DropdownMenuItem className="text-rams-red">TERMINATE_PROTOCOL</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <h4 className="font-heading font-bold text-sm leading-snug group-hover:text-primary transition-colors">{task.title}</h4>
+        <h4 className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 leading-snug group-hover:text-rams-orange transition-none">{task.title}</h4>
         {task.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed font-medium">{task.description}</p>
+          <p className="text-[11px] text-muted-foreground/60 line-clamp-2 leading-relaxed font-medium">{task.description}</p>
         )}
-        <div className="flex items-center justify-between pt-4 border-t border-border/10">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+        <div className="flex items-center justify-between pt-4 border-t border-rams-border/30">
+          <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
             <Calendar className="h-3 w-3" />
             {task.due_date ? formatDate(task.due_date) : 'ASAP'}
           </div>
-          <div className="flex -space-x-2">
-            <div className="h-7 w-7 rounded-full border-2 border-background bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shadow-sm">
-              JD
+          <div className="flex -space-x-1">
+            <div className="h-6 w-6 rounded-none border border-rams-border bg-rams-panel flex items-center justify-center text-[8px] font-black text-muted-foreground uppercase">
+              {getInitials(task.assigned_to_name || 'UN')}
             </div>
           </div>
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function getInitials(name: string) {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase();
 }

@@ -6,13 +6,13 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const labelVariants = cva(
-  'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
+  'text-[10px] font-black uppercase tracking-[0.2em] leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-40',
   {
     variants: {
       variant: {
-        default: 'text-foreground',
-        muted: 'text-muted-foreground',
-        error: 'text-danger',
+        default: 'text-foreground/70',
+        muted: 'text-muted-foreground/50',
+        error: 'text-rams-red',
       },
     },
     defaultVariants: {
@@ -38,7 +38,7 @@ const Label = React.forwardRef<
   >
     {children}
     {required && (
-      <span className="ml-1 text-danger" aria-hidden="true">
+      <span className="ml-1 text-rams-red" aria-hidden="true">
         *
       </span>
     )}

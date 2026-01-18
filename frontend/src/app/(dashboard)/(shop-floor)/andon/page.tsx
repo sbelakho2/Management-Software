@@ -93,160 +93,140 @@ export default function AndonBoardPage() {
   }, []);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="andon-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="andon-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight  flex items-center gap-3">
-            <Zap className="h-10 w-10 text-primary" />
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90 flex items-center gap-3">
+            <div className="flex flex-col gap-0.5">
+              <div className="h-1.5 w-4 bg-rams-red" />
+              <div className="h-1.5 w-4 bg-rams-orange" />
+              <div className="h-1.5 w-4 bg-rams-green" />
+            </div>
             {t('pages.andon.title')}
           </h1>
-          <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            Real-time monitoring • Last updated {formatDate(lastRefresh, { hour: 'numeric', minute: 'numeric', second: 'numeric' })}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-none bg-rams-green animate-pulse" />
+            <span>REAL-TIME_STREAM</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: ANDON-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button 
             variant="ghost" 
             size="icon"
-            className="rounded-xl hover:bg-primary/10 transition-all"
+            className="rounded-rams-sm h-10 w-10 border border-rams-border hover:bg-rams-panel transition-none"
             onClick={() => setSoundEnabled(!soundEnabled)}
             title={soundEnabled ? 'Mute alerts' : 'Enable alert sounds'}
           >
-            {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+            {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           </Button>
           <Button
             variant="outline"
-            size="lg"
-            className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary"
+            size="default"
+            className="rounded-rams-sm border-rams-border"
             onClick={() => router.push('/andon/analytics')}
           >
-            <TrendingUp className="h-4 w-4 mr-2" />
+            <TrendingUp className="h-3.5 w-3.5 mr-2" />
             Analytics
           </Button>
           <Button 
             variant="ghost" 
             size="icon"
-            className="rounded-xl hover:bg-primary/10 transition-all"
+            className="rounded-rams-sm h-10 w-10 border border-rams-border hover:bg-rams-panel transition-none"
             onClick={toggleFullscreen}
             title="Toggle fullscreen"
           >
-            <Maximize2 className="h-5 w-5" />
+            <Maximize2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => setLastRefresh(new Date())}>
-            <RefreshCw className="h-5 w-5" />
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="rounded-rams-sm h-10 w-10 border border-rams-border hover:bg-rams-panel transition-none" 
+            onClick={() => setLastRefresh(new Date())}
+          >
+            <RefreshCw className="h-4 w-4" />
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/andon/settings')}>
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
+          <Button 
+            size="default" 
+            className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" 
+            onClick={() => router.push('/andon/settings')}
+          >
+            <Settings className="mr-2 h-3.5 w-3.5" />
+            Control Station
           </Button>
         </div>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className={cn("rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1", criticalAlerts.length > 0 && 'border-danger/20 bg-danger/[0.02]')}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-3xl font-heading font-bold tracking-tight ">{activeEvents.length}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Active Signals</p>
-              </div>
-              <div className={cn("p-3 rounded-2xl shadow-sm", criticalAlerts.length > 0 ? "bg-danger/10 text-danger animate-pulse" : "bg-muted/10 text-muted-foreground")}>
-                <AlertTriangle className="h-5 w-5" />
-              </div>
+      <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+        <div className={cn("bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0 group", criticalAlerts.length > 0 && 'bg-rams-red/5')}>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Signals</p>
+          <div className="flex items-end justify-between">
+            <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", criticalAlerts.length > 0 ? "text-rams-red" : "text-foreground/90")}>
+              {activeEvents.length}
             </div>
             {criticalAlerts.length > 0 && (
-              <Badge variant="destructive" className="mt-3 rounded-md px-1.5 py-0 text-[8px] font-black uppercase tracking-widest">
-                {criticalAlerts.length} CRITICAL NODES
-              </Badge>
+              <Badge variant="danger" size="sm" className="mb-1">{criticalAlerts.length} CRITICAL</Badge>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-3xl font-heading font-bold tracking-tight ">{runningMachines}/{workCenters.size}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Operational Pulse</p>
-              </div>
-              <div className="p-3 rounded-2xl bg-emerald-500/10 text-emerald-600 shadow-sm">
-                <Play className="h-5 w-5" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0 group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Operational Pulse</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{runningMachines}/{workCenters.size}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">ACTIVE_NODES</p>
+        </div>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={cn(
-                  'text-3xl font-heading font-bold tracking-tight mt-1',
-                  metrics.avgResponseTime < 300 ? 'text-emerald-600 dark:text-emerald-500' : 'text-amber-600 dark:text-amber-500'
-                )}>
-                  {Math.round(metrics.avgResponseTime / 60)}m
-                </p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Mean Response</p>
-              </div>
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
-                <Zap className="h-5 w-5" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0 group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Response</p>
+          <div className={cn(
+            "text-3xl font-mono font-bold tracking-tight tabular-nums",
+            metrics.avgResponseTime < 300 ? "text-rams-green" : "text-rams-orange"
+          )}>
+            {Math.round(metrics.avgResponseTime / 60)}m
+          </div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">PROTOCOL_VELOCITY</p>
+        </div>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-3xl font-heading font-bold tracking-tight ">{metrics.totalResolved}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mt-1">Resolved Nodes</p>
-              </div>
-              <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">
-                <Package className="h-5 w-5" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-rams-module p-6 border-b border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Resolved Nodes</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{metrics.totalResolved}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">TOTAL_CYCLES</p>
+        </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
         {/* Active Alerts */}
         <div className="lg:col-span-1 space-y-6">
-          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2 px-2">
-            <AlertTriangle className="h-4 w-4 text-warning/60" />
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/60 flex items-center gap-3 px-1">
+            <div className="h-1.5 w-1.5 bg-rams-orange" />
             Active Signals ({activeEvents.length})
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-1">
             {activeEvents.length === 0 ? (
-              <Card className="rounded-[2.5rem] border-emerald-500/20 bg-emerald-500/[0.02] backdrop-blur-md shadow-glow">
-                <CardContent className="p-8 text-center space-y-4">
-                  <div className="p-4 rounded-full bg-emerald-500/10 inline-block">
-                    <CheckCircle className="h-10 w-10 text-emerald-600" />
-                  </div>
-                  <div>
-                    <p className="font-heading font-bold text-lg text-emerald-800 dark:text-emerald-200">Protocol Stable</p>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/60 mt-1">No active anomalies identified</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="py-12 text-center industrial-panel bg-rams-panel/20 border-dashed">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-border mb-4">
+                  <CheckCircle className="h-8 w-8 text-rams-green/20" />
+                </div>
+                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Protocol Stable</p>
+                <p className="text-[9px] text-muted-foreground/30 mt-1 uppercase tracking-[0.2em]">No active anomalies identified</p>
+              </div>
             ) : (
               activeEvents.map((alert) => (
-                <Card key={alert.id} className={cn('rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-premium group', alert.severity === 'critical' ? 'border-danger/20' : 'border-warning/20')}>
-                  <div className={cn('h-1 w-full', alert.severity === 'critical' ? 'bg-danger' : 'bg-warning')} />
-                  <CardContent className="p-6 space-y-4">
+                <Card key={alert.id} className="rounded-none border-rams-border bg-rams-module group relative overflow-hidden">
+                  <div className={cn('absolute top-0 left-0 w-1 h-full', alert.severity === 'critical' ? 'bg-rams-red' : 'bg-rams-orange')} />
+                  <CardContent className="p-5 space-y-4">
                     <div className="flex justify-between items-start">
-                      <div className="font-mono text-xs font-bold text-primary/60">{alert.work_center_id}</div>
-                      <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'} className="rounded-md text-[8px] font-black uppercase tracking-widest border-none">{alert.severity}</Badge>
+                      <div className="font-mono text-[10px] font-black text-muted-foreground/40 uppercase tracking-widest">STATION: {alert.work_center_id}</div>
+                      <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'} size="sm" className="h-4">{alert.severity.toUpperCase()}</Badge>
                     </div>
-                    <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 leading-snug group-hover:text-primary transition-colors">{alert.description}</p>
-                    <div className="flex justify-between items-center pt-4 border-t border-border/10">
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{formatElapsedTime(alert.created_at)}</span>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="h-8 rounded-lg text-[9px] uppercase tracking-widest font-black" onClick={() => handleAcknowledge(alert.id)}>SYNC</Button>
-                        <Button size="sm" variant="outline" className="h-8 rounded-lg text-[9px] uppercase tracking-widest font-black" onClick={() => handleEscalate(alert.id)}>ESCALATE</Button>
+                    <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 leading-snug">{alert.description}</p>
+                    <div className="flex justify-between items-center pt-4 border-t border-rams-border/30">
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30">{formatElapsedTime(alert.created_at)}</span>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" className="h-7 px-3 text-[8px] font-black uppercase tracking-widest rounded-none" onClick={() => handleAcknowledge(alert.id)}>SYNC</Button>
+                        <Button size="sm" variant="outline" className="h-7 px-3 text-[8px] font-black uppercase tracking-widest rounded-none" onClick={() => handleEscalate(alert.id)}>ESCALATE</Button>
                       </div>
                     </div>
                   </CardContent>
@@ -258,64 +238,63 @@ export default function AndonBoardPage() {
 
         {/* Work Centers */}
         <div className="lg:col-span-2 space-y-6">
-          <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-2 px-2">
-            <Wrench className="h-4 w-4 text-primary/60" />
+          <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/60 flex items-center gap-3 px-1">
+            <div className="h-1.5 w-1.5 bg-rams-orange" />
             Intelligence Nodes
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-px border border-rams-border bg-rams-border">
             {Array.from(workCenters.values()).map((wc) => (
-              <Card key={wc.id} className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden hover:shadow-premium-hover transition-all duration-500 group">
-                <div className={cn('h-1.5 w-full transition-colors duration-1000', wc.status === 'running' ? 'bg-success shadow-glow' : 'bg-danger animate-pulse')} />
-                <CardContent className="p-6 space-y-5">
-                  <div className="flex justify-between items-center">
-                    <span className="font-heading font-bold text-base tracking-tight text-foreground/80">{wc.name}</span>
-                    <Badge variant={wc.status === 'running' ? 'success' : 'secondary'} className="rounded-md text-[8px] font-black uppercase tracking-widest border-none">{wc.status}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+              <div key={wc.id} className="bg-rams-module p-6 group">
+                <div className="flex justify-between items-center mb-6">
+                  <span className="font-sans font-black text-sm uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{wc.name}</span>
+                  <Badge variant={wc.status === 'running' ? 'success' : 'danger'} size="sm" className="h-4">{wc.status.toUpperCase()}</Badge>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
                     <span>OEE Pulse</span>
                     <span className="text-foreground/60">{wc.oee}%</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted/20 overflow-hidden shadow-inner-soft">
+                  <div className="h-1 bg-rams-panel border border-rams-border/30 overflow-hidden">
                     <div 
                       className={cn(
                         "h-full transition-all duration-1000",
-                        wc.status === 'running' ? 'bg-success' : 'bg-danger'
+                        wc.status === 'running' ? 'bg-rams-green' : 'bg-rams-red'
                       )} 
                       style={{ width: `${wc.efficiency}%` }} 
                     />
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         </div>
       </div>
 
       {/* Quick Actions */}
-      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
-        <CardHeader className="pb-4 border-b border-border/5 bg-muted/5 p-6">
-          <CardTitle className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/60">Strategic Operational Controls</CardTitle>
+      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+        <CardHeader className="p-4 border-b border-rams-border bg-rams-panel/20">
+          <CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/60">Strategic Operational Controls</CardTitle>
         </CardHeader>
-        <CardContent className="p-6">
-          <div className="flex flex-wrap gap-3">
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              <PhoneCall className="mr-2 h-4 w-4" />
+        <CardContent className="p-6 bg-rams-module">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-none border-rams-border hover:bg-rams-panel transition-none">
+              <PhoneCall className="mr-2 h-3.5 w-3.5" />
               Sync Supervisor
             </Button>
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              <MessageSquare className="mr-2 h-4 w-4" />
+            <Button variant="outline" className="rounded-none border-rams-border hover:bg-rams-panel transition-none">
+              <MessageSquare className="mr-2 h-3.5 w-3.5" />
               Global Broadcast
             </Button>
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              <Wrench className="mr-2 h-4 w-4" />
+            <Button variant="outline" className="rounded-none border-rams-border hover:bg-rams-panel transition-none">
+              <Wrench className="mr-2 h-3.5 w-3.5" />
               Technician Node
             </Button>
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              <Package className="mr-2 h-4 w-4" />
+            <Button variant="outline" className="rounded-none border-rams-border hover:bg-rams-panel transition-none">
+              <Package className="mr-2 h-3.5 w-3.5" />
               Logistics Sync
             </Button>
-            <Button variant="outline" size="lg" className="rounded-xl border-danger/20 hover:bg-danger/5 text-danger">
-              <AlertTriangle className="mr-2 h-4 w-4" />
+            <Button variant="outline" className="rounded-none border-rams-red/20 text-rams-red hover:bg-rams-red/5 transition-none">
+              <AlertTriangle className="mr-2 h-3.5 w-3.5" />
               Protocol Exception
             </Button>
           </div>

@@ -65,59 +65,23 @@ function CustomerStats({ customers }: { customers: any[] }) {
   }, [customers]);
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Intelligence Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.active}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
-              <Building2 className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Prospective Partners</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.prospects}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
-              <Users className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Aggregated Revenue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(stats.totalRevenue)}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
-              <DollarSign className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Conversion Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.avgWinRate.toFixed(0)}%</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-secondary/50 text-foreground shadow-sm">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Intel Nodes</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.active}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Prospective Partners</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.prospects}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Aggregated Revenue</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(stats.totalRevenue)}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Conversion Pulse</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.avgWinRate.toFixed(1)}%</p>
+      </div>
     </div>
   );
 }
@@ -128,60 +92,53 @@ function CustomerCard({ customer }: { customer: any }) {
 
   return (
     <Card 
-      className="hover:shadow-md transition-shadow cursor-pointer"
+      className="rounded-rams-sm group cursor-pointer"
       onClick={() => router.push(`/customers/${customer.id}`)}
     >
-      <CardContent className="pt-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <Avatar size="lg">
-              <AvatarFallback className="bg-primary/10 text-primary">
-                {getInitials(customer.name)}
-              </AvatarFallback>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-12 w-12 rounded-none border border-rams-border">
+              <AvatarImage src={customer.logo_url} />
+              <AvatarFallback className="bg-rams-panel text-muted-foreground font-mono font-black">{getInitials(customer.name)}</AvatarFallback>
             </Avatar>
             <div>
-              <h3 className="font-semibold">{customer.name}</h3>
-              <p className="text-sm text-muted-foreground">{customer.code}</p>
+              <h3 className="font-sans font-black text-sm uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{customer.name}</h3>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-0.5">Node_ID: {customer.code || customer.id.substring(0, 4)}</p>
             </div>
           </div>
-          <Badge variant={config.variant}>{config.label}</Badge>
+          <Badge variant={config.variant} size="sm">{config.label.toUpperCase()}</Badge>
         </div>
 
-        <div className="mt-4 space-y-2 text-sm">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Building2 className="h-4 w-4" />
-            <span>{customer.industry}</span>
+        <div className="space-y-3 mb-6">
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground/60 font-medium">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground/30" />
+            <span className="truncate">{customer.industry || 'IND_CLASSIFIED'}</span>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <MapPin className="h-4 w-4" />
-            <span>{customer.location_city || 'N/A'}, {customer.location_state || 'N/A'}</span>
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground/60 font-medium">
+            <MapPin className="h-3.5 w-3.5 text-muted-foreground/30" />
+            <span className="truncate">{customer.location_city || 'LOC_UNKNOWN'}</span>
           </div>
           {customer.primary_contact_name && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Users className="h-4 w-4" />
+            <div className="flex items-center gap-3 text-[10px] text-muted-foreground/60 font-medium">
+              <Users className="h-3.5 w-3.5 text-muted-foreground/30" />
               <span>{customer.primary_contact_name}</span>
             </div>
           )}
         </div>
 
-        <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-2 text-center">
+        <div className="pt-6 border-t border-rams-border/30 grid grid-cols-3 gap-2">
           <div>
-            <p className="text-lg font-bold">{customer.total_rfqs || 0}</p>
-            <p className="text-xs text-muted-foreground">RFQs</p>
+            <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 mb-1">RFQS</p>
+            <p className="text-sm font-mono font-bold tabular-nums text-foreground/80">{customer.total_rfqs || 0}</p>
           </div>
           <div>
-            <p className="text-lg font-bold">{formatCurrency(customer.total_revenue || 0)}</p>
-            <p className="text-xs text-muted-foreground">Revenue</p>
+            <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 mb-1">REVENUE</p>
+            <p className="text-sm font-mono font-bold tabular-nums text-foreground/80">{formatCurrency(customer.total_revenue || 0)}</p>
           </div>
           <div>
-            <p className={cn(
-              'text-lg font-bold',
-              (customer.win_rate || 0) >= 70 ? 'text-success' : 
-              (customer.win_rate || 0) >= 50 ? 'text-warning' : 'text-muted-foreground'
-            )}>
-              {customer.win_rate || 0}%
-            </p>
-            <p className="text-xs text-muted-foreground">Win Rate</p>
+            <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 mb-1">WIN_RATE</p>
+            <p className="text-sm font-mono font-bold tabular-nums text-rams-green">{(customer.win_rate || 0).toFixed(1)}%</p>
           </div>
         </div>
       </CardContent>
@@ -194,73 +151,73 @@ function CustomerRow({ customer }: { customer: any }) {
   const config = (statusConfig as any)[customer.status] || statusConfig.active;
 
   return (
-    <tr 
-      className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
+    <TableRow 
+      className="transition-none cursor-pointer group"
       onClick={() => router.push(`/customers/${customer.id}`)}
     >
-      <td className="py-3 px-4">
+      <TableCell>
         <div className="flex items-center gap-3">
-          <Avatar>
-            <AvatarFallback className="bg-primary/10 text-primary">
+          <Avatar className="h-8 w-8 rounded-none border border-rams-border">
+            <AvatarFallback className="bg-rams-panel text-muted-foreground font-mono font-black text-[10px]">
               {getInitials(customer.name)}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="font-medium">{customer.name}</p>
-            <p className="text-sm text-muted-foreground">{customer.code}</p>
+            <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{customer.name}</p>
+            <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{customer.code}</p>
           </div>
         </div>
-      </td>
-      <td className="py-3 px-4">
-        <Badge variant={config.variant}>{config.label}</Badge>
-      </td>
-      <td className="py-3 px-4 text-muted-foreground">{customer.industry}</td>
-      <td className="py-3 px-4 text-muted-foreground">
+      </TableCell>
+      <TableCell>
+        <Badge variant={config.variant} size="sm">{config.label.toUpperCase()}</Badge>
+      </TableCell>
+      <TableCell className="text-[10px] font-medium text-muted-foreground/60 uppercase">{customer.industry}</TableCell>
+      <TableCell className="text-[10px] font-medium text-muted-foreground/60 uppercase">
         {customer.location_city || '—'}, {customer.location_state || '—'}
-      </td>
-      <td className="py-3 px-4">
+      </TableCell>
+      <TableCell>
         {customer.primary_contact_name ? (
-          <div className="text-sm">
-            <p>{customer.primary_contact_name}</p>
-            <p className="text-muted-foreground">{customer.primary_contact_email}</p>
+          <div className="text-[10px] font-medium">
+            <p className="text-foreground/80">{customer.primary_contact_name.toUpperCase()}</p>
+            <p className="text-muted-foreground/40 font-mono lowercase">{customer.primary_contact_email}</p>
           </div>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground/20">—</span>
         )}
-      </td>
-      <td className="py-3 px-4 text-center">{customer.total_rfqs || 0}</td>
-      <td className="py-3 px-4 text-right font-medium">
+      </TableCell>
+      <TableCell className="text-center font-mono font-bold tabular-nums">{customer.total_rfqs || 0}</TableCell>
+      <TableCell className="text-right font-mono font-bold tabular-nums">
         {formatCurrency(customer.total_revenue || 0)}
-      </td>
-      <td className="py-3 px-4 text-center">
+      </TableCell>
+      <TableCell className="text-center">
         <span className={cn(
-          'font-medium',
-          (customer.win_rate || 0) >= 70 ? 'text-success' : 
-          (customer.win_rate || 0) >= 50 ? 'text-warning' : 'text-muted-foreground'
+          'font-mono font-bold tabular-nums',
+          (customer.win_rate || 0) >= 70 ? 'text-rams-green' : 
+          (customer.win_rate || 0) >= 50 ? 'text-rams-orange' : 'text-muted-foreground/40'
         )}>
           {customer.win_rate > 0 ? `${customer.win_rate}%` : '—'}
         </span>
-      </td>
-      <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="h-8 w-8">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => router.push(`/customers/${customer.id}`)}>
-              <Eye className="mr-2 h-4 w-4" />
-              View
+              <Eye className="mr-2 h-3.5 w-3.5" />
+              ANALYZE
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/customers/${customer.id}?mode=edit`)}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
+              <Edit className="mr-2 h-3.5 w-3.5" />
+              MODIFY
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -303,19 +260,27 @@ export default function CustomersPage() {
   }, [customersList, searchQuery, statusFilter, industryFilter]);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="customers-page">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="customers-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.customers.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.customers.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.customers.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: CRM-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/customers/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Customer
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
+            <Download className="mr-2 h-3.5 w-3.5" />
+            EXPORT_INTEL
+          </Button>
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => router.push('/customers/new')}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            INITIALIZE_NODE
           </Button>
         </div>
       </div>
@@ -323,114 +288,117 @@ export default function CustomersPage() {
       {/* Stats */}
       <CustomerStats customers={customersList} />
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search customers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                  <SelectItem value="prospect">Prospect</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={industryFilter} onValueChange={setIndustryFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Industry" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All industries</SelectItem>
-                  {industries.map((industry) => (
-                    <SelectItem key={industry} value={industry as string}>{industry}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex border rounded-md">
-                <Button
-                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                  size="sm"
-                  className="rounded-r-none"
-                  onClick={() => setViewMode('grid')}
-                >
-                  Grid
-                </Button>
-                <Button
-                  variant={viewMode === 'list' ? 'default' : 'ghost'}
-                  size="sm"
-                  className="rounded-l-none"
-                  onClick={() => setViewMode('list')}
-                >
-                  List
-                </Button>
-              </div>
-            </div>
+      {/* Filters & View Toggle */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 items-center gap-4 flex-wrap max-w-4xl">
+          <div className="relative flex-1 min-w-[240px] group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
+            <Input
+              placeholder="SEARCH_ACCOUNTS..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-10 text-[10px]"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px] h-10 text-[10px]">
+              <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="STATUS_STATE" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_STATES</SelectItem>
+              <SelectItem value="active">ACTIVE</SelectItem>
+              <SelectItem value="inactive">INACTIVE</SelectItem>
+              <SelectItem value="prospect">PROSPECT</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={industryFilter} onValueChange={setIndustryFilter}>
+            <SelectTrigger className="w-[180px] h-10 text-[10px]">
+              <Building2 className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="INDUSTRY_CAT" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_INDUSTRIES</SelectItem>
+              {industries.map((industry) => (
+                <SelectItem key={industry} value={industry as string}>{String(industry).toUpperCase()}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm">
+          <Button
+            variant={viewMode === 'grid' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('grid')}
+            className={cn("h-8 px-3 rounded-none", viewMode === 'grid' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+          >
+            GRID
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+            className={cn("h-8 px-3 rounded-none", viewMode === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+          >
+            TABLE
+          </Button>
+        </div>
+      </div>
 
       {/* Content */}
       {loading ? (
-        <div className="text-center py-12 text-muted-foreground">Loading customers...</div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="industrial-panel p-6 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 bg-rams-panel border border-rams-border animate-pulse" />
+                <div className="space-y-2 flex-1">
+                  <div className="h-3 w-1/2 bg-rams-panel animate-pulse" />
+                  <div className="h-2 w-1/4 bg-rams-panel animate-pulse" />
+                </div>
+              </div>
+              <div className="h-20 bg-rams-panel animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : filteredCustomers.length === 0 ? (
+        <div className="py-24 text-center border border-dashed border-rams-border bg-rams-panel/20">
+          <Building2 className="mx-auto h-12 w-12 text-muted-foreground/20" />
+          <div className="mt-4">
+            <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
+            <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new account protocol</p>
+          </div>
+        </div>
       ) : viewMode === 'grid' ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredCustomers.map((customer) => (
             <CustomerCard key={customer.id} customer={customer} />
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="py-3 px-4 text-left font-medium">Customer</th>
-                    <th className="py-3 px-4 text-left font-medium">Status</th>
-                    <th className="py-3 px-4 text-left font-medium">Industry</th>
-                    <th className="py-3 px-4 text-left font-medium">Location</th>
-                    <th className="py-3 px-4 text-left font-medium">Primary Contact</th>
-                    <th className="py-3 px-4 text-center font-medium">RFQs</th>
-                    <th className="py-3 px-4 text-right font-medium">Revenue</th>
-                    <th className="py-3 px-4 text-center font-medium">Win Rate</th>
-                    <th className="py-3 px-4 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCustomers.map((customer) => (
-                    <CustomerRow key={customer.id} customer={customer} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
+        <Card className="rounded-rams-sm overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ACCOUNT_IDENTIFIER</TableHead>
+                <TableHead>STATUS_STATE</TableHead>
+                <TableHead>INDUSTRY_CAT</TableHead>
+                <TableHead>LOCATION_NODE</TableHead>
+                <TableHead>PRIMARY_CONTACT</TableHead>
+                <TableHead className="text-center">RFQS</TableHead>
+                <TableHead className="text-right">TOTAL_VAL</TableHead>
+                <TableHead className="text-center">WIN_KPI</TableHead>
+                <TableHead className="w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredCustomers.map((customer) => (
+                <CustomerRow key={customer.id} customer={customer} />
+              ))}
+            </TableBody>
+          </Table>
         </Card>
-      )}
-
-      {!loading && filteredCustomers.length === 0 && (
-        <div className="text-center py-12">
-          <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-medium">No customers found</h3>
-          <p className="text-muted-foreground">
-            {searchQuery || statusFilter !== 'all' || industryFilter !== 'all'
-              ? 'Try adjusting your filters'
-              : 'Add your first customer to get started'}
-          </p>
-        </div>
       )}
     </div>
   );

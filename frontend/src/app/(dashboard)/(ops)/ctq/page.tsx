@@ -139,23 +139,23 @@ const categoryColors: Record<CTQCategory, string> = {
   other: 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300',
 };
 
-const priorityColors: Record<CTQPriority, string> = {
-  critical: 'destructive',
+const priorityColors: Record<CTQPriority, any> = {
+  critical: 'danger',
   major: 'warning',
-  minor: 'default',
+  minor: 'secondary',
 };
 
-const statusColors: Record<CTQStatus, string> = {
+const statusColors: Record<CTQStatus, any> = {
   draft: 'secondary',
-  active: 'default',
+  active: 'success',
   under_review: 'warning',
-  approved: 'success',
-  obsolete: 'secondary',
+  approved: 'default',
+  obsolete: 'outline',
 };
 
-const resultColors: Record<MeasurementResult, string> = {
+const resultColors: Record<MeasurementResult, any> = {
   pass: 'success',
-  fail: 'destructive',
+  fail: 'danger',
   marginal: 'warning',
   not_measured: 'secondary',
 };
@@ -229,331 +229,253 @@ export default function CTQPage() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="ctq-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.ctq.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            {t('pages.ctq.subtitle')}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.ctq.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: QUALITY-SPEC-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+            <History className="h-3.5 w-3.5 mr-2" />
+            Legacy Data
+          </Button>
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={handleExport}>
+            <Download className="h-3.5 w-3.5 mr-2" />
             Export Intel
           </Button>
           {hasPageAccess('/ctq/new', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
-              <Plus className="mr-2 h-4 w-4" />
-              New Specification
+            <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => router.push('/ctq/new')}>
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              Initialize CTQ
             </Button>
           )}
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total CTQs</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.active} active
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Approved</CardTitle>
-            <CheckCircle className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.approved}</div>
-            <p className="text-xs text-muted-foreground">
-              {((stats.approved / stats.total) * 100).toFixed(1)}% of total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Critical</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.critical}</div>
-            <p className="text-xs text-muted-foreground">
-              Highest priority
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pass Rate</CardTitle>
-            <TrendingUp className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.average_pass_rate.toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground">
-              Average across all CTQs
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Measured Today</CardTitle>
-            <Gauge className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{stats.measured_today}</div>
-            <p className="text-xs text-muted-foreground">
-              Measurements recorded
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Measurements</CardTitle>
-            <History className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">
-              {ctqs.reduce((sum, ctq) => sum + ctq.measurement_count, 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              All time
-            </p>
-          </CardContent>
-        </Card>
+      {/* Stats Grid (Industrial Modules) */}
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-6 border border-rams-border bg-rams-border">
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Total CTQ Nodes</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats?.total || 0}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{stats.active} Active Sync</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Approved Nodes</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.approved}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{((stats.approved / (stats.total || 1)) * 100).toFixed(1)}% GATE_PASS</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Critical Gates</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.critical}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-red uppercase tracking-widest mt-2">HIGH_SPEC_RISK</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Pass Rate</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats.average_pass_rate.toFixed(1)}%</div>
+          <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">SYNC_VELOCITY</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Measured Today</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.measured_today}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">PULSE_DETECTIONS</p>
+        </div>
+        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Aggregated Log</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">
+            {ctqs.reduce((sum, ctq) => sum + ctq.measurement_count, 0)}
+          </div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">TOTAL_VERIFICATIONS</p>
+        </div>
       </div>
 
       {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search CTQs..."
-                  className="pl-8"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full md:w-[180px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="dimensional">Dimensional</SelectItem>
-                <SelectItem value="surface">Surface</SelectItem>
-                <SelectItem value="material">Material</SelectItem>
-                <SelectItem value="mechanical">Mechanical</SelectItem>
-                <SelectItem value="electrical">Electrical</SelectItem>
-                <SelectItem value="visual">Visual</SelectItem>
-                <SelectItem value="functional">Functional</SelectItem>
-                <SelectItem value="environmental">Environmental</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-full md:w-[180px]">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priorities</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="major">Major</SelectItem>
-                <SelectItem value="minor">Minor</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full md:w-[180px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="under_review">Under Review</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="obsolete">Obsolete</SelectItem>
-              </SelectContent>
-            </Select>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-1 items-center gap-4 max-w-4xl">
+          <div className="relative flex-1 min-w-[240px] group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
+            <Input
+              placeholder="SEARCH_CTQ_NODES..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-10 text-[10px]"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[160px] h-10 text-[10px]">
+              <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="CATEGORY_NODE" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_CATEGORIES</SelectItem>
+              <SelectItem value="dimensional">DIMENSIONAL</SelectItem>
+              <SelectItem value="surface">SURFACE_FINISH</SelectItem>
+              <SelectItem value="material">MATERIAL_NODE</SelectItem>
+              <SelectItem value="mechanical">MECHANICAL</SelectItem>
+              <SelectItem value="electrical">ELECTRICAL</SelectItem>
+              <SelectItem value="visual">VISUAL_GATE</SelectItem>
+              <SelectItem value="functional">FUNCTIONAL_SYNC</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-[160px] h-10 text-[10px]">
+              <AlertTriangle className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="PRIORITY_LVL" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_PRIORITIES</SelectItem>
+              <SelectItem value="critical">CRITICAL_NODE</SelectItem>
+              <SelectItem value="major">MAJOR_RISK</SelectItem>
+              <SelectItem value="minor">MINOR_PROTOCOL</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[160px] h-10 text-[10px]">
+              <Clock className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="STATUS_STATE" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_STATUS</SelectItem>
+              <SelectItem value="draft">DRAFT_MODE</SelectItem>
+              <SelectItem value="active">ACTIVE_SYNC</SelectItem>
+              <SelectItem value="under_review">UNDER_REVIEW</SelectItem>
+              <SelectItem value="approved">APPROVED_GATE</SelectItem>
+              <SelectItem value="obsolete">OBSOLETE_NODE</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* CTQ Table */}
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>CTQ Number</TableHead>
-              <TableHead>Characteristic</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Priority</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Specification</TableHead>
-              <TableHead>Pass Rate</TableHead>
-              <TableHead>Latest Result</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
-                </TableRow>
-              ))
-            ) : filteredCTQs.length === 0 ? (
+      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8">
-                  <div className="flex flex-col items-center gap-2">
-                    <FileText className="h-8 w-8 text-muted-foreground" />
-                    <p className="text-muted-foreground">
-                      {searchQuery || categoryFilter !== 'all' || priorityFilter !== 'all' || statusFilter !== 'all'
-                        ? 'No CTQs match your filters'
-                        : 'No CTQs found'}
-                    </p>
-                    {(searchQuery || categoryFilter !== 'all' || priorityFilter !== 'all' || statusFilter !== 'all') && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setCategoryFilter('all');
-                          setPriorityFilter('all');
-                          setStatusFilter('all');
-                        }}
-                      >
-                        Clear Filters
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
+                <TableHead>CTQ_IDENTIFIER</TableHead>
+                <TableHead>CHARACTERISTIC</TableHead>
+                <TableHead>CATEGORY_NODE</TableHead>
+                <TableHead>PRIORITY</TableHead>
+                <TableHead>STATUS_NODE</TableHead>
+                <TableHead>SPECIFICATION</TableHead>
+                <TableHead>PASS_RATE_KPI</TableHead>
+                <TableHead>LATEST_SYNC</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
-            ) : (
-              filteredCTQs.map((ctq) => (
-                <TableRow key={ctq.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell>
-                    <Link href={`/ctq/${ctq.id}`} className="font-medium hover:underline">
-                      {ctq.ctq_number}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{ctq.characteristic}</p>
-                      {ctq.part_number && (
-                        <p className="text-xs text-muted-foreground">{ctq.part_number}</p>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={cn('gap-1', categoryColors[ctq.category])}>
-                      {categoryIcons[ctq.category]}
-                      {ctq.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={priorityColors[ctq.priority] as any}>
-                      {ctq.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={statusColors[ctq.status] as any}>
-                      {ctq.status.replace('_', ' ')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono text-xs">
-                      {ctq.specification}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm font-medium">
-                        {ctq.pass_rate.toFixed(1)}%
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        ({ctq.measurement_count})
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {ctq.measurements && ctq.measurements.length > 0 ? (
-                      <Badge variant={resultColors[ctq.measurements[0].result] as any}>
-                        {ctq.measurements[0].result}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary">No data</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link href={`/ctq/${ctq.id}`}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/ctq/${ctq.id}?mode=edit`}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => handleDelete(ctq.id)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                  </TableRow>
+                ))
+              ) : filteredCTQs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-24">
+                    <FileText className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
+                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero CTQ protocols identified</p>
+                    <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new specification</p>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                filteredCTQs.map((ctq) => (
+                  <TableRow 
+                    key={ctq.id} 
+                    className="group transition-none cursor-pointer"
+                    onClick={() => router.push(`/ctq/${ctq.id}`)}
+                  >
+                    <TableCell className="font-mono font-bold text-rams-orange tabular-nums">{ctq.ctq_number}</TableCell>
+                    <TableCell>
+                      <div className="space-y-0.5">
+                        <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{ctq.characteristic}</p>
+                        {ctq.part_number && <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{ctq.part_number}</p>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-sans font-bold text-[11px] uppercase tracking-tight text-muted-foreground/60">{ctq.category}</TableCell>
+                    <TableCell>
+                      <Badge variant={priorityColors[ctq.priority]} size="sm">
+                        {ctq.priority.toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusColors[ctq.status]} size="sm">
+                        {ctq.status.toUpperCase().replace('_', ' ')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-[10px] font-mono font-bold text-foreground/70 uppercase">
+                        {ctq.specification}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="w-24 space-y-1.5">
+                        <div className="flex justify-between text-[9px] font-mono font-bold tabular-nums">
+                          <span className={cn(ctq.pass_rate >= 95 ? 'text-rams-green' : 'text-rams-orange')}>{Math.round(ctq.pass_rate)}%</span>
+                        </div>
+                        <div className="h-1 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                          <div className={cn(
+                            "h-full transition-all duration-500",
+                            ctq.pass_rate >= 95 ? 'bg-rams-green' : 'bg-rams-orange'
+                          )} style={{ width: `${ctq.pass_rate}%` }} />
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant={ctq.measurements?.[0]?.result === 'pass' ? 'success' : 
+                                ctq.measurements?.[0]?.result === 'fail' ? 'danger' : 'secondary'}
+                        size="sm"
+                        className="h-4 px-1"
+                      >
+                        {ctq.measurements?.[0]?.result?.toUpperCase() || 'NO_DATA'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}`)}>
+                            <Eye className="mr-2 h-3.5 w-3.5" /> ANALYZE
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}/edit`)}>
+                            <Edit className="mr-2 h-3.5 w-3.5" /> REFINE
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}/measure`)}>
+                            <Gauge className="mr-2 h-3.5 w-3.5 text-rams-orange" /> MEASURE
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-rams-red" onClick={() => handleDelete(ctq.id)}>
+                            TERMINATE_NODE
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
     </div>
   );

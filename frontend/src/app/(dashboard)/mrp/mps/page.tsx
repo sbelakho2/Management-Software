@@ -88,148 +88,189 @@ export default function MpsPage() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in">
-      <div>
-        <h1 className="text-4xl font-heading font-bold tracking-tight">Master Production Schedule</h1>
-        <p className="text-muted-foreground">Plan demand buckets and align MRP inputs</p>
+    <div className="space-y-8 page-fade-in pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+            {t('pages.mrp.mps.title')}
+          </h1>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>Master Production Schedule</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: MRP-SYNC-01</span>
+          </p>
+        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+      <div className="grid gap-8 lg:grid-cols-2">
+        <Card className="rounded-rams-sm">
           <CardHeader>
-            <CardTitle className="text-base">Create MPS Plan</CardTitle>
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">INITIALIZE_PLAN_PROTOCOL</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Plan Name</label>
-                <Input value={planForm.name} onChange={(e) => setPlanForm((prev) => ({ ...prev, name: e.target.value }))} />
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="md:col-span-2 space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">PLAN_IDENTITY</label>
+                <Input placeholder="e.g., Q1_PRODUCTION_SYNC" value={planForm.name} onChange={(e) => setPlanForm((prev) => ({ ...prev, name: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Period Start</label>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">PERIOD_START</label>
                 <Input type="date" value={planForm.periodStart} onChange={(e) => setPlanForm((prev) => ({ ...prev, periodStart: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Period End</label>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">PERIOD_END</label>
                 <Input type="date" value={planForm.periodEnd} onChange={(e) => setPlanForm((prev) => ({ ...prev, periodEnd: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Horizon Days</label>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">HORIZON_DAYS</label>
                 <Input type="number" value={planForm.horizonDays} onChange={(e) => setPlanForm((prev) => ({ ...prev, horizonDays: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+              <div className="md:col-span-2 space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">PROTOCOL_NOTES</label>
                 <Input value={planForm.notes} onChange={(e) => setPlanForm((prev) => ({ ...prev, notes: e.target.value }))} />
               </div>
             </div>
-            <Button onClick={handleCreatePlan} disabled={loading} className="w-full">Create Plan</Button>
+            <Button className="w-full rounded-rams-sm bg-rams-orange text-black font-black uppercase h-10 transition-none" onClick={handleCreatePlan} disabled={loading}>
+              INITIALIZE_PROTOCOL
+            </Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm">
           <CardHeader>
-            <CardTitle className="text-base">Add MPS Line</CardTitle>
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">DEMAND_BUCKET_INJECTION</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Plan</label>
-                <Select value={lineForm.planId} onValueChange={(value) => setLineForm((prev) => ({ ...prev, planId: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select plan" />
+          <CardContent className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="md:col-span-2 space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">ACTIVE_PLAN_NODE</label>
+                <Select value={lineForm.planId} onValueChange={(v) => setLineForm((prev) => ({ ...prev, planId: v }))}>
+                  <SelectTrigger className="text-[10px] h-10">
+                    <SelectValue placeholder="SELECT_PROTOCOL" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mpsPlans.map((plan) => (
-                      <SelectItem key={plan.id} value={plan.id}>{plan.name}</SelectItem>
+                    {mpsPlans.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name.toUpperCase()}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Product ID</label>
-                <Input value={lineForm.productId} onChange={(e) => setLineForm((prev) => ({ ...prev, productId: e.target.value }))} />
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">PRODUCT_ID</label>
+                <Input type="number" value={lineForm.productId} onChange={(e) => setLineForm((prev) => ({ ...prev, productId: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Bucket Date</label>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">BUCKET_DATE</label>
                 <Input type="date" value={lineForm.bucketDate} onChange={(e) => setLineForm((prev) => ({ ...prev, bucketDate: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Quantity</label>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">QUANTITY_TARGET</label>
                 <Input type="number" value={lineForm.quantity} onChange={(e) => setLineForm((prev) => ({ ...prev, quantity: e.target.value }))} />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground">Source</label>
-                <Input value={lineForm.sourceType} onChange={(e) => setLineForm((prev) => ({ ...prev, sourceType: e.target.value }))} placeholder="forecast" />
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">SOURCE_TYPE</label>
+                <Input value={lineForm.sourceType} onChange={(e) => setLineForm((prev) => ({ ...prev, sourceType: e.target.value }))} />
               </div>
             </div>
-            <Button onClick={handleCreateLine} disabled={loading || mpsPlans.length === 0} className="w-full">Add Line</Button>
+            <Button className="w-full rounded-rams-sm bg-rams-orange text-black font-black uppercase h-10 transition-none" onClick={handleCreateLine} disabled={loading}>
+              INJECT_DEMAND
+            </Button>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-base">Plans</CardTitle>
+      <Card className="rounded-rams-sm overflow-hidden">
+        <CardHeader className="bg-rams-panel/30 border-b border-rams-border">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">MPS_PROTOCOL_REGISTRY</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Plan</th>
-                <th className="py-3 px-4 text-left font-medium">Period</th>
-                <th className="py-3 px-4 text-left font-medium">Horizon</th>
-                <th className="py-3 px-4 text-left font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mpsPlans.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No plans created.</td></tr>
-              ) : (
-                mpsPlans.map((plan) => (
-                  <tr key={plan.id} className="border-b hover:bg-muted/50">
-                    <td className="py-3 px-4 font-medium">{plan.name}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{plan.period_start} - {plan.period_end}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{plan.horizon_days} days</td>
-                    <td className="py-3 px-4">
-                      <Badge variant={plan.status === 'published' ? 'success' : 'secondary'}>{plan.status}</Badge>
+          <div className="overflow-x-auto">
+            <table className="w-full border-separate border-spacing-0">
+              <thead>
+                <tr className="bg-rams-panel">
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">PLAN_IDENTITY</th>
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">PERIOD_RANGE</th>
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">HORIZON_STATE</th>
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">STATUS_NODE</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rams-border/30">
+                {mpsPlans.map((plan) => (
+                  <tr key={plan.id} className="hover:bg-rams-panel/50 transition-none cursor-help">
+                    <td className="px-6 py-4">
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{plan.name}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-mono text-[10px] font-bold text-muted-foreground/60">{plan.period_start} - {plan.period_end}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-mono text-[10px] font-bold tabular-nums text-muted-foreground/60">{plan.horizon_days} DAYS</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant="outline" className="rounded-none border-rams-border font-black text-[8px] uppercase tracking-widest px-1.5 h-4 bg-rams-panel">
+                        {plan.status}
+                      </Badge>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+                {mpsPlans.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center">
+                      <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">ZERO_PROTOCOLS_IDENTIFIED</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-base">Plan Lines</CardTitle>
+      <Card className="rounded-rams-sm overflow-hidden">
+        <CardHeader className="bg-rams-panel/30 border-b border-rams-border">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">PLAN_LINE_EXPOSURE</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Bucket</th>
-                <th className="py-3 px-4 text-left font-medium">Product</th>
-                <th className="py-3 px-4 text-left font-medium">Quantity</th>
-                <th className="py-3 px-4 text-left font-medium">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mpsLines.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No plan lines.</td></tr>
-              ) : (
-                mpsLines.map((line) => (
-                  <tr key={line.id} className="border-b hover:bg-muted/50">
-                    <td className="py-3 px-4 text-muted-foreground">{line.bucket_date}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{line.product_id}</td>
-                    <td className="py-3 px-4 font-medium">{line.quantity}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{line.source_type || '—'}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full border-separate border-spacing-0">
+              <thead>
+                <tr className="bg-rams-panel">
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">BUCKET_DATE</th>
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">PRODUCT_NODE</th>
+                  <th className="px-6 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">QUANTITY</th>
+                  <th className="px-6 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-rams-border">SOURCE_STREAM</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rams-border/30">
+                {mpsLines.map((line) => (
+                  <tr key={line.id} className="hover:bg-rams-panel/50 transition-none cursor-help">
+                    <td className="px-6 py-4">
+                      <p className="font-mono text-[10px] font-bold text-muted-foreground/60">{line.bucket_date}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-mono text-[10px] font-bold text-foreground/80">PRODUCT_{line.product_id}</p>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <p className="font-mono font-bold tabular-nums">{line.quantity}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant="secondary" className="rounded-none border-rams-border font-black text-[8px] uppercase tracking-widest px-1.5 h-4">
+                        {line.source_type || 'MANUAL'}
+                      </Badge>
+                    </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+                {mpsLines.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center">
+                      <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">ZERO_DEMAND_LINES_INJECTED</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>

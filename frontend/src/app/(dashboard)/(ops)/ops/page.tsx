@@ -93,32 +93,32 @@ const getIconColor = (label: string, trendIsGood?: boolean): 'primary' | 'succes
 
 function TaskCard({ task }: { task: TaskItem }) {
   const priorityConfig = {
-    low: { bg: 'bg-muted/50', text: 'text-muted-foreground', label: 'Low' },
-    medium: { bg: 'bg-warning/10', text: 'text-warning', label: 'Medium' },
-    high: { bg: 'bg-danger/10', text: 'text-danger', label: 'High' },
-    urgent: { bg: 'bg-danger', text: 'text-white', label: 'Urgent' },
+    low: { variant: 'secondary' as const, label: 'Low' },
+    medium: { variant: 'default' as const, label: 'Medium' },
+    high: { variant: 'warning' as const, label: 'High' },
+    urgent: { variant: 'danger' as const, label: 'Urgent' },
   };
 
   const statusIcons = {
-    todo: <Clock className="h-4 w-4 text-muted-foreground/40" />,
-    in_progress: <AlertCircle className="h-4 w-4 text-warning/60" />,
-    done: <CheckCircle2 className="h-4 w-4 text-success/60" />,
+    todo: <Clock className="h-3.5 w-3.5 text-muted-foreground/40" />,
+    in_progress: <AlertCircle className="h-3.5 w-3.5 text-rams-orange/60" />,
+    done: <CheckCircle2 className="h-3.5 w-3.5 text-rams-green/60" />,
   };
 
   const cfg = priorityConfig[task.priority];
 
   return (
-    <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/10 border border-border/5 hover:bg-primary/5 hover:border-primary/10 transition-all duration-300 group">
+    <div className="flex items-center justify-between p-4 bg-rams-panel/40 border border-rams-border/50 hover:bg-rams-panel transition-none group">
       <div className="flex items-center gap-4 min-w-0">
-        <div className="p-2 rounded-xl bg-background shadow-sm">
+        <div className="p-2 rounded-rams-sm bg-rams-module border border-rams-border group-hover:border-rams-orange transition-none">
           {statusIcons[task.status]}
         </div>
         <div className="min-w-0">
-          <p className="font-heading font-bold text-sm tracking-tight truncate text-foreground/80 group-hover:text-primary transition-colors">{task.title}</p>
+          <p className="font-sans font-black text-xs uppercase tracking-tight truncate text-foreground/80 group-hover:text-rams-orange transition-none">{task.title}</p>
           {task.linkedEntity && (
             <Link
               href={task.linkedEntity.href}
-              className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 hover:text-primary transition-colors"
+              className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 hover:text-rams-orange transition-none"
             >
               {task.linkedEntity.type}: {task.linkedEntity.title}
             </Link>
@@ -126,11 +126,11 @@ function TaskCard({ task }: { task: TaskItem }) {
         </div>
       </div>
       <div className="flex items-center gap-4 shrink-0">
-        <Badge className={cn('rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest border-none', cfg.bg, cfg.text)}>
-          {cfg.label}
+        <Badge variant={cfg.variant} size="sm">
+          {cfg.label.toUpperCase()}
         </Badge>
-        <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/30 whitespace-nowrap">
-          {formatRelativeTime(new Date(task.dueDate))}
+        <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30 whitespace-nowrap">
+          {formatRelativeTime(new Date(task.dueDate)).toUpperCase()}
         </span>
       </div>
     </div>
@@ -139,23 +139,23 @@ function TaskCard({ task }: { task: TaskItem }) {
 
 function ActivityCard({ activity }: { activity: ActivityItem }) {
   return (
-    <div className="flex items-start gap-4 p-4 rounded-2xl bg-muted/5 border border-border/5 hover:bg-muted/10 transition-all duration-300 group">
-      <Avatar fallback={activity.user.name} size="sm" className="ring-2 ring-background shadow-sm" />
+    <div className="flex items-start gap-4 p-4 bg-rams-panel/20 border border-rams-border/30 hover:bg-rams-panel transition-none group">
+      <Avatar fallback={activity.user.name} size="sm" className="rounded-rams-sm border border-rams-border/20" />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium leading-relaxed">
-          <span className="font-heading font-bold text-foreground/90">{activity.user.name}</span>{' '}
-          {activity.link ? (
-            <Link href={activity.link} className="text-primary hover:underline underline-offset-4 decoration-primary/30">
-              {activity.description}
-            </Link>
-          ) : (
-            <span className="text-muted-foreground">{activity.description}</span>
-          )}
+        <p className="font-sans font-black text-[11px] uppercase tracking-tight text-foreground/80 leading-snug group-hover:text-rams-orange transition-none">
+          <span className="text-muted-foreground/40">{activity.user.name.split(' ')[0]}</span> // {activity.description}
         </p>
-        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground/30 mt-1.5">
-          {formatRelativeTime(new Date(activity.timestamp))}
+        <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/20 mt-2">
+          {formatRelativeTime(new Date(activity.timestamp)).toUpperCase()}
         </p>
       </div>
+      {activity.link && (
+        <Button variant="ghost" size="icon" asChild className="h-7 w-7 rounded-rams-sm hover:bg-rams-panel transition-none">
+          <Link href={activity.link}>
+            <ArrowRight className="h-3.5 w-3.5 opacity-20 group-hover:opacity-100 group-hover:text-rams-orange group-hover:translate-x-0.5 transition-all" />
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }
@@ -169,33 +169,41 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
   } as const;
 
   const statusColors: Record<string, string> = {
-    new: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
-    reviewing: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
-    quoting: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
+    new: 'bg-rams-steel/10 text-rams-steel border-rams-steel/20',
+    reviewing: 'bg-rams-orange/10 text-rams-orange border-rams-orange/20',
+    quoting: 'bg-rams-green/10 text-rams-green border-rams-green/20',
   };
 
   return (
-    <Link href={`/pipeline/${rfq.id}`} className="group">
-      <Card className="hover:shadow-premium-hover hover:-translate-y-1 transition-all duration-500 border-border/40 bg-card/40 backdrop-blur-sm rounded-[1.5rem] h-full">
-        <CardContent className="p-5 space-y-4">
+    <Link href={`/pipeline/${rfq.id}`} className="group block h-full">
+      <Card className="rounded-rams-sm border border-rams-border bg-rams-module hover:border-rams-orange/40 transition-none h-full">
+        <CardContent className="p-5 space-y-6">
           <div className="flex items-start justify-between">
             <div>
-              <p className="font-mono text-xs font-bold text-primary/60">{rfq.rfqNumber}</p>
-              <p className="font-heading font-bold text-sm tracking-tight group-hover:text-primary transition-colors">{rfq.customerName}</p>
+              <p className="font-mono text-[10px] font-bold text-rams-orange tabular-nums">{rfq.rfqNumber}</p>
+              <p className="font-sans font-black text-sm uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none mt-0.5">{rfq.customerName}</p>
             </div>
-            <Badge variant={priorityColors[rfq.priority]} className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">{rfq.priority}</Badge>
+            <Badge variant={priorityColors[rfq.priority]} size="sm">
+              {rfq.priority.toUpperCase()}
+            </Badge>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2 font-medium leading-relaxed">{rfq.title}</p>
-          <div className="flex items-center justify-between pt-4 border-t border-border/10">
-            <Badge className={cn('rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest border-none', statusColors[rfq.status] || 'bg-muted')}>
-              {rfq.status}
+          <p className="text-xs font-medium text-muted-foreground/60 line-clamp-2 uppercase leading-relaxed">{rfq.title}</p>
+          <div className="flex items-center justify-between pt-6 border-t border-rams-border/30">
+            <Badge 
+              variant="outline"
+              className={cn(
+                'rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-4', 
+                statusColors[rfq.status] || 'bg-rams-panel'
+              )}
+            >
+              {rfq.status.toUpperCase()}
             </Badge>
             <div className="text-right">
               {rfq.estimatedValue && (
-                <p className="text-sm font-heading font-bold tracking-tight">{formatCurrency(rfq.estimatedValue)}</p>
+                <p className="text-sm font-mono font-bold tabular-nums text-foreground/90">{formatCurrency(rfq.estimatedValue)}</p>
               )}
-              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">
-                DUE {formatRelativeTime(new Date(rfq.dueDate))}
+              <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30 mt-1">
+                DUE {formatRelativeTime(new Date(rfq.dueDate)).toUpperCase()}
               </p>
             </div>
           </div>
@@ -272,74 +280,79 @@ export default function TodayPage() {
     .filter((t: TaskItem) => !t.linkedEntity?.href || hasPageAccess(t.linkedEntity.href, userRoles));
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="ops-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             Operations Command
           </h1>
-          <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-primary/60" />
-            {formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })} • Real-time Production Pulse
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>Real-time Production Pulse</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: OPS-CENTER-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <AmbientStatus 
+            status={(data?.abnormalities || []).length > 0 ? 'warning' : 'operational'} 
+            label={(data?.abnormalities || []).length > 0 ? 'Issues Detected' : 'All Systems Operational'}
+          />
           {hasPageAccess('/pipeline/new', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+            <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" asChild>
               <Link href="/pipeline/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Create RFQ
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                Initialize RFQ
               </Link>
             </Button>
           )}
         </div>
       </div>
 
-      {/* System Status */}
-      <div className="flex items-center justify-end">
-        <AmbientStatus 
-          status={(data?.abnormalities || []).length > 0 ? 'warning' : 'operational'} 
-          label={(data?.abnormalities || []).length > 0 ? 'Issues Detected' : 'All Systems Operational'}
-        />
+      {/* KPI Stats */}
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+        {kpis.map((kpi) => (
+          <div key={kpi.id} className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0 group hover:bg-rams-panel transition-none cursor-help">
+            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{kpi.label}</p>
+            <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{kpi.value}</div>
+            {kpi.change !== undefined && (
+              <p className={cn(
+                "text-[9px] font-mono font-bold uppercase tracking-widest mt-2 flex items-center gap-1",
+                kpi.trend === 'up' ? (kpi.trendIsGood ? "text-rams-green" : "text-rams-red") : 
+                kpi.trend === 'down' ? (kpi.trendIsGood ? "text-rams-green" : "text-rams-red") : 
+                "text-muted-foreground/40"
+              )}>
+                {kpi.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : 
+                 kpi.trend === 'down' ? <TrendingDown className="h-3 w-3" /> : null}
+                {kpi.change > 0 ? '+' : ''}{kpi.change}% ALPHA
+              </p>
+            )}
+          </div>
+        ))}
       </div>
 
-      {/* KPI Cards - Using Shared StatCard */}
-      <StatSection label="Production Metrics" columns={4}>
-        {kpis.map((kpi) => (
-          <StatCard
-            key={kpi.id}
-            value={kpi.value}
-            label={kpi.label}
-            icon={kpi.icon}
-            iconColor={getIconColor(kpi.label, kpi.trendIsGood)}
-            trend={kpi.trend}
-            trendValue={kpi.change !== undefined ? `${kpi.change > 0 ? '+' : ''}${kpi.change}%` : undefined}
-            onClick={kpi.href ? () => window.location.href = kpi.href! : undefined}
-          />
-        ))}
-      </StatSection>
-
-      {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Tasks */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="lg:col-span-2 rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border flex flex-row items-center justify-between">
             <div>
-              <CardTitle>My Priorities</CardTitle>
-              <CardDescription>Top priorities for today</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                <Target className="h-4 w-4 text-rams-orange" />
+                Strategic Priorities
+              </CardTitle>
             </div>
-            <Button variant="ghost" size="sm" asChild>
+            <Button variant="ghost" size="sm" asChild className="rounded-rams-sm text-[9px] font-black uppercase tracking-widest hover:bg-rams-orange/10 hover:text-rams-orange transition-none">
               <Link href="/tasks">
-                View All <ArrowRight className="ml-2 h-4 w-4" />
+                View All <ArrowRight className="ml-2 h-3.5 w-3.5" />
               </Link>
             </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-1 space-y-1">
             {tasks.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground">
-                No priorities set. Great job! 🎉
-              </p>
+              <div className="py-12 text-center text-muted-foreground/20">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                <p className="text-[9px] font-mono font-black uppercase tracking-widest">ZERO_PRIORITIES_IDENTIFIED</p>
+              </div>
             ) : (
               tasks.map((task) => <TaskCard key={task.id} task={task} />)
             )}
@@ -347,22 +360,29 @@ export default function TodayPage() {
         </Card>
 
         {/* Abnormalities */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Abnormalities</CardTitle>
-            <CardDescription>Issues requiring attention</CardDescription>
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 text-rams-red">
+              <AlertTriangle className="h-4 w-4" />
+              Critical Anomalies
+            </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {(data?.abnormalities || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">No abnormalities detected.</p>
+              <div className="py-12 text-center text-muted-foreground/20">
+                <Shield className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                <p className="text-[9px] font-mono font-black uppercase tracking-widest">System Stable</p>
+              </div>
             ) : (
-              <div className="space-y-4">
+              <div className="divide-y divide-rams-border/30">
                 {data?.abnormalities.map((a: any) => (
-                  <div key={a.id} className="flex items-start gap-3 text-sm">
-                    <AlertCircle className="h-4 w-4 text-danger mt-0.5" />
+                  <div key={a.id} className="p-4 flex items-start gap-4 hover:bg-rams-red/5 transition-none group">
+                    <div className="mt-0.5 p-2 rounded-rams-sm bg-rams-red/5 border border-rams-red/20 text-rams-red">
+                      <AlertCircle className="h-4 w-4" />
+                    </div>
                     <div>
-                      <p className="font-medium">{a.title}</p>
-                      <p className="text-xs text-muted-foreground">{a.description}</p>
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-red transition-none">{a.title}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1 uppercase leading-relaxed font-medium">{a.description}</p>
                     </div>
                   </div>
                 ))}

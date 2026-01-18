@@ -103,59 +103,25 @@ function TrainingStats() {
   }).length;
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Active Skill Nodes</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{skills.length}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
-              <Award className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Intelligence Protocols</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{trainings.length}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Synchronization Pulse</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{records.filter(r => r.status === 'in_progress').length}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
-              <Clock className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className={cn("rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md", expiringCount > 0 && 'border-danger/20 bg-danger/[0.02]')}>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={cn("text-[10px] font-bold uppercase tracking-widest", expiringCount > 0 ? 'text-danger/60' : 'text-muted-foreground/60')}>Threshold Alerts</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{expiringCount}</p>
-            </div>
-            <div className={cn('p-3 rounded-2xl shadow-sm', expiringCount > 0 ? 'bg-danger/10 text-danger' : 'bg-muted text-muted-foreground')}>
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Skill Nodes</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{skills.length}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Operational Protocols</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{trainings.length}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Synchronization Pulse</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{records.filter(r => r.status === 'in_progress').length}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Threshold Alerts</p>
+        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', expiringCount > 0 ? 'text-rams-red' : 'text-foreground/90')}>
+          {expiringCount}
+        </p>
+      </div>
     </div>
   );
 }
@@ -475,38 +441,43 @@ function TrainingPageContent() {
   }, [activeTab]);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="training-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="training-page">
+      {/* Header */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.training.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.training.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.training.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: ACADEMY-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/training/matrix')}>
-            <TrendingUp className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => router.push('/training/matrix')}>
+            <TrendingUp className="mr-2 h-3.5 w-3.5" />
             Skills Matrix
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
-                <Plus className="mr-2 h-4 w-4" />
-                New Activity
+              <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                Initialize Activity
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => router.push('/training/certifications/new')}>
-                <Award className="mr-2 h-4 w-4" />
+                <Award className="mr-2 h-3.5 w-3.5" />
                 New Certification
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/training/programs/new')}>
-                <BookOpen className="mr-2 h-4 w-4" />
+                <BookOpen className="mr-2 h-3.5 w-3.5" />
                 New Training Program
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push('/training/enroll')}>
-                <User className="mr-2 h-4 w-4" />
+                <User className="mr-2 h-3.5 w-3.5" />
                 Enroll Employee
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -517,67 +488,60 @@ function TrainingPageContent() {
       {/* Stats */}
       <TrainingStats />
 
-      {/* Tabs */}
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
-        <CardHeader className="pb-0 border-b border-border/10 bg-muted/5">
-          <div className="flex gap-8">
+      {/* Main Content (Modular Rack) */}
+      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+        <CardHeader className="p-0 border-b border-rams-border bg-rams-panel/20">
+          <div className="flex">
             <button
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative',
                 activeTab === 'certifications'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('certifications')}
             >
               <div className="flex items-center gap-2">
-                <Award className="h-4 w-4" />
+                <Award className="h-3.5 w-3.5" />
                 Certifications
               </div>
-              {activeTab === 'certifications' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-border/30',
                 activeTab === 'programs'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('programs')}
             >
               <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4" />
+                <BookOpen className="h-3.5 w-3.5" />
                 Programs
               </div>
-              {activeTab === 'programs' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-border/30',
                 activeTab === 'records'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('records')}
             >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+                <FileText className="h-3.5 w-3.5" />
                 Records
               </div>
-              {activeTab === 'records' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
           </div>
         </CardHeader>
-        <CardContent className="pt-8">
-          {activeTab === 'certifications' && <CertificationsTab />}
-          {activeTab === 'programs' && <ProgramsTab />}
-          {activeTab === 'records' && <RecordsTab />}
+        <CardContent className="p-6 bg-rams-module">
+          <div className="animate-in fade-in duration-300">
+            {activeTab === 'certifications' && <CertificationsTab />}
+            {activeTab === 'programs' && <ProgramsTab />}
+            {activeTab === 'records' && <RecordsTab />}
+          </div>
         </CardContent>
       </Card>
     </div>

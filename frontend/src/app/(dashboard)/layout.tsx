@@ -41,30 +41,29 @@ export default function DashboardLayout({
 
   if (!mounted || isLoading) {
     return (
-      <div className="flex h-screen w-screen flex-col items-center justify-center gap-6 bg-background relative overflow-hidden">
-        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none opacity-50 dark:opacity-20">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 blur-[120px] rounded-full animate-pulse" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/20 blur-[120px] rounded-full animate-pulse [animation-delay:2s]" />
-        </div>
-        
+      <div className="flex h-screen w-screen flex-col items-center justify-center gap-8 bg-rams-chassis relative overflow-hidden">
         <div className="relative">
-          <div className="h-20 w-20 rounded-[2rem] bg-primary/10 flex items-center justify-center shadow-glow animate-float">
-            <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-heading font-bold text-2xl quirky-card">
+          <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-border">
+            <div className="h-10 w-10 bg-rams-orange text-black flex items-center justify-center font-mono font-black text-2xl border border-black/10">
               S
             </div>
           </div>
-          <div className="absolute -inset-4 border border-primary/20 rounded-[2.5rem] animate-pulse" />
+          <div className="absolute -inset-4 border border-rams-orange/20 animate-pulse" />
         </div>
         
-        <div className="space-y-2 text-center animate-in fade-in slide-in-from-bottom-2 duration-1000">
-          <h2 className="text-xl font-heading font-bold tracking-tight ">
-            Synchronizing Intelligence
+        <div className="space-y-4 text-center animate-in fade-in duration-500">
+          <h2 className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-foreground/60">
+            SYSTEM_INITIALIZATION...
           </h2>
-          <div className="flex items-center justify-center gap-1.5">
-            <div className="h-1 w-1 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
-            <div className="h-1 w-1 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
-            <div className="h-1 w-1 rounded-full bg-primary animate-bounce" />
+          <div className="flex items-center justify-center gap-1">
+            <div className="h-1 w-4 bg-rams-orange animate-pulse" />
+            <div className="h-1 w-4 bg-rams-orange animate-pulse [animation-delay:150ms]" />
+            <div className="h-1 w-4 bg-rams-orange animate-pulse [animation-delay:300ms]" />
           </div>
+        </div>
+
+        <div className="fixed bottom-8 text-[9px] font-mono text-muted-foreground/40 uppercase tracking-widest">
+          PROTOCOL: SENSEI_OS_V3 // BOOT_SEQUENCE
         </div>
       </div>
     );

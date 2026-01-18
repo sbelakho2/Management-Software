@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { ThemeProvider } from 'next-themes';
 import { useState, useEffect, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PWAProvider } from '@/components/pwa/pwa-provider';
@@ -20,6 +21,7 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   const isE2E = process.env.NEXT_PUBLIC_E2E === '1';
+  const pathname = usePathname();
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -37,11 +39,14 @@ export function Providers({ children }: ProvidersProps) {
       })
   );
 
-  // Load user on mount
+  // Load user on mount - but skip on auth pages to avoid "session expired" flash
   const loadUser = useAuthStore((state) => state.loadUser);
   useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+    const isAuthPage = pathname?.startsWith('/login') || pathname?.startsWith('/register') || pathname?.startsWith('/forgot-password');
+    if (!isAuthPage) {
+      loadUser();
+    }
+  }, [loadUser, pathname]);
 
   return (
     <ErrorBoundary>

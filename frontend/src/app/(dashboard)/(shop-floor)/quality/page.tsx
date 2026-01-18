@@ -158,59 +158,25 @@ function QualityStats() {
   const currentFPY = fpyTrend ? fpyTrend.current_value : 94.2;
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Active Sync Gates</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{totalInspections}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
-              <ClipboardCheck className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60">Global Anomalies</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500 mt-1">{totalNcrs}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-danger/10 text-danger shadow-sm">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Resolution Protocols</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{totalCapas}</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
-              <Shield className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">First Pass Velocity</p>
-              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500 mt-1">{currentFPY}%</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Sync Gates</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{totalInspections}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Global Anomalies</p>
+        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', totalNcrs > 0 ? 'text-rams-red' : 'text-foreground/90')}>
+          {totalNcrs}
+        </p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Resolution Protocols</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{totalCapas}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">First Pass Velocity</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{currentFPY}%</p>
+      </div>
     </div>
   );
 }

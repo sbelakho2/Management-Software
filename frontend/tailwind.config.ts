@@ -66,11 +66,24 @@ const config: Config = {
           track: 'hsl(var(--goal-track))',
           fill: 'hsl(var(--goal-fill))',
         },
+        // Sensei-Rams 3.0 - Industrial Functional Palette
+        rams: {
+          chassis: '#F2F2F2',
+          module: '#E6E6E6',
+          panel: '#D9D9D9',
+          line: '#CCCCCC',
+          orange: '#FFBE00',
+          red: '#D62D2D',
+          green: '#2D8C3C',
+          steel: '#4A90E2',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        'rams-sm': '2px',
+        'rams-md': '4px',
       },
       boxShadow: {
         'premium': '0 0 0 1px rgba(0, 0, 0, 0.03), 0 2px 4px rgba(0, 0, 0, 0.02), 0 12px 24px rgba(0, 0, 0, 0.04)',

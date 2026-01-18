@@ -112,142 +112,150 @@ export default function ProjectManagementPage() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="pm-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="pm-page">
+      {/* Header */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.projectManagement.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.projectManagement.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.projectManagement.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: PM-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-[200px]">
-            <TabsList className="grid w-full grid-cols-2 bg-background/50 border-border/50">
-              <TabsTrigger value="list">List</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => setCreateOpen(true)} data-testid="pm-create-project">
-            <Plus className="mr-2 h-4 w-4" />
-            New Initiative
+          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm mr-2">
+            <Button
+              variant={view === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('list')}
+              className={cn("h-8 px-3 rounded-none", view === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              LIST
+            </Button>
+            <Button
+              variant={view === 'portfolio' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('portfolio')}
+              className={cn("h-8 px-3 rounded-none", view === 'portfolio' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              PORTFOLIO
+            </Button>
+          </div>
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => setCreateOpen(true)} data-testid="pm-create-project">
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            INITIALIZE_INITIATIVE
           </Button>
         </div>
       </div>
 
       {view === 'portfolio' ? (
-        <div className="grid gap-8 md:grid-cols-2">
-          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+        <div className="grid gap-0 md:grid-cols-2 border border-rams-border bg-rams-border">
+          <Card className="rounded-none border-0 border-r border-b md:border-b-0">
             <CardHeader className="pb-6">
-              <CardTitle className="text-lg font-heading">Initiative Distribution</CardTitle>
-              <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">High-level portfolio nodes by status</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Initiative Distribution</CardTitle>
+              <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">High-level portfolio nodes by status</CardDescription>
             </CardHeader>
             <CardContent>
-              <BarChart 
-                data={[
-                  { label: 'Planning', value: projects.filter(p => p.status === 'planning').length, color: '#94a3b8' },
-                  { label: 'Active', value: projects.filter(p => p.status === 'active').length, color: '#10b981' },
-                  { label: 'On Hold', value: projects.filter(p => p.status === 'on_hold').length, color: '#f59e0b' },
-                  { label: 'Completed', value: projects.filter(p => p.status === 'completed').length, color: '#3b82f6' },
-                ]}
-              />
+              <div className="h-[240px] flex items-center justify-center bg-rams-panel/20 border border-rams-border/50 relative overflow-hidden">
+                <BarChart 
+                  data={[
+                    { label: 'Planning', value: projects.filter(p => p.status === 'planning').length, color: '#94a3b8' },
+                    { label: 'Active', value: projects.filter(p => p.status === 'active').length, color: '#FFBE00' },
+                    { label: 'On Hold', value: projects.filter(p => p.status === 'on_hold').length, color: '#D62D2D' },
+                    { label: 'Completed', value: projects.filter(p => p.status === 'completed').length, color: '#2D8C3C' },
+                  ]}
+                />
+                <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
+              </div>
             </CardContent>
           </Card>
-          <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md flex flex-col items-center justify-center p-12">
+          <Card className="rounded-none border-0 border-b md:border-b-0 flex flex-col items-center justify-center p-12 bg-rams-module">
             <div className="relative">
-              <div className="text-6xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">
+              <div className="text-6xl font-mono font-bold tracking-tight text-rams-green tabular-nums">
                 {projects.length > 0 ? Math.round((projects.filter(p => p.status === 'active' || p.status === 'completed').length / projects.length) * 100) : 0}%
               </div>
-              <div className="absolute -inset-8 border-2 border-success/10 rounded-full animate-pulse" />
+              <div className="absolute -inset-8 border border-rams-green/20 animate-pulse" />
             </div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-success/60 mt-12">Portfolio Health Index</p>
-            <p className="text-sm text-muted-foreground font-medium mt-2">Strategic Velocity Optimal</p>
+            <p className="text-[9px] font-mono font-black uppercase tracking-[0.3em] text-rams-green mt-12">Portfolio Health Index</p>
+            <p className="text-[10px] font-sans font-bold text-muted-foreground/60 uppercase mt-2">Strategic Velocity Optimal</p>
           </Card>
         </div>
       ) : (
         <div className="space-y-8">
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardContent className="p-6">
-              <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search initiatives by intelligence key, slug, or description..."
-                  className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
-                  data-testid="pm-search"
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="relative group max-w-2xl">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="SEARCH_INITIATIVES..."
+              className="pl-10 h-10 text-[10px]"
+              data-testid="pm-search"
+            />
+          </div>
 
-          {isLoading && (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <Card key={idx} className="p-6 rounded-3xl">
-                  <Skeleton className="h-6 w-48 rounded-lg" />
-                  <Skeleton className="mt-4 h-4 w-full rounded-md" />
-                  <Skeleton className="mt-2 h-4 w-2/3 rounded-md" />
-                </Card>
+          {isLoading && projects.length === 0 ? (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {[1, 2, 3, 4, 5, 6].map((idx) => (
+                <div key={idx} className="industrial-panel p-6 space-y-4">
+                  <Skeleton className="h-4 w-1/3 rounded-none" />
+                  <Skeleton className="h-12 w-full rounded-none" />
+                  <Skeleton className="h-4 w-2/3 rounded-none" />
+                </div>
               ))}
             </div>
-          )}
-
-          {!isLoading && filtered.length === 0 && (
-            <div className="rounded-[3rem] border-2 border-dashed border-border/20 p-20 text-center bg-muted/5">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6 shadow-inner-soft">
-                <FolderKanban className="h-10 w-10 text-muted-foreground/30" />
+          ) : filtered.length === 0 ? (
+            <div className="py-24 text-center border border-dashed border-rams-border bg-rams-panel/20">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-border mb-6">
+                <FolderKanban className="h-8 w-8 text-muted-foreground/20" />
               </div>
-              <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No initiatives match current search parameters.</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero initiative protocols identified</p>
               <div className="mt-8">
-                <Button variant="outline" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setCreateOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Initiate First Protocol
+                <Button variant="outline" className="rounded-rams-sm" onClick={() => setCreateOpen(true)}>
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  INITIATE_FIRST_PROTOCOL
                 </Button>
               </div>
             </div>
-          )}
-
-          {!isLoading && filtered.length > 0 && (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="pm-project-grid">
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3" data-testid="pm-project-grid">
               {filtered.map((p: Project) => {
                 const tone = statusTone[p.status];
                 return (
                   <Link key={p.id} href={`/project-management/${p.id}`} className="block group">
-                    <Card className="h-full border-border/40 bg-card/40 backdrop-blur-sm rounded-[2rem] transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1.5 hover:border-primary/20" data-testid={`pm-project-${p.id}`}>
-                      <CardHeader className="pb-4">
+                    <Card className="h-full rounded-rams-sm group hover:border-rams-orange/40 transition-none" data-testid={`pm-project-${p.id}`}>
+                      <CardHeader className="pb-4 bg-rams-panel/10 border-b border-rams-border/30">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1.5">
-                            <CardTitle className="text-lg font-heading font-bold tracking-tight group-hover:text-primary transition-colors">{p.name}</CardTitle>
-                            <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">NODE: {p.slug}</p>
+                          <div className="space-y-1">
+                            <CardTitle className="group-hover:text-rams-orange transition-none">{p.name}</CardTitle>
+                            <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">NODE: {p.slug}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             {p.is_private ? (
-                              <div className="p-2 rounded-xl bg-danger/5 text-danger/40 border border-danger/5" title="Private Protocol">
+                              <div className="p-2 bg-rams-panel border border-rams-border text-rams-red/40" title="Private Protocol">
                                 <Lock className="h-3.5 w-3.5" />
                               </div>
                             ) : (
-                              <div className="p-2 rounded-xl bg-primary/5 text-primary/40 border border-primary/5" title="Shared Intelligence">
+                              <div className="p-2 bg-rams-panel border border-rams-border text-rams-green/40" title="Shared Intelligence">
                                 <Globe className="h-3.5 w-3.5" />
                               </div>
                             )}
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="space-y-5">
+                      <CardContent className="p-6 space-y-6">
                         <div className="flex flex-wrap gap-2">
-                          <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest', tone.className)}>{tone.label}</Badge>
-                          <Badge variant="outline" className="rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border-border/40 text-muted-foreground/60">{typeLabel[p.project_type]}</Badge>
+                          <Badge variant="outline" className={cn('rounded-none border-rams-border font-black', tone.className)}>{tone.label.toUpperCase()}</Badge>
+                          <Badge variant="outline" className="rounded-none border-rams-border text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{typeLabel[p.project_type].toUpperCase()}</Badge>
                         </div>
-                        {p.description ? (
-                          <p className="line-clamp-2 text-xs text-muted-foreground/80 leading-relaxed font-medium">{p.description}</p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground/40 italic">No description protocol established.</p>
-                        )}
-                        <div className="pt-4 border-t border-border/5 flex items-center justify-between">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">
-                            PULSE {formatRelativeTime(p.updated_at)}
+                        <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed font-medium h-10">{p.description || 'No description protocol established.'}</p>
+                        <div className="pt-6 border-t border-rams-border/30 flex items-center justify-between">
+                          <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30">
+                            PULSE {formatRelativeTime(p.updated_at).toUpperCase()}
                           </p>
-                          <ArrowRight className="h-4 w-4 text-primary/20 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
                         </div>
                       </CardContent>
                     </Card>
@@ -259,34 +267,35 @@ export default function ProjectManagementPage() {
         </div>
       )}
 
+      {/* Create Dialog (Industrialized) */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg" data-testid="pm-create-dialog">
+        <DialogContent className="max-w-2xl" data-testid="pm-create-dialog">
           <DialogHeader>
-            <DialogTitle>Create Project</DialogTitle>
+            <DialogTitle>INITIALIZE_INITIATIVE_PROTOCOL</DialogTitle>
             <DialogDescription>
-              Create a new project workspace for stories, sprints, epics, and cross-module work.
+              Create a new space for project intelligence, strategic alignment and cross-module work.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4">
+          <div className="grid gap-6 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="pm-name">Name</Label>
+              <Label htmlFor="pm-name">INITIATIVE_IDENTITY</Label>
               <Input
                 id="pm-name"
                 value={createForm.name}
                 onChange={(e) => setCreateForm((s) => ({ ...s, name: e.target.value }))}
-                placeholder="e.g., NPI - Wing Bracket"
+                placeholder="e.g., NPI - WING BRACKET..."
                 data-testid="pm-create-name"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="pm-desc">Description</Label>
+              <Label htmlFor="pm-desc">PROTOCOL_SCOPE</Label>
               <Textarea
                 id="pm-desc"
                 value={createForm.description}
                 onChange={(e) => setCreateForm((s) => ({ ...s, description: e.target.value }))}
-                placeholder="Scope, objectives, and key deliverables"
+                placeholder="Detail scope, objectives, and key strategic deliverables..."
                 rows={4}
                 data-testid="pm-create-description"
               />
@@ -294,18 +303,18 @@ export default function ProjectManagementPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="grid gap-2">
-                <Label>Type</Label>
+                <Label>ENGINEERING_TYPE</Label>
                 <Select
                   value={createForm.project_type}
                   onValueChange={(v) => setCreateForm((s) => ({ ...s, project_type: v as ProjectType }))}
                 >
                   <SelectTrigger data-testid="pm-create-type">
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(typeLabel).map(([k, lbl]) => (
                       <SelectItem key={k} value={k}>
-                        {lbl}
+                        {lbl.toUpperCase()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -313,18 +322,18 @@ export default function ProjectManagementPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label>Status</Label>
+                <Label>STATUS_STATE</Label>
                 <Select
                   value={createForm.status}
                   onValueChange={(v) => setCreateForm((s) => ({ ...s, status: v as ProjectStatus }))}
                 >
                   <SelectTrigger data-testid="pm-create-status">
-                    <SelectValue placeholder="Select status" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(statusTone).map(([k, v]) => (
                       <SelectItem key={k} value={k}>
-                        {v.label}
+                        {v.label.toUpperCase()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -332,28 +341,30 @@ export default function ProjectManagementPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center justify-between p-4 bg-rams-panel border border-rams-border/50">
               <div>
-                <p className="text-sm font-medium">Visibility</p>
-                <p className="text-xs text-muted-foreground">Private projects require membership for access.</p>
+                <Label className="text-foreground">PRIVATE_NODE_RESTRICTION</Label>
+                <p className="text-[9px] text-muted-foreground/60 uppercase font-mono mt-1">Restrict visibility to invited team members only</p>
               </div>
               <Button
                 type="button"
                 variant={createForm.is_private ? 'default' : 'outline'}
+                size="sm"
                 onClick={() => setCreateForm((s) => ({ ...s, is_private: !s.is_private }))}
                 data-testid="pm-create-visibility"
+                className="h-8 rounded-none border-rams-border"
               >
-                {createForm.is_private ? 'Private' : 'Shared'}
+                {createForm.is_private ? 'PRIVATE' : 'GLOBAL'}
               </Button>
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              CANCEL_PROTOCOL
             </Button>
             <Button onClick={onSubmitCreate} data-testid="pm-create-submit">
-              Create
+              INITIALIZE_INITIATIVE
             </Button>
           </DialogFooter>
         </DialogContent>

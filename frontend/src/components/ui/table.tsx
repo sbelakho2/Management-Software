@@ -53,8 +53,8 @@ const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      'bg-muted/5 border-b',
-      sticky && 'sticky top-0 z-10 bg-background/80 backdrop-blur-md shadow-sm',
+      'bg-rams-module border-b border-rams-border',
+      sticky && 'sticky top-0 z-10',
       className
     )}
     {...props}
@@ -68,7 +68,7 @@ const TableBody = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <tbody
     ref={ref}
-    className={cn('[&_tr:last-child]:border-0', className)}
+    className={cn('[&_tr:last-child]:border-0 bg-rams-chassis/50', className)}
     {...props}
   />
 ));
@@ -81,7 +81,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      'border-t bg-muted/5 font-medium [&>tr]:last:border-b-0',
+      'border-t border-rams-border bg-rams-module font-mono font-bold [&>tr]:last:border-b-0',
       className
     )}
     {...props}
@@ -101,10 +101,10 @@ const TableRow = React.forwardRef<
     <tr
       ref={ref}
       className={cn(
-        'border-b border-border/10 transition-all duration-300',
-        hoverable && 'hover:bg-primary/5',
-        selected && 'bg-primary/10',
-        'data-[state=selected]:bg-primary/10',
+        'border-b border-rams-border/50 transition-none',
+        hoverable && 'hover:bg-rams-panel',
+        selected && 'bg-rams-orange/10',
+        'data-[state=selected]:bg-rams-orange/10',
         className
       )}
       {...props}
@@ -138,8 +138,8 @@ const TableHead = React.forwardRef<
     <th
       ref={ref}
       className={cn(
-        'h-12 px-4 text-left align-middle font-heading font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60',
-        sortable && 'cursor-pointer select-none hover:text-primary transition-colors',
+        'h-10 px-4 text-left align-middle font-mono font-black uppercase tracking-widest text-[9px] text-muted-foreground/60',
+        sortable && 'cursor-pointer select-none hover:text-rams-orange transition-none',
         className
       )}
       onClick={sortable && onSort ? onSort : undefined}
@@ -148,7 +148,7 @@ const TableHead = React.forwardRef<
       <div className="flex items-center gap-2">
         {children}
         {sortable && (
-          <span className="text-xs opacity-50">
+          <span className="text-[10px] opacity-40 font-bold">
             {sortDirection === 'asc' && '↑'}
             {sortDirection === 'desc' && '↓'}
             {!sortDirection && '⇅'}
@@ -179,7 +179,7 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      'p-4 align-middle [&:has([role=checkbox])]:pr-0',
+      'p-4 align-middle [&:has([role=checkbox])]:pr-0 font-sans font-medium',
       className
     )}
     {...props}
@@ -193,7 +193,7 @@ const TableCaption = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <caption
     ref={ref}
-    className={cn('mt-4 text-sm text-muted-foreground', className)}
+    className={cn('mt-4 text-[10px] font-mono uppercase tracking-widest text-muted-foreground/40', className)}
     {...props}
   />
 ));
@@ -213,7 +213,7 @@ const TableActions = React.forwardRef<HTMLDivElement, TableActionsProps>(
     <div
       ref={ref}
       className={cn(
-        'flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100',
+        'flex items-center gap-2 opacity-0 transition-none group-hover:opacity-100',
         className
       )}
     >

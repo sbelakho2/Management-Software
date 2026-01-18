@@ -81,61 +81,25 @@ function ProductStats({ products }: { products: Product[] }) {
   }, [products]);
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Active Products</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.active}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-success/10 text-success">
-              <Package className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={cn("text-[10px] font-bold uppercase tracking-widest", stats.lowStock > 0 ? "text-warning/60" : "text-muted-foreground/60")}>Low Stock</p>
-              <p className={cn("text-3xl font-heading font-bold tracking-tight mt-1", stats.lowStock > 0 ? "text-amber-600 dark:text-amber-500" : "text-foreground")}>
-                {stats.lowStock}
-              </p>
-            </div>
-            <div className={cn("p-3 rounded-2xl shadow-sm", stats.lowStock > 0 ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground")}>
-              <Boxes className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Total Revenue</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(stats.totalRevenue)}</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-primary/10 text-primary">
-              <DollarSign className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md transition-all duration-500 hover:shadow-premium-hover hover:-translate-y-1">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Avg. Margin</p>
-              <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{stats.avgMargin.toFixed(1)}%</p>
-            </div>
-            <div className="p-3 rounded-2xl shadow-sm bg-muted/30 text-foreground">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Inventory Nodes</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.active}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Stock Abnormalities</p>
+        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', stats.lowStock > 0 ? 'text-rams-red' : 'text-foreground/90')}>
+          {stats.lowStock}
+        </p>
+      </div>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Aggregated Revenue</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(stats.totalRevenue)}</p>
+      </div>
+      <div className="bg-rams-module p-6 border-b border-rams-border">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Margin KPI</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.avgMargin.toFixed(1)}%</p>
+      </div>
     </div>
   );
 }
@@ -147,83 +111,76 @@ function ProductRow({ product }: { product: Product }) {
   const isLowStock = product.inventoryQty <= product.reorderPoint && product.status === 'active';
 
   return (
-    <tr 
-      className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
+    <TableRow 
+      className="transition-none cursor-pointer group"
       onClick={() => router.push(`/products/${product.id}`)}
     >
-      <td className="py-3 px-4">
+      <TableCell>
         <div>
-          <p className="font-mono font-medium">{product.partNumber}</p>
-          <p className="text-sm text-muted-foreground">{product.name}</p>
+          <p className="font-mono font-bold text-rams-orange tabular-nums">{product.partNumber}</p>
+          <p className="text-[11px] font-sans font-black uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{product.name}</p>
         </div>
-      </td>
-      <td className="py-3 px-4 text-muted-foreground">{product.category}</td>
-      <td className="py-3 px-4">
-        <Badge variant={config.variant}>{config.label}</Badge>
-      </td>
-      <td className="py-3 px-4 text-right">{formatCurrency(product.standardCost)}</td>
-      <td className="py-3 px-4 text-right font-medium">{formatCurrency(product.listPrice)}</td>
-      <td className="py-3 px-4 text-right">
+      </TableCell>
+      <TableCell className="font-sans font-bold text-[11px] uppercase tracking-tight text-muted-foreground/60">{product.category}</TableCell>
+      <TableCell>
+        <Badge variant={config.variant} size="sm">{config.label.toUpperCase()}</Badge>
+      </TableCell>
+      <TableCell className="text-right font-mono font-bold tabular-nums">{formatCurrency(product.standardCost)}</TableCell>
+      <TableCell className="text-right font-mono font-bold tabular-nums">{formatCurrency(product.listPrice)}</TableCell>
+      <TableCell className="text-right">
         <span className={cn(
-          'font-medium',
-          margin >= 40 ? 'text-success' : margin >= 25 ? 'text-warning' : 'text-danger'
+          'font-mono font-bold tabular-nums',
+          margin >= 40 ? 'text-rams-green' : margin >= 25 ? 'text-rams-orange' : 'text-rams-red'
         )}>
           {margin.toFixed(1)}%
         </span>
-      </td>
-      <td className="py-3 px-4 text-right">
-        <span className={cn(isLowStock && 'text-warning font-medium')}>
+      </TableCell>
+      <TableCell className="text-center">
+        <span className={cn('font-mono font-bold tabular-nums', isLowStock ? 'text-rams-red' : 'text-foreground/80')}>
           {formatNumber(product.inventoryQty)}
           {isLowStock && ' ⚠'}
         </span>
-      </td>
-      <td className="py-3 px-4 text-center">{product.leadTimeDays}d</td>
-      <td className="py-3 px-4 text-right">{formatNumber(product.totalSold)}</td>
-      <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+      </TableCell>
+      <TableCell className="text-center font-mono text-[10px] text-muted-foreground/40">{product.leadTimeDays}D</TableCell>
+      <TableCell className="text-right font-mono font-bold tabular-nums text-muted-foreground/60">{formatNumber(product.totalSold)}</TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm">
+            <Button variant="ghost" size="icon" className="h-8 w-8">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => router.push(`/products/${product.id}`)}>
-              <Eye className="mr-2 h-4 w-4" />
-              View
+              <Eye className="mr-2 h-3.5 w-3.5" /> ANALYZE
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/products/${product.id}?mode=edit`)}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
+              <Edit className="mr-2 h-3.5 w-3.5" /> MODIFY
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <Copy className="mr-2 h-4 w-4" />
-              Duplicate
+              <Copy className="mr-2 h-3.5 w-3.5" /> DUPLICATE_NODE
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
-              <Layers className="mr-2 h-4 w-4" />
-              View BOM
+              <Layers className="mr-2 h-3.5 w-3.5" /> VIEW_BOM
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <BarChart3 className="mr-2 h-4 w-4" />
-              View Analytics
+              <BarChart3 className="mr-2 h-3.5 w-3.5" /> VIEW_INTEL
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             {product.status === 'active' ? (
-              <DropdownMenuItem className="text-warning">
-                <Archive className="mr-2 h-4 w-4" />
-                Deactivate
+              <DropdownMenuItem className="text-rams-red">
+                <Archive className="mr-2 h-3.5 w-3.5" /> DEACTIVATE_NODE
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuItem className="text-success">
-                <Package className="mr-2 h-4 w-4" />
-                Activate
+              <DropdownMenuItem className="text-rams-green">
+                <Package className="mr-2 h-3.5 w-3.5" /> ACTIVATE_NODE
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -279,35 +236,31 @@ export default function ProductsPage() {
   }, [mappedProducts, searchQuery, statusFilter, categoryFilter, stockFilter]);
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="products-page">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="products-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.products.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.products.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.products.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: INVENTORY-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-                <Download className="mr-2 h-4 w-4" />
-                Export Intel
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
-              <DropdownMenuItem className="rounded-xl m-1">Export as CSV</DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl m-1">Export as Excel</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <Upload className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
+            <Download className="mr-2 h-3.5 w-3.5" />
+            Export Intel
+          </Button>
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
+            <Upload className="mr-2 h-3.5 w-3.5" />
             Import
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => router.push('/products/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => router.push('/products/new')}>
+            <Plus className="mr-2 h-3.5 w-3.5" />
+            Initialize Node
           </Button>
         </div>
       </div>
@@ -316,101 +269,89 @@ export default function ProductsPage() {
       <ProductStats products={mappedProducts} />
 
       {/* Filters */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search products..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                  <SelectItem value="discontinued">Discontinued</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>{category}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={stockFilter} onValueChange={setStockFilter}>
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue placeholder="Stock" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All stock</SelectItem>
-                  <SelectItem value="low">Low stock</SelectItem>
-                  <SelectItem value="out">Out of stock</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 items-center gap-4 flex-wrap max-w-4xl">
+          <div className="relative flex-1 min-w-[240px] group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
+            <Input
+              placeholder="SEARCH_INVENTORY_NODES..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-10 text-[10px]"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[140px] h-10 text-[10px]">
+              <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="STATUS_STATE" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_STATUS</SelectItem>
+              <SelectItem value="active">ACTIVE</SelectItem>
+              <SelectItem value="inactive">INACTIVE</SelectItem>
+              <SelectItem value="discontinued">DISCONTINUED</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[160px] h-10 text-[10px]">
+              <Layers className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="CATEGORY_CAT" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_CATEGORIES</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category} value={category}>{category.toUpperCase()}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={stockFilter} onValueChange={setStockFilter}>
+            <SelectTrigger className="w-[140px] h-10 text-[10px]">
+              <Package className="mr-2 h-3.5 w-3.5 opacity-40" />
+              <SelectValue placeholder="STOCK_LEVEL" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ALL_STOCK</SelectItem>
+              <SelectItem value="low">LOW_STOCK_⚠</SelectItem>
+              <SelectItem value="out">OUT_OF_STOCK</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Product</th>
-                  <th className="py-3 px-4 text-left font-medium">Category</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-right font-medium">Cost</th>
-                  <th className="py-3 px-4 text-right font-medium">Price</th>
-                  <th className="py-3 px-4 text-right font-medium">Margin</th>
-                  <th className="py-3 px-4 text-right font-medium">Inventory</th>
-                  <th className="py-3 px-4 text-center font-medium">Lead Time</th>
-                  <th className="py-3 px-4 text-right font-medium">Total Sold</th>
-                  <th className="py-3 px-4 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.map((product) => (
-                  <ProductRow key={product.id} product={product} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {filteredProducts.length === 0 && (
-            <div className="text-center py-12">
-              <Package className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-medium">No products found</h3>
-              <p className="text-muted-foreground">
-                {searchQuery || statusFilter !== 'all' || categoryFilter !== 'all' || stockFilter !== 'all'
-                  ? 'Try adjusting your filters'
-                  : 'Add your first product to get started'}
-              </p>
-              {!searchQuery && statusFilter === 'all' && categoryFilter === 'all' && stockFilter === 'all' && (
-                <Button className="mt-4" onClick={() => router.push('/products/new')}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Product
-                </Button>
-              )}
+      <Card className="rounded-rams-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>PRODUCT_IDENTITY</TableHead>
+                <TableHead>CATEGORY_NODE</TableHead>
+                <TableHead>STATUS_STATE</TableHead>
+                <TableHead className="text-right">STD_COST</TableHead>
+                <TableHead className="text-right">LIST_PRICE</TableHead>
+                <TableHead className="text-right">MARGIN_KPI</TableHead>
+                <TableHead className="text-center">INVENTORY</TableHead>
+                <TableHead className="text-center">LEAD_TIME</TableHead>
+                <TableHead className="text-right">TOTAL_SOLD</TableHead>
+                <TableHead className="w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProducts.map((product) => (
+                <ProductRow key={product.id} product={product} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {filteredProducts.length === 0 && (
+          <div className="text-center py-24">
+            <Package className="mx-auto h-12 w-12 text-muted-foreground/20" />
+            <div className="mt-4">
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero nodes identified</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new product node</p>
             </div>
-          )}
-        </CardContent>
+          </div>
+        )}
       </Card>
     </div>
   );

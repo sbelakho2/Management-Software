@@ -45,18 +45,18 @@ export interface StatCardProps {
 }
 
 const iconColorMap = {
-  primary: 'bg-primary/10 text-primary',
-  success: 'bg-emerald-500/10 text-emerald-600',
-  warning: 'bg-amber-500/10 text-amber-600',
-  danger: 'bg-red-500/10 text-red-600',
-  info: 'bg-blue-500/10 text-blue-600',
-  muted: 'bg-muted text-muted-foreground',
+  primary: 'bg-rams-panel border-rams-border text-muted-foreground',
+  success: 'bg-rams-green/10 border-rams-green/20 text-rams-green',
+  warning: 'bg-rams-orange/10 border-rams-orange/20 text-rams-orange',
+  danger: 'bg-rams-red/10 border-rams-red/20 text-rams-red',
+  info: 'bg-rams-steel/10 border-rams-steel/20 text-rams-steel',
+  muted: 'bg-rams-panel border-rams-border text-muted-foreground/60',
 };
 
 const trendColorMap = {
-  up: 'text-emerald-600',
-  down: 'text-red-600',
-  neutral: 'text-muted-foreground',
+  up: 'text-rams-green',
+  down: 'text-rams-red',
+  neutral: 'text-muted-foreground/60',
 };
 
 const TrendIcon = {
@@ -85,8 +85,8 @@ export function StatCard({
     <div
       className={cn(
         'stat-card',
-        spotlight && 'stat-card-spotlight',
-        critical && 'stat-card-critical',
+        spotlight && 'border-rams-orange/40 bg-rams-orange/5',
+        critical && 'border-rams-red/40 bg-rams-red/5',
         onClick && 'cursor-pointer',
         className
       )}
@@ -100,8 +100,8 @@ export function StatCard({
         <div className="space-y-1">
           <p className={cn(
             'stat-card-value',
-            spotlight && 'text-gradient-primary',
-            critical && 'text-gradient-danger'
+            spotlight && 'text-rams-orange',
+            critical && 'text-rams-red'
           )}>
             {value}
           </p>
@@ -109,7 +109,7 @@ export function StatCard({
           
           {/* Trend indicator */}
           {trend && trendValue && (
-            <div className={cn('stat-card-trend', trendColorMap[trend])}>
+            <div className={cn('stat-card-trend font-mono', trendColorMap[trend])}>
               {TrendIconComponent && <TrendIconComponent className="h-3 w-3" />}
               <span>{trendValue}</span>
             </div>
@@ -117,12 +117,12 @@ export function StatCard({
         </div>
 
         {/* Right: Icon Container */}
-        <div className={cn('stat-card-icon', iconColorMap[iconColor])}>
-          <Icon className="h-5 w-5" />
+        <div className={cn('stat-card-icon border', iconColorMap[iconColor])}>
+          <Icon className="h-4 w-4" />
         </div>
       </div>
 
-      {/* Goal Progress Bar (Goal-Gradient Effect) */}
+      {/* Goal Progress Bar (Industrial) */}
       {goal && (
         <div className="mt-4 space-y-1.5">
           <div className="goal-progress-track">
@@ -131,7 +131,7 @@ export function StatCard({
               style={{ width: `${goalPercentage}%` }}
             />
           </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground">
+          <div className="flex justify-between text-[9px] font-mono font-bold uppercase tracking-tighter text-muted-foreground/40">
             <span>{goal.label || `${goal.current} / ${goal.target}`}</span>
             <span>{Math.round(goalPercentage)}%</span>
           </div>

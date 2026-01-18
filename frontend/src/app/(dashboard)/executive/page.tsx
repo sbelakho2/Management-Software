@@ -81,14 +81,16 @@ export default function ExecutivePage() {
 
   return (
     <PageGuard requiredRoles={EXECUTIVE_ROLES}>
-      <div className="space-y-8 page-fade-in" data-testid="executive-page">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="space-y-8 page-fade-in pb-12" data-testid="executive-page">
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
           <div className="space-y-1">
-            <h1 className="text-4xl font-heading font-bold tracking-tight ">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
               Executive Control Plane
             </h1>
-            <p className="text-muted-foreground font-medium">
-              Strategic intelligence, predictive analysis, and command center oversight
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>Strategic intelligence and command center oversight</span>
+              <span className="opacity-30">|</span>
+              <span>STATION: COMMAND-01</span>
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -96,9 +98,9 @@ export default function ExecutivePage() {
               status={totalNcrs > 5 ? 'critical' : totalNcrs > 0 ? 'warning' : 'operational'} 
               label={totalNcrs > 5 ? 'Anomalies Detected' : totalNcrs > 0 ? 'Monitoring Active' : 'All Systems Nominal'}
             />
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" asChild>
+            <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" asChild>
               <a href={exportUrl}>
-                <Download className="mr-2 h-4 w-4" />
+                <Download className="mr-2 h-3.5 w-3.5" />
                 Export Intelligence
               </a>
             </Button>
@@ -106,152 +108,162 @@ export default function ExecutivePage() {
         </div>
 
         <Tabs defaultValue="north-star" className="space-y-8 animate-in fade-in duration-700">
-          <TabsList className="flex h-14 w-full justify-start gap-3 bg-muted/10 p-1.5 rounded-2xl backdrop-blur-md border border-border/5 overflow-x-auto no-scrollbar shadow-inner-soft">
-            <TabsTrigger value="north-star" className="gap-2.5 rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
-              North Star Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="nl2sql" className="gap-2.5 rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
-              NL2SQL Intelligence
-            </TabsTrigger>
-            <TabsTrigger value="employee-risk" className="gap-2.5 rounded-xl px-8 font-heading font-bold text-xs uppercase tracking-widest transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow">
-              Predictive Human Risk
-            </TabsTrigger>
+          <TabsList className="bg-rams-panel border border-rams-border p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
+            <TabsTrigger value="north-star">NORTH_STAR</TabsTrigger>
+            <TabsTrigger value="nl2sql">SENSEI_AI</TabsTrigger>
+            <TabsTrigger value="employee-risk">RISK_PREDICTION</TabsTrigger>
           </TabsList>
 
           <TabsContent value="north-star" data-testid="north-star" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {/* Executive KPIs - Miller's Law Grouping */}
-            <StatSection label="Strategic Metrics" columns={4}>
-              <StatCard
-                value={`$${(((todayData as any)?.metrics?.revenue || 0) / 1000000).toFixed(1)}M`}
-                label="Revenue Intelligence (MTD)"
-                icon={TrendingUp}
-                iconColor="success"
-                trend="up"
-                trendValue="+2.1% ALPHA TREND"
-                spotlight
-              />
-              <StatCard
-                value={totalNcrs.toString()}
-                label="Active Anomalies"
-                icon={AlertTriangle}
-                iconColor="danger"
-                critical={totalNcrs > 5}
-              />
-              <StatCard
-                value={totalCapas.toString()}
-                label="Open Resolutions"
-                icon={Shield}
-                iconColor="warning"
-              />
-              <StatCard
-                value="99.9%"
-                label="Operational Uptime"
-                icon={TrendingUp}
-                iconColor="success"
-                trend="up"
-                trendValue="System Resilience Optimal"
-              />
-            </StatSection>
-
-            <div className="grid gap-8 md:grid-cols-2">
-              <ContentCard title="Strategic Directives" subtitle="Automated priorities from Sensei AI">
-                <div className="space-y-4 stagger-list">
-                   <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 space-y-2 group hover:bg-primary/10 transition-all duration-300 stat-card-spotlight" style={{ '--stagger-index': 0 } as React.CSSProperties}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-primary/60">Priority Alpha</span>
-                        <Badge variant="destructive" className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">Critical</Badge>
-                      </div>
-                      <p className="font-heading font-bold text-base tracking-tight">Address Margin Leakage in Tier 2 Suppliers</p>
-                      <p className="text-xs text-muted-foreground font-medium leading-relaxed">AI detected 4.2% variance in Q3 procurement vs budget protocols.</p>
-                   </div>
-                   <div className="p-5 rounded-2xl bg-muted/30 border border-border/10 space-y-2 group hover:bg-primary/5 transition-all duration-300" style={{ '--stagger-index': 1 } as React.CSSProperties}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Priority Beta</span>
-                        <Badge className="rounded-md px-1.5 py-0 text-[9px] font-bold uppercase tracking-widest">Strategic</Badge>
-                      </div>
-                      <p className="font-heading font-bold text-base tracking-tight">Accelerate Level 4 Maturity Training</p>
-                      <p className="text-xs text-muted-foreground font-medium leading-relaxed">Operations bottlenecking at specialized inspection gates requiring sync.</p>
-                   </div>
+            {/* Executive KPIs */}
+            <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+              <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group hover:bg-rams-panel transition-none cursor-help">
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Revenue Intelligence (MTD)</p>
+                <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">
+                  ${(((todayData as any)?.metrics?.revenue || 0) / 1000000).toFixed(1)}M
                 </div>
-              </ContentCard>
+                <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2 flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3" /> +2.1% ALPHA_TREND
+                </p>
+              </div>
+              <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group hover:bg-rams-panel transition-none cursor-help">
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Anomalies</p>
+                <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", totalNcrs > 5 ? "text-rams-red" : "text-foreground/90")}>
+                  {totalNcrs}
+                </div>
+                <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">ACTIVE_GATE_BLOCKS</p>
+              </div>
+              <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group hover:bg-rams-panel transition-none cursor-help">
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Open Resolutions</p>
+                <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{totalCapas}</div>
+                <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">CAPA_SYNC_ACTIVE</p>
+              </div>
+              <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-border group hover:bg-rams-panel transition-none cursor-help">
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Operational Uptime</p>
+                <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">99.9%</div>
+                <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">OPTIMAL_STATE</p>
+              </div>
+            </div>
 
-              <ContentCard title="Operational Overview" subtitle="Live feed from shop floor gates">
-                   <div className="h-56 flex items-center justify-center border-2 border-dashed border-border/20 rounded-[2rem] bg-muted/5">
-                      <div className="text-center space-y-3">
-                        <div className="p-4 rounded-full bg-primary/10 inline-block animate-pulse">
-                          <Users className="h-8 w-8 text-primary/40" />
-                        </div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground/40">Aggregating Global Metrics...</p>
+            <div className="grid gap-8 lg:grid-cols-2">
+              <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+                <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-rams-orange" />
+                    Strategic Directives
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-1 space-y-1">
+                  {[
+                    { label: 'Priority Alpha', title: 'Address Margin Leakage in Tier 2 Suppliers', desc: 'AI detected 4.2% variance in Q3 procurement vs budget protocols.', severity: 'critical' },
+                    { label: 'Priority Beta', title: 'Accelerate Level 4 Maturity Training', desc: 'Operations bottlenecking at specialized inspection gates requiring sync.', severity: 'strategic' },
+                  ].map((item) => (
+                    <div key={item.label} className="p-5 bg-rams-panel/40 border border-rams-border/50 hover:bg-rams-panel transition-none group">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{item.label}</span>
+                        <Badge variant={item.severity === 'critical' ? 'danger' : 'default'} size="sm" className="h-4 px-1">{item.severity.toUpperCase()}</Badge>
                       </div>
-                   </div>
-              </ContentCard>
+                      <p className="font-sans font-black text-sm uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{item.title}</p>
+                      <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed font-medium uppercase">{item.desc}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+                <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                    <Users className="h-4 w-4 text-rams-orange" />
+                    Operational Overview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-12 flex items-center justify-center bg-rams-module relative overflow-hidden">
+                  <div className="relative z-10 text-center space-y-4">
+                    <div className="p-4 rounded-none bg-rams-panel border border-rams-border inline-block animate-pulse">
+                      <Users className="h-8 w-8 text-rams-orange/40" />
+                    </div>
+                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-muted-foreground/40">Aggregating Global Metrics...</p>
+                  </div>
+                  <div className="absolute inset-0 perforated-bg opacity-5" />
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
-          <TabsContent value="nl2sql" data-testid="nl2sql" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <Card className="premium-glass border-primary/20 shadow-glow">
-              <CardHeader>
+          <TabsContent value="nl2sql" data-testid="nl2sql" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                    <Send className="h-5 w-5" />
+                  <div className="p-2 rounded-none bg-rams-orange/10 border border-rams-orange/20 text-rams-orange">
+                    <Send className="h-4 w-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-xl">Intelligence Query (Sensei NL2SQL)</CardTitle>
-                    <CardDescription>Ask any strategic question in plain English.</CardDescription>
+                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Autonomous Data Interface</CardTitle>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">Protocol: Natural Language to SQL Sync</p>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">Strategic Inquiry</label>
-                  <Textarea
-                    value={nl2sqlQuestion}
-                    onChange={(e) => setNl2sqlQuestion(e.target.value)}
-                    rows={4}
-                    placeholder="e.g. Show me the win rate for quotes over $100k in the last 6 months by salesperson."
-                    className="rounded-2xl bg-background/50 border-border/50 focus:border-primary/50 transition-all text-lg font-medium p-4"
-                    data-testid="nl2sql-question"
-                  />
+              <CardContent className="p-8 space-y-8 bg-rams-module relative overflow-hidden">
+                <div className="space-y-4 relative z-10">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Command Input</label>
+                    <Textarea
+                      value={nl2sqlQuestion}
+                      onChange={(e) => setNl2sqlQuestion(e.target.value)}
+                      rows={4}
+                      placeholder="e.g. Show me the win rate for quotes over $100k in the last 6 months by salesperson."
+                      className="bg-rams-panel border-rams-border text-[11px] font-bold uppercase tracking-wider p-4 h-32 focus-visible:ring-rams-orange"
+                      data-testid="nl2sql-question"
+                    />
+                  </div>
+                  <Button 
+                    onClick={handleRunNl2sql} 
+                    disabled={nl2sqlLoading || !nl2sqlQuestion}
+                    className="w-full h-12 rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]"
+                    data-testid="nl2sql-run"
+                  >
+                    {nl2sqlLoading ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        REASONING_IN_PROGRESS...
+                      </div>
+                    ) : (
+                      'EXECUTE_INFERENCE'
+                    )}
+                  </Button>
                 </div>
-                
-                <Button 
-                  onClick={handleRunNl2sql} 
-                  disabled={nl2sqlLoading} 
-                  size="xl" 
-                  className="w-full rounded-2xl shadow-glow premium-shimmer"
-                  data-testid="nl2sql-run"
-                >
-                  {nl2sqlLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Send className="mr-2 h-5 w-5" />}
-                  Generate Intelligence
-                </Button>
 
-                {nl2sqlError && (
-                  <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive font-medium animate-in slide-in-from-top-2" data-testid="nl2sql-error">
-                    {nl2sqlError}
+                {(nl2sqlResult || nl2sqlError) && (
+                  <div className="mt-8 animate-in fade-in slide-in-from-top-4 duration-500 relative z-10">
+                    {nl2sqlError ? (
+                      <div className="p-6 bg-rams-red/5 border border-rams-red/20 flex gap-4" data-testid="nl2sql-error">
+                        <AlertTriangle className="h-5 w-5 text-rams-red shrink-0" />
+                        <div className="text-xs font-medium text-rams-red uppercase leading-relaxed">{nl2sqlError}</div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6" data-testid="nl2sql-result">
+                        <div className="grid gap-6 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Generated Logic (SQL)</label>
+                            <pre className="p-4 bg-rams-panel border border-rams-border text-[10px] font-mono text-foreground/70 overflow-auto max-h-40 rounded-none uppercase tracking-tighter">{nl2sqlResult.generated_sql}</pre>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Sensei Reasoning</label>
+                            <div className="p-4 bg-rams-orange/5 border border-rams-orange/20 text-xs font-medium leading-relaxed uppercase text-foreground/80">{nl2sqlResult.explanation}</div>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Intelligence Data Output</label>
+                          <pre className="p-4 bg-rams-panel border border-rams-border text-[10px] font-mono text-foreground/70 overflow-auto max-h-60 rounded-none uppercase tracking-tighter">
+                            {JSON.stringify(nl2sqlResult.result, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-
-                {nl2sqlResult && (
-                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500" data-testid="nl2sql-result">
-                    <div className="grid gap-4 md:grid-cols-2">
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Generated Logic (SQL)</label>
-                          <pre className="rounded-xl border border-border/30 bg-black/5 dark:bg-white/5 p-4 text-xs font-mono overflow-auto max-h-40">{nl2sqlResult.generated_sql}</pre>
-                       </div>
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Sensei Reasoning</label>
-                          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm font-medium leading-relaxed">{nl2sqlResult.explanation}</div>
-                       </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Intelligence Data Output</label>
-                      <pre className="rounded-xl border border-border/30 bg-black/5 dark:bg-white/5 p-4 text-xs font-mono overflow-auto max-h-60">
-                        {JSON.stringify(nl2sqlResult.result, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
+                <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
               </CardContent>
             </Card>
           </TabsContent>

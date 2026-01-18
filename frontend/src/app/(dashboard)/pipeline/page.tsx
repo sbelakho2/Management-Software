@@ -245,221 +245,236 @@ export default function PipelinePage() {
 
   if (!isTestEnv && isLoading && rfqs.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-10 w-32" />
+      <div className="space-y-8">
+        <div className="flex items-center justify-between border-b border-rams-border pb-8">
+          <Skeleton className="h-8 w-48 rounded-rams-sm" />
+          <Skeleton className="h-10 w-32 rounded-rams-sm" />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32" />)}
+        <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
+          {[1, 2, 3, 4].map(i => <div key={i} className="bg-rams-module p-6 border-r border-rams-border last:border-r-0"><Skeleton className="h-12 w-full rounded-rams-sm" /></div>)}
         </div>
-        <Skeleton className="h-96 w-full" />
+        <Skeleton className="h-96 w-full rounded-rams-sm border border-rams-border" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="pipeline-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="pipeline-page">
+      {/* Header */}
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.pipeline.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.pipeline.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.pipeline.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: PIPELINE-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => exportRFQs()} disabled={isLoading}>
-            <Download className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => exportRFQs()} disabled={isLoading}>
+            <Download className="mr-2 h-3.5 w-3.5" />
             Export Intel
           </Button>
-          <Button asChild size="lg" className="rounded-xl shadow-glow subtle-shine">
+          <Button asChild size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase">
             <Link href="/pipeline/new">
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 h-3.5 w-3.5" />
               New Opportunity
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active Intelligence Nodes</CardTitle>
-            <Clock className="h-4 w-4 text-primary/60" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.activeRFQs}</div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-danger/60 mt-2">{effectiveStats.overdueCount} Critical Thresholds</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Pipeline Magnitude</CardTitle>
-            <span className="text-primary/60 text-[10px] font-bold">$</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(effectiveStats.totalValue)}</div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">Across {effectiveStats.totalRFQs} RFQs</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Mean Response Velocity</CardTitle>
-            <Clock className="h-4 w-4 text-primary/60" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.avgResponseTime}h</div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">Target: &lt; 24h Protocol</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Conversion Pulse</CardTitle>
-            <AlertCircle className="h-4 w-4 text-primary/60" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-heading font-bold tracking-tight ">{effectiveStats.conversionRate}%</div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-success/60 mt-2">+2% ALPHA VARIANCE</p>
-          </CardContent>
-        </Card>
+      {/* Stats Grid */}
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Intel Nodes</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.activeRFQs}</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2">{effectiveStats.overdueCount} Critical Thresholds</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Pipeline Magnitude</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(effectiveStats.totalValue)}</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">Across {effectiveStats.totalRFQs} RFQs</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Response Velocity</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.avgResponseTime}h</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2">Optimal range identified</p>
+        </div>
+        <div className="bg-rams-module p-6 border-b border-rams-border group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Conversion Rate</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.conversionRate}%</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">Protocol: ALPHA_VARIANCE</p>
+        </div>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardContent className="p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-1 items-center space-x-3 max-w-2xl">
-              <div className="relative flex-1 group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-                <Input
-                  placeholder="Search opportunities by node identity..."
-                  className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px] h-12 rounded-xl bg-background/50 border-border/50">
-                  <SelectValue placeholder="Node Stage" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
-                  <SelectItem value="all" className="rounded-xl m-1">All Stages</SelectItem>
-                  {STAGES.map(s => <SelectItem key={s.id} value={s.id} className="rounded-xl m-1">{s.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                <SelectTrigger className="w-[180px] h-12 rounded-xl bg-background/50 border-border/50">
-                  <SelectValue placeholder="Priority Layer" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
-                  <SelectItem value="all" className="rounded-xl m-1">All Priorities</SelectItem>
-                  <SelectItem value="urgent" className="rounded-xl m-1">Urgent</SelectItem>
-                  <SelectItem value="high" className="rounded-xl m-1">High</SelectItem>
-                  <SelectItem value="medium" className="rounded-xl m-1">Medium</SelectItem>
-                  <SelectItem value="low" className="rounded-xl m-1">Low</SelectItem>
-                </SelectContent>
-              </Select>
-              {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
-                <Button variant="ghost" onClick={clearFilters} size="sm" className="rounded-xl hover:text-primary">
-                  Reset
-                </Button>
-              )}
+      <div className="flex flex-col gap-6">
+        {/* Filters and View Toggle */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-1 items-center gap-4 max-w-2xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+              <Input
+                placeholder="SEARCH_PROTOCOLS..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10 h-10 text-[10px]"
+              />
             </div>
-            <div className="flex items-center rounded-xl border border-border/40 p-1 bg-background/50 shadow-inner-soft">
-              <Button
-                variant={view === 'list' ? 'secondary' : 'ghost'}
-                size="icon"
-                className="h-9 w-9 rounded-lg"
-                aria-label="List view"
-                onClick={() => setAndPersistView('list')}
-              >
-                <LayoutList className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={view === 'board' ? 'secondary' : 'ghost'}
-                size="icon"
-                className="h-9 w-9 rounded-lg"
-                aria-label="Board view"
-                onClick={() => setAndPersistView('board')}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px] h-10 text-[10px]">
+                <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
+                <SelectValue placeholder="STATUS_STATE" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ALL_STAGES</SelectItem>
+                {STAGES.map(stage => (
+                  <SelectItem key={stage.id} value={stage.id}>{stage.label.toUpperCase()}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger className="w-[160px] h-10 text-[10px]">
+                <AlertCircle className="mr-2 h-3.5 w-3.5 opacity-40" />
+                <SelectValue placeholder="PRIORITY_LVL" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ALL_PRIORITIES</SelectItem>
+                <SelectItem value="urgent">URGENT</SelectItem>
+                <SelectItem value="high">HIGH</SelectItem>
+                <SelectItem value="medium">MEDIUM</SelectItem>
+                <SelectItem value="low">LOW</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </CardContent>
-      </Card>
 
-      {view === 'board' ? (
-        <KanbanBoard 
-          rfqs={filtered} 
-          onCardClick={(rfq) => router.push(`/rfqs/${rfq.id}`)}
-          onCardMove={async (cardId, fromStatus, toStatus) => {
-            // Update pipeline store when move happens in Kanban
-            await setRFQStatus(cardId, toStatus);
-          }}
-        />
-      ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>RFQ #</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((rfq) => (
-                <TableRow 
-                  key={rfq.id} 
-                  className="cursor-pointer" 
-                  onClick={() => router.push(`/rfqs/${rfq.id}`)}
-                >
-                  <TableCell className="font-mono">{rfq.rfq_number}</TableCell>
-                  <TableCell className="font-medium">{rfq.customer?.name || 'N/A'}</TableCell>
-                  <TableCell>{getStatusBadge(rfq.status)}</TableCell>
-                  <TableCell>
-                    <Badge variant={getPriorityColor(rfq.priority) as any} className="capitalize">
-                      {rfq.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{formatCurrency(rfq.estimated_value || 0)}</TableCell>
-                  <TableCell className={cn(
-                    new Date(rfq.due_date) < new Date() && rfq.status !== 'won' && rfq.status !== 'lost' && "text-destructive font-medium"
-                  )}>
-                    {formatDate(rfq.due_date)}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => router.push(`/rfqs/${rfq.id}`)}>View Details</DropdownMenuItem>
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive" onClick={() => deleteRFQ(rfq.id)}>Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filtered.length === 0 && (
+          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm">
+            <Button
+              variant={view === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setAndPersistView('list')}
+              className={cn("h-8 px-3 rounded-none", view === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              <LayoutList className="mr-2 h-3.5 w-3.5" />
+              LIST
+            </Button>
+            <Button
+              variant={view === 'board' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setAndPersistView('board')}
+              className={cn("h-8 px-3 rounded-none", view === 'board' ? "bg-rams-orange text-black" : "text-muted-foreground")}
+            >
+              <LayoutGrid className="mr-2 h-3.5 w-3.5" />
+              BOARD
+            </Button>
+          </div>
+        </div>
+
+        {/* Content */}
+        {view === 'board' ? (
+          <div className="industrial-panel min-h-[600px] bg-rams-panel/30">
+            <KanbanBoard 
+              rfqs={filtered} 
+              onCardClick={(rfq) => router.push(`/pipeline/${rfq.id}`)}
+              onCardMove={async (cardId, fromStatus, toStatus) => {
+                await setRFQStatus(cardId, toStatus);
+              }}
+            />
+          </div>
+        ) : (
+          <Card className="rounded-rams-sm overflow-hidden">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    No results found.
-                  </TableCell>
+                  <TableHead>RFQ_NUMBER</TableHead>
+                  <TableHead>OPPORTUNITY_TITLE</TableHead>
+                  <TableHead>CUSTOMER_NODE</TableHead>
+                  <TableHead>STATUS_STATE</TableHead>
+                  <TableHead>PRIORITY_LVL</TableHead>
+                  <TableHead className="text-right">EST_VALUE</TableHead>
+                  <TableHead>THRESHOLD_DATE</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+              </TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-24">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="p-4 bg-rams-panel border border-rams-border rounded-none">
+                          <Plus className="h-8 w-8 text-muted-foreground/20" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
+                          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new opportunity</p>
+                        </div>
+                        {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
+                          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-rams-orange hover:bg-rams-orange/5">
+                            RESET_FILTERS
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filtered.map((rfq) => (
+                    <TableRow 
+                      key={rfq.id} 
+                      className="group transition-none cursor-pointer"
+                      onClick={() => router.push(`/pipeline/${rfq.id}`)}
+                    >
+                      <TableCell className="font-mono font-bold text-rams-orange tabular-nums">{rfq.rfq_number}</TableCell>
+                      <TableCell>
+                        <span className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">
+                          {rfq.title}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-sans font-bold text-[11px] uppercase tracking-tight text-muted-foreground/60">
+                        {rfq.customer?.name || 'Unknown'}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(rfq.status)}</TableCell>
+                      <TableCell>
+                        <Badge variant={getPriorityColor(rfq.priority)} size="sm">
+                          {rfq.priority.toUpperCase()}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-bold tabular-nums">
+                        {formatCurrency(rfq.estimated_value, rfq.currency)}
+                      </TableCell>
+                      <TableCell className="font-mono text-[10px] uppercase tracking-tighter text-muted-foreground/60">
+                        {rfq.due_date ? formatDate(new Date(rfq.due_date)) : 'N/A'}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => router.push(`/pipeline/${rfq.id}`)}>
+                              <ArrowRight className="mr-2 h-3.5 w-3.5" /> ANALYZE
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push(`/quotes/new?rfq=${rfq.id}`)}>
+                              <Plus className="mr-2 h-3.5 w-3.5" /> INITIALIZE_QUOTE
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-rams-red" onClick={() => deleteRFQ(rfq.id)}>
+                              TERMINATE_NODE
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

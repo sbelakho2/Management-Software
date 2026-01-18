@@ -65,53 +65,68 @@ const recentAudits = [
 export default function AuditorDashboard() {
   const { t } = useI18n();
   return (
-    <div className="space-y-8 page-fade-in" data-testid="auditor-page">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="auditor-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.auditor.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            {t('pages.auditor.subtitle')}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.auditor.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: AUDIT-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <Download className="h-4 w-4 mr-2" />
-            Export Intelligence
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+            <Download className="h-3.5 w-3.5 mr-2" />
+            Export Intel
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
-            <FileSearch className="h-4 w-4 mr-2" />
-            New Protocol
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
+            <FileSearch className="h-3.5 w-3.5 mr-2" />
+            Initialize Protocol
           </Button>
         </div>
       </div>
 
       {/* Compliance Score Banner */}
-      <Card className="bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-950/20 dark:to-blue-950/20 border-emerald-200 dark:border-emerald-900">
-        <CardContent className="py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Overall Compliance Score</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-4xl font-bold text-emerald-600">{auditStats.complianceScore}%</span>
-                <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-300">
-                  <TrendingUp className="h-3 w-3 mr-1" />
-                  +2% from last quarter
-                </Badge>
+      <Card className="rounded-rams-sm bg-rams-module border border-rams-border overflow-hidden">
+        <CardContent className="p-0">
+          <div className="grid grid-cols-1 md:grid-cols-3">
+            <div className="p-8 md:col-span-2 space-y-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">Organizational Compliance Magnitude</p>
+                <div className="flex items-baseline gap-4 mt-2">
+                  <span className="text-6xl font-mono font-bold text-rams-green tabular-nums">{auditStats.complianceScore}%</span>
+                  <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green font-mono font-black text-[9px] h-5">
+                    <TrendingUp className="h-3 w-3 mr-1" />
+                    +2% ALPHA_SHIFT
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/40">
+                  <span>Threshold_Alignment</span>
+                  <span>Optimal</span>
+                </div>
+                <div className="h-1.5 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                  <div className="h-full bg-rams-green transition-all duration-1000" style={{ width: `${auditStats.complianceScore}%` }} />
+                </div>
               </div>
             </div>
-            <div className="hidden sm:flex items-center gap-3">
+            <div className="p-8 bg-rams-panel/30 border-l border-rams-border flex flex-col justify-between">
               <AmbientStatus 
                 status={auditStats.criticalFindings > 0 ? 'warning' : 'operational'} 
                 label={auditStats.criticalFindings > 0 ? `${auditStats.criticalFindings} Critical Findings` : 'Compliance Optimal'}
               />
-              <Shield className="h-16 w-16 text-emerald-600/20" />
+              <div className="flex items-center gap-4 mt-8 opacity-20">
+                <Shield className="h-12 w-12" />
+                <div className="text-[10px] font-mono font-black uppercase leading-tight">
+                  Security_Protocol<br />Verified
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="goal-progress-track mt-4">
-            <div className="goal-progress-fill bg-emerald-500" style={{ width: `${auditStats.complianceScore}%` }} />
           </div>
         </CardContent>
       </Card>
@@ -149,149 +164,164 @@ export default function AuditorDashboard() {
       </StatSection>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-8 lg:grid-cols-2">
         {/* Upcoming Audits */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-rams-orange" />
               Upcoming Audits
             </CardTitle>
-            <CardDescription>Scheduled audits in the next 60 days</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-border/30">
               {upcomingAudits.map((audit) => (
                 <div
                   key={audit.id}
-                  className="flex items-center justify-between py-3 border-b last:border-0"
+                  className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${
-                      audit.priority === 'high' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
-                    }`}>
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "p-2 rounded-rams-sm border border-rams-border",
+                      audit.priority === 'high' ? 'bg-rams-red/5 text-rams-red border-rams-red/20' : 'bg-rams-panel text-muted-foreground'
+                    )}>
                       <FileSearch className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{audit.name}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{audit.name}</p>
+                      <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">
                         <Calendar className="h-3 w-3" />
                         {audit.date}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{audit.type}</Badge>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="rounded-none border-rams-border text-[8px] font-black uppercase tracking-widest px-1.5 h-4 bg-rams-panel">{audit.type}</Badge>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
                   </div>
                 </div>
               ))}
             </div>
-            <Button variant="outline" className="w-full mt-4">
-              View Audit Calendar
-            </Button>
+            <div className="p-4 bg-rams-panel/10 border-t border-rams-border">
+              <Button variant="outline" size="sm" className="w-full rounded-rams-sm text-[9px] font-black uppercase tracking-widest h-8">
+                VIEW_AUDIT_CALENDAR
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
         {/* Open Findings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-rams-red" />
               Open Findings
             </CardTitle>
-            <CardDescription>Findings requiring action</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-border/30">
               {openFindings.map((finding) => (
                 <div
                   key={finding.id}
-                  className="flex items-center justify-between py-3 border-b last:border-0"
+                  className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
                 >
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{finding.title}</p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{finding.title}</p>
+                    <div className="flex items-center gap-3 mt-1">
                       <Badge 
                         variant="outline" 
-                        className={finding.severity === 'major' ? 'border-destructive text-destructive' : ''}
+                        className={cn(
+                          "rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-4 bg-rams-panel",
+                          finding.severity === 'major' ? 'border-rams-red/20 text-rams-red' : 'border-rams-border'
+                        )}
                       >
                         {finding.severity}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">{finding.area}</span>
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{finding.area}</span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`text-sm font-medium ${finding.daysOverdue > 0 ? 'text-destructive' : ''}`}>
-                      {finding.daysOverdue > 0 ? `${finding.daysOverdue}d overdue` : `Due ${finding.dueDate}`}
+                    <p className={cn(
+                      "text-[10px] font-mono font-black uppercase tracking-tighter",
+                      finding.daysOverdue > 0 ? 'text-rams-red' : 'text-muted-foreground/60'
+                    )}>
+                      {finding.daysOverdue > 0 ? `${finding.daysOverdue}D_OVERDUE` : `DUE: ${finding.dueDate.toUpperCase()}`}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
-            <Button variant="outline" className="w-full mt-4">
-              <Filter className="h-4 w-4 mr-2" />
-              View All Findings
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Compliance by Area */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Compliance by Area
-            </CardTitle>
-            <CardDescription>Scores by audit area</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {complianceAreas.map((area) => (
-                <div key={area.name} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{area.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">{area.audits} audits</span>
-                      <span className={`font-bold ${area.score >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        {area.score}%
-                      </span>
-                    </div>
-                  </div>
-                  <Progress value={area.score} className="h-2" />
-                </div>
-              ))}
+            <div className="p-4 bg-rams-panel/10 border-t border-rams-border">
+              <Button variant="outline" size="sm" className="w-full rounded-rams-sm text-[9px] font-black uppercase tracking-widest h-8">
+                VIEW_ALL_FINDINGS
+              </Button>
             </div>
           </CardContent>
         </Card>
 
+        {/* Compliance by Area */}
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-rams-orange" />
+              Compliance by Area
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-6">
+            {complianceAreas.map((area) => (
+              <div key={area.name} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">{area.name}</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{area.audits} AUDITS</span>
+                    <span className={cn(
+                      "text-sm font-mono font-bold tabular-nums",
+                      area.score >= 90 ? 'text-rams-green' : 'text-rams-orange'
+                    )}>
+                      {area.score}%
+                    </span>
+                  </div>
+                </div>
+                <div className="h-1 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                  <div className={cn(
+                    "h-full transition-all duration-1000",
+                    area.score >= 90 ? 'bg-rams-green' : 'bg-rams-orange'
+                  )} style={{ width: `${area.score}%` }} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
         {/* Recent Audits */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
+        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <FileText className="h-4 w-4 text-rams-orange" />
               Recent Audits
             </CardTitle>
-            <CardDescription>Latest completed audits</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-border/30">
               {recentAudits.map((audit) => (
                 <div
                   key={audit.id}
-                  className="flex items-center justify-between py-3 border-b last:border-0"
+                  className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
                 >
                   <div>
-                    <p className="font-medium text-sm">{audit.name}</p>
-                    <p className="text-xs text-muted-foreground">{audit.date}</p>
+                    <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{audit.name}</p>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{audit.date}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{audit.findings} findings</Badge>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="rounded-none border-rams-border text-[8px] font-black uppercase tracking-widest px-1.5 h-4 bg-rams-panel">{audit.findings} FINDINGS</Badge>
                     <Badge 
-                      variant={audit.status === 'closed' ? 'outline' : 'destructive'}
-                      className={audit.status === 'closed' ? 'text-emerald-600' : ''}
+                      variant={audit.status === 'closed' ? 'outline' : 'warning'}
+                      className={cn(
+                        "rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-4",
+                        audit.status === 'closed' ? 'border-rams-green/20 text-rams-green bg-rams-green/5' : 'bg-rams-panel'
+                      )}
                     >
-                      {audit.status}
+                      {audit.status.toUpperCase()}
                     </Badge>
                   </div>
                 </div>

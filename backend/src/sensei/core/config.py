@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     
     # API
     API_PREFIX: str = "/api/v1"
-    # Local dev + Playwright E2E (Next dev server may run on 3100)
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3100"]
+    # Local dev + Playwright E2E (Next dev server may run on 3001/3100 if 3000 is busy)
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3100"]
     
     # Database
     DATABASE_URL: str = Field(..., description="Async PostgreSQL connection string")

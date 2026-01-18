@@ -59,28 +59,30 @@ export default function WarehouseDashboard() {
   }, [user]);
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.warehouse.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            {t('pages.warehouse.subtitle')}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.warehouse.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: WAREHOUSE-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           {hasPageAccess('/warehouse/sync', userRoles) && (
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              <RefreshCw className="h-4 w-4 mr-2" />
+            <Button variant="outline" size="default" className="rounded-rams-sm">
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />
               Sync Real-time Stock
             </Button>
           )}
           {hasPageAccess('/supply-chain', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+            <Button size="default" className="rounded-rams-sm" asChild>
               <Link href="/supply-chain">
-                <Package className="h-4 w-4 mr-2" />
+                <Package className="h-3.5 w-3.5 mr-2" />
                 Inventory Command
               </Link>
             </Button>
@@ -97,7 +99,7 @@ export default function WarehouseDashboard() {
       </div>
 
       {/* Stats Grid - Using Shared StatCard */}
-      <StatSection label="Inventory Metrics" columns={4}>
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
         <StatCard
           value={inventoryStats.totalItems.toLocaleString()}
           label="Inventory Nodes (SKUs)"
@@ -105,6 +107,7 @@ export default function WarehouseDashboard() {
           iconColor="primary"
           trend="up"
           trendValue="+124 this cycle"
+          className="rounded-none border-0 border-r border-b"
         />
         <StatCard
           value={inventoryStats.lowStock}
@@ -112,45 +115,49 @@ export default function WarehouseDashboard() {
           icon={AlertTriangle}
           iconColor="warning"
           critical={inventoryStats.lowStock > 20}
+          className="rounded-none border-0 border-r border-b"
         />
         <StatCard
           value={inventoryStats.pendingReceipts}
           label="Inbound Synchronization"
           icon={Truck}
           iconColor="info"
+          className="rounded-none border-0 border-r border-b"
         />
         <StatCard
           value={inventoryStats.pendingShipments}
           label="Outbound Velocity"
           icon={Package}
           iconColor="success"
+          className="rounded-none border-0 border-b"
         />
-      </StatSection>
+      </div>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-8 lg:grid-cols-2">
         {/* Recent Movements */}
-        <Card>
+        <Card className="rounded-rams-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
+              <BarChart3 className="h-4 w-4" />
               Recent Movements
             </CardTitle>
             <CardDescription>Latest inventory transactions</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-border/30">
               {recentMovements.map((movement) => (
                 <div
                   key={movement.id}
-                  className="flex items-center justify-between py-2 border-b last:border-0"
+                  className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-none border",
                       movement.type === 'in' 
-                        ? 'bg-emerald-100 text-emerald-600' 
-                        : 'bg-blue-100 text-blue-600'
-                    }`}>
+                        ? 'bg-rams-green/5 border-rams-green/20 text-rams-green' 
+                        : 'bg-rams-steel/5 border-rams-steel/20 text-rams-steel'
+                    )}>
                       {movement.type === 'in' ? (
                         <ArrowDownRight className="h-4 w-4" />
                       ) : (
@@ -158,18 +165,18 @@ export default function WarehouseDashboard() {
                       )}
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{movement.item}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{movement.item}</p>
+                      <div className="flex items-center gap-2 text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">
                         <MapPin className="h-3 w-3" />
                         {movement.location}
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium text-sm">
+                    <p className="font-mono font-bold text-sm tabular-nums">
                       {movement.type === 'in' ? '+' : '-'}{movement.quantity}
                     </p>
-                    <p className="text-xs text-muted-foreground">{movement.time}</p>
+                    <p className="text-[9px] font-mono font-black text-muted-foreground/30 uppercase tracking-tighter">{movement.time}</p>
                   </div>
                 </div>
               ))}
@@ -178,35 +185,36 @@ export default function WarehouseDashboard() {
         </Card>
 
         {/* Low Stock Alerts */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+        <Card className="rounded-rams-sm border-rams-red/30 bg-rams-red/5">
+          <CardHeader className="border-rams-red/10 bg-rams-red/10">
+            <CardTitle className="flex items-center gap-2 text-rams-red">
+              <AlertTriangle className="h-4 w-4" />
               Low Stock Alerts
             </CardTitle>
-            <CardDescription>Items below reorder point</CardDescription>
+            <CardDescription className="text-rams-red/60">Items below reorder point</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-6">
               {lowStockItems.map((item) => (
                 <div key={item.id} className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm">{item.name}</p>
-                    <Badge variant="outline" className="text-amber-600">
+                    <p className="font-sans font-black text-[11px] uppercase tracking-tight text-foreground/80">{item.name}</p>
+                    <Badge variant="outline" className="border-rams-red/20 bg-rams-red/10 text-rams-red h-5 px-2">
                       {item.current} / {item.reorder} {item.unit}
                     </Badge>
                   </div>
                   <Progress 
                     value={(item.current / item.reorder) * 100} 
-                    className="h-2"
+                    className="h-1 bg-rams-red/10 border-rams-red/20"
+                    indicatorClassName="bg-rams-red"
                   />
                 </div>
               ))}
             </div>
             {hasPageAccess('/supply-chain', userRoles) && (
-              <Button variant="outline" className="w-full mt-4" asChild>
+              <Button variant="outline" className="w-full mt-8 border-rams-red/20 hover:bg-rams-red/10 hover:text-rams-red transition-none text-[10px]" asChild>
                 <Link href="/supply-chain?filter=low-stock">
-                  <ClipboardList className="h-4 w-4 mr-2" />
+                  <ClipboardList className="h-3.5 w-3.5 mr-2" />
                   View All Low Stock Items
                 </Link>
               </Button>
