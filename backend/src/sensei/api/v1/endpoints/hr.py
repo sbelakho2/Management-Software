@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from sensei.api.deps import DBSession, CurrentUser
 from sensei.models.user import User, Role
-from sensei.models.hr import EmployeeProfile, HRJobOpening, HRLeaveRequest
+from sensei.models.hr import EmployeeProfile, HRJobOpening, HRLeaveRequest, HRJobApplication, HRAppraisal
 from sensei.models.learning import UserLearningProgress, LearningModule
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response

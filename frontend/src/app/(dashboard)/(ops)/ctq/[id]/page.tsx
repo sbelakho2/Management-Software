@@ -121,15 +121,15 @@ const categoryIcons: Record<CTQCategory, React.ReactNode> = {
 };
 
 const categoryColors: Record<CTQCategory, string> = {
-  dimensional: 'bg-blue-100 text-blue-700 border-blue-200',
-  surface: 'bg-green-100 text-green-700 border-green-200',
-  material: 'bg-purple-100 text-purple-700 border-purple-200',
-  mechanical: 'bg-orange-100 text-orange-700 border-orange-200',
-  electrical: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  visual: 'bg-pink-100 text-pink-700 border-pink-200',
-  functional: 'bg-cyan-100 text-cyan-700 border-cyan-200',
-  environmental: 'bg-red-100 text-red-700 border-red-200',
-  other: 'bg-gray-100 text-gray-700 border-gray-200',
+  dimensional: 'bg-rams-steel/10 text-rams-steel border-rams-steel/20',
+  surface: 'bg-rams-green/10 text-rams-green border-rams-green/20',
+  material: 'bg-rams-panel text-foreground/70 border-rams-line',
+  mechanical: 'bg-rams-orange/10 text-rams-orange border-rams-orange/20',
+  electrical: 'bg-rams-orange/10 text-rams-orange border-rams-orange/20',
+  visual: 'bg-rams-steel/10 text-rams-steel border-rams-steel/20',
+  functional: 'bg-rams-green/10 text-rams-green border-rams-green/20',
+  environmental: 'bg-rams-red/10 text-rams-red border-rams-red/20',
+  other: 'bg-rams-panel text-muted-foreground border-rams-line',
 };
 
 const resultBadgeVariant: Record<MeasurementResult, 'default' | 'success' | 'destructive' | 'warning'> = {
@@ -327,14 +327,14 @@ export default function CTQDetailPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <FileText className="h-16 w-16 text-muted-foreground" />
         <div className="text-center">
-          <h2 className="text-3xl font-heading font-bold tracking-tight ">CTQ Not Found</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.ctqDetail.notFound') || 'CTQ Not Found'}</h2>
           <p className="text-muted-foreground mt-2">
-            The CTQ you're looking for doesn't exist or has been deleted.
+            {t('pages.ctqDetail.notFoundDescription') || "The CTQ you're looking for doesn't exist or has been deleted."}
           </p>
         </div>
         <Button onClick={() => router.push('/ctq')}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to CTQs
+          {t('pages.ctqDetail.backToCTQs') || 'Back to CTQs'}
         </Button>
       </div>
     );
@@ -347,7 +347,7 @@ export default function CTQDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.push('/ctq')}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-orange/10 transition-none" onClick={() => router.push('/ctq')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -373,52 +373,52 @@ export default function CTQDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={handleExport}>
+          <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-orange/5" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
-            Export Intel
+            {t('pages.ctqDetail.exportIntel') || 'Export Intel'}
           </Button>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setIsEditing(true)}>
+          <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-orange/5" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
-            Edit
+            {t('common.edit') || 'Edit'}
           </Button>
-          <Button variant="destructive" size="lg" className="rounded-xl shadow-sm" onClick={() => setShowDeleteDialog(true)}>
+          <Button variant="destructive" size="lg" className="rounded-rams-sm" onClick={() => setShowDeleteDialog(true)}>
             <Trash2 className="mr-2 h-4 w-4" />
-            Retire
+            {t('pages.ctqDetail.retire') || 'Retire'}
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Pass Rate</CardTitle>
-            <CheckCircle className="h-4 w-4 text-success/60" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('pages.ctqDetail.passRate') || 'Pass Rate'}</CardTitle>
+            <CheckCircle className="h-4 w-4 text-rams-green/60" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-heading font-bold tracking-tight ">{ctq.pass_rate.toFixed(1)}%</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
-              {Math.round((ctq.measurement_count * ctq.pass_rate) / 100)} of {ctq.measurement_count} PASSED
+              {Math.round((ctq.measurement_count * ctq.pass_rate) / 100)} of {ctq.measurement_count} {t('pages.ctqDetail.passed') || 'PASSED'}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Synchronization Pulse</CardTitle>
-            <ClipboardCheck className="h-4 w-4 text-primary/60" />
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('pages.ctqDetail.synchronizationPulse') || 'Synchronization Pulse'}</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-rams-orange/60" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-heading font-bold tracking-tight ">{ctq.measurement_count}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
-              Total Recorded Samples
+              {t('pages.ctqDetail.totalRecordedSamples') || 'Total Recorded Samples'}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Latest Intelligence</CardTitle>
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('pages.ctqDetail.latestIntelligence') || 'Latest Intelligence'}</CardTitle>
             {resultIcons[ctq.measurements[0]?.result || 'not_measured']}
           </CardHeader>
           <CardContent>
@@ -434,17 +434,17 @@ export default function CTQDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Performance Trend</CardTitle>
-            {trend === 'up' ? <TrendingUp className="h-4 w-4 text-danger/60" /> :
-             trend === 'down' ? <TrendingDown className="h-4 w-4 text-success/60" /> :
+            <CardTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('pages.ctqDetail.performanceTrend') || 'Performance Trend'}</CardTitle>
+            {trend === 'up' ? <TrendingUp className="h-4 w-4 text-rams-red/60" /> :
+             trend === 'down' ? <TrendingDown className="h-4 w-4 text-rams-green/60" /> :
              <Minus className="h-4 w-4 text-muted-foreground/60" />}
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-heading font-bold tracking-tight  capitalize">{trend}</div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-2">
-              Velocity over last 3 samples
+              {t('pages.ctqDetail.velocityOverSamples') || 'Velocity over last 3 samples'}
             </p>
           </CardContent>
         </Card>

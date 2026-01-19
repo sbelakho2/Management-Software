@@ -18,30 +18,26 @@ export default function LanguageSettingsPage() {
       title={t('settings.localization.title')} 
       description={t('settings.localization.description')}
     >
-      <div className="space-y-8 max-w-xl">
+      <div className="space-y-12 py-6">
         {/* Language Selection */}
-        <div className="space-y-3">
-          <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1 flex items-center gap-2">
+        <section className="space-y-4 max-w-md">
+          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1 flex items-center gap-2">
             <Languages className="h-3.5 w-3.5" />
             {t('settings.localization.intelligenceLanguage')}
           </Label>
           <Select value={locale} onValueChange={(value) => setLocale(value as Locale)}>
-            <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+            <SelectTrigger className="bg-rams-panel border-rams-line h-10 text-[11px] rounded-rams-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="rounded-2xl shadow-premium">
+            <SelectContent>
               {availableLocales.map((loc) => (
                 <SelectItem 
                   key={loc.locale} 
                   value={loc.locale} 
-                  className="rounded-xl m-1"
                 >
                   <span className="flex items-center gap-3">
                     <span className="text-lg">{loc.flag}</span>
-                    <span>{loc.nativeName}</span>
-                    {loc.locale === locale && (
-                      <Check className="h-4 w-4 text-primary ml-auto" />
-                    )}
+                    <span>{loc.nativeName.toUpperCase()}</span>
                   </span>
                 </SelectItem>
               ))}
@@ -50,62 +46,66 @@ export default function LanguageSettingsPage() {
           
           {/* RTL indicator for Arabic */}
           {direction === 'rtl' && (
-            <p className="text-xs text-muted-foreground mt-2 flex items-center gap-2 bg-primary/5 p-3 rounded-xl">
-              <Globe className="h-4 w-4 text-primary" />
-              <span>{t('common.info')}: Right-to-left (RTL) layout active</span>
-            </p>
+            <div className="p-4 bg-rams-panel/40 border border-rams-line flex items-center gap-3">
+              <Globe className="h-4 w-4 text-rams-orange" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-foreground/70">
+                {t('common.info')}: {t('settings.localization.rtlActive')}
+              </p>
+            </div>
           )}
-        </div>
+        </section>
 
         {/* Format Preview */}
-        <div className="space-y-3">
-          <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
-            {t('settings.localization.temporalFormat')} - Preview
+        <section className="space-y-6">
+          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">
+            {t('settings.localization.temporalFormat')} - {t('settings.localization.preview')}
           </Label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="p-4 rounded-2xl bg-background/50 border border-border/50">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+          <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-2">
+            <div className="p-6 bg-rams-module group hover:bg-rams-panel transition-none">
+              <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mb-4">
                 <Calendar className="h-3.5 w-3.5" />
                 {t('settings.localization.dateFormat')}
               </div>
-              <p className="font-medium">{formatDate(now, { dateStyle: 'full' })}</p>
-              <p className="text-sm text-muted-foreground mt-1">{formatDate(now, { dateStyle: 'short' })}</p>
+              <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{formatDate(now, { dateStyle: 'full' })}</p>
+              <p className="text-[10px] font-mono text-muted-foreground/40 mt-1">{formatDate(now, { dateStyle: 'short' })}</p>
             </div>
-            <div className="p-4 rounded-2xl bg-background/50 border border-border/50">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+            <div className="p-6 bg-rams-module group hover:bg-rams-panel transition-none">
+              <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mb-4">
                 <Clock className="h-3.5 w-3.5" />
                 {t('settings.localization.timeFormat')}
               </div>
-              <p className="font-medium">{formatDate(now, { timeStyle: 'long' })}</p>
-              <p className="text-sm text-muted-foreground mt-1">{formatDate(now, { timeStyle: 'short' })}</p>
+              <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{formatDate(now, { timeStyle: 'long' })}</p>
+              <p className="text-[10px] font-mono text-muted-foreground/40 mt-1">{formatDate(now, { timeStyle: 'short' })}</p>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Number Format Preview */}
-        <div className="space-y-3">
-          <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">
-            Number Format Preview
+        <section className="space-y-6">
+          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">
+            {t('settings.localization.numericPrecisionPreview')}
           </Label>
-          <div className="p-4 rounded-2xl bg-background/50 border border-border/50">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Standard Number</p>
-                <p className="font-medium text-lg">{formatNumber(sampleNumber)}</p>
+          <div className="p-6 bg-rams-panel/20 border border-rams-line">
+            <div className="grid gap-12 sm:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('settings.localization.standardMetric')}</p>
+                <p className="font-mono font-bold text-2xl tabular-nums text-foreground/80">{formatNumber(sampleNumber)}</p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">Percentage</p>
-                <p className="font-medium text-lg">{formatNumber(0.8567, { style: 'percent', maximumFractionDigits: 1 })}</p>
+              <div className="space-y-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('settings.localization.efficiencyPercentage')}</p>
+                <p className="font-mono font-bold text-2xl tabular-nums text-rams-green">{formatNumber(0.8567, { style: 'percent', maximumFractionDigits: 1 })}</p>
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Success message */}
-        <div className="p-4 rounded-2xl bg-success/5 border border-success/20 text-success">
-          <p className="text-sm flex items-center gap-2">
-            <Check className="h-4 w-4" />
-            {t('common.success')}: Changes are saved automatically
+        <div className="p-4 bg-rams-green/5 border border-rams-green/20 group">
+          <p className="text-[10px] font-black uppercase tracking-widest text-rams-green flex items-center gap-3">
+            <div className="p-1 bg-rams-green text-white rounded-none">
+              <Check className="h-3 w-3" />
+            </div>
+            {t('settings.localization.autoSyncActive')}
           </p>
         </div>
       </div>

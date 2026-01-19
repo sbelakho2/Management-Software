@@ -163,22 +163,22 @@ const mockRFQ: RFQDetail = {
   created_by: { id: 'u0', name: 'System Import' },
 };
 
-const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
-  new: { label: 'New', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' },
-  reviewing: { label: 'Reviewing', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' },
-  quoting: { label: 'Quoting', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' },
-  submitted: { label: 'Submitted', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' },
-  won: { label: 'Won', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' },
-  lost: { label: 'Lost', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' },
-  no_bid: { label: 'No Bid', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
-  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
+const statusConfig: Record<RFQStatus, { labelKey: string; color: string }> = {
+  new: { labelKey: 'pages.pipeline.statusBadges.new', color: 'bg-rams-steel/10 text-rams-steel border border-rams-steel/20' },
+  reviewing: { labelKey: 'pages.pipeline.statusBadges.reviewing', color: 'bg-rams-orange/10 text-rams-orange border border-rams-orange/20' },
+  quoting: { labelKey: 'pages.pipeline.statusBadges.quoting', color: 'bg-rams-panel text-foreground/80 border border-rams-line' },
+  submitted: { labelKey: 'pages.pipeline.statusBadges.submitted', color: 'bg-rams-steel/10 text-rams-steel border border-rams-steel/20' },
+  won: { labelKey: 'pages.pipeline.statusBadges.won', color: 'bg-rams-green/10 text-rams-green border border-rams-green/20' },
+  lost: { labelKey: 'pages.pipeline.statusBadges.lost', color: 'bg-rams-red/10 text-rams-red border border-rams-red/20' },
+  no_bid: { labelKey: 'pages.pipeline.statusBadges.noBid', color: 'bg-rams-muted/10 text-rams-muted border border-rams-muted/20' },
+  cancelled: { labelKey: 'pages.pipeline.statusBadges.cancelled', color: 'bg-rams-muted/10 text-rams-muted border border-rams-muted/20' },
 };
 
-const priorityConfig: Record<Priority, { label: string; color: string }> = {
-  low: { label: 'Low', color: 'secondary' },
-  medium: { label: 'Medium', color: 'warning' },
-  high: { label: 'High', color: 'danger' },
-  urgent: { label: 'Urgent', color: 'destructive' },
+const priorityConfig: Record<Priority, { labelKey: string; color: string }> = {
+  low: { labelKey: 'common.priority.low', color: 'secondary' },
+  medium: { labelKey: 'common.priority.medium', color: 'warning' },
+  high: { labelKey: 'common.priority.high', color: 'danger' },
+  urgent: { labelKey: 'common.priority.urgent', color: 'destructive' },
 };
 
 function formatFileSize(bytes: number): string {
@@ -255,10 +255,10 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-heading font-bold tracking-tight ">{rfq.rfq_number}</h1>
               <Badge className={statusConfig[rfq.status].color}>
-                {statusConfig[rfq.status].label}
+                {t(statusConfig[rfq.status].labelKey)}
               </Badge>
               <Badge variant={priorityConfig[rfq.priority].color as 'secondary' | 'warning' | 'danger' | 'destructive'}>
-                {priorityConfig[rfq.priority].label}
+                {t(priorityConfig[rfq.priority].labelKey)}
               </Badge>
             </div>
             <p className="text-muted-foreground">{rfq.customer.name}</p>
@@ -268,13 +268,13 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           <Button variant="outline" asChild>
             <Link href={`/pipeline/${rfq.id}?mode=edit`}>
               <Edit className="mr-2 h-4 w-4" />
-              Edit
+              {t('common.edit')}
             </Link>
           </Button>
           <Button asChild>
             <Link href={`/quotes/new?rfq=${rfq.id}`}>
               <Plus className="mr-2 h-4 w-4" />
-              Create Quote
+              {t('pages.pipeline.createQuote')}
             </Link>
           </Button>
           <DropdownMenu>
@@ -286,24 +286,24 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
             <DropdownMenuContent align="end">
               <DropdownMenuItem>
                 <Copy className="mr-2 h-4 w-4" />
-                Duplicate
+                {t('common.duplicate')}
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Send className="mr-2 h-4 w-4" />
-                Submit Quote
+                {t('pages.pipeline.submitQuote')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setNoBidDialogOpen(true)}>
                 <XCircle className="mr-2 h-4 w-4" />
-                No Bid
+                {t('pages.pipeline.noBid')}
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Archive className="mr-2 h-4 w-4" />
-                Archive
+                {t('common.archive')}
               </DropdownMenuItem>
               <DropdownMenuItem className="text-danger">
                 <Trash2 className="mr-2 h-4 w-4" />
-                Delete
+                {t('common.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -321,7 +321,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
             <CardContent className="space-y-4">
               {rfq.description && (
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Description</p>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">{t('common.description')}</p>
                   <p className="whitespace-pre-wrap">{rfq.description}</p>
                 </div>
               )}
@@ -329,40 +329,40 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                 <div className="flex items-center gap-3">
                   <Calendar className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">Due Date</p>
+                    <p className="text-sm text-muted-foreground">{t('common.dueDate')}</p>
                     <p className={cn('font-medium', isOverdue && 'text-danger')}>
                       {formatDate(new Date(rfq.due_date))}
-                      {isOverdue ? ' (Overdue)' : ` (${daysUntilDue} days)`}
+                      {isOverdue ? ` (${t('common.overdue')})` : ` (${daysUntilDue} ${t('common.days')})`}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Clock className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">Received</p>
+                    <p className="text-sm text-muted-foreground">{t('common.received')}</p>
                     <p className="font-medium">{formatDate(new Date(rfq.received_date))}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <DollarSign className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">Estimated Value</p>
+                    <p className="text-sm text-muted-foreground">{t('pages.pipeline.estimatedValue')}</p>
                     <p className="font-medium">
-                      {rfq.estimated_value ? formatCurrency(rfq.estimated_value) : 'Not specified'}
+                      {rfq.estimated_value ? formatCurrency(rfq.estimated_value) : t('common.notSpecified')}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <User className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <p className="text-sm text-muted-foreground">Assigned To</p>
+                    <p className="text-sm text-muted-foreground">{t('common.assignedTo')}</p>
                     {rfq.assignee ? (
                       <div className="flex items-center gap-2">
                         <Avatar fallback={rfq.assignee.name} size="xs" />
                         <span className="font-medium">{rfq.assignee.name}</span>
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">Unassigned</p>
+                      <p className="text-muted-foreground">{t('common.unassigned')}</p>
                     )}
                   </div>
                 </div>
@@ -380,7 +380,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           {/* Line Items */}
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>{t('pages.pipeline.lineItems')}</CardTitle>
               <CardDescription>{rfq.line_items.length} items</CardDescription>
             </CardHeader>
             <CardContent>
@@ -388,11 +388,11 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="py-2 px-3 text-left text-sm font-medium">Part Number</th>
-                      <th className="py-2 px-3 text-left text-sm font-medium">Description</th>
-                      <th className="py-2 px-3 text-right text-sm font-medium">Qty</th>
-                      <th className="py-2 px-3 text-left text-sm font-medium">UoM</th>
-                      <th className="py-2 px-3 text-right text-sm font-medium">Target Price</th>
+                      <th className="py-2 px-3 text-left text-sm font-medium">{t('pages.pipeline.table.partNumber')}</th>
+                      <th className="py-2 px-3 text-left text-sm font-medium">{t('common.description')}</th>
+                      <th className="py-2 px-3 text-right text-sm font-medium">{t('common.qty')}</th>
+                      <th className="py-2 px-3 text-left text-sm font-medium">{t('pages.pipeline.table.uom')}</th>
+                      <th className="py-2 px-3 text-right text-sm font-medium">{t('pages.pipeline.table.targetPrice')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -417,26 +417,26 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Quotes</CardTitle>
+                <CardTitle>{t('pages.pipeline.quotes')}</CardTitle>
                 <CardDescription>{rfq.quotes.length} quote(s) created</CardDescription>
               </div>
               <Button size="sm" asChild>
                 <Link href={`/quotes/new?rfq=${rfq.id}`}>
                   <Plus className="mr-2 h-4 w-4" />
-                  New Quote
+                  {t('pages.pipeline.newQuote')}
                 </Link>
               </Button>
             </CardHeader>
             <CardContent>
               {rfq.quotes.length === 0 ? (
                 <p className="text-center py-8 text-muted-foreground">
-                  No quotes created yet
+                  {t('pages.pipeline.noQuotesYet')}
                 </p>
               ) : (
                 <div className="space-y-3">
                   {rfq.quotes.map((quote) => (
                     <Link key={quote.id} href={`/quotes/${quote.id}`}>
-                      <div className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center justify-between p-3 border border-rams-line rounded-rams-sm hover:bg-rams-panel transition-none">
                         <div>
                           <p className="font-medium">{quote.quote_number}</p>
                           <p className="text-sm text-muted-foreground">
@@ -463,7 +463,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
-                Customer
+                {t('common.customer')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -480,7 +480,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
               )}
               <Button variant="outline" size="sm" className="w-full" asChild>
                 <Link href={`/customers/${rfq.customer.id}`}>
-                  View Customer
+                  {t('pages.pipeline.viewCustomer')}
                 </Link>
               </Button>
             </CardContent>
@@ -491,18 +491,18 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
-                Attachments
+                {t('common.attachments')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {rfq.attachments.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No attachments
+                  {t('pages.pipeline.noAttachments')}
                 </p>
               ) : (
                 <div className="space-y-2">
                   {rfq.attachments.map((file) => (
-                    <div key={file.id} className="flex items-center justify-between p-2 border rounded hover:bg-muted/50">
+                    <div key={file.id} className="flex items-center justify-between p-2 border border-rams-line rounded-rams-sm hover:bg-rams-panel transition-none">
                       <div className="flex items-center gap-2 min-w-0">
                         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                         <span className="text-sm truncate">{file.filename}</span>
@@ -516,7 +516,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
               )}
               <Button variant="outline" size="sm" className="w-full mt-3">
                 <Plus className="mr-2 h-4 w-4" />
-                Add Attachment
+                {t('pages.pipeline.addAttachment')}
               </Button>
             </CardContent>
           </Card>
@@ -524,7 +524,7 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           {/* Activity */}
           <Card>
             <CardHeader>
-              <CardTitle>Activity</CardTitle>
+              <CardTitle>{t('common.activity')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -557,14 +557,14 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
       <Dialog open={noBidDialogOpen} onOpenChange={setNoBidDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark as No Bid</DialogTitle>
+            <DialogTitle>{t('pages.pipeline.markAsNoBid')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to mark this RFQ as No Bid? This action can be undone.
+              {t('pages.pipeline.noBidConfirmation')}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Textarea
-              placeholder="Reason for no bid (optional)"
+              placeholder={t('pages.pipeline.noBidReasonPlaceholder')}
               value={noBidReason}
               onChange={(e) => setNoBidReason(e.target.value)}
               rows={3}
@@ -572,14 +572,14 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNoBidDialogOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={() => {
               // Handle no bid
               setNoBidDialogOpen(false);
               setNoBidReason('');
             }}>
-              Confirm No Bid
+              {t('pages.pipeline.confirmNoBid')}
             </Button>
           </DialogFooter>
         </DialogContent>

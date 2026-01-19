@@ -11,11 +11,11 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'rounded-rams-sm text-card-foreground transition-none border border-rams-border',
+          'rounded-rams-sm text-card-foreground transition-none border border-rams-line',
           {
             default: 'bg-rams-module shadow-none hover:border-rams-orange/30',
-            elevated: 'bg-rams-module shadow-none border-rams-border/80',
-            outlined: 'border border-rams-border bg-transparent',
+            elevated: 'bg-rams-module shadow-none border-rams-line/80',
+            outlined: 'border border-rams-line bg-transparent',
           }[variant],
           className
         )}
@@ -32,7 +32,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('flex flex-col space-y-1.5 p-5 border-b border-rams-border/30 bg-rams-panel/10', className)}
+    className={cn('flex flex-col space-y-1.5 p-5 border-b border-rams-line/30 bg-rams-panel/10', className)}
     {...props}
   />
 ));

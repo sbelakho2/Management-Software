@@ -14,22 +14,25 @@ import { cn } from '@/lib/utils';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, isLoading, error, clearError } = useAuthStore();
+  const { register, isLoading, error, clearError, resetAuth } = useAuthStore();
   const { t, isRTL } = useI18n();
   
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [fullName, setFullName] = React.useState('');
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const [showStoreError, setShowStoreError] = React.useState(false);
 
+  // Clear any stale auth state on mount
   React.useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
+    resetAuth();
+  }, [resetAuth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
     clearError();
+    setShowStoreError(true); // Show errors only after user attempts registration
 
     if (!email || !password || !fullName) {
       setLocalError(t('validation.fillAllFields'));
@@ -49,6 +52,9 @@ export default function RegisterPage() {
     }
   };
 
+  // Only show store error if user has attempted registration
+  const displayError = localError || (showStoreError ? error : null);
+
   return (
     <div className={cn("space-y-8", isRTL && "text-right")}>
       <div>
@@ -60,9 +66,9 @@ export default function RegisterPage() {
         </p>
       </div>
 
-      {(error || localError) && (
-        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red animate-in slide-in-from-top-2 duration-300 rounded-rams-sm">
-          <AlertDescription className="font-mono font-black uppercase tracking-widest text-[9px]">{error || localError}</AlertDescription>
+      {displayError && (
+        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red rounded-rams-sm">
+          <AlertDescription className="font-mono font-black uppercase tracking-widest text-[9px]">{displayError}</AlertDescription>
         </Alert>
       )}
 
@@ -86,7 +92,7 @@ export default function RegisterPage() {
               type="text"
               placeholder={t('forms.fullNamePlaceholder')}
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none uppercase", isRTL ? "pr-11" : "pl-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none uppercase", isRTL ? "pr-11" : "pl-11")}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               disabled={isLoading}
@@ -114,7 +120,7 @@ export default function RegisterPage() {
               placeholder="USER_IDENTIFIER@COMPANY.COM"
               autoComplete="email"
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -142,7 +148,7 @@ export default function RegisterPage() {
               placeholder="••••••••"
               autoComplete="new-password"
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}

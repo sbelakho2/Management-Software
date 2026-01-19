@@ -82,34 +82,35 @@ interface SOStats {
   };
 }
 
-const statusConfig: Record<SalesOrder['status'], { label: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
-  draft: { label: 'Draft', variant: 'secondary', icon: FileText },
-  approved: { label: 'Approved', variant: 'default', icon: CheckCircle },
-  released: { label: 'Released', variant: 'warning', icon: Package },
-  shipped: { label: 'Shipped', variant: 'default', icon: Truck },
-  invoiced: { label: 'Invoiced', variant: 'default', icon: CreditCard },
-  closed: { label: 'Closed', variant: 'success', icon: CheckCircle },
+const statusConfig: Record<SalesOrder['status'], { labelKey: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
+  draft: { labelKey: 'common.draft', variant: 'secondary', icon: FileText },
+  approved: { labelKey: 'common.approved', variant: 'default', icon: CheckCircle },
+  released: { labelKey: 'pages.orders.status.released', variant: 'warning', icon: Package },
+  shipped: { labelKey: 'pages.orders.status.shipped', variant: 'default', icon: Truck },
+  invoiced: { labelKey: 'pages.orders.status.invoiced', variant: 'default', icon: CreditCard },
+  closed: { labelKey: 'pages.orders.status.closed', variant: 'success', icon: CheckCircle },
 };
 
 function OrderStats({ stats }: { stats: SOStats | null }) {
+  const { t } = useI18n();
   if (!stats) return null;
 
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Draft Orders</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.orders.stats.draftOrders')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.orders.draft}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Approved Orders</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.orders.stats.approvedOrders')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.orders.approved}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Issued Invoices</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.orders.stats.issuedInvoices')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.invoices.issued}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Overdue Invoices</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">{t('pages.orders.stats.overdueInvoices')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.invoices.overdue}</p>
       </div>
     </div>
@@ -121,6 +122,7 @@ function OrderRow({ order, onApprove, onRelease }: {
   onApprove: (id: string) => void;
   onRelease: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const config = statusConfig[order.status];
   const StatusIcon = config.icon;
 
@@ -137,7 +139,7 @@ function OrderRow({ order, onApprove, onRelease }: {
               className="text-[9px] font-mono uppercase tracking-tight text-muted-foreground/40 hover:text-rams-orange"
               onClick={(e) => e.stopPropagation()}
             >
-              Protocol: Source_Quote
+              {t('pages.orders.sourceQuote')}
             </Link>
           )}
         </div>
@@ -148,12 +150,12 @@ function OrderRow({ order, onApprove, onRelease }: {
           className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 hover:text-rams-orange transition-none"
           onClick={(e) => e.stopPropagation()}
         >
-          {order.account_name || 'Unknown'}
+          {order.account_name || t('common.unknown')}
         </Link>
       </TableCell>
       <TableCell>
         <Badge variant={config.variant} size="sm">
-          {config.label}
+          {t(config.labelKey)}
         </Badge>
       </TableCell>
       <TableCell className="text-right">
@@ -177,24 +179,24 @@ function OrderRow({ order, onApprove, onRelease }: {
           <DropdownMenuContent align="end">
             <DropdownMenuItem>
               <Eye className="mr-2 h-3.5 w-3.5" />
-              Analyze Details
+              {t('common.viewDetails')}
             </DropdownMenuItem>
             {order.status === 'draft' && (
               <DropdownMenuItem onClick={() => onApprove(order.id)}>
                 <CheckCircle className="mr-2 h-3.5 w-3.5 text-rams-green" />
-                Approve Protocol
+                {t('common.approve')}
               </DropdownMenuItem>
             )}
             {order.status === 'approved' && (
               <DropdownMenuItem onClick={() => onRelease(order.id)}>
                 <Package className="mr-2 h-3.5 w-3.5 text-rams-orange" />
-                Release to Station
+                {t('pages.orders.releaseToWarehouse')}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <CreditCard className="mr-2 h-3.5 w-3.5" />
-              Generate Invoice
+              {t('pages.orders.generateInvoice')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -263,7 +265,7 @@ export default function SalesOrdersPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.orders.title')}</h1>
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
@@ -279,14 +281,14 @@ export default function SalesOrdersPage() {
             onClick={() => router.push('/quotes')}
           >
             <FileText className="mr-2 h-3.5 w-3.5" />
-            Quotes
+            {t('pages.quotes.title')}
           </Button>
           <Button 
             className="rounded-rams-sm"
             onClick={() => router.push('/quotes/new')}
           >
             <Plus className="mr-2 h-3.5 w-3.5" />
-            New Order
+            {t('pages.orders.newOrder')}
           </Button>
         </div>
       </div>
@@ -299,7 +301,7 @@ export default function SalesOrdersPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
           <Input 
-            placeholder="SEARCH_PROTOCOL..."
+            placeholder={t('common.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10 h-10 text-[10px]"
@@ -308,16 +310,16 @@ export default function SalesOrdersPage() {
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[180px] h-10 text-[10px]">
             <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
-            <SelectValue placeholder="STATUS_FILTER" />
+            <SelectValue placeholder={t('common.filterByStatus')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">ALL_STATUS</SelectItem>
-            <SelectItem value="draft">DRAFT</SelectItem>
-            <SelectItem value="approved">APPROVED</SelectItem>
-            <SelectItem value="released">RELEASED</SelectItem>
-            <SelectItem value="shipped">SHIPPED</SelectItem>
-            <SelectItem value="invoiced">INVOICED</SelectItem>
-            <SelectItem value="closed">CLOSED</SelectItem>
+            <SelectItem value="all">{t('common.allStatus')}</SelectItem>
+            <SelectItem value="draft">{t('common.draft')}</SelectItem>
+            <SelectItem value="approved">{t('common.approved')}</SelectItem>
+            <SelectItem value="released">{t('pages.orders.status.released')}</SelectItem>
+            <SelectItem value="shipped">{t('pages.orders.status.shipped')}</SelectItem>
+            <SelectItem value="invoiced">{t('pages.orders.status.invoiced')}</SelectItem>
+            <SelectItem value="closed">{t('pages.orders.status.closed')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -327,12 +329,12 @@ export default function SalesOrdersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ORDER_ID</TableHead>
-              <TableHead>CUSTOMER_ACCOUNT</TableHead>
-              <TableHead>STATUS_NODE</TableHead>
-              <TableHead className="text-right">TOTAL_VALUE</TableHead>
-              <TableHead className="text-center">LINES</TableHead>
-              <TableHead>TIMESTAMP</TableHead>
+              <TableHead>{t('pages.orders.table.orderId')}</TableHead>
+              <TableHead>{t('pages.orders.table.customer')}</TableHead>
+              <TableHead>{t('common.status')}</TableHead>
+              <TableHead className="text-right">{t('pages.orders.table.totalValue')}</TableHead>
+              <TableHead className="text-center">{t('pages.orders.table.lines')}</TableHead>
+              <TableHead>{t('common.date')}</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -342,7 +344,7 @@ export default function SalesOrdersPage() {
                 <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-3">
                     <div className="animate-spin rounded-none h-8 w-8 border border-rams-orange border-t-transparent"></div>
-                    <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Synchronizing Protocols...</p>
+                    <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{t('common.loading')}</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -352,11 +354,11 @@ export default function SalesOrdersPage() {
                   <div className="flex flex-col items-center gap-3">
                     <Package className="h-12 w-12 text-muted-foreground/20" />
                     <div>
-                      <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
+                      <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.orders.empty.title')}</p>
                       <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">
                         {search || statusFilter !== 'all' 
-                          ? 'Adjust filtering parameters' 
-                          : 'Initialize your first order protocol'}
+                          ? t('common.adjustFilters') 
+                          : t('pages.orders.empty.description')}
                       </p>
                     </div>
                     <Button 
@@ -364,7 +366,7 @@ export default function SalesOrdersPage() {
                       onClick={() => router.push('/quotes/new')}
                     >
                       <Plus className="mr-2 h-3.5 w-3.5" />
-                      Initialize Order
+                      {t('pages.orders.newOrder')}
                     </Button>
                   </div>
                 </TableCell>
@@ -384,53 +386,53 @@ export default function SalesOrdersPage() {
       </Card>
 
       {/* Quick Actions */}
-      <div className="grid gap-0 md:grid-cols-3 border border-rams-border bg-rams-border">
+      <div className="grid gap-0 md:grid-cols-3 border border-rams-line bg-rams-line">
         <div 
-          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-border cursor-pointer hover:bg-rams-panel transition-colors group"
+          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-line cursor-pointer hover:bg-rams-panel group"
           onClick={() => router.push('/quotes')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-line group-hover:border-rams-orange">
               <FileText className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Quote_Repository</p>
-              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Analyze source documents</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">{t('pages.quotes.title')}</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{t('pages.orders.quickActions.viewQuotes')}</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange" />
         </div>
         
         <div 
-          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-border cursor-pointer hover:bg-rams-panel transition-colors group"
+          className="flex items-center justify-between p-6 bg-rams-module border-r border-rams-line cursor-pointer hover:bg-rams-panel group"
           onClick={() => router.push('/customers')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-line group-hover:border-rams-orange">
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Account_Intelligence</p>
-              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Manage customer nodes</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">{t('pages.customers.title')}</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{t('pages.orders.quickActions.manageCustomers')}</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange" />
         </div>
 
         <div 
-          className="flex items-center justify-between p-6 bg-rams-module cursor-pointer hover:bg-rams-panel transition-colors group"
+          className="flex items-center justify-between p-6 bg-rams-module cursor-pointer hover:bg-rams-panel group"
           onClick={() => router.push('/finance')}
         >
           <div className="flex items-center gap-4">
-            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-border group-hover:border-rams-orange transition-colors">
+            <div className="p-2 rounded-rams-sm bg-rams-panel border border-rams-line group-hover:border-rams-orange">
               <CreditCard className="h-4 w-4 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">Invoicing</p>
-              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Manage customer invoices</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80">{t('pages.orders.quickActions.invoicing')}</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{t('pages.orders.quickActions.manageInvoices')}</p>
             </div>
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange group-hover:translate-x-1 transition-all" />
+          <ArrowRight className="h-4 w-4 text-muted-foreground/20 group-hover:text-rams-orange" />
         </div>
       </div>
     </div>

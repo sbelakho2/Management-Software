@@ -102,6 +102,20 @@ User and administrator guides.
 - [Security Operations](./maintenance/SECURITY.md) - Secrets, SSO, 2FA
 - Monitoring Guide - Prometheus setup (coming soon)
 
+### 7. Role-Based Resources
+
+Documentation organized by user role (in `/docs/Resources/`):
+
+- **[AI Insights Access Reference](./Resources/AI_INSIGHTS_ACCESS.md)** - Complete insight access documentation
+- **Admin** - System administration and insight configuration
+- **CEO** - Executive insights and full access guide
+- **General Manager** - Operational insights
+- **Finance** - Financial analytics and cost insights
+- **Quality** - Quality metrics and SPC analysis
+- **Maintenance** - Predictive maintenance and equipment health
+- **Supervisor** - Shift management and team productivity
+- **Operator** - Shop floor insights
+
 ## 🎯 By Role
 
 ### Software Engineer
@@ -137,6 +151,13 @@ User and administrator guides.
 3. [Database Maintenance](./maintenance/DATABASE.md) - Data protection
 4. [Security Operations](./maintenance/SECURITY.md) - Access control
 5. [Monitoring](./architecture/README.md#monitoring--observability) - System health
+
+### Factory Users
+
+Each factory role has dedicated documentation:
+1. [AI Insights Access Reference](./Resources/AI_INSIGHTS_ACCESS.md) - Understand your access
+2. Role-specific guides in `/docs/Resources/{YourRole}/`
+3. [User Guide](./guides/user-guide.md) - General system usage
 
 ## 📝 Documentation Standards
 

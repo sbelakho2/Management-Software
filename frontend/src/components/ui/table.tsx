@@ -53,7 +53,7 @@ const TableHeader = React.forwardRef<
   <thead
     ref={ref}
     className={cn(
-      'bg-rams-module border-b border-rams-border',
+      'bg-rams-module border-b border-rams-line',
       sticky && 'sticky top-0 z-10',
       className
     )}
@@ -81,7 +81,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      'border-t border-rams-border bg-rams-module font-mono font-bold [&>tr]:last:border-b-0',
+      'border-t border-rams-line bg-rams-module font-mono font-bold [&>tr]:last:border-b-0',
       className
     )}
     {...props}
@@ -101,7 +101,7 @@ const TableRow = React.forwardRef<
     <tr
       ref={ref}
       className={cn(
-        'border-b border-rams-border/50 transition-none',
+        'border-b border-rams-line/50 transition-none',
         hoverable && 'hover:bg-rams-panel',
         selected && 'bg-rams-orange/10',
         'data-[state=selected]:bg-rams-orange/10',

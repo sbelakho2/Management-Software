@@ -16,12 +16,22 @@ import {
   Save,
   MoreHorizontal,
   Search,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useQualityStore } from '@/stores/quality';
 import { cn, formatDate } from '@/lib/utils';
 import { useI18n } from '@/contexts/i18n-context';
@@ -46,7 +56,7 @@ export default function NCRDetailsPage() {
   if (!ncr) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin h-8 w-8 border-2 border-rams-orange border-t-transparent"></div>
       </div>
     );
   }
@@ -59,103 +69,129 @@ export default function NCRDetailsPage() {
   };
 
   const severityConfig = {
-    minor: { label: 'Minor', class: 'bg-slate-100 text-slate-800' },
-    major: { label: 'Major', class: 'bg-orange-100 text-orange-800' },
-    critical: { label: 'Critical', class: 'bg-red-100 text-red-800' },
+    minor: { label: 'Minor', class: 'bg-rams-panel text-muted-foreground' },
+    major: { label: 'Major', class: 'bg-rams-orange/10 text-rams-orange' },
+    critical: { label: 'Critical', class: 'bg-rams-red/10 text-rams-red' },
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.push('/quality?tab=ncrs')}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-heading font-bold tracking-tight ">{ncr.ncr_number}</h1>
-              <Badge variant={statusConfig[ncr.status as keyof typeof statusConfig]?.variant || 'default'}>
-                {statusConfig[ncr.status as keyof typeof statusConfig]?.label || ncr.status}
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{ncr.ncr_number}</h1>
+              <Badge variant={statusConfig[ncr.status as keyof typeof statusConfig]?.variant || 'secondary'} size="sm" className="h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+                {(statusConfig[ncr.status as keyof typeof statusConfig]?.label || ncr.status).toUpperCase()}
               </Badge>
-              <Badge className={severityConfig[ncr.severity as keyof typeof severityConfig]?.class}>
-                {severityConfig[ncr.severity as keyof typeof severityConfig]?.label || ncr.severity}
+              <Badge variant="outline" className={cn("rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-4 bg-rams-panel", severityConfig[ncr.severity as keyof typeof severityConfig]?.class.replace('bg-', 'border-').split(' ')[0])}>
+                {(severityConfig[ncr.severity as keyof typeof severityConfig]?.label || ncr.severity).toUpperCase()}
               </Badge>
             </div>
-            <p className="text-muted-foreground">{ncr.description}</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2 mt-1">
+              <span>{t('quality.ncr.detail.subtitle') || 'Non-Conformance Intelligence Node'}</span>
+              <span className="opacity-30">|</span>
+              <span>STATION: QUALITY-CONTROL-01</span>
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Comment
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none">
+            <MessageSquare className="h-3.5 w-3.5 mr-2" />
+            {t('quality.ncr.detail.comment') || 'COMMENT'}
           </Button>
-          <Button>
-            Assign CAPA
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+            {t('quality.ncr.detail.assignCapa') || 'ASSIGN_CAPA'}
           </Button>
-          <Button variant="outline" size="icon">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 border border-rams-line rounded-rams-sm">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>
+                <Edit className="mr-2 h-3.5 w-3.5" /> {t('quality.ncr.detail.refineProtocol') || 'REFINE_PROTOCOL'}
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <History className="mr-2 h-3.5 w-3.5" /> {t('quality.ncr.detail.viewLogs') || 'VIEW_LOGS'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-rams-red">
+                <Trash2 className="mr-2 h-3.5 w-3.5" /> {t('quality.ncr.detail.terminateNode') || 'TERMINATE_NODE'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Non-Conformance Details</CardTitle>
+      <div className="grid gap-8 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-8">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.ncr.detail.discrepancyIntelligence') || 'Discrepancy Intelligence'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <span className="text-sm text-muted-foreground font-medium">Description</span>
-                  <p className="text-sm leading-relaxed">{ncr.description || 'No description provided.'}</p>
+            <CardContent className="p-8 space-y-8">
+              <div className="grid gap-8 sm:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40 mb-2">{t('quality.ncr.detail.subjectiveData') || 'Subjective Data'}</div>
+                  <p className="text-xs font-medium text-foreground/70 uppercase leading-relaxed">{ncr.description || t('quality.ncr.detail.noDescription') || 'No description provided.'}</p>
                 </div>
                 <div className="space-y-4">
-                  <div className="flex justify-between border-b pb-2 text-sm">
-                    <span className="text-muted-foreground">Product</span>
-                    <span className="font-medium">Precision Bracket Type A</span>
+                  <div className="flex justify-between items-center border-b border-rams-line pb-3 text-[10px] font-black uppercase tracking-widest">
+                    <span className="text-muted-foreground/40">Product Node</span>
+                    <span className="text-foreground/80">Precision Bracket Type Alpha</span>
                   </div>
-                  <div className="flex justify-between border-b pb-2 text-sm">
-                    <span className="text-muted-foreground">Work Order</span>
-                    <span className="font-medium">WO-2024-001</span>
+                  <div className="flex justify-between items-center border-b border-rams-line pb-3 text-[10px] font-black uppercase tracking-widest">
+                    <span className="text-muted-foreground/40">Work Order Sync</span>
+                    <span className="text-foreground/80 font-mono">WO-2024-001</span>
                   </div>
-                  <div className="flex justify-between border-b pb-2 text-sm">
-                    <span className="text-muted-foreground">Quantity Affected</span>
-                    <span className="font-medium">12 pcs</span>
+                  <div className="flex justify-between items-center border-b border-rams-line pb-3 text-[10px] font-black uppercase tracking-widest">
+                    <span className="text-muted-foreground/40">Magnitude Affected</span>
+                    <span className="text-foreground/80 font-mono">12 PCS</span>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Tabs defaultValue="investigation">
-            <TabsList>
-              <TabsTrigger value="investigation">Investigation</TabsTrigger>
-              <TabsTrigger value="disposition">Disposition</TabsTrigger>
-              <TabsTrigger value="attachments">Attachments</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
+          <Tabs defaultValue="investigation" className="animate-in fade-in duration-500">
+            <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit">
+              <TabsTrigger value="investigation">{t('quality.ncr.detail.tabs.rootCause') || 'ROOT_CAUSE_ANALYSIS'}</TabsTrigger>
+              <TabsTrigger value="disposition">{t('quality.ncr.detail.tabs.disposition') || 'DISPOSITION_NODE'}</TabsTrigger>
+              <TabsTrigger value="attachments">{t('quality.ncr.detail.tabs.evidence') || 'EVIDENCE_NODES'}</TabsTrigger>
+              <TabsTrigger value="history">{t('quality.ncr.detail.tabs.eventLog') || 'EVENT_LOG'}</TabsTrigger>
             </TabsList>
-            <TabsContent value="investigation" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Root Cause Analysis</CardTitle>
+            <TabsContent value="investigation" className="mt-6 space-y-4">
+              <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+                <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.ncr.detail.investigationProtocol') || 'Investigation Protocol'}</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="p-4 bg-muted/30 border rounded-lg">
-                    <h4 className="font-medium mb-2">Findings</h4>
-                    <p className="text-sm text-muted-foreground">
+                <CardContent className="p-8 space-y-8 bg-rams-module">
+                  <div className="p-6 bg-rams-panel/40 border border-rams-line relative overflow-hidden group">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-rams-orange mb-4">Finding Entry [LOG_01]</h4>
+                    <p className="text-xs font-medium text-foreground/70 uppercase leading-relaxed relative z-10">
                       Initial investigation suggests a misalignment in the fixture during the secondary milling operation.
-                      The coolant flow was also found to be partially blocked, leading to heat buildup.
+                      The coolant flow was also found to be partially blocked, leading to heat buildup within the machining cluster.
                     </p>
+                    <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <Label>Category</Label>
-                      <p className="text-sm font-medium">Machine Failure</p>
+                  <div className="grid gap-8 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Anomalous Category</Label>
+                      <div className="p-3 bg-rams-panel border border-rams-line text-[11px] font-bold text-foreground/80 uppercase">Machine Failure</div>
                     </div>
-                    <div className="space-y-1">
-                      <Label>Investigated By</Label>
-                      <p className="text-sm font-medium">Sarah Johnson</p>
+                    <div className="space-y-2">
+                      <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Investigated By</Label>
+                      <div className="flex items-center gap-3 p-3 bg-rams-panel border border-rams-line">
+                        <Avatar className="h-5 w-5 rounded-none border border-rams-line">
+                          <AvatarFallback className="text-[8px] font-mono">SJ</AvatarFallback>
+                        </Avatar>
+                        <span className="text-[11px] font-bold text-foreground/80 uppercase">Sarah Johnson</span>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -164,53 +200,60 @@ export default function NCRDetailsPage() {
           </Tabs>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Metadata</CardTitle>
+        <div className="space-y-8">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Telemetry Metadata</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>Reported On</span>
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <div className="flex items-center gap-3">
+                  <Clock className="h-3.5 w-3.5 opacity-40" />
+                  <span>Reported Pulse</span>
                 </div>
-                <span className="font-medium">{formatDate(ncr.created_at)}</span>
+                <span className="font-mono font-bold text-foreground/80">{formatDate(ncr.created_at).toUpperCase()}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <User className="h-4 w-4" />
-                  <span>Reported By</span>
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-t border-rams-line pt-4">
+                <div className="flex items-center gap-3">
+                  <User className="h-3.5 w-3.5 opacity-40" />
+                  <span>Reporter Node</span>
                 </div>
-                <span className="font-medium">John Smith</span>
+                <span className="font-bold text-foreground/80">JOHN SMITH</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <AlertTriangle className="h-4 w-4" />
-                  <span>Department</span>
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-t border-rams-line pt-4">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-3.5 w-3.5 opacity-40" />
+                  <span>Dept_Node</span>
                 </div>
-                <span className="font-medium">Production</span>
+                <span className="font-bold text-foreground/80">PRODUCTION</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Containment Actions</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-rams-red" />
+                Containment Protocols
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="p-1 space-y-1 bg-rams-module">
               {[
                 { label: 'Isolate affected batch', status: 'completed' },
                 { label: 'Stop machine station CNC-04', status: 'completed' },
                 { label: 'Inspect previous 10 units', status: 'in_progress' },
               ].map((action, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm">
-                  {action.status === 'completed' ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Clock className="h-4 w-4 text-blue-500" />
-                  )}
-                  <span className={action.status === 'completed' ? 'line-through text-muted-foreground' : ''}>
+                <div key={i} className="flex items-center gap-4 p-4 bg-rams-panel/40 border border-rams-line transition-none group hover:bg-rams-panel">
+                  <div className={cn(
+                    "h-6 w-6 border flex items-center justify-center transition-none",
+                    action.status === 'completed' ? "bg-rams-green/5 border-rams-green/20 text-rams-green" : "bg-rams-orange/5 border-rams-orange/20 text-rams-orange animate-pulse"
+                  )}>
+                    {action.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                  </div>
+                  <span className={cn(
+                    "text-[11px] font-bold uppercase transition-none",
+                    action.status === 'completed' ? "text-muted-foreground/40 line-through" : "text-foreground/70"
+                  )}>
                     {action.label}
                   </span>
                 </div>

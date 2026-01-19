@@ -65,48 +65,48 @@ import {
 type TabType = 'inspections' | 'ncrs' | 'capas' | 'msa' | 'capability' | 'customer' | 'fai' | 'self' | 'lab' | 'aql' | 'traceability' | 'change-point' | 'management-review';
 
 const inspectionStatusConfig: Record<string, any> = {
-  pending: { label: 'Pending', variant: 'secondary' as const, icon: Clock },
-  in_progress: { label: 'In Progress', variant: 'warning' as const, icon: Clock },
-  completed: { label: 'Completed', variant: 'success' as const, icon: CheckCircle },
-  cancelled: { label: 'Cancelled', variant: 'danger' as const, icon: XCircle },
-  passed: { label: 'Passed', variant: 'success' as const, icon: CheckCircle },
-  failed: { label: 'Failed', variant: 'danger' as const, icon: XCircle },
+  pending: { labelKey: 'common.pending', variant: 'secondary' as const, icon: Clock },
+  in_progress: { labelKey: 'common.inProgress', variant: 'warning' as const, icon: Clock },
+  completed: { labelKey: 'common.completed', variant: 'success' as const, icon: CheckCircle },
+  cancelled: { labelKey: 'common.cancelled', variant: 'danger' as const, icon: XCircle },
+  passed: { labelKey: 'pages.quality.status.passed', variant: 'success' as const, icon: CheckCircle },
+  failed: { labelKey: 'pages.quality.status.failed', variant: 'danger' as const, icon: XCircle },
 };
 
 const ncrStatusConfig: Record<string, any> = {
-  open: { label: 'Open', variant: 'warning' as const },
-  investigating: { label: 'Investigating', variant: 'default' as const },
-  pending_disposition: { label: 'Disposition', variant: 'secondary' as const },
-  closed: { label: 'Closed', variant: 'success' as const },
-  disposition: { label: 'Disposition', variant: 'secondary' as const },
+  open: { labelKey: 'pages.quality.status.open', variant: 'warning' as const },
+  investigating: { labelKey: 'pages.quality.status.investigating', variant: 'default' as const },
+  pending_disposition: { labelKey: 'pages.quality.status.disposition', variant: 'secondary' as const },
+  closed: { labelKey: 'pages.quality.status.closed', variant: 'success' as const },
+  disposition: { labelKey: 'pages.quality.status.disposition', variant: 'secondary' as const },
 };
 
 const severityConfig: Record<string, any> = {
-  critical: { label: 'Critical', variant: 'danger' as const },
-  major: { label: 'Major', variant: 'warning' as const },
-  minor: { label: 'Minor', variant: 'secondary' as const },
+  critical: { labelKey: 'common.critical', variant: 'danger' as const },
+  major: { labelKey: 'pages.quality.severity.major', variant: 'warning' as const },
+  minor: { labelKey: 'pages.quality.severity.minor', variant: 'secondary' as const },
 };
 
 const capaStatusConfig: Record<string, any> = {
-  open: { label: 'Open', variant: 'warning' as const },
-  in_progress: { label: 'In Progress', variant: 'default' as const },
-  pending_verification: { label: 'Verifying', variant: 'secondary' as const },
-  verified: { label: 'Verified', variant: 'success' as const },
-  closed: { label: 'Closed', variant: 'success' as const },
-  implementing: { label: 'Implementing', variant: 'default' as const },
-  verifying: { label: 'Verifying', variant: 'secondary' as const },
+  open: { labelKey: 'pages.quality.status.open', variant: 'warning' as const },
+  in_progress: { labelKey: 'common.inProgress', variant: 'default' as const },
+  pending_verification: { labelKey: 'pages.quality.status.verifying', variant: 'secondary' as const },
+  verified: { labelKey: 'pages.quality.status.verified', variant: 'success' as const },
+  closed: { labelKey: 'pages.quality.status.closed', variant: 'success' as const },
+  implementing: { labelKey: 'pages.quality.status.implementing', variant: 'default' as const },
+  verifying: { labelKey: 'pages.quality.status.verifying', variant: 'secondary' as const },
 };
 
 const priorityConfig = {
-  high: { label: 'High', variant: 'danger' as const },
-  medium: { label: 'Medium', variant: 'warning' as const },
-  low: { label: 'Low', variant: 'secondary' as const },
+  high: { labelKey: 'common.priority.high', variant: 'danger' as const },
+  medium: { labelKey: 'common.priority.medium', variant: 'warning' as const },
+  low: { labelKey: 'common.priority.low', variant: 'secondary' as const },
 };
 
 const msaStatusConfig: Record<string, any> = {
-  in_progress: { label: 'In Progress', variant: 'warning' as const },
-  completed: { label: 'Completed', variant: 'success' as const },
-  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+  in_progress: { labelKey: 'common.inProgress', variant: 'warning' as const },
+  completed: { labelKey: 'common.completed', variant: 'success' as const },
+  cancelled: { labelKey: 'common.cancelled', variant: 'secondary' as const },
 };
 
 const msaStudyTypeLabels: Record<string, string> = {
@@ -117,34 +117,35 @@ const msaStudyTypeLabels: Record<string, string> = {
 };
 
 const capabilityStatusConfig: Record<string, any> = {
-  in_progress: { label: 'In Progress', variant: 'warning' as const },
-  completed: { label: 'Completed', variant: 'success' as const },
-  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+  in_progress: { labelKey: 'common.inProgress', variant: 'warning' as const },
+  completed: { labelKey: 'common.completed', variant: 'success' as const },
+  cancelled: { labelKey: 'common.cancelled', variant: 'secondary' as const },
 };
 
 const complaintStatusConfig: Record<string, any> = {
-  received: { label: 'New', variant: 'warning' as const },
-  under_review: { label: 'Review', variant: 'secondary' as const },
-  investigation: { label: 'Investigate', variant: 'default' as const },
-  containment: { label: 'Contain', variant: 'secondary' as const },
-  capa: { label: 'CAPA', variant: 'default' as const },
-  closed: { label: 'Closed', variant: 'success' as const },
-  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+  received: { labelKey: 'common.new', variant: 'warning' as const },
+  under_review: { labelKey: 'pages.quality.status.review', variant: 'secondary' as const },
+  investigation: { labelKey: 'pages.quality.status.investigate', variant: 'default' as const },
+  containment: { labelKey: 'pages.quality.status.contain', variant: 'secondary' as const },
+  capa: { labelKey: 'pages.quality.status.capa', variant: 'default' as const },
+  closed: { labelKey: 'pages.quality.status.closed', variant: 'success' as const },
+  cancelled: { labelKey: 'common.cancelled', variant: 'secondary' as const },
 };
 
 const faiStatusConfig: Record<string, any> = {
-  in_progress: { label: 'In Progress', variant: 'warning' as const },
-  completed: { label: 'Completed', variant: 'success' as const },
-  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+  in_progress: { labelKey: 'common.inProgress', variant: 'warning' as const },
+  completed: { labelKey: 'common.completed', variant: 'success' as const },
+  cancelled: { labelKey: 'common.cancelled', variant: 'secondary' as const },
 };
 
 const selfInspectionStatusConfig: Record<string, any> = {
-  in_progress: { label: 'In Progress', variant: 'warning' as const },
-  completed: { label: 'Completed', variant: 'success' as const },
-  cancelled: { label: 'Cancelled', variant: 'secondary' as const },
+  in_progress: { labelKey: 'common.inProgress', variant: 'warning' as const },
+  completed: { labelKey: 'common.completed', variant: 'success' as const },
+  cancelled: { labelKey: 'common.cancelled', variant: 'secondary' as const },
 };
 
 function QualityStats() {
+  const { t } = useI18n();
   const { totalInspections, totalNcrs, totalCapas } = useQualityStore();
   const { trends, fetchTrends } = useAnalyticsStore();
 
@@ -158,23 +159,23 @@ function QualityStats() {
   const currentFPY = fpyTrend ? fpyTrend.current_value : 94.2;
 
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Sync Gates</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.activeSyncGates') || 'Active Sync Gates'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{totalInspections}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Global Anomalies</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.globalAnomalies') || 'Global Anomalies'}</p>
         <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', totalNcrs > 0 ? 'text-rams-red' : 'text-foreground/90')}>
           {totalNcrs}
         </p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Resolution Protocols</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.resolutionProtocols') || 'Resolution Protocols'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{totalCapas}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">First Pass Velocity</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.firstPassVelocity') || 'First Pass Velocity'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{currentFPY}%</p>
       </div>
     </div>
@@ -182,6 +183,7 @@ function QualityStats() {
 }
 
 function InspectionsTab() {
+  const { t } = useI18n();
   const router = useRouter();
   const { inspections, fetchInspections, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -205,7 +207,7 @@ function InspectionsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search inspections..."
+            placeholder={t('pages.quality.inspections.searchPlaceholder') || 'Search inspections...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -215,14 +217,14 @@ function InspectionsTab() {
           <Filter className="h-4 w-4 text-muted-foreground" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder={t('common.status') || 'Status'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="passed">Passed</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="all">{t('pages.quality.filters.allStatuses') || 'All statuses'}</SelectItem>
+              <SelectItem value="pending">{t('common.pending') || 'Pending'}</SelectItem>
+              <SelectItem value="in_progress">{t('common.inProgress') || 'In Progress'}</SelectItem>
+              <SelectItem value="passed">{t('pages.quality.status.passed') || 'Passed'}</SelectItem>
+              <SelectItem value="failed">{t('pages.quality.status.failed') || 'Failed'}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -234,13 +236,13 @@ function InspectionsTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Inspection</th>
-                  <th className="py-3 px-4 text-left font-medium">Work Order</th>
-                  <th className="py-3 px-4 text-left font-medium">Product</th>
-                  <th className="py-3 px-4 text-left font-medium">Type</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Scheduled</th>
-                  <th className="py-3 px-4 text-left font-medium">Inspector</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.inspection') || 'Inspection'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.workOrder') || 'Work Order'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.product') || 'Product'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.scheduled') || 'Scheduled'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.inspector') || 'Inspector'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -261,7 +263,7 @@ function InspectionsTab() {
                       <td className="py-3 px-4">
                         <Badge variant={config?.variant || 'secondary'} className="gap-1">
                           <StatusIcon className="h-3 w-3" />
-                          {config?.label || insp.status}
+                          {config?.labelKey ? t(config.labelKey) : insp.status}
                         </Badge>
                       </td>
                       <td className="py-3 px-4">{new Date(insp.inspection_date).toLocaleDateString()}</td>
@@ -276,11 +278,11 @@ function InspectionsTab() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem>
                               <Eye className="mr-2 h-4 w-4" />
-                              View
+                              {t('common.view') || 'View'}
                             </DropdownMenuItem>
                             <DropdownMenuItem>
                               <ClipboardCheck className="mr-2 h-4 w-4" />
-                              Start Inspection
+                              {t('pages.quality.actions.startInspection') || 'Start Inspection'}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -298,6 +300,7 @@ function InspectionsTab() {
 }
 
 function MSATab() {
+  const { t } = useI18n();
   const {
     msaStudies,
     fetchMsaStudies,
@@ -374,34 +377,34 @@ function MSATab() {
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Create MSA Study</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.msa.createStudy') || 'Create MSA Study'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Gauge ID</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.gaugeId') || 'Gauge ID'}</label>
               <Input
                 value={studyForm.gaugeId}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, gaugeId: e.target.value }))}
-                placeholder="Gauge UUID"
+                placeholder={t('pages.quality.msa.gaugeIdPlaceholder') || 'Gauge UUID'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.studyName') || 'Study Name'}</label>
               <Input
                 value={studyForm.name}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g., Line 2 CMM GRR"
+                placeholder={t('pages.quality.msa.studyNamePlaceholder') || 'e.g., Line 2 CMM GRR'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Study Type</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.studyType') || 'Study Type'}</label>
               <Select
                 value={studyForm.studyType}
                 onValueChange={(value) => setStudyForm((prev) => ({ ...prev, studyType: value }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder={t('pages.quality.msa.selectType') || 'Select type'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="grr">GRR</SelectItem>
@@ -412,7 +415,7 @@ function MSATab() {
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Parts</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.parts') || 'Parts'}</label>
               <Input
                 type="number"
                 value={studyForm.partsCount}
@@ -420,7 +423,7 @@ function MSATab() {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Operators</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.operators') || 'Operators'}</label>
               <Input
                 type="number"
                 value={studyForm.operatorsCount}
@@ -428,7 +431,7 @@ function MSATab() {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Trials</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.trials') || 'Trials'}</label>
               <Input
                 type="number"
                 value={studyForm.trialsCount}
@@ -477,23 +480,23 @@ function MSATab() {
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Operator ID</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.operatorId') || 'Operator ID'}</label>
               <Input
                 value={measurementForm.operatorId}
                 onChange={(e) => setMeasurementForm((prev) => ({ ...prev, operatorId: e.target.value }))}
-                placeholder="Operator UUID"
+                placeholder={t('pages.quality.msa.operatorPlaceholder') || 'Operator UUID'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Part ID</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.partId') || 'Part ID'}</label>
               <Input
                 value={measurementForm.partId}
                 onChange={(e) => setMeasurementForm((prev) => ({ ...prev, partId: e.target.value }))}
-                placeholder="Part identifier"
+                placeholder={t('pages.quality.msa.partPlaceholder') || 'Part identifier'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Trial</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.trial') || 'Trial'}</label>
               <Input
                 type="number"
                 value={measurementForm.trialNumber}
@@ -501,7 +504,7 @@ function MSATab() {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Measured Value</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.measuredValue') || 'Measured Value'}</label>
               <Input
                 type="number"
                 value={measurementForm.measuredValue}
@@ -511,7 +514,7 @@ function MSATab() {
           </div>
           <div className="flex justify-end">
             <Button variant="outline" onClick={handleAddMeasurement} disabled={loading}>
-              Add Measurement
+              {t('pages.quality.msa.addMeasurementButton') || 'Add Measurement'}
             </Button>
           </div>
         </CardContent>
@@ -523,19 +526,19 @@ function MSATab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Study</th>
-                  <th className="py-3 px-4 text-left font-medium">Gauge</th>
-                  <th className="py-3 px-4 text-left font-medium">Type</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Design</th>
-                  <th className="py-3 px-4 text-left font-medium">GRR %</th>
-                  <th className="py-3 px-4 text-left font-medium">NDC</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.msa.study') || 'Study'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.msa.gauge') || 'Gauge'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.msa.design') || 'Design'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.msa.grrPercent') || 'GRR %'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.msa.ndc') || 'NDC'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
               <tbody>
                 {msaStudies.map((study) => {
-                  const statusConfig = msaStatusConfig[study.status] || { label: study.status, variant: 'secondary' };
+                  const statusConfig = msaStatusConfig[study.status] || { labelKey: study.status, variant: 'secondary' };
                   const grrPercent = study.result?.grr_percent;
                   return (
                     <tr key={study.id} className="border-b hover:bg-muted/50">
@@ -544,7 +547,7 @@ function MSATab() {
                       <td className="py-3 px-4">{msaStudyTypeLabels[study.study_type] || study.study_type}</td>
                       <td className="py-3 px-4">
                         <Badge variant={statusConfig.variant}>
-                          {statusConfig.label}
+                          {statusConfig.labelKey ? t(statusConfig.labelKey) : study.status}
                         </Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
@@ -578,6 +581,7 @@ function MSATab() {
 }
 
 function CapabilityTab() {
+  const { t } = useI18n();
   const {
     capabilityStudies,
     fetchCapabilityStudies,
@@ -651,67 +655,67 @@ function CapabilityTab() {
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Create Capability Study</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.capability.createStudy') || 'Create Capability Study'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.studyName') || 'Study Name'}</label>
               <Input
                 value={studyForm.name}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g., CNC Mill 1 Diameter"
+                placeholder={t('pages.quality.capability.studyNamePlaceholder') || 'e.g., CNC Mill 1 Diameter'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Process</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.process') || 'Process'}</label>
               <Input
                 value={studyForm.processName}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, processName: e.target.value }))}
-                placeholder="e.g., CNC Mill 1"
+                placeholder={t('pages.quality.capability.processPlaceholder') || 'e.g., CNC Mill 1'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Characteristic</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.characteristic') || 'Characteristic'}</label>
               <Input
                 value={studyForm.characteristic}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, characteristic: e.target.value }))}
-                placeholder="e.g., Bore Diameter"
+                placeholder={t('pages.quality.capability.characteristicPlaceholder') || 'e.g., Bore Diameter'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">LSL</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.lsl') || 'LSL'}</label>
               <Input
                 type="number"
                 value={studyForm.lsl}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, lsl: e.target.value }))}
-                placeholder="Lower spec limit"
+                placeholder={t('pages.quality.capability.lslPlaceholder') || 'Lower spec limit'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">USL</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.usl') || 'USL'}</label>
               <Input
                 type="number"
                 value={studyForm.usl}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, usl: e.target.value }))}
-                placeholder="Upper spec limit"
+                placeholder={t('pages.quality.capability.uslPlaceholder') || 'Upper spec limit'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Target</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('common.target') || 'Target'}</label>
               <Input
                 type="number"
                 value={studyForm.target}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, target: e.target.value }))}
-                placeholder="Optional target"
+                placeholder={t('pages.quality.capability.targetPlaceholder') || 'Optional target'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Unit</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.unit') || 'Unit'}</label>
               <Input
                 value={studyForm.unit}
                 onChange={(e) => setStudyForm((prev) => ({ ...prev, unit: e.target.value }))}
-                placeholder="mm, in, etc."
+                placeholder={t('pages.quality.capability.unitPlaceholder') || 'mm, in, etc.'}
               />
             </div>
           </div>
@@ -799,7 +803,7 @@ function CapabilityTab() {
               </thead>
               <tbody>
                 {capabilityStudies.map((study) => {
-                  const statusConfig = capabilityStatusConfig[study.status] || { label: study.status, variant: 'secondary' };
+                  const statusConfig = capabilityStatusConfig[study.status] || { labelKey: study.status, variant: 'secondary' };
                   return (
                     <tr key={study.id} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4 font-medium">{study.name}</td>
@@ -811,7 +815,7 @@ function CapabilityTab() {
                       <td className="py-3 px-4">{study.result?.cp !== undefined ? Number(study.result.cp).toFixed(2) : '—'}</td>
                       <td className="py-3 px-4">{study.result?.cpk !== undefined ? Number(study.result.cpk).toFixed(2) : '—'}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                        <Badge variant={statusConfig.variant}>{statusConfig.labelKey ? t(statusConfig.labelKey) : study.status}</Badge>
                       </td>
                       <td className="py-3 px-4">
                         <Button
@@ -837,6 +841,7 @@ function CapabilityTab() {
 }
 
 function CustomerSatisfactionTab() {
+  const { t } = useI18n();
   const {
     customerComplaints,
     customerSurveys,
@@ -921,41 +926,41 @@ function CustomerSatisfactionTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="rounded-2xl border-border/40 bg-card/40">
-          <CardContent className="pt-6">
+      <div className="grid gap-0 md:grid-cols-3 border border-rams-line bg-rams-line">
+        <Card className="bg-rams-module border-0 shadow-none">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary/60">NPS Score</p>
-                <p className="text-3xl font-heading font-bold mt-1">{stats ? stats.nps_score : '—'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-2">NPS Score</p>
+                <p className="text-3xl font-mono font-bold tabular-nums">{stats ? stats.nps_score : '—'}</p>
               </div>
-              <div className="p-3 rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <div className="p-3 bg-rams-panel border border-rams-line text-rams-steel">
                 <Smile className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl border-border/40 bg-card/40">
-          <CardContent className="pt-6">
+        <Card className="bg-rams-module border-0 border-x border-rams-line shadow-none">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-warning/60">Open Complaints</p>
-                <p className="text-3xl font-heading font-bold mt-1">{complaintStats ? complaintStats.open : '—'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-2">Open Complaints</p>
+                <p className="text-3xl font-mono font-bold tabular-nums">{complaintStats ? complaintStats.open : '—'}</p>
               </div>
-              <div className="p-3 rounded-2xl bg-warning/10 text-warning shadow-sm">
+              <div className="p-3 bg-rams-orange/10 border border-rams-orange/20 text-rams-orange">
                 <AlertTriangle className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl border-border/40 bg-card/40">
-          <CardContent className="pt-6">
+        <Card className="bg-rams-module border-0 shadow-none">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-success/60">Responses</p>
-                <p className="text-3xl font-heading font-bold mt-1">{stats ? stats.total_responses : '—'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-2">Responses</p>
+                <p className="text-3xl font-mono font-bold tabular-nums">{stats ? stats.total_responses : '—'}</p>
               </div>
-              <div className="p-3 rounded-2xl bg-success/10 text-success shadow-sm">
+              <div className="p-3 bg-rams-green/10 border border-rams-green/20 text-rams-green">
                 <CheckCircle className="h-5 w-5" />
               </div>
             </div>
@@ -1026,12 +1031,12 @@ function CustomerSatisfactionTab() {
               </thead>
               <tbody>
                 {customerComplaints.map((complaint) => {
-                  const statusConfig = complaintStatusConfig[complaint.status] || { label: complaint.status, variant: 'secondary' };
+                  const statusConfig = complaintStatusConfig[complaint.status] || { labelKey: complaint.status, variant: 'secondary' };
                   return (
                     <tr key={complaint.id} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4 font-medium">{complaint.title}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                        <Badge variant={statusConfig.variant}>{statusConfig.labelKey ? t(statusConfig.labelKey) : complaint.status}</Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
                         {new Date(complaint.received_at).toLocaleDateString()}
@@ -1141,6 +1146,7 @@ function CustomerSatisfactionTab() {
 }
 
 function FAITab() {
+  const { t } = useI18n();
   const {
     faiInspections,
     fetchFAIInspections,
@@ -1371,14 +1377,14 @@ function FAITab() {
               </thead>
               <tbody>
                 {faiInspections.map((inspection) => {
-                  const statusConfig = faiStatusConfig[inspection.status] || { label: inspection.status, variant: 'secondary' };
+                  const statusConfig = faiStatusConfig[inspection.status] || { labelKey: inspection.status, variant: 'secondary' };
                   return (
                     <tr key={inspection.id} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4 font-medium">{inspection.inspection_number}</td>
                       <td className="py-3 px-4 text-muted-foreground">{inspection.part_number}</td>
                       <td className="py-3 px-4 text-muted-foreground">{inspection.revision || '—'}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                        <Badge variant={statusConfig.variant}>{statusConfig.labelKey ? t(statusConfig.labelKey) : inspection.status}</Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">
                         {inspection.characteristics?.length ?? 0}
@@ -1407,6 +1413,7 @@ function FAITab() {
 }
 
 function SelfInspectionTab() {
+  const { t } = useI18n();
   const {
     selfInspections,
     fetchSelfInspections,
@@ -1579,12 +1586,12 @@ function SelfInspectionTab() {
               </thead>
               <tbody>
                 {selfInspections.map((inspection) => {
-                  const statusConfig = selfInspectionStatusConfig[inspection.status] || { label: inspection.status, variant: 'secondary' };
+                  const statusConfig = selfInspectionStatusConfig[inspection.status] || { labelKey: inspection.status, variant: 'secondary' };
                   return (
                     <tr key={inspection.id} className="border-b hover:bg-muted/50">
                       <td className="py-3 px-4 font-medium">{inspection.inspection_number}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                        <Badge variant={statusConfig.variant}>{statusConfig.labelKey ? t(statusConfig.labelKey) : inspection.status}</Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{inspection.checks?.length ?? 0}</td>
                       <td className="py-3 px-4">
@@ -3157,6 +3164,7 @@ function ManagementReviewTab() {
 }
 
 function NCRsTab() {
+  const { t } = useI18n();
   const router = useRouter();
   const { ncrs, fetchNCRs, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -3245,10 +3253,10 @@ function NCRsTab() {
                       <td className="py-3 px-4 font-medium">{ncr.ncr_number}</td>
                       <td className="py-3 px-4 truncate max-w-[200px]">{ncr.description}</td>
                       <td className="py-3 px-4">
-                        <Badge variant={severityCfg?.variant || 'secondary'}>{severityCfg?.label || ncr.severity}</Badge>
+                        <Badge variant={severityCfg?.variant || 'secondary'}>{severityCfg?.labelKey ? t(severityCfg.labelKey) : ncr.severity}</Badge>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.label || ncr.status}</Badge>
+                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.labelKey ? t(statusCfg.labelKey) : ncr.status}</Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{ncr.product?.name || '—'}</td>
                       <td className="py-3 px-4 text-right">{ncr.quantity_affected}</td>
@@ -3285,6 +3293,7 @@ function NCRsTab() {
 }
 
 function CAPAsTab() {
+  const { t } = useI18n();
   const router = useRouter();
   const { capas, fetchCAPAs, loading } = useQualityStore();
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -3376,7 +3385,7 @@ function CAPAsTab() {
                         {capa.status === 'open' ? 'High' : 'Medium'}
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.label || capa.status}</Badge>
+                        <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.labelKey ? t(statusCfg.labelKey) : capa.status}</Badge>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{capa.ncr_id?.substring(0, 8) || '—'}</td>
                       <td className={cn('py-3 px-4', isOverdue && 'text-danger font-medium')}>
@@ -3428,38 +3437,42 @@ function QualityPageContent() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in" data-testid="quality-page">
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12" data-testid="quality-page">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.quality.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">{t('pages.quality.subtitle')}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.quality.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: QUALITY-HUB-01</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.push('/quality/analytics')}>
-            <TrendingUp className="mr-2 h-4 w-4" />
-            Analytics
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.push('/quality/analytics')}>
+            <TrendingUp className="mr-2 h-3.5 w-3.5" />
+            {t('quality.analytics') || 'Analytics'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
-                <Plus className="mr-2 h-4 w-4" />
-                New Protocol
+              <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                {t('quality.newProtocol') || 'New Protocol'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => router.push('/quality/inspections/new')}>
                 <ClipboardCheck className="mr-2 h-4 w-4" />
-                New Inspection
+                {t('quality.newInspection') || 'New Inspection'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/quality/ncrs/new')}>
                 <AlertTriangle className="mr-2 h-4 w-4" />
-                New NCR
+                {t('quality.newNCR') || 'New NCR'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/quality/capas/new')}>
                 <Shield className="mr-2 h-4 w-4" />
-                New CAPA
+                {t('quality.newCAPA') || 'New CAPA'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -3470,233 +3483,194 @@ function QualityPageContent() {
       <QualityStats />
 
       {/* Tabs */}
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
-        <CardHeader className="pb-0 border-b border-border/10 bg-muted/5">
-          <div className="flex gap-8">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+        <CardHeader className="pb-0 border-b border-rams-line bg-rams-panel/20">
+          <div className="flex gap-0 overflow-x-auto">
             <button
               onClick={() => handleTabChange('inspections')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative',
                 activeTab === 'inspections'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40 border-r border-rams-line'
               )}
             >
               <div className="flex items-center gap-2">
-                <ClipboardCheck className="h-4 w-4" />
-                Sync Gates
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                {t('quality.tabs.syncGates') || 'Sync Gates'}
               </div>
-              {activeTab === 'inspections' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('ncrs')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'ncrs'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Anomalies (NCR)
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {t('quality.tabs.anomalies') || 'Anomalies (NCR)'}
               </div>
-              {activeTab === 'ncrs' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('capas')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'capas'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Protocols (CAPA)
+                <Shield className="h-3.5 w-3.5" />
+                {t('quality.tabs.protocols') || 'Protocols (CAPA)'}
               </div>
-              {activeTab === 'capas' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('msa')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'msa'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <Ruler className="h-4 w-4" />
+                <Ruler className="h-3.5 w-3.5" />
                 MSA / GRR
               </div>
-              {activeTab === 'msa' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('capability')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'capability'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <Gauge className="h-4 w-4" />
+                <Gauge className="h-3.5 w-3.5" />
                 Cp / Cpk
               </div>
-              {activeTab === 'capability' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('customer')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'customer'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <Smile className="h-4 w-4" />
-                Customer Satisfaction
+                <Smile className="h-3.5 w-3.5" />
+                {t('quality.tabs.customerSatisfaction') || 'Customer Satisfaction'}
               </div>
-              {activeTab === 'customer' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('fai')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'fai'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <FileCheck className="h-4 w-4" />
+                <FileCheck className="h-3.5 w-3.5" />
                 FAI / AS9102
               </div>
-              {activeTab === 'fai' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('self')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'self'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4" />
+                <ClipboardList className="h-3.5 w-3.5" />
                 Self Inspection
               </div>
-              {activeTab === 'self' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('lab')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'lab'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <FlaskConical className="h-4 w-4" />
+                <FlaskConical className="h-3.5 w-3.5" />
                 Lab Management
               </div>
-              {activeTab === 'lab' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('aql')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'aql'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+                <FileText className="h-3.5 w-3.5" />
                 AQL Sampling
               </div>
-              {activeTab === 'aql' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('traceability')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'traceability'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+                <FileText className="h-3.5 w-3.5" />
                 Traceability
               </div>
-              {activeTab === 'traceability' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('change-point')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-r border-rams-line',
                 activeTab === 'change-point'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
+                <TrendingUp className="h-3.5 w-3.5" />
                 Change Point
               </div>
-              {activeTab === 'change-point' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
             <button
               onClick={() => handleTabChange('management-review')}
               className={cn(
-                'pb-4 px-1 text-xs font-bold uppercase tracking-widest transition-all relative group',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative',
                 activeTab === 'management-review'
-                  ? 'text-primary'
-                  : 'text-muted-foreground/60 hover:text-primary/80'
+                  ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
             >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
+                <FileText className="h-3.5 w-3.5" />
                 Management Review
               </div>
-              {activeTab === 'management-review' && (
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full shadow-glow" />
-              )}
             </button>
           </div>
         </CardHeader>
-        <CardContent className="pt-8">
+        <CardContent className="p-6 bg-rams-module">
           {activeTab === 'inspections' && <InspectionsTab />}
           {activeTab === 'ncrs' && <NCRsTab />}
           {activeTab === 'capas' && <CAPAsTab />}

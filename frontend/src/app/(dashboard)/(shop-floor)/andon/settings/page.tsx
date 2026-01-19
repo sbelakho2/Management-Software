@@ -35,85 +35,85 @@ export default function AndonSettingsPage() {
     <div className="max-w-3xl mx-auto space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">Signal Configuration</h1>
-            <p className="text-muted-foreground font-medium text-sm">Configure multi-channel alerts and organizational response protocols</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('andon.settings.title') || 'Signal Configuration'}</h1>
+            <p className="text-muted-foreground font-medium text-sm">{t('andon.settings.subtitle') || 'Configure multi-channel alerts and organizational response protocols'}</p>
           </div>
         </div>
-        <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8" onClick={handleSubmit} disabled={isSubmitting}>
+        <Button size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-12 px-8" onClick={handleSubmit} disabled={isSubmitting}>
           <Save className="h-4 w-4 mr-2" />
-          {isSubmitting ? 'Calibrating...' : 'Save Configuration'}
+          {isSubmitting ? (t('andon.settings.calibrating') || 'Calibrating...') : (t('andon.settings.saveConfiguration') || 'Save Configuration')}
         </Button>
       </div>
       <div className="grid gap-8">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
           <CardHeader className="pb-8">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
+              <div className="p-2 bg-rams-panel border border-rams-line text-rams-orange">
                 <Bell className="h-5 w-5" />
               </div>
-              <CardTitle className="text-lg font-heading">Notification Intelligence</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('andon.settings.notificationIntelligence.title') || 'Notification Intelligence'}</CardTitle>
             </div>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Strategic routing for anomalous signals</CardDescription>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">{t('andon.settings.notificationIntelligence.subtitle') || 'Strategic routing for anomalous signals'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-8">
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">Critical Escalation</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Notify global supervisors immediately for LINE STOP protocols</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.notificationIntelligence.criticalEscalation') || 'Critical Escalation'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.notificationIntelligence.criticalEscalationDesc') || 'Notify global supervisors immediately for LINE STOP protocols'}</p>
               </div>
-              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
+              <Switch defaultChecked className="data-[state=checked]:bg-rams-orange" />
             </div>
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">Quality Abnormalities</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Notify Quality Engineer node after 5 mins of unresolved state</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.notificationIntelligence.qualityAbnormalities') || 'Quality Abnormalities'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.notificationIntelligence.qualityAbnormalitiesDesc') || 'Notify Quality Engineer node after 5 mins of unresolved state'}</p>
               </div>
-              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
+              <Switch defaultChecked className="data-[state=checked]:bg-rams-orange" />
             </div>
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">Maintenance Dispatch</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Initiate immediate technician node request for machine breakdowns</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.notificationIntelligence.maintenanceDispatch') || 'Maintenance Dispatch'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.notificationIntelligence.maintenanceDispatchDesc') || 'Initiate immediate technician node request for machine breakdowns'}</p>
               </div>
-              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
+              <Switch defaultChecked className="data-[state=checked]:bg-rams-orange" />
             </div>
           </CardContent>
         </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
           <CardHeader className="pb-8">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
+              <div className="p-2 bg-rams-panel border border-rams-line text-rams-orange">
                 <Volume2 className="h-5 w-5" />
               </div>
-              <CardTitle className="text-lg font-heading">Protocol Channels</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('andon.settings.protocolChannels.title') || 'Protocol Channels'}</CardTitle>
             </div>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Multi-modal signal delivery methods</CardDescription>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">{t('andon.settings.protocolChannels.subtitle') || 'Multi-modal signal delivery methods'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-8">
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">Visual Command Mesh</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Flash strategic warnings on all synchronized shop floor monitors</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.protocolChannels.visualCommandMesh') || 'Visual Command Mesh'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.protocolChannels.visualCommandMeshDesc') || 'Flash strategic warnings on all synchronized shop floor monitors'}</p>
               </div>
-              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
+              <Switch defaultChecked className="data-[state=checked]:bg-rams-orange" />
             </div>
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">Mobile SMS Gateway</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Dispatch text alerts to active on-call intelligence nodes</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.protocolChannels.mobileSmsGateway') || 'Mobile SMS Gateway'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.protocolChannels.mobileSmsGatewayDesc') || 'Dispatch text alerts to active on-call intelligence nodes'}</p>
               </div>
-              <Switch className="data-[state=checked]:bg-primary" />
+              <Switch className="data-[state=checked]:bg-rams-orange" />
             </div>
-            <div className="flex items-center justify-between p-5 rounded-2xl bg-muted/10 border border-border/5 group transition-all hover:bg-primary/5">
+            <div className="flex items-center justify-between p-5 bg-rams-panel border border-rams-line group transition-none hover:bg-rams-panel/50">
               <div className="space-y-1">
-                <Label className="font-heading font-bold text-sm tracking-tight">OS Intelligence Push</Label>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Show native browser notifications for active organizational alerts</p>
+                <Label className="text-[11px] font-black uppercase tracking-tight">{t('andon.settings.protocolChannels.osIntelligencePush') || 'OS Intelligence Push'}</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.settings.protocolChannels.osIntelligencePushDesc') || 'Show native browser notifications for active organizational alerts'}</p>
               </div>
-              <Switch defaultChecked className="data-[state=checked]:bg-primary" />
+              <Switch defaultChecked className="data-[state=checked]:bg-rams-orange" />
             </div>
           </CardContent>
         </Card>

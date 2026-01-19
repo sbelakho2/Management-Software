@@ -150,9 +150,9 @@ const mockCustomer: Customer = {
 };
 
 const statusConfig = {
-  active: { label: 'Active', variant: 'success' as const },
-  inactive: { label: 'Inactive', variant: 'secondary' as const },
-  prospect: { label: 'Prospect', variant: 'warning' as const },
+  active: { labelKey: 'pages.customers.status.active', variant: 'success' as const },
+  inactive: { labelKey: 'pages.customers.status.inactive', variant: 'secondary' as const },
+  prospect: { labelKey: 'pages.customers.status.prospect', variant: 'warning' as const },
 };
 
 const rfqStatusConfig = {
@@ -255,9 +255,9 @@ export default function CustomerDetailPage() {
   if (!customer) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-lg font-medium">Customer not found</h2>
+        <h2 className="text-lg font-medium">{t('pages.customers.detail.notFound')}</h2>
         <Button className="mt-4" onClick={() => router.push('/customers')}>
-          Back to Customers
+          {t('pages.customers.detail.backToCustomers')}
         </Button>
       </div>
     );
@@ -275,14 +275,14 @@ export default function CustomerDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <Avatar size="lg">
-            <AvatarFallback className="bg-primary/10 text-primary text-lg">
+            <AvatarFallback className="bg-rams-panel text-muted-foreground text-lg">
               {getInitials(customer.name)}
             </AvatarFallback>
           </Avatar>
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-heading font-bold tracking-tight ">{customer.name}</h1>
-              <Badge variant={config.variant}>{config.label}</Badge>
+              <Badge variant={config.variant}>{t(config.labelKey)}</Badge>
             </div>
             <p className="text-muted-foreground">{customer.code} • {customer.industry}</p>
           </div>
@@ -290,11 +290,11 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
-            Edit
+            {t('common.edit')}
           </Button>
           <Button onClick={() => router.push(`/pipeline/new?customer=${customer.id}`)}>
             <Plus className="mr-2 h-4 w-4" />
-            New RFQ
+            {t('pages.customers.detail.newRfq')}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -305,22 +305,22 @@ export default function CustomerDetailPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem>
                 <FileText className="mr-2 h-4 w-4" />
-                View All RFQs
+                {t('pages.customers.detail.viewAllRfqs')}
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <Users className="mr-2 h-4 w-4" />
-                Manage Contacts
+                {t('pages.customers.detail.manageContacts')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {customer.status === 'active' ? (
                 <DropdownMenuItem onClick={() => setShowDeactivateDialog(true)} className="text-warning">
                   <Archive className="mr-2 h-4 w-4" />
-                  Deactivate
+                  {t('pages.customers.detail.deactivate')}
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem className="text-success">
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Activate
+                  {t('pages.customers.detail.activate')}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -333,25 +333,25 @@ export default function CustomerDetailPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-3xl font-heading font-bold tracking-tight ">{customer.stats.totalRFQs}</p>
-            <p className="text-sm text-muted-foreground">Total RFQs</p>
+            <p className="text-sm text-muted-foreground">{t('pages.customers.detail.stats.totalRfqs')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-3xl font-heading font-bold tracking-tight ">{customer.stats.openRFQs}</p>
-            <p className="text-sm text-muted-foreground">Open RFQs</p>
+            <p className="text-sm text-muted-foreground">{t('pages.customers.detail.stats.openRfqs')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(customer.stats.totalRevenue)}</p>
-            <p className="text-sm text-muted-foreground">Total Revenue</p>
+            <p className="text-sm text-muted-foreground">{t('pages.customers.detail.stats.totalRevenue')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(customer.stats.avgOrderValue)}</p>
-            <p className="text-sm text-muted-foreground">Avg Order</p>
+            <p className="text-sm text-muted-foreground">{t('pages.customers.detail.stats.avgOrder')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -363,7 +363,7 @@ export default function CustomerDetailPage() {
             )}>
               {customer.stats.winRate}%
             </p>
-            <p className="text-sm text-muted-foreground">Win Rate</p>
+            <p className="text-sm text-muted-foreground">{t('pages.customers.detail.stats.winRate')}</p>
           </CardContent>
         </Card>
       </div>
@@ -375,11 +375,11 @@ export default function CustomerDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Recent RFQs</CardTitle>
-                <CardDescription>Latest requests from this customer</CardDescription>
+                <CardTitle>{t('pages.customers.detail.recentRfqs')}</CardTitle>
+                <CardDescription>{t('pages.customers.detail.recentRfqsDesc')}</CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={() => router.push(`/pipeline?customer=${customer.id}`)}>
-                View All
+                {t('pages.customers.detail.viewAll')}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
@@ -390,7 +390,7 @@ export default function CustomerDetailPage() {
                     <Link
                       key={rfq.id}
                       href={`/pipeline/${rfq.id}`}
-                      className="flex items-center justify-between px-4 py-3 hover:bg-muted/50 transition-colors"
+                      className="flex items-center justify-between px-4 py-3 hover:bg-rams-panel transition-none"
                     >
                       <div>
                         <div className="flex items-center gap-2">
@@ -414,18 +414,18 @@ export default function CustomerDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Contacts</CardTitle>
-                <CardDescription>{customer.contacts.length} contacts</CardDescription>
+                <CardTitle>{t('pages.customers.detail.contacts')}</CardTitle>
+                <CardDescription>{customer.contacts.length} {t('pages.customers.detail.contactsCount')}</CardDescription>
               </div>
               <Button variant="outline" size="sm">
                 <Plus className="mr-2 h-4 w-4" />
-                Add Contact
+                {t('pages.customers.detail.addContact')}
               </Button>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2">
                 {customer.contacts.map((contact) => (
-                  <div key={contact.id} className="border rounded-lg p-4">
+                  <div key={contact.id} className="border border-rams-line rounded-rams-sm p-4">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar>
@@ -435,7 +435,7 @@ export default function CustomerDetailPage() {
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{contact.name}</p>
                             {contact.isPrimary && (
-                              <Badge variant="secondary" size="sm">Primary</Badge>
+                              <Badge variant="secondary" size="sm">{t('pages.customers.detail.primaryBadge')}</Badge>
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">{contact.title}</p>
@@ -460,11 +460,11 @@ export default function CustomerDetailPage() {
 
           {/* Notes */}
           {customer.notes && (
-            <Card className="border-warning/50 bg-warning/5">
+            <Card className="border-rams-orange/50 bg-rams-orange/5">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" />
-                  Notes
+                  {t('pages.customers.detail.notes')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -481,12 +481,12 @@ export default function CustomerDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                Company Info
+                {t('pages.customers.detail.companyInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-sm text-muted-foreground">Address</p>
+                <p className="text-sm text-muted-foreground">{t('pages.customers.detail.address')}</p>
                 <p className="text-sm mt-1">
                   {customer.address.street}<br />
                   {customer.address.city}, {customer.address.state} {customer.address.postalCode}<br />
@@ -495,7 +495,7 @@ export default function CustomerDetailPage() {
               </div>
               {customer.website && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Website</p>
+                  <p className="text-sm text-muted-foreground">{t('pages.customers.detail.website')}</p>
                   <a 
                     href={customer.website} 
                     target="_blank" 
@@ -509,7 +509,7 @@ export default function CustomerDetailPage() {
               )}
               {primaryContact && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Primary Contact</p>
+                  <p className="text-sm text-muted-foreground">{t('pages.customers.detail.primaryContact')}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <Avatar size="sm">
                       <AvatarFallback>{getInitials(primaryContact.name)}</AvatarFallback>
@@ -529,7 +529,7 @@ export default function CustomerDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
-                Recent Activity
+                {t('pages.customers.detail.recentActivity')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -538,7 +538,7 @@ export default function CustomerDetailPage() {
                   const Icon = activityIcons[activity.type];
                   return (
                     <div key={activity.id} className="flex items-start gap-3">
-                      <div className="p-1.5 rounded-full bg-muted">
+                      <div className="p-1.5 rounded-rams-sm bg-rams-panel border border-rams-line">
                         <Icon className="h-3 w-3" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -558,11 +558,11 @@ export default function CustomerDetailPage() {
           <Card>
             <CardContent className="pt-4 space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Created</span>
+                <span className="text-muted-foreground">{t('pages.customers.detail.created')}</span>
                 <span>{formatDate(new Date(customer.createdAt))}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Last Updated</span>
+                <span className="text-muted-foreground">{t('pages.customers.detail.lastUpdated')}</span>
                 <span>{formatRelativeTime(customer.updatedAt)}</span>
               </div>
             </CardContent>
@@ -574,17 +574,17 @@ export default function CustomerDetailPage() {
       <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Deactivate Customer</DialogTitle>
+            <DialogTitle>{t('pages.customers.detail.deactivateDialog.title')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to deactivate {customer.name}? They will no longer appear in search results or be available for new RFQs.
+              {t('pages.customers.detail.deactivateDialog.description', { name: customer.name })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeactivateDialog(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="destructive" onClick={handleDeactivate}>
-              Deactivate
+              {t('pages.customers.detail.deactivateDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -795,6 +795,7 @@ class TestRFQWorkflow:
             rfq_id=sample_rfq.id,
             db=db,
             current_user=mock_user,
+            _=None,
             win_reason="Best price and quality",
         )
         
@@ -819,6 +820,7 @@ class TestRFQWorkflow:
             rfq_id=sample_rfq.id,
             db=db,
             current_user=mock_user,
+            _=None,
             loss_reason="Price too high",
             competitor_id=competitor_id,
         )
@@ -842,6 +844,7 @@ class TestRFQWorkflow:
             rfq_id=sample_rfq.id,
             db=db,
             current_user=mock_user,
+            _=None,
             reason="Outside our capabilities",
         )
         

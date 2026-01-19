@@ -19,8 +19,31 @@ For local development, secrets are managed via a `.env` file. Never commit this 
 
 ### RBAC (Role-Based Access Control)
 Roles and permissions are defined in the database.
-- **Roles**: `Admin`, `Manager`, `User`, `Viewer`.
-- **Permissions**: Granular control over resources (e.g., `rfq:create`, `work_order:approve`).
+
+**Role Hierarchy (24 Roles):**
+| Level | Roles |
+|-------|-------|
+| 0-5 | Admin, CEO (Full Access) |
+| 10-15 | GM, Executive |
+| 20 | Finance, HR, Ops, Quality, IT (Department Heads) |
+| 30-40 | Accountant, Auditor, Sales Engineer, Estimator, Sales, Purchasing, Supply Chain |
+| 45-50 | Logistics, Warehouse, Maintenance, Engineering |
+| 60-70 | Supervisor, Team Lead |
+| 80-100 | Operator, Viewer |
+
+**Permission Types:**
+- **Page Access**: Which pages/routes a role can access
+- **Resource Actions**: Granular control (e.g., `rfq:create`, `work_order:approve`)
+- **AI Insight Access**: Which AI insights a role can query
+
+### AI Insight Access Control
+The system provides role-based access to 57 AI insight categories:
+- **Sensitivity Levels**: Low, Medium, High, Critical
+- **Full Access Roles**: Admin and CEO have locked full access
+- **Configurable Access**: Other roles can be customized via Admin UI
+- **Audit Trail**: All insight access is logged with tamper-proof signing
+
+See [AI Insights Access Reference](../Resources/AI_INSIGHTS_ACCESS.md) for details.
 
 ### Single Sign-On (SSO)
 Sensei OS supports SAML 2.0 for enterprise SSO integration. Configuration is managed in the **Admin/Security** dashboard.
@@ -36,6 +59,20 @@ Sensei OS supports SAML 2.0 for enterprise SSO integration. Configuration is man
 All critical actions (logins, data modifications, approvals) are recorded in the `audit_logs` table.
 - **Retention**: Audit logs are partitioned by date. Old partitions can be archived to S3 for long-term compliance.
 - **Viewing**: Logs can be viewed in the **Admin/Audit Log** page.
+
+### AI Insight Audit Logs
+AI insight access has dedicated audit logging:
+- **Immutable Entries**: Each log entry is cryptographically signed (HMAC-SHA256)
+- **Tamper Detection**: Any modification to logs is detectable
+- **Anomaly Detection**: Automatic detection of suspicious access patterns
+- **Compliance Ready**: Supports SOX, GDPR, ISO 27001 requirements
+
+**What's Logged:**
+- User ID, role, and session information
+- Insight category and specific insight accessed
+- Access result (granted/denied)
+- Response time
+- Client information (IP, user agent)
 
 ## Vulnerability Scanning
 

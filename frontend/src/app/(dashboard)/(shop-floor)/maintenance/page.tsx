@@ -45,25 +45,25 @@ import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card'
 
 type TabType = 'assets' | 'work-orders' | 'pm-schedules' | 'loto' | 'tool-crib' | 'warranty' | 'field-returns' | 'budget';
 
-function MaintenanceStats() {
+function MaintenanceStats({ t }: { t: (key: string) => string | undefined }) {
   const { stats } = useMaintenanceStore();
   
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Asset Nodes</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.maintenance.stats.assetNodes') || 'Asset Nodes'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats?.total_assets || 0}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Anomalous Down</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">{t('pages.maintenance.stats.anomalousDown') || 'Anomalous Down'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats?.assets_by_status?.down || 0}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-4">Threshold Overdue</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-4">{t('pages.maintenance.stats.thresholdOverdue') || 'Threshold Overdue'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats?.overdue_pms || 0}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-4">Efficiency Pulse</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-4">{t('pages.maintenance.stats.efficiencyPulse') || 'Efficiency Pulse'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">88.5%</p>
       </div>
     </div>
@@ -71,6 +71,7 @@ function MaintenanceStats() {
 }
 
 function AssetsTab() {
+  const { t } = useI18n();
   const { assets, loading, fetchAssets } = useMaintenanceStore();
   const [searchQuery, setSearchQuery] = React.useState('');
 
@@ -114,7 +115,7 @@ function AssetsTab() {
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="Search assets..." 
+            placeholder={t('pages.maintenance.searchAssets') || 'Search assets...'} 
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -122,7 +123,7 @@ function AssetsTab() {
         </div>
         <Button variant="outline" className="gap-2">
           <Filter className="h-4 w-4" />
-          Filter
+          {t('common.filter') || 'Filter'}
         </Button>
       </div>
       
@@ -131,20 +132,20 @@ function AssetsTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Asset #</th>
-                <th className="py-3 px-4 text-left font-medium">Name</th>
-                <th className="py-3 px-4 text-left font-medium">Type</th>
-                <th className="py-3 px-4 text-left font-medium">Status</th>
-                <th className="py-3 px-4 text-left font-medium">Criticality</th>
-                <th className="py-3 px-4 text-left font-medium">Last PM</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.assetNumber') || 'Asset #'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.name') || 'Name'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.criticality') || 'Criticality'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.lastPM') || 'Last PM'}</th>
                 <th className="py-3 px-4 w-10"></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">Loading assets...</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingAssets') || 'Loading assets...'}</td></tr>
               ) : filteredAssets.length === 0 ? (
-                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No assets found.</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noAssetsFound') || 'No assets found.'}</td></tr>
               ) : (
                 filteredAssets.map((asset) => (
                   <tr key={asset.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -160,7 +161,7 @@ function AssetsTab() {
                       <Badge variant="outline">{asset.criticality}</Badge>
                     </td>
                     <td className="py-3 px-4 text-muted-foreground">
-                      {asset.last_pm_date ? formatDate(new Date(asset.last_pm_date)) : 'N/A'}
+                      {asset.last_pm_date ? formatDate(new Date(asset.last_pm_date)) : (t('common.na') || 'N/A')}
                     </td>
                     <td className="py-3 px-4">
                       <Button variant="ghost" size="icon">
@@ -175,13 +176,13 @@ function AssetsTab() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardHeader>
-          <CardTitle className="text-base">Equipment Hierarchy</CardTitle>
+          <CardTitle className="text-base">{t('pages.maintenance.equipmentHierarchy') || 'Equipment Hierarchy'}</CardTitle>
         </CardHeader>
         <CardContent>
           {assets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No asset hierarchy available.</p>
+            <p className="text-sm text-muted-foreground">{t('pages.maintenance.noAssetHierarchy') || 'No asset hierarchy available.'}</p>
           ) : (
             <div className="space-y-3">
               {renderAssetTree(null)}
@@ -194,6 +195,7 @@ function AssetsTab() {
 }
 
 function WorkOrdersTab() {
+  const { t } = useI18n();
   const { workOrders, loading, fetchWorkOrders } = useMaintenanceStore();
 
   useEffect(() => {
@@ -206,21 +208,21 @@ function WorkOrdersTab() {
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="py-3 px-4 text-left font-medium">WO #</th>
-              <th className="py-3 px-4 text-left font-medium">Type</th>
-              <th className="py-3 px-4 text-left font-medium">Status</th>
-              <th className="py-3 px-4 text-left font-medium">Approval</th>
-              <th className="py-3 px-4 text-left font-medium">Priority</th>
-              <th className="py-3 px-4 text-left font-medium">Assigned To</th>
-              <th className="py-3 px-4 text-left font-medium">Created</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.woNumber') || 'WO #'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.approval') || 'Approval'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.priority') || 'Priority'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.assignedTo') || 'Assigned To'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.created') || 'Created'}</th>
               <th className="py-3 px-4 w-10"></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">Loading work orders...</td></tr>
+              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingWorkOrders') || 'Loading work orders...'}</td></tr>
             ) : workOrders.length === 0 ? (
-              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">No work orders found.</td></tr>
+              <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noWorkOrdersFound') || 'No work orders found.'}</td></tr>
             ) : (
               workOrders.map((wo) => (
                 <tr key={wo.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -233,7 +235,7 @@ function WorkOrdersTab() {
                     </Badge>
                   </td>
                   <td className="py-3 px-4">{wo.priority}</td>
-                  <td className="py-3 px-4 text-muted-foreground">{wo.assigned_to || 'Unassigned'}</td>
+                  <td className="py-3 px-4 text-muted-foreground">{wo.assigned_to || t('common.unassigned') || 'Unassigned'}</td>
                   <td className="py-3 px-4 text-muted-foreground">{formatDate(new Date(wo.created_at))}</td>
                   <td className="py-3 px-4">
                     <Button variant="ghost" size="icon">
@@ -251,6 +253,7 @@ function WorkOrdersTab() {
 }
 
 function PMSchedulesTab() {
+  const { t } = useI18n();
   const { pmSchedules, pmRoute, loading, fetchPMSchedules, fetchPMRoute } = useMaintenanceStore();
 
   useEffect(() => {
@@ -260,30 +263,30 @@ function PMSchedulesTab() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardHeader>
-          <CardTitle className="text-base">Upcoming PM Schedules</CardTitle>
+          <CardTitle className="text-base">{t('pages.maintenance.upcomingPMSchedules') || 'Upcoming PM Schedules'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Name</th>
-                <th className="py-3 px-4 text-left font-medium">Frequency</th>
-                <th className="py-3 px-4 text-left font-medium">Next Due</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.name') || 'Name'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.frequency') || 'Frequency'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.nextDue') || 'Next Due'}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">Loading schedules...</td></tr>
+                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingSchedules') || 'Loading schedules...'}</td></tr>
               ) : pmSchedules.length === 0 ? (
-                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">No PM schedules found.</td></tr>
+                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noPMSchedulesFound') || 'No PM schedules found.'}</td></tr>
               ) : (
                 pmSchedules.map((pm) => (
                   <tr key={pm.id} className="border-b hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{pm.name}</td>
                     <td className="py-3 px-4 text-muted-foreground">{pm.frequency_value} {pm.frequency_unit}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{pm.next_due ? formatDate(new Date(pm.next_due)) : 'N/A'}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{pm.next_due ? formatDate(new Date(pm.next_due)) : (t('common.na') || 'N/A')}</td>
                   </tr>
                 ))
               )}
@@ -292,30 +295,30 @@ function PMSchedulesTab() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardHeader>
-          <CardTitle className="text-base">Optimized PM Route (7 days)</CardTitle>
+          <CardTitle className="text-base">{t('pages.maintenance.optimizedPMRoute') || 'Optimized PM Route (7 days)'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <table className="w-full">
             <thead>
               <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Asset</th>
-                <th className="py-3 px-4 text-left font-medium">Task</th>
-                <th className="py-3 px-4 text-left font-medium">Due</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.asset') || 'Asset'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.task') || 'Task'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.due') || 'Due'}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">Loading route...</td></tr>
+                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingRoute') || 'Loading route...'}</td></tr>
               ) : pmRoute.length === 0 ? (
-                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">No PM route items.</td></tr>
+                <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noPMRouteItems') || 'No PM route items.'}</td></tr>
               ) : (
                 pmRoute.map((item) => (
                   <tr key={item.pm_id} className="border-b hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 text-muted-foreground">{item.asset_id.slice(0, 8)}</td>
                     <td className="py-3 px-4 font-medium">{item.name}</td>
-                    <td className="py-3 px-4 text-muted-foreground">{item.next_due ? formatDate(new Date(item.next_due)) : 'N/A'}</td>
+                    <td className="py-3 px-4 text-muted-foreground">{item.next_due ? formatDate(new Date(item.next_due)) : (t('common.na') || 'N/A')}</td>
                   </tr>
                 ))
               )}
@@ -328,6 +331,7 @@ function PMSchedulesTab() {
 }
 
 function LotoTab() {
+  const { t } = useI18n();
   const { lotoProcedures, activeLotoLocks, loading, fetchLotoProcedures, fetchActiveLotoLocks } = useMaintenanceStore();
 
   useEffect(() => {
@@ -338,28 +342,28 @@ function LotoTab() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldAlert className="h-4 w-4 text-warning" />
-              LOTO Procedures
+              <ShieldAlert className="h-4 w-4 text-rams-orange" />
+              {t('pages.maintenance.lotoProcedures') || 'LOTO Procedures'}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Title</th>
-                  <th className="py-3 px-4 text-left font-medium">Asset</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Version</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.title') || 'Title'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.asset') || 'Asset'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.version') || 'Version'}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">Loading procedures...</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingProcedures') || 'Loading procedures...'}</td></tr>
                 ) : lotoProcedures.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No LOTO procedures found.</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noLotoProceduresFound') || 'No LOTO procedures found.'}</td></tr>
                 ) : (
                   lotoProcedures.map((proc) => (
                     <tr key={proc.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -379,28 +383,28 @@ function LotoTab() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Lock className="h-4 w-4 text-danger" />
-              Active Locks
+              <Lock className="h-4 w-4 text-rams-red" />
+              {t('pages.maintenance.activeLocks') || 'Active Locks'}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Lock #</th>
-                  <th className="py-3 px-4 text-left font-medium">Asset</th>
-                  <th className="py-3 px-4 text-left font-medium">Applied</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.lockNumber') || 'Lock #'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.asset') || 'Asset'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.applied') || 'Applied'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">Loading locks...</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingLocks') || 'Loading locks...'}</td></tr>
                 ) : activeLotoLocks.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No active locks.</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noActiveLocks') || 'No active locks.'}</td></tr>
                 ) : (
                   activeLotoLocks.map((lock) => (
                     <tr key={lock.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -423,6 +427,7 @@ function LotoTab() {
 }
 
 function ToolCribTab() {
+  const { t } = useI18n();
   const { tools, activeToolCheckouts, loading, fetchTools, fetchActiveToolCheckouts } = useMaintenanceStore();
 
   useEffect(() => {
@@ -433,28 +438,28 @@ function ToolCribTab() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Hammer className="h-4 w-4 text-primary" />
-              Tool Inventory
+              <Hammer className="h-4 w-4 text-rams-orange" />
+              {t('pages.maintenance.toolInventory') || 'Tool Inventory'}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Tool #</th>
-                  <th className="py-3 px-4 text-left font-medium">Name</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Qty</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.toolNumber') || 'Tool #'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.name') || 'Name'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.qty') || 'Qty'}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">Loading tools...</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingTools') || 'Loading tools...'}</td></tr>
                 ) : tools.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No tools found.</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noToolsFound') || 'No tools found.'}</td></tr>
                 ) : (
                   tools.map((tool) => (
                     <tr key={tool.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -474,34 +479,34 @@ function ToolCribTab() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Wrench className="h-4 w-4 text-warning" />
-              Active Checkouts
+              <Wrench className="h-4 w-4 text-rams-orange" />
+              {t('pages.maintenance.activeCheckouts') || 'Active Checkouts'}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Tool</th>
-                  <th className="py-3 px-4 text-left font-medium">Checked Out</th>
-                  <th className="py-3 px-4 text-left font-medium">Due Back</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.tool') || 'Tool'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.checkedOut') || 'Checked Out'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.dueBack') || 'Due Back'}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">Loading checkouts...</td></tr>
+                  <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingCheckouts') || 'Loading checkouts...'}</td></tr>
                 ) : activeToolCheckouts.length === 0 ? (
-                  <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">No active checkouts.</td></tr>
+                  <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noActiveCheckouts') || 'No active checkouts.'}</td></tr>
                 ) : (
                   activeToolCheckouts.map((checkout) => (
                     <tr key={checkout.id} className="border-b hover:bg-muted/50 transition-colors">
                       <td className="py-3 px-4 font-medium">{checkout.tool_id.slice(0, 8)}</td>
                       <td className="py-3 px-4 text-muted-foreground">{formatDate(new Date(checkout.checked_out_at))}</td>
                       <td className="py-3 px-4 text-muted-foreground">
-                        {checkout.due_back_at ? formatDate(new Date(checkout.due_back_at)) : 'N/A'}
+                        {checkout.due_back_at ? formatDate(new Date(checkout.due_back_at)) : (t('common.na') || 'N/A')}
                       </td>
                     </tr>
                   ))
@@ -516,6 +521,7 @@ function ToolCribTab() {
 }
 
 function WarrantyTab() {
+  const { t } = useI18n();
   const { warranties, loading, fetchWarranties } = useMaintenanceStore();
 
   useEffect(() => {
@@ -523,30 +529,30 @@ function WarrantyTab() {
   }, [fetchWarranties]);
 
   return (
-    <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+    <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="h-4 w-4 text-success" />
-          Asset Warranties
+          <ShieldCheck className="h-4 w-4 text-rams-green" />
+          {t('pages.maintenance.assetWarranties') || 'Asset Warranties'}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="py-3 px-4 text-left font-medium">Asset</th>
-              <th className="py-3 px-4 text-left font-medium">Type</th>
-              <th className="py-3 px-4 text-left font-medium">Coverage</th>
-              <th className="py-3 px-4 text-left font-medium">Status</th>
-              <th className="py-3 px-4 text-left font-medium">Claims</th>
-              <th className="py-3 px-4 text-left font-medium">Ends</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.asset') || 'Asset'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.coverage') || 'Coverage'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.claims') || 'Claims'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.ends') || 'Ends'}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">Loading warranties...</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingWarranties') || 'Loading warranties...'}</td></tr>
             ) : warranties.length === 0 ? (
-              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No warranties found.</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noWarrantiesFound') || 'No warranties found.'}</td></tr>
             ) : (
               warranties.map((warranty) => (
                 <tr key={warranty.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -571,6 +577,7 @@ function WarrantyTab() {
 }
 
 function FieldReturnsTab() {
+  const { t } = useI18n();
   const { fieldReturns, loading, fetchFieldReturns } = useMaintenanceStore();
 
   useEffect(() => {
@@ -578,30 +585,30 @@ function FieldReturnsTab() {
   }, [fetchFieldReturns]);
 
   return (
-    <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+    <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-warning" />
-          Field Returns
+          <AlertTriangle className="h-4 w-4 text-rams-orange" />
+          {t('pages.maintenance.fieldReturns') || 'Field Returns'}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="py-3 px-4 text-left font-medium">Return #</th>
-              <th className="py-3 px-4 text-left font-medium">Asset</th>
-              <th className="py-3 px-4 text-left font-medium">Status</th>
-              <th className="py-3 px-4 text-left font-medium">Failure Mode</th>
-              <th className="py-3 px-4 text-left font-medium">Cost Impact</th>
-              <th className="py-3 px-4 text-left font-medium">Received</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.returnNumber') || 'Return #'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.asset') || 'Asset'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.failureMode') || 'Failure Mode'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.costImpact') || 'Cost Impact'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.received') || 'Received'}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">Loading field returns...</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingFieldReturns') || 'Loading field returns...'}</td></tr>
             ) : fieldReturns.length === 0 ? (
-              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No field returns found.</td></tr>
+              <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noFieldReturnsFound') || 'No field returns found.'}</td></tr>
             ) : (
               fieldReturns.map((fieldReturn) => (
                 <tr key={fieldReturn.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -628,6 +635,7 @@ function FieldReturnsTab() {
 }
 
 function BudgetTab() {
+  const { t } = useI18n();
   const { budgets, loading, fetchBudgets } = useMaintenanceStore();
 
   useEffect(() => {
@@ -635,25 +643,25 @@ function BudgetTab() {
   }, [fetchBudgets]);
 
   return (
-    <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+    <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
       <CardHeader>
-        <CardTitle className="text-base">Maintenance Budget</CardTitle>
+        <CardTitle className="text-base">{t('pages.maintenance.maintenanceBudget') || 'Maintenance Budget'}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <table className="w-full">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="py-3 px-4 text-left font-medium">Period</th>
-              <th className="py-3 px-4 text-left font-medium">Budget</th>
-              <th className="py-3 px-4 text-left font-medium">Actual</th>
-              <th className="py-3 px-4 text-left font-medium">Variance</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.period') || 'Period'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.budget') || 'Budget'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.actual') || 'Actual'}</th>
+              <th className="py-3 px-4 text-left font-medium">{t('pages.maintenance.table.variance') || 'Variance'}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">Loading budgets...</td></tr>
+              <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.loadingBudgets') || 'Loading budgets...'}</td></tr>
             ) : budgets.length === 0 ? (
-              <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No budgets found.</td></tr>
+              <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noBudgetsFound') || 'No budgets found.'}</td></tr>
             ) : (
               budgets.map((budget) => (
                 <tr key={budget.id} className="border-b hover:bg-muted/50 transition-colors">
@@ -690,7 +698,7 @@ function MaintenancePageContent() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="maintenance-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.maintenance.title')}
@@ -698,29 +706,29 @@ function MaintenancePageContent() {
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
             <span>{t('pages.maintenance.subtitle')}</span>
             <span className="opacity-30">|</span>
-            <span>STATION: FACILITY-01</span>
+            <span>{t('pages.maintenance.station') || 'STATION: FACILITY-01'}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => router.push('/maintenance/mobile')}>
-            MOBILE_MODE
+            {t('pages.maintenance.mobileMode') || 'MOBILE_MODE'}
           </Button>
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
             <History className="h-3.5 w-3.5 mr-2" />
-            History
+            {t('common.history') || 'History'}
           </Button>
           <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => {}}>
             <Plus className="mr-2 h-3.5 w-3.5" />
-            Initialize Asset
+            {t('pages.maintenance.initializeAsset') || 'Initialize Asset'}
           </Button>
         </div>
       </div>
 
-      <MaintenanceStats />
+      <MaintenanceStats t={t} />
 
       {/* Main Content (Modular Rack) */}
-      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
-        <CardHeader className="p-0 border-b border-rams-border bg-rams-panel/20">
+      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
+        <CardHeader className="p-0 border-b border-rams-line bg-rams-panel/20">
           <div className="flex overflow-x-auto scrollbar-hide">
             <button
               className={cn(
@@ -731,73 +739,73 @@ function MaintenancePageContent() {
               )}
               onClick={() => setActiveTab('assets')}
             >
-              Assets
+              {t('pages.maintenance.tabs.assets') || 'Assets'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'work-orders'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('work-orders')}
             >
-              Work Orders
+              {t('pages.maintenance.tabs.workOrders') || 'Work Orders'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'pm-schedules'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('pm-schedules')}
             >
-              PM Schedules
+              {t('pages.maintenance.tabs.pmSchedules') || 'PM Schedules'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'loto'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('loto')}
             >
-              LOTO
+              {t('pages.maintenance.tabs.loto') || 'LOTO'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'tool-crib'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('tool-crib')}
             >
-              Tool Crib
+              {t('pages.maintenance.tabs.toolCrib') || 'Tool Crib'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'warranty'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('warranty')}
             >
-              Warranty
+              {t('pages.maintenance.tabs.warranty') || 'Warranty'}
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none whitespace-nowrap relative border-l border-rams-line',
                 activeTab === 'budget'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
               )}
               onClick={() => setActiveTab('budget')}
             >
-              Budget
+              {t('pages.maintenance.tabs.budget') || 'Budget'}
             </button>
           </div>
         </CardHeader>
@@ -819,8 +827,9 @@ function MaintenancePageContent() {
 }
 
 export default function MaintenancePage() {
+  const { t } = useI18n();
   return (
-    <Suspense fallback={<div>Loading Maintenance...</div>}>
+    <Suspense fallback={<div>{t('pages.maintenance.loading') || 'Loading Maintenance...'}</div>}>
       <MaintenancePageContent />
     </Suspense>
   );

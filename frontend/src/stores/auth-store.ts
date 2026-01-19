@@ -17,6 +17,8 @@ interface AuthState {
   updateProfile: (data: Partial<User>) => Promise<void>;
   updatePreferences: (preferences: Partial<UserPreferences>) => Promise<void>;
   clearError: () => void;
+  /** Reset auth state without making API calls - use on login page to clear stale state */
+  resetAuth: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -158,6 +160,26 @@ export const useAuthStore = create<AuthState>()(
       },
 
       clearError: () => set({ error: null }),
+
+      resetAuth: () => {
+        // Clear localStorage tokens
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('auth-storage');
+          } catch {
+            // localStorage not available
+          }
+        }
+        // Clear Zustand state
+        set({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+          error: null,
+        });
+      },
     }),
     {
       name: 'auth-storage',

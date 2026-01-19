@@ -1,481 +1,4265 @@
 {
-  "meta": {
-    "locale": "ar",
-    "name": "Arabic",
-    "nativeName": "العربية",
-    "flag": "🇹🇳",
-    "direction": "rtl"
+  "a3": {
+    "detail": {
+      "exportProtocol": "تصدير بروتوكول",
+      "implementation": {
+        "countermeasures": "الإجراءات التصحيحية",
+        "subtitle": "تنفيذ الإجراءات",
+        "timeline": "الجدول الزمني",
+        "title": "التنفيذ"
+      },
+      "notFound": "لا يتوفر تقرير آ٣",
+      "protocolVelocity": {
+        "executionPulse": "نبض التنفيذ",
+        "logicType": "نوع المنطق",
+        "priorityLayer": "طبقة الأولوية",
+        "statusNode": "حالة العقدة",
+        "title": "سرعة البروتوكول"
+      },
+      "refineAnalysis": "تنقيح التحليل",
+      "sections": {
+        "background": "الخلفية",
+        "currentState": "الحالة الحالية",
+        "rootCauseIntelligence": "ذكاء السبب الجذري",
+        "strategicTargets": "الأهداف الاستراتيجية"
+      },
+      "structuralAnalysis": {
+        "subtitle": "تحليل بنيوي",
+        "title": "التحليل البنيوي"
+      }
+    },
+    "edit": {
+      "basicInformation": "المعلومات الأساسية",
+      "content": "المحتوى",
+      "reportTitle": "عنوان التقرير",
+      "reportType": "نوع التقرير",
+      "saveChanges": "حفظ التغييرات",
+      "saving": "جارٍ الحفظ",
+      "sections": {
+        "analysis": "تحليل",
+        "background": "الخلفية",
+        "currentStatus": "الحالة الحالية",
+        "goals": "الأهداف"
+      },
+      "status": "الحالة",
+      "subtitle": "تعديل تقرير آ٣",
+      "title": "تعديل تقرير آ٣"
+    },
+    "empty": {
+      "subtitle": "ابدأ بإنشاء تقرير جديد",
+      "title": "لا توجد تقارير آ٣"
+    },
+    "exportIntel": "تصدير معلومات تقرير آ٣",
+    "initializeResolution": "بدء حل تقرير آ٣",
+    "new": {
+      "basicInformation": {
+        "a3Title": "عنوان تقرير آ٣",
+        "description": "الوصف",
+        "title": "العنوان",
+        "titlePlaceholder": "أدخل عنوانًا"
+      },
+      "createA3": "إنشاء تقرير آ٣",
+      "initializing": "جارٍ التهيئة",
+      "subtitle": "أنشئ تقرير آ٣ جديدًا",
+      "title": "تقرير آ٣ جديد"
+    },
+    "sections": {
+      "background": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "الخلفية"
+      },
+      "countermeasures": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "الإجراءات التصحيحية"
+      },
+      "currentCondition": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "الوضع الحالي"
+      },
+      "goal": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "الهدف"
+      },
+      "implementation": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "التنفيذ"
+      },
+      "rootCause": {
+        "description": "الوصف",
+        "number": "الرقم",
+        "placeholder": "أدخل التفاصيل",
+        "title": "السبب الجذري"
+      },
+      "team": {
+        "addTeamMembersPlaceholder": "أضف أعضاء الفريق",
+        "contributors": "المساهمون",
+        "reportOwner": "مالك التقرير",
+        "searchUsersPlaceholder": "ابحث عن مستخدمين",
+        "title": "الفريق"
+      }
+    },
+    "stats": {
+      "activeProtocols": "بروتوكولات تقارير آ٣ النشطة",
+      "aggregatedRegistry": "السجل المجمّع",
+      "executionPulse": "نبض التنفيذ",
+      "horizonOverdue": "تجاوز الأفق الزمني",
+      "pendingApprovals": "موافقات معلّقة",
+      "queueGates": "بوابات الانتظار",
+      "thresholdExceptions": "استثناءات العتبة",
+      "totalNodes": "إجمالي عُقد آ٣"
+    },
+    "statuses": {
+      "approved": "موافق عليه",
+      "draft": "مسودة",
+      "inProgress": "قيد التنفيذ",
+      "review": "قيد المراجعة"
+    },
+    "table": {
+      "author": "الكاتب",
+      "identifier": "معرّف تقرير آ٣",
+      "priority": "الأولوية",
+      "progressKpi": "مؤشر تقدم الأداء",
+      "protocolType": "نوع البروتوكول",
+      "resolutionTitle": "عنوان حل تقرير آ٣",
+      "statusNode": "حالة العقدة",
+      "targetHorizon": "الأفق المستهدف"
+    },
+    "types": {
+      "problemSolving": "حل المشكلات",
+      "proposal": "اقتراح",
+      "statusReport": "تقرير حالة آ٣",
+      "strategy": "استراتيجية"
+    }
   },
-  "common": {
-    "save": "حفظ",
-    "cancel": "إلغاء",
-    "delete": "حذف",
-    "edit": "تعديل",
-    "create": "إنشاء",
-    "update": "تحديث",
-    "search": "بحث",
-    "filter": "تصفية",
-    "clear": "مسح",
-    "close": "إغلاق",
-    "loading": "جارٍ التحميل...",
-    "error": "خطأ",
-    "success": "نجاح",
-    "warning": "تحذير",
-    "info": "معلومات",
-    "yes": "نعم",
-    "no": "لا",
-    "confirm": "تأكيد",
-    "back": "رجوع",
-    "next": "التالي",
-    "previous": "السابق",
-    "submit": "إرسال",
-    "reset": "إعادة تعيين",
-    "noData": "لا توجد بيانات",
-    "noResults": "لم يتم العثور على نتائج",
-    "add": "إضافة",
-    "remove": "إزالة",
-    "view": "عرض",
-    "details": "التفاصيل",
-    "actions": "الإجراءات",
-    "status": "الحالة",
-    "date": "التاريخ",
-    "time": "الوقت",
-    "name": "الاسم",
-    "description": "الوصف",
-    "type": "النوع",
-    "category": "الفئة",
-    "priority": "الأولوية",
-    "select": "اختيار",
-    "selectAll": "تحديد الكل",
-    "deselectAll": "إلغاء تحديد الكل",
-    "showMore": "عرض المزيد",
-    "showLess": "عرض أقل",
-    "seeAll": "عرض الكل",
-    "refresh": "تحديث",
-    "export": "تصدير",
-    "import": "استيراد",
-    "download": "تنزيل",
-    "upload": "رفع",
-    "print": "طباعة",
-    "copy": "نسخ",
-    "paste": "لصق",
-    "duplicate": "تكرار",
-    "archive": "أرشفة",
-    "restore": "استعادة",
-    "approve": "موافقة",
-    "reject": "رفض",
-    "pending": "قيد الانتظار",
-    "active": "نشط",
-    "inactive": "غير نشط",
-    "draft": "مسودة",
-    "published": "منشور",
-    "completed": "مكتمل",
-    "inProgress": "قيد التنفيذ",
-    "notStarted": "لم يبدأ",
-    "onHold": "معلق",
-    "cancelled": "ملغى",
-    "total": "المجموع",
-    "amount": "المبلغ",
-    "quantity": "الكمية",
-    "price": "السعر",
-    "discount": "خصم",
-    "tax": "ضريبة",
-    "subtotal": "المجموع الفرعي",
-    "required": "مطلوب",
-    "optional": "اختياري",
-    "enabled": "مفعّل",
-    "disabled": "معطّل",
-    "all": "الكل",
-    "none": "لا شيء",
-    "other": "أخرى",
-    "new": "جديد",
-    "old": "قديم",
-    "high": "عالٍ",
-    "medium": "متوسط",
-    "low": "منخفض",
-    "critical": "حرج",
-    "urgent": "عاجل"
+  "accessibility": {
+    "closeMenu": "إغلاق القائمة",
+    "collapseSection": "طي القسم",
+    "expandSection": "توسيع القسم",
+    "externalLink": "رابط خارجي",
+    "hidePassword": "إخفاء كلمة المرور",
+    "loading": "جارٍ تحميل المحتوى",
+    "loadingComplete": "اكتمل التحميل",
+    "newWindow": "يفتح في نافذة جديدة",
+    "openMenu": "فتح القائمة",
+    "showPassword": "إظهار كلمة المرور",
+    "skipToContent": "تخطي إلى المحتوى",
+    "skipToNavigation": "تخطي إلى التنقل",
+    "toggleTheme": "تغيير السمة"
+  },
+  "andon": {
+    "actions": {
+      "escalate": "تصعيد",
+      "globalBroadcast": "بث عام",
+      "logisticsSync": "مزامنة اللوجستيات",
+      "protocolException": "استثناء البروتوكول",
+      "sync": "مزامنة",
+      "syncSupervisor": "مزامنة المشرف",
+      "technicianNode": "عقدة الفني"
+    },
+    "analytics": {
+      "_value": "التحليلات",
+      "anomalousNodes": {
+        "cumulativeDelay": "التأخير التراكمي",
+        "empty": "لا توجد بيانات",
+        "strategicSignals": "إشارات استراتيجية",
+        "subtitle": "تنبيهات الشذوذ",
+        "title": "العُقد الشاذة"
+      },
+      "exportIntel": "تصدير المعلومات",
+      "signalTaxonomy": {
+        "empty": "لا توجد بيانات",
+        "subtitle": "تصنيف الإشارات",
+        "title": "تصنيف الإشارات"
+      },
+      "stats": {
+        "aggregatedAcrossNodes": "مجمّع عبر العُقد",
+        "estimatedOperationalLeakage": "تسرب تشغيلي مُقدّر",
+        "fullProtocolLifecycle": "دورة حياة البروتوكول الكاملة",
+        "globalUptimeImpact": "تأثير الجاهزية العالمية",
+        "meanAcknowledgePulse": "متوسط نبضة الإقرار",
+        "meanResolutionVelocity": "متوسط سرعة المعالجة",
+        "temporalGap": "الفجوة الزمنية",
+        "totalIntelligenceSignals": "إجمالي إشارات الذكاء"
+      },
+      "subtitle": "تحليلات أندون",
+      "title": "تحليلات أندون"
+    },
+    "controlStation": "محطة التحكم",
+    "empty": {
+      "noActiveAnomalies": "لا توجد شذوذات نشطة",
+      "protocolStable": "البروتوكول مستقر"
+    },
+    "history": {
+      "exportTelemetry": "تصدير القياس عن بُعد",
+      "searchPlaceholder": "ابحث في سجل أندون",
+      "strategicWindow": "نافذة استراتيجية",
+      "subtitle": "سجل الإشارات",
+      "table": {
+        "anomalousContext": "سياق الشذوذ",
+        "protocolDuration": "مدة البروتوكول",
+        "resolutionAgent": "جهة المعالجة",
+        "signalType": "نوع الإشارة",
+        "stationNode": "عقدة المحطة",
+        "temporalNode": "العقدة الزمنية"
+      },
+      "title": "سجل أندون"
+    },
+    "realTimeStream": "البث المباشر",
+    "reports": {
+      "download": "تنزيل",
+      "empty": "لا توجد تقارير",
+      "generateReport": "إنشاء تقرير",
+      "searchPlaceholder": "ابحث في التقارير",
+      "subtitle": "إنشاء ومراجعة التقارير",
+      "title": "التقارير"
+    },
+    "sections": {
+      "activeSignals": "الإشارات النشطة",
+      "intelligenceNodes": "عُقد الذكاء",
+      "strategicControls": "عناصر تحكم استراتيجية"
+    },
+    "settings": {
+      "calibrating": "جارٍ المعايرة...",
+      "notificationIntelligence": {
+        "criticalEscalation": "تصعيد حرج",
+        "criticalEscalationDesc": "تنبيهات التصعيد للحالات الحرجة",
+        "maintenanceDispatch": "إرسال للصيانة",
+        "maintenanceDispatchDesc": "إشعار فرق الصيانة بالمشكلات",
+        "qualityAbnormalities": "انحرافات الجودة",
+        "qualityAbnormalitiesDesc": "تنبيهات حالات عدم المطابقة",
+        "subtitle": "إشعارات ذكية",
+        "title": "إشعارات أندون"
+      },
+      "protocolChannels": {
+        "mobileSmsGateway": "بوابة الرسائل النصية للجوال",
+        "mobileSmsGatewayDesc": "إرسال التنبيهات عبر الرسائل النصية",
+        "osIntelligencePush": "إشعارات النظام الذكية",
+        "osIntelligencePushDesc": "إشعارات فورية من النظام",
+        "subtitle": "قنوات البروتوكول",
+        "title": "قنوات الإشعار",
+        "visualCommandMesh": "شبكة الأوامر المرئية",
+        "visualCommandMeshDesc": "عرض التنبيهات على اللوحات المرئية"
+      },
+      "saveConfiguration": "حفظ تكوين",
+      "subtitle": "إعدادات أندون",
+      "title": "إعدادات أندون"
+    },
+    "station": "المحطة: أندون-٠١",
+    "stationPrefix": "المحطة:",
+    "stats": {
+      "activeNodes": "العُقد النشطة",
+      "activeSignals": "الإشارات النشطة",
+      "meanResponse": "متوسط الاستجابة",
+      "operationalPulse": "نبض التشغيل",
+      "protocolVelocity": "سرعة البروتوكول",
+      "resolvedNodes": "العُقد المُعالجة",
+      "totalCycles": "إجمالي الدورات"
+    },
+    "workCenter": {
+      "oeePulse": "نبضة الكفاءة الإجمالية للمعدات"
+    }
   },
   "auth": {
-    "login": "تسجيل الدخول",
-    "logout": "تسجيل الخروج",
-    "signIn": "دخول",
-    "signUp": "إنشاء حساب",
-    "signOut": "خروج",
-    "email": "البريد الإلكتروني",
-    "password": "كلمة المرور",
-    "confirmPassword": "تأكيد كلمة المرور",
-    "forgotPassword": "نسيت؟",
-    "resetPassword": "إعادة تعيين كلمة المرور",
-    "changePassword": "تغيير كلمة المرور",
-    "currentPassword": "كلمة المرور الحالية",
-    "newPassword": "كلمة المرور الجديدة",
-    "rememberMe": "تذكرني",
-    "stayLoggedIn": "البقاء متصلاً",
-    "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
     "accountLocked": "الحساب مغلق. يرجى الاتصال بالدعم.",
-    "sessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
-    "welcomeBack": "مرحباً بعودتك",
-    "loginSubtitle": "أدخل بيانات الاعتماد للوصول إلى مركز القيادة",
+    "alreadyHaveAccount": "لديك حساب بالفعل؟",
     "authenticating": "جاري التحقق...",
-    "secureAccess": "وصول آمن",
-    "needAccess": "هل تحتاج إلى وصول؟",
-    "contactAdmin": "اتصل بالمسؤول",
-    "verificationSent": "تم إرسال التحقق",
-    "instructionsDispatched": "تم إرسال التعليمات إلى",
     "backToSignIn": "العودة لتسجيل الدخول",
-    "resetAccess": "إعادة تعيين الوصول",
-    "enterEmailForRecovery": "أدخل بريدك الإلكتروني لتلقي تعليمات الاسترداد",
-    "resetEmailFailed": "فشل في إرسال بريد إعادة التعيين",
+    "changePassword": "تغيير كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "contactAdmin": "اتصل بالمسؤول",
+    "createAccount": "إنشاء حساب",
+    "currentPassword": "كلمة المرور الحالية",
     "dispatching": "جاري الإرسال...",
-    "sendInstructions": "إرسال التعليمات",
-    "returnToSignIn": "العودة لتسجيل الدخول",
-    "requestAccessSubtitle": "طلب الوصول إلى منصة Sensei OS",
+    "dontHaveAccount": "ليس لديك حساب؟",
+    "email": "البريد الإلكتروني",
+    "enterCode": "أدخل رمز التحقق",
+    "enterEmailForRecovery": "أدخل بريدك الإلكتروني لتلقي تعليمات الاسترداد",
+    "forgotPassword": "نسيت؟",
+    "instructionsDispatched": "تم إرسال التعليمات إلى",
+    "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+    "login": "تسجيل الدخول",
+    "loginSubtitle": "أدخل بيانات الاعتماد للوصول إلى مركز القيادة",
+    "logout": "تسجيل الخروج",
+    "needAccess": "هل تحتاج إلى وصول؟",
+    "newPassword": "كلمة المرور الجديدة",
+    "password": "كلمة المرور",
     "passwordRequirements": "حد أدنى 8 أحرف مع تعقيد مؤسسي",
     "processing": "جاري المعالجة...",
+    "rememberMe": "تذكرني",
     "requestAccess": "طلب الوصول",
-    "createAccount": "إنشاء حساب",
-    "alreadyHaveAccount": "لديك حساب بالفعل؟",
-    "dontHaveAccount": "ليس لديك حساب؟",
+    "requestAccessSubtitle": "طلب الوصول إلى منصة سينسي",
+    "resetAccess": "إعادة تعيين الوصول",
+    "resetEmailFailed": "فشل في إرسال بريد إعادة التعيين",
+    "resetPassword": "إعادة تعيين كلمة المرور",
+    "returnToSignIn": "العودة لتسجيل الدخول",
+    "secureAccess": "وصول آمن",
+    "sendInstructions": "إرسال التعليمات",
+    "sessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
+    "signIn": "دخول",
+    "signOut": "خروج",
+    "signUp": "إنشاء حساب",
+    "stayLoggedIn": "البقاء متصلاً",
     "termsAgreement": "بالتسجيل، فإنك توافق على شروط الخدمة وسياسة الخصوصية",
     "twoFactorAuth": "التحقق بخطوتين",
-    "enterCode": "أدخل رمز التحقق",
-    "verifyIdentity": "تحقق من هويتك"
+    "verificationSent": "تم إرسال التحقق",
+    "verifyIdentity": "تحقق من هويتك",
+    "welcomeBack": "مرحباً بعودتك"
+  },
+  "common": {
+    "abort": "إلغاء",
+    "abortProtocol": "إلغاء البروتوكول",
+    "actions": {
+      "_value": "الإجراءات",
+      "analyze": "تحليل"
+    },
+    "activate": "تفعيل",
+    "active": "نشط",
+    "activeUsers": "المستخدمون النشطون",
+    "activity": "النشاط",
+    "actual": "فعلي",
+    "add": "إضافة",
+    "adjustFilters": "اضبط عوامل التصفية",
+    "advanced": "متقدم",
+    "all": "الكل",
+    "allCategories": "كل الفئات",
+    "allDepartments": "كل الأقسام",
+    "allStatus": "كل الحالات",
+    "amount": "المبلغ",
+    "approve": "موافقة",
+    "approved": "موافق عليه",
+    "archive": "أرشفة",
+    "asset": "أصل",
+    "assigned": "مُسند",
+    "assignedTo": "مُسند إلى",
+    "attachments": "المرفقات",
+    "back": "رجوع",
+    "beginner": "مبتدئ",
+    "blocked": "محظور",
+    "board": "لوحة",
+    "cancel": "إلغاء",
+    "cancelled": "ملغى",
+    "category": "الفئة",
+    "clear": "مسح",
+    "close": "إغلاق",
+    "completed": "مكتمل",
+    "confirm": "تأكيد",
+    "copy": "نسخ",
+    "create": "إنشاء",
+    "created": "تم الإنشاء",
+    "creating": "جارٍ الإنشاء",
+    "critical": "حرج",
+    "customer": "عميل",
+    "dashboard": "لوحة التحكم",
+    "date": "التاريخ",
+    "days": "أيام",
+    "deactivate": "تعطيل",
+    "delete": "حذف",
+    "description": "الوصف",
+    "deselectAll": "إلغاء تحديد الكل",
+    "detailedIntelligence": "معلومات تفصيلية",
+    "details": "التفاصيل",
+    "disabled": "معطّل",
+    "discard": "تجاهل",
+    "discontinued": "متوقف",
+    "discount": "خصم",
+    "download": "تنزيل",
+    "draft": "مسودة",
+    "due": "مستحق",
+    "dueDate": "تاريخ الاستحقاق",
+    "duplicate": "تكرار",
+    "duration": "المدة",
+    "edit": "تعديل",
+    "enabled": "مفعّل",
+    "enrolled": "مسجّل",
+    "error": "خطأ",
+    "escalated": "تم التصعيد",
+    "execute": "تنفيذ",
+    "expert": "خبير",
+    "export": "تصدير",
+    "exportIntel": "تصدير المعلومات",
+    "filter": "تصفية",
+    "filterByStatus": "تصفية بواسطة الحالة",
+    "filters": "عوامل التصفية",
+    "grid": "شبكة",
+    "high": "عالٍ",
+    "history": "السجل",
+    "import": "استيراد",
+    "inProgress": "قيد التنفيذ",
+    "inactive": "غير نشط",
+    "info": "معلومات",
+    "initializing": "جارٍ التهيئة",
+    "instructor": "مدرّس",
+    "intermediate": "متوسط",
+    "list": "قائمة",
+    "loading": "جارٍ التحميل...",
+    "low": "منخفض",
+    "medium": "متوسط",
+    "na": "غير متاح",
+    "name": "الاسم",
+    "new": "جديد",
+    "next": "التالي",
+    "no": "لا",
+    "noData": "لا توجد بيانات",
+    "noResults": "لم يتم العثور على نتائج",
+    "none": "لا شيء",
+    "notClassified": "غير مصنّف",
+    "notSpecified": "غير محدد",
+    "notStarted": "لم يبدأ",
+    "old": "قديم",
+    "onHold": "معلق",
+    "operations": "العمليات",
+    "optional": "اختياري",
+    "other": "أخرى",
+    "overdue": "متأخر",
+    "paste": "لصق",
+    "pending": "قيد الانتظار",
+    "previous": "السابق",
+    "price": "السعر",
+    "print": "طباعة",
+    "priority": {
+      "_value": "الأولوية",
+      "critical": "حرج",
+      "high": "عالية",
+      "label": "الأولوية",
+      "low": "منخفضة",
+      "medium": "متوسطة",
+      "normal": "عادية",
+      "urgent": "عاجل"
+    },
+    "priorityLayer": "طبقة الأولوية",
+    "private": "خاص",
+    "projectCreated": "مشروع تم الإنشاء",
+    "public": "عام",
+    "published": "منشور",
+    "qty": "الكمية",
+    "quality": "الجودة",
+    "quantity": "الكمية",
+    "received": "تم الاستلام",
+    "refresh": "تحديث",
+    "reject": "رفض",
+    "rejected": "مرفوض",
+    "remove": "إزالة",
+    "required": "مطلوب",
+    "reset": "إعادة تعيين",
+    "restore": "استعادة",
+    "save": "حفظ",
+    "saving": "جارٍ الحفظ",
+    "scheduled": "مجدول",
+    "search": "بحث",
+    "seeAll": "عرض الكل",
+    "select": "اختيار",
+    "selectAll": "تحديد الكل",
+    "settings": "الإعدادات",
+    "showLess": "عرض أقل",
+    "showMore": "عرض المزيد",
+    "status": {
+      "_label": "الحالة",
+      "_value": "الحالة",
+      "allSystemsOperational": "جميع الأنظمة تعمل بشكل طبيعي",
+      "complete": "مكتمل",
+      "criticalAlert": "تنبيه حرج",
+      "error": "خطأ",
+      "idle": "خامل",
+      "minorIssuesDetected": "تم اكتشاف مشكلات بسيطة",
+      "processing": "جارٍ المعالجة",
+      "syncing": "جارٍ المزامنة",
+      "systemOffline": "النظام غير متصل"
+    },
+    "submit": "إرسال",
+    "subtotal": "المجموع الفرعي",
+    "success": "نجاح",
+    "synchronizing": "جارٍ المزامنة",
+    "target": "الهدف",
+    "task": "مهمة",
+    "tax": "ضريبة",
+    "temporalHorizon": "الأفق الزمني",
+    "time": "الوقت",
+    "title": "العنوان",
+    "total": "المجموع",
+    "trend": "اتجاه",
+    "tryAgain": "حاول مرة أخرى",
+    "type": "النوع",
+    "unassigned": "غير مُسند",
+    "unknown": "غير معروف",
+    "unknownProduct": "منتج غير معروف",
+    "unread": "غير مقروء",
+    "update": "تحديث",
+    "upload": "رفع",
+    "urgent": "عاجل",
+    "version": "الإصدار",
+    "view": "عرض",
+    "viewAll": "عرض الكل",
+    "viewDetails": "عرض التفاصيل",
+    "warning": "تحذير",
+    "yes": "نعم"
+  },
+  "components": {
+    "factoryFloor": {
+      "machineStatus": {
+        "maintenanceRequired": "مطلوب صيانة",
+        "productionIssue": "مشكلة إنتاج",
+        "qualityAlert": "تنبيه جودة",
+        "safetyAlert": "تنبيه سلامة"
+      }
+    }
+  },
+  "confirmations": {
+    "archiveDescription": "سيتم نقل {item} إلى الأرشيف.",
+    "archiveTitle": "أرشفة {item}؟",
+    "deleteDescription": "لا يمكن التراجع عن هذا الإجراء. سيتم حذف {item} نهائياً.",
+    "deleteTitle": "حذف {item}؟",
+    "discardDescription": "لديك تغييرات غير محفوظة. هل أنت متأكد من تجاهلها؟",
+    "discardTitle": "تجاهل التغييرات؟",
+    "logoutDescription": "سيتم تسجيل خروجك من حسابك.",
+    "logoutTitle": "تسجيل الخروج؟",
+    "restoreDescription": "سيتم استعادة {item} من الأرشيف.",
+    "restoreTitle": "استعادة {item}؟"
+  },
+  "errors": {
+    "badRequest": "طلب غير صالح. يرجى التحقق من إدخالاتك.",
+    "conflict": "تم تعديل هذا المورد بواسطة مستخدم آخر.",
+    "forbidden": "تم رفض الوصول.",
+    "networkError": "خطأ في الشبكة. يرجى التحقق من اتصالك.",
+    "notFound": "لم يتم العثور على المورد المطلوب.",
+    "permissionDenied": "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
+    "rateLimitExceeded": "طلبات كثيرة جداً. يرجى الانتظار قليلاً.",
+    "serverError": "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.",
+    "serviceUnavailable": "الخدمة غير متاحة مؤقتاً. يرجى المحاولة لاحقاً.",
+    "sessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
+    "timeout": "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+    "unauthorized": "يجب تسجيل الدخول لتنفيذ هذا الإجراء.",
+    "unknown": "حدث خطأ غير معروف.",
+    "validationError": "يرجى التحقق من إدخالاتك والمحاولة مرة أخرى."
+  },
+  "forms": {
+    "addMore": "إضافة المزيد",
+    "attachFile": "إرفاق ملف",
+    "cancel": "إلغاء",
+    "dragDropFile": "اسحب وأفلت الملفات هنا أو انقر للاستعراض",
+    "fullName": "الاسم الكامل",
+    "fullNamePlaceholder": "أحمد محمد",
+    "optionalFields": "الحقول الاختيارية",
+    "removeFile": "إزالة الملف",
+    "removeItem": "حذف العنصر",
+    "requiredFields": "الحقول المطلوبة",
+    "reset": "إعادة تعيين النموذج",
+    "saveChanges": "حفظ التغييرات",
+    "saveDraft": "حفظ كمسودة",
+    "selectDate": "اختر التاريخ",
+    "selectOption": "اختر خياراً",
+    "selectTime": "اختر الوقت",
+    "submit": "إرسال",
+    "typeToSearch": "اكتب للبحث..."
+  },
+  "meta": {
+    "locale": "ar",
+    "name": "العربية",
+    "nativeName": "العربية",
+    "flag": "🇸🇦",
+    "direction": "rtl"
+  },
+  "modules": {
+    "finance": {
+      "accounting": "المحاسبة",
+      "budgets": "الميزانيات",
+      "expenses": "المصروفات",
+      "invoices": "الفواتير",
+      "ledger": "دفتر الأستاذ",
+      "payments": "المدفوعات",
+      "reports": "التقارير",
+      "taxes": "الضرائب",
+      "title": "المالية"
+    },
+    "hr": {
+      "attendance": "الحضور",
+      "benefits": "المزايا",
+      "employees": "الموظفون",
+      "leave": "الإجازات",
+      "payroll": "الرواتب",
+      "performance": "الأداء",
+      "recruitment": "التوظيف",
+      "title": "الموارد البشرية",
+      "training": "التدريب"
+    },
+    "inventory": {
+      "adjustment": "التعديل",
+      "count": "الجرد الدوري",
+      "receiving": "الاستلام",
+      "reorder": "إعادة الطلب",
+      "shipping": "الشحن",
+      "stock": "المخزون",
+      "title": "المخزون",
+      "transfer": "النقل",
+      "warehouse": "المستودع"
+    },
+    "maintenance": {
+      "assets": "الأصول",
+      "corrective": "التصحيحية",
+      "mtbf": "متوسط الوقت بين الأعطال",
+      "mttr": "متوسط وقت الإصلاح",
+      "parts": "قطع الغيار",
+      "preventive": "الوقائية",
+      "schedule": "الجدول",
+      "title": "الصيانة",
+      "vendors": "الموردون",
+      "workOrders": "أوامر العمل"
+    },
+    "production": {
+      "capacity": "الطاقة الإنتاجية",
+      "downtime": "وقت التوقف",
+      "efficiency": "الكفاءة",
+      "output": "المخرجات",
+      "scheduling": "الجدولة",
+      "scrap": "الفاقد",
+      "title": "الإنتاج",
+      "workOrders": "أوامر العمل",
+      "yield": "العائد"
+    },
+    "purchase": {
+      "mrp": "تخطيط موارد المواد",
+      "orders": "أوامر الشراء",
+      "receiving": "الاستلام",
+      "requisitions": "طلبات الشراء",
+      "returns": "المرتجعات",
+      "sourcing": "التوريد",
+      "suppliers": "الموردون",
+      "title": "المشتريات"
+    },
+    "quality": {
+      "audit": "المراجعة",
+      "capa": "الإجراءات التصحيحية والوقائية",
+      "certifications": "الشهادات",
+      "compliance": "الامتثال",
+      "defects": "العيوب",
+      "inspections": "الفحوصات",
+      "ncr": "تقارير عدم المطابقة",
+      "passRate": "معدل النجاح",
+      "title": "الجودة"
+    },
+    "sales": {
+      "forecast": "التوقعات",
+      "leads": "العملاء المحتملون",
+      "lost": "خاسرة",
+      "newDeal": "صفقة جديدة",
+      "opportunities": "الفرص",
+      "pipeline": "خط الأنابيب",
+      "quota": "الحصة",
+      "revenue": "الإيرادات",
+      "rfqs": "طلبات عروض الأسعار",
+      "title": "المبيعات",
+      "won": "مكسوبة"
+    }
   },
   "navigation": {
+    "a3Reports": "تقارير آ٣",
+    "accounting": "المحاسبة",
+    "analytics": "التحليلات",
+    "andon": "أندون",
+    "auditor": "المراجعة",
+    "ctqTracking": "تتبع نقاط الجودة الحرجة",
+    "customers": "العملاء",
     "dashboard": "لوحة القيادة",
     "dashboards": "لوحات القيادة",
-    "today": "اليوم",
-    "tasks": "المهام",
+    "exceptions": "الاستثناءات",
     "executive": "الإدارة التنفيذية",
-    "analytics": "التحليلات",
+    "finance": "المالية",
+    "help": "المساعدة",
+    "home": "الرئيسية",
     "hr": "الموارد البشرية",
     "it": "تقنية المعلومات",
-    "warehouse": "المستودع",
-    "auditor": "المراجعة",
-    "salesCRM": "المبيعات وإدارة العملاء",
-    "salesOverview": "نظرة عامة على المبيعات",
-    "pipeline": "خط الأنابيب",
-    "quotes": "عروض الأسعار",
-    "customers": "العملاء",
+    "maintenance": "الصيانة",
+    "menu": "القائمة",
+    "notifications": "الإشعارات",
+    "obeya": "أوبيا",
     "operations": "العمليات",
     "opsOverview": "نظرة عامة على العمليات",
+    "pipeline": "خط الأنابيب",
     "production": "الإنتاج",
-    "projects": "المشاريع",
     "products": "المنتجات",
-    "obeya": "أوبيا",
-    "a3Reports": "تقارير A3",
-    "ctqTracking": "تتبع CTQ",
-    "exceptions": "الاستثناءات",
-    "qualitySupport": "الجودة والدعم",
-    "quality": "الجودة",
-    "andon": "أندون",
-    "maintenance": "الصيانة",
-    "supplyChain": "سلسلة التوريد",
+    "profile": "الملف الشخصي",
+    "projects": "المشاريع",
     "purchase": "المشتريات",
+    "quality": "الجودة",
+    "qualitySupport": "الجودة والدعم",
+    "quotes": "عروض الأسعار",
+    "salesCRM": "المبيعات وإدارة العملاء",
+    "salesOverview": "نظرة عامة على المبيعات",
+    "search": "بحث",
+    "settings": "الإعدادات",
+    "supplyChain": "سلسلة التوريد",
+    "tasks": "المهام",
+    "taxCompliance": "الامتثال الضريبي",
+    "today": "اليوم",
     "training": "التدريب",
     "trainingMatrix": "مصفوفة التدريب",
-    "accounting": "المحاسبة",
-    "taxCompliance": "الامتثال الضريبي",
-    "finance": "المالية",
-    "settings": "الإعدادات",
-    "help": "المساعدة",
-    "profile": "الملف الشخصي",
-    "notifications": "الإشعارات",
-    "search": "بحث",
-    "menu": "القائمة",
-    "home": "الرئيسية"
+    "warehouse": "المستودع"
+  },
+  "notifications": {
+    "clearAll": "مسح الكل",
+    "loadMore": "تحميل المزيد",
+    "markAllRead": "تعليم الكل كمقروء",
+    "newNotification": "إشعار جديد",
+    "noNotifications": "لا توجد إشعارات",
+    "title": "الإشعارات"
+  },
+  "pages": {
+    "a3": {
+      "actions": {
+        "delete": "حذف",
+        "edit": "تعديل",
+        "escalate": "تصعيد للإدارة",
+        "newA3": "تقرير آ٣ جديد",
+        "view": "عرض الحل"
+      },
+      "empty": {
+        "subtitle": "عدّل المعلمات أو ابدأ بروتوكول حل جديد",
+        "title": "لا توجد بروتوكولات آ٣"
+      },
+      "exportIntel": "تصدير المعلومات",
+      "filters": {
+        "active": "نشط",
+        "allStatuses": "كل الحالات",
+        "allTypes": "كل الأنواع",
+        "closed": "مغلق",
+        "draft": "مسودة",
+        "inReview": "قيد المراجعة",
+        "kaizen": "كايزن",
+        "problemSolving": "حل المشكلات",
+        "processImprovement": "تحسين العمليات"
+      },
+      "initializeResolution": "تهيئة الحل",
+      "search": {
+        "placeholder": "ابحث في بروتوكولات آ٣..."
+      },
+      "sections": {
+        "background": "الخلفية",
+        "countermeasures": "الإجراءات المضادة",
+        "currentCondition": "الوضع الحالي",
+        "followUp": "المتابعة",
+        "goal": "الهدف",
+        "rootCause": "السبب الجذري"
+      },
+      "stats": {
+        "activeA3s": "تقارير آ٣ النشطة",
+        "activeProtocols": "البروتوكولات النشطة",
+        "aggregatedRegistry": "السجل المجمّع",
+        "avgResolutionTime": "متوسط وقت الحل",
+        "closedThisMonth": "مغلقة هذا الشهر",
+        "executionPulse": "نبض التنفيذ",
+        "horizonOverdue": "تجاوز الأفق الزمني",
+        "inReview": "قيد المراجعة",
+        "pendingApprovals": "موافقات معلّقة",
+        "queueGates": "بوابات الانتظار",
+        "thresholdExceptions": "استثناءات العتبة",
+        "totalNodes": "إجمالي عُقد آ٣"
+      },
+      "subtitle": "حل المشكلات المنظم والتحسين المستمر عبر الوظائف",
+      "table": {
+        "author": "المؤلف",
+        "identifier": "معرّف آ٣",
+        "priority": "الأولوية",
+        "progressKpi": "مؤشر تقدم الأداء",
+        "protocolType": "نوع البروتوكول",
+        "resolutionTitle": "عنوان الحل",
+        "statusNode": "حالة العقدة",
+        "targetHorizon": "الأفق المستهدف"
+      },
+      "title": "الحلول الاستراتيجية آ٣",
+      "toast": {
+        "deleted": "تم حذف تقرير آ٣",
+        "deletedDescription": "تم حذف تقرير آ٣ بنجاح.",
+        "escalated": "تم تصعيد تقرير آ٣",
+        "escalatedDescription": "تم تصعيد التقرير إلى الإدارة للمراجعة."
+      }
+    },
+    "admin": {
+      "approvals": {
+        "actions": {
+          "delete": "حذف",
+          "duplicate": "تكرار",
+          "edit": "تعديل"
+        },
+        "description": "تكوين سلاسل الموافقة ومستويات التفويض",
+        "initializeWorkflow": "تهيئة سير العمل",
+        "table": {
+          "approvers": "الموافقون",
+          "escalation": "التصعيد",
+          "scope": "النطاق",
+          "status": "الحالة",
+          "threshold": "الحد",
+          "workflowId": "معرّف سير العمل",
+          "workflowName": "اسم سير العمل"
+        },
+        "title": "سير عمل الموافقات"
+      },
+      "audit": {
+        "description": "سجلات تدقيق النظام وتتبع الامتثال",
+        "empty": "لا توجد سجلات تدقيق",
+        "table": {
+          "action": "الإجراء",
+          "details": "التفاصيل",
+          "ip": "عنوان الإنترنت",
+          "resource": "المورد",
+          "timestamp": "الطابع الزمني",
+          "user": "مستخدم"
+        },
+        "title": "سجل التدقيق"
+      },
+      "coreConfigSynced": "تمت مزامنة الإعدادات الأساسية",
+      "features": {
+        "categories": {
+          "core": "الوحدات الأساسية",
+          "integrations": "التكاملات",
+          "mlCapabilities": "قدرات التعلم الآلي"
+        },
+        "description": "تمكين أو تعطيل ميزات النظام",
+        "title": "إدارة الميزات"
+      },
+      "gates": {
+        "actions": {
+          "delete": "حذف",
+          "edit": "تعديل",
+          "moveDown": "تحريك لأسفل",
+          "moveUp": "تحريك لأعلى"
+        },
+        "description": "تكوين نقاط فحص الجودة",
+        "initializeGate": "تهيئة بوابة",
+        "table": {
+          "approvalLevel": "مستوى الموافقة",
+          "checkpoints": "نقاط الفحص",
+          "gateId": "معرّف البوابة",
+          "gateName": "اسم البوابة",
+          "order": "الترتيب",
+          "slaHours": "ساعات اتفاقية مستوى الخدمة",
+          "status": "الحالة"
+        },
+        "title": "بوابات الجودة"
+      },
+      "learning": {
+        "actions": {
+          "delete": "حذف",
+          "duplicate": "تكرار",
+          "edit": "تعديل"
+        },
+        "badge": {
+          "mandatory": "إلزامي",
+          "optional": "اختياري"
+        },
+        "description": "تكوين متطلبات التدريب والشهادات",
+        "initializeCadence": "تهيئة الإيقاع",
+        "table": {
+          "compliance": "الامتثال",
+          "duration": "المدة",
+          "frequency": "التكرار",
+          "moduleId": "معرّف الوحدة",
+          "moduleName": "اسم الوحدة",
+          "status": "الحالة",
+          "targetRoles": "الأدوار المستهدفة"
+        },
+        "title": "إعدادات التعلم"
+      },
+      "lineage": {
+        "description": "تتبع تدفق البيانات والتبعيات",
+        "loadGraph": "تحميل الرسم البياني",
+        "syncing": "جارٍ المزامنة...",
+        "title": "سلسلة نسب البيانات"
+      },
+      "roles": {
+        "actions": {
+          "delete": "حذف",
+          "edit": "تعديل",
+          "manageUsers": "إدارة المستخدمين"
+        },
+        "auth": {
+          "admin": "مسؤول",
+          "read": "قراءة",
+          "write": "كتابة"
+        },
+        "description": "تعريف أدوار المستخدمين والصلاحيات",
+        "initializeRole": "تهيئة دور",
+        "table": {
+          "authLevel": "مستوى الصلاحية",
+          "permissions": "الصلاحيات",
+          "roleId": "معرّف الدور",
+          "roleName": "اسم الدور",
+          "status": "الحالة",
+          "users": "المستخدمون"
+        },
+        "title": "إدارة الأدوار"
+      },
+      "saveConfiguration": "حفظ تكوين",
+      "security": {
+        "commitPolicies": "سياسات الالتزام",
+        "downloadManifest": "تنزيل البيان",
+        "hardening": {
+          "description": "إعدادات أمان متقدمة",
+          "title": "تعزيز الأمان"
+        },
+        "sso": {
+          "description": "إعدادات تسجيل الدخول الموحّد",
+          "title": "إعدادات تسجيل الدخول الموحّد"
+        }
+      },
+      "status": {
+        "active": "نشط",
+        "inactive": "غير نشط"
+      },
+      "subtitle": "إدارة النظام والتكوين",
+      "tabs": {
+        "accessLayers": "طبقات الوصول",
+        "approvalSync": "مزامنة الموافقات",
+        "dataLineage": "سلسلة نسب البيانات",
+        "docTemplates": "قوالب المستندات",
+        "featureNodes": "عُقد الميزات",
+        "hardening": "تعزيز الأمان",
+        "learningCadence": "إيقاع التعلم",
+        "qualityGates": "بوابات الجودة",
+        "systemLogs": "سجلات النظام"
+      },
+      "templates": {
+        "description": "إدارة قوالب المستندات",
+        "initializeTemplate": "تهيئة قالب",
+        "title": "قوالب المستندات"
+      },
+      "title": "الإدارة"
+    },
+    "analytics": {
+      "alpha": "ألفا",
+      "crossGateFlow": "التدفق عبر البوابات",
+      "exportIntel": "تصدير الاستخبارات",
+      "gateAnalytics": "تحليلات البوابة",
+      "highImpact": "تأثير عالٍ",
+      "insights": {
+        "highImpactProtocol": "بروتوكول عالي التأثير",
+        "strategicCountermeasures": "إجراءات مضادة استراتيجية",
+        "synthesizing": "يعمل ذكاء سينسي على توليد عُقد معرفة جديدة..."
+      },
+      "mlInsights": {
+        "actionItems": "الإجراءات المطلوبة",
+        "confidence": "الثقة",
+        "impact": "التأثير",
+        "model": "النموذج",
+        "noInsights": "لا توجد رؤى للتعلم الآلي",
+        "subtitle": "تنبؤات مدعومة بالذكاء الاصطناعي واكتشاف الشذوذ",
+        "title": "رؤى استخبارات التعلم الآلي"
+      },
+      "models": {
+        "accuracy": "الدقة",
+        "f1Score": "درجة إف-١",
+        "intelligence": "ذكاء",
+        "neuralCompute": "تدفق الحوسبة العصبية",
+        "precision": "الإحكام",
+        "recall": "الاستدعاء",
+        "warming": "جارٍ تسخين عناقيد الحوسبة الموزعة للتعلم الآلي..."
+      },
+      "overview": {
+        "baseline": "جارٍ إعداد خط الأساس للبيانات...",
+        "confidenceSignal": "إشارة الثقة",
+        "forecast7d": "توقعات (٧ أيام)",
+        "historicalAvg": "المتوسط التاريخي",
+        "inferencesToday": "استدلالات اليوم",
+        "modelHealth": "صحة النموذج الذاتية",
+        "modelHealthDesc": "مراقبة آنية لموثوقية الاستدلال",
+        "modelNode": "عقدة النموذج",
+        "noInsights": "لا توجد رؤى ذات أولوية حالياً. أداء المؤسسة ضمن الحدود المثلى.",
+        "predictiveMetrics": "تدرجات المقاييس التنبؤية",
+        "predictiveMetricsDesc": "المسار الحالي مقابل النتائج المتوقعة بالذكاء الاصطناعي",
+        "reasoning": "ذكاء سينسي يجري الاستدلال...",
+        "senseiActions": "إجراءات مقترحة من سينسي",
+        "strategicIntelFeed": "تغذية المعلومات الاستراتيجية",
+        "strategicIntelFeedDesc": "توجيهات مولدة بالذكاء الاصطناعي تتطلب انتباهاً فورياً",
+        "warmingClusters": "جارٍ تسخين عناقيد الحوسبة للتعلم الآلي..."
+      },
+      "periods": {
+        "24h": "آخر ٢٤ ساعة",
+        "30d": "آخر ٣٠ يوماً",
+        "7d": "آخر ٧ أيام",
+        "90d": "آخر ٩٠ يوماً"
+      },
+      "riskLevels": {
+        "high": "عالٍ",
+        "low": "منخفض",
+        "medium": "متوسط"
+      },
+      "stableGradient": "تدرج مستقر",
+      "station": "المحطة: التحليلات-٠١",
+      "stats": {
+        "healthIndex": "مؤشر الصحة",
+        "insights": "رؤى الذكاء الاصطناعي",
+        "oee": "الفعالية الشاملة للمنظمة",
+        "risk": "المخاطر الاستراتيجية"
+      },
+      "subtitle": "استخبارات تنظيمية موحدة وتحليلات استراتيجية عبر البوابات",
+      "systemHealth": {
+        "accuracy": "الدقة",
+        "activeModels": "نماذج التعلم الآلي النشطة",
+        "degradedState": "حالة متدهورة",
+        "lastTrained": "آخر تدريب",
+        "modelName": "اسم النموذج",
+        "optimalVelocity": "السرعة المثلى",
+        "overallHealth": "درجة الصحة الإجمالية",
+        "status": "الحالة",
+        "subtitle": "أداء النموذج وحالة البنية التحتية",
+        "title": "صحة نظام التعلم الآلي"
+      },
+      "tabs": {
+        "mlInsights": "رؤى التعلم الآلي",
+        "models": "صحة النماذج",
+        "overview": "نظرة عامة",
+        "systemHealth": "صحة النظام",
+        "trends": "الاتجاهات"
+      },
+      "title": "استخبارات النجم الشمالي",
+      "trendAnalysis": "تحليل الاتجاهات",
+      "trends": {
+        "change": "التغيير",
+        "current": "الحالي",
+        "noTrends": "لا توجد بيانات اتجاهات متاحة",
+        "prediction30d": "توقعات ٣٠ يوماً",
+        "prediction7d": "توقعات ٧ أيام",
+        "previous": "السابق",
+        "subtitle": "المقاييس التاريخية والتنبؤات",
+        "title": "اتجاهات الأداء"
+      },
+      "trendsTab": {
+        "currentMagnitude": "الشدة الحالية",
+        "inferenceStream": "تصور تدفق الاستدلال",
+        "projection30d": "توقع 30 يوماً",
+        "projection7d": "توقع 7 أيام",
+        "protocol": "بروتوكول",
+        "temporalModel": "النموذج الزمني ٠٤",
+        "training": "ذكاء سينسي يقوم بتدريب نماذج التنبؤ الزمني..."
+      }
+    },
+    "andon": {
+      "actions": {
+        "analytics": "التحليلات",
+        "enableAlerts": "تفعيل أصوات التنبيه",
+        "muteAlerts": "كتم التنبيهات",
+        "settings": "الإعدادات",
+        "toggleFullscreen": "تبديل وضع ملء الشاشة"
+      },
+      "stats": {
+        "activeSignals": "الإشارات النشطة",
+        "criticalNodes": "العقد الحرجة",
+        "meanResponse": "متوسط الاستجابة",
+        "operationalPulse": "النبض التشغيلي"
+      },
+      "status": {
+        "acknowledged": "تم الإقرار",
+        "active": "نشط",
+        "resolved": "تم الحل"
+      },
+      "subtitle": "المراقبة في الوقت الفعلي وإدارة التنبيهات",
+      "tabs": {
+        "analytics": "التحليلات",
+        "history": "السجل",
+        "live": "مباشر",
+        "settings": "الإعدادات"
+      },
+      "title": "استخبارات أندون"
+    },
+    "auditor": {
+      "actions": {
+        "newAudit": "مراجعة جديدة"
+      },
+      "alphaShift": "+2% انحراف ألفا",
+      "audits": "عمليات التدقيق",
+      "complianceByArea": "الامتثال حسب المجال",
+      "complianceOptimal": "الامتثال الأمثل",
+      "criticalFindings": "نتائج حرجة",
+      "exportIntel": "تصدير المعلومات",
+      "filters": {
+        "allAreas": "جميع المجالات",
+        "allStatuses": "جميع الحالات"
+      },
+      "initializeProtocol": "تهيئة بروتوكول",
+      "openFindings": "نتائج مفتوحة",
+      "optimal": "أمثل",
+      "organizationalComplianceMagnitude": "مستوى امتثال المؤسسة",
+      "recentAudits": "عمليات تدقيق حديثة",
+      "securityProtocol": "بروتوكول الأمان",
+      "station": "المحطة: تدقيق-01",
+      "stats": {
+        "auditMetrics": "تدقيق المقاييس",
+        "auditProtocolsYtd": "بروتوكولات التدقيق (منذ بداية العام)",
+        "complianceScore": "درجة الامتثال الإجمالية",
+        "meanDaysToClosure": "متوسط الأيام للإغلاق",
+        "openFindings": "النتائج المفتوحة",
+        "pendingAudits": "المراجعات المعلقة",
+        "resolutionRate": "معدل الحل",
+        "resolutionVelocity": "سرعة المعالجة",
+        "scheduledProtocols": "بروتوكولات مجدولة",
+        "unresolvedFindings": "نتائج غير محسومة"
+      },
+      "subtitle": "تتبع المراجعات وإدارة النتائج ومراقبة الامتثال",
+      "tabs": {
+        "audits": "المراجعات",
+        "controls": "الضوابط",
+        "dashboard": "لوحة القيادة",
+        "findings": "النتائج"
+      },
+      "thresholdAlignment": "مواءمة العتبة",
+      "title": "استخبارات المراجعة",
+      "upcomingAudits": "عمليات تدقيق قادمة",
+      "verified": "تم التحقق",
+      "viewAllFindings": "عرض كل النتائج",
+      "viewAuditCalendar": "عرض تقويم التدقيق"
+    },
+    "ctq": {
+      "actions": {
+        "delete": "حذف",
+        "edit": "تعديل",
+        "newCtq": "نقطة جودة حرجة جديدة",
+        "retire": "أرشفة",
+        "view": "عرض المواصفة"
+      },
+      "activeSync": "مزامنة نشطة",
+      "adjustParameters": "ضبط المعلمات",
+      "aggregatedLog": "السجل المجمّع",
+      "approvedNodes": "العُقد المعتمدة",
+      "criticalGates": "بوابات حرجة",
+      "exportIntel": "تصدير المعلومات",
+      "filters": {
+        "active": "نشط",
+        "allCategories": "كل الفئات",
+        "allPriorities": "كل الأولويات",
+        "allStatuses": "كل الحالات",
+        "dimensional": "أبعاد",
+        "material": "مواد",
+        "monitoring": "مراقبة",
+        "p1Critical": "أولوية ١ حرجة",
+        "p2High": "أولوية ٢ عالية",
+        "p3Medium": "أولوية ٣ متوسطة",
+        "process": "عمليات",
+        "underReview": "قيد المراجعة"
+      },
+      "initializeCTQ": "تهيئة نقاط الجودة الحرجة",
+      "legacyData": "بيانات قديمة",
+      "meanPassRate": "متوسط معدل النجاح",
+      "measuredToday": "تم قياسها اليوم",
+      "search": {
+        "placeholder": "ابحث في بروتوكولات نقاط الجودة الحرجة..."
+      },
+      "stats": {
+        "activeCtqs": "نقاط الجودة الحرجة النشطة",
+        "capability": "قدرة العملية",
+        "inControl": "تحت السيطرة",
+        "outOfSpec": "خارج المواصفات"
+      },
+      "subtitle": "تتبع نقاط الجودة الحرجة وقدرة العملية",
+      "table": {
+        "capability": "القدرة",
+        "category": "الفئة",
+        "characteristic": "الخاصية",
+        "ctqIdentifier": "معرّف نقطة الجودة الحرجة",
+        "priority": "الأولوية",
+        "specification": "المواصفة",
+        "status": "الحالة"
+      },
+      "title": "استخبارات نقاط الجودة الحرجة",
+      "toast": {
+        "deleted": "تم حذف بروتوكول نقاط الجودة الحرجة",
+        "deletedDescription": "تم حذف بروتوكول نقاط الجودة الحرجة بنجاح.",
+        "retired": "تمت أرشفة بروتوكول نقاط الجودة الحرجة",
+        "retiredDescription": "تمت أرشفة بروتوكول نقاط الجودة الحرجة."
+      },
+      "totalCTQNodes": "إجمالي عُقد نقاط الجودة الحرجة",
+      "zeroCTQProtocols": "لا توجد بروتوكولات نقاط الجودة الحرجة"
+    },
+    "ctqDetail": {
+      "backToCTQs": "العودة إلى نقاط الجودة الحرجة",
+      "exportIntel": "تصدير المعلومات",
+      "latestIntelligence": "آخر المعلومات",
+      "notFound": "غير موجود",
+      "notFoundDescription": "لم يتم العثور على السجل المطلوب.",
+      "passRate": "معدل النجاح",
+      "passed": "ناجح",
+      "performanceTrend": "اتجاه الأداء",
+      "retire": "أرشفة",
+      "synchronizationPulse": "نبضة المزامنة",
+      "totalRecordedSamples": "إجمالي العينات المسجلة",
+      "velocityOverSamples": "السرعة عبر العينات"
+    },
+    "customers": {
+      "actions": {
+        "analyze": "تحليل",
+        "modify": "تعديل",
+        "newCustomer": "عميل جديد"
+      },
+      "detail": {
+        "activate": "تفعيل",
+        "addContact": "إضافة جهة اتصال",
+        "address": "العنوان",
+        "backToCustomers": "العودة إلى العملاء",
+        "companyInfo": "معلومات الشركة",
+        "contacts": "جهات الاتصال",
+        "contactsCount": "عدد جهات الاتصال",
+        "created": "تم الإنشاء",
+        "deactivate": "تعطيل",
+        "deactivateDialog": {
+          "confirm": "تأكيد",
+          "description": "هل أنت متأكد من تعطيل {{name}}؟ لن يظهر بعد الآن في نتائج البحث ولن يكون متاحاً لطلبات عروض الأسعار الجديدة.",
+          "title": "تعطيل العميل؟"
+        },
+        "lastUpdated": "آخر تحديث",
+        "manageContacts": "إدارة جهات الاتصال",
+        "newRfq": "طلب عرض سعر جديد",
+        "notFound": "غير موجود",
+        "notes": "ملاحظات",
+        "primaryBadge": "شارة أساسي",
+        "primaryContact": "جهة الاتصال الأساسية",
+        "recentActivity": "النشاط الأخير",
+        "recentRfqs": "طلبات عروض أسعار حديثة",
+        "recentRfqsDesc": "ملخص لطلبات عروض الأسعار الأخيرة",
+        "stats": {
+          "avgOrder": "متوسط الطلب",
+          "openRfqs": "طلبات عروض أسعار مفتوحة",
+          "totalRevenue": "الإجمالي الإيرادات",
+          "totalRfqs": "إجمالي طلبات عروض الأسعار",
+          "winRate": "معدل الفوز"
+        },
+        "viewAll": "عرض الكل",
+        "viewAllRfqs": "عرض جميع طلبات عروض الأسعار",
+        "website": "الموقع الإلكتروني"
+      },
+      "emptyState": {
+        "description": "ابدأ بإضافة عميل جديد.",
+        "title": "لا توجد عملاء"
+      },
+      "exportIntel": "تصدير المعلومات",
+      "filters": {
+        "active": "نشط",
+        "allIndustries": "كل الصناعات",
+        "allStates": "كل الحالات",
+        "inactive": "غير نشط",
+        "prospect": "محتمل"
+      },
+      "initializeNode": "تهيئة عقدة",
+      "labels": {
+        "revenue": "الإيرادات",
+        "rfqs": "طلبات عروض الأسعار",
+        "winRate": "معدل الفوز"
+      },
+      "metrics": {
+        "revenue": "الإيرادات",
+        "rfqs": "طلبات عروض الأسعار",
+        "winRate": "معدل الفوز"
+      },
+      "new": {
+        "addContact": "إضافة جهة اتصال",
+        "addFirstContact": "إضافة أول جهة اتصال",
+        "address": "العنوان",
+        "city": "المدينة",
+        "companyInfo": "معلومات الشركة",
+        "companyName": "اسم الشركة",
+        "companyNamePlaceholder": "أدخل اسم الشركة",
+        "contact": "جهة اتصال",
+        "contacts": "جهات الاتصال",
+        "contactsDescription": "أضف جهات اتصال لهذا العميل",
+        "country": "البلد",
+        "customerCode": "رمز العميل",
+        "editTitle": "تعديل العميل",
+        "editingDescription": "تعديل {{name}}",
+        "email": "البريد الإلكتروني",
+        "emailPlaceholder": "مثال: مستخدم@مثال.كوم",
+        "fullName": "الاسم الكامل",
+        "fullNamePlaceholder": "أدخل الاسم الكامل",
+        "generate": "توليد",
+        "industry": "الصناعة",
+        "internalNotes": "ملاحظات داخلية",
+        "internalNotesDescription": "ملاحظات للاستخدام الداخلي فقط",
+        "jobTitle": "المسمى الوظيفي",
+        "jobTitlePlaceholder": "مثال: مدير مشتريات",
+        "newDescription": "أدخل تفاصيل العميل",
+        "newTitle": "عميل جديد",
+        "noContacts": "لا توجد جهات اتصال",
+        "notesPlaceholder": "أضف ملاحظات حول هذا العميل...",
+        "phone": "الهاتف",
+        "phonePlaceholder": "مثال: ‎+٩٦٦ ٥٥٥٥٥٥٥٥٥",
+        "postalCode": "الرمز البريدي",
+        "primary": "أساسي",
+        "saveCustomer": "حفظ عميل",
+        "saving": "جارٍ الحفظ",
+        "selectIndustry": "اختر الصناعة",
+        "setAsPrimary": "تعيين كأساسي",
+        "stateProvince": "المنطقة/المحافظة",
+        "status": "الحالة",
+        "streetAddress": "عنوان الشارع",
+        "tip1": "يجب أن يكون رمز العميل فريداً وسهل التذكر",
+        "tip2": "عيّن جهة الاتصال الرئيسية كأساسية",
+        "tip3": "أضف ملاحظات حول المتطلبات أو التفضيلات الخاصة",
+        "tips": "نصائح",
+        "toast": {
+          "customerCreated": "تم إنشاء العميل",
+          "customerUpdated": "تم تحديث العميل",
+          "errorSaving": "خطأ في الحفظ",
+          "fixErrors": "يرجى إصلاح الأخطاء",
+          "tryAgain": "حاول مرة أخرى",
+          "validationError": "خطأ في التحقق"
+        },
+        "validation": {
+          "companyNameRequired": "اسم الشركة مطلوب",
+          "contactEmailRequired": "بريد جهة الاتصال مطلوب",
+          "contactNameRequired": "اسم جهة الاتصال مطلوب",
+          "contactRequired": "جهة الاتصال مطلوبة",
+          "customerCodeRequired": "رمز العميل مطلوب",
+          "industryRequired": "الصناعة مطلوبة"
+        },
+        "website": "الموقع الإلكتروني"
+      },
+      "nodeId": "معرّف العقدة",
+      "searchPlaceholder": "ابحث عن العملاء...",
+      "stats": {
+        "activeNodes": "عقد الاستخبارات النشطة",
+        "aggregatedRevenue": "الإيرادات المجمعة",
+        "conversionRate": "معدل التحويل",
+        "meanConversionPulse": "متوسط نبض التحويل",
+        "prospectivePartners": "شركاء محتملون",
+        "prospects": "الشركاء المحتملون",
+        "revenue": "الإيرادات المجمعة"
+      },
+      "status": {
+        "active": "نشط",
+        "inactive": "غير نشط",
+        "prospect": "محتمل"
+      },
+      "subtitle": "إدارة العلاقات واستخبارات الإيرادات",
+      "table": {
+        "accountIdentifier": "معرّف الحساب",
+        "industryCat": "فئة الصناعة",
+        "locationNode": "عقدة الموقع",
+        "primaryContact": "جهة الاتصال الرئيسية",
+        "rfqs": "طلبات عروض الأسعار",
+        "statusState": "حالة السجل",
+        "totalVal": "إجمالي القيمة",
+        "winKpi": "مؤشر الفوز"
+      },
+      "title": "استخبارات العملاء",
+      "viewModes": {
+        "grid": "شبكة",
+        "table": "جدول"
+      }
+    },
+    "exceptions": {
+      "criticalOpenNodes": "عُقد حرجة مفتوحة",
+      "escalatedNodes": "عُقد مصعّدة",
+      "exportProtocol": "تصدير بروتوكول",
+      "filters": {
+        "allCategories": "كل الفئات",
+        "allSeverities": "كل مستويات الشدة",
+        "allStatuses": "كل الحالات",
+        "critical": "حرج",
+        "delivery": "التسليم",
+        "high": "عالية",
+        "investigating": "قيد التحقيق",
+        "low": "منخفضة",
+        "medium": "متوسطة",
+        "open": "مفتوح",
+        "pending": "قيد الانتظار",
+        "process": "عمليات",
+        "quality": "الجودة",
+        "resolved": "محلول",
+        "safety": "السلامة"
+      },
+      "highUrgencyDeviations": "انحرافات عالية الإلحاح",
+      "meanResolution": "متوسط زمن المعالجة",
+      "overdueProtocols": "بروتوكولات متأخرة",
+      "stats": {
+        "critical": "حرجة",
+        "openExceptions": "الاستثناءات المفتوحة",
+        "resolvedToday": "تم حلها اليوم"
+      },
+      "subtitle": "تتبع وحل الاستثناءات التشغيلية",
+      "syncIntel": "مزامنة المعلومات",
+      "table": {
+        "categoryNode": "فئة الاستثناء",
+        "descriptionProtocol": "وصف الاستثناء",
+        "horizon": "الأفق",
+        "ownerSync": "المالك",
+        "pulseDetection": "نبض الاكتشاف",
+        "severity": "الشدة",
+        "statusNode": "الحالة",
+        "title": "سجل الاستثناءات"
+      },
+      "tabs": {
+        "all": "الكل",
+        "process": "عمليات",
+        "quality": "الجودة",
+        "safety": "السلامة"
+      },
+      "title": "إدارة الاستثناءات"
+    },
+    "executive": {
+      "aggregatingMetrics": "جارٍ تجميع المقاييس",
+      "allSystemsNominal": "جميع الأنظمة ضمن الوضع الطبيعي",
+      "anomaliesDetected": "تم رصد شذوذات",
+      "exportIntelligence": "تصدير المعلومات",
+      "kpi": {
+        "activeAnomalies": "شذوذات نشطة",
+        "activeGateBlocks": "حواجز بوابة نشطة",
+        "alphaTrend": "اتجاه ألفا",
+        "capaSyncActive": "مزامنة الإجراءات التصحيحية والوقائية نشطة",
+        "openResolutions": "معالجات مفتوحة",
+        "operationalUptime": "جاهزية التشغيل",
+        "optimalState": "الحالة المثلى",
+        "revenueMtd": "الإيرادات حتى تاريخه"
+      },
+      "monitoringActive": "المراقبة نشطة",
+      "nl2sql": {
+        "commandInput": "إدخال الأوامر",
+        "dataOutput": "مخرجات البيانات",
+        "executeInference": "تنفيذ الاستدلال",
+        "generatedLogic": "منطق مُولّد",
+        "placeholder": "اكتب سؤالك",
+        "protocol": "بروتوكول",
+        "reasoningInProgress": "الاستدلال جارٍ",
+        "senseiReasoning": "استدلال سينسي",
+        "title": "الاستعلام الذكي"
+      },
+      "operationalOverview": "نظرة عامة تشغيلية",
+      "risk": {
+        "analystReasoning": "تحليل المحلل",
+        "burnoutMagnitude": "شدة الاحتراق الوظيفي",
+        "burnoutThreshold": "عتبة الاحتراق الوظيفي",
+        "departmentNode": "عقدة القسم",
+        "deptPlaceholder": "اختر القسم",
+        "employeeIdentity": "هوية الموظف",
+        "executePredictiveModel": "تشغيل النموذج التنبؤي",
+        "namePlaceholder": "أدخل الاسم",
+        "noRiskFactors": "لا توجد عوامل خطر",
+        "overtimeVelocity": "معدل العمل الإضافي",
+        "peerComparisonDelta": "فرق المقارنة مع الأقران",
+        "protocol": "بروتوكول",
+        "retentionIndex": "مؤشر الاحتفاظ",
+        "retentionProtocol": "بروتوكول الاحتفاظ",
+        "riskFactorsIdentified": "عوامل المخاطر المحددة",
+        "scoreConfidence": "موثوقية الدرجة",
+        "skipRateIntel": "استخبارات معدل التجاوز",
+        "tenureProtocol": "بروتوكول مدة الخدمة",
+        "title": "العنوان"
+      },
+      "sections": {
+        "aiStrategist": "الاستراتيجي الذكي",
+        "businessIntel": "استخبارات الأعمال",
+        "strategicKpis": "مؤشرات الأداء الاستراتيجية"
+      },
+      "station": "المحطة",
+      "stats": {
+        "customerSat": "رضا العملاء",
+        "grossMargin": "هامش الربح الإجمالي",
+        "opsHealth": "صحة العمليات",
+        "revenuePulse": "نبض الإيرادات"
+      },
+      "strategicDirectives": {
+        "directive1Desc": "وصف التوجيه ١",
+        "directive1Title": "عنوان التوجيه ١",
+        "directive2Desc": "وصف التوجيه ٢",
+        "directive2Title": "عنوان التوجيه ٢",
+        "priorityAlpha": "الأولوية ألفا",
+        "priorityBeta": "الأولوية بيتا",
+        "title": "العنوان"
+      },
+      "subtitle": "الاستخبارات الاستراتيجية والتحليل التنبؤي وإشراف مركز القيادة",
+      "tabs": {
+        "finance": "المالية",
+        "operations": "العمليات",
+        "overview": "نظرة عامة",
+        "strategist": "الاستراتيجي الذكي"
+      },
+      "title": "مركز القيادة التنفيذية"
+    },
+    "finance": {
+      "allSystemsNominal": "جميع الأنظمة مستقرة",
+      "costDrivers": {
+        "energy": "الطاقة",
+        "impactOnMargin": "الأثر على الهامش",
+        "logistics": "اللوجستيات",
+        "overtime": "العمل الإضافي",
+        "rawMaterials": "المواد الخام",
+        "title": "العنوان"
+      },
+      "costing": {
+        "actualCost": "التكلفة الفعلية",
+        "actualLabor": "العمالة الفعلية",
+        "actualMaterial": "المواد الفعلية",
+        "actualOverhead": "التكاليف غير المباشرة الفعلية",
+        "completedQty": "الكمية المكتملة",
+        "costRollupEntry": "إدخال تجميع التكلفة",
+        "costRollups": "تجميعات التكلفة",
+        "currency": "العملة",
+        "effective": "ساري",
+        "effectiveDate": "تاريخ السريان",
+        "finishedSku": "الصنف النهائي",
+        "laborUnitCost": "تكلفة وحدة العمالة",
+        "materialUnitCost": "تكلفة وحدة المواد",
+        "noRollups": "لا توجد تجميعات تكلفة",
+        "noStandardCosts": "لا توجد تكاليف معيارية",
+        "overheadUnitCost": "تكلفة الوحدة للتكاليف غير المباشرة",
+        "plannedQty": "الكمية المخططة",
+        "recordRollup": "تسجيل التجميع",
+        "relievedCost": "تكلفة التسوية",
+        "saveStandardCost": "حفظ التكلفة المعيارية",
+        "sku": "رمز الصنف",
+        "standardCost": "التكلفة المعيارية",
+        "standardCosts": "التكاليف المعيارية",
+        "subtitle": "تحليل تكلفة المنتج وتحسين الهوامش",
+        "title": "استخبارات التكاليف",
+        "totalUnit": "الإجمالي وحدة",
+        "variance": "الفرق",
+        "varianceAnalysis": "تحليل الفروقات",
+        "varianceLabor": "فرق العمالة",
+        "varianceMaterial": "فرق المواد",
+        "varianceOverhead": "فرق التكاليف غير المباشرة",
+        "varianceTotal": "إجمالي الفرق",
+        "workOrder": "أمر العمل"
+      },
+      "currency": {
+        "addFxRate": "إضافة سعر الصرف",
+        "allowedCurrencies": "العملات المسموح بها",
+        "asOf": "اعتبارًا من",
+        "autoUpdateFxRates": "تحديث أسعار الصرف تلقائيًا",
+        "baseCurrency": "العملة الأساسية",
+        "conversion": "تحويل العملات",
+        "currencyConfiguration": "العملة تكوين",
+        "exchangeRates": "أسعار الصرف",
+        "from": "من",
+        "fxRates": "أسعار الصرف",
+        "fxSource": "مصدر سعر الصرف",
+        "manualPlaceholder": "إدخال يدوي",
+        "noFxRates": "لا توجد أسعار صرف",
+        "pair": "زوج العملات",
+        "rate": "السعر",
+        "reportingCurrency": "عملة التقارير",
+        "saveRate": "حفظ السعر",
+        "saveSettings": "حفظ الإعدادات",
+        "subtitle": "مراقبة أسعار الصرف وإدارة العملات المتعددة",
+        "title": "استخبارات العملات",
+        "to": "إلى"
+      },
+      "exportIntel": "تصدير الاستخبارات",
+      "kpi": {
+        "alpha": "ألفا",
+        "budgetUtilization": "استغلال الميزانية",
+        "delta": "دلتا",
+        "grossMargin": "الهامش الإجمالي",
+        "liquidity": "السيولة",
+        "opex": "المصروفات التشغيلية",
+        "revenue": "الإيرادات"
+      },
+      "ledger": {
+        "accountName": "اسم الحساب",
+        "addAccount": "إضافة الحساب",
+        "balance": "الرصيد",
+        "code": "الرمز",
+        "journalEntries": "القيود اليومية",
+        "loadingAccounts": "جارٍ تحميل الحسابات",
+        "netEquity": "صافي حقوق الملكية",
+        "noAccountsFound": "لم يتم العثور على حسابات",
+        "subtitle": "شجرة الحسابات وإدارة القيود",
+        "title": "استخبارات دفتر الأستاذ العام",
+        "totalAssets": "إجمالي الأصول",
+        "totalLiabilities": "إجمالي الالتزامات",
+        "type": "النوع"
+      },
+      "quarter": "الربع",
+      "revenueByProduct": {
+        "aftermarketServices": "خدمات ما بعد البيع",
+        "assemblySystems": "أنظمة التجميع",
+        "precisionComponents": "مكونات دقيقة",
+        "title": "العنوان"
+      },
+      "sections": {
+        "accountsReceivable": "حسابات القبض",
+        "budgetAnalysis": "تحليل الميزانية",
+        "overview": "نظرة عامة مالية"
+      },
+      "station": "المحطة",
+      "stats": {
+        "cashPosition": "الوضع النقدي",
+        "ebitdaMargin": "هامش الأرباح قبل الفوائد والضرائب والإهلاك والاستهلاك",
+        "outstandingAr": "المستحقات القائمة",
+        "revenueYtd": "إيرادات السنة حتى الآن"
+      },
+      "subtitle": "توقعات الإيرادات والنفقات التشغيلية واستخبارات الهوامش",
+      "tabs": {
+        "budgets": "الميزانيات",
+        "overview": "نظرة عامة",
+        "payables": "المدفوعات",
+        "receivables": "المستحقات"
+      },
+      "tax": {
+        "code": "الرمز",
+        "country": "البلد",
+        "currency": "العملة",
+        "effective": "ساري",
+        "effectiveDate": "تاريخ السريان",
+        "jurisdiction": "الاختصاص",
+        "jurisdictionId": "معرف الاختصاص",
+        "jurisdictions": "الاختصاصات",
+        "name": "الاسم",
+        "noJurisdictions": "لا توجد اختصاصات",
+        "noTaxRates": "لا توجد معدلات ضريبية",
+        "noTransactions": "لا توجد معاملات",
+        "rate": "السعر",
+        "recordTransaction": "تسجيل معاملة",
+        "reference": "المرجع",
+        "referenceId": "معرف المرجع",
+        "referenceType": "نوع المرجع",
+        "region": "المنطقة",
+        "saveJurisdiction": "حفظ الاختصاص",
+        "saveRate": "حفظ السعر",
+        "subtitle": "الامتثال الضريبي والتقارير وإدارة المعدلات",
+        "tax": "ضريبة",
+        "taxAmount": "ضريبة المبلغ",
+        "taxJurisdiction": "اختصاص ضريبي",
+        "taxLiability": "الالتزام الضريبي",
+        "taxRate": "ضريبة السعر",
+        "taxRateId": "معرف معدل الضريبة",
+        "taxRates": "معدلات الضرائب",
+        "taxReports": "التقارير الضريبية",
+        "taxTransactions": "المعاملات الضريبية",
+        "taxType": "ضريبة النوع",
+        "taxable": "خاضع للضريبة",
+        "taxableAmount": "المبلغ الخاضع للضريبة",
+        "title": "استخبارات الضرائب",
+        "transactionLedger": "دفتر المعاملات",
+        "type": "النوع"
+      },
+      "title": "مركز القيادة المالية"
+    },
+    "hr": {
+      "accessTrainingMatrix": "الوصول إلى مصفوفة التدريب",
+      "activeRecruitment": "التوظيف النشط",
+      "capacitySync": "السعة مزامنة",
+      "commitSync": "مزامنة الالتزام",
+      "complianceGates": "بوابات الامتثال",
+      "headcountNode": "عقدة عدد الموظفين",
+      "hrSystemsOnline": "أنظمة الموارد البشرية متصلة",
+      "initializePersonnel": "تهيئة الموظفين",
+      "intelligenceThresholds": "عتبات الذكاء",
+      "nodeDistribution": "توزيع العقد",
+      "nodes": "العقد",
+      "opportunityPulse": "نبض الفرص",
+      "pendingRequests": "الطلبات المعلقة",
+      "reviewAll": "مراجعة الكل",
+      "sections": {
+        "directory": "دليل الموظفين",
+        "orgChart": "الهيكل التنظيمي",
+        "performance": "الأداء"
+      },
+      "station": "المحطة: رأس المال البشري-01",
+      "stats": {
+        "activeHeadcount": "عدد الموظفين النشطين",
+        "avgTenure": "متوسط مدة الخدمة",
+        "openPositions": "الوظائف الشاغرة",
+        "trainingCompliance": "امتثال التدريب"
+      },
+      "strategicAvailability": "الجاهزية الاستراتيجية",
+      "subtitle": "إدارة القوى العاملة والشهادات وسرعة رأس المال البشري",
+      "tabs": {
+        "employees": "الموظفون",
+        "orgChart": "الهيكل التنظيمي",
+        "overview": "نظرة عامة",
+        "performance": "الأداء"
+      },
+      "thisCycle": "هذه الدورة",
+      "thresholdBreaches": "تجاوزات العتبات",
+      "title": "الأفراد والمواهب",
+      "trainingMatrix": "مصفوفة التدريب"
+    },
+    "it": {
+      "active": "نشط",
+      "activeBreach": "خرق نشط",
+      "activeComputeNode": "عقدة حوسبة نشطة",
+      "activeNodes": "عقد نشطة",
+      "activeSockets": "مقابس نشطة",
+      "allSystemsNominal": "جميع الأنظمة مستقرة",
+      "connectedOperatives": "العاملون المتصلون",
+      "connectionsSynced": "تمت مزامنة الاتصالات",
+      "continuousPulseEstablished": "تم إنشاء نبض مستمر",
+      "cpuUtilization": "استخدام المعالج",
+      "diskSaturation": "تشبع القرص",
+      "distributedWafActive": "جدار حماية الويب الموزع نشط",
+      "firewallArchitecture": "بنية جدار الحماية",
+      "globalInfrastructureSynchronized": "تمت مزامنة البنية التحتية العالمية",
+      "intelligenceNodeCluster": "عنقود عقدة الذكاء",
+      "latency": "زمن التأخير",
+      "liveLogs": "سجلات مباشرة",
+      "memoryPulse": "نبض الذاكرة",
+      "messageQueueDegraded": "تدهور صف الرسائل",
+      "refreshSync": "تحديث مزامنة",
+      "resolved": "محلول",
+      "rsaSynchronized": "تمت مزامنة تشفير آر إس إيه 4096 بت",
+      "sections": {
+        "infrastructure": "البنية التحتية",
+        "security": "الأمان",
+        "tickets": "التذاكر"
+      },
+      "securitySyncProtocol": "الأمان مزامنة بروتوكول",
+      "sslCertificate": "شهادة إس إس إل",
+      "stable": "مستقر",
+      "station": "المحطة: قيادة البنية التحتية-01",
+      "stats": {
+        "activeIncidents": "الحوادث النشطة",
+        "pendingChanges": "التغييرات المعلقة",
+        "securityScore": "درجة الأمان",
+        "systemUptime": "وقت تشغيل النظام"
+      },
+      "subtitle": "صحة النظام والأمن ومراقبة سرعة البنية التحتية",
+      "tabs": {
+        "assets": "الأصول",
+        "changes": "التغييرات",
+        "incidents": "الحوادث",
+        "overview": "نظرة عامة"
+      },
+      "telemetryAnomalies": "شذوذات القياس عن بُعد",
+      "title": "مركز قيادة تقنية المعلومات",
+      "trafficUp": "ارتفاع الحركة",
+      "updateSecurityPolicies": "تحديث سياسات الأمان",
+      "uptime": "مدة التشغيل",
+      "validNode": "عقدة صالحة"
+    },
+    "maintenance": {
+      "actions": {
+        "newWorkOrder": "أمر عمل جديد"
+      },
+      "activeCheckouts": "الإعارات النشطة",
+      "activeLocks": "أقفال نشطة",
+      "assetWarranties": "ضمانات الأصول",
+      "equipmentHierarchy": "هرمية المعدات",
+      "fieldReturns": "مرتجعات ميدانية",
+      "initializeAsset": "تهيئة أصل",
+      "loading": "جارٍ التحميل",
+      "loadingAssets": "جارٍ تحميل الأصول",
+      "loadingBudgets": "جارٍ تحميل الميزانيات",
+      "loadingCheckouts": "جارٍ تحميل الإعارات",
+      "loadingFieldReturns": "جارٍ تحميل المرتجعات الميدانية",
+      "loadingLocks": "جارٍ تحميل الأقفال",
+      "loadingProcedures": "جارٍ تحميل الإجراءات",
+      "loadingRoute": "جارٍ تحميل المسار",
+      "loadingSchedules": "جارٍ تحميل الجداول",
+      "loadingTools": "جارٍ تحميل الأدوات",
+      "loadingWarranties": "جارٍ تحميل الضمانات",
+      "loadingWorkOrders": "جارٍ تحميل أوامر العمل",
+      "lotoProcedures": "إجراءات القفل والوسم",
+      "maintenanceBudget": "الصيانة الميزانية",
+      "mobile": {
+        "activeLOTO": "القفل والوسم النشطان",
+        "launchScanner": "تشغيل الماسح",
+        "logDowntime": "سجل وقت التوقف",
+        "openWorkOrders": "مفتوح أوامر العمل",
+        "pmDue": "الصيانة الوقائية المستحقة",
+        "quickIncidentLog": "سجل حادث سريع",
+        "reviewPMs": "مراجعة الصيانة الوقائية",
+        "scanAssetTool": "أداة مسح الأصل",
+        "scanDescription": "وصف المسح",
+        "stopScanner": "إيقاف الماسح",
+        "subtitle": "الوضع المحمول لإدارة الصيانة",
+        "title": "العنوان",
+        "viewLOTO": "عرض القفل والوسم",
+        "viewWorkOrders": "عرض أوامر العمل"
+      },
+      "mobileMode": "وضع الجوال",
+      "noActiveCheckouts": "لا توجد إعارات نشطة",
+      "noActiveLocks": "لا توجد أقفال نشطة",
+      "noAssetHierarchy": "لا توجد هرمية للأصول",
+      "noAssetsFound": "لم يتم العثور على أصول",
+      "noBudgetsFound": "لم يتم العثور على ميزانيات",
+      "noFieldReturnsFound": "لم يتم العثور على مرتجعات ميدانية",
+      "noLotoProceduresFound": "لا توجد إجراءات قفل ووسم",
+      "noPMRouteItems": "لا توجد عناصر لمسار الصيانة الوقائية",
+      "noPMSchedulesFound": "لم يتم العثور على جداول الصيانة الوقائية",
+      "noToolsFound": "لم يتم العثور على أدوات",
+      "noWarrantiesFound": "لم يتم العثور على ضمانات",
+      "noWorkOrdersFound": "لم يتم العثور على أوامر عمل",
+      "optimizedPMRoute": "مسار الصيانة الوقائية المُحسّن",
+      "searchAssets": "البحث عن الأصول",
+      "station": "المحطة: المرافق-01",
+      "stats": {
+        "anomalousDown": "الأعطال الشاذة",
+        "assetNodes": "عقد الأصول",
+        "efficiencyPulse": "نبض الكفاءة",
+        "thresholdOverdue": "تجاوز الحد"
+      },
+      "subtitle": "مراقبة صحة الأصول وأوامر العمل واستخبارات الصيانة التنبؤية",
+      "table": {
+        "actual": "فعلي",
+        "applied": "مطبق",
+        "approval": "اعتماد",
+        "assetNumber": "رقم الأصل",
+        "assignedTo": "مسند إلى",
+        "budget": "الميزانية",
+        "checkedOut": "مُعار",
+        "claims": "مطالبات",
+        "costImpact": "أثر التكلفة",
+        "coverage": "التغطية",
+        "criticality": "الحرجية",
+        "dueBack": "تاريخ الإرجاع",
+        "ends": "ينتهي",
+        "failureMode": "نمط العطل",
+        "frequency": "التكرار",
+        "lastPM": "آخر صيانة وقائية",
+        "lockNumber": "رقم القفل",
+        "nextDue": "الموعد القادم",
+        "period": "الفترة",
+        "qty": "الكمية",
+        "received": "مستلم",
+        "returnNumber": "رقم المرتجع",
+        "tool": "أداة",
+        "toolNumber": "رقم الأداة",
+        "variance": "الفرق",
+        "woNumber": "رقم أمر العمل"
+      },
+      "tabs": {
+        "assets": "الأصول",
+        "budget": "الميزانية",
+        "loto": "القفل والوسم",
+        "pmSchedule": "جدول الصيانة الوقائية",
+        "pmSchedules": "جداول الصيانة الوقائية",
+        "toolCrib": "مستودع الأدوات",
+        "warranty": "الضمان",
+        "workOrders": "أوامر العمل"
+      },
+      "title": "مركز قيادة الصيانة",
+      "toolInventory": "مخزون الأدوات",
+      "upcomingPMSchedules": "جداول الصيانة الوقائية القادمة"
+    },
+    "mrp": {
+      "mps": {
+        "activePlanNode": "عقدة الخطة النشطة",
+        "bucketDate": "تاريخ الدُفعة",
+        "demandBucketInjection": "إدراج دُفعة الطلب",
+        "horizonDays": "أيام الأفق",
+        "initializePlanProtocol": "تهيئة بروتوكول الخطة",
+        "initializeProtocol": "تهيئة بروتوكول",
+        "injectDemand": "إدراج الطلب",
+        "periodEnd": "نهاية الفترة",
+        "periodStart": "بداية الفترة",
+        "planIdentity": "هوية الخطة",
+        "planPlaceholder": "عنصر نائب للخطة",
+        "productId": "معرف المنتج",
+        "protocolNotes": "بروتوكول ملاحظات",
+        "quantityTarget": "الكمية المستهدفة",
+        "selectProtocol": "اختيار البروتوكول",
+        "sourceType": "نوع المصدر",
+        "station": "المحطة: مزامنة تخطيط الموارد-01",
+        "subtitle": "تخطيط وجدولة الإنتاج",
+        "table": {
+          "bucketDate": "تاريخ الدُفعة",
+          "days": "الأيام",
+          "horizonState": "حالة الأفق",
+          "manual": "يدوي",
+          "periodRange": "نطاق الفترة",
+          "planIdentity": "هوية الخطة",
+          "planLineExposure": "كشف بنود الخطة",
+          "planProtocolRegistry": "سجل بروتوكول الجدول الرئيسي",
+          "productNode": "عقدة المنتج",
+          "quantity": "الكمية",
+          "sourceStream": "مسار المصدر",
+          "statusNode": "عقدة الحالة",
+          "zeroDemandLines": "تم إدراج بنود طلب صفرية",
+          "zeroProtocols": "تم تحديد بروتوكولات صفرية"
+        },
+        "title": "جدول الإنتاج الرئيسي"
+      },
+      "subtitle": "تخطيط متطلبات المواد وتحليل السعة",
+      "title": "استخبارات تخطيط موارد المواد"
+    },
+    "obeya": {
+      "actions": {
+        "newObeya": "أوبيا جديد"
+      },
+      "heijunkaLeveling": "تسوية هيجونكا",
+      "heijunkaTips": "نصائح هيجونكا",
+      "initializeBoard": "تهيئة اللوحة",
+      "parameters": "المعلمات",
+      "predictiveBreaches": "تجاوزات تنبؤية",
+      "primaryNorthStars": "الأهداف الشمالية الرئيسية",
+      "rebalanceOps": "إعادة توازن العمليات",
+      "recentSiloAlerts": "تنبيهات الصوامع الأخيرة",
+      "resourceRebalancing": "إعادة موازنة الموارد",
+      "sections": {
+        "hoshinKanri": "هوشين كانري",
+        "visualControls": "الضوابط البصرية"
+      },
+      "siloBottlenecks": "اختناقات الصوامع",
+      "subtitle": "استخبارات تنظيمية توجيهية وإدارة بصرية",
+      "syncIntel": "مزامنة الاستخبارات",
+      "tabs": {
+        "actions": "الإجراءات",
+        "exceptions": "الاستثناءات",
+        "metrics": "المقاييس",
+        "overview": "نظرة عامة",
+        "problems": "المشكلات",
+        "senseiAi": "سينسي للذكاء الاصطناعي",
+        "sqdcpDetail": "تفاصيل إس كيو دي سي بي"
+      },
+      "title": "أوبيا المعرفي"
+    },
+    "obeyaDetail": {
+      "backToObeya": "العودة إلى أوبيا",
+      "dueDateWas": "تاريخ الاستحقاق كان",
+      "kpiMetrics": "مقاييس مؤشرات الأداء",
+      "noDescription": "لا يوجد وصف",
+      "notFound": "غير موجود",
+      "notFoundDescription": "الوصف غير متاح"
+    },
+    "obeyaNew": {
+      "boardIdentity": "هوية اللوحة",
+      "boardIdentityPlaceholder": "أدخل هوية اللوحة",
+      "departmentNode": "قسم عقدة",
+      "description": "الوصف",
+      "establishBoard": "إنشاء اللوحة",
+      "identifyTeam": "تحديد الفريق",
+      "intelligenceModules": "وحدات الذكاء",
+      "intelligenceModulesDescription": "وصف وحدات الذكاء",
+      "primaryCustodian": "القيّم الرئيسي",
+      "protocolConfiguration": "بروتوكول تكوين",
+      "protocolConfigurationDescription": "بروتوكول تكوين الوصف",
+      "searchUserNodes": "بحث عن مستخدمين",
+      "strategicContext": "السياق الاستراتيجي",
+      "strategicContextPlaceholder": "أدخل السياق الاستراتيجي",
+      "title": "العنوان"
+    },
+    "offline": {
+      "branding": "نظام سينسي • استمرارية الدقة",
+      "cachedData": "بيانات الاستخبارات المخزنة مؤقتاً",
+      "capabilitiesTitle": "الإمكانيات دون اتصال",
+      "description": "تم قطع رابط استخبارات نظام سينسي. بعض الميزات الأساسية غير متاحة حالياً.",
+      "draftSync": "مزامنة المسودات عند إعادة الاتصال",
+      "reconnect": "إعادة الاتصال",
+      "returnHome": "العودة للصفحة الرئيسية",
+      "syncedPages": "الصفحات المزامنة سابقاً",
+      "title": "انقطع الاتصال"
+    },
+    "ops": {
+      "allSystemsOperational": "جميع الأنظمة تعمل",
+      "criticalAnomalies": "شذوذات حرجة",
+      "initializeRfq": "تهيئة طلب عرض أسعار",
+      "issuesDetected": "تم اكتشاف مشكلات",
+      "strategicPriorities": "الأولويات الاستراتيجية",
+      "subtitle": "استخبارات تشغيلية موحدة",
+      "systemStable": "النظام مستقر",
+      "title": "نظرة عامة على العمليات"
+    },
+    "orders": {
+      "empty": {
+        "description": "إنشاء طلبك الأول",
+        "title": "لا توجد طلبات"
+      },
+      "generateInvoice": "إنشاء فاتورة",
+      "newOrder": "طلب جديد",
+      "quickActions": {
+        "invoicing": "الفوترة",
+        "manageCustomers": "إدارة العملاء",
+        "manageInvoices": "إدارة الفواتير",
+        "viewQuotes": "عرض عروض الأسعار"
+      },
+      "releaseToWarehouse": "إطلاق إلى المستودع",
+      "sourceQuote": "عرض السعر المصدر",
+      "stats": {
+        "activeOrders": "الطلبات النشطة",
+        "approvedOrders": "الطلبات المعتمدة",
+        "delivered": "مسلمة",
+        "draftOrders": "مسودة الطلبات",
+        "issuedInvoices": "الفواتير الصادرة",
+        "overdueInvoices": "الفواتير المتأخرة",
+        "pendingShipment": "في انتظار الشحن",
+        "shipped": "مشحونة"
+      },
+      "status": {
+        "cancelled": "ملغى",
+        "closed": "مغلق",
+        "confirmed": "مؤكد",
+        "delivered": "مسلم",
+        "invoiced": "مفوتر",
+        "pending": "معلق",
+        "processing": "قيد المعالجة",
+        "released": "مفرج عنه",
+        "shipped": "مشحون"
+      },
+      "subtitle": "تنفيذ الطلبات وتتبع التسليم",
+      "table": {
+        "customer": "عميل",
+        "lines": "البنود",
+        "orderId": "معرف الطلب",
+        "totalValue": "القيمة الإجمالية"
+      },
+      "title": "استخبارات الطلبات"
+    },
+    "pipeline": {
+      "actions": {
+        "analyze": "تحليل",
+        "initializeQuote": "تهيئة عرض سعر",
+        "newRfq": "طلب عرض أسعار جديد",
+        "resetFilters": "إعادة تعيين عوامل التصفية",
+        "terminateNode": "إنهاء عقدة"
+      },
+      "addAttachment": "إضافة مرفق",
+      "confirmNoBid": "تأكيد عدم التقديم",
+      "createQuote": "إنشاء عرض سعر",
+      "emptyState": {
+        "description": "عدّل المعايير أو أنشئ فرصة جديدة",
+        "title": "لم يتم تحديد أي بروتوكولات"
+      },
+      "estimatedValue": "القيمة التقديرية",
+      "lineItems": "بنود السطر",
+      "markAsNoBid": "وضع علامة عدم التقديم",
+      "new": {
+        "establishProtocol": "إنشاء بروتوكول",
+        "labels": {
+          "addNode": "إضافة عقدة",
+          "customerNode": "عميل عقدة",
+          "detailedContext": "السياق التفصيلي",
+          "estimatedMagnitude": "الحجم التقديري",
+          "ingestionDate": "تاريخ الإدخال",
+          "lineIntelligence": "ذكاء البنود",
+          "magnitude": "الحجم",
+          "partNode": "عقدة الجزء",
+          "priorityLayer": "طبقة الأولوية",
+          "protocolNotes": "بروتوكول ملاحظات",
+          "specification": "المواصفة",
+          "strategicDeadline": "الموعد الاستراتيجي",
+          "strategicTitle": "العنوان الاستراتيجي",
+          "targetValuation": "القيمة المستهدفة",
+          "temporalHorizon": "الأفق الزمني",
+          "unitProtocol": "وحدة بروتوكول"
+        },
+        "opportunityParameters": "معلمات الفرصة",
+        "placeholders": {
+          "customer": "ابحث عن شركاء...",
+          "description": "معلومات إضافية حول بروتوكول طلب عرض الأسعار...",
+          "notes": "معلومات سرية، وصول مقيد...",
+          "title": "مثال: قطع دقيقة لمشروع الطيران"
+        },
+        "priority": {
+          "high": "أولوية عالية",
+          "low": "أولوية منخفضة",
+          "medium": "أولوية متوسطة",
+          "urgent": "أولوية عاجلة"
+        },
+        "station": "المحطة: إدخال خط الأنابيب-01",
+        "subtitle": "العنوان الفرعي",
+        "title": "العنوان",
+        "toast": {
+          "rfqCreateFailed": "فشل إنشاء طلب عرض أسعار. يرجى المحاولة مرة أخرى.",
+          "rfqCreated": "تم إنشاء طلب عرض أسعار",
+          "rfqCreatedDescription": "تم إنشاء طلب عرض الأسعار الجديد بنجاح."
+        },
+        "validation": {
+          "provideTitleAndCustomer": "يرجى توفير العنوان والعميل.",
+          "requiredFieldsMissing": "الحقول المطلوبة مفقودة"
+        }
+      },
+      "newOpportunity": "فرصة جديدة",
+      "newQuote": "عرض سعر جديد",
+      "noAttachments": "لا المرفقات",
+      "noBid": "عدم التقديم",
+      "noBidConfirmation": "تأكيد عدم التقديم",
+      "noBidReasonPlaceholder": "سبب عدم التقديم",
+      "noQuotesYet": "لا توجد عروض أسعار بعد",
+      "quotes": "عروض الأسعار",
+      "searchPlaceholder": "عبارة البحث",
+      "stages": {
+        "lost": "خاسرة",
+        "negotiating": "قيد التفاوض",
+        "new": "جديدة",
+        "quoted": "تم التسعير",
+        "quoting": "قيد التسعير",
+        "received": "مستلمة",
+        "reviewing": "قيد المراجعة",
+        "submitted": "مقدمة",
+        "won": "فائزة"
+      },
+      "station": "المحطة: خط الأنابيب-01",
+      "stats": {
+        "acrossRfqs": "عبر {{count}} طلبات عروض أسعار",
+        "activeIntelNodes": "عقد ذكاء نشطة",
+        "avgResponseTime": "متوسط وقت الاستجابة",
+        "conversionRate": "معدل التحويل",
+        "criticalThresholds": "عتبات حرجة",
+        "openRfqs": "طلبات عروض أسعار مفتوحة",
+        "optimalRangeIdentified": "تم تحديد النطاق الأمثل",
+        "pipelineMagnitude": "حجم خط الأنابيب",
+        "pipelineValue": "قيمة خط الأنابيب",
+        "protocolAlphaVariance": "تفاوت بروتوكول ألفا",
+        "responseVelocity": "سرعة الاستجابة"
+      },
+      "statusBadges": {
+        "cancelled": "ملغى",
+        "lost": "خسر",
+        "new": "جديد",
+        "noBid": "عدم التقديم",
+        "quoting": "قيد التسعير",
+        "reviewing": "قيد المراجعة",
+        "submitted": "مقدمة",
+        "won": "فاز"
+      },
+      "submitQuote": "إرسال عرض سعر",
+      "subtitle": "إدارة دورة حياة طلبات عروض الأسعار واستخبارات التحويل",
+      "table": {
+        "partNumber": "رقم الجزء",
+        "targetPrice": "السعر المستهدف",
+        "uom": "وحدة القياس"
+      },
+      "tableHeaders": {
+        "customerNode": "عقدة العميل",
+        "estValue": "القيمة التقديرية",
+        "opportunityTitle": "عنوان الفرصة",
+        "priorityLvl": "مستوى الأولوية",
+        "rfqNumber": "رقم طلب عرض الأسعار",
+        "statusState": "الحالة",
+        "thresholdDate": "تاريخ العتبة"
+      },
+      "title": "خط أنابيب الإيرادات",
+      "unknown": "غير معروف",
+      "viewCustomer": "عرض عميل",
+      "views": {
+        "board": "لوحة",
+        "kanban": "كانبان",
+        "list": "قائمة",
+        "table": "جدول",
+        "timeline": "الجدول الزمني"
+      }
+    },
+    "production": {
+      "actions": {
+        "analyze": "تحليل",
+        "modify": "تعديل",
+        "newWorkOrder": "أمر عمل جديد"
+      },
+      "filters": {
+        "allNodes": "كل العقد",
+        "allStatus": "كل الحالات",
+        "statusState": "الحالة",
+        "workCenter": "مركز العمل"
+      },
+      "protocolProductionNode": "بروتوكول: عقدة الإنتاج",
+      "station": "المحطة: الإنتاج-01",
+      "stats": {
+        "activeOrders": "الأوامر النشطة",
+        "operationalVelocity": "السرعة التشغيلية",
+        "overdueHorizon": "الأفق المتأخر",
+        "suspendedNodes": "العقد المعلقة"
+      },
+      "status": {
+        "cancelled": "ملغى",
+        "closed": "مغلق",
+        "completed": "مكتمل",
+        "inProgress": "قيد التنفيذ",
+        "onHold": "موقوف",
+        "pending": "معلق",
+        "planned": "مخطط",
+        "released": "مفرج عنه"
+      },
+      "subtitle": "تنسيق التصنيع في الوقت الفعلي وتتبع سرعة الإنتاج",
+      "table": {
+        "dueHorizon": "أفق الاستحقاق",
+        "exProgress": "تقدم التنفيذ",
+        "operator": "المشغل",
+        "orderId": "معرف الطلب",
+        "priorityLevel": "مستوى الأولوية",
+        "productNode": "منتج عقدة",
+        "statusState": "الحالة",
+        "workCenter": "مركز العمل"
+      },
+      "title": "نبض التنفيذ",
+      "views": {
+        "gantt": "جانت",
+        "kanban": "كانبان",
+        "schedule": "الجدول"
+      },
+      "workCenter": "مركز العمل"
+    },
+    "products": {
+      "actions": {
+        "newProduct": "منتج جديد"
+      },
+      "details": {
+        "bom": "قائمة المواد",
+        "history": "السجل",
+        "inventory": "المخزون",
+        "overview": "نظرة عامة",
+        "routing": "المسار",
+        "specifications": "المواصفات"
+      },
+      "station": "المحطة: المخزون-01",
+      "stats": {
+        "activeProducts": "المنتجات النشطة",
+        "avgLeadTime": "متوسط وقت التسليم",
+        "bomsDefined": "قوائم المواد المحددة",
+        "routingsActive": "المسارات النشطة"
+      },
+      "subtitle": "إدارة مواصفات التصنيع واستخبارات البيانات الرئيسية",
+      "tabs": {
+        "boms": "قوائم المواد",
+        "products": "المنتجات",
+        "routings": "المسارات"
+      },
+      "title": "محفظة المنتجات"
+    },
+    "projectManagement": {
+      "actions": {
+        "createFirst": "إنشاء أول مشروع",
+        "createProject": "إنشاء مشروع",
+        "newInitiative": "مبادرة جديدة"
+      },
+      "createDialog": {
+        "description": "إنشاء مساحة جديدة لذكاء المشروع والمواءمة الاستراتيجية والعمل بين الوحدات.",
+        "descriptionPlaceholder": "حدّد النطاق والأهداف وأبرز المخرجات الاستراتيجية...",
+        "name": "اسم المشروع",
+        "namePlaceholder": "مثال: إطلاق منتج جديد - دعامة جناح...",
+        "status": "الحالة الابتدائية",
+        "title": "إنشاء مشروع جديد",
+        "type": "نوع المشروع",
+        "visibility": "الرؤية",
+        "visibilityDescription": "تقييد الرؤية على أعضاء الفريق المدعوين فقط"
+      },
+      "detail": {
+        "activity": "النشاط",
+        "backToProjects": "العودة إلى المشاريع",
+        "backlog": "قائمة الانتظار",
+        "epics": "الملحمات",
+        "issues": "المشكلات",
+        "milestones": "المعالم",
+        "notFound": "غير موجود",
+        "sprints": "الدورات",
+        "wiki": "الويكي"
+      },
+      "distributionDescription": "توزيع المشاريع حسب الحالة",
+      "emptyState": "لا توجد مبادرات تطابق معايير البحث الحالية.",
+      "errors": {
+        "loadingProject": "خطأ في تحميل المشروع",
+        "nameRequired": "اسم المشروع مطلوب"
+      },
+      "initializeInitiative": "تهيئة المبادرة",
+      "labels": {
+        "privateProtocol": "مشروع خاص",
+        "pulse": "نبض",
+        "sharedIntelligence": "مشروع مشترك",
+        "velocityOptimal": "السرعة الاستراتيجية مثالية"
+      },
+      "noDescription": "لا يوجد وصف.",
+      "portfolio": "المحفظة",
+      "search": {
+        "placeholder": "البحث عن المبادرات..."
+      },
+      "searchPlaceholder": "عبارة البحث",
+      "sections": {
+        "distribution": "توزيع المبادرات",
+        "healthIndex": "مؤشر صحة المحفظة"
+      },
+      "station": "المحطة: إدارة المشاريع-01",
+      "status": {
+        "active": "نشط",
+        "archived": "مؤرشف",
+        "cancelled": "ملغى",
+        "completed": "مكتمل",
+        "onHold": "موقوف",
+        "planning": "التخطيط"
+      },
+      "subtitle": "التنسيق الاستراتيجي للمبادرات المعقدة والمعالم",
+      "title": "هندسة المشاريع",
+      "types": {
+        "a3": "آ٣",
+        "hybrid": "هجينة",
+        "kaizen": "كايزن",
+        "kanban": "كانبان",
+        "maintenance": "الصيانة",
+        "npi": "إطلاق منتج جديد",
+        "scrum": "سكرم",
+        "standard": "قياسي"
+      },
+      "views": {
+        "list": "قائمة",
+        "portfolio": "محفظة"
+      }
+    },
+    "purchase": {
+      "actions": {
+        "approveGate": "موافقة البوابة",
+        "newRequisition": "طلب شراء جديد",
+        "recordReceipt": "تسجيل الاستلام",
+        "transmitToSupplier": "إرسال إلى المورد"
+      },
+      "filters": {
+        "allStatus": "كل الحالات",
+        "approvedSync": "موافق عليه مزامنة",
+        "converted": "محول",
+        "draftNode": "مسودة عقدة",
+        "gateApproval": "موافقة البوابة",
+        "received": "مستلم",
+        "statusState": "الحالة",
+        "submitted": "مقدم",
+        "transmitted": "مرسل"
+      },
+      "initializeRequisition": "تهيئة طلب شراء",
+      "orders": "الطلبات",
+      "quickActions": {
+        "convertToPrs": "تحويل الاقتراحات إلى طلبات شراء",
+        "goodsReceipt": "استلام البضائع",
+        "mrpIntelligence": "استخبارات تخطيط الموارد",
+        "poGrnInvoiceSync": "مزامنة أمر الشراء وإشعار الاستلام والفاتورة",
+        "recordShipments": "تسجيل الشحنات الواردة",
+        "threeWayMatching": "مطابقة ثلاثية"
+      },
+      "requisitionNew": {
+        "addLineItemError": "يرجى إضافة بند واحد على الأقل",
+        "addNode": "إضافة عقدة",
+        "businessJustification": "مبرر الأعمال *",
+        "createFailed": "فشل إنشاء طلب الشراء. يرجى المحاولة مرة أخرى.",
+        "error": "خطأ",
+        "estimatedProtocolTotal": "الإجمالي التقديري للبروتوكول",
+        "fiscalSummary": "الملخص المالي",
+        "initializeItemsUsing": "تهيئة عناصر طلب الشراء باستخدام لوحة العقد",
+        "justificationPlaceholder": "اشرح لماذا هذه العقد مطلوبة للمزامنة التنظيمية...",
+        "nodeInjection": "حقن العقد",
+        "nodeInjectionDesc": "إدراج عقد المنتج مباشرة في السجل",
+        "orDefineManualSpec": "أو حدّد المواصفة يدويًا...",
+        "priorities": {
+          "high": "أولوية عالية",
+          "low": "أولوية منخفضة",
+          "medium": "أولوية متوسطة",
+          "urgent": "أولوية عاجلة"
+        },
+        "priorityLayer": "طبقة الأولوية",
+        "requisitionParameters": "معلمات طلب الشراء",
+        "resourceLineIntel": "ذكاء سطر الموارد",
+        "resourceNodes": "عقد الموارد",
+        "saveDraft": "حفظ مسودة",
+        "savedAsDraft": "تم حفظ طلب الشراء كمسودة",
+        "searchProductNodes": "ابحث عن عقد المنتجات...",
+        "selectProductNode": "اختر عقدة المنتج...",
+        "station": "المحطة: إدخال طلبات الشراء-01",
+        "submitForApproval": "إرسال للموافقة",
+        "submittedForApproval": "تم إرسال طلب الشراء للموافقة",
+        "subtitle": "استيعاب طلبات المشتريات",
+        "success": "نجاح",
+        "tableHeaders": {
+          "estPrice": "السعر التقديري",
+          "magnitude": "الحجم",
+          "productNodeDesc": "عقدة المنتج / الوصف",
+          "subtotal": "المجموع الفرعي",
+          "uom": "وحدة القياس"
+        },
+        "thresholdDate": "تاريخ العتبة (مطلوب بحلول)",
+        "title": "تهيئة بروتوكول طلب الشراء",
+        "totalMagnitude": "الحجم الإجمالي",
+        "zeroNodesFound": "لم يتم العثور على عقد",
+        "zeroResourceNodes": "لم يتم تحديد عقد موارد"
+      },
+      "requisitions": "طلبات الشراء",
+      "search": {
+        "orders": "بحث الطلبات...",
+        "requisitions": "بحث عن طلبات الشراء..."
+      },
+      "station": "المحطة: المشتريات-01",
+      "stats": {
+        "activeTransmissions": "عمليات الإرسال النشطة",
+        "dueHorizonToday": "أفق الاستحقاق اليوم",
+        "gateSyncRequired": "مطلوب مزامنة البوابة",
+        "openRequisitions": "طلبات الشراء المفتوحة",
+        "pendingOrders": "قيد الانتظار الطلبات",
+        "pendingPos": "أوامر الشراء المعلقة",
+        "receiptsToday": "الاستلامات اليوم",
+        "sentToSuppliers": "المرسلة للموردين",
+        "waitingForAction": "بانتظار إجراء"
+      },
+      "status": {
+        "convertedToPo": "محول إلى أمر شراء",
+        "partial": "جزئي",
+        "pendingApproval": "قيد انتظار الموافقة",
+        "received": "مستلم",
+        "sent": "مرسل",
+        "submitted": "مقدم"
+      },
+      "subtitle": "إدارة أوامر الشراء والتعاون مع الموردين",
+      "suppliers": "الموردون",
+      "table": {
+        "initializeFirstRequisition": "تهيئة أول بروتوكول لطلب شراء",
+        "initializeRequisitionFirst": "تهيئة بروتوكول طلب الشراء أولاً",
+        "justificationLog": "سجل المبررات",
+        "lines": "البنود",
+        "orderId": "معرف الطلب",
+        "poNode": "عقدة أمر الشراء",
+        "reqNumber": "رقم طلب الشراء",
+        "statusState": "الحالة",
+        "supplierNode": "مورد عقدة",
+        "synchronizingOrders": "جارٍ مزامنة الطلبات...",
+        "synchronizingRequisitions": "جارٍ مزامنة طلبات الشراء...",
+        "timestamp": "الطابع الزمني",
+        "totalValue": "القيمة الإجمالية",
+        "unknownSupplier": "مورد غير معروف",
+        "zeroOrdersIdentified": "لم يتم تحديد أي طلبات",
+        "zeroRequisitionsIdentified": "لم يتم تحديد أي طلبات شراء"
+      },
+      "tabs": {
+        "purchaseOrders": "أوامر الشراء",
+        "requisitions": "طلبات الشراء",
+        "suppliers": "الموردون"
+      },
+      "title": "استخبارات المشتريات"
+    },
+    "quality": {
+      "actions": {
+        "startInspection": "بدء الفحص"
+      },
+      "capability": {
+        "addMeasurement": "إضافة قياس",
+        "addMeasurementButton": "إضافة قياس",
+        "characteristic": "السمة",
+        "characteristicPlaceholder": "مثال: قطر التجويف",
+        "cpk": "سي بي كيه",
+        "createStudy": "إنشاء دراسة القدرة",
+        "createStudyButton": "إنشاء دراسة",
+        "lsl": "الحد الأدنى للمواصفة",
+        "lslPlaceholder": "الحد الأدنى للمواصفة",
+        "measuredValue": "القيمة المقاسة",
+        "measurementPlaceholder": "القياس",
+        "notes": "ملاحظات",
+        "notesPlaceholder": "اختياري ملاحظات",
+        "optionalNotes": "اختياري ملاحظات",
+        "process": "العملية",
+        "processPlaceholder": "مثال: ماكينة تفريز 1",
+        "sampleLabel": "وسم العينة",
+        "sampleLabelPlaceholder": "وسم اختياري",
+        "samples": "العينات",
+        "selectStudy": "اختر الدراسة",
+        "studyLabel": "الدراسة",
+        "studyName": "اسم الدراسة",
+        "studyNamePlaceholder": "مثال: قطر ماكينة تفريز 1",
+        "target": "الهدف",
+        "targetPlaceholder": "هدف اختياري",
+        "unit": "وحدة",
+        "unitPlaceholder": "مم، بوصة، إلخ",
+        "usl": "الحد الأعلى للمواصفة",
+        "uslPlaceholder": "الحد الأعلى للمواصفة"
+      },
+      "capas": {
+        "newCapa": "إجراء تصحيحي جديد",
+        "subtitle": "إدارة الإجراءات التصحيحية وتتبع الفعالية",
+        "title": "الإجراءات التصحيحية"
+      },
+      "filters": {
+        "allStatuses": "كل الحالات"
+      },
+      "inspections": {
+        "newInspection": "فحص جديد",
+        "searchPlaceholder": "ابحث عن الفحوصات...",
+        "subtitle": "تتبع فحوصات الجودة والتقارير",
+        "title": "استخبارات الفحص"
+      },
+      "msa": {
+        "addMeasurement": "إضافة قياس",
+        "addMeasurementButton": "إضافة قياس",
+        "createStudy": "إنشاء دراسة إم إس إيه",
+        "createStudyButton": "إنشاء دراسة",
+        "design": "التصميم",
+        "gauge": "الأداة القياسية",
+        "gaugeId": "معرف الأداة",
+        "gaugeIdPlaceholder": "معرف الأداة",
+        "grrPercent": "نسبة جي آر آر",
+        "measuredValue": "القيمة المقاسة",
+        "ndc": "إن دي سي",
+        "notes": "ملاحظات",
+        "operatorId": "معرف المشغل",
+        "operatorPlaceholder": "معرف المشغل",
+        "operators": "المشغلون",
+        "optionalNotes": "اختياري ملاحظات",
+        "partId": "معرف الجزء",
+        "partPlaceholder": "معرّف الجزء",
+        "parts": "الأجزاء",
+        "selectStudy": "اختر الدراسة",
+        "selectType": "اختر النوع",
+        "study": "الدراسة",
+        "studyName": "اسم الدراسة",
+        "studyNamePlaceholder": "مثال: خط 2 قياس سي إم إم جي آر آر",
+        "studyType": "نوع الدراسة",
+        "trial": "تجربة",
+        "trials": "تجارب"
+      },
+      "ncrs": {
+        "newNcr": "تقرير عدم مطابقة جديد",
+        "subtitle": "تتبع العيوب وتحليل السبب الجذري",
+        "title": "تقارير عدم المطابقة"
+      },
+      "severity": {
+        "major": "جسيم",
+        "minor": "طفيف"
+      },
+      "stats": {
+        "activeSyncGates": "بوابات المزامنة النشطة",
+        "firstPassVelocity": "سرعة المرور الأول",
+        "globalAnomalies": "الشذوذ العالمي",
+        "resolutionProtocols": "بروتوكولات الحل"
+      },
+      "status": {
+        "capa": "إجراء تصحيحي",
+        "closed": "مغلق",
+        "contain": "احتواء",
+        "disposition": "التصرف",
+        "failed": "فشل",
+        "implementing": "قيد التنفيذ",
+        "investigate": "التحقيق",
+        "investigating": "جارٍ التحقيق",
+        "open": "مفتوح",
+        "passed": "ناجح",
+        "review": "مراجعة",
+        "verified": "موثق",
+        "verifying": "جارٍ التحقق"
+      },
+      "subtitle": "تتبع العيوب وإدارة الفحص والتحسين المستمر",
+      "table": {
+        "inspection": "الفحص",
+        "inspector": "المفتش",
+        "product": "منتج",
+        "scheduled": "مجدول",
+        "workOrder": "أمر العمل"
+      },
+      "tabs": {
+        "analytics": "التحليلات",
+        "aql": "حد القبول النوعي",
+        "capability": "القدرة",
+        "capas": "الإجراءات التصحيحية",
+        "changePoint": "نقطة التغيير",
+        "customer": "عميل",
+        "fai": "فحص أولي",
+        "inspections": "الفحوصات",
+        "lab": "المختبر",
+        "managementReview": "مراجعة الإدارة",
+        "msa": "تحليل نظام القياس",
+        "ncrs": "تقارير عدم المطابقة",
+        "self": "الفحص الذاتي",
+        "traceability": "التتبع"
+      },
+      "title": "مركز قيادة الجودة"
+    },
+    "quotes": {
+      "actions": {
+        "analyze": "تحليل",
+        "cloneProtocol": "استنساخ بروتوكول",
+        "exportProtocol": "تصدير بروتوكول",
+        "initiateApproval": "بدء الموافقة",
+        "newQuote": "عرض أسعار جديد",
+        "protocolLost": "بروتوكول خسر",
+        "protocolWon": "بروتوكول فاز",
+        "transmitProtocol": "إرسال البروتوكول"
+      },
+      "detail": {
+        "approval": "الموافقة",
+        "approve": "موافقة",
+        "backToQuotes": "العودة إلى عروض الأسعار",
+        "created": "تم الإنشاء",
+        "createdBy": "تم الإنشاء بواسطة",
+        "customer": "عميل",
+        "dialogs": {
+          "approveDescription": "وصف الموافقة",
+          "lostDescription": "وصف الخسارة",
+          "markAsLost": "وضع علامة خاسر",
+          "markAsWon": "وضع علامة فائز",
+          "markLost": "وسم بالخسارة",
+          "markWon": "وسم بالفوز",
+          "reasonPlaceholder": "سبب الرفض",
+          "reject": "رفض",
+          "rejectDescription": "وصف الرفض",
+          "rejectQuote": "رفض عرض سعر",
+          "submit": "إرسال",
+          "submitForApproval": "إرسال للموافقة",
+          "wonDescription": "وصف الفوز"
+        },
+        "discount": "خصم",
+        "exportPdf": "تصدير ملف بي دي إف",
+        "internalNotes": "ملاحظات داخلية",
+        "lineItems": "بنود السطر",
+        "lineItemsTitle": "عنوان بنود السطر",
+        "margin": "الهامش",
+        "markLost": "وسم بالخسارة",
+        "markWon": "وسم بالفوز",
+        "notFound": "غير موجود",
+        "print": "طباعة",
+        "reject": "رفض",
+        "sendToCustomer": "إرسال إلى العميل",
+        "sent": "مرسل",
+        "submitForApproval": "إرسال للموافقة",
+        "subtotal": "المجموع الفرعي",
+        "table": {
+          "description": "الوصف",
+          "extended": "الإجمالي الممتد",
+          "leadTime": "وقت التسليم",
+          "partNo": "رقم الجزء",
+          "qty": "الكمية",
+          "unitPrice": "وحدة السعر",
+          "uom": "وحدة القياس"
+        },
+        "tax": "ضريبة",
+        "termsConditions": "الشروط والأحكام",
+        "total": "الإجمالي",
+        "validUntil": "صالح حتى",
+        "versionHistory": "سجل الإصدارات",
+        "viewHistory": "عرض السجل"
+      },
+      "emptyState": {
+        "adjustFilters": "تعديل عوامل التصفية",
+        "initializeFirst": "تهيئة أولى",
+        "title": "العنوان"
+      },
+      "filters": {
+        "accepted": "مقبول",
+        "allProtocols": "كل البروتوكولات",
+        "approved": "موافق عليه",
+        "draft": "مسودة",
+        "expired": "منتهي",
+        "pendingReview": "قيد المراجعة",
+        "rejected": "مرفوض",
+        "transmitted": "مرسل"
+      },
+      "initializeQuotation": "تهيئة عرض سعر",
+      "labels": {
+        "expiresSoon": "تنتهي قريباً"
+      },
+      "new": {
+        "addFirstItem": "إضافة أول عنصر",
+        "addItem": "إضافة عنصر",
+        "addItemsToQuote": "إضافة بنود إلى العرض",
+        "addProductsAndPricing": "إضافة المنتجات والتسعير",
+        "discount": "خصم",
+        "forRfq": "للطلب",
+        "incompletePricing": "تسعير غير مكتمل",
+        "internalNotes": "ملاحظات داخلية",
+        "internalNotesPlaceholder": "أدخل ملاحظات داخلية",
+        "lineItems": "بنود السطر",
+        "margin": "الهامش",
+        "noLineItems": "لا توجد بنود",
+        "overallMargin": "الهامش الإجمالي",
+        "quoteSummary": "ملخص عرض السعر",
+        "saveDraft": "حفظ مسودة",
+        "submitDialog": {
+          "description": "الوصف",
+          "title": "العنوان"
+        },
+        "submitForApproval": "إرسال للموافقة",
+        "subtotal": "المجموع الفرعي",
+        "tax": "ضريبة",
+        "taxRate": "معدل الضريبة",
+        "termsAndConditions": "الشروط والأحكام",
+        "termsAndNotes": "الشروط والملاحظات",
+        "title": "العنوان",
+        "total": "الإجمالي",
+        "totalCost": "إجمالي التكلفة",
+        "validUntil": "صالح حتى",
+        "zeroPriceWarning": "تحذير: سعر صفري"
+      },
+      "rfqNumber": "رقم طلب عرض الأسعار",
+      "searchPlaceholder": "عبارة البحث",
+      "stats": {
+        "avgMargin": "متوسط الهامش",
+        "pendingApproval": "في انتظار الموافقة",
+        "pipelineValue": "قيمة خط الأنابيب",
+        "sentToCustomer": "مرسل إلى عميل",
+        "sentToCustomers": "مرسلة للعملاء"
+      },
+      "status": {
+        "accepted": "مقبولة",
+        "approved": "موافق عليها",
+        "draft": "مسودة",
+        "expired": "منتهية الصلاحية",
+        "pendingApproval": "في انتظار الموافقة",
+        "rejected": "مرفوضة",
+        "sent": "مرسلة"
+      },
+      "subtitle": "إدارة العروض وتحسين التسعير",
+      "table": {
+        "customerNode": "عميل عقدة",
+        "marginKpi": "مؤشر أداء الهامش",
+        "operator": "المشغل",
+        "quoteProtocol": "عرض سعر بروتوكول",
+        "statusState": "الحالة",
+        "totalValue": "القيمة الإجمالية",
+        "validThru": "صالح حتى",
+        "version": "الإصدار"
+      },
+      "title": "استخبارات عروض الأسعار"
+    },
+    "sales": {
+      "allPriority": "كل الأولويات",
+      "allStatus": "كل الحالات",
+      "due": "مستحق",
+      "emptyStage": "مرحلة فارغة",
+      "kanban": {
+        "new": "جديدة",
+        "quoting": "قيد التسعير",
+        "reviewing": "قيد المراجعة",
+        "submitted": "مقدمة"
+      },
+      "newOpportunity": "فرصة جديدة",
+      "noRfqsFound": "لا توجد طلبات عروض أسعار",
+      "priority": {
+        "high": "عالية",
+        "low": "منخفضة",
+        "medium": "متوسطة",
+        "urgent": "عاجل"
+      },
+      "searchPlaceholder": "عبارة البحث",
+      "showingCount": "عرض {{filtered}} من {{الإجمالي}} طلبات عروض الأسعار",
+      "status": {
+        "cancelled": "ملغى",
+        "lost": "خسر",
+        "new": "جديد",
+        "noBid": "عدم التقديم",
+        "quoting": "قيد التسعير",
+        "reviewing": "قيد المراجعة",
+        "submitted": "مقدمة",
+        "won": "فاز"
+      },
+      "subtitle": "تتبع الإيرادات واستخبارات المبيعات",
+      "table": {
+        "assignee": "المسؤول",
+        "dueDate": "تاريخ الاستحقاق",
+        "priority": "الأولوية",
+        "rfq": "طلب عرض أسعار",
+        "status": "الحالة",
+        "title": "العنوان",
+        "value": "القيمة"
+      },
+      "title": "مركز قيادة المبيعات",
+      "totalValue": "القيمة الإجمالية",
+      "unassigned": "غير مسند",
+      "unknownPartner": "شريك غير معروف"
+    },
+    "settings": {
+      "account": {
+        "subtitle": "إدارة تفضيلات حسابك",
+        "title": "إعدادات الحساب"
+      },
+      "api": {
+        "subtitle": "إدارة مفاتيح واجهات البرمجة والويب هوكس",
+        "title": "تكوين واجهات البرمجة"
+      },
+      "appearance": {
+        "subtitle": "تخصيص تجربتك البصرية",
+        "title": "إعدادات المظهر"
+      },
+      "company": {
+        "subtitle": "تكوين المعلمات التنظيمية",
+        "title": "إعدادات الشركة"
+      },
+      "data": {
+        "subtitle": "استيراد وتصدير ونسخ البيانات احتياطياً",
+        "title": "إدارة البيانات"
+      },
+      "email": {
+        "subtitle": "تكوين إشعارات وقوالب البريد الإلكتروني",
+        "title": "إعدادات البريد الإلكتروني"
+      },
+      "integrations": {
+        "subtitle": "ربط خدمات الطرف الثالث",
+        "title": "التكاملات"
+      },
+      "language": {
+        "subtitle": "تكوين إعدادات اللغة والمنطقة",
+        "title": "اللغة والمنطقة"
+      },
+      "links": {
+        "account": "الحساب",
+        "appearance": "المظهر",
+        "language": "اللغة والمنطقة",
+        "notifications": "الإشعارات",
+        "profile": "الملف الشخصي",
+        "security": "الأمان"
+      },
+      "mobile": {
+        "subtitle": "تكوين إعدادات تطبيق الجوال",
+        "title": "إعدادات الجوال"
+      },
+      "notifications": {
+        "subtitle": "تكوين تفضيلات الإشعارات",
+        "title": "إعدادات الإشعارات"
+      },
+      "profile": {
+        "actions": {
+          "save": "حفظ التغييرات"
+        },
+        "labels": {
+          "bio": "نبذة",
+          "email": "البريد الإلكتروني",
+          "firstName": "الاسم الأول",
+          "lastName": "اسم العائلة",
+          "phone": "الهاتف"
+        },
+        "sections": {
+          "avatar": "الصورة الرمزية",
+          "basicInfo": "المعلومات الأساسية"
+        },
+        "subtitle": "إدارة معلوماتك الشخصية",
+        "title": "إعدادات الملف الشخصي"
+      },
+      "sections": {
+        "organizational": "المعلمات التنظيمية",
+        "personal": "الاستخبارات الشخصية",
+        "system": "بنية النظام"
+      },
+      "security": {
+        "subtitle": "إدارة تفضيلات الأمان",
+        "title": "إعدادات الأمان"
+      },
+      "sites": {
+        "subtitle": "إدارة مواقع وأماكن المنظمة",
+        "title": "إدارة المواقع"
+      },
+      "station": "المحطة: إعدادات-01",
+      "subtitle": "تكوين واجهتك الشخصية ومعلمات المؤسسة",
+      "team": {
+        "subtitle": "إدارة المستخدمين والصلاحيات",
+        "title": "إدارة الفريق"
+      },
+      "title": "مركز التحكم"
+    },
+    "supplyChain": {
+      "actions": {
+        "runSimulation": "تشغيل المحاكاة"
+      },
+      "disruptions": {
+        "title": "اضطرابات نشطة"
+      },
+      "initializeSimulation": "تهيئة المحاكاة",
+      "loading": "جارٍ تحميل سلسلة التوريد...",
+      "overview": {
+        "title": "نظرة عامة على سلسلة التوريد"
+      },
+      "scenarios": {
+        "costIncrease": "زيادة التكلفة:",
+        "delayImpact": "أثر التأخير:",
+        "loading": "جارٍ تحميل السيناريوهات...",
+        "noScenarios": "لم يتم العثور على سيناريوهات.",
+        "probability": "الاحتمال",
+        "searchPlaceholder": "بحث عن سيناريوهات..."
+      },
+      "station": "المحطة: اللوجستيات العالمية-01",
+      "stats": {
+        "activeSuppliers": "الموردون النشطون",
+        "activeSyncNodes": "عقد المزامنة النشطة",
+        "atRisk": "معرضون للخطر",
+        "globalRiskIndex": "مؤشر المخاطر العالمي",
+        "intelNodes": "عقد الاستخبارات",
+        "mitigationReadiness": "جاهزية التخفيف",
+        "onTimeDelivery": "التسليم في الوقت المحدد",
+        "optimalReserve": "الاحتياطي الأمثل",
+        "protocolVerifications": "تحقق البروتوكولات",
+        "qualityScore": "درجة الجودة",
+        "simulationCycles": "دورات المحاكاة",
+        "thresholdExceeded": "تم تجاوز العتبة"
+      },
+      "subtitle": "محاكاة الاضطرابات العالمية واختبارات الإجهاد للمخاطر",
+      "syncPulse": "نبض المزامنة",
+      "tabs": {
+        "disruptions": "الاضطرابات",
+        "networkMap": "خريطة الشبكة",
+        "overview": "نظرة عامة",
+        "riskAnalysis": "تحليل المخاطر",
+        "scenarios": "السيناريوهات"
+      },
+      "title": "استخبارات سلسلة التوريد"
+    },
+    "tasks": {
+      "actions": {
+        "newTask": "مهمة جديدة"
+      },
+      "card": {
+        "asap": "في أقرب وقت",
+        "refineProtocol": "تنقيح البروتوكول",
+        "terminateProtocol": "إنهاء البروتوكول",
+        "viewNode": "عرض العقدة"
+      },
+      "filters": {
+        "allPriorities": "جميع الأولويات",
+        "allStatuses": "جميع الحالات",
+        "strategicFilters": "عوامل تصفية استراتيجية"
+      },
+      "initializeTask": "تهيئة مهمة",
+      "new": {
+        "assignmentTitle": "عنوان المهمة",
+        "configureMetadata": "تهيئة البيانات الوصفية",
+        "createAssignment": "إنشاء مهمة",
+        "descriptionPlaceholder": "أدخل الوصف",
+        "discard": "إلغاء",
+        "protocolParameters": "معلمات البروتوكول",
+        "station": "المحطة: إدخال مهمة-01",
+        "subtitle": "العنوان الفرعي",
+        "synchronizing": "جارٍ المزامنة...",
+        "taskCreateError": "فشل إلى إنشاء مهمة.",
+        "taskCreated": "تم إنشاء المهمة",
+        "taskCreatedDescription": "تم تعيين المهمة بنجاح.",
+        "title": "العنوان",
+        "titlePlaceholder": "أدخل العنوان"
+      },
+      "priority": {
+        "critical": "حرج",
+        "high": "عالية",
+        "low": "منخفضة",
+        "medium": "متوسطة"
+      },
+      "searchPlaceholder": "عبارة البحث",
+      "station": "المحطة: المهام-01",
+      "stats": {
+        "completedToday": "مكتملة اليوم",
+        "inProgress": "قيد التنفيذ",
+        "overdue": "متأخرة",
+        "pending": "معلقة"
+      },
+      "status": {
+        "backlog": "قائمة الانتظار",
+        "cancelled": "ملغى",
+        "done": "مكتمل",
+        "inProgress": "قيد التنفيذ",
+        "inReview": "قيد المراجعة",
+        "todo": "للقيام"
+      },
+      "subtitle": "إدارة وتتبع مهامك التشغيلية",
+      "tabs": {
+        "all": "جميع المهام",
+        "my": "مهامي",
+        "team": "مهام الفريق"
+      },
+      "title": "مركز المهام",
+      "zeroProtocolNodes": "لم يتم تحديد عقد بروتوكول"
+    },
+    "today": {
+      "allClearStatus": "الحالة: كل شيء سليم",
+      "assignedTasks": "المهام المسندة",
+      "criticalAnomalies": "شذوذات حرجة",
+      "defaultDrillHint": "ضع في الاعتبار الأولويات التشغيلية الحالية وعوامل المخاطر.",
+      "defaultDrillQuestion": "تهيئة بروتوكول يومي لتحليل تخفيف المخاطر.",
+      "drill": {
+        "completed": "اكتمل التمرين!",
+        "dailyProtocol": "يومي بروتوكول",
+        "drillComplete": "اكتمل التمرين",
+        "engageQuestion": "تفاعل مع سؤال التشغيل لليوم",
+        "hideHint": "إخفاء التلميح",
+        "keepMomentum": "تم تسجيل ردك. واصل الزخم!",
+        "responsePlaceholder": "أدخل ردك على التمرين...",
+        "responseRecorded": "تم تسجيل الرد بنجاح",
+        "showHint": "إظهار التلميح",
+        "submitResponse": "إرسال الرد",
+        "submitting": "جارٍ الإرسال...",
+        "title": "التمرين اليومي لسينسي",
+        "yourResponse": "ردك"
+      },
+      "errorLoading": "فشل تحميل بيانات اليوم",
+      "executeAnswer": "تنفيذ الإجابة",
+      "greetings": {
+        "afternoon": "مساء الخير",
+        "evening": "مساء الخير",
+        "morning": "صباح الخير"
+      },
+      "initializeRFQ": "تهيئة طلب عرض أسعار",
+      "lsw": {
+        "daily": "يومي",
+        "monthly": "شهري",
+        "overdue": "متأخر",
+        "title": "العمل المعياري للقائد",
+        "weekly": "أسبوعي"
+      },
+      "maturityLevel": "مستوى النضج",
+      "myWork": {
+        "criticalAnomalies": "شذوذات حرجة",
+        "noAssignments": "لا توجد مهام معينة",
+        "strategicClarity": "وضوح استراتيجي",
+        "strategicUserStories": "قصص المستخدمين الاستراتيجية"
+      },
+      "priorityRfqs": "طلبات عروض أسعار ذات أولوية",
+      "sections": {
+        "myWork": "عملي",
+        "priorityTasks": "المهام ذات الأولوية",
+        "quickActions": "إجراءات سريعة",
+        "recentActivity": "النشاط الأخير",
+        "upcoming": "القادم"
+      },
+      "senseiDailyDrill": "التمرين اليومي لسينسي",
+      "stationStatus": "حالة المحطة: مثالي",
+      "subtitle": "مركز قيادة الاستخبارات",
+      "targetToday": "هدف اليوم",
+      "topPriorities": "أهم الأولويات"
+    },
+    "training": {
+      "certifications": {
+        "newCertification": "شهادة جديدة",
+        "noSkillsFound": "لم يتم العثور على مهارات",
+        "safety": "السلامة",
+        "searchPlaceholder": "بحث عن مهارات...",
+        "subtitle": "تتبع الشهادات وإدارة التجديد",
+        "title": "الشهادات",
+        "validMonths": "مدة الصلاحية",
+        "viewCertifiedEmployees": "عرض الموظفين المعتمدين"
+      },
+      "matrix": {
+        "subtitle": "رسم خريطة كفاءات الفريق وتحليل الفجوات",
+        "title": "مصفوفة المهارات"
+      },
+      "programs": {
+        "allTypes": "كل الأنواع",
+        "newProgram": "برنامج جديد",
+        "noProgramsFound": "لم يتم العثور على برامج",
+        "searchPlaceholder": "بحث عن برامج...",
+        "subtitle": "إدارة البرامج وتتبع التسجيل",
+        "table": {
+          "dates": "التواريخ",
+          "program": "البرنامج"
+        },
+        "title": "برامج التدريب"
+      },
+      "records": {
+        "noRecordsFound": "لم يتم العثور على سجلات",
+        "searchPlaceholder": "بحث حسب موظف أو تدريب...",
+        "table": {
+          "employee": "موظف",
+          "score": "الدرجة",
+          "training": "التدريب"
+        }
+      },
+      "stats": {
+        "activeSkillNodes": "عقد المهارات النشطة",
+        "intelligenceProtocols": "بروتوكولات الاستخبارات",
+        "synchronizationPulse": "نبض المزامنة",
+        "thresholdAlerts": "تنبيهات الحد"
+      },
+      "subtitle": "مصفوفة المهارات وتتبع الشهادات وتطوير الكفاءات",
+      "tabs": {
+        "certifications": "الشهادات",
+        "enroll": "التسجيل",
+        "programs": "البرامج",
+        "records": "السجلات",
+        "skillsMatrix": "مصفوفة المهارات"
+      },
+      "title": "استخبارات التدريب"
+    },
+    "warehouse": {
+      "inventoryCommand": "قيادة المخزون",
+      "itemsBelowReorder": "عناصر أقل من حد إعادة الطلب",
+      "latestTransactions": "أحدث المعاملات",
+      "lowStockAlerts": "تنبيهات انخفاض المخزون",
+      "recentMovements": "الحركات الأخيرة",
+      "sections": {
+        "inventory": "نظرة عامة على المخزون",
+        "locations": "المواقع",
+        "movements": "الحركات"
+      },
+      "station": "المحطة: المستودع-01",
+      "stats": {
+        "abnormalStockLevels": "مستويات مخزون غير طبيعية",
+        "inboundSync": "مزامنة الوارد",
+        "inventoryNodes": "عقد المخزون",
+        "lowStock": "مخزون منخفض",
+        "outboundVelocity": "سرعة الصادر",
+        "pendingReceipts": "استلامات معلقة",
+        "pendingShipments": "شحنات معلقة",
+        "totalSkus": "إجمالي وحدات المخزون"
+      },
+      "status": {
+        "allStockNormal": "جميع مستويات المخزون طبيعية",
+        "itemsOutOfStock": "العناصر غير المتوفرة"
+      },
+      "subtitle": "مراقبة مستويات المخزون العالمية وتتبع تدفق المواد وتحسين عمليات المستودع",
+      "syncStock": "مزامنة المخزون",
+      "tabs": {
+        "inventory": "المخزون",
+        "overview": "نظرة عامة",
+        "receiving": "الاستلام",
+        "shipping": "الشحن"
+      },
+      "title": "اللوجستيات والمخزون",
+      "trends": {
+        "thisCycle": "+124 هذه الدورة"
+      },
+      "viewAllLowStock": "عرض كل عناصر انخفاض المخزون"
+    }
+  },
+  "production": {
+    "detail": {
+      "aggregationPulse": "نبض التجميع",
+      "escalateAnomaly": "تصعيد شذوذ",
+      "executionVelocity": "سرعة التنفيذ",
+      "exportSpec": "تصدير المواصفة",
+      "gateVerified": "تم التحقق من البوابة",
+      "initiateExecution": "بدء التنفيذ",
+      "node": "عقدة",
+      "scrapDeviation": "انحراف الهدر",
+      "suspendProtocol": "تعليق البروتوكول",
+      "tabs": {
+        "bom": "قائمة المواد",
+        "history": "السجل",
+        "operations": "العمليات",
+        "quality": "الجودة"
+      },
+      "targetMagnitude": "الحجم المستهدف",
+      "unknownProduct": "منتج غير معروف",
+      "viewHistory": "عرض السجل"
+    },
+    "emptyState": {
+      "description": "الوصف",
+      "title": "العنوان"
+    },
+    "filters": {
+      "allNodes": "كل العقد",
+      "allStatus": "كل الحالات",
+      "statusState": "الحالة",
+      "workCenter": "مركز العمل"
+    },
+    "initializeWO": "تهيئة أمر العمل",
+    "new": {
+      "createFailed": "إنشاء فشل",
+      "establishOrder": "إنشاء أمر",
+      "fillRequired": "املأ الحقول المطلوبة",
+      "magnitude": "الحجم",
+      "operationalParameters": "المعلمات التشغيلية",
+      "priorityLayer": "طبقة الأولوية",
+      "subtitle": "العنوان الفرعي",
+      "targetProduct": "المنتج المستهدف",
+      "temporalHorizon": "الأفق الزمني",
+      "title": "العنوان",
+      "validationError": "خطأ في التحقق",
+      "workOrderCreated": "أمر العمل تم الإنشاء",
+      "workOrderIdentity": "معرف أمر العمل"
+    },
+    "searchPlaceholder": "عبارة البحث",
+    "stats": {
+      "executionPulse": "نبض التنفيذ",
+      "operationalVelocity": "السرعة التشغيلية",
+      "overdueHorizon": "أفق الاستحقاق المتأخر",
+      "suspendedNodes": "العقد المعلقة"
+    },
+    "status": {
+      "cancelled": "ملغى",
+      "closed": "مغلق",
+      "completed": "مكتمل",
+      "inProgress": "قيد التنفيذ",
+      "onHold": "معلق",
+      "planned": "مخطط",
+      "released": "مفرج عنه"
+    },
+    "table": {
+      "dueHorizon": "أفق الاستحقاق",
+      "exProgress": "تقدم التنفيذ",
+      "operator": "المشغل",
+      "orderId": "معرف الطلب",
+      "priorityLevel": "مستوى الأولوية",
+      "productNode": "منتج عقدة",
+      "statusState": "الحالة",
+      "workCenter": "مركز العمل"
+    },
+    "workCenter": "مركز العمل"
+  },
+  "products": {
+    "allStock": "كل المخزون",
+    "detail": {
+      "addComponent": "إضافة مكوّن",
+      "adjustDialog": {
+        "apply": "تطبيق",
+        "title": "العنوان"
+      },
+      "adjustInventory": "تعديل المخزون",
+      "analyzeIntel": "تحليل الاستخبارات",
+      "authorize": "تفويض",
+      "backToProducts": "رجوع إلى المنتجات",
+      "billOfMaterials": "قائمة المواد",
+      "bomDescription": "قائمة المواد الوصف",
+      "cloneNode": "استنساخ عقدة",
+      "contextualIntelligence": "الاستخبارات السياقية",
+      "deauthorize": "إلغاء التفويض",
+      "fiscalParameters": "المعلمات المالية",
+      "magnitudePulse": "نبض الحجم",
+      "nodeSpecifications": "مواصفات العقدة",
+      "nodeTelemetry": "قياس العقدة",
+      "notFound": "غير موجود",
+      "refineMasterData": "تنقيح البيانات الرئيسية",
+      "stats": {
+        "fiscalMargin": "الهامش المالي",
+        "marketValuation": "قيمة السوق",
+        "nodeMagnitude": "حجم العقدة",
+        "totalCycles": "إجمالي الدورات",
+        "winProbability": "احتمال الفوز"
+      },
+      "temporalVelocity": "السرعة الزمنية",
+      "viewAllCycles": "عرض كل الدورات",
+      "viewLogs": "عرض السجلات"
+    },
+    "edit": {
+      "basicInformation": "المعلومات الأساسية",
+      "category": "الفئة",
+      "description": "الوصف",
+      "leadTime": "وقت التسليم",
+      "partNumber": "رقم الجزء",
+      "productName": "اسم المنتج",
+      "productUpdated": "منتج تم التحديث",
+      "reorderPoint": "حد إعادة الطلب",
+      "saveChanges": "حفظ التغييرات",
+      "status": "الحالة",
+      "statusInventory": "الحالة المخزون",
+      "title": "العنوان",
+      "unitOfMeasure": "وحدة القياس",
+      "updateFailed": "تحديث فشل"
+    },
+    "emptyState": {
+      "description": "الوصف",
+      "title": "العنوان"
+    },
+    "exportIntel": "تصدير الاستخبارات",
+    "import": "استيراد",
+    "initializeNode": "تهيئة عقدة",
+    "lowStock": "منخفضة المخزون",
+    "new": {
+      "basicIdentification": "التعريف الأساسي",
+      "detailedContext": "السياق التفصيلي",
+      "establishNode": "إنشاء عقدة",
+      "failedToEstablish": "فشل الإنشاء",
+      "nodeSynchronized": "تمت مزامنة العقدة",
+      "partNodeIdentity": "معرف عقدة الجزء",
+      "providePartAndName": "يرجى إدخال الجزء والاسم",
+      "requiredParams": "المعلمات المطلوبة",
+      "strategicName": "الاسم الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "supplyDynamics": "ديناميكيات التوريد",
+      "syncFailed": "مزامنة فشل",
+      "taxonomyCategory": "فئة التصنيف",
+      "temporalLead": "المهلة الزمنية",
+      "title": "العنوان",
+      "unitProtocol": "وحدة بروتوكول"
+    },
+    "outOfStock": "غير متوفر",
+    "stats": {
+      "activeInventoryNodes": "عقد مخزون نشطة",
+      "aggregatedRevenue": "الإيرادات المجمعة",
+      "meanMarginKPI": "متوسط مؤشر أداء الهامش",
+      "stockAbnormalities": "شذوذات المخزون"
+    },
+    "status": {
+      "discontinued": "متوقف"
+    },
+    "stockLevel": "مستوى المخزون",
+    "table": {
+      "inventory": "المخزون",
+      "leadTime": "وقت التسليم",
+      "listPrice": "سعر القائمة",
+      "margin": "الهامش",
+      "product": "منتج",
+      "standardCost": "التكلفة المعيارية",
+      "totalSold": "إجمالي المبيعات"
+    },
+    "viewAnalytics": "عرض التحليلات",
+    "viewBom": "عرض قائمة المواد"
+  },
+  "quality": {
+    "analytics": {
+      "_value": "التحليلات",
+      "activeAnomalies": "شذوذات نشطة",
+      "adjustParameters": "تعديل المعلمات",
+      "awaitingDisposition": "بانتظار التصرف",
+      "exportIntel": "تصدير الاستخبارات",
+      "firstPassYield": "عائد المرور الأول",
+      "ignoreRisk": "تجاهل المخاطر",
+      "implementationPhase": "مرحلة التنفيذ",
+      "inspectionGateOutcomes": "نتائج بوابة الفحص",
+      "meanInspectionPulse": "متوسط نبض الفحص",
+      "ncrRootCause": "السبب الجذري لعدم المطابقة",
+      "predictiveIntelligence": "الاستخبارات التنبؤية",
+      "resolutionProtocols": "بروتوكولات المعالجة",
+      "strategicWindow": "النافذة الاستراتيجية",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان",
+      "velocityGain": "مكاسب السرعة",
+      "vsLastCycle": "مقارنة بالدورة السابقة"
+    },
+    "capa": {
+      "detail": {
+        "addNode": "إضافة عقدة",
+        "commitAction": "تثبيت الإجراء",
+        "countermeasureNodes": "عقد الإجراءات التصحيحية",
+        "exportProtocol": "تصدير بروتوكول",
+        "implementationMagnitude": "حجم التنفيذ",
+        "problemStatement": "بيان المشكلة",
+        "refineCapa": "تنقيح إجراء تصحيحي",
+        "rootCauseAnalysis": "تحليل السبب الجذري",
+        "subtitle": "العنوان الفرعي",
+        "syncPulse": "نبض المزامنة",
+        "tabs": {
+          "actionProtocol": "بروتوكول الإجراء",
+          "effectivenessSync": "مزامنة الفاعلية",
+          "relatedAnomalies": "الشذوذات المرتبطة"
+        },
+        "terminateNode": "إنهاء عقدة",
+        "verifyEffectiveness": "تحقق الفاعلية"
+      },
+      "new": {
+        "actionPlanParameters": "معلمات خطة الإجراء",
+        "assignedOperative": "المسؤول المعيّن",
+        "capaCreated": "تم إنشاء الإجراء التصحيحي",
+        "capaIdentity": "معرف الإجراء التصحيحي",
+        "createFailed": "إنشاء فشل",
+        "establishCapa": "إنشاء إجراء تصحيحي",
+        "initiatedSuccess": "تم البدء بنجاح",
+        "originNode": "عقدة المصدر",
+        "priorityLayer": "طبقة الأولوية",
+        "rootCauseCountermeasures": "إجراءات السبب الجذري التصحيحية",
+        "subtitle": "العنوان الفرعي",
+        "targetHorizon": "الأفق المستهدف",
+        "title": "العنوان"
+      }
+    },
+    "inspection": {
+      "detail": {
+        "assignmentTelemetry": "قياس الإسناد",
+        "checklist": "قائمة التحقق",
+        "commitSync": "مزامنة الالتزام",
+        "inspectionIntelligence": "استخبارات الفحص",
+        "leadInspector": "المفتش الرئيسي",
+        "printEvidence": "طباعة الأدلة",
+        "resultsAnalytics": "النتائج التحليلات",
+        "scheduledSync": "مجدول مزامنة"
+      },
+      "new": {
+        "assignedInspector": "المفتش المعيّن",
+        "associatedWoSync": "مزامنة أمر العمل المرتبط",
+        "createFailed": "إنشاء فشل",
+        "establishInspection": "إنشاء فحص",
+        "gateParameters": "معلمات البوابة",
+        "initialObservation": "الملاحظة الأولية",
+        "initializedSuccess": "تم التهيئة بنجاح",
+        "inspectionStarted": "بدأ الفحص",
+        "phaseNode": "عقدة المرحلة",
+        "productPartNode": "عقدة جزء المنتج",
+        "protocolIdentity": "معرف البروتوكول",
+        "subtitle": "العنوان الفرعي",
+        "title": "العنوان"
+      }
+    },
+    "ncr": {
+      "detail": {
+        "assignCapa": "تعيين إجراء تصحيحي",
+        "comment": "تعليق",
+        "discrepancyIntelligence": "استخبارات التباين",
+        "investigationProtocol": "بروتوكول التحقيق",
+        "noDescription": "لا يوجد وصف",
+        "refineProtocol": "تنقيح البروتوكول",
+        "subjectiveData": "بيانات ذاتية",
+        "subtitle": "العنوان الفرعي",
+        "tabs": {
+          "disposition": "التصرف",
+          "eventLog": "سجل الأحداث",
+          "evidence": "الأدلة",
+          "rootCause": "السبب الجذري"
+        },
+        "terminateNode": "إنهاء عقدة",
+        "viewLogs": "عرض السجلات"
+      },
+      "new": {
+        "associatedWo": "أمر عمل مرتبط",
+        "createFailed": "إنشاء فشل",
+        "detectionNode": "عقدة الاكتشاف",
+        "discrepancyIntelligence": "استخبارات التباين",
+        "establishNcr": "إنشاء تقرير عدم مطابقة",
+        "issueTitleProtocol": "بروتوكول عنوان المشكلة",
+        "ncrCreated": "تم إنشاء تقرير عدم مطابقة",
+        "ncrParameters": "معلمات تقرير عدم مطابقة",
+        "recordedSuccess": "تم التسجيل بنجاح",
+        "relatedProduct": "منتج مرتبط",
+        "severityMagnitude": "شدة الخطورة",
+        "subtitle": "العنوان الفرعي",
+        "title": "العنوان",
+        "titleDescRequired": "وصف العنوان مطلوب",
+        "validationError": "خطأ في التحقق"
+      }
+    },
+    "newCAPA": "إجراء تصحيحي جديد",
+    "newInspection": "فحص جديد",
+    "newNCR": "تقرير عدم مطابقة جديد",
+    "newProtocol": "بروتوكول جديد",
+    "stats": {
+      "activeSyncGates": "بوابات المزامنة النشطة",
+      "firstPassVelocity": "سرعة المرور الأول",
+      "globalAnomalies": "الشذوذات العالمية",
+      "resolutionProtocols": "بروتوكولات المعالجة"
+    },
+    "tabs": {
+      "anomalies": "الشذوذات",
+      "customerSatisfaction": "رضا العملاء",
+      "protocols": "البروتوكولات",
+      "syncGates": "بوابات المزامنة"
+    }
   },
   "quickActions": {
-    "createNewRFQ": "إنشاء طلب عرض أسعار جديد",
-    "createNewQuote": "إنشاء عرض أسعار جديد",
     "createNewCustomer": "إنشاء عميل جديد",
+    "createNewQuote": "إنشاء عرض أسعار جديد",
+    "createNewRFQ": "إنشاء طلب عرض أسعار جديد",
     "createNewTask": "إنشاء مهمة جديدة",
     "createWorkOrder": "إنشاء أمر عمل",
     "newRequisition": "طلب شراء جديد"
-  },
-  "settings": {
-    "title": "الإعدادات",
-    "general": "عام",
-    "profile": "الملف الشخصي",
-    "account": "الحساب",
-    "security": "الأمان",
-    "notifications": "الإشعارات",
-    "appearance": "المظهر",
-    "language": "اللغة",
-    "preferences": "التفضيلات",
-    "organization": "المنظمة",
-    "system": "النظام",
-    "integrations": "التكاملات",
-    "billing": "الفوترة",
-    "team": "الفريق",
-    "permissions": "الصلاحيات",
-    "audit": "سجل المراجعة",
-    "backup": "النسخ الاحتياطي والاستعادة",
-    "api": "مفاتيح API",
-    "webhooks": "ويب هوكس",
-    "localization": {
-      "title": "بروتوكول التوطين",
-      "description": "ضبط لغة المنظمة وهياكل البيانات الإقليمية",
-      "intelligenceLanguage": "لغة الواجهة",
-      "temporalFormat": "تنسيق الوقت",
-      "dateFormat": "تنسيق التاريخ",
-      "timeFormat": "تنسيق الساعة",
-      "timezone": "المنطقة الزمنية",
-      "currency": "العملة",
-      "measurementUnits": "وحدات القياس"
-    },
-    "appearance": {
-      "title": "المظهر",
-      "theme": "السمة",
-      "lightMode": "الوضع الفاتح",
-      "darkMode": "الوضع الداكن",
-      "systemDefault": "إعداد النظام",
-      "accentColor": "لون التمييز",
-      "fontSize": "حجم الخط",
-      "density": "كثافة العرض",
-      "compact": "مضغوط",
-      "comfortable": "مريح",
-      "spacious": "واسع"
-    }
-  },
-  "errors": {
-    "networkError": "خطأ في الشبكة. يرجى التحقق من اتصالك.",
-    "sessionExpired": "انتهت جلستك. يرجى تسجيل الدخول مرة أخرى.",
-    "permissionDenied": "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
-    "notFound": "لم يتم العثور على المورد المطلوب.",
-    "serverError": "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.",
-    "validationError": "يرجى التحقق من إدخالاتك والمحاولة مرة أخرى.",
-    "rateLimitExceeded": "طلبات كثيرة جداً. يرجى الانتظار قليلاً.",
-    "serviceUnavailable": "الخدمة غير متاحة مؤقتاً. يرجى المحاولة لاحقاً.",
-    "badRequest": "طلب غير صالح. يرجى التحقق من إدخالاتك.",
-    "unauthorized": "يجب تسجيل الدخول لتنفيذ هذا الإجراء.",
-    "forbidden": "تم رفض الوصول.",
-    "conflict": "تم تعديل هذا المورد بواسطة مستخدم آخر.",
-    "timeout": "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
-    "unknown": "حدث خطأ غير معروف."
-  },
-  "confirmations": {
-    "deleteTitle": "حذف {item}؟",
-    "deleteDescription": "لا يمكن التراجع عن هذا الإجراء. سيتم حذف {item} نهائياً.",
-    "discardTitle": "تجاهل التغييرات؟",
-    "discardDescription": "لديك تغييرات غير محفوظة. هل أنت متأكد من تجاهلها؟",
-    "logoutTitle": "تسجيل الخروج؟",
-    "logoutDescription": "سيتم تسجيل خروجك من حسابك.",
-    "archiveTitle": "أرشفة {item}؟",
-    "archiveDescription": "سيتم نقل {item} إلى الأرشيف.",
-    "restoreTitle": "استعادة {item}؟",
-    "restoreDescription": "سيتم استعادة {item} من الأرشيف."
-  },
-  "time": {
-    "now": "الآن",
-    "seconds": "منذ {count} ثانية",
-    "minutes": "منذ {count} دقيقة",
-    "hours": "منذ {count} ساعة",
-    "days": "منذ {count} يوم",
-    "weeks": "منذ {count} أسبوع",
-    "months": "منذ {count} شهر",
-    "years": "منذ {count} سنة",
-    "second": "ثانية",
-    "minute": "دقيقة",
-    "hour": "ساعة",
-    "day": "يوم",
-    "week": "أسبوع",
-    "month": "شهر",
-    "year": "سنة",
-    "today": "اليوم",
-    "yesterday": "أمس",
-    "tomorrow": "غداً",
-    "thisWeek": "هذا الأسبوع",
-    "lastWeek": "الأسبوع الماضي",
-    "nextWeek": "الأسبوع القادم",
-    "thisMonth": "هذا الشهر",
-    "lastMonth": "الشهر الماضي",
-    "nextMonth": "الشهر القادم"
-  },
-  "validation": {
-    "required": "هذا الحقل مطلوب",
-    "email": "يرجى إدخال بريد إلكتروني صالح",
-    "minLength": "يجب أن يحتوي على {min} أحرف على الأقل",
-    "maxLength": "يجب ألا يتجاوز {max} أحرف",
-    "pattern": "تنسيق غير صالح",
-    "number": "يجب أن يكون رقماً صالحاً",
-    "positiveNumber": "يجب أن يكون رقماً موجباً",
-    "integer": "يجب أن يكون رقماً صحيحاً",
-    "url": "يرجى إدخال رابط صالح",
-    "phone": "يرجى إدخال رقم هاتف صالح",
-    "date": "يرجى إدخال تاريخ صالح",
-    "dateRange": "يجب أن يكون تاريخ الانتهاء بعد تاريخ البداية",
-    "passwordMatch": "كلمتا المرور غير متطابقتين",
-    "passwordStrength": "كلمة المرور ضعيفة جداً",
-    "unique": "هذه القيمة مستخدمة بالفعل",
-    "fillAllFields": "يرجى ملء جميع الحقول",
-    "passwordMinLength": "يجب أن تكون كلمة المرور 8 أحرف على الأقل"
-  },
-  "tables": {
-    "showing": "عرض",
-    "of": "من",
-    "entries": "عنصر",
-    "page": "صفحة",
-    "rowsPerPage": "صفوف في الصفحة",
-    "noData": "لا توجد بيانات للعرض",
-    "loading": "جارٍ تحميل البيانات...",
-    "sortBy": "ترتيب حسب",
-    "ascending": "تصاعدي",
-    "descending": "تنازلي",
-    "filterBy": "تصفية حسب",
-    "clearFilters": "مسح الفلاتر",
-    "columns": "الأعمدة",
-    "exportCSV": "تصدير CSV",
-    "exportPDF": "تصدير PDF"
-  },
-  "forms": {
-    "submit": "إرسال",
-    "saveChanges": "حفظ التغييرات",
-    "saveDraft": "حفظ كمسودة",
-    "cancel": "إلغاء",
-    "reset": "إعادة تعيين النموذج",
-    "requiredFields": "الحقول المطلوبة",
-    "optionalFields": "الحقول الاختيارية",
-    "attachFile": "إرفاق ملف",
-    "removeFile": "إزالة الملف",
-    "dragDropFile": "اسحب وأفلت الملفات هنا أو انقر للاستعراض",
-    "selectDate": "اختر التاريخ",
-    "selectTime": "اختر الوقت",
-    "selectOption": "اختر خياراً",
-    "typeToSearch": "اكتب للبحث...",
-    "addMore": "إضافة المزيد",
-    "removeItem": "حذف العنصر",
-    "fullName": "الاسم الكامل",
-    "fullNamePlaceholder": "أحمد محمد"
-  },
-  "notifications": {
-    "title": "الإشعارات",
-    "markAllRead": "تعليم الكل كمقروء",
-    "clearAll": "مسح الكل",
-    "noNotifications": "لا توجد إشعارات",
-    "newNotification": "إشعار جديد",
-    "loadMore": "تحميل المزيد"
-  },
-  "userMenu": {
-    "profile": "ملفي الشخصي",
-    "settings": "الإعدادات",
-    "help": "المساعدة والدعم",
-    "feedback": "إرسال ملاحظات",
-    "logout": "تسجيل الخروج",
-    "switchAccount": "تبديل الحساب",
-    "manageAccounts": "إدارة الحسابات"
-  },
-  "accessibility": {
-    "skipToContent": "تخطي إلى المحتوى",
-    "skipToNavigation": "تخطي إلى التنقل",
-    "openMenu": "فتح القائمة",
-    "closeMenu": "إغلاق القائمة",
-    "expandSection": "توسيع القسم",
-    "collapseSection": "طي القسم",
-    "toggleTheme": "تغيير السمة",
-    "newWindow": "يفتح في نافذة جديدة",
-    "externalLink": "رابط خارجي",
-    "loading": "جارٍ تحميل المحتوى",
-    "loadingComplete": "اكتمل التحميل",
-    "showPassword": "إظهار كلمة المرور",
-    "hidePassword": "إخفاء كلمة المرور"
-  },
-  "modules": {
-    "sales": {
-      "title": "المبيعات",
-      "rfqs": "طلبات عروض الأسعار",
-      "opportunities": "الفرص",
-      "leads": "العملاء المحتملون",
-      "pipeline": "خط الأنابيب",
-      "revenue": "الإيرادات",
-      "forecast": "التوقعات",
-      "quota": "الحصة",
-      "won": "مكسوبة",
-      "lost": "خاسرة",
-      "newDeal": "صفقة جديدة"
-    },
-    "production": {
-      "title": "الإنتاج",
-      "workOrders": "أوامر العمل",
-      "scheduling": "الجدولة",
-      "capacity": "الطاقة الإنتاجية",
-      "efficiency": "الكفاءة",
-      "downtime": "وقت التوقف",
-      "output": "المخرجات",
-      "yield": "العائد",
-      "scrap": "الفاقد"
-    },
-    "quality": {
-      "title": "الجودة",
-      "inspections": "الفحوصات",
-      "ncr": "تقارير عدم المطابقة",
-      "capa": "الإجراءات التصحيحية والوقائية",
-      "compliance": "الامتثال",
-      "certifications": "الشهادات",
-      "audit": "المراجعة",
-      "defects": "العيوب",
-      "passRate": "معدل النجاح"
-    },
-    "inventory": {
-      "title": "المخزون",
-      "stock": "المخزون",
-      "warehouse": "المستودع",
-      "receiving": "الاستلام",
-      "shipping": "الشحن",
-      "transfer": "النقل",
-      "adjustment": "التعديل",
-      "count": "الجرد الدوري",
-      "reorder": "إعادة الطلب"
-    },
-    "maintenance": {
-      "title": "الصيانة",
-      "assets": "الأصول",
-      "preventive": "الوقائية",
-      "corrective": "التصحيحية",
-      "workOrders": "أوامر العمل",
-      "parts": "قطع الغيار",
-      "vendors": "الموردون",
-      "schedule": "الجدول",
-      "mttr": "متوسط وقت الإصلاح",
-      "mtbf": "متوسط الوقت بين الأعطال"
-    },
-    "hr": {
-      "title": "الموارد البشرية",
-      "employees": "الموظفون",
-      "attendance": "الحضور",
-      "leave": "الإجازات",
-      "payroll": "الرواتب",
-      "recruitment": "التوظيف",
-      "performance": "الأداء",
-      "training": "التدريب",
-      "benefits": "المزايا"
-    },
-    "finance": {
-      "title": "المالية",
-      "accounting": "المحاسبة",
-      "invoices": "الفواتير",
-      "payments": "المدفوعات",
-      "expenses": "المصروفات",
-      "budgets": "الميزانيات",
-      "reports": "التقارير",
-      "taxes": "الضرائب",
-      "ledger": "دفتر الأستاذ"
-    },
-    "purchase": {
-      "title": "المشتريات",
-      "requisitions": "طلبات الشراء",
-      "orders": "أوامر الشراء",
-      "suppliers": "الموردون",
-      "receiving": "الاستلام",
-      "returns": "المرتجعات",
-      "mrp": "تخطيط موارد المواد",
-      "sourcing": "التوريد"
-    }
   },
   "rtl": {
     "inputPlaceholder": "اكتب هنا...",
     "searchPlaceholder": "ابحث هنا...",
     "selectPlaceholder": "اختر..."
+  },
+  "settings": {
+    "account": {
+      "credentialRotation": "تدوير بيانات الاعتماد",
+      "credentialRotationDesc": "وصف تدوير بيانات الاعتماد",
+      "currentPassword": "كلمة المرور الحالية",
+      "deleteAccount": "حذف الحساب",
+      "deleteAccountDesc": "حذف حسابك وجميع البيانات المرتبطة به نهائياً",
+      "description": "الوصف",
+      "emailPreferences": "تفضيلات البريد الإلكتروني",
+      "newPassword": "كلمة مرور جديدة",
+      "primaryEmail": "البريد الإلكتروني الأساسي",
+      "subtitle": "تدوير بيانات الاعتماد وتكوين العقدة",
+      "timezone": "المنطقة الزمنية",
+      "title": "الحساب",
+      "updateCredentials": "تحديث بيانات الاعتماد"
+    },
+    "api": {
+      "_value": "مفاتيح واجهة البرمجة",
+      "activeAuthNodes": "عقد المصادقة النشطة",
+      "description": "الوصف",
+      "initializeNewKey": "تهيئة مفتاح جديد",
+      "intelligenceThroughput": "ذكاء الإنتاجية",
+      "optimalLoad": "الحمل الأمثل",
+      "title": "العنوان"
+    },
+    "appearance": {
+      "accentColor": "لون التمييز",
+      "comfortable": "مريح",
+      "comfortableDesc": "مسافات أكبر لقراءة أسهل",
+      "compact": "مضغوط",
+      "compactDesc": "محتوى أكثر على الشاشة",
+      "compactNavigation": "تنقل مضغوط",
+      "compactNavigationDesc": "تصغير الشريط الجانبي افتراضياً",
+      "darkMode": "الوضع الداكن",
+      "darkModeDesc": "خلفية داكنة مع نص فاتح",
+      "density": "كثافة العرض",
+      "fontSize": "حجم الخط",
+      "fontSizeLarge": "كبير",
+      "fontSizeLargeDesc": "18 بكسل أساس",
+      "fontSizeMedium": "متوسط",
+      "fontSizeMediumDesc": "16 بكسل أساس (افتراضي)",
+      "fontSizeSmall": "صغير",
+      "fontSizeSmallDesc": "14 بكسل أساس",
+      "lightMode": "الوضع الفاتح",
+      "lightModeDesc": "خلفية فاتحة مع نص داكن",
+      "livePreview": "معاينة مباشرة",
+      "reducedMotion": "تقليل الحركة",
+      "reducedMotionDesc": "تقليل الرسوم المتحركة والانتقالات في الواجهة",
+      "save": "حفظ",
+      "saveSuccess": "حفظ نجاح",
+      "saving": "جاري الحفظ...",
+      "senseiOrange": "برتقالي سينسي",
+      "spacious": "واسع",
+      "subtitle": "جماليات الواجهة والمعايرات",
+      "systemDefault": "إعداد النظام",
+      "systemDefaultDesc": "اتباع تفضيلات النظام",
+      "theme": "السمة",
+      "themeMode": "وضع السمة",
+      "title": "المظهر"
+    },
+    "audit": "سجل المراجعة",
+    "backup": "النسخ الاحتياطي والاستعادة",
+    "billing": "الفوترة",
+    "company": {
+      "brandingSync": "مزامنة الهوية البصرية",
+      "description": "الوصف",
+      "legalEntityIdentity": "هوية الكيان القانوني",
+      "registeredOffice": "المكتب المسجّل",
+      "taxIdVat": "معرّف الضريبة/القيمة المضافة",
+      "title": "العنوان"
+    },
+    "currency": {
+      "currency": "العملة",
+      "disclaimer": "أسعار الصرف تُقدَّم لأغراض معلوماتية وقد لا تعكس أسعار المعاملات الفعلية. يتم تحديث الأسعار كل ساعة من بيانات البنك المركزي الأوروبي.",
+      "display": "العرض",
+      "displayCurrency": "عملة العرض",
+      "displayCurrencyDesc": "اختر كيفية عرض القيم المالية في التطبيق",
+      "exchangeRates": "أسعار الصرف",
+      "exchangeRatesDesc": "أسعار مباشرة من البنك المركزي الأوروبي",
+      "lastUpdated": "آخر تحديث",
+      "never": "أبداً",
+      "preview": "معاينة",
+      "rateVsDisplay": "السعر مقابل {العملة}",
+      "rateVsEur": "السعر مقابل اليورو",
+      "refresh": "تحديث الأسعار",
+      "sampleAmount": "مبلغ العينة: 1,000 الوحدات",
+      "selectCurrency": "اختر العملة",
+      "statusError": "استخدام الأسعار المخزنة",
+      "statusOk": "تم مزامنة الأسعار",
+      "suggested": "مقترح",
+      "suggestionNote": "استنادًا إلى إعدادات اللغة لديك، نوصي بـ {العملة}",
+      "useSuggested": "استخدام المقترح",
+      "valueIn": "١٬٠٠٠ بعملة {العملة}"
+    },
+    "data": {
+      "description": "الوصف",
+      "establishExport": "بدء التصدير",
+      "executePurge": "تنفيذ التنظيف",
+      "fullExport": "تصدير كامل",
+      "fullExportDesc": "وصف التصدير الكامل",
+      "pruningProtocol": "بروتوكول التنقية",
+      "pruningProtocolDesc": "وصف بروتوكول التنقية",
+      "title": "العنوان"
+    },
+    "email": {
+      "description": "الوصف",
+      "dispatchIdentity": "هوية الإرسال",
+      "intelligenceBroadcast": "بث الاستخبارات",
+      "intelligenceBroadcastDesc": "وصف بث الاستخبارات",
+      "relayReplyTo": "إعادة توجيه الرد إلى",
+      "serverSync": "خادم مزامنة",
+      "title": "العنوان"
+    },
+    "general": "عام",
+    "integrations": {
+      "_value": "التكاملات",
+      "description": "الوصف",
+      "title": "العنوان"
+    },
+    "language": "اللغة",
+    "localization": {
+      "autoSyncActive": "تفعيل المزامنة التلقائية",
+      "currency": "العملة",
+      "dateFormat": "تنسيق التاريخ",
+      "description": "ضبط لغة المنظمة وهياكل البيانات الإقليمية",
+      "intelligenceLanguage": "لغة الواجهة",
+      "measurementUnits": "وحدات القياس",
+      "numericPrecisionPreview": "معاينة الدقة الرقمية",
+      "temporalFormat": "تنسيق الوقت",
+      "timeFormat": "تنسيق الساعة",
+      "timezone": "المنطقة الزمنية",
+      "title": "بروتوكول التوطين"
+    },
+    "mobile": {
+      "biometricSync": "مزامنة القياسات الحيوية",
+      "biometricSyncDesc": "استخدم معرّف الوجه أو البصمة لفتح العقدة",
+      "description": "إدارة مزامنة تطبيق الجوال وطبقات التفويض الحيوي",
+      "offlineIntelligence": "ذكاء دون اتصال",
+      "offlineIntelligenceDesc": "تخزين مؤقت للعُقد التشغيلية لبيئات الكمون العالي",
+      "telemetryPush": "إشعارات القياس عن بُعد",
+      "telemetryPushDesc": "تلقي تنبيهات تنظيمية فورية على الأجهزة المحمولة",
+      "title": "عقدة التشغيل المحمولة"
+    },
+    "notifications": {
+      "abnormalityDetected": "اكتشاف عدم مطابقة",
+      "abnormalityDetectedDesc": "عند بدء بروتوكول عدم المطابقة",
+      "andonEscalation": "تصعيد أندون",
+      "andonEscalationDesc": "تنبيهات فورية لخط الإنتاج تتطلب الانتباه",
+      "approvalRequest": "طلب اعتماد",
+      "approvalRequestDesc": "عندما يتطلب عرض السعر موافقة استراتيجية",
+      "calibrating": "جارٍ المعايرة...",
+      "commerceOutcome": "نتيجة تجارية",
+      "commerceOutcomeDesc": "عندما يصل عرض السعر إلى حالة نهائية (ربح/خسارة)",
+      "dailyCommandSummary": "ملخص الأوامر اليومي",
+      "dailyCommandSummaryDesc": "إحاطة بأنشطة اليوم السابق والمهام المعلّقة",
+      "digest": "الملخص اليومي",
+      "digestDesc": "تلقي ملخص يومي للأنشطة",
+      "dispatchSynchronization": "مزامنة الإرسال",
+      "dispatchSynchronizationDesc": "وقت التسليم المستهدف للإحاطة اليومية بالذكاء",
+      "emailNotifications": "إشعارات البريد الإلكتروني",
+      "inAppNotifications": "الإشعارات داخل التطبيق",
+      "inboundRfqSignal": "إشارة طلب عرض سعر وارد",
+      "inboundRfqSignalDesc": "عند دخول طلب عرض سعر جديد إلى المسار أو إسناده",
+      "inspectionThreshold": "عتبة الفحص",
+      "inspectionThresholdDesc": "تذكيرات بالتزامنات القادمة لبوابات الجودة",
+      "marketing": "رسائل التسويق",
+      "marketingDesc": "أخبار المنتجات والمحتوى الترويجي",
+      "mentions": "الإشارات والردود",
+      "mentionsDesc": "إشعارك عندما يذكرك شخص ما",
+      "pipelineCommerce": "إشارات المسار والتجارة",
+      "productionFloorTelemetry": "قياس أرضية الإنتاج",
+      "pushNotifications": "الإشعارات الفورية",
+      "qualityAssuranceAlerts": "تنبيهات ضمان الجودة",
+      "resolutionProtocol": "بروتوكول المعالجة (إجراء تصحيحي)",
+      "resolutionProtocolDesc": "عند إسناد إجراء تصحيحي للتنفيذ",
+      "saveRouting": "حفظ التوجيه",
+      "strategicSummaries": "ملخصات استراتيجية",
+      "subtitle": "تكوين التنبيهات وبروتوكولات الاتصال",
+      "title": "الإشعارات",
+      "updates": "تحديثات النظام",
+      "updatesDesc": "إعلانات وتحديثات النظام المهمة",
+      "weeklyPerformanceIntelligence": "ذكاء الأداء الأسبوعي",
+      "weeklyPerformanceIntelligenceDesc": "تقرير مُجمّع للمقاييس وسرعة المنظمة",
+      "workOrderEvolution": "تطور أمر العمل",
+      "workOrderEvolutionDesc": "تحولات الحالة في أوامر الإنتاج المتتبعة",
+      "digestTimeOptions": {
+        "0600": "06:00 (شروق الشمس)",
+        "0700": "07:00",
+        "0800": "08:00 (بداية الوردية)",
+        "0900": "09:00",
+        "1800": "18:00 (نهاية الوردية)"
+      }
+    },
+    "roleInsights": {
+      "title": "تعيينات رؤى الأدوار",
+      "subtitle": "اضبط أي رؤى ذكاء اصطناعي يمكن لكل دور الوصول إليها",
+      "export": "تصدير",
+      "saveChanges": "حفظ التغييرات",
+      "exportFilePrefix": "رؤى-الأدوار",
+      "infoTitle": "حول التحكم في وصول الأدوار إلى الرؤى",
+      "infoBody": "يتم تنظيم رؤى الذكاء الاصطناعي حسب مستوى الحساسية. لدى المدير التنفيذي والرئيس وصول كامل (مقفل). يمكن تخصيص الأدوار الأخرى وفق احتياجات المؤسسة. يتم تدقيق التغييرات ويمكن تصديرها للامتثال.",
+      "tabs": {
+        "matrix": "مصفوفة الوصول",
+        "roles": "حسب الدور",
+        "audit": "سجل التدقيق"
+      },
+      "filters": {
+        "searchPlaceholder": "ابحث عن الرؤى...",
+        "sensitivityPlaceholder": "التصفية حسب الحساسية",
+        "rolePlaceholder": "التصفية حسب الدور",
+        "allSensitivities": "كل درجات الحساسية",
+        "allRoles": "كل الأدوار"
+      },
+      "table": {
+        "insightHeader": "الرؤية"
+      },
+      "tooltip": {
+        "level": "المستوى: {level}",
+        "locked": "{role} لديه وصول كامل (مقفل)"
+      },
+      "roleCard": {
+        "insightsAccess": "وصول الرؤى",
+        "levelBadge": "المستوى {level}",
+        "fullAccess": "وصول كامل",
+        "editMappings": "تعديل التعيينات"
+      },
+      "audit": {
+        "title": "سجل التغييرات",
+        "description": "تتبّع جميع التغييرات على تعيينات رؤى الأدوار للامتثال وتدقيق الأمان",
+        "headers": {
+          "timestamp": "الطابع الزمني",
+          "action": "الإجراء",
+          "role": "الدور",
+          "insight": "الرؤية",
+          "performedBy": "تم بواسطة",
+          "reason": "السبب"
+        },
+        "actions": {
+          "grant": "تم المنح",
+          "revoke": "تم السحب",
+          "bulkUpdate": "تحديث جماعي"
+        },
+        "sampleReasons": {
+          "qualityImprovement": "مبادرة لتحسين الجودة",
+          "dataSensitivity": "سياسة حساسية البيانات",
+          "expandedMaintenance": "توسيع الوصول للصيانة التنبؤية"
+        }
+      },
+      "saveDialog": {
+        "title": "حفظ التغييرات",
+        "description": "قدّم سببًا لهذا التغيير (مطلوب لمسار التدقيق)",
+        "reasonLabel": "سبب التغيير",
+        "reasonPlaceholder": "مثال: تحديث الوصول لمتطلبات امتثال جديدة",
+        "cancel": "إلغاء",
+        "saveAudit": "حفظ وتدقيق"
+      },
+      "sensitivity": {
+        "low": "منخفضة",
+        "medium": "متوسطة",
+        "high": "عالية",
+        "critical": "حرجة",
+        "lowDesc": "رؤى تشغيلية عامة",
+        "mediumDesc": "رؤى خاصة بالأقسام",
+        "highDesc": "رؤى أعمال حساسة",
+        "criticalDesc": "خاصة بالقيادة التنفيذية فقط"
+      },
+      "categories": {
+        "production": {
+          "name": "الإنتاج والعمليات",
+          "description": "مؤشرات الإنتاج في الوقت الحقيقي والكفاءة والرؤى التشغيلية"
+        },
+        "quality": {
+          "name": "الجودة والامتثال",
+          "description": "مؤشرات الجودة وتحليل العيوب ورؤى الامتثال"
+        },
+        "inventory": {
+          "name": "المخزون وسلسلة الإمداد",
+          "description": "مستويات المخزون وصحة سلسلة الإمداد ورؤى الشراء"
+        },
+        "maintenance": {
+          "name": "الصيانة والمعدات",
+          "description": "حالة المعدات والصيانة التنبؤية ورؤى الاعتمادية"
+        },
+        "financial": {
+          "name": "المالية وتحليل التكاليف",
+          "description": "الأداء المالي وتحليل التكاليف ورؤى الربحية"
+        },
+        "workforce": {
+          "name": "القوى العاملة والموارد البشرية",
+          "description": "تحليلات القوى العاملة والإنتاجية ورؤى الموارد البشرية"
+        },
+        "sales": {
+          "name": "المبيعات والعملاء",
+          "description": "أداء المبيعات وتحليل خط الأنابيب ورؤى العملاء"
+        },
+        "strategic": {
+          "name": "الاستراتيجية والإدارة التنفيذية",
+          "description": "رؤى استراتيجية عالية المستوى ولوحات تحكم تنفيذية"
+        }
+      },
+      "insights": {
+        "production_efficiency": {
+          "name": "كفاءة الإنتاج",
+          "description": "الفعالية الإجمالية للمعدات والإنتاجية وأزمنة الدورة"
+        },
+        "production_bottlenecks": {
+          "name": "تحليل الاختناقات",
+          "description": "تحديد قيود الإنتاج"
+        },
+        "downtime_analysis": {
+          "name": "تحليل التوقفات",
+          "description": "توقفات المعدات والعمليات"
+        },
+        "capacity_utilization": {
+          "name": "استغلال السعة",
+          "description": "مؤشرات الموارد والسعة"
+        },
+        "production_forecasts": {
+          "name": "توقعات الإنتاج",
+          "description": "تنبؤات الطلب المدعومة بالذكاء الاصطناعي"
+        },
+        "quality_metrics": {
+          "name": "مؤشرات الجودة",
+          "description": "الأجزاء لكل مليون ومعدلات العيوب والعائد"
+        },
+        "spc_analysis": {
+          "name": "تحليل التحكم الإحصائي بالعمليات",
+          "description": "رؤى التحكم الإحصائي في العمليات"
+        },
+        "defect_predictions": {
+          "name": "توقعات العيوب",
+          "description": "تنبؤ العيوب بالذكاء الاصطناعي"
+        },
+        "compliance_status": {
+          "name": "حالة الامتثال",
+          "description": "متابعة الامتثال التنظيمي"
+        },
+        "audit_readiness": {
+          "name": "جاهزية التدقيق",
+          "description": "رؤى التحضير للتدقيق"
+        },
+        "inventory_levels": {
+          "name": "مستويات المخزون",
+          "description": "مستويات المخزون ودوران المخزون"
+        },
+        "reorder_recommendations": {
+          "name": "توصيات إعادة الطلب",
+          "description": "نقاط إعادة الطلب المحسّنة بالذكاء الاصطناعي"
+        },
+        "supplier_performance": {
+          "name": "أداء المورّدين",
+          "description": "بطاقات تقييم المورّدين والمؤشرات"
+        },
+        "supply_chain_risks": {
+          "name": "مخاطر سلسلة الإمداد",
+          "description": "تقييم المخاطر والتنبيهات"
+        },
+        "cost_optimization": {
+          "name": "تحسين التكاليف",
+          "description": "رؤى تكاليف الشراء"
+        },
+        "equipment_health": {
+          "name": "صحة المعدات",
+          "description": "حالة الآلات ومراقبتها"
+        },
+        "predictive_maintenance": {
+          "name": "الصيانة التنبؤية",
+          "description": "تنبؤات الأعطال بالذكاء الاصطناعي"
+        },
+        "maintenance_costs": {
+          "name": "تكاليف الصيانة",
+          "description": "تتبع وتحليل التكاليف"
+        },
+        "asset_lifecycle": {
+          "name": "دورة حياة الأصول",
+          "description": "رؤى دورة حياة الأصول"
+        },
+        "reliability_metrics": {
+          "name": "مؤشرات الاعتمادية",
+          "description": "تحليل متوسط الزمن بين الأعطال ومتوسط زمن الإصلاح"
+        },
+        "cost_analysis": {
+          "name": "تحليل التكاليف",
+          "description": "تفصيلات التكاليف"
+        },
+        "profitability": {
+          "name": "تحليل الربحية",
+          "description": "ربحية المنتج والعميل"
+        },
+        "margin_trends": {
+          "name": "اتجاهات الهامش",
+          "description": "تحليل الهوامش عبر الزمن"
+        },
+        "revenue_forecasts": {
+          "name": "توقعات الإيرادات",
+          "description": "تنبؤات الإيرادات بالذكاء الاصطناعي"
+        },
+        "cash_flow_insights": {
+          "name": "رؤى التدفق النقدي",
+          "description": "تحليل الوضع النقدي"
+        },
+        "workforce_productivity": {
+          "name": "إنتاجية القوى العاملة",
+          "description": "مؤشرات أداء الفريق"
+        },
+        "attendance_patterns": {
+          "name": "أنماط الحضور",
+          "description": "تحليلات الحضور"
+        },
+        "skill_gaps": {
+          "name": "تحليل فجوات المهارات",
+          "description": "تقييم احتياجات التدريب"
+        },
+        "retention_risks": {
+          "name": "مخاطر الاحتفاظ",
+          "description": "تنبؤات التسرب بالذكاء الاصطناعي"
+        },
+        "compensation_insights": {
+          "name": "رؤى التعويضات",
+          "description": "تحليل الرواتب والمزايا"
+        },
+        "sales_pipeline": {
+          "name": "خط أنابيب المبيعات",
+          "description": "صحة الخط وسرعته"
+        },
+        "win_loss_analysis": {
+          "name": "تحليل الفوز/الخسارة",
+          "description": "أنماط نتائج الصفقات"
+        },
+        "customer_insights": {
+          "name": "رؤى العملاء",
+          "description": "تحليل سلوك العملاء"
+        },
+        "quote_optimization": {
+          "name": "تحسين العروض السعرية",
+          "description": "توصيات تسعير بالذكاء الاصطناعي"
+        },
+        "market_trends": {
+          "name": "اتجاهات السوق",
+          "description": "تحليل الصناعة والسوق"
+        },
+        "kpi_dashboard": {
+          "name": "لوحة مؤشرات الأداء",
+          "description": "نظرة تنفيذية على مؤشرات الأداء"
+        },
+        "competitive_analysis": {
+          "name": "تحليل المنافسين",
+          "description": "رؤى تموضع السوق"
+        },
+        "strategic_recommendations": {
+          "name": "توصيات استراتيجية",
+          "description": "اقتراحات استراتيجية مدعومة بالذكاء الاصطناعي"
+        },
+        "risk_assessment": {
+          "name": "تقييم المخاطر",
+          "description": "تحليل مخاطر المؤسسة"
+        },
+        "scenario_planning": {
+          "name": "تخطيط السيناريوهات",
+          "description": "أدوات تحليل ماذا لو"
+        }
+      },
+      "roles": {
+        "admin": {
+          "name": "المسؤول",
+          "description": "وصول كامل للنظام"
+        },
+        "ceo": {
+          "name": "المدير التنفيذي",
+          "description": "الرئيس التنفيذي"
+        },
+        "gm": {
+          "name": "المدير العام",
+          "description": "المدير العام"
+        },
+        "exec": {
+          "name": "تنفيذي",
+          "description": "القيادة التنفيذية"
+        },
+        "finance": {
+          "name": "المالية",
+          "description": "قسم المالية"
+        },
+        "hr": {
+          "name": "الموارد البشرية",
+          "description": "الموارد البشرية"
+        },
+        "ops": {
+          "name": "العمليات",
+          "description": "مدير العمليات"
+        },
+        "quality": {
+          "name": "الجودة",
+          "description": "مدير الجودة"
+        },
+        "it": {
+          "name": "تقنية المعلومات",
+          "description": "قسم تقنية المعلومات"
+        },
+        "accountant": {
+          "name": "محاسب",
+          "description": "طاقم المحاسبة"
+        },
+        "auditor": {
+          "name": "مدقق",
+          "description": "مدقق داخلي/خارجي"
+        },
+        "sales_engineer": {
+          "name": "مهندس مبيعات",
+          "description": "مبيعات تقنية"
+        },
+        "estimator": {
+          "name": "مقدّر التكاليف",
+          "description": "مقدّر التكاليف"
+        },
+        "sales": {
+          "name": "المبيعات",
+          "description": "مندوب مبيعات"
+        },
+        "purchasing": {
+          "name": "المشتريات",
+          "description": "وكيل المشتريات"
+        },
+        "supply_chain": {
+          "name": "سلسلة الإمداد",
+          "description": "أخصائي سلسلة الإمداد"
+        },
+        "logistics": {
+          "name": "اللوجستيات",
+          "description": "منسق اللوجستيات"
+        },
+        "warehouse": {
+          "name": "المخزن",
+          "description": "طاقم المخزن"
+        },
+        "maintenance": {
+          "name": "الصيانة",
+          "description": "فني صيانة"
+        },
+        "engineering": {
+          "name": "الهندسة",
+          "description": "مهندس"
+        },
+        "supervisor": {
+          "name": "مشرف",
+          "description": "مشرف إنتاج"
+        },
+        "team_lead": {
+          "name": "قائد فريق",
+          "description": "قائد فريق"
+        },
+        "operator": {
+          "name": "مشغل",
+          "description": "مشغل آلة"
+        },
+        "viewer": {
+          "name": "مُشاهد",
+          "description": "وصول للقراءة فقط"
+        }
+      }
+    },
+    "organization": "المنظمة",
+    "permissions": "الصلاحيات",
+    "preferences": "التفضيلات",
+    "profile": {
+      "avatar": "الصورة الرمزية",
+      "basicInfo": "المعلومات الأساسية",
+      "bio": "نبذة",
+      "changeAvatar": "تغيير الصورة الرمزية",
+      "communicationNodes": "قنوات الاتصال",
+      "department": "القسم",
+      "email": "البريد الإلكتروني",
+      "emailAddress": "عنوان البريد الإلكتروني",
+      "firstName": "الاسم الأول",
+      "fullName": "الاسم الكامل",
+      "jobTitle": "المسمى الوظيفي",
+      "lastName": "اسم العائلة",
+      "location": "الموقع",
+      "organizationalRole": "الدور التنظيمي",
+      "personalInfo": "المعلومات الشخصية",
+      "personnelSummary": "ملخص الموظف",
+      "phone": "الهاتف",
+      "phoneNumber": "رقم الهاتف",
+      "removeAvatar": "إزالة الصورة الرمزية",
+      "saveChanges": "حفظ_التغييرات",
+      "subtitle": "الهوية الشخصية والدور التنظيمي",
+      "synchronizing": "جاري_المزامنة...",
+      "timezoneSync": "مزامنة المنطقة الزمنية",
+      "title": "الملف الشخصي"
+    },
+    "security": {
+      "accessPassword": "كلمة مرور الوصول",
+      "active": "نشط",
+      "activeIntelligenceNodes": "عُقد الذكاء النشطة",
+      "activity": {
+        "loginFailed": "فشل تسجيل الدخول",
+        "loginSuccess": "تم تسجيل الدخول بنجاح",
+        "logout": "تم تسجيل الخروج",
+        "passwordChanged": "تم تغيير كلمة المرور",
+        "twoFactorEnabled": "تم تفعيل المصادقة الثنائية"
+      },
+      "atRisk": "معرّض للخطر",
+      "authenticationKeys": "مفاتيح المصادقة",
+      "authenticatorProtocol": "بروتوكول المصادقة",
+      "cancelProtocol": "إلغاء البروتوكول",
+      "changePassword": "تغيير كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "currentPassword": "كلمة المرور الحالية",
+      "disable2FA": "تعطيل التحقق بخطوتين",
+      "enable2FA": "تفعيل التحقق بخطوتين",
+      "enable2faDesc": "فعّل المصادقة الثنائية لأمان بمستوى صناعي",
+      "eventTelemetryLog": "سجل تليمترية الأحداث",
+      "lastActive": "آخر نشاط",
+      "lastRotated": "آخر تدوير قبل 3 أيام",
+      "newPassword": "كلمة المرور الجديدة",
+      "primaryNode": "العقدة الأساسية",
+      "pulse": "نبضة",
+      "revokeAllSessions": "إلغاء جميع الجلسات",
+      "revokeSession": "إلغاء",
+      "securityRecommendation1": "المصادقة الثنائية نشطة ومتزامنة",
+      "securityRecommendation2": "تم تدوير بيانات الهوية ضمن الحد الموصى به",
+      "securityRecommendation3": "فكّر في إنهاء الجلسات القديمة لتقليل سطح الهجوم",
+      "securitySyncRecommendations": "توصيات مزامنة الأمان",
+      "sessions": "الجلسات النشطة",
+      "sessionsDesc": "إدارة جلسات تسجيل الدخول النشطة",
+      "subtitle": "مفاتيح المصادقة وبروتوكولات الوصول",
+      "syncedWithToken": "متزامن مع مولّد الرمز",
+      "terminateAllRemoteSessions": "إنهاء جميع الجلسات البعيدة",
+      "terminateNode": "إنهاء العقدة",
+      "terminateNodeAuthorization": "إنهاء عقدة التفويض",
+      "terminateNodeDescription": "سيؤدي هذا الإجراء إلى تسجيل خروج الجهاز في {location}. هل تريد المتابعة بإنهاء العقدة؟",
+      "thisDevice": "هذا الجهاز",
+      "title": "الأمان",
+      "twoFactor": "التحقق بخطوتين",
+      "twoFactorDesc": "إضافة طبقة أمان إضافية لحسابك",
+      "updateKeys": "تحديث المفاتيح",
+      "verificationLayer": "طبقة التحقق"
+    },
+    "sites": {
+      "activeSitesDirectory": "دليل المواقع النشطة",
+      "addSite": "تهيئة عقدة موقع",
+      "address": "العنوان",
+      "countrySync": "مزامنة البلد",
+      "currencyNode": "عقدة العملة",
+      "initializeFirstNode": "تهيئة أول عقدة",
+      "initializeProtocol": "تهيئة البروتوكول",
+      "initializeSiteNode": "تهيئة عقدة موقع",
+      "nodeCommonName": "الاسم الشائع للعقدة",
+      "physicalAddressNode": "عنوان العقدة الفعلي",
+      "siteCode": "رمز الموقع",
+      "siteCodeIdentifier": "معرّف رمز الموقع",
+      "siteName": "اسم الموقع",
+      "station": "المحطة: العمليات العالمية-01",
+      "status": "الحالة",
+      "subtitle": "تكوين عقد الموقع",
+      "synchronizing": "جارٍ المزامنة...",
+      "temporalAlignment": "المواءمة الزمنية",
+      "timezone": "المنطقة الزمنية",
+      "title": "مواقع التصنيع",
+      "zeroSitesIdentified": "لم يتم العثور على مواقع"
+    },
+    "system": "النظام",
+    "team": {
+      "_value": "فريق",
+      "activeOperatives": "الأعضاء النشطون",
+      "intelligenceNodes": "عُقد الذكاء",
+      "inviteProtocol": "بروتوكول الدعوة",
+      "pendingSync": "مزامنة معلّقة",
+      "pulseNominal": "نبضة طبيعية",
+      "subtitle": "إدارة أعضاء الفريق والصلاحيات",
+      "title": "إدارة الفريق",
+      "totalRegistry": "إجمالي السجل",
+      "waitingForGate": "بانتظار البوابة",
+      "zeroOperativesIdentified": "لم يتم العثور على أعضاء"
+    },
+    "title": "الإعدادات",
+    "webhooks": "ويب هوكس"
+  },
+  "tables": {
+    "ascending": "تصاعدي",
+    "clearFilters": "مسح الفلاتر",
+    "columns": "الأعمدة",
+    "descending": "تنازلي",
+    "entries": "عنصر",
+    "exportCSV": "تصدير ملف سي إس في",
+    "exportPDF": "تصدير ملف بي دي إف",
+    "filterBy": "تصفية حسب",
+    "loading": "جارٍ تحميل البيانات...",
+    "noData": "لا توجد بيانات للعرض",
+    "of": "من",
+    "page": "صفحة",
+    "rowsPerPage": "صفوف في الصفحة",
+    "showing": "عرض",
+    "sortBy": "ترتيب حسب"
+  },
+  "time": {
+    "day": "يوم",
+    "days": "منذ {count} يوم",
+    "hour": "ساعة",
+    "hours": "منذ {count} ساعة",
+    "lastMonth": "الشهر الماضي",
+    "lastWeek": "الأسبوع الماضي",
+    "minute": "دقيقة",
+    "minutes": "منذ {count} دقيقة",
+    "month": "شهر",
+    "months": "منذ {count} شهر",
+    "nextMonth": "الشهر القادم",
+    "nextWeek": "الأسبوع القادم",
+    "now": "الآن",
+    "second": "ثانية",
+    "seconds": "منذ {count} ثانية",
+    "thisMonth": "هذا الشهر",
+    "thisWeek": "هذا الأسبوع",
+    "today": "اليوم",
+    "tomorrow": "غداً",
+    "week": "أسبوع",
+    "weeks": "منذ {count} أسبوع",
+    "year": "سنة",
+    "years": "منذ {count} سنة",
+    "yesterday": "أمس"
+  },
+  "training": {
+    "certifications": {
+      "detail": {
+        "awardedTo": "ممنوح إلى",
+        "certificateOfAchievement": "شهادة إنجاز",
+        "downloadCertificate": "تنزيل الشهادة",
+        "expiresOn": "تاريخ الانتهاء",
+        "finalScore": "النتيجة النهائية",
+        "issueDate": "تاريخ الإصدار",
+        "scopeOfCertification": "نطاق الشهادة",
+        "title": "العنوان"
+      },
+      "new": {
+        "certificationDetails": "تفاصيل الشهادة",
+        "certificationTitle": "عنوان الشهادة",
+        "defaultIssuer": "الجهة الافتراضية",
+        "expiryDate": "تاريخ الانتهاء",
+        "finalScore": "النتيجة النهائية",
+        "issueDate": "تاريخ الإصدار",
+        "issuingAuthority": "الجهة المانحة",
+        "registerCertification": "تسجيل الشهادة",
+        "scorePlaceholder": "أدخل الدرجة",
+        "subtitle": "العنوان الفرعي",
+        "teamMember": "عضو الفريق",
+        "teamMemberPlaceholder": "اختر عضو الفريق",
+        "title": "العنوان",
+        "toast": {
+          "success": {
+            "description": "الوصف",
+            "title": "العنوان"
+          }
+        }
+      }
+    },
+    "enroll": {
+      "configureParams": "تكوين المعلمات",
+      "establishEnrollment": "إعداد التسجيل",
+      "initiateEnrollment": "بدء التسجيل",
+      "rationalOptimization": "تحسين عقلاني",
+      "reasonPlaceholder": "سبب التسجيل",
+      "selectProgram": "اختر البرنامج",
+      "strategicProgramNode": "عقدة البرنامج الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان",
+      "toast": {
+        "success": {
+          "description": "الوصف",
+          "title": "العنوان"
+        }
+      }
+    },
+    "enrollEmployee": "تسجيل موظف",
+    "initializeActivity": "تهيئة النشاط",
+    "matrix": {
+      "competencyMatrix": "مصفوفة الكفاءات",
+      "departmentNode": "قسم عقدة",
+      "exportMatrix": "تصدير المصفوفة",
+      "operativeNode": "عقدة العامل",
+      "searchPlaceholder": "عبارة البحث",
+      "strategicAvg": "المتوسط الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان"
+    },
+    "newCertification": "شهادة جديدة",
+    "newTrainingProgram": "برنامج تدريبي جديد",
+    "programs": {
+      "detail": {
+        "continueLearning": "متابعة التعلم",
+        "curriculum": "المنهج",
+        "details": "التفاصيل",
+        "programDescription": "وصف البرنامج"
+      },
+      "new": {
+        "category": "الفئة",
+        "createProgram": "إنشاء برنامج",
+        "durationPlaceholder": "مدة البرنامج",
+        "estimatedDuration": "المدة التقديرية",
+        "instructor": "المدرّس",
+        "programDetails": "تفاصيل البرنامج",
+        "programTitle": "عنوان البرنامج",
+        "skillLevel": "مستوى المهارة",
+        "subtitle": "العنوان الفرعي",
+        "title": "العنوان",
+        "toast": {
+          "success": {
+            "description": "الوصف",
+            "title": "العنوان"
+          }
+        }
+      }
+    },
+    "skillsMatrix": "مصفوفة المهارات",
+    "stats": {
+      "activeSkillNodes": "عقد مهارات نشطة",
+      "operationalProtocols": "البروتوكولات التشغيلية",
+      "synchronizationPulse": "نبض المزامنة",
+      "thresholdAlerts": "تنبيهات العتبة"
+    },
+    "tabs": {
+      "certifications": "الشهادات",
+      "programs": "البرامج",
+      "records": "السجلات"
+    }
+  },
+  "userMenu": {
+    "feedback": "إرسال ملاحظات",
+    "help": "المساعدة والدعم",
+    "logout": "تسجيل الخروج",
+    "manageAccounts": "إدارة الحسابات",
+    "profile": "ملفي الشخصي",
+    "settings": "الإعدادات",
+    "switchAccount": "تبديل الحساب"
+  },
+  "validation": {
+    "date": "يرجى إدخال تاريخ صالح",
+    "dateRange": "يجب أن يكون تاريخ الانتهاء بعد تاريخ البداية",
+    "email": "يرجى إدخال بريد إلكتروني صالح",
+    "fillAllFields": "يرجى ملء جميع الحقول",
+    "integer": "يجب أن يكون رقماً صحيحاً",
+    "maxLength": "يجب ألا يتجاوز {max} أحرف",
+    "minLength": "يجب أن يحتوي على {min} أحرف على الأقل",
+    "number": "يجب أن يكون رقماً صالحاً",
+    "passwordMatch": "كلمتا المرور غير متطابقتين",
+    "passwordMinLength": "يجب أن تكون كلمة المرور 8 أحرف على الأقل",
+    "passwordStrength": "كلمة المرور ضعيفة جداً",
+    "pattern": "تنسيق غير صالح",
+    "phone": "يرجى إدخال رقم هاتف صالح",
+    "positiveNumber": "يجب أن يكون رقماً موجباً",
+    "required": "هذا الحقل مطلوب",
+    "unique": "هذه القيمة مستخدمة بالفعل",
+    "url": "يرجى إدخال رابط صالح"
   }
 }

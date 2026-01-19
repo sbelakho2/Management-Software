@@ -13,6 +13,7 @@ import {
   Ban,
   Download,
   RefreshCw,
+  Filter,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { useExceptionsStore } from '@/stores/exceptions';
 import { useI18n } from '@/contexts/i18n-context';
+import { cn } from '@/lib/utils';
 import type { ExceptionSeverity, ExceptionCategory, ExceptionStatus } from '@/stores/exceptions';
 
 export default function ExceptionsPage() {
@@ -94,7 +96,7 @@ export default function ExceptionsPage() {
     const colors = {
       critical: 'bg-rams-red/10 text-rams-red border-rams-red/20',
       high: 'bg-rams-orange/10 text-rams-orange border-rams-orange/20',
-      medium: 'bg-rams-panel text-foreground/70 border-rams-border',
+      medium: 'bg-rams-panel text-foreground/70 border-rams-line',
       low: 'bg-rams-steel/10 text-rams-steel border-rams-steel/20',
     };
     return colors[severity];
@@ -161,7 +163,7 @@ export default function ExceptionsPage() {
   if (!stats) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-in fade-in duration-700 bg-rams-chassis">
       <div className="relative">
-        <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-border">
+        <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-line">
           <div className="h-10 w-10 bg-rams-orange text-black flex items-center justify-center font-mono font-black text-2xl border border-black/10">
             !
           </div>
@@ -188,48 +190,48 @@ export default function ExceptionsPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="exceptions-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-            Anomalous Node Registry
+            {t('pages.exceptions.title') || 'Anomalous Node Registry'}
           </h1>
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
-            <span>Exception tracking and escalation protocol</span>
+            <span>{t('pages.exceptions.subtitle') || 'Exception tracking and escalation protocol'}</span>
             <span className="opacity-30">|</span>
             <span>STATION: OPS-EXCEPTION-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={handleRefresh} disabled={isLoading}>
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={handleRefresh} disabled={isLoading}>
             <RefreshCw className={cn("h-3.5 w-3.5 mr-2", isLoading && "animate-spin")} />
-            Sync Intel
+            {t('pages.exceptions.syncIntel') || 'Sync Intel'}
           </Button>
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={handleExport}>
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-2" />
-            Export Protocol
+            {t('pages.exceptions.exportProtocol') || 'Export Protocol'}
           </Button>
         </div>
       </div>
 
       {/* Stats Grid (Industrial Modules) */}
-      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Critical Open Nodes</p>
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.criticalOpenNodes') || 'Critical Open Nodes'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.critical_count}</div>
           <p className="text-[9px] font-mono font-bold text-rams-red uppercase tracking-widest mt-2">{stats.total_open} TOTAL_OPEN</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Overdue Protocols</p>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.overdueProtocols') || 'Overdue Protocols'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats.overdue_count}</div>
           <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">SLA_VARIANCE_DETECTED</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Escalated Nodes</p>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.escalatedNodes') || 'Escalated Nodes'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.escalated_count}</div>
           <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">MGMT_SYNC_REQUIRED</p>
         </div>
-        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Resolution</p>
+        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.meanResolution') || 'Mean Resolution'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
           <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{stats.resolved_today} RESOLVED_TODAY</p>
         </div>
@@ -237,11 +239,11 @@ export default function ExceptionsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8 animate-in fade-in duration-700">
-        <TabsList className="bg-rams-panel border border-rams-border p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
-          <TabsTrigger value="overview">OVERVIEW</TabsTrigger>
-          <TabsTrigger value="critical">CRITICAL_ONLY</TabsTrigger>
-          <TabsTrigger value="trends">TEMPORAL_TRENDS</TabsTrigger>
-          <TabsTrigger value="by-category">BY_CATEGORY</TabsTrigger>
+        <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
+          <TabsTrigger value="overview">{t('pages.exceptions.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="critical">{t('pages.exceptions.tabs.criticalOnly')}</TabsTrigger>
+          <TabsTrigger value="trends">{t('pages.exceptions.tabs.temporalTrends')}</TabsTrigger>
+          <TabsTrigger value="by-category">{t('pages.exceptions.tabs.byCategory')}</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -255,15 +257,15 @@ export default function ExceptionsPage() {
                   <SelectValue placeholder="CATEGORY" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">ALL_CATEGORIES</SelectItem>
-                  <SelectItem value="andon">ANDON_SIGNALS</SelectItem>
-                  <SelectItem value="quote">QUOTE_BREACHES</SelectItem>
-                  <SelectItem value="production">PROD_VARIANCES</SelectItem>
-                  <SelectItem value="quality">QUALITY_ANOMALIES</SelectItem>
-                  <SelectItem value="a3">A3_PROBLEMS</SelectItem>
-                  <SelectItem value="obeya">OBEYA_SYCLOS</SelectItem>
-                  <SelectItem value="task">TASK_DELAYS</SelectItem>
-                  <SelectItem value="training">TRAINING_GAPS</SelectItem>
+                  <SelectItem value="all">{t('pages.exceptions.filters.allCategories')}</SelectItem>
+                  <SelectItem value="andon">{t('pages.exceptions.filters.andonSignals')}</SelectItem>
+                  <SelectItem value="quote">{t('pages.exceptions.filters.quoteBreaches')}</SelectItem>
+                  <SelectItem value="production">{t('pages.exceptions.filters.prodVariances')}</SelectItem>
+                  <SelectItem value="quality">{t('pages.exceptions.filters.qualityAnomalies')}</SelectItem>
+                  <SelectItem value="a3">{t('pages.exceptions.filters.a3Problems')}</SelectItem>
+                  <SelectItem value="obeya">{t('pages.exceptions.filters.obeyaSyclos')}</SelectItem>
+                  <SelectItem value="task">{t('pages.exceptions.filters.taskDelays')}</SelectItem>
+                  <SelectItem value="training">{t('pages.exceptions.filters.trainingGaps')}</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -273,11 +275,11 @@ export default function ExceptionsPage() {
                   <SelectValue placeholder="SEVERITY" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">ALL_SEVERITIES</SelectItem>
-                  <SelectItem value="critical">CRITICAL_ONLY</SelectItem>
-                  <SelectItem value="high">HIGH_SEVERITY</SelectItem>
-                  <SelectItem value="medium">MEDIUM_SEVERITY</SelectItem>
-                  <SelectItem value="low">LOW_SEVERITY</SelectItem>
+                  <SelectItem value="all">{t('pages.exceptions.filters.allSeverities')}</SelectItem>
+                  <SelectItem value="critical">{t('pages.exceptions.filters.criticalOnly')}</SelectItem>
+                  <SelectItem value="high">{t('pages.exceptions.filters.highSeverity')}</SelectItem>
+                  <SelectItem value="medium">{t('pages.exceptions.filters.mediumSeverity')}</SelectItem>
+                  <SelectItem value="low">{t('pages.exceptions.filters.lowSeverity')}</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -287,33 +289,33 @@ export default function ExceptionsPage() {
                   <SelectValue placeholder="STATUS" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">ALL_STATUS</SelectItem>
-                  <SelectItem value="open">OPEN_PROTOCOL</SelectItem>
-                  <SelectItem value="acknowledged">ACKNOWLEDGED</SelectItem>
-                  <SelectItem value="in_progress">IN_PROGRESS</SelectItem>
-                  <SelectItem value="escalated">ESCALATED</SelectItem>
-                  <SelectItem value="resolved">RESOLVED</SelectItem>
+                  <SelectItem value="all">{t('pages.exceptions.filters.allStatus')}</SelectItem>
+                  <SelectItem value="open">{t('pages.exceptions.filters.openProtocol')}</SelectItem>
+                  <SelectItem value="acknowledged">{t('pages.exceptions.filters.acknowledged')}</SelectItem>
+                  <SelectItem value="in_progress">{t('pages.exceptions.filters.inProgress')}</SelectItem>
+                  <SelectItem value="escalated">{t('pages.exceptions.filters.escalated')}</SelectItem>
+                  <SelectItem value="resolved">{t('pages.exceptions.filters.resolved')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           {/* Exceptions Table */}
-          <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
-            <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">PROTOCOL_REGISTRY ({filteredExceptions.length})</CardTitle>
+          <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.exceptions.protocolRegistry')} ({filteredExceptions.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SEVERITY</TableHead>
-                    <TableHead>DESCRIPTION_PROTOCOL</TableHead>
-                    <TableHead>CATEGORY_NODE</TableHead>
-                    <TableHead>OWNER_SYNC</TableHead>
-                    <TableHead>STATUS_NODE</TableHead>
-                    <TableHead>PULSE_DETECTION</TableHead>
-                    <TableHead>HORIZON</TableHead>
+                    <TableHead>{t('pages.exceptions.table.severity')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.descriptionProtocol')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.categoryNode')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.ownerSync')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.statusNode')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.pulseDetection')}</TableHead>
+                    <TableHead>{t('pages.exceptions.table.horizon')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -377,7 +379,7 @@ export default function ExceptionsPage() {
             <CardHeader className="bg-rams-red/10 border-b border-rams-red/20">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-rams-red flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" />
-                High Urgency Deviations
+                {t('pages.exceptions.highUrgencyDeviations') || 'High Urgency Deviations'}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -401,11 +403,11 @@ export default function ExceptionsPage() {
                           <Target className="h-3 w-3" /> {e.category.toUpperCase()}
                         </div>
                         <div className="flex items-center gap-2 text-[9px] font-mono font-black uppercase tracking-widest text-rams-red/60">
-                          <Clock className="h-3 w-3" /> DUE {formatRelativeTime(new Date(e.due_date)).toUpperCase()}
+                          <Clock className="h-3 w-3" /> DUE {formatRelativeTime(e.due_date).toUpperCase()}
                         </div>
                       </div>
                     </div>
-                    <Button size="default" className="rounded-rams-sm bg-rams-red text-white font-black uppercase tracking-widest text-[10px] h-10 px-6 hover:bg-rams-red/90" onClick={() => resolveException(e.id)}>
+                    <Button size="default" className="rounded-rams-sm bg-rams-red text-white font-black uppercase tracking-widest text-[10px] h-10 px-6 hover:bg-rams-red/90" onClick={() => resolveException(e.id, 'Resolved via quick action')}>
                       RESOLVE_NODE
                     </Button>
                   </div>
@@ -424,8 +426,8 @@ export default function ExceptionsPage() {
         {/* Temporal Trends Tab */}
         <TabsContent value="trends" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="grid gap-8 lg:grid-cols-2">
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-rams-orange" />
                   Exception Intensity Trend
@@ -466,7 +468,7 @@ export default function ExceptionsPage() {
                     </div>
                   ))}
                 </div>
-                <div className="flex gap-6 mt-8 pt-6 border-t border-rams-border/30 text-[9px] font-black uppercase tracking-widest">
+                <div className="flex gap-6 mt-8 pt-6 border-t border-rams-line text-[9px] font-black uppercase tracking-widest">
                   <div className="flex items-center gap-2 text-rams-red">
                     <div className="w-2 h-2 bg-rams-red" />
                     Critical
@@ -480,15 +482,15 @@ export default function ExceptionsPage() {
                     Medium
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground/40">
-                    <div className="w-2 h-2 bg-rams-panel border border-rams-border" />
+                    <div className="w-2 h-2 bg-rams-panel border border-rams-line" />
                     Low
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Target className="h-4 w-4 text-rams-green" />
                   Resolution Performance Pulse
@@ -504,7 +506,7 @@ export default function ExceptionsPage() {
                           {trend.resolved} NODES_CLEARED
                         </span>
                       </div>
-                      <div className="h-1.5 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                      <div className="h-1.5 bg-rams-panel border border-rams-line overflow-hidden">
                         <div 
                           className="h-full bg-rams-green transition-all duration-1000" 
                           style={{ width: `${(trend.resolved / 40) * 100}%` }} 
@@ -520,7 +522,7 @@ export default function ExceptionsPage() {
 
         {/* By Category Tab */}
         <TabsContent value="by-category" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="grid gap-px border border-rams-border bg-rams-border sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-2 lg:grid-cols-4">
             {Object.entries(byCategory).map(([category, count]) => {
               const CategoryIcon = getCategoryIcon(category as ExceptionCategory);
               return (

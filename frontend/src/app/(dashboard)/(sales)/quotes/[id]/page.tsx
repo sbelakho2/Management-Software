@@ -153,14 +153,14 @@ const mockQuote: Quote = {
   ],
 };
 
-const statusConfig: Record<Quote['status'], { label: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
-  draft: { label: 'Draft', variant: 'secondary', icon: FileText },
-  pending_approval: { label: 'Pending Approval', variant: 'warning', icon: Clock },
-  approved: { label: 'Approved', variant: 'default', icon: CheckCircle },
-  sent: { label: 'Sent', variant: 'default', icon: Send },
-  accepted: { label: 'Accepted', variant: 'success', icon: CheckCircle },
-  rejected: { label: 'Rejected', variant: 'danger', icon: XCircle },
-  expired: { label: 'Expired', variant: 'outline', icon: Calendar },
+const statusConfig: Record<Quote['status'], { labelKey: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
+  draft: { labelKey: 'pages.quotes.status.draft', variant: 'secondary', icon: FileText },
+  pending_approval: { labelKey: 'pages.quotes.status.pendingApproval', variant: 'warning', icon: Clock },
+  approved: { labelKey: 'pages.quotes.status.approved', variant: 'default', icon: CheckCircle },
+  sent: { labelKey: 'pages.quotes.status.sent', variant: 'default', icon: Send },
+  accepted: { labelKey: 'pages.quotes.status.accepted', variant: 'success', icon: CheckCircle },
+  rejected: { labelKey: 'pages.quotes.status.rejected', variant: 'danger', icon: XCircle },
+  expired: { labelKey: 'pages.quotes.status.expired', variant: 'outline', icon: Calendar },
 };
 
 function QuoteDetailSkeleton() {
@@ -219,9 +219,9 @@ export default function QuoteDetailPage() {
   if (!quote) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-lg font-medium">Quote not found</h2>
+        <h2 className="text-lg font-medium">{t('pages.quotes.detail.notFound')}</h2>
         <Button className="mt-4" onClick={() => router.push('/quotes')}>
-          Back to Quotes
+          {t('pages.quotes.detail.backToQuotes')}
         </Button>
       </div>
     );
@@ -244,7 +244,7 @@ export default function QuoteDetailPage() {
               <h1 className="text-3xl font-heading font-bold tracking-tight ">{quote.quoteNumber}</h1>
               <Badge variant={config.variant} className="gap-1">
                 <StatusIcon className="h-3 w-3" />
-                {config.label}
+                {t(config.labelKey)}
               </Badge>
               <Badge variant="outline">v{quote.version}</Badge>
             </div>
@@ -260,16 +260,16 @@ export default function QuoteDetailPage() {
           {quote.status === 'draft' && (
             <Button variant="outline" onClick={() => setIsEditing(true)}>
               <Edit className="mr-2 h-4 w-4" />
-              Edit
+              {t('common.edit')}
             </Button>
           )}
           <Button variant="outline">
             <Printer className="mr-2 h-4 w-4" />
-            Print
+            {t('pages.quotes.detail.print')}
           </Button>
           <Button variant="outline">
             <Download className="mr-2 h-4 w-4" />
-            Export PDF
+            {t('pages.quotes.detail.exportPdf')}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -280,46 +280,46 @@ export default function QuoteDetailPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem>
                 <Copy className="mr-2 h-4 w-4" />
-                Duplicate
+                {t('common.duplicate')}
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <History className="mr-2 h-4 w-4" />
-                View History
+                {t('pages.quotes.detail.viewHistory')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {quote.status === 'draft' && (
                 <DropdownMenuItem onClick={() => setShowActionDialog('approve')}>
                   <Send className="mr-2 h-4 w-4" />
-                  Submit for Approval
+                  {t('pages.quotes.detail.submitForApproval')}
                 </DropdownMenuItem>
               )}
               {quote.status === 'pending_approval' && (
                 <>
                   <DropdownMenuItem onClick={() => setShowActionDialog('approve')} className="text-success">
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Approve
+                    {t('pages.quotes.detail.approve')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowActionDialog('reject')} className="text-danger">
                     <XCircle className="mr-2 h-4 w-4" />
-                    Reject
+                    {t('pages.quotes.detail.reject')}
                   </DropdownMenuItem>
                 </>
               )}
               {quote.status === 'approved' && (
                 <DropdownMenuItem>
                   <Send className="mr-2 h-4 w-4" />
-                  Send to Customer
+                  {t('pages.quotes.detail.sendToCustomer')}
                 </DropdownMenuItem>
               )}
               {quote.status === 'sent' && (
                 <>
                   <DropdownMenuItem onClick={() => setShowActionDialog('won')} className="text-success">
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Mark Won
+                    {t('pages.quotes.detail.markWon')}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setShowActionDialog('lost')} className="text-danger">
                     <XCircle className="mr-2 h-4 w-4" />
-                    Mark Lost
+                    {t('pages.quotes.detail.markLost')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -337,7 +337,7 @@ export default function QuoteDetailPage() {
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Total</span>
+                  <span className="text-sm text-muted-foreground">{t('pages.quotes.detail.total')}</span>
                 </div>
                 <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{formatCurrency(quote.total)}</p>
               </CardContent>
@@ -346,7 +346,7 @@ export default function QuoteDetailPage() {
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Margin</span>
+                  <span className="text-sm text-muted-foreground">{t('pages.quotes.detail.margin')}</span>
                 </div>
                 <p className={cn(
                   'text-3xl font-heading font-bold tracking-tight  mt-1',
@@ -360,7 +360,7 @@ export default function QuoteDetailPage() {
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Valid Until</span>
+                  <span className="text-sm text-muted-foreground">{t('pages.quotes.detail.validUntil')}</span>
                 </div>
                 <p className={cn('text-3xl font-heading font-bold tracking-tight mt-1', isExpiringSoon && 'text-amber-600 dark:text-amber-500')}>
                   {formatDate(new Date(quote.validUntil), { month: 'short', day: 'numeric' })}
@@ -371,7 +371,7 @@ export default function QuoteDetailPage() {
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Line Items</span>
+                  <span className="text-sm text-muted-foreground">{t('pages.quotes.detail.lineItems')}</span>
                 </div>
                 <p className="text-3xl font-heading font-bold tracking-tight  mt-1">{quote.lineItems.length}</p>
               </CardContent>
@@ -381,20 +381,20 @@ export default function QuoteDetailPage() {
           {/* Line Items */}
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>{t('pages.quotes.detail.lineItemsTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="py-3 px-4 text-left font-medium">Part #</th>
-                      <th className="py-3 px-4 text-left font-medium">Description</th>
-                      <th className="py-3 px-4 text-right font-medium">Qty</th>
-                      <th className="py-3 px-4 text-left font-medium">UoM</th>
-                      <th className="py-3 px-4 text-right font-medium">Unit Price</th>
-                      <th className="py-3 px-4 text-right font-medium">Extended</th>
-                      <th className="py-3 px-4 text-right font-medium">Lead Time</th>
+                    <tr className="border-b border-rams-line bg-rams-panel">
+                      <th className="py-3 px-4 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.partNo')}</th>
+                      <th className="py-3 px-4 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.description')}</th>
+                      <th className="py-3 px-4 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.qty')}</th>
+                      <th className="py-3 px-4 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.uom')}</th>
+                      <th className="py-3 px-4 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.unitPrice')}</th>
+                      <th className="py-3 px-4 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.extended')}</th>
+                      <th className="py-3 px-4 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">{t('pages.quotes.detail.table.leadTime')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -412,26 +412,26 @@ export default function QuoteDetailPage() {
                   </tbody>
                   <tfoot>
                     <tr className="border-t bg-muted/30">
-                      <td colSpan={5} className="py-3 px-4 text-right font-medium">Subtotal</td>
+                      <td colSpan={5} className="py-3 px-4 text-right font-medium">{t('pages.quotes.detail.subtotal')}</td>
                       <td className="py-3 px-4 text-right font-medium">{formatCurrency(quote.subtotal)}</td>
                       <td></td>
                     </tr>
                     {quote.discount > 0 && (
                       <tr>
-                        <td colSpan={5} className="py-2 px-4 text-right text-muted-foreground">Discount</td>
+                        <td colSpan={5} className="py-2 px-4 text-right text-muted-foreground">{t('pages.quotes.detail.discount')}</td>
                         <td className="py-2 px-4 text-right text-muted-foreground">-{formatCurrency(quote.discount)}</td>
                         <td></td>
                       </tr>
                     )}
                     {quote.tax > 0 && (
                       <tr>
-                        <td colSpan={5} className="py-2 px-4 text-right text-muted-foreground">Tax</td>
+                        <td colSpan={5} className="py-2 px-4 text-right text-muted-foreground">{t('pages.quotes.detail.tax')}</td>
                         <td className="py-2 px-4 text-right text-muted-foreground">{formatCurrency(quote.tax)}</td>
                         <td></td>
                       </tr>
                     )}
                     <tr className="border-t-2 font-bold">
-                      <td colSpan={5} className="py-3 px-4 text-right">Total</td>
+                      <td colSpan={5} className="py-3 px-4 text-right">{t('pages.quotes.detail.total')}</td>
                       <td className="py-3 px-4 text-right">{formatCurrency(quote.total)}</td>
                       <td></td>
                     </tr>
@@ -444,7 +444,7 @@ export default function QuoteDetailPage() {
           {/* Terms */}
           <Card>
             <CardHeader>
-              <CardTitle>Terms & Conditions</CardTitle>
+              <CardTitle>{t('pages.quotes.detail.termsConditions')}</CardTitle>
             </CardHeader>
             <CardContent>
               <pre className="whitespace-pre-wrap font-sans text-sm">{quote.termsAndConditions}</pre>
@@ -453,11 +453,11 @@ export default function QuoteDetailPage() {
 
           {/* Internal Notes */}
           {quote.notes && (
-            <Card className="border-warning/50 bg-warning/5">
+            <Card className="border-rams-orange/50 bg-rams-orange/5">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <MessageSquare className="h-4 w-4" />
-                  Internal Notes
+                  {t('pages.quotes.detail.internalNotes')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -474,7 +474,7 @@ export default function QuoteDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                Customer
+                {t('pages.quotes.detail.customer')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -508,7 +508,7 @@ export default function QuoteDetailPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-success" />
-                  Approval
+                  {t('pages.quotes.detail.approval')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
@@ -530,7 +530,7 @@ export default function QuoteDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-4 w-4" />
-                Version History
+                {t('pages.quotes.detail.versionHistory')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -538,10 +538,10 @@ export default function QuoteDetailPage() {
                 {quote.versions.map((version) => (
                   <div key={version.version} className="flex items-start gap-3">
                     <div className={cn(
-                      'w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium',
+                      'w-6 h-6 rounded-rams-sm flex items-center justify-center text-xs font-mono font-bold',
                       version.version === quote.version 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-muted'
+                        ? 'bg-rams-orange text-black' 
+                        : 'bg-rams-panel border border-rams-line'
                     )}>
                       {version.version}
                     </div>
@@ -561,11 +561,11 @@ export default function QuoteDetailPage() {
           <Card>
             <CardContent className="pt-4 space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Created</span>
+                <span className="text-muted-foreground">{t('pages.quotes.detail.created')}</span>
                 <span>{formatDateTime(quote.createdAt)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Created By</span>
+                <span className="text-muted-foreground">{t('pages.quotes.detail.createdBy')}</span>
                 <div className="flex items-center gap-2">
                   <Avatar size="xs">
                     <AvatarImage src={quote.createdBy.avatar} />
@@ -576,7 +576,7 @@ export default function QuoteDetailPage() {
               </div>
               {quote.sentAt && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sent</span>
+                  <span className="text-muted-foreground">{t('pages.quotes.detail.sent')}</span>
                   <span>{formatDateTime(quote.sentAt)}</span>
                 </div>
               )}
@@ -590,22 +590,22 @@ export default function QuoteDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {showActionDialog === 'approve' && 'Submit for Approval'}
-              {showActionDialog === 'reject' && 'Reject Quote'}
-              {showActionDialog === 'won' && 'Mark Quote as Won'}
-              {showActionDialog === 'lost' && 'Mark Quote as Lost'}
+              {showActionDialog === 'approve' && t('pages.quotes.detail.dialogs.submitForApproval')}
+              {showActionDialog === 'reject' && t('pages.quotes.detail.dialogs.rejectQuote')}
+              {showActionDialog === 'won' && t('pages.quotes.detail.dialogs.markAsWon')}
+              {showActionDialog === 'lost' && t('pages.quotes.detail.dialogs.markAsLost')}
             </DialogTitle>
             <DialogDescription>
-              {showActionDialog === 'approve' && 'This quote will be sent to your manager for approval.'}
-              {showActionDialog === 'reject' && 'Provide a reason for rejecting this quote.'}
-              {showActionDialog === 'won' && 'Congratulations! Mark this quote as won to close it.'}
-              {showActionDialog === 'lost' && 'Provide a reason for losing this quote.'}
+              {showActionDialog === 'approve' && t('pages.quotes.detail.dialogs.approveDescription')}
+              {showActionDialog === 'reject' && t('pages.quotes.detail.dialogs.rejectDescription')}
+              {showActionDialog === 'won' && t('pages.quotes.detail.dialogs.wonDescription')}
+              {showActionDialog === 'lost' && t('pages.quotes.detail.dialogs.lostDescription')}
             </DialogDescription>
           </DialogHeader>
           {(showActionDialog === 'reject' || showActionDialog === 'lost') && (
             <div className="py-4">
               <Textarea
-                placeholder="Reason..."
+                placeholder={t('pages.quotes.detail.dialogs.reasonPlaceholder')}
                 value={actionReason}
                 onChange={(e) => setActionReason(e.target.value)}
                 rows={3}
@@ -614,16 +614,16 @@ export default function QuoteDetailPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowActionDialog(null)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant={showActionDialog === 'reject' || showActionDialog === 'lost' ? 'destructive' : 'default'}
               onClick={() => handleAction(showActionDialog || '')}
             >
-              {showActionDialog === 'approve' && 'Submit'}
-              {showActionDialog === 'reject' && 'Reject'}
-              {showActionDialog === 'won' && 'Mark Won'}
-              {showActionDialog === 'lost' && 'Mark Lost'}
+              {showActionDialog === 'approve' && t('pages.quotes.detail.dialogs.submit')}
+              {showActionDialog === 'reject' && t('pages.quotes.detail.dialogs.reject')}
+              {showActionDialog === 'won' && t('pages.quotes.detail.dialogs.markWon')}
+              {showActionDialog === 'lost' && t('pages.quotes.detail.dialogs.markLost')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Search, Save, Send } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Search, Save, Send, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -118,8 +118,8 @@ export default function NewPurchaseRequisitionPage() {
   const handleSubmit = async (asDraft: boolean = true) => {
     if (lines.length === 0) {
       toast({
-        title: 'Error',
-        description: 'Please add at least one line item',
+        title: t('pages.purchase.requisitionNew.error'),
+        description: t('pages.purchase.requisitionNew.addLineItemError'),
         variant: 'destructive',
       });
       return;
@@ -145,16 +145,16 @@ export default function NewPurchaseRequisitionPage() {
       await apiClient.post('/purchase/requisitions', payload);
       
       toast({
-        title: 'Success',
-        description: asDraft ? 'Requisition saved as draft' : 'Requisition submitted for approval',
+        title: t('pages.purchase.requisitionNew.success'),
+        description: asDraft ? t('pages.purchase.requisitionNew.savedAsDraft') : t('pages.purchase.requisitionNew.submittedForApproval'),
       });
       
       router.push('/purchase');
     } catch (error) {
       console.error('Failed to create requisition:', error);
       toast({
-        title: 'Error',
-        description: 'Failed to create requisition. Please try again.',
+        title: t('pages.purchase.requisitionNew.error'),
+        description: t('pages.purchase.requisitionNew.createFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -168,87 +168,92 @@ export default function NewPurchaseRequisitionPage() {
   );
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl" asChild>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" asChild>
             <Link href="/purchase">
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">
-              New Purchase Requisition
+          <div className="space-y-1">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+              {t('pages.purchase.requisitionNew.title')}
             </h1>
-            <p className="text-muted-foreground">Request materials or services for procurement</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>{t('pages.purchase.requisitionNew.subtitle')}</span>
+              <span className="opacity-30">|</span>
+              <span>{t('pages.purchase.requisitionNew.station')}</span>
+            </p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <Button 
             variant="outline" 
-            className="rounded-xl"
+            size="default"
+            className="rounded-rams-sm border-rams-line h-10 px-6 transition-none"
             onClick={() => handleSubmit(true)}
             disabled={loading}
           >
-            <Save className="mr-2 h-4 w-4" />
-            Save Draft
+            <Save className="mr-2 h-3.5 w-3.5" />
+            {t('pages.purchase.requisitionNew.saveDraft')}
           </Button>
           <Button 
-            className="rounded-xl shadow-glow"
+            size="default"
+            className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none"
             onClick={() => handleSubmit(false)}
             disabled={loading}
           >
-            <Send className="mr-2 h-4 w-4" />
-            Submit for Approval
+            <Send className="mr-2 h-3.5 w-3.5" />
+            {t('pages.purchase.requisitionNew.submitForApproval')}
           </Button>
         </div>
       </div>
 
       {/* Form */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Main Form */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-8">
           {/* Requisition Details */}
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle>Requisition Details</CardTitle>
-              <CardDescription>Provide justification and priority for this request</CardDescription>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.purchase.requisitionNew.requisitionParameters')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="p-8 space-y-8">
               <div className="space-y-2">
-                <Label htmlFor="justification">Business Justification *</Label>
+                <Label htmlFor="justification" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.purchase.requisitionNew.businessJustification')}</Label>
                 <Textarea
                   id="justification"
-                  placeholder="Explain why these items are needed..."
+                  placeholder={t('pages.purchase.requisitionNew.justificationPlaceholder')}
                   value={justification}
                   onChange={(e) => setJustification(e.target.value)}
-                  className="min-h-[100px] rounded-xl"
+                  className="min-h-[120px] rounded-rams-sm bg-rams-panel border-rams-line text-[11px] uppercase leading-relaxed"
                 />
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-8 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="priority">Priority</Label>
+                  <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.purchase.requisitionNew.priorityLayer')}</Label>
                   <Select value={priority} onValueChange={(v: any) => setPriority(v)}>
-                    <SelectTrigger className="rounded-xl">
+                    <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="low">{t('pages.purchase.requisitionNew.priorities.low')}</SelectItem>
+                      <SelectItem value="medium">{t('pages.purchase.requisitionNew.priorities.medium')}</SelectItem>
+                      <SelectItem value="high">{t('pages.purchase.requisitionNew.priorities.high')}</SelectItem>
+                      <SelectItem value="urgent">{t('pages.purchase.requisitionNew.priorities.urgent')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="required_date">Required By</Label>
+                  <Label htmlFor="required_date" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.purchase.requisitionNew.thresholdDate')}</Label>
                   <Input
                     id="required_date"
                     type="date"
                     value={requiredDate}
                     onChange={(e) => setRequiredDate(e.target.value)}
-                    className="rounded-xl"
+                    className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                   />
                 </div>
               </div>
@@ -256,129 +261,137 @@ export default function NewPurchaseRequisitionPage() {
           </Card>
 
           {/* Line Items */}
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-rams-line bg-rams-panel/20 p-6">
               <div>
-                <CardTitle>Line Items</CardTitle>
-                <CardDescription>Add products or services to request</CardDescription>
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.purchase.requisitionNew.resourceLineIntel')}</CardTitle>
               </div>
-              <Button onClick={addLine} className="rounded-xl">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Item
+              <Button variant="outline" size="sm" onClick={addLine} className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                {t('pages.purchase.requisitionNew.addNode')}
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {lines.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <p>No items added yet</p>
-                  <p className="text-sm">Click "Add Item" to start building your requisition</p>
+                <div className="text-center py-24 bg-rams-module relative overflow-hidden">
+                  <Plus className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4 relative z-10" />
+                  <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60 relative z-10">{t('pages.purchase.requisitionNew.zeroResourceNodes')}</p>
+                  <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1 relative z-10">{t('pages.purchase.requisitionNew.initializeItemsUsing')}</p>
+                  <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[250px]">Product/Description</TableHead>
-                      <TableHead className="w-[100px]">Qty</TableHead>
-                      <TableHead className="w-[80px]">UoM</TableHead>
-                      <TableHead className="w-[120px]">Est. Price</TableHead>
-                      <TableHead className="w-[120px]">Subtotal</TableHead>
-                      <TableHead className="w-[50px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell>
-                          <Select
-                            value={line.product_id}
-                            onValueChange={(v) => handleProductSelect(line.id, v)}
-                          >
-                            <SelectTrigger className="rounded-lg">
-                              <SelectValue placeholder="Select product..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {filteredProducts.slice(0, 50).map((product) => (
-                                <SelectItem key={product.id} value={product.id}>
-                                  {product.name} ({product.sku})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            placeholder="Or enter description..."
-                            value={line.description}
-                            onChange={(e) => updateLine(line.id, { description: e.target.value })}
-                            className="mt-2 rounded-lg text-sm"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={line.quantity}
-                            onChange={(e) => updateLine(line.id, { quantity: parseInt(e.target.value) || 1 })}
-                            className="rounded-lg"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={line.unit_of_measure}
-                            onChange={(e) => updateLine(line.id, { unit_of_measure: e.target.value })}
-                            className="rounded-lg"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={line.estimated_unit_price}
-                            onChange={(e) => updateLine(line.id, { estimated_unit_price: parseFloat(e.target.value) || 0 })}
-                            className="rounded-lg"
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          ${(line.quantity * line.estimated_unit_price).toFixed(2)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => removeLine(line.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('pages.purchase.requisitionNew.tableHeaders.productNodeDesc')}</TableHead>
+                        <TableHead className="w-24">{t('pages.purchase.requisitionNew.tableHeaders.magnitude')}</TableHead>
+                        <TableHead className="w-20">{t('pages.purchase.requisitionNew.tableHeaders.uom')}</TableHead>
+                        <TableHead className="w-32">{t('pages.purchase.requisitionNew.tableHeaders.estPrice')}</TableHead>
+                        <TableHead className="w-32">{t('pages.purchase.requisitionNew.tableHeaders.subtotal')}</TableHead>
+                        <TableHead className="w-10"></TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {lines.map((line) => (
+                        <TableRow key={line.id} className="transition-none hover:bg-rams-panel">
+                          <TableCell>
+                            <div className="space-y-2">
+                              <Select
+                                value={line.product_id}
+                                onValueChange={(v) => handleProductSelect(line.id, v)}
+                              >
+                                <SelectTrigger className="h-9 rounded-none bg-rams-panel border-rams-line text-[10px] font-bold uppercase">
+                                  <SelectValue placeholder={t('pages.purchase.requisitionNew.selectProductNode')} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {filteredProducts.slice(0, 50).map((product) => (
+                                    <SelectItem key={product.id} value={product.id}>
+                                      {product.name.toUpperCase()} ({product.sku})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Input
+                                placeholder={t('pages.purchase.requisitionNew.orDefineManualSpec')}
+                                value={line.description}
+                                onChange={(e) => updateLine(line.id, { description: e.target.value })}
+                                className="h-8 rounded-none bg-rams-panel border-rams-line text-[9px] font-medium uppercase"
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={line.quantity}
+                              onChange={(e) => updateLine(line.id, { quantity: parseInt(e.target.value) || 1 })}
+                              className="h-9 rounded-none bg-rams-panel border-rams-line text-[10px] font-mono font-bold"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={line.unit_of_measure}
+                              onChange={(e) => updateLine(line.id, { unit_of_measure: e.target.value.toUpperCase() })}
+                              className="h-9 rounded-none bg-rams-panel border-rams-line text-[10px] font-bold"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="relative">
+                              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/30" />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                value={line.estimated_unit_price}
+                                onChange={(e) => updateLine(line.id, { estimated_unit_price: parseFloat(e.target.value) || 0 })}
+                                className="pl-7 h-9 rounded-none bg-rams-panel border-rams-line text-[10px] font-mono font-bold"
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono font-bold text-xs tabular-nums text-foreground/80">
+                            ${(line.quantity * line.estimated_unit_price).toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground/20 hover:text-rams-red hover:bg-rams-red/5 rounded-none transition-none"
+                              onClick={() => removeLine(line.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* Summary */}
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle>Summary</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.purchase.requisitionNew.fiscalSummary')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Line Items</span>
-                <span className="font-medium">{lines.length}</span>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>{t('pages.purchase.requisitionNew.resourceNodes')}</span>
+                <span className="font-mono font-bold text-foreground/80">{lines.length}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Quantity</span>
-                <span className="font-medium">{lines.reduce((sum, l) => sum + l.quantity, 0)}</span>
+              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>{t('pages.purchase.requisitionNew.totalMagnitude')}</span>
+                <span className="font-mono font-bold text-foreground/80 tabular-nums">{lines.reduce((sum, l) => sum + l.quantity, 0)}</span>
               </div>
-              <div className="border-t pt-4">
-                <div className="flex justify-between">
-                  <span className="font-medium">Estimated Total</span>
-                  <span className="text-xl font-heading font-bold text-primary">
+              <div className="border-t border-rams-line pt-6">
+                <div className="flex justify-between items-end">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.purchase.requisitionNew.estimatedProtocolTotal')}</span>
+                  <span className="text-3xl font-mono font-bold text-rams-orange tabular-nums">
                     ${calculateTotal().toFixed(2)}
                   </span>
                 </div>
@@ -387,26 +400,26 @@ export default function NewPurchaseRequisitionPage() {
           </Card>
 
           {/* Quick Add Products */}
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle>Quick Add</CardTitle>
-              <CardDescription>Search and add products</CardDescription>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.purchase.requisitionNew.nodeInjection')}</CardTitle>
+              <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('pages.purchase.requisitionNew.nodeInjectionDesc')}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <CardContent className="p-6 space-y-6">
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
                 <Input
-                  placeholder="Search products..."
+                  placeholder={t('pages.purchase.requisitionNew.searchProductNodes')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 rounded-xl"
+                  className="pl-10 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[10px]"
                 />
               </div>
-              <div className="max-h-[300px] overflow-y-auto space-y-2">
+              <div className="max-h-[400px] overflow-y-auto space-y-1 pr-2 scrollbar-hide">
                 {filteredProducts.slice(0, 10).map((product) => (
                   <div
                     key={product.id}
-                    className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
+                    className="flex items-center justify-between p-4 bg-rams-panel/20 border border-rams-line hover:bg-rams-panel hover:border-rams-orange/40 transition-none cursor-pointer group"
                     onClick={() => {
                       const newLine: RequisitionLine = {
                         id: crypto.randomUUID(),
@@ -422,12 +435,17 @@ export default function NewPurchaseRequisitionPage() {
                     }}
                   >
                     <div>
-                      <p className="text-sm font-medium">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">{product.sku}</p>
+                      <p className="text-[11px] font-black uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{product.name}</p>
+                      <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">{product.sku}</p>
                     </div>
-                    <Plus className="h-4 w-4 text-muted-foreground" />
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-rams-orange transition-none" />
                   </div>
                 ))}
+                {filteredProducts.length === 0 && (
+                  <div className="text-center py-12 text-muted-foreground/20 border border-dashed border-rams-line">
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest">{t('pages.purchase.requisitionNew.zeroNodesFound')}</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

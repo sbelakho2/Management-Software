@@ -50,7 +50,12 @@ export const authApi = {
    * Login with email and password
    */
   async login(credentials: LoginCredentials): Promise<BackendTokenResponse> {
-    const response = await apiClient.post<BackendLoginResponse>('/auth/login', credentials);
+    const payload = {
+      email: credentials.email.trim().toLowerCase(),
+      password: credentials.password.trim(),
+    };
+    console.log('[AUTH DEBUG] Login request payload:', JSON.stringify(payload, null, 2));
+    const response = await apiClient.post<BackendLoginResponse>('/auth/login', payload);
 
     if (isTwoFactorRequiredResponse(response)) {
       throw new Error(response.message || 'Two-factor authentication required');
@@ -67,7 +72,10 @@ export const authApi = {
    * Register a new user
    */
   async register(data: RegisterData): Promise<BackendTokenResponse> {
-    const response = await apiClient.post<BackendTokenResponse>('/auth/register', data);
+    const response = await apiClient.post<BackendTokenResponse>('/auth/register', {
+      ...data,
+      email: data.email.trim().toLowerCase(),
+    });
     apiClient.setToken(response.access_token);
     if (typeof window !== 'undefined') {
       localStorage.setItem('refresh_token', response.refresh_token);

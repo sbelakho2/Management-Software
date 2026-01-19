@@ -58,15 +58,15 @@ export default function EditA3Page() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">Edit A3 Report</h1>
-            <p className="text-muted-foreground">Modify the strategic problem-solving document</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('a3.edit.title') || 'Edit A3 Report'}</h1>
+            <p className="text-muted-foreground">{t('a3.edit.subtitle') || 'Modify the strategic problem-solving document'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
+          <Button variant="outline" onClick={() => router.back()}>{t('common.cancel') || 'Cancel'}</Button>
           <Button onClick={handleSubmit} disabled={isSubmitting}>
             <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? (t('a3.edit.saving') || 'Saving...') : (t('a3.edit.saveChanges') || 'Save Changes')}
           </Button>
         </div>
       </div>
@@ -74,11 +74,11 @@ export default function EditA3Page() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Basic Information</CardTitle>
+            <CardTitle>{t('a3.edit.basicInformation') || 'Basic Information'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Report Title *</Label>
+              <Label htmlFor="title">{t('a3.edit.reportTitle') || 'Report Title'} *</Label>
               <Input
                 id="title"
                 value={form.title}
@@ -88,26 +88,26 @@ export default function EditA3Page() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="type">Report Type</Label>
+                <Label htmlFor="type">{t('a3.edit.reportType') || 'Report Type'}</Label>
                 <Select value={form.a3_type} onValueChange={(v) => setForm({ ...form, a3_type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="problem_solving">Problem Solving</SelectItem>
-                    <SelectItem value="proposal">Proposal</SelectItem>
-                    <SelectItem value="status_report">Status Report</SelectItem>
-                    <SelectItem value="strategy">Strategy</SelectItem>
+                    <SelectItem value="problem_solving">{t('a3.types.problemSolving') || 'Problem Solving'}</SelectItem>
+                    <SelectItem value="proposal">{t('a3.types.proposal') || 'Proposal'}</SelectItem>
+                    <SelectItem value="status_report">{t('a3.types.statusReport') || 'Status Report'}</SelectItem>
+                    <SelectItem value="strategy">{t('a3.types.strategy') || 'Strategy'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="status">Status</Label>
+                <Label htmlFor="status">{t('a3.edit.status') || 'Status'}</Label>
                 <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="review">Review</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="draft">{t('a3.statuses.draft') || 'Draft'}</SelectItem>
+                    <SelectItem value="in_progress">{t('a3.statuses.inProgress') || 'In Progress'}</SelectItem>
+                    <SelectItem value="review">{t('a3.statuses.review') || 'Review'}</SelectItem>
+                    <SelectItem value="approved">{t('a3.statuses.approved') || 'Approved'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -117,11 +117,11 @@ export default function EditA3Page() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Content</CardTitle>
+            <CardTitle>{t('a3.edit.content') || 'Content'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="background">1. Background</Label>
+              <Label htmlFor="background">{t('a3.edit.sections.background') || '1. Background'}</Label>
               <Textarea
                 id="background"
                 rows={3}
@@ -130,7 +130,7 @@ export default function EditA3Page() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="currentStatus">2. Current Status</Label>
+              <Label htmlFor="currentStatus">{t('a3.edit.sections.currentStatus') || '2. Current Status'}</Label>
               <Textarea
                 id="currentStatus"
                 rows={3}
@@ -139,7 +139,7 @@ export default function EditA3Page() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="goals">3. Goals / Targets</Label>
+              <Label htmlFor="goals">{t('a3.edit.sections.goals') || '3. Goals / Targets'}</Label>
               <Textarea
                 id="goals"
                 rows={3}
@@ -148,7 +148,7 @@ export default function EditA3Page() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="analysis">4. Root Cause Analysis</Label>
+              <Label htmlFor="analysis">{t('a3.edit.sections.analysis') || '4. Root Cause Analysis'}</Label>
               <Textarea
                 id="analysis"
                 rows={3}

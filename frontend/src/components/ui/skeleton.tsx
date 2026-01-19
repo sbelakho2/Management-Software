@@ -38,7 +38,7 @@ function SkeletonCard({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('rounded-rams-sm border border-rams-border bg-rams-module p-5', className)}
+      className={cn('rounded-rams-sm border border-rams-line bg-rams-module p-5', className)}
       {...props}
     >
       <div className="flex items-center space-x-4">
@@ -67,9 +67,9 @@ function SkeletonTable({
   columns?: number;
 }) {
   return (
-    <div className={cn('w-full border border-rams-border rounded-rams-sm overflow-hidden', className)} {...props}>
+    <div className={cn('w-full border border-rams-line rounded-rams-sm overflow-hidden', className)} {...props}>
       {/* Header */}
-      <div className="flex gap-4 border-b border-rams-border bg-rams-panel p-4">
+      <div className="flex gap-4 border-b border-rams-line bg-rams-panel p-4">
         {Array.from({ length: columns }).map((_, i) => (
           <Skeleton key={i} className="h-2 flex-1 opacity-40" />
         ))}
@@ -77,7 +77,7 @@ function SkeletonTable({
       {/* Rows */}
       <div className="bg-rams-module">
         {Array.from({ length: rows }).map((_, rowIndex) => (
-          <div key={rowIndex} className="flex gap-4 p-4 border-b border-rams-border/30 last:border-0">
+          <div key={rowIndex} className="flex gap-4 p-4 border-b border-rams-line/30 last:border-0">
             {Array.from({ length: columns }).map((_, colIndex) => (
               <Skeleton
                 key={colIndex}
@@ -102,7 +102,7 @@ function SkeletonList({
   return (
     <div className={cn('space-y-1', className)} {...props}>
       {Array.from({ length: items }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 p-3 bg-rams-module border border-rams-border/50 rounded-rams-sm">
+        <div key={i} className="flex items-center gap-4 p-3 bg-rams-module border border-rams-line/50 rounded-rams-sm">
           <Skeleton className="h-8 w-8 rounded-rams-sm" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-2 w-1/3" />

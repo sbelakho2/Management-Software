@@ -114,6 +114,30 @@ function getNestedValue(obj: Record<string, unknown>, path: string): string | un
 }
 
 /**
+ * Convert a translation key to a human-readable fallback
+ * e.g., "pages.pipeline.newOpportunity" -> "New Opportunity"
+ */
+function keyToReadableFallback(key: string): string {
+  // Get the last part of the key (most specific)
+  const lastPart = key.split('.').pop() || key;
+  
+  // Convert camelCase/PascalCase to words with spaces
+  // "newOpportunity" -> "new Opportunity" -> "New Opportunity"
+  const withSpaces = lastPart
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/([0-9]+)/g, ' $1 ')
+    .trim();
+  
+  // Capitalize first letter of each word
+  return withSpaces
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Interpolate parameters into a translation string
  * Supports both {param} and {{param}} syntax
  */
@@ -207,10 +231,13 @@ export function I18nProvider({
         value = getNestedValue(TRANSLATIONS.en as Record<string, unknown>, key);
       }
 
-      // Return key if no translation found
+      // Return human-readable fallback if no translation found
       if (value === undefined) {
-        console.warn(`Missing translation for key: ${key}`);
-        return key;
+        // Only warn in development
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`Missing translation for key: ${key}`);
+        }
+        return keyToReadableFallback(key);
       }
 
       return interpolate(value, params);

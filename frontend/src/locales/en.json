@@ -37,7 +37,9 @@
     "remove": "Remove",
     "view": "View",
     "details": "Details",
-    "actions": "Actions",
+    "actions": {
+      "analyze": "Analyze"
+    },
     "status": "Status",
     "date": "Date",
     "time": "Time",
@@ -45,7 +47,18 @@
     "description": "Description",
     "type": "Type",
     "category": "Category",
-    "priority": "Priority",
+    "priority": {
+      "label": "Priority",
+      "_value": "Priority",
+      "critical": "Critical",
+      "high": "High",
+      "low": "Low",
+      "medium": "Medium",
+      "normal": "Normal",
+      "urgent": "Urgent"
+    },
+    "approved": "Approved",
+    "rejected": "Rejected",
     "select": "Select",
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
@@ -86,6 +99,7 @@
     "optional": "Optional",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "discontinued": "Discontinued",
     "all": "All",
     "none": "None",
     "other": "Other",
@@ -95,7 +109,89 @@
     "medium": "Medium",
     "low": "Low",
     "critical": "Critical",
-    "urgent": "Urgent"
+    "urgent": "Urgent",
+    "abort": "Abort",
+    "abortProtocol": "Abort Protocol",
+    "activeUsers": "Active Users",
+    "activity": "Activity",
+    "actual": "Actual",
+    "advanced": "Advanced",
+    "allDepartments": "All Departments",
+    "asset": "Asset",
+    "assigned": "Assigned",
+    "assignedTo": "Assigned To",
+    "attachments": "Attachments",
+    "beginner": "Beginner",
+    "blocked": "Blocked",
+    "board": "Board",
+    "created": "Created",
+    "creating": "Creating",
+    "customer": "Customer",
+    "dashboard": "Dashboard",
+    "days": "Days",
+    "detailedIntelligence": "Detailed Intelligence",
+    "discard": "Discard",
+    "due": "Due",
+    "dueDate": "Due Date",
+    "duration": "Duration",
+    "enrolled": "Enrolled",
+    "escalated": "Escalated",
+    "execute": "Execute",
+    "expert": "Expert",
+    "exportIntel": "Export Intel",
+    "filters": "Filters",
+    "grid": "Grid",
+    "history": "History",
+    "initializing": "Initializing",
+    "instructor": "Instructor",
+    "intermediate": "Intermediate",
+    "list": "List",
+    "notSpecified": "Not Specified",
+    "operations": "Operations",
+    "overdue": "Overdue",
+    "priorityLayer": "Priority Layer",
+    "qty": "Qty",
+    "quality": "Quality",
+    "received": "Received",
+    "saving": "Saving",
+    "scheduled": "Scheduled",
+    "settings": "Settings",
+    "synchronizing": "Synchronizing",
+    "target": "Target",
+    "task": "Task",
+    "temporalHorizon": "Temporal Horizon",
+    "title": "Title",
+    "trend": "Trend",
+    "tryAgain": "Try Again",
+    "unassigned": "Unassigned",
+    "unknownProduct": "Unknown Product",
+    "na": "N/A",
+    "version": "Version",
+    "viewAll": "View All",
+    "projectCreated": "Project Created",
+    "private": "Private",
+    "public": "Public",
+    "allStatus": "All Status",
+    "allCategories": "All Categories",
+    "filterByStatus": "Filter by Status",
+    "adjustFilters": "Adjust filters",
+    "unknown": "Unknown",
+    "notClassified": "Not Classified",
+    "viewDetails": "View Details",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "status": {
+      "_label": "Status",
+      "allSystemsOperational": "All Systems Operational",
+      "minorIssuesDetected": "Minor Issues Detected",
+      "criticalAlert": "Critical Alert",
+      "systemOffline": "System Offline",
+      "idle": "Idle",
+      "syncing": "Syncing",
+      "processing": "Processing",
+      "complete": "Complete",
+      "error": "Error"
+    }
   },
   "auth": {
     "login": "Log In",
@@ -198,22 +294,716 @@
   "settings": {
     "title": "Settings",
     "general": "General",
-    "profile": "Profile",
-    "account": "Account",
-    "security": "Security",
-    "notifications": "Notifications",
-    "appearance": "Appearance",
+    "profile": {
+      "title": "Profile",
+      "subtitle": "Personal Identity & Organizational Role",
+      "personalInfo": "Personal Information",
+      "fullName": "Full Name",
+      "email": "Email",
+      "phone": "Phone",
+      "jobTitle": "Job Title",
+      "department": "Department",
+      "avatar": "Avatar",
+      "changeAvatar": "Change Avatar",
+      "removeAvatar": "Remove Avatar",
+      "bio": "Bio",
+      "saveChanges": "SAVE_CHANGES",
+      "synchronizing": "SYNCHRONIZING...",
+      "basicInfo": "Basic Info",
+      "communicationNodes": "Communication Nodes",
+      "emailAddress": "Email Address",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "location": "Location",
+      "organizationalRole": "Organizational Role",
+      "personnelSummary": "Personnel Summary",
+      "personnelSummaryPlaceholder": "Write a brief professional summary",
+      "phoneNumber": "Phone Number",
+      "timezoneSync": "Timezone Sync",
+      "selectDepartment": "Select department",
+      "selectTimezone": "Select timezone",
+      "timezones": {
+        "africaCasablanca": "(GMT+0) Casablanca",
+        "europeParis": "(GMT+1) Paris",
+        "europeLondon": "(GMT+0) London",
+        "americaNewYork": "(GMT-5) New York",
+        "americaLosAngeles": "(GMT-8) Los Angeles"
+      },
+      "departments": {
+        "engineering": "Engineering",
+        "production": "Production",
+        "quality": "Quality",
+        "sales": "Sales",
+        "operations": "Operations",
+        "finance": "Finance",
+        "humanResources": "Human Resources",
+        "it": "IT"
+      },
+      "toast": {
+        "updated": {
+          "title": "Profile updated",
+          "description": "Your changes have been saved successfully."
+        },
+        "failed": {
+          "title": "Update failed",
+          "description": "There was an error saving your changes."
+        }
+      }
+    },
+    "account": {
+      "title": "Account",
+      "subtitle": "Credential Rotation & Node Configuration",
+      "description": "Manage primary identity credentials and authentication layers",
+      "updateCredentials": "UPDATE_CREDENTIALS",
+      "emailPreferences": "Email Preferences",
+      "timezone": "Timezone",
+      "deleteAccount": "Delete Account",
+      "deleteAccountDesc": "Permanently delete your account and all associated data",
+      "credentialRotation": "Credential Rotation",
+      "credentialRotationDesc": "Periodic update of access keys is recommended",
+      "currentPassword": "Current Password",
+      "newPassword": "New Intelligence Key",
+      "primaryEmail": "Primary Email Protocol"
+    },
+    "security": {
+      "title": "Security",
+      "subtitle": "Authentication Keys & Access Protocols",
+      "changePassword": "Change Password",
+      "changePasswordDesc": "Enter your current password and a new password",
+      "currentPassword": "Current Password",
+      "newPassword": "New Password",
+      "confirmPassword": "Confirm Password",
+      "passwordStrengthHint": "Password must be at least 8 characters and include an uppercase letter and a number",
+      "passwordsDoNotMatch": "Passwords do not match",
+      "passwordVisibility": {
+        "show": "Show",
+        "hide": "Hide",
+        "label": "passwords"
+      },
+      "changingPassword": "Changing...",
+      "updateKeys": "UPDATE_KEYS",
+      "twoFactor": "Two-Factor Authentication",
+      "twoFactorDesc": "Add an extra layer of security to your account",
+      "enable2FA": "Enable 2FA",
+      "disable2FA": "Disable 2FA",
+      "sessions": "Active Sessions",
+      "sessionsDesc": "Manage your active login sessions",
+      "thisDevice": "This device",
+      "lastActive": "Last active",
+      "revokeSession": "Revoke",
+      "revokeAllSessions": "Revoke All Sessions",
+      "accessPassword": "Access Password",
+      "active": "ACTIVE",
+      "activeIntelligenceNodes": "Active Intelligence Nodes",
+      "atRisk": "AT_RISK",
+      "authenticationKeys": "Authentication Keys",
+      "authenticatorProtocol": "Authenticator Protocol",
+      "enable2faDesc": "Enable 2FA for industrial-grade security",
+      "eventTelemetryLog": "Event Telemetry Log",
+      "lastRotated": "Last rotated 3 days ago",
+      "securitySyncRecommendations": "Security Sync Recommendations",
+      "syncedWithToken": "Synchronized with external token generator",
+      "terminateAllRemoteSessions": "Terminate All Remote Sessions",
+      "verificationLayer": "Verification Layer",
+      "primaryNode": "PRIMARY_NODE",
+      "terminateNode": "TERMINATE_NODE",
+      "pulse": "PULSE",
+      "securityRecommendation1": "Two-factor authentication is active and synchronized",
+      "securityRecommendation2": "Identity credentials rotated within recommended threshold",
+      "securityRecommendation3": "Consider terminating legacy sessions to minimize surface area",
+      "terminateNodeAuthorization": "Terminate Node Authorization",
+      "terminateNodeDescription": "This action will sign out the device in {location}. Proceed with termination?",
+      "cancelProtocol": "CANCEL_PROTOCOL",
+      "activity": {
+        "loginSuccess": "Successful login",
+        "loginFailed": "Failed login attempt",
+        "logout": "Logged out",
+        "passwordChanged": "Password changed",
+        "twoFactorEnabled": "2FA enabled"
+      }
+    },
+    "notifications": {
+      "title": "Notifications",
+      "subtitle": "Alert Configuration & Communication Protocols",
+      "emailNotifications": "Email Notifications",
+      "pushNotifications": "Push Notifications",
+      "inAppNotifications": "In-App Notifications",
+      "digest": "Daily Digest",
+      "digestDesc": "Receive a daily summary of activities",
+      "mentions": "Mentions & Replies",
+      "mentionsDesc": "Get notified when someone mentions you",
+      "updates": "System Updates",
+      "updatesDesc": "Important system announcements and updates",
+      "marketing": "Marketing Communications",
+      "marketingDesc": "Product news and promotional content",
+      "calibrating": "CALIBRATING...",
+      "pipelineCommerce": "Pipeline & Commerce Signals",
+      "productionFloorTelemetry": "Production Floor Telemetry",
+      "qualityAssuranceAlerts": "Quality Assurance Alerts",
+      "saveRouting": "SAVE_ROUTING",
+      "strategicSummaries": "Strategic Summaries",
+      "inboundRfqSignal": "Inbound RFQ Signal",
+      "inboundRfqSignalDesc": "When a new RFQ enters the pipeline or is assigned",
+      "approvalRequest": "Approval Request",
+      "approvalRequestDesc": "When a quotation requires strategic sign-off",
+      "commerceOutcome": "Commerce Outcome",
+      "commerceOutcomeDesc": "When a quote reaches a terminal won/lost state",
+      "abnormalityDetected": "Abnormality Detected (NCR)",
+      "abnormalityDetectedDesc": "When a new non-conformance protocol is initiated",
+      "resolutionProtocol": "Resolution Protocol (CAPA)",
+      "resolutionProtocolDesc": "When a corrective action is assigned for execution",
+      "inspectionThreshold": "Inspection Threshold",
+      "inspectionThresholdDesc": "Reminders for upcoming quality gate synchronizations",
+      "workOrderEvolution": "Work Order Evolution",
+      "workOrderEvolutionDesc": "Status transitions on tracked production orders",
+      "andonEscalation": "Andon Escalation",
+      "andonEscalationDesc": "Immediate production line alerts requiring attention",
+      "dailyCommandSummary": "Daily Command Summary",
+      "dailyCommandSummaryDesc": "Briefing of previous day activity and pending tasks",
+      "weeklyPerformanceIntelligence": "Weekly Performance Intelligence",
+      "weeklyPerformanceIntelligenceDesc": "Aggregate metrics and organizational velocity report",
+      "dispatchSynchronization": "Dispatch Synchronization",
+      "dispatchSynchronizationDesc": "Target delivery time for daily intelligence briefing",
+      "digestTimeOptions": {
+        "0600": "06:00 AM (Sunrise)",
+        "0700": "07:00 AM",
+        "0800": "08:00 AM (Shift start)",
+        "0900": "09:00 AM",
+        "1800": "06:00 PM (Shift end)"
+      }
+    },
+    "roleInsights": {
+      "title": "Role-Insight Mappings",
+      "subtitle": "Configure which AI insights each role can access",
+      "export": "Export",
+      "saveChanges": "Save Changes",
+      "exportFilePrefix": "role-insights",
+      "infoTitle": "About Role-Insight Access Control",
+      "infoBody": "AI insights are organized by sensitivity level. CEO and Admin have full access (locked). Other roles can be customized based on organizational needs. Changes are audited and can be exported for compliance.",
+      "tabs": {
+        "matrix": "Access Matrix",
+        "roles": "By Role",
+        "audit": "Audit Log"
+      },
+      "filters": {
+        "searchPlaceholder": "Search insights...",
+        "sensitivityPlaceholder": "Filter by sensitivity",
+        "rolePlaceholder": "Filter by role",
+        "allSensitivities": "All Sensitivities",
+        "allRoles": "All Roles"
+      },
+      "table": {
+        "insightHeader": "Insight"
+      },
+      "tooltip": {
+        "level": "Level: {level}",
+        "locked": "{role} has full access (locked)"
+      },
+      "roleCard": {
+        "insightsAccess": "Insights Access",
+        "levelBadge": "Level {level}",
+        "fullAccess": "Full Access",
+        "editMappings": "Edit Mappings"
+      },
+      "audit": {
+        "title": "Change Audit Log",
+        "description": "Track all changes made to role-insight mappings for compliance and security auditing",
+        "headers": {
+          "timestamp": "Timestamp",
+          "action": "Action",
+          "role": "Role",
+          "insight": "Insight",
+          "performedBy": "Performed By",
+          "reason": "Reason"
+        },
+        "actions": {
+          "grant": "Granted",
+          "revoke": "Revoked",
+          "bulkUpdate": "Bulk Update"
+        },
+        "sampleReasons": {
+          "qualityImprovement": "Quality improvement initiative",
+          "dataSensitivity": "Data sensitivity policy",
+          "expandedMaintenance": "Expanded predictive maintenance access"
+        }
+      },
+      "saveDialog": {
+        "title": "Save Changes",
+        "description": "Provide a reason for this change (required for audit trail)",
+        "reasonLabel": "Reason for Change",
+        "reasonPlaceholder": "e.g., Updated access for new compliance requirements",
+        "cancel": "Cancel",
+        "saveAudit": "Save & Audit"
+      },
+      "sensitivity": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "critical": "Critical",
+        "lowDesc": "General operational insights",
+        "mediumDesc": "Department-specific insights",
+        "highDesc": "Sensitive business insights",
+        "criticalDesc": "Executive-only insights"
+      },
+      "categories": {
+        "production": {
+          "name": "Production & Operations",
+          "description": "Real-time production metrics, efficiency, and operational insights"
+        },
+        "quality": {
+          "name": "Quality & Compliance",
+          "description": "Quality metrics, defect analysis, and compliance insights"
+        },
+        "inventory": {
+          "name": "Inventory & Supply Chain",
+          "description": "Inventory levels, supply chain health, and procurement insights"
+        },
+        "maintenance": {
+          "name": "Maintenance & Equipment",
+          "description": "Equipment health, predictive maintenance, and reliability insights"
+        },
+        "financial": {
+          "name": "Financial & Cost Analysis",
+          "description": "Financial performance, cost analysis, and profitability insights"
+        },
+        "workforce": {
+          "name": "Workforce & HR",
+          "description": "Workforce analytics, productivity, and HR insights"
+        },
+        "sales": {
+          "name": "Sales & Customer",
+          "description": "Sales performance, pipeline analysis, and customer insights"
+        },
+        "strategic": {
+          "name": "Strategic & Executive",
+          "description": "High-level strategic insights and executive dashboards"
+        }
+      },
+      "insights": {
+        "production_efficiency": {
+          "name": "Production Efficiency",
+          "description": "OEE, throughput, cycle times"
+        },
+        "production_bottlenecks": {
+          "name": "Bottleneck Analysis",
+          "description": "Identify production constraints"
+        },
+        "downtime_analysis": {
+          "name": "Downtime Analysis",
+          "description": "Equipment and process downtime"
+        },
+        "capacity_utilization": {
+          "name": "Capacity Utilization",
+          "description": "Resource and capacity metrics"
+        },
+        "production_forecasts": {
+          "name": "Production Forecasts",
+          "description": "AI-powered demand predictions"
+        },
+        "quality_metrics": {
+          "name": "Quality Metrics",
+          "description": "PPM, defect rates, yield"
+        },
+        "spc_analysis": {
+          "name": "SPC Analysis",
+          "description": "Statistical process control insights"
+        },
+        "defect_predictions": {
+          "name": "Defect Predictions",
+          "description": "AI-powered defect forecasting"
+        },
+        "compliance_status": {
+          "name": "Compliance Status",
+          "description": "Regulatory compliance tracking"
+        },
+        "audit_readiness": {
+          "name": "Audit Readiness",
+          "description": "Audit preparation insights"
+        },
+        "inventory_levels": {
+          "name": "Inventory Levels",
+          "description": "Stock levels and turnover"
+        },
+        "reorder_recommendations": {
+          "name": "Reorder Recommendations",
+          "description": "AI-optimized reorder points"
+        },
+        "supplier_performance": {
+          "name": "Supplier Performance",
+          "description": "Vendor scorecards and metrics"
+        },
+        "supply_chain_risks": {
+          "name": "Supply Chain Risks",
+          "description": "Risk assessment and alerts"
+        },
+        "cost_optimization": {
+          "name": "Cost Optimization",
+          "description": "Procurement cost insights"
+        },
+        "equipment_health": {
+          "name": "Equipment Health",
+          "description": "Machine status and monitoring"
+        },
+        "predictive_maintenance": {
+          "name": "Predictive Maintenance",
+          "description": "AI failure predictions"
+        },
+        "maintenance_costs": {
+          "name": "Maintenance Costs",
+          "description": "Cost tracking and analysis"
+        },
+        "asset_lifecycle": {
+          "name": "Asset Lifecycle",
+          "description": "Equipment lifecycle insights"
+        },
+        "reliability_metrics": {
+          "name": "Reliability Metrics",
+          "description": "MTBF, MTTR analysis"
+        },
+        "cost_analysis": {
+          "name": "Cost Analysis",
+          "description": "Detailed cost breakdowns"
+        },
+        "profitability": {
+          "name": "Profitability Analysis",
+          "description": "Product and customer profitability"
+        },
+        "margin_trends": {
+          "name": "Margin Trends",
+          "description": "Margin analysis over time"
+        },
+        "revenue_forecasts": {
+          "name": "Revenue Forecasts",
+          "description": "AI revenue predictions"
+        },
+        "cash_flow_insights": {
+          "name": "Cash Flow Insights",
+          "description": "Cash position analysis"
+        },
+        "workforce_productivity": {
+          "name": "Workforce Productivity",
+          "description": "Team performance metrics"
+        },
+        "attendance_patterns": {
+          "name": "Attendance Patterns",
+          "description": "Attendance analytics"
+        },
+        "skill_gaps": {
+          "name": "Skill Gap Analysis",
+          "description": "Training needs assessment"
+        },
+        "retention_risks": {
+          "name": "Retention Risks",
+          "description": "AI attrition predictions"
+        },
+        "compensation_insights": {
+          "name": "Compensation Insights",
+          "description": "Salary and benefits analysis"
+        },
+        "sales_pipeline": {
+          "name": "Sales Pipeline",
+          "description": "Pipeline health and velocity"
+        },
+        "win_loss_analysis": {
+          "name": "Win/Loss Analysis",
+          "description": "Deal outcome patterns"
+        },
+        "customer_insights": {
+          "name": "Customer Insights",
+          "description": "Customer behavior analysis"
+        },
+        "quote_optimization": {
+          "name": "Quote Optimization",
+          "description": "AI pricing recommendations"
+        },
+        "market_trends": {
+          "name": "Market Trends",
+          "description": "Industry and market analysis"
+        },
+        "kpi_dashboard": {
+          "name": "KPI Dashboard",
+          "description": "Executive KPI overview"
+        },
+        "competitive_analysis": {
+          "name": "Competitive Analysis",
+          "description": "Market positioning insights"
+        },
+        "strategic_recommendations": {
+          "name": "Strategic Recommendations",
+          "description": "AI strategic suggestions"
+        },
+        "risk_assessment": {
+          "name": "Risk Assessment",
+          "description": "Enterprise risk analysis"
+        },
+        "scenario_planning": {
+          "name": "Scenario Planning",
+          "description": "What-if analysis tools"
+        }
+      },
+      "roles": {
+        "admin": {
+          "name": "Administrator",
+          "description": "Full system access"
+        },
+        "ceo": {
+          "name": "CEO",
+          "description": "Chief Executive Officer"
+        },
+        "gm": {
+          "name": "General Manager",
+          "description": "General Manager"
+        },
+        "exec": {
+          "name": "Executive",
+          "description": "Executive Leadership"
+        },
+        "finance": {
+          "name": "Finance",
+          "description": "Finance Department"
+        },
+        "hr": {
+          "name": "HR",
+          "description": "Human Resources"
+        },
+        "ops": {
+          "name": "Operations",
+          "description": "Operations Manager"
+        },
+        "quality": {
+          "name": "Quality",
+          "description": "Quality Manager"
+        },
+        "it": {
+          "name": "IT",
+          "description": "IT Department"
+        },
+        "accountant": {
+          "name": "Accountant",
+          "description": "Accounting Staff"
+        },
+        "auditor": {
+          "name": "Auditor",
+          "description": "Internal/External Auditor"
+        },
+        "sales_engineer": {
+          "name": "Sales Engineer",
+          "description": "Technical Sales"
+        },
+        "estimator": {
+          "name": "Estimator",
+          "description": "Cost Estimator"
+        },
+        "sales": {
+          "name": "Sales",
+          "description": "Sales Representative"
+        },
+        "purchasing": {
+          "name": "Purchasing",
+          "description": "Purchasing Agent"
+        },
+        "supply_chain": {
+          "name": "Supply Chain",
+          "description": "Supply Chain Specialist"
+        },
+        "logistics": {
+          "name": "Logistics",
+          "description": "Logistics Coordinator"
+        },
+        "warehouse": {
+          "name": "Warehouse",
+          "description": "Warehouse Staff"
+        },
+        "maintenance": {
+          "name": "Maintenance",
+          "description": "Maintenance Technician"
+        },
+        "engineering": {
+          "name": "Engineering",
+          "description": "Engineer"
+        },
+        "supervisor": {
+          "name": "Supervisor",
+          "description": "Production Supervisor"
+        },
+        "team_lead": {
+          "name": "Team Lead",
+          "description": "Team Leader"
+        },
+        "operator": {
+          "name": "Operator",
+          "description": "Machine Operator"
+        },
+        "viewer": {
+          "name": "Viewer",
+          "description": "Read-only Access"
+        }
+      }
+    },
+    "appearance": {
+      "title": "Appearance",
+      "subtitle": "Interface Aesthetics & Calibrations",
+      "theme": "Theme",
+      "themeMode": "Theme Mode",
+      "lightMode": "Light Mode",
+      "lightModeDesc": "Light background with dark text",
+      "darkMode": "Dark Mode",
+      "darkModeDesc": "Dark background with light text",
+      "systemDefault": "System Default",
+      "systemDefaultDesc": "Follow your system preferences",
+      "accentColor": "Accent Color",
+      "senseiOrange": "Sensei Orange",
+      "fontSize": "Font Size",
+      "fontSizeSmall": "Small",
+      "fontSizeSmallDesc": "14px base",
+      "fontSizeMedium": "Medium",
+      "fontSizeMediumDesc": "16px base (default)",
+      "fontSizeLarge": "Large",
+      "fontSizeLargeDesc": "18px base",
+      "density": "Display Density",
+      "compact": "Compact",
+      "compactDesc": "More content on screen",
+      "comfortable": "Comfortable",
+      "comfortableDesc": "More spacing for easier reading",
+      "spacious": "Spacious",
+      "compactNavigation": "Compact Navigation",
+      "compactNavigationDesc": "Minimize sidebar footprint by default",
+      "reducedMotion": "Reduced Motion",
+      "reducedMotionDesc": "Minimize interface animations and transitions",
+      "livePreview": "Live Preview",
+      "preview": {
+        "title": "Intelligence Module 04",
+        "subtitle": "Live operational stream synchronized",
+        "primaryAction": "EXECUTE_COMMAND",
+        "secondaryAction": "VIEW_INTEL",
+        "tertiaryAction": "TERMINATE"
+      },
+      "save": "SAVE",
+      "saving": "SAVING...",
+      "saveSuccess": "Save Success"
+    },
     "language": "Language",
     "preferences": "Preferences",
     "organization": "Organization",
     "system": "System",
-    "integrations": "Integrations",
+    "integrations": {
+      "_value": "Integrations",
+      "description": "Synchronize organizational intelligence with external systems",
+      "title": "Integration Hub",
+      "status": {
+        "connected": "CONNECTED",
+        "disconnected": "NOT_CONNECTED"
+      },
+      "items": {
+        "sap": {
+          "name": "SAP ERP Protocol",
+          "desc": "Bidirectional sync of production cycles and inventory nodes"
+        },
+        "teams": {
+          "name": "Microsoft Teams Channel",
+          "desc": "Automated dispatch of Andon signals to operative channels"
+        },
+        "powerbi": {
+          "name": "PowerBI Intelligence",
+          "desc": "Strategic data stream export for deep temporal analysis"
+        },
+        "slack": {
+          "name": "Slack Integration",
+          "desc": "Real-time telemetry notifications and operative command sync"
+        }
+      }
+    },
     "billing": "Billing",
-    "team": "Team",
+    "team": {
+      "_value": "Team",
+      "activeOperatives": "Active Operatives",
+      "intelligenceNodes": "Intelligence Nodes",
+      "inviteProtocol": "Invite Protocol",
+      "pendingSync": "Pending Sync",
+      "pulseNominal": "Pulse Nominal",
+      "subtitle": "Organizational hierarchy and access sync",
+      "title": "Personnel Directory",
+      "totalRegistry": "Total Registry",
+      "waitingForGate": "Waiting For Gate",
+      "zeroOperativesIdentified": "Zero Operatives Identified",
+      "searchPlaceholder": "SEARCH_OPERATIVES...",
+      "valueUnavailable": "—",
+      "invitedAt": "Invited {date}",
+      "filters": {
+        "role": "ROLE",
+        "status": "STATUS",
+        "allRoles": "ALL_ROLES",
+        "allStatus": "ALL_STATUS"
+      },
+      "table": {
+        "operativeIdentity": "OPERATIVE_IDENTITY",
+        "accessLayer": "ACCESS_LAYER",
+        "departmentNode": "DEPT_NODE",
+        "syncStatus": "SYNC_STATUS",
+        "lastPulse": "LAST_PULSE"
+      },
+      "roles": {
+        "admin": "Admin",
+        "adminDesc": "Full access to all features and settings",
+        "manager": "Manager",
+        "managerDesc": "Can manage team members and approve workflows",
+        "user": "User",
+        "userDesc": "Standard access to assigned features",
+        "viewer": "Viewer",
+        "viewerDesc": "Read-only access"
+      },
+      "status": {
+        "active": "Active",
+        "invited": "Invited",
+        "disabled": "Disabled"
+      },
+      "departments": {
+        "management": "Management",
+        "engineering": "Engineering",
+        "production": "Production",
+        "quality": "Quality",
+        "sales": "Sales",
+        "warehouse": "Warehouse"
+      },
+      "inviteDialog": {
+        "title": "Invite team member",
+        "description": "Send an invitation to join your organization",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "colleague@example.com",
+        "roleLabel": "Role",
+        "departmentLabel": "Department",
+        "departmentPlaceholder": "Select department",
+        "sendInvitation": "Send invitation"
+      },
+      "actions": {
+        "refineNode": "REFINE_NODE",
+        "rotateRole": "ROTATE_ROLE",
+        "resendSync": "RESEND_SYNC",
+        "deauthorize": "DE-AUTHORIZE",
+        "reauthorize": "RE-AUTHORIZE",
+        "terminateProtocol": "TERMINATE_PROTOCOL"
+      }
+    },
     "permissions": "Permissions",
     "audit": "Audit Log",
     "backup": "Backup & Restore",
-    "api": "API Keys",
+    "api": {
+      "_value": "API Keys",
+      "activeAuthNodes": "Active Auth Nodes",
+      "description": "Manage authorization keys for external intelligence streams",
+      "initializeNewKey": "Initialize New Key",
+      "intelligenceThroughput": "Intelligence Throughput",
+      "optimalLoad": "Optimal Load",
+      "title": "API Access Tokens",
+      "initializedOn": "INITIALIZED_ON",
+      "requestVolume": "REQUEST_VOLUME (24H)",
+      "errorRate": "ERROR_RATE",
+      "protocolStream": "Protocol: REST_JSON_STREAM // NODE: SENSEI_CORE_V3",
+      "keys": {
+        "erpSync": "ERP Sync",
+        "shopFloorDisplay": "Shop Floor Display"
+      }
+    },
     "webhooks": "Webhooks",
     "localization": {
       "title": "Localization Protocol",
@@ -224,20 +1014,135 @@
       "timeFormat": "Time Format",
       "timezone": "Timezone",
       "currency": "Currency",
-      "measurementUnits": "Measurement Units"
+      "measurementUnits": "Measurement Units",
+      "autoSyncActive": "Auto Sync Active",
+      "numericPrecisionPreview": "Numeric Precision Preview",
+      "rtlActive": "Right-to-left (RTL) layout active",
+      "preview": "Preview",
+      "standardMetric": "Standard metric",
+      "efficiencyPercentage": "Efficiency percentage"
     },
-    "appearance": {
-      "title": "Appearance",
-      "theme": "Theme",
-      "lightMode": "Light Mode",
-      "darkMode": "Dark Mode",
-      "systemDefault": "System Default",
-      "accentColor": "Accent Color",
-      "fontSize": "Font Size",
-      "density": "Display Density",
-      "compact": "Compact",
-      "comfortable": "Comfortable",
-      "spacious": "Spacious"
+    "currency": {
+      "displayCurrency": "Display Currency",
+      "displayCurrencyDesc": "Choose how monetary values are displayed throughout the application",
+      "selectCurrency": "Select Currency",
+      "preview": "Preview",
+      "sampleAmount": "Sample amount: 1,000 units",
+      "suggested": "Suggested",
+      "suggestionNote": "Based on your language settings, {currency} is recommended",
+      "useSuggested": "Use Suggested",
+      "exchangeRates": "Exchange Rates",
+      "exchangeRatesDesc": "Live rates from European Central Bank (ECB)",
+      "refresh": "Refresh Rates",
+      "statusOk": "Rates synchronized",
+      "statusError": "Using cached rates",
+      "lastUpdated": "Last updated",
+      "never": "Never",
+      "currency": "Currency",
+      "rateVsEur": "Rate vs EUR",
+      "rateVsDisplay": "Rate vs {currency}",
+      "valueIn": "1,000 in {currency}",
+      "display": "Display",
+      "disclaimer": "Exchange rates are provided for informational purposes and may not reflect actual transaction rates. Rates are refreshed hourly from ECB data."
+    },
+    "sites": {
+      "title": "Manufacturing Sites",
+      "subtitle": "Global facility nodes and regional parameters",
+      "station": "STATION: GLOBAL-OPS-01",
+      "addSite": "Initialize Site Node",
+      "siteName": "Site Name",
+      "siteCode": "Site Code",
+      "address": "Address",
+      "timezone": "Timezone",
+      "status": "Status",
+      "activeSitesDirectory": "Active Sites Directory",
+      "countrySync": "Country Sync",
+      "currencyNode": "Currency Node",
+      "initializeFirstNode": "Initialize your first global node using the configuration panel",
+      "initializeProtocol": "INITIALIZE_PROTOCOL",
+      "initializeSiteNode": "Initialize Site Node",
+      "nodeCommonName": "Node Common Name",
+      "physicalAddressNode": "Physical Address Node",
+      "siteCodeIdentifier": "Site Code Identifier",
+      "synchronizing": "SYNCHRONIZING...",
+      "temporalAlignment": "Temporal Alignment (Timezone)",
+      "zeroSitesIdentified": "Zero site protocols identified",
+      "placeholders": {
+        "siteCode": "e.g. SITE-NY-01",
+        "nodeCommonName": "e.g. New York Advanced Plant",
+        "countrySync": "USA",
+        "currencyNode": "USD",
+        "temporalAlignment": "America/New_York",
+        "physicalAddressNode": "123 Industrial Ave, NY"
+      },
+      "table": {
+        "code": "CODE",
+        "siteIdentity": "SITE_IDENTITY",
+        "temporalSync": "TEMPORAL_SYNC",
+        "currency": "CURR",
+        "statusNode": "STATUS_NODE"
+      },
+      "addressUnavailable": "LOC_UNDETERMINED",
+      "valueUnavailable": "—",
+      "status": {
+        "active": "ACTIVE",
+        "inactive": "INACTIVE"
+      }
+    },
+    "company": {
+      "brandingSync": "Branding Sync",
+      "description": "Manage primary organizational nodes and legal identifiers",
+      "legalEntityIdentity": "Legal Entity Identity",
+      "registeredOffice": "Registered Office",
+      "taxIdVat": "Tax Id Vat",
+      "title": "Company Architecture",
+      "defaults": {
+        "legalEntityIdentity": "Sensei Manufacturing Solutions",
+        "taxIdVat": "MA-123456789",
+        "registeredOffice": "123 Industrial Ave, Casablanca, Morocco"
+      },
+      "branding": {
+        "primaryLogoNode": "PRIMARY_LOGO_NODE",
+        "logoPlaceholder": "LOGO",
+        "updateStream": "UPDATE_STREAM",
+        "interfaceAccentSync": "INTERFACE_ACCENT_SYNC",
+        "activeAccent": "Active: Rams_Orange (#FFBE00)"
+      }
+    },
+    "data": {
+      "description": "Manage high-level data protocols and organizational exports",
+      "establishExport": "ESTABLISH_EXPORT",
+      "executePurge": "EXECUTE_PURGE",
+      "fullExport": "Full Intelligence Export",
+      "fullExportDesc": "Download all organizational nodes in JSON/CSV format for audit synchronization",
+      "pruningProtocol": "Pruning Protocol",
+      "pruningProtocolDesc": "Terminate records older than 5 years (standard compliance threshold)",
+      "title": "Data Architecture"
+    },
+    "email": {
+      "description": "Configure SMTP nodes and automated dispatch protocols",
+      "dispatchIdentity": "Dispatch Identity",
+      "intelligenceBroadcast": "Intelligence Broadcast",
+      "intelligenceBroadcastDesc": "Enable automated organizational notifications",
+      "relayReplyTo": "Relay Reply To",
+      "serverSync": "Server Synchronization",
+      "title": "Communications Relay",
+      "defaults": {
+        "dispatchIdentity": "SENSEI_OS_COMMAND",
+        "relayReplyTo": "no-reply@sensei-manuf.com"
+      },
+      "smtpStatus": "SMTP_RELAY: SYNCHRONIZED",
+      "smtpDetails": "Host: mail.sensei-infra.com // Port: 587 (TLS)"
+    },
+    "mobile": {
+      "biometricSync": "Biometric Sync",
+      "biometricSyncDesc": "Use Face ID or fingerprint encryption for node unlock",
+      "description": "Manage mobile application sync and biometric authorization layers",
+      "offlineIntelligence": "Offline Intelligence",
+      "offlineIntelligenceDesc": "Cache operational nodes for high-latency environments",
+      "telemetryPush": "Telemetry Push Signals",
+      "telemetryPushDesc": "Receive real-time organizational alerts on mobile hardware",
+      "title": "Mobile Operative Node"
     }
   },
   "errors": {
@@ -489,27 +1394,28 @@
     "analytics": {
       "title": "North Star Intelligence",
       "subtitle": "Unified organizational intelligence and strategic cross-gate analytics",
+      "station": "STATION: ANALYTICS-01",
       "stats": {
         "oee": "Organizational OEE",
         "risk": "Strategic Risk",
         "insights": "AI Insights",
-        "healthIndex": "Health Index"
+        "healthIndex": "HEALTH_INDEX"
       },
       "gateAnalytics": "Gate Analytics",
       "trendAnalysis": "Trend Analysis",
       "crossGateFlow": "Cross-Gate Flow",
-      "exportIntel": "Export Intel",
+      "exportIntel": "EXPORT_INTEL",
       "periods": {
-        "24h": "Last 24 Hours",
-        "7d": "Last 7 Days",
-        "30d": "Last 30 Days",
-        "90d": "Last 90 Days"
+        "24h": "LAST_24_HOURS",
+        "7d": "LAST_7_DAYS",
+        "30d": "LAST_30_DAYS",
+        "90d": "LAST_90_DAYS"
       },
       "tabs": {
-        "overview": "Overview",
-        "mlInsights": "ML Insights",
-        "trends": "Trends",
-        "systemHealth": "System Health"
+        "overview": "OVERVIEW",
+        "mlInsights": "ML_INSIGHTS",
+        "trends": "PREDICTIVE_TRENDS",
+        "models": "MODEL_HEALTH"
       },
       "mlInsights": {
         "title": "ML Intelligence Insights",
@@ -538,25 +1444,75 @@
         "modelName": "Model Name",
         "status": "Status",
         "accuracy": "Accuracy",
-        "lastTrained": "Last Trained"
+        "lastTrained": "Last Trained",
+        "optimalVelocity": "OPTIMAL_VELOCITY",
+        "degradedState": "DEGRADED_STATE"
       },
       "riskLevels": {
         "low": "LOW",
         "medium": "MEDIUM",
         "high": "HIGH"
       },
-      "stableGradient": "Stable Gradient",
-      "highImpact": "High Impact",
-      "alpha": "Alpha"
+      "stableGradient": "STABLE_GRADIENT",
+      "highImpact": "HIGH_IMPACT_EVENTS",
+      "alpha": "ALPHA",
+      "overview": {
+        "strategicIntelFeed": "STRATEGIC_INTELLIGENCE_FEED",
+        "strategicIntelFeedDesc": "AI-generated directives requiring immediate command attention",
+        "noInsights": "No priority insights at this time. Organizational performance is within optimal parameters.",
+        "reasoning": "Sensei AI is reasoning...",
+        "confidenceSignal": "CONFIDENCE_SIGNAL",
+        "modelNode": "MODEL_NODE",
+        "senseiActions": "Sensei Recommended Actions",
+        "predictiveMetrics": "PREDICTIVE_METRIC_GRADIENTS",
+        "predictiveMetricsDesc": "Current trajectory vs AI forecasted outcome",
+        "historicalAvg": "HISTORICAL_AVG",
+        "forecast7d": "FORECAST (7D)",
+        "baseline": "Establishing data baseline...",
+        "modelHealth": "AUTONOMOUS_MODEL_HEALTH",
+        "modelHealthDesc": "Real-time monitoring of inference reliability",
+        "inferencesToday": "INFERENCES_TODAY",
+        "warmingClusters": "Warming up ML compute clusters..."
+      },
+      "insights": {
+        "highImpactProtocol": "HIGH_IMPACT_PROTOCOL",
+        "strategicCountermeasures": "STRATEGIC_COUNTERMEASURES",
+        "synthesizing": "Sensei AI is synthesizing new intelligence nodes..."
+      },
+      "trendsTab": {
+        "protocol": "PROTOCOL",
+        "currentMagnitude": "CURRENT_MAGNITUDE",
+        "projection7d": "7-DAY_PROJECTION",
+        "projection30d": "30-DAY_PROJECTION",
+        "inferenceStream": "Inference Stream Visualization",
+        "temporalModel": "Model: TEMPORAL-CONV-04",
+        "training": "Sensei AI is training temporal projection models..."
+      },
+      "models": {
+        "intelligence": "Intelligence",
+        "accuracy": "Accuracy",
+        "precision": "Precision",
+        "recall": "Recall",
+        "f1Score": "F1 Score",
+        "neuralCompute": "Neural Compute Stream",
+        "warming": "Warming up distributed ML compute clusters..."
+      }
     },
     "auditor": {
       "title": "Audit Intelligence",
       "subtitle": "Audit tracking, findings management, and compliance monitoring",
+      "station": "STATION: AUDIT-01",
       "stats": {
         "complianceScore": "Overall Compliance Score",
         "openFindings": "Open Findings",
         "pendingAudits": "Pending Audits",
-        "resolutionRate": "Resolution Rate"
+        "resolutionRate": "Resolution Rate",
+        "auditProtocolsYtd": "Audit Protocols (YTD)",
+        "unresolvedFindings": "Unresolved Findings",
+        "scheduledProtocols": "Scheduled Protocols",
+        "resolutionVelocity": "Resolution Velocity",
+        "meanDaysToClosure": "Mean days to closure",
+        "auditMetrics": "Audit Metrics"
       },
       "actions": {
         "newAudit": "New Audit"
@@ -570,7 +1526,24 @@
         "audits": "Audits",
         "findings": "Findings",
         "controls": "Controls"
-      }
+      },
+      "complianceByArea": "Compliance by Area",
+      "exportIntel": "Export Intel",
+      "initializeProtocol": "Initialize Protocol",
+      "openFindings": "Open Findings",
+      "organizationalComplianceMagnitude": "Organizational Compliance Magnitude",
+      "recentAudits": "Recent Audits",
+      "upcomingAudits": "Upcoming Audits",
+      "viewAuditCalendar": "VIEW_AUDIT_CALENDAR",
+      "viewAllFindings": "VIEW_ALL_FINDINGS",
+      "alphaShift": "+2% ALPHA_SHIFT",
+      "thresholdAlignment": "Threshold_Alignment",
+      "optimal": "Optimal",
+      "securityProtocol": "Security_Protocol",
+      "verified": "Verified",
+      "criticalFindings": "Critical Findings",
+      "complianceOptimal": "Compliance Optimal",
+      "audits": "AUDITS"
     },
     "executive": {
       "title": "Executive Control Plane",
@@ -591,6 +1564,64 @@
         "finance": "Finance",
         "operations": "Operations",
         "strategist": "AI Strategist"
+      },
+      "aggregatingMetrics": "Aggregating Metrics",
+      "allSystemsNominal": "All Systems Nominal",
+      "anomaliesDetected": "Anomalies Detected",
+      "exportIntelligence": "Export Intelligence",
+      "kpi": {
+        "activeAnomalies": "Active Anomalies",
+        "activeGateBlocks": "Active Gate Blocks",
+        "alphaTrend": "Alpha Trend",
+        "capaSyncActive": "Capa Sync Active",
+        "openResolutions": "Open Resolutions",
+        "operationalUptime": "Operational Uptime",
+        "optimalState": "Optimal State",
+        "revenueMtd": "Revenue Mtd"
+      },
+      "monitoringActive": "Monitoring Active",
+      "nl2sql": {
+        "commandInput": "Command Input",
+        "dataOutput": "Data Output",
+        "executeInference": "Execute Inference",
+        "generatedLogic": "Generated Logic",
+        "placeholder": "Placeholder",
+        "protocol": "Protocol",
+        "reasoningInProgress": "Reasoning In Progress",
+        "senseiReasoning": "Sensei Reasoning",
+        "title": "Title"
+      },
+      "operationalOverview": "Operational Overview",
+      "risk": {
+        "analystReasoning": "Analyst Reasoning",
+        "burnoutMagnitude": "Burnout Magnitude",
+        "burnoutThreshold": "Burnout Threshold",
+        "departmentNode": "Department Node",
+        "deptPlaceholder": "Dept Placeholder",
+        "employeeIdentity": "Employee Identity",
+        "executePredictiveModel": "Execute Predictive Model",
+        "namePlaceholder": "Name Placeholder",
+        "noRiskFactors": "No Risk Factors",
+        "overtimeVelocity": "Overtime Velocity",
+        "peerComparisonDelta": "Peer Comparison Delta",
+        "protocol": "Protocol",
+        "retentionIndex": "Retention Index",
+        "retentionProtocol": "Retention Protocol",
+        "riskFactorsIdentified": "Risk Factors Identified",
+        "scoreConfidence": "Score Confidence",
+        "skipRateIntel": "Skip Rate Intel",
+        "tenureProtocol": "Tenure Protocol",
+        "title": "Title"
+      },
+      "station": "Station",
+      "strategicDirectives": {
+        "directive1Desc": "Directive 1 Desc",
+        "directive1Title": "Directive 1 Title",
+        "directive2Desc": "Directive 2 Desc",
+        "directive2Title": "Directive 2 Title",
+        "priorityAlpha": "Priority Alpha",
+        "priorityBeta": "Priority Beta",
+        "title": "Title"
       }
     },
     "finance": {
@@ -618,14 +1649,58 @@
         "subtitle": "Product costing analysis and margin optimization",
         "standardCost": "Standard Cost",
         "actualCost": "Actual Cost",
-        "varianceAnalysis": "Variance Analysis"
+        "varianceAnalysis": "Variance Analysis",
+        "actualLabor": "Actual Labor",
+        "actualMaterial": "Actual Material",
+        "actualOverhead": "Actual Overhead",
+        "completedQty": "Completed Qty",
+        "costRollupEntry": "Cost Rollup Entry",
+        "costRollups": "Cost Rollups",
+        "currency": "Currency",
+        "effective": "Effective",
+        "effectiveDate": "Effective Date",
+        "finishedSku": "Finished Sku",
+        "laborUnitCost": "Labor Unit Cost",
+        "materialUnitCost": "Material Unit Cost",
+        "noRollups": "No Rollups",
+        "noStandardCosts": "No Standard Costs",
+        "overheadUnitCost": "Overhead Unit Cost",
+        "plannedQty": "Planned Qty",
+        "recordRollup": "Record Rollup",
+        "relievedCost": "Relieved Cost",
+        "saveStandardCost": "Save Standard Cost",
+        "sku": "Sku",
+        "standardCosts": "Standard Costs",
+        "totalUnit": "Total Unit",
+        "variance": "Variance",
+        "varianceLabor": "Variance Labor",
+        "varianceMaterial": "Variance Material",
+        "varianceOverhead": "Variance Overhead",
+        "varianceTotal": "Variance Total",
+        "workOrder": "Work Order"
       },
       "currency": {
         "title": "Currency Intelligence",
         "subtitle": "Exchange rate monitoring and multi-currency management",
         "baseCurrency": "Base Currency",
         "exchangeRates": "Exchange Rates",
-        "conversion": "Currency Conversion"
+        "conversion": "Currency Conversion",
+        "addFxRate": "Add Fx Rate",
+        "allowedCurrencies": "Allowed Currencies",
+        "asOf": "As Of",
+        "autoUpdateFxRates": "Auto Update Fx Rates",
+        "currencyConfiguration": "Currency Configuration",
+        "from": "From",
+        "fxRates": "Fx Rates",
+        "fxSource": "Fx Source",
+        "manualPlaceholder": "Manual Placeholder",
+        "noFxRates": "No Fx Rates",
+        "pair": "Pair",
+        "rate": "Rate",
+        "reportingCurrency": "Reporting Currency",
+        "saveRate": "Save Rate",
+        "saveSettings": "Save Settings",
+        "to": "To"
       },
       "ledger": {
         "title": "General Ledger Intelligence",
@@ -633,15 +1708,80 @@
         "totalAssets": "Total Assets",
         "totalLiabilities": "Total Liabilities",
         "netEquity": "Net Equity",
-        "journalEntries": "Journal Entries"
+        "journalEntries": "Journal Entries",
+        "accountName": "Account Name",
+        "addAccount": "Add Account",
+        "balance": "Balance",
+        "code": "Code",
+        "loadingAccounts": "Loading Accounts",
+        "noAccountsFound": "No Accounts Found",
+        "type": "Type"
       },
       "tax": {
         "title": "Tax Intelligence",
         "subtitle": "Tax compliance, reporting, and rate management",
         "taxLiability": "Tax Liability",
         "taxRates": "Tax Rates",
-        "taxReports": "Tax Reports"
-      }
+        "taxReports": "Tax Reports",
+        "code": "Code",
+        "country": "Country",
+        "currency": "Currency",
+        "effective": "Effective",
+        "effectiveDate": "Effective Date",
+        "jurisdiction": "Jurisdiction",
+        "jurisdictionId": "Jurisdiction Id",
+        "jurisdictions": "Jurisdictions",
+        "name": "Name",
+        "noJurisdictions": "No Jurisdictions",
+        "noTaxRates": "No Tax Rates",
+        "noTransactions": "No Transactions",
+        "rate": "Rate",
+        "recordTransaction": "Record Transaction",
+        "reference": "Reference",
+        "referenceId": "Reference Id",
+        "referenceType": "Reference Type",
+        "region": "Region",
+        "saveJurisdiction": "Save Jurisdiction",
+        "saveRate": "Save Rate",
+        "tax": "Tax",
+        "taxable": "Taxable",
+        "taxableAmount": "Taxable Amount",
+        "taxAmount": "Tax Amount",
+        "taxJurisdiction": "Tax Jurisdiction",
+        "taxRate": "Tax Rate",
+        "taxRateId": "Tax Rate Id",
+        "taxTransactions": "Tax Transactions",
+        "taxType": "Tax Type",
+        "transactionLedger": "Transaction Ledger",
+        "type": "Type"
+      },
+      "allSystemsNominal": "All Systems Nominal",
+      "costDrivers": {
+        "energy": "Energy",
+        "impactOnMargin": "Impact On Margin",
+        "logistics": "Logistics",
+        "overtime": "Overtime",
+        "rawMaterials": "Raw Materials",
+        "title": "Title"
+      },
+      "exportIntel": "Export Intel",
+      "kpi": {
+        "alpha": "Alpha",
+        "budgetUtilization": "Budget Utilization",
+        "delta": "Delta",
+        "grossMargin": "Gross Margin",
+        "liquidity": "Liquidity",
+        "opex": "Opex",
+        "revenue": "Revenue"
+      },
+      "quarter": "Quarter",
+      "revenueByProduct": {
+        "aftermarketServices": "Aftermarket Services",
+        "assemblySystems": "Assembly Systems",
+        "precisionComponents": "Precision Components",
+        "title": "Title"
+      },
+      "station": "Station"
     },
     "hr": {
       "title": "People & Talent",
@@ -662,7 +1802,26 @@
         "employees": "Employees",
         "orgChart": "Org Chart",
         "performance": "Performance"
-      }
+      },
+      "capacitySync": "Capacity Sync",
+      "headcountNode": "Headcount Node",
+      "initializePersonnel": "Initialize Personnel",
+      "intelligenceThresholds": "Intelligence Thresholds",
+      "nodeDistribution": "Node Distribution",
+      "opportunityPulse": "Opportunity Pulse",
+      "strategicAvailability": "Strategic Availability",
+      "thresholdBreaches": "Threshold Breaches",
+      "trainingMatrix": "Training Matrix",
+      "station": "STATION: HUMAN-CAPITAL-01",
+      "hrSystemsOnline": "HR Systems Online",
+      "thisCycle": "THIS_CYCLE",
+      "activeRecruitment": "ACTIVE_RECRUITMENT",
+      "pendingRequests": "PENDING_REQUESTS",
+      "complianceGates": "COMPLIANCE_GATES",
+      "commitSync": "COMMIT_SYNC",
+      "reviewAll": "REVIEW_ALL",
+      "accessTrainingMatrix": "Access Training Matrix",
+      "nodes": "NODES"
     },
     "it": {
       "title": "IT Command Center",
@@ -683,7 +1842,38 @@
         "incidents": "Incidents",
         "changes": "Changes",
         "assets": "Assets"
-      }
+      },
+      "activeSockets": "Active Sockets",
+      "connectedOperatives": "Connected Operatives",
+      "continuousPulseEstablished": "Continuous Pulse Established",
+      "cpuUtilization": "CPU Utilization",
+      "diskSaturation": "Disk Saturation",
+      "globalInfrastructureSynchronized": "Global Infrastructure Synchronized",
+      "intelligenceNodeCluster": "Intelligence Node Cluster",
+      "liveLogs": "Live Logs",
+      "memoryPulse": "Memory Pulse",
+      "refreshSync": "Refresh Sync",
+      "securitySyncProtocol": "Security Sync Protocol",
+      "telemetryAnomalies": "Telemetry Anomalies",
+      "uptime": "Uptime",
+      "station": "STATION: INFRA-COMMAND-01",
+      "allSystemsNominal": "All Systems Nominal",
+      "messageQueueDegraded": "Message Queue Degraded",
+      "activeComputeNode": "Active_Compute_Node",
+      "connectionsSynced": "CONNECTIONS_SYNCED",
+      "latency": "LATENCY",
+      "resolved": "RESOLVED",
+      "activeBreach": "ACTIVE_BREACH",
+      "activeNodes": "ACTIVE_NODES",
+      "trafficUp": "TRAFFIC_UP",
+      "stable": "STABLE",
+      "sslCertificate": "SSL Certificate",
+      "rsaSynchronized": "RSA 4096-BIT SYNCHRONIZED",
+      "validNode": "VALID_NODE",
+      "firewallArchitecture": "Firewall Architecture",
+      "distributedWafActive": "DISTRIBUTED WAF ACTIVE",
+      "active": "ACTIVE",
+      "updateSecurityPolicies": "UPDATE_SECURITY_POLICIES"
     },
     "today": {
       "greetings": {
@@ -692,6 +1882,20 @@
         "evening": "Good evening"
       },
       "subtitle": "Intelligence Command Center",
+      "stationStatus": "STATION_STATUS: OPTIMAL",
+      "errorLoading": "Failed to load today's data",
+      "initializeRFQ": "Initialize RFQ",
+      "defaultDrillQuestion": "Initialize daily protocol analysis for risk mitigation.",
+      "defaultDrillHint": "Consider current operational priorities and risk factors.",
+      "executeAnswer": "Execute Answer",
+      "topPriorities": "Top Priorities",
+      "targetToday": "Target_Today",
+      "criticalAnomalies": "Critical Anomalies",
+      "assignedTasks": "Assigned Tasks",
+      "allClearStatus": "Status: All_Clear",
+      "priorityRfqs": "Priority RFQs",
+      "senseiDailyDrill": "Sensei Daily Drill",
+      "maturityLevel": "Maturity Level",
       "sections": {
         "priorityTasks": "Priority Tasks",
         "quickActions": "Quick Actions",
@@ -705,11 +1909,33 @@
         "weekly": "Weekly",
         "monthly": "Monthly",
         "overdue": "Overdue"
+      },
+      "drill": {
+        "title": "Sensei_Daily_Drill",
+        "dailyProtocol": "Daily Protocol",
+        "engageQuestion": "Engage with today's operational question",
+        "drillComplete": "Drill Complete",
+        "responseRecorded": "Response recorded successfully",
+        "showHint": "Show Hint",
+        "hideHint": "Hide Hint",
+        "yourResponse": "Your Response",
+        "responsePlaceholder": "Enter your response to the drill...",
+        "submitting": "Submitting...",
+        "submitResponse": "Submit Response",
+        "completed": "Drill completed!",
+        "keepMomentum": "Your response has been recorded. Keep up the momentum!"
+      },
+      "myWork": {
+        "strategicClarity": "Strategic Clarity",
+        "noAssignments": "No assignments identified",
+        "strategicUserStories": "STRATEGIC_USER_STORIES",
+        "criticalAnomalies": "CRITICAL_ANOMALIES"
       }
     },
     "tasks": {
       "title": "Mission Control",
       "subtitle": "Manage and track your operational assignments",
+      "station": "STATION: TASK-01",
       "stats": {
         "pending": "Pending",
         "inProgress": "In Progress",
@@ -726,17 +1952,65 @@
       },
       "filters": {
         "allPriorities": "All Priorities",
-        "allStatuses": "All Statuses"
+        "allStatuses": "All Statuses",
+        "strategicFilters": "Strategic Filters"
+      },
+      "initializeTask": "Initialize Task",
+      "searchPlaceholder": "SEARCH_TASK_PROTOCOLS...",
+      "zeroProtocolNodes": "Zero Protocol Nodes",
+      "status": {
+        "todo": "To Do",
+        "inProgress": "In Progress",
+        "inReview": "Review",
+        "done": "Completed",
+        "cancelled": "Cancelled",
+        "backlog": "Backlog"
+      },
+      "priority": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "critical": "Critical"
+      },
+      "card": {
+        "viewNode": "VIEW_NODE",
+        "refineProtocol": "REFINE_PROTOCOL",
+        "terminateProtocol": "TERMINATE_PROTOCOL",
+        "asap": "ASAP"
+      },
+      "new": {
+        "title": "Initialize Task Protocol",
+        "subtitle": "Strategic Task Assignment",
+        "station": "STATION: TASK-ENTRY-01",
+        "assignmentTitle": "Assignment Title",
+        "configureMetadata": "Configure assignment metadata and priority layer",
+        "createAssignment": "ESTABLISH_PROTOCOL",
+        "descriptionPlaceholder": "Incorporate additional context and required outcomes for this protocol...",
+        "protocolParameters": "Protocol Parameters",
+        "titlePlaceholder": "Specify the strategic objective...",
+        "discard": "DISCARD",
+        "synchronizing": "SYNCHRONIZING...",
+        "taskCreated": "Task Protocol Established",
+        "taskCreatedDescription": "The task has been assigned successfully.",
+        "taskCreateError": "Failed to create task."
       }
     },
     "warehouse": {
       "title": "Logistics & Inventory",
       "subtitle": "Monitor global stock levels, track material flow, and optimize warehouse operations",
+      "station": "STATION: WAREHOUSE-01",
       "stats": {
         "totalSkus": "Total SKUs",
+        "inventoryNodes": "Inventory Nodes (SKUs)",
+        "abnormalStockLevels": "Abnormal Stock Levels",
         "lowStock": "Low Stock",
         "pendingReceipts": "Pending Receipts",
-        "pendingShipments": "Pending Shipments"
+        "inboundSync": "Inbound Synchronization",
+        "pendingShipments": "Pending Shipments",
+        "outboundVelocity": "Outbound Velocity"
+      },
+      "trends": {
+        "thisCycle": "+124 this cycle"
       },
       "sections": {
         "inventory": "Inventory Overview",
@@ -748,24 +2022,49 @@
         "inventory": "Inventory",
         "receiving": "Receiving",
         "shipping": "Shipping"
+      },
+      "inventoryCommand": "Inventory Command",
+      "itemsBelowReorder": "Items below reorder point",
+      "latestTransactions": "Latest inventory transactions",
+      "lowStockAlerts": "Low Stock Alerts",
+      "recentMovements": "Recent Movements",
+      "syncStock": "Sync Real-time Stock",
+      "viewAllLowStock": "View All Low Stock Items",
+      "status": {
+        "itemsOutOfStock": "Items Out of Stock",
+        "allStockNormal": "All Stock Levels Normal"
       }
     },
     "pipeline": {
-      "title": "Revenue Pipeline",
-      "subtitle": "End-to-end RFQ lifecycle management and conversion intelligence",
+      "title": "Sales Pipeline",
+      "subtitle": "Manage RFQs, quotes, and sales opportunities",
+      "station": "PIPELINE",
       "stats": {
         "openRfqs": "Open RFQs",
         "pipelineValue": "Pipeline Value",
         "conversionRate": "Conversion Rate",
-        "avgResponseTime": "Avg Response Time"
+        "avgResponseTime": "Avg. Response Time",
+        "activeIntelNodes": "Active Opportunities",
+        "criticalThresholds": "Critical Thresholds",
+        "pipelineMagnitude": "Pipeline Size",
+        "acrossRfqs": "Across {{count}} RFQs",
+        "responseVelocity": "Response Time",
+        "optimalRangeIdentified": "Optimal range",
+        "protocolAlphaVariance": "Performance Variance"
       },
       "actions": {
-        "newRfq": "New RFQ"
+        "newRfq": "New RFQ",
+        "analyze": "Analyze",
+        "initializeQuote": "Create Quote",
+        "terminateNode": "Close Opportunity",
+        "resetFilters": "Reset Filters"
       },
       "views": {
         "kanban": "Kanban",
         "table": "Table",
-        "timeline": "Timeline"
+        "timeline": "Timeline",
+        "list": "List",
+        "board": "Board"
       },
       "stages": {
         "received": "Received",
@@ -773,19 +2072,127 @@
         "quoted": "Quoted",
         "negotiating": "Negotiating",
         "won": "Won",
-        "lost": "Lost"
-      }
+        "lost": "Lost",
+        "new": "New",
+        "reviewing": "Reviewing",
+        "submitted": "Submitted"
+      },
+      "statusBadges": {
+        "new": "New",
+        "reviewing": "Reviewing",
+        "quoting": "Quoting",
+        "submitted": "Submitted",
+        "won": "Won",
+        "lost": "Lost",
+        "noBid": "No Bid",
+        "cancelled": "Cancelled"
+      },
+      "tableHeaders": {
+        "rfqNumber": "RFQ Number",
+        "opportunityTitle": "Title",
+        "customerNode": "Customer",
+        "statusState": "Status",
+        "priorityLvl": "Priority",
+        "estValue": "Est. Value",
+        "thresholdDate": "Due Date"
+      },
+      "emptyState": {
+        "title": "No RFQs found",
+        "description": "Adjust your filters or create a new RFQ"
+      },
+      "addAttachment": "Add Attachment",
+      "confirmNoBid": "Confirm No Bid",
+      "createQuote": "Create Quote",
+      "estimatedValue": "Estimated Value",
+      "lineItems": "Line Items",
+      "markAsNoBid": "Mark as No Bid",
+      "new": {
+        "title": "New RFQ",
+        "subtitle": "Create a new Request for Quote",
+        "station": "NEW RFQ",
+        "establishProtocol": "Save RFQ",
+        "opportunityParameters": "RFQ Details",
+        "labels": {
+          "strategicTitle": "Title",
+          "customerNode": "Customer",
+          "priorityLayer": "Priority",
+          "detailedContext": "Description",
+          "lineIntelligence": "Line Items",
+          "addNode": "Add Item",
+          "partNode": "Part Number",
+          "specification": "Description",
+          "magnitude": "Quantity",
+          "unitProtocol": "Unit",
+          "targetValuation": "Target Price",
+          "temporalHorizon": "Timeline",
+          "ingestionDate": "Received Date",
+          "strategicDeadline": "Due Date",
+          "estimatedMagnitude": "Estimated Value",
+          "protocolNotes": "Notes"
+        },
+        "placeholders": {
+          "title": "e.g. Precision Parts for Aerospace Project",
+          "customer": "Search customers...",
+          "description": "Additional details regarding the RFQ...",
+          "notes": "Internal notes...",
+          "partNumber": "PN-XXXX",
+          "itemDescription": "Item description...",
+          "unit": "pcs, kg, etc."
+        },
+        "priority": {
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "urgent": "Urgent"
+        },
+        "validation": {
+          "requiredFieldsMissing": "Required Fields Missing",
+          "provideTitleAndCustomer": "Please provide a title and customer."
+        },
+        "toast": {
+          "rfqCreated": "RFQ Created",
+          "rfqCreatedDescription": "The new RFQ has been successfully created.",
+          "rfqCreateFailed": "Failed to create RFQ. Please try again."
+        }
+      },
+      "newOpportunity": "New Opportunity",
+      "newQuote": "New Quote",
+      "noAttachments": "No Attachments",
+      "noBid": "No Bid",
+      "noBidConfirmation": "Are you sure you want to mark this RFQ as No Bid? This action can be undone.",
+      "noBidReasonPlaceholder": "Reason for no bid (optional)",
+      "noQuotesYet": "No quotes created yet",
+      "quotes": "Quotes",
+      "searchPlaceholder": "SEARCH_PROTOCOLS...",
+      "submitQuote": "Submit Quote",
+      "table": {
+        "partNumber": "Part Number",
+        "targetPrice": "Target Price",
+        "uom": "UoM"
+      },
+      "viewCustomer": "View Customer",
+      "unknown": "Unknown"
     },
     "customers": {
       "title": "Customer Intelligence",
       "subtitle": "Relationship management and revenue intelligence",
+      "nodeId": "Node ID",
+      "searchPlaceholder": "Search customers...",
       "stats": {
         "activeNodes": "Active Intelligence Nodes",
         "prospects": "Prospective Partners",
         "revenue": "Aggregated Revenue",
-        "conversionRate": "Mean Conversion Pulse"
+        "conversionRate": "Mean Conversion Pulse",
+        "aggregatedRevenue": "Aggregated Revenue",
+        "meanConversionPulse": "Mean Conversion Pulse",
+        "prospectivePartners": "Prospective Partners"
       },
       "labels": {
+        "rfqs": "RFQs",
+        "revenue": "Revenue",
+        "winRate": "Win Rate"
+      },
+      "metrics": {
         "rfqs": "RFQs",
         "revenue": "Revenue",
         "winRate": "Win Rate"
@@ -796,17 +2203,148 @@
         "prospect": "Prospect"
       },
       "actions": {
-        "newCustomer": "New Customer"
+        "newCustomer": "New Customer",
+        "analyze": "Analyze",
+        "modify": "Modify"
+      },
+      "detail": {
+        "activate": "Activate",
+        "addContact": "Add Contact",
+        "address": "Address",
+        "backToCustomers": "Back to Customers",
+        "companyInfo": "Company Info",
+        "contacts": "Contacts",
+        "contactsCount": "contacts",
+        "created": "Created",
+        "deactivate": "Deactivate",
+        "deactivateDialog": {
+          "confirm": "Deactivate",
+          "title": "Deactivate Customer",
+          "description": "Are you sure you want to deactivate {{name}}? They will no longer appear in search results or be available for new RFQs."
+        },
+        "lastUpdated": "Last Updated",
+        "manageContacts": "Manage Contacts",
+        "newRfq": "New RFQ",
+        "notes": "Notes",
+        "notFound": "Customer not found",
+        "primaryBadge": "Primary",
+        "primaryContact": "Primary Contact",
+        "recentActivity": "Recent Activity",
+        "recentRfqs": "Recent RFQs",
+        "recentRfqsDesc": "Latest requests from this customer",
+        "stats": {
+          "avgOrder": "Avg Order",
+          "openRfqs": "Open RFQs",
+          "totalRevenue": "Total Revenue",
+          "totalRfqs": "Total RFQs",
+          "winRate": "Win Rate"
+        },
+        "viewAll": "View All",
+        "viewAllRfqs": "View All RFQs",
+        "website": "Website"
+      },
+      "emptyState": {
+        "description": "Adjust parameters or initialize new account protocol",
+        "title": "Zero protocols identified"
+      },
+      "exportIntel": "Export Intel",
+      "filters": {
+        "active": "Active",
+        "allIndustries": "All Industries",
+        "allStates": "All States",
+        "inactive": "Inactive",
+        "prospect": "Prospect"
+      },
+      "initializeNode": "Initialize Node",
+      "new": {
+        "companyInfo": "Company Information",
+        "companyName": "Company Name",
+        "companyNamePlaceholder": "Acme Corporation",
+        "contact": "Contact",
+        "editTitle": "Edit Customer",
+        "editingDescription": "Editing {{name}}",
+        "email": "Email",
+        "emailPlaceholder": "john@company.com",
+        "fullName": "Full Name",
+        "fullNamePlaceholder": "John Doe",
+        "jobTitle": "Job Title",
+        "jobTitlePlaceholder": "Procurement Manager",
+        "newDescription": "Add a new customer to your CRM",
+        "newTitle": "New Customer",
+        "phone": "Phone",
+        "phonePlaceholder": "+1 (555) 123-4567",
+        "primary": "Primary",
+        "saveCustomer": "Save Customer",
+        "saving": "Saving...",
+        "setAsPrimary": "Set as Primary",
+        "customerCode": "Customer Code",
+        "generate": "Generate",
+        "industry": "Industry",
+        "selectIndustry": "Select industry",
+        "status": "Status",
+        "website": "Website",
+        "address": "Address",
+        "streetAddress": "Street Address",
+        "city": "City",
+        "stateProvince": "State / Province",
+        "postalCode": "Postal Code",
+        "country": "Country",
+        "contacts": "Contacts",
+        "contactsDescription": "Add contacts for this customer",
+        "addContact": "Add Contact",
+        "noContacts": "No contacts added",
+        "addFirstContact": "Add First Contact",
+        "internalNotes": "Internal Notes",
+        "internalNotesDescription": "Notes for internal use only",
+        "notesPlaceholder": "Add notes about this customer...",
+        "tips": "Tips",
+        "tip1": "Customer codes should be unique and easy to remember",
+        "tip2": "Mark your main point of contact as Primary",
+        "tip3": "Add notes about special requirements or preferences",
+        "toast": {
+          "customerCreated": "Customer created",
+          "customerUpdated": "Customer updated",
+          "errorSaving": "Error saving customer",
+          "fixErrors": "Please fix the errors before saving.",
+          "tryAgain": "Please try again.",
+          "validationError": "Validation Error"
+        },
+        "validation": {
+          "companyNameRequired": "Company name is required",
+          "contactEmailRequired": "Contact email is required",
+          "contactNameRequired": "Contact name is required",
+          "contactRequired": "At least one contact is required",
+          "customerCodeRequired": "Customer code is required",
+          "industryRequired": "Industry is required"
+        }
+      },
+      "searchPlaceholder": "Search Placeholder",
+      "table": {
+        "accountIdentifier": "Account Identifier",
+        "industryCat": "Industry Cat",
+        "locationNode": "Location Node",
+        "primaryContact": "Primary Contact",
+        "rfqs": "Rfqs",
+        "statusState": "Status State",
+        "totalVal": "Total Val",
+        "winKpi": "Win Kpi"
+      },
+      "viewModes": {
+        "grid": "Grid",
+        "table": "Table"
       }
     },
     "quotes": {
       "title": "Quote Intelligence",
       "subtitle": "Proposal management and pricing optimization",
+      "rfqNumber": "RFQ Number",
+      "searchPlaceholder": "Search quotes...",
       "stats": {
         "pendingApproval": "Pending Approval",
         "sentToCustomers": "Sent to Customers",
         "pipelineValue": "Pipeline Value",
-        "avgMargin": "Avg. Margin"
+        "avgMargin": "Avg. Margin",
+        "sentToCustomer": "Sent To Customer"
       },
       "status": {
         "draft": "Draft",
@@ -821,17 +2359,144 @@
         "expiresSoon": "expires soon"
       },
       "actions": {
-        "newQuote": "New Quote"
+        "newQuote": "New Quote",
+        "analyze": "Analyze",
+        "cloneProtocol": "Clone Protocol",
+        "exportProtocol": "Export Protocol",
+        "initiateApproval": "Initiate Approval",
+        "protocolLost": "Protocol Lost",
+        "protocolWon": "Protocol Won",
+        "transmitProtocol": "Transmit Protocol"
+      },
+      "detail": {
+        "approval": "Approval",
+        "approve": "Approve",
+        "backToQuotes": "Back to Quotes",
+        "created": "Created",
+        "createdBy": "Created By",
+        "customer": "Customer",
+        "dialogs": {
+          "approveDescription": "This quote will be sent to your manager for approval.",
+          "lostDescription": "Provide a reason for losing this quote.",
+          "markAsLost": "Mark Quote as Lost",
+          "markAsWon": "Mark Quote as Won",
+          "markLost": "Mark Lost",
+          "markWon": "Mark Won",
+          "reasonPlaceholder": "Reason...",
+          "reject": "Reject",
+          "rejectDescription": "Provide a reason for rejecting this quote.",
+          "rejectQuote": "Reject Quote",
+          "submit": "Submit",
+          "submitForApproval": "Submit for Approval",
+          "wonDescription": "Congratulations! Mark this quote as won to close it."
+        },
+        "discount": "Discount",
+        "exportPdf": "Export PDF",
+        "internalNotes": "Internal Notes",
+        "lineItems": "Line Items",
+        "lineItemsTitle": "Line Items",
+        "margin": "Margin",
+        "markLost": "Mark Lost",
+        "markWon": "Mark Won",
+        "notFound": "Quote not found",
+        "print": "Print",
+        "reject": "Reject",
+        "sendToCustomer": "Send to Customer",
+        "sent": "Sent",
+        "submitForApproval": "Submit for Approval",
+        "subtotal": "Subtotal",
+        "table": {
+          "description": "Description",
+          "extended": "Extended",
+          "leadTime": "Lead Time",
+          "partNo": "Part #",
+          "qty": "Qty",
+          "unitPrice": "Unit Price",
+          "uom": "UoM"
+        },
+        "tax": "Tax",
+        "termsConditions": "Terms & Conditions",
+        "total": "Total",
+        "validUntil": "Valid Until",
+        "versionHistory": "Version History",
+        "viewHistory": "View History"
+      },
+      "emptyState": {
+        "adjustFilters": "Adjust filtering parameters",
+        "initializeFirst": "Initialize your first pricing protocol",
+        "title": "Zero protocols identified"
+      },
+      "filters": {
+        "accepted": "Accepted",
+        "allProtocols": "All Protocols",
+        "approved": "Approved",
+        "draft": "Draft",
+        "expired": "Expired",
+        "pendingReview": "Pending Review",
+        "rejected": "Rejected",
+        "transmitted": "Transmitted"
+      },
+      "initializeQuotation": "Initialize Quotation",
+      "new": {
+        "addFirstItem": "Add First Item",
+        "addItem": "Add Item",
+        "addItemsToQuote": "Add items to your quote",
+        "addProductsAndPricing": "Add products and pricing",
+        "discount": "Discount",
+        "forRfq": "For RFQ",
+        "incompletePricing": "Incomplete pricing",
+        "internalNotes": "Internal Notes",
+        "internalNotesPlaceholder": "Notes for internal use only (not visible to customer)",
+        "lineItems": "Line Items",
+        "margin": "Margin",
+        "noLineItems": "No line items",
+        "overallMargin": "Overall Margin",
+        "quoteSummary": "Quote Summary",
+        "saveDraft": "Save Draft",
+        "submitDialog": {
+          "description": "This quote will be sent to your manager for approval before it can be sent to the customer.",
+          "title": "Submit Quote for Approval"
+        },
+        "submitForApproval": "Submit for Approval",
+        "subtotal": "Subtotal",
+        "tax": "Tax",
+        "taxRate": "Tax Rate",
+        "termsAndConditions": "Terms and Conditions",
+        "termsAndNotes": "Terms & Notes",
+        "title": "New Quote",
+        "total": "Total",
+        "totalCost": "Total Cost",
+        "validUntil": "Valid Until",
+        "zeroPriceWarning": "Some line items have $0.00 unit price"
+      },
+      "searchPlaceholder": "SEARCH_PROTOCOLS...",
+      "table": {
+        "customerNode": "Customer Node",
+        "marginKpi": "Margin Kpi",
+        "operator": "Operator",
+        "quoteProtocol": "Quote Protocol",
+        "statusState": "Status State",
+        "totalValue": "Total Value",
+        "validThru": "Valid Thru",
+        "version": "Version"
       }
     },
     "orders": {
       "title": "Order Intelligence",
       "subtitle": "Order fulfillment and delivery tracking",
+      "newOrder": "New Order",
+      "sourceQuote": "Source Quote",
+      "releaseToWarehouse": "Release to Warehouse",
+      "generateInvoice": "Generate Invoice",
       "stats": {
         "activeOrders": "Active Orders",
         "pendingShipment": "Pending Shipment",
         "shipped": "Shipped",
-        "delivered": "Delivered"
+        "delivered": "Delivered",
+        "draftOrders": "Draft Orders",
+        "approvedOrders": "Approved Orders",
+        "issuedInvoices": "Issued Invoices",
+        "overdueInvoices": "Overdue Invoices"
       },
       "status": {
         "pending": "Pending",
@@ -839,12 +2504,73 @@
         "processing": "Processing",
         "shipped": "Shipped",
         "delivered": "Delivered",
-        "cancelled": "Cancelled"
+        "cancelled": "Cancelled",
+        "released": "Released",
+        "invoiced": "Invoiced",
+        "closed": "Closed"
+      },
+      "table": {
+        "orderId": "Order ID",
+        "customer": "Customer",
+        "totalValue": "Total Value",
+        "lines": "Lines"
+      },
+      "empty": {
+        "title": "No orders found",
+        "description": "Create your first order"
+      },
+      "quickActions": {
+        "viewQuotes": "View source quotes",
+        "manageCustomers": "Manage customers",
+        "invoicing": "Invoicing",
+        "manageInvoices": "Manage invoices"
       }
     },
     "sales": {
-      "title": "Sales Command",
-      "subtitle": "Revenue tracking and sales intelligence"
+      "title": "Pipeline Velocity",
+      "subtitle": "Strategic RFQ management, opportunity tracking, and revenue forecasting",
+      "allPriority": "All Priority",
+      "allStatus": "All Status",
+      "emptyStage": "Empty Stage",
+      "newOpportunity": "New Opportunity",
+      "noRfqsFound": "No RFQs found",
+      "searchPlaceholder": "Search RFQs...",
+      "table": {
+        "assignee": "Assignee",
+        "dueDate": "Due Date",
+        "priority": "Priority",
+        "rfq": "RFQ",
+        "status": "Status",
+        "title": "Title",
+        "value": "Value"
+      },
+      "unassigned": "Unassigned",
+      "showingCount": "Showing {{filtered}} of {{total}} RFQs",
+      "totalValue": "Total Value",
+      "status": {
+        "new": "New",
+        "reviewing": "Reviewing",
+        "quoting": "Quoting",
+        "submitted": "Submitted",
+        "won": "Won",
+        "lost": "Lost",
+        "noBid": "No Bid",
+        "cancelled": "Cancelled"
+      },
+      "priority": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "urgent": "Urgent"
+      },
+      "kanban": {
+        "new": "New",
+        "reviewing": "Reviewing",
+        "quoting": "Quoting",
+        "submitted": "Submitted"
+      },
+      "unknownPartner": "Unknown Partner",
+      "due": "DUE"
     },
     "production": {
       "title": "Execution Pulse",
@@ -862,13 +2588,38 @@
       },
       "status": {
         "pending": "Pending",
+        "planned": "Planned",
+        "released": "Released",
         "inProgress": "In Progress",
+        "onHold": "On Hold",
         "completed": "Completed",
-        "onHold": "On Hold"
+        "cancelled": "Cancelled",
+        "closed": "Closed"
       },
+      "table": {
+        "dueHorizon": "Due Horizon",
+        "exProgress": "Ex Progress",
+        "operator": "Operator",
+        "orderId": "Order ID",
+        "priorityLevel": "Priority Level",
+        "productNode": "Product Node",
+        "statusState": "Status State",
+        "workCenter": "Work Center"
+      },
+      "filters": {
+        "allNodes": "All Nodes",
+        "allStatus": "All Status",
+        "statusState": "Status State",
+        "workCenter": "Work Center"
+      },
+      "workCenter": "Work Center",
       "actions": {
-        "newWorkOrder": "New Work Order"
-      }
+        "newWorkOrder": "New Work Order",
+        "analyze": "ANALYZE",
+        "modify": "MODIFY"
+      },
+      "protocolProductionNode": "PROTOCOL: PRODUCTION_NODE",
+      "station": "STATION: PRODUCTION-01"
     },
     "quality": {
       "title": "Quality Command",
@@ -883,12 +2634,23 @@
         "inspections": "Inspections",
         "ncrs": "NCRs",
         "capas": "CAPAs",
-        "analytics": "Analytics"
+        "analytics": "Analytics",
+        "msa": "MSA",
+        "capability": "Capability",
+        "customer": "Customer",
+        "fai": "FAI",
+        "self": "Self Inspection",
+        "lab": "Lab",
+        "aql": "AQL",
+        "traceability": "Traceability",
+        "changePoint": "Change Point",
+        "managementReview": "Management Review"
       },
       "inspections": {
         "title": "Inspection Intelligence",
         "subtitle": "Quality inspection tracking and reporting",
-        "newInspection": "New Inspection"
+        "newInspection": "New Inspection",
+        "searchPlaceholder": "Search inspections..."
       },
       "ncrs": {
         "title": "Non-Conformance Reports",
@@ -899,11 +2661,105 @@
         "title": "Corrective Actions",
         "subtitle": "CAPA management and effectiveness tracking",
         "newCapa": "New CAPA"
+      },
+      "status": {
+        "passed": "Passed",
+        "failed": "Failed",
+        "open": "Open",
+        "closed": "Closed",
+        "investigating": "Investigating",
+        "disposition": "Disposition",
+        "verifying": "Verifying",
+        "verified": "Verified",
+        "implementing": "Implementing",
+        "review": "Review",
+        "investigate": "Investigate",
+        "contain": "Contain",
+        "capa": "CAPA"
+      },
+      "severity": {
+        "major": "Major",
+        "minor": "Minor"
+      },
+      "filters": {
+        "allStatuses": "All statuses"
+      },
+      "table": {
+        "inspection": "Inspection",
+        "workOrder": "Work Order",
+        "product": "Product",
+        "scheduled": "Scheduled",
+        "inspector": "Inspector"
+      },
+      "actions": {
+        "startInspection": "Start Inspection"
+      },
+      "msa": {
+        "createStudy": "Create MSA Study",
+        "gaugeId": "Gauge ID",
+        "gaugeIdPlaceholder": "Gauge UUID",
+        "studyName": "Study Name",
+        "studyNamePlaceholder": "e.g., Line 2 CMM GRR",
+        "studyType": "Study Type",
+        "selectType": "Select type",
+        "parts": "Parts",
+        "operators": "Operators",
+        "trials": "Trials",
+        "notes": "Notes",
+        "optionalNotes": "Optional notes",
+        "createStudyButton": "Create Study",
+        "addMeasurement": "Add Measurement",
+        "study": "Study",
+        "selectStudy": "Select study",
+        "operatorId": "Operator ID",
+        "operatorPlaceholder": "Operator UUID",
+        "partId": "Part ID",
+        "partPlaceholder": "Part identifier",
+        "trial": "Trial",
+        "measuredValue": "Measured Value",
+        "addMeasurementButton": "Add Measurement",
+        "gauge": "Gauge",
+        "design": "Design",
+        "grrPercent": "GRR %",
+        "ndc": "NDC"
+      },
+      "capability": {
+        "createStudy": "Create Capability Study",
+        "studyName": "Study Name",
+        "studyNamePlaceholder": "e.g., CNC Mill 1 Diameter",
+        "process": "Process",
+        "processPlaceholder": "e.g., CNC Mill 1",
+        "characteristic": "Characteristic",
+        "characteristicPlaceholder": "e.g., Bore Diameter",
+        "lsl": "LSL",
+        "lslPlaceholder": "Lower spec limit",
+        "usl": "USL",
+        "uslPlaceholder": "Upper spec limit",
+        "target": "Target",
+        "targetPlaceholder": "Optional target",
+        "unit": "Unit",
+        "unitPlaceholder": "mm, in, etc.",
+        "notes": "Notes",
+        "notesPlaceholder": "Optional notes",
+        "optionalNotes": "Optional notes",
+        "createStudyButton": "Create Study",
+        "addMeasurement": "Add Measurement",
+        "selectStudy": "Select study",
+        "studyLabel": "Study",
+        "measuredValue": "Measured Value",
+        "measurementPlaceholder": "Measurement",
+        "sampleLabel": "Sample Label",
+        "sampleLabelPlaceholder": "Optional label",
+        "addMeasurementButton": "Add Measurement",
+        "cpk": "Cpk",
+        "samples": "Samples"
       }
     },
     "maintenance": {
       "title": "Maintenance Command",
       "subtitle": "Asset health monitoring, work orders, and predictive maintenance intelligence",
+      "station": "STATION: FACILITY-01",
+      "assetWarranties": "Asset Warranties",
       "stats": {
         "assetNodes": "Asset Nodes",
         "anomalousDown": "Anomalous Down",
@@ -913,11 +2769,96 @@
       "tabs": {
         "assets": "Assets",
         "workOrders": "Work Orders",
-        "pmSchedule": "PM Schedule"
+        "pmSchedule": "PM Schedule",
+        "budget": "Budget",
+        "loto": "Loto",
+        "pmSchedules": "Pm Schedules",
+        "toolCrib": "Tool Crib",
+        "warranty": "Warranty"
       },
       "actions": {
         "newWorkOrder": "New Work Order"
-      }
+      },
+      "activeCheckouts": "Active Checkouts",
+      "activeLocks": "Active Locks",
+      "equipmentHierarchy": "Equipment Hierarchy",
+      "fieldReturns": "Field Returns",
+      "initializeAsset": "Initialize Asset",
+      "loading": "Loading",
+      "loadingAssets": "Loading Assets",
+      "loadingBudgets": "Loading Budgets",
+      "loadingCheckouts": "Loading Checkouts",
+      "loadingFieldReturns": "Loading Field Returns",
+      "loadingLocks": "Loading Locks",
+      "loadingProcedures": "Loading Procedures",
+      "loadingRoute": "Loading Route",
+      "loadingSchedules": "Loading Schedules",
+      "loadingTools": "Loading Tools",
+      "loadingWarranties": "Loading Warranties",
+      "loadingWorkOrders": "Loading Work Orders",
+      "lotoProcedures": "Loto Procedures",
+      "maintenanceBudget": "Maintenance Budget",
+      "mobile": {
+        "activeLOTO": "Active Loto",
+        "launchScanner": "Launch Scanner",
+        "logDowntime": "Log Downtime",
+        "openWorkOrders": "Open Work Orders",
+        "pmDue": "Pm Due",
+        "quickIncidentLog": "Quick Incident Log",
+        "reviewPMs": "Review P Ms",
+        "scanAssetTool": "Scan Asset Tool",
+        "scanDescription": "Scan Description",
+        "stopScanner": "Stop Scanner",
+        "subtitle": "Subtitle",
+        "title": "Title",
+        "viewLOTO": "View Loto",
+        "viewWorkOrders": "View Work Orders"
+      },
+      "mobileMode": "Mobile Mode",
+      "noActiveCheckouts": "No Active Checkouts",
+      "noActiveLocks": "No Active Locks",
+      "noAssetHierarchy": "No Asset Hierarchy",
+      "noAssetsFound": "No Assets Found",
+      "noBudgetsFound": "No Budgets Found",
+      "noFieldReturnsFound": "No Field Returns Found",
+      "noLotoProceduresFound": "No Loto Procedures Found",
+      "noPMRouteItems": "No Pm Route Items",
+      "noPMSchedulesFound": "No Pm Schedules Found",
+      "noToolsFound": "No Tools Found",
+      "noWarrantiesFound": "No Warranties Found",
+      "noWorkOrdersFound": "No Work Orders Found",
+      "optimizedPMRoute": "Optimized Pm Route",
+      "searchAssets": "Search Assets",
+      "table": {
+        "actual": "Actual",
+        "applied": "Applied",
+        "approval": "Approval",
+        "assetNumber": "Asset Number",
+        "assignedTo": "Assigned To",
+        "budget": "Budget",
+        "checkedOut": "Checked Out",
+        "claims": "Claims",
+        "costImpact": "Cost Impact",
+        "coverage": "Coverage",
+        "criticality": "Criticality",
+        "dueBack": "Due Back",
+        "ends": "Ends",
+        "failureMode": "Failure Mode",
+        "frequency": "Frequency",
+        "lastPM": "Last Pm",
+        "lockNumber": "Lock Number",
+        "nextDue": "Next Due",
+        "period": "Period",
+        "qty": "Qty",
+        "received": "Received",
+        "returnNumber": "Return Number",
+        "tool": "Tool",
+        "toolNumber": "Tool Number",
+        "variance": "Variance",
+        "woNumber": "Wo Number"
+      },
+      "toolInventory": "Tool Inventory",
+      "upcomingPMSchedules": "Upcoming Pm Schedules"
     },
     "training": {
       "title": "Training Intelligence",
@@ -932,7 +2873,8 @@
         "skillsMatrix": "Skills Matrix",
         "certifications": "Certifications",
         "programs": "Programs",
-        "enroll": "Enroll"
+        "enroll": "Enroll",
+        "records": "Records"
       },
       "matrix": {
         "title": "Skills Matrix",
@@ -941,22 +2883,48 @@
       "certifications": {
         "title": "Certifications",
         "subtitle": "Certification tracking and renewal management",
-        "newCertification": "New Certification"
+        "newCertification": "New Certification",
+        "searchPlaceholder": "Search skills...",
+        "noSkillsFound": "No skills found",
+        "viewCertifiedEmployees": "View Certified Employees",
+        "validMonths": "Valid",
+        "safety": "Safety"
       },
       "programs": {
         "title": "Training Programs",
         "subtitle": "Program management and enrollment tracking",
-        "newProgram": "New Program"
+        "newProgram": "New Program",
+        "searchPlaceholder": "Search programs...",
+        "allTypes": "All Types",
+        "noProgramsFound": "No programs found",
+        "table": {
+          "program": "Program",
+          "dates": "Dates"
+        }
+      },
+      "records": {
+        "searchPlaceholder": "Search by employee or training...",
+        "noRecordsFound": "No records found",
+        "table": {
+          "employee": "Employee",
+          "training": "Training",
+          "score": "Score"
+        }
       }
     },
     "products": {
-      "title": "Product Portfolio",
-      "subtitle": "Manage manufacturing specifications and master data intelligence",
+      "title": "Product Catalog",
+      "subtitle": "Manage products, BOMs, and manufacturing routings",
+      "station": "PRODUCTS",
       "stats": {
         "activeProducts": "Active Products",
         "bomsDefined": "BOMs Defined",
-        "routingsActive": "Routings Active",
-        "avgLeadTime": "Avg Lead Time"
+        "routingsActive": "Active Routings",
+        "avgLeadTime": "Avg. Lead Time",
+        "activeInventoryNodes": "Active Products",
+        "aggregatedRevenue": "Total Revenue",
+        "meanMarginKPI": "Average Margin",
+        "stockAbnormalities": "Low Stock Alerts"
       },
       "actions": {
         "newProduct": "New Product"
@@ -973,7 +2941,32 @@
         "routing": "Routing",
         "inventory": "Inventory",
         "history": "History"
-      }
+      },
+      "status": {
+        "discontinued": "Discontinued"
+      },
+      "viewBom": "View BOM",
+      "viewAnalytics": "View Analytics",
+      "stockLevel": "Stock Level",
+      "allStock": "All Stock",
+      "lowStock": "Low Stock",
+      "outOfStock": "Out of Stock",
+      "table": {
+        "product": "Product",
+        "standardCost": "Standard Cost",
+        "listPrice": "List Price",
+        "margin": "Margin",
+        "inventory": "Inventory",
+        "leadTime": "Lead Time",
+        "totalSold": "Total Sold"
+      },
+      "emptyState": {
+        "description": "Start by adding your first product to the catalog.",
+        "title": "No products found"
+      },
+      "exportIntel": "Export Catalog",
+      "import": "Import",
+      "initializeNode": "Create Product"
     },
     "andon": {
       "title": "Andon Intelligence",
@@ -1006,37 +2999,173 @@
     "purchase": {
       "title": "Procurement Intelligence",
       "subtitle": "Purchase order management and supplier collaboration",
+      "station": "STATION: PROCUREMENT-01",
       "stats": {
         "openRequisitions": "Open Requisitions",
+        "pendingOrders": "Pending Orders",
         "pendingPos": "Pending POs",
         "sentToSuppliers": "Sent to Suppliers",
-        "receiptsToday": "Receipts Today"
+        "receiptsToday": "Receipts Today",
+        "waitingForAction": "Waiting For Action",
+        "gateSyncRequired": "Gate Sync Required",
+        "activeTransmissions": "Active Transmissions",
+        "dueHorizonToday": "Due Horizon Today"
+      },
+      "status": {
+        "pendingApproval": "Pending Approval",
+        "sent": "Sent",
+        "partial": "Partial",
+        "received": "Received",
+        "submitted": "Submitted",
+        "convertedToPo": "Converted to PO"
       },
       "actions": {
-        "newRequisition": "New Requisition"
+        "newRequisition": "New Requisition",
+        "approveGate": "Approve Gate",
+        "transmitToSupplier": "Transmit to Supplier",
+        "recordReceipt": "Record Receipt"
       },
       "tabs": {
         "requisitions": "Requisitions",
         "purchaseOrders": "Purchase Orders",
         "suppliers": "Suppliers"
+      },
+      "table": {
+        "orderId": "Order ID",
+        "supplierNode": "Supplier Node",
+        "statusState": "Status State",
+        "totalValue": "Total Value",
+        "lines": "Lines",
+        "timestamp": "Timestamp",
+        "reqNumber": "Req Number",
+        "justificationLog": "Justification Log",
+        "synchronizingOrders": "Synchronizing Orders...",
+        "synchronizingRequisitions": "Synchronizing Requisitions...",
+        "zeroOrdersIdentified": "Zero orders identified",
+        "initializeRequisitionFirst": "Initialize requisition protocol first",
+        "zeroRequisitionsIdentified": "Zero requisitions identified",
+        "initializeFirstRequisition": "Initialize first requisition protocol",
+        "unknownSupplier": "UNKNOWN_SUPPLIER",
+        "poNode": "PO_NODE"
+      },
+      "filters": {
+        "statusState": "Status State",
+        "allStatus": "All Status",
+        "draftNode": "Draft Node",
+        "gateApproval": "Gate Approval",
+        "approvedSync": "Approved Sync",
+        "transmitted": "Transmitted",
+        "received": "Received",
+        "submitted": "Submitted",
+        "converted": "Converted"
+      },
+      "search": {
+        "orders": "Search Orders...",
+        "requisitions": "Search Requisitions..."
+      },
+      "quickActions": {
+        "mrpIntelligence": "MRP Intelligence",
+        "convertToPrs": "Convert suggestions to PRs",
+        "goodsReceipt": "Goods Receipt",
+        "recordShipments": "Record incoming shipments",
+        "threeWayMatching": "3-Way Matching",
+        "poGrnInvoiceSync": "PO, GRN & Invoice sync"
+      },
+      "initializeRequisition": "Initialize Requisition",
+      "orders": "Orders",
+      "requisitions": "Requisitions",
+      "suppliers": "Suppliers",
+      "requisitionNew": {
+        "title": "Initialize Requisition Protocol",
+        "subtitle": "Procurement Demand Ingestion",
+        "station": "STATION: REQ-ENTRY-01",
+        "saveDraft": "SAVE_DRAFT",
+        "submitForApproval": "SUBMIT_FOR_APPROVAL",
+        "requisitionParameters": "Requisition Parameters",
+        "businessJustification": "Business Justification Protocol *",
+        "justificationPlaceholder": "Explain why these nodes are required for organizational sync...",
+        "priorityLayer": "Priority Layer",
+        "priorities": {
+          "low": "LOW_PRIORITY",
+          "medium": "MEDIUM_PRIORITY",
+          "high": "HIGH_PRIORITY",
+          "urgent": "URGENT_SYNC"
+        },
+        "thresholdDate": "Threshold Date (Required By)",
+        "resourceLineIntel": "Resource Line Intelligence",
+        "addNode": "ADD_NODE",
+        "zeroResourceNodes": "Zero resource nodes defined",
+        "initializeItemsUsing": "Initialize requisition items using the node panel",
+        "tableHeaders": {
+          "productNodeDesc": "PRODUCT_NODE / DESCRIPTION",
+          "magnitude": "MAGNITUDE",
+          "uom": "UOM",
+          "estPrice": "EST_PRICE",
+          "subtotal": "SUBTOTAL"
+        },
+        "selectProductNode": "SELECT_PRODUCT_NODE...",
+        "orDefineManualSpec": "OR_DEFINE_MANUAL_SPEC...",
+        "fiscalSummary": "Fiscal Summary",
+        "resourceNodes": "Resource Nodes",
+        "totalMagnitude": "Total Magnitude",
+        "estimatedProtocolTotal": "Estimated Protocol Total",
+        "nodeInjection": "Node Injection",
+        "nodeInjectionDesc": "Directly inject product nodes into registry",
+        "searchProductNodes": "SEARCH_PRODUCT_NODES...",
+        "zeroNodesFound": "Zero Nodes Found",
+        "error": "Error",
+        "success": "Success",
+        "addLineItemError": "Please add at least one line item",
+        "savedAsDraft": "Requisition saved as draft",
+        "submittedForApproval": "Requisition submitted for approval",
+        "createFailed": "Failed to create requisition. Please try again."
       }
     },
     "supplyChain": {
       "title": "Supply Chain Intelligence",
       "subtitle": "Global disruption simulation and risk stress-testing",
+      "station": "STATION: GLOBAL-LOGISTICS-01",
       "stats": {
         "activeSuppliers": "Active Suppliers",
         "atRisk": "At Risk",
         "onTimeDelivery": "On-Time Delivery",
-        "qualityScore": "Quality Score"
+        "qualityScore": "Quality Score",
+        "globalRiskIndex": "Global Risk Index",
+        "thresholdExceeded": "THRESHOLD_EXCEEDED",
+        "intelNodes": "Intel Nodes",
+        "activeSyncNodes": "ACTIVE_SYNC_NODES",
+        "mitigationReadiness": "Mitigation Readiness",
+        "optimalReserve": "OPTIMAL_RESERVE",
+        "simulationCycles": "Simulation Cycles",
+        "protocolVerifications": "PROTOCOL_VERIFICATIONS"
       },
       "actions": {
         "runSimulation": "Run Simulation"
       },
       "tabs": {
         "networkMap": "Network Map",
-        "riskAnalysis": "Risk Analysis"
-      }
+        "riskAnalysis": "Risk Analysis",
+        "overview": "Overview",
+        "scenarios": "Scenarios",
+        "disruptions": "Disruptions"
+      },
+      "initializeSimulation": "Initialize Simulation",
+      "syncPulse": "Sync Pulse",
+      "scenarios": {
+        "searchPlaceholder": "Search scenarios...",
+        "loading": "Loading scenarios...",
+        "noScenarios": "No scenarios found.",
+        "probability": "Prob",
+        "delayImpact": "Delay Impact:",
+        "costIncrease": "Cost Increase:"
+      },
+      "overview": {
+        "title": "Supply Chain Overview"
+      },
+      "disruptions": {
+        "title": "Active Disruptions"
+      },
+      "loading": "Loading Supply Chain..."
     },
     "settings": {
       "title": "Control Center",
@@ -1123,7 +3252,8 @@
       "mobile": {
         "title": "Mobile Settings",
         "subtitle": "Configure mobile app settings"
-      }
+      },
+      "station": "STATION: CONFIG-NODE-01"
     },
     "obeya": {
       "title": "Cognitive Obeya",
@@ -1132,7 +3262,10 @@
         "overview": "Overview",
         "metrics": "Metrics",
         "actions": "Actions",
-        "problems": "Problems"
+        "problems": "Problems",
+        "senseiAi": "SENSEI_AI",
+        "sqdcpDetail": "SQDCP_DETAIL",
+        "exceptions": "Exceptions"
       },
       "sections": {
         "hoshinKanri": "Hoshin Kanri",
@@ -1140,7 +3273,18 @@
       },
       "actions": {
         "newObeya": "New Obeya"
-      }
+      },
+      "heijunkaLeveling": "Heijunka Leveling",
+      "initializeBoard": "Initialize Board",
+      "parameters": "Parameters",
+      "predictiveBreaches": "Predictive Breaches",
+      "primaryNorthStars": "Primary North Stars",
+      "recentSiloAlerts": "Recent Silo Alerts",
+      "resourceRebalancing": "Resource Rebalancing",
+      "syncIntel": "Sync Intel",
+      "siloBottlenecks": "Silo Bottlenecks",
+      "rebalanceOps": "Rebalance Ops",
+      "heijunkaTips": "Heijunka Tips"
     },
     "a3": {
       "title": "A3 Strategic Resolutions",
@@ -1149,10 +3293,36 @@
         "activeA3s": "Active A3s",
         "inReview": "In Review",
         "closedThisMonth": "Closed This Month",
-        "avgResolutionTime": "Avg Resolution Time"
+        "avgResolutionTime": "Avg Resolution Time",
+        "totalNodes": "Total A3 Nodes",
+        "aggregatedRegistry": "Aggregated Registry",
+        "executionPulse": "Execution Pulse",
+        "activeProtocols": "ACTIVE_PROTOCOLS",
+        "pendingApprovals": "Pending Approvals",
+        "queueGates": "QUEUE_GATES",
+        "horizonOverdue": "Horizon Overdue",
+        "thresholdExceptions": "THRESHOLD_EXCEPTIONS"
       },
       "actions": {
-        "newA3": "New A3"
+        "newA3": "New A3",
+        "view": "VIEW_RESOLUTION",
+        "edit": "EDIT_PROTOCOL",
+        "escalate": "ESCALATE_TO_MGMT",
+        "delete": "DELETE_NODE"
+      },
+      "search": {
+        "placeholder": "Search A3 protocols..."
+      },
+      "filters": {
+        "allTypes": "All Types",
+        "problemSolving": "PROBLEM_SOLVING",
+        "processImprovement": "PROCESS_IMPROVEMENT",
+        "kaizen": "KAIZEN",
+        "allStatuses": "All Statuses",
+        "draft": "DRAFT",
+        "active": "ACTIVE",
+        "inReview": "IN_REVIEW",
+        "closed": "CLOSED"
       },
       "sections": {
         "background": "Background",
@@ -1161,6 +3331,28 @@
         "rootCause": "Root Cause",
         "countermeasures": "Countermeasures",
         "followUp": "Follow-up"
+      },
+      "exportIntel": "Export Intel",
+      "initializeResolution": "Initialize Resolution",
+      "toast": {
+        "deleted": "A3 Report Deleted",
+        "deletedDescription": "The A3 report has been successfully deleted.",
+        "escalated": "A3 Escalated",
+        "escalatedDescription": "Report escalated to management for review."
+      },
+      "table": {
+        "identifier": "A3_IDENTIFIER",
+        "resolutionTitle": "RESOLUTION_TITLE",
+        "protocolType": "PROTOCOL_TYPE",
+        "statusNode": "STATUS_NODE",
+        "priority": "PRIORITY",
+        "author": "AUTHOR",
+        "progressKpi": "PROGRESS_KPI",
+        "targetHorizon": "TARGET_HORIZON"
+      },
+      "empty": {
+        "title": "Zero A3 protocols identified",
+        "subtitle": "Adjust parameters or initialize new resolution protocol"
       }
     },
     "ctq": {
@@ -1173,8 +3365,56 @@
         "capability": "Process Capability"
       },
       "actions": {
-        "newCtq": "New CTQ"
-      }
+        "newCtq": "New CTQ",
+        "view": "VIEW_SPEC",
+        "edit": "EDIT_PARAMS",
+        "retire": "RETIRE_PROTOCOL",
+        "delete": "DELETE_NODE"
+      },
+      "search": {
+        "placeholder": "Search CTQ protocols..."
+      },
+      "filters": {
+        "allCategories": "All Categories",
+        "dimensional": "DIMENSIONAL",
+        "material": "MATERIAL",
+        "process": "PROCESS",
+        "allPriorities": "All Priorities",
+        "p1Critical": "P1_CRITICAL",
+        "p2High": "P2_HIGH",
+        "p3Medium": "P3_MEDIUM",
+        "allStatuses": "All Statuses",
+        "active": "ACTIVE",
+        "monitoring": "MONITORING",
+        "underReview": "UNDER_REVIEW"
+      },
+      "table": {
+        "ctqIdentifier": "CTQ_IDENTIFIER",
+        "characteristic": "CHARACTERISTIC",
+        "category": "CATEGORY",
+        "priority": "PRIORITY",
+        "specification": "SPECIFICATION",
+        "capability": "CAPABILITY",
+        "status": "STATUS"
+      },
+      "toast": {
+        "deleted": "CTQ Protocol Deleted",
+        "deletedDescription": "The CTQ protocol has been successfully deleted.",
+        "retired": "CTQ Protocol Retired",
+        "retiredDescription": "The CTQ protocol has been archived."
+      },
+      "activeSync": "Active Sync",
+      "adjustParameters": "Adjust Parameters",
+      "aggregatedLog": "Aggregated Log",
+      "approvedNodes": "Approved Nodes",
+      "criticalGates": "Critical Gates",
+      "exportIntel": "Export Intel",
+      "initializeCTQ": "Initialize Ctq",
+      "legacyData": "Legacy Data",
+      "meanPassRate": "Mean Pass Rate",
+      "measuredToday": "Measured Today",
+      "totalCTQNodes": "Total Ctq Nodes",
+      "zeroCTQProtocols": "Zero Ctq Protocols"
     },
     "exceptions": {
       "title": "Exception Management",
@@ -1183,15 +3423,62 @@
         "openExceptions": "Open Exceptions",
         "critical": "Critical",
         "resolvedToday": "Resolved Today"
-      }
+      },
+      "tabs": {
+        "all": "ALL",
+        "quality": "QUALITY",
+        "process": "PROCESS",
+        "safety": "SAFETY"
+      },
+      "filters": {
+        "allCategories": "All Categories",
+        "process": "PROCESS",
+        "quality": "QUALITY",
+        "safety": "SAFETY",
+        "delivery": "DELIVERY",
+        "allSeverities": "All Severities",
+        "critical": "CRITICAL",
+        "high": "HIGH",
+        "medium": "MEDIUM",
+        "low": "LOW",
+        "allStatuses": "All Statuses",
+        "open": "OPEN",
+        "investigating": "INVESTIGATING",
+        "pending": "PENDING",
+        "resolved": "RESOLVED"
+      },
+      "table": {
+        "title": "Exception Registry",
+        "severity": "SEVERITY",
+        "descriptionProtocol": "DESCRIPTION_PROTOCOL",
+        "categoryNode": "CATEGORY_NODE",
+        "ownerSync": "OWNER_SYNC",
+        "statusNode": "STATUS_NODE",
+        "pulseDetection": "PULSE_DETECTION",
+        "horizon": "HORIZON"
+      },
+      "criticalOpenNodes": "Critical Open Nodes",
+      "escalatedNodes": "Escalated Nodes",
+      "exportProtocol": "Export Protocol",
+      "highUrgencyDeviations": "High Urgency Deviations",
+      "meanResolution": "Mean Resolution",
+      "overdueProtocols": "Overdue Protocols",
+      "syncIntel": "Sync Intel"
     },
     "ops": {
       "title": "Operations Overview",
-      "subtitle": "Unified operational intelligence"
+      "subtitle": "Unified operational intelligence",
+      "allSystemsOperational": "All Systems Operational",
+      "criticalAnomalies": "Critical Anomalies",
+      "initializeRfq": "Initialize Rfq",
+      "issuesDetected": "Issues Detected",
+      "strategicPriorities": "Strategic Priorities",
+      "systemStable": "System Stable"
     },
     "projectManagement": {
       "title": "Project Engineering",
       "subtitle": "Strategic orchestration of complex initiatives and milestones",
+      "station": "STATION: PM-01",
       "status": {
         "planning": "Planning",
         "active": "Active",
@@ -1205,31 +3492,909 @@
         "portfolio": "Portfolio"
       },
       "actions": {
-        "newInitiative": "New Initiative"
+        "newInitiative": "New Initiative",
+        "createFirst": "Create First Project",
+        "createProject": "Create Project"
       },
       "sections": {
         "distribution": "Initiative Distribution",
         "healthIndex": "Portfolio Health Index"
       },
       "labels": {
-        "velocityOptimal": "Strategic Velocity Optimal"
+        "velocityOptimal": "Strategic Velocity Optimal",
+        "privateProtocol": "Private Protocol",
+        "sharedIntelligence": "Shared Intelligence",
+        "pulse": "Pulse"
       },
       "search": {
-        "placeholder": "Search initiatives..."
+        "placeholder": "Search projects..."
       },
-      "emptyState": "No initiatives match current search parameters."
+      "emptyState": "No projects found matching your search.",
+      "detail": {
+        "activity": "Activity",
+        "backlog": "Backlog",
+        "backToProjects": "Back to Projects",
+        "epics": "Epics",
+        "issues": "Issues",
+        "milestones": "Milestones",
+        "notFound": "Project Not Found",
+        "sprints": "Sprints",
+        "wiki": "Wiki"
+      },
+      "initializeInitiative": "Initialize Initiative",
+      "portfolio": "Portfolio",
+      "searchPlaceholder": "Search Placeholder",
+      "types": {
+        "standard": "Standard",
+        "scrum": "Scrum",
+        "kanban": "Kanban",
+        "hybrid": "Hybrid",
+        "npi": "NPI",
+        "kaizen": "Kaizen",
+        "a3": "A3",
+        "maintenance": "Maintenance"
+      },
+      "noDescription": "No description provided.",
+      "distributionDescription": "Project distribution by status",
+      "createDialog": {
+        "title": "Create New Project",
+        "description": "Create a new space for project intelligence, strategic alignment and cross-module work.",
+        "name": "Project Name",
+        "namePlaceholder": "e.g., NPI - Wing Bracket...",
+        "descriptionPlaceholder": "Detail scope, objectives, and key strategic deliverables...",
+        "type": "Project Type",
+        "status": "Initial Status",
+        "visibility": "Visibility",
+        "visibilityDescription": "Restrict visibility to invited team members only"
+      },
+      "errors": {
+        "loadingProject": "Error loading project",
+        "nameRequired": "Project name required"
+      }
     },
     "mrp": {
       "title": "MRP Intelligence",
       "subtitle": "Material requirements planning and capacity analysis",
       "mps": {
         "title": "Master Production Schedule",
-        "subtitle": "Production planning and scheduling"
+        "subtitle": "Production planning and scheduling",
+        "station": "STATION: MRP-SYNC-01",
+        "activePlanNode": "Active Plan Node",
+        "bucketDate": "Bucket Date",
+        "demandBucketInjection": "Demand Bucket Injection",
+        "horizonDays": "Horizon Days",
+        "initializePlanProtocol": "Initialize Plan Protocol",
+        "initializeProtocol": "Initialize Protocol",
+        "injectDemand": "Inject Demand",
+        "periodEnd": "Period End",
+        "periodStart": "Period Start",
+        "planIdentity": "Plan Identity",
+        "planPlaceholder": "e.g., Q1_PRODUCTION_SYNC",
+        "productId": "Product Id",
+        "protocolNotes": "Protocol Notes",
+        "quantityTarget": "Quantity Target",
+        "selectProtocol": "Select Protocol",
+        "sourceType": "Source Type",
+        "table": {
+          "planProtocolRegistry": "MPS Protocol Registry",
+          "planLineExposure": "Plan Line Exposure",
+          "planIdentity": "PLAN_IDENTITY",
+          "periodRange": "PERIOD_RANGE",
+          "horizonState": "HORIZON_STATE",
+          "statusNode": "STATUS_NODE",
+          "bucketDate": "BUCKET_DATE",
+          "productNode": "PRODUCT_NODE",
+          "quantity": "QUANTITY",
+          "sourceStream": "SOURCE_STREAM",
+          "days": "DAYS",
+          "zeroProtocols": "ZERO_PROTOCOLS_IDENTIFIED",
+          "zeroDemandLines": "ZERO_DEMAND_LINES_INJECTED",
+          "manual": "MANUAL"
+        }
       }
     },
     "admin": {
       "title": "Administration",
-      "subtitle": "System administration and configuration"
+      "subtitle": "System administration and configuration",
+      "coreConfigSynced": "Core Configuration Synchronized",
+      "saveConfiguration": "Save Configuration",
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "tabs": {
+        "accessLayers": "Access Layers",
+        "approvalSync": "Approval Sync",
+        "dataLineage": "Data Lineage",
+        "docTemplates": "Document Templates",
+        "featureNodes": "Feature Nodes",
+        "hardening": "Hardening",
+        "learningCadence": "Learning Cadence",
+        "qualityGates": "Quality Gates",
+        "systemLogs": "System Logs"
+      },
+      "approvals": {
+        "title": "Approval Workflows",
+        "description": "Configure approval chains and authorization levels",
+        "initializeWorkflow": "Initialize Workflow",
+        "table": {
+          "workflowId": "WORKFLOW_ID",
+          "workflowName": "WORKFLOW_NAME",
+          "scope": "SCOPE",
+          "approvers": "APPROVERS",
+          "threshold": "THRESHOLD",
+          "escalation": "ESCALATION",
+          "status": "STATUS"
+        },
+        "actions": {
+          "edit": "EDIT",
+          "duplicate": "DUPLICATE",
+          "delete": "DELETE"
+        }
+      },
+      "audit": {
+        "title": "Audit Trail",
+        "description": "System audit logs and compliance tracking",
+        "table": {
+          "timestamp": "TIMESTAMP",
+          "user": "USER",
+          "action": "ACTION",
+          "resource": "RESOURCE",
+          "details": "DETAILS",
+          "ip": "IP"
+        },
+        "empty": "No audit records found"
+      },
+      "features": {
+        "title": "Feature Management",
+        "description": "Enable or disable system features",
+        "categories": {
+          "core": "CORE_MODULES",
+          "mlCapabilities": "ML_CAPABILITIES",
+          "integrations": "INTEGRATIONS"
+        }
+      },
+      "gates": {
+        "title": "Quality Gates",
+        "description": "Configure quality checkpoint definitions",
+        "initializeGate": "Initialize Gate",
+        "table": {
+          "order": "ORDER",
+          "gateId": "GATE_ID",
+          "gateName": "GATE_NAME",
+          "checkpoints": "CHECKPOINTS",
+          "approvalLevel": "APPROVAL_LEVEL",
+          "slaHours": "SLA_HOURS",
+          "status": "STATUS"
+        },
+        "actions": {
+          "edit": "EDIT",
+          "moveUp": "MOVE_UP",
+          "moveDown": "MOVE_DOWN",
+          "delete": "DELETE"
+        }
+      },
+      "learning": {
+        "title": "Learning Configuration",
+        "description": "Configure training and certification requirements",
+        "initializeCadence": "Initialize Cadence",
+        "table": {
+          "moduleId": "MODULE_ID",
+          "moduleName": "MODULE_NAME",
+          "frequency": "FREQUENCY",
+          "targetRoles": "TARGET_ROLES",
+          "duration": "DURATION",
+          "compliance": "COMPLIANCE",
+          "status": "STATUS"
+        },
+        "badge": {
+          "mandatory": "MANDATORY",
+          "optional": "OPTIONAL"
+        },
+        "actions": {
+          "edit": "EDIT",
+          "duplicate": "DUPLICATE",
+          "delete": "DELETE"
+        }
+      },
+      "lineage": {
+        "title": "Data Lineage",
+        "description": "Track data flow and dependencies",
+        "loadGraph": "Load Graph",
+        "syncing": "Syncing..."
+      },
+      "roles": {
+        "title": "Role Management",
+        "description": "Define user roles and permissions",
+        "initializeRole": "Initialize Role",
+        "table": {
+          "roleId": "ROLE_ID",
+          "roleName": "ROLE_NAME",
+          "permissions": "PERMISSIONS",
+          "users": "USERS",
+          "authLevel": "AUTH_LEVEL",
+          "status": "STATUS"
+        },
+        "auth": {
+          "read": "READ",
+          "write": "WRITE",
+          "admin": "ADMIN"
+        },
+        "actions": {
+          "edit": "EDIT",
+          "manageUsers": "MANAGE_USERS",
+          "delete": "DELETE"
+        }
+      },
+      "security": {
+        "commitPolicies": "Commit Policies",
+        "downloadManifest": "Download Manifest",
+        "hardening": {
+          "title": "Security Hardening",
+          "description": "Advanced security configuration"
+        },
+        "sso": {
+          "title": "SSO Configuration",
+          "description": "Single sign-on settings"
+        }
+      },
+      "templates": {
+        "title": "Document Templates",
+        "description": "Manage document templates",
+        "initializeTemplate": "Initialize Template"
+      }
+    },
+    "ctqDetail": {
+      "backToCTQs": "Back To Ct Qs",
+      "exportIntel": "Export Intel",
+      "latestIntelligence": "Latest Intelligence",
+      "notFound": "Not Found",
+      "notFoundDescription": "Not Found Description",
+      "passed": "Passed",
+      "passRate": "Pass Rate",
+      "performanceTrend": "Performance Trend",
+      "retire": "Retire",
+      "synchronizationPulse": "Synchronization Pulse",
+      "totalRecordedSamples": "Total Recorded Samples",
+      "velocityOverSamples": "Velocity Over Samples"
+    },
+    "obeyaDetail": {
+      "backToObeya": "Back To Obeya",
+      "dueDateWas": "Due Date Was",
+      "kpiMetrics": "Kpi Metrics",
+      "noDescription": "No Description",
+      "notFound": "Not Found",
+      "notFoundDescription": "Not Found Description"
+    },
+    "obeyaNew": {
+      "boardIdentity": "Board Identity",
+      "boardIdentityPlaceholder": "Board Identity Placeholder",
+      "departmentNode": "Department Node",
+      "description": "Description",
+      "establishBoard": "Establish Board",
+      "identifyTeam": "Identify Team",
+      "intelligenceModules": "Intelligence Modules",
+      "intelligenceModulesDescription": "Intelligence Modules Description",
+      "primaryCustodian": "Primary Custodian",
+      "protocolConfiguration": "Protocol Configuration",
+      "protocolConfigurationDescription": "Protocol Configuration Description",
+      "searchUserNodes": "Search User Nodes",
+      "strategicContext": "Strategic Context",
+      "strategicContextPlaceholder": "Strategic Context Placeholder",
+      "title": "Title"
+    }
+  },
+  "a3": {
+    "detail": {
+      "exportProtocol": "Export Protocol",
+      "implementation": {
+        "countermeasures": "Countermeasures",
+        "subtitle": "Subtitle",
+        "timeline": "Timeline",
+        "title": "Title"
+      },
+      "notFound": "Not Found",
+      "protocolVelocity": {
+        "executionPulse": "Execution Pulse",
+        "logicType": "Logic Type",
+        "priorityLayer": "Priority Layer",
+        "statusNode": "Status Node",
+        "title": "Title"
+      },
+      "refineAnalysis": "Refine Analysis",
+      "sections": {
+        "background": "Background",
+        "currentState": "Current State",
+        "rootCauseIntelligence": "Root Cause Intelligence",
+        "strategicTargets": "Strategic Targets"
+      },
+      "structuralAnalysis": {
+        "subtitle": "Subtitle",
+        "title": "Title"
+      }
+    },
+    "edit": {
+      "basicInformation": "Basic Information",
+      "content": "Content",
+      "reportTitle": "Report Title",
+      "reportType": "Report Type",
+      "saveChanges": "Save Changes",
+      "saving": "Saving",
+      "sections": {
+        "analysis": "Analysis",
+        "background": "Background",
+        "currentStatus": "Current Status",
+        "goals": "Goals"
+      },
+      "status": "Status",
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "empty": {
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "exportIntel": "Export Intel",
+    "initializeResolution": "Initialize Resolution",
+    "new": {
+      "basicInformation": {
+        "a3Title": "A 3 Title",
+        "description": "Description",
+        "title": "Title",
+        "titlePlaceholder": "Title Placeholder"
+      },
+      "createA3": "Create A 3",
+      "initializing": "Initializing",
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "sections": {
+      "background": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "countermeasures": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "currentCondition": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "goal": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "implementation": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "rootCause": {
+        "description": "Description",
+        "number": "Number",
+        "placeholder": "Placeholder",
+        "title": "Title"
+      },
+      "team": {
+        "addTeamMembersPlaceholder": "Add Team Members Placeholder",
+        "contributors": "Contributors",
+        "reportOwner": "Report Owner",
+        "searchUsersPlaceholder": "Search Users Placeholder",
+        "title": "Title"
+      }
+    },
+    "stats": {
+      "activeProtocols": "Active Protocols",
+      "aggregatedRegistry": "Aggregated Registry",
+      "executionPulse": "Execution Pulse",
+      "horizonOverdue": "Horizon Overdue",
+      "pendingApprovals": "Pending Approvals",
+      "queueGates": "Queue Gates",
+      "thresholdExceptions": "Threshold Exceptions",
+      "totalNodes": "Total Nodes"
+    },
+    "statuses": {
+      "approved": "Approved",
+      "draft": "Draft",
+      "inProgress": "In Progress",
+      "review": "Review"
+    },
+    "table": {
+      "author": "Author",
+      "identifier": "Identifier",
+      "priority": "Priority",
+      "progressKpi": "Progress Kpi",
+      "protocolType": "Protocol Type",
+      "resolutionTitle": "Resolution Title",
+      "statusNode": "Status Node",
+      "targetHorizon": "Target Horizon"
+    },
+    "types": {
+      "problemSolving": "Problem Solving",
+      "proposal": "Proposal",
+      "statusReport": "Status Report",
+      "strategy": "Strategy"
+    }
+  },
+  "andon": {
+    "actions": {
+      "escalate": "ESCALATE",
+      "globalBroadcast": "Global Broadcast",
+      "logisticsSync": "Logistics Sync",
+      "protocolException": "Protocol Exception",
+      "sync": "SYNC",
+      "syncSupervisor": "Sync Supervisor",
+      "technicianNode": "Technician Node"
+    },
+    "analytics": {
+      "_value": "Analytics",
+      "anomalousNodes": {
+        "cumulativeDelay": "Cumulative Delay",
+        "empty": "Empty",
+        "strategicSignals": "Strategic Signals",
+        "subtitle": "Subtitle",
+        "title": "Title"
+      },
+      "exportIntel": "Export Intel",
+      "signalTaxonomy": {
+        "empty": "Empty",
+        "subtitle": "Subtitle",
+        "title": "Title"
+      },
+      "stats": {
+        "aggregatedAcrossNodes": "Aggregated Across Nodes",
+        "estimatedOperationalLeakage": "Estimated Operational Leakage",
+        "fullProtocolLifecycle": "Full Protocol Lifecycle",
+        "globalUptimeImpact": "Global Uptime Impact",
+        "meanAcknowledgePulse": "Mean Acknowledge Pulse",
+        "meanResolutionVelocity": "Mean Resolution Velocity",
+        "temporalGap": "Temporal Gap",
+        "totalIntelligenceSignals": "Total Intelligence Signals"
+      },
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "controlStation": "Control Station",
+    "realTimeStream": "REAL-TIME_STREAM",
+    "station": "STATION: ANDON-01",
+    "stationPrefix": "STATION:",
+    "empty": {
+      "noActiveAnomalies": "No Active Anomalies",
+      "protocolStable": "Protocol Stable"
+    },
+    "history": {
+      "exportTelemetry": "Export Telemetry",
+      "searchPlaceholder": "Search Placeholder",
+      "strategicWindow": "Strategic Window",
+      "subtitle": "Subtitle",
+      "table": {
+        "anomalousContext": "Anomalous Context",
+        "protocolDuration": "Protocol Duration",
+        "resolutionAgent": "Resolution Agent",
+        "signalType": "Signal Type",
+        "stationNode": "Station Node",
+        "temporalNode": "Temporal Node"
+      },
+      "title": "Title"
+    },
+    "reports": {
+      "download": "Download",
+      "empty": "Empty",
+      "generateReport": "Generate Report",
+      "searchPlaceholder": "Search Placeholder",
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "sections": {
+      "activeSignals": "Active Signals",
+      "intelligenceNodes": "Intelligence Nodes",
+      "strategicControls": "Strategic Controls"
+    },
+    "settings": {
+      "calibrating": "Calibrating",
+      "notificationIntelligence": {
+        "criticalEscalation": "Critical Escalation",
+        "criticalEscalationDesc": "Critical Escalation Desc",
+        "maintenanceDispatch": "Maintenance Dispatch",
+        "maintenanceDispatchDesc": "Maintenance Dispatch Desc",
+        "qualityAbnormalities": "Quality Abnormalities",
+        "qualityAbnormalitiesDesc": "Quality Abnormalities Desc",
+        "subtitle": "Subtitle",
+        "title": "Title"
+      },
+      "protocolChannels": {
+        "mobileSmsGateway": "Mobile Sms Gateway",
+        "mobileSmsGatewayDesc": "Mobile Sms Gateway Desc",
+        "osIntelligencePush": "Os Intelligence Push",
+        "osIntelligencePushDesc": "Os Intelligence Push Desc",
+        "subtitle": "Subtitle",
+        "title": "Title",
+        "visualCommandMesh": "Visual Command Mesh",
+        "visualCommandMeshDesc": "Visual Command Mesh Desc"
+      },
+      "saveConfiguration": "Save Configuration",
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "stats": {
+      "activeNodes": "Active Nodes",
+      "activeSignals": "Active Signals",
+      "meanResponse": "Mean Response",
+      "operationalPulse": "Operational Pulse",
+      "protocolVelocity": "Protocol Velocity",
+      "resolvedNodes": "Resolved Nodes",
+      "totalCycles": "Total Cycles"
+    },
+    "workCenter": {
+      "oeePulse": "Oee Pulse"
+    }
+  },
+  "Processing": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "production": {
+    "detail": {
+      "aggregationPulse": "Aggregation Pulse",
+      "escalateAnomaly": "Escalate Anomaly",
+      "executionVelocity": "Execution Velocity",
+      "exportSpec": "Export Spec",
+      "gateVerified": "Gate Verified",
+      "initiateExecution": "Initiate Execution",
+      "node": "Node",
+      "scrapDeviation": "Scrap Deviation",
+      "suspendProtocol": "Suspend Protocol",
+      "tabs": {
+        "bom": "Bom",
+        "history": "History",
+        "operations": "Operations",
+        "quality": "Quality"
+      },
+      "targetMagnitude": "Target Magnitude",
+      "unknownProduct": "Unknown Product",
+      "viewHistory": "View History"
+    },
+    "emptyState": {
+      "description": "Description",
+      "title": "Title"
+    },
+    "initializeWO": "Initialize Wo",
+    "new": {
+      "createFailed": "Create Failed",
+      "establishOrder": "Establish Order",
+      "fillRequired": "Fill Required",
+      "magnitude": "Magnitude",
+      "operationalParameters": "Operational Parameters",
+      "priorityLayer": "Priority Layer",
+      "subtitle": "Subtitle",
+      "targetProduct": "Target Product",
+      "temporalHorizon": "Temporal Horizon",
+      "title": "Title",
+      "validationError": "Validation Error",
+      "workOrderCreated": "Work Order Created",
+      "workOrderIdentity": "Work Order Identity"
+    },
+    "searchPlaceholder": "Search Placeholder",
+    "stats": {
+      "executionPulse": "Execution Pulse",
+      "operationalVelocity": "Operational Velocity",
+      "overdueHorizon": "Overdue Horizon",
+      "suspendedNodes": "Suspended Nodes"
+    },
+    "status": {
+      "cancelled": "Cancelled",
+      "closed": "Closed",
+      "completed": "Completed",
+      "inProgress": "In Progress",
+      "onHold": "On Hold",
+      "planned": "Planned",
+      "released": "Released"
+    },
+    "table": {
+      "dueHorizon": "Due Horizon",
+      "exProgress": "Ex Progress",
+      "operator": "Operator",
+      "orderId": "Order ID",
+      "priorityLevel": "Priority Level",
+      "productNode": "Product Node",
+      "statusState": "Status State",
+      "workCenter": "Work Center"
+    },
+    "filters": {
+      "allNodes": "All Nodes",
+      "allStatus": "All Status",
+      "statusState": "Status State",
+      "workCenter": "Work Center"
+    },
+    "workCenter": "Work Center"
+  },
+  "quality": {
+    "analytics": {
+      "_value": "Analytics",
+      "activeAnomalies": "Active Anomalies",
+      "adjustParameters": "Adjust Parameters",
+      "awaitingDisposition": "Awaiting Disposition",
+      "exportIntel": "Export Intel",
+      "firstPassYield": "First Pass Yield",
+      "ignoreRisk": "Ignore Risk",
+      "implementationPhase": "Implementation Phase",
+      "inspectionGateOutcomes": "Inspection Gate Outcomes",
+      "meanInspectionPulse": "Mean Inspection Pulse",
+      "ncrRootCause": "Ncr Root Cause",
+      "predictiveIntelligence": "Predictive Intelligence",
+      "resolutionProtocols": "Resolution Protocols",
+      "strategicWindow": "Strategic Window",
+      "subtitle": "Subtitle",
+      "title": "Title",
+      "velocityGain": "Velocity Gain",
+      "vsLastCycle": "Vs Last Cycle"
+    },
+    "capa": {
+      "detail": {
+        "addNode": "Add Node",
+        "commitAction": "Commit Action",
+        "countermeasureNodes": "Countermeasure Nodes",
+        "exportProtocol": "Export Protocol",
+        "implementationMagnitude": "Implementation Magnitude",
+        "problemStatement": "Problem Statement",
+        "refineCapa": "Refine Capa",
+        "rootCauseAnalysis": "Root Cause Analysis",
+        "subtitle": "Subtitle",
+        "syncPulse": "Sync Pulse",
+        "tabs": {
+          "actionProtocol": "Action Protocol",
+          "effectivenessSync": "Effectiveness Sync",
+          "relatedAnomalies": "Related Anomalies"
+        },
+        "terminateNode": "Terminate Node",
+        "verifyEffectiveness": "Verify Effectiveness"
+      },
+      "new": {
+        "actionPlanParameters": "Action Plan Parameters",
+        "assignedOperative": "Assigned Operative",
+        "capaCreated": "Capa Created",
+        "capaIdentity": "Capa Identity",
+        "createFailed": "Create Failed",
+        "establishCapa": "Establish Capa",
+        "initiatedSuccess": "Initiated Success",
+        "originNode": "Origin Node",
+        "priorityLayer": "Priority Layer",
+        "rootCauseCountermeasures": "Root Cause Countermeasures",
+        "subtitle": "Subtitle",
+        "targetHorizon": "Target Horizon",
+        "title": "Title"
+      }
+    },
+    "inspection": {
+      "detail": {
+        "assignmentTelemetry": "Assignment Telemetry",
+        "checklist": "Checklist",
+        "commitSync": "Commit Sync",
+        "inspectionIntelligence": "Inspection Intelligence",
+        "leadInspector": "Lead Inspector",
+        "printEvidence": "Print Evidence",
+        "resultsAnalytics": "Results Analytics",
+        "scheduledSync": "Scheduled Sync"
+      },
+      "new": {
+        "assignedInspector": "Assigned Inspector",
+        "associatedWoSync": "Associated Wo Sync",
+        "createFailed": "Create Failed",
+        "establishInspection": "Establish Inspection",
+        "gateParameters": "Gate Parameters",
+        "initializedSuccess": "Initialized Success",
+        "initialObservation": "Initial Observation",
+        "inspectionStarted": "Inspection Started",
+        "phaseNode": "Phase Node",
+        "productPartNode": "Product Part Node",
+        "protocolIdentity": "Protocol Identity",
+        "subtitle": "Subtitle",
+        "title": "Title"
+      }
+    },
+    "ncr": {
+      "detail": {
+        "assignCapa": "Assign Capa",
+        "comment": "Comment",
+        "discrepancyIntelligence": "Discrepancy Intelligence",
+        "investigationProtocol": "Investigation Protocol",
+        "noDescription": "No Description",
+        "refineProtocol": "Refine Protocol",
+        "subjectiveData": "Subjective Data",
+        "subtitle": "Subtitle",
+        "tabs": {
+          "disposition": "Disposition",
+          "eventLog": "Event Log",
+          "evidence": "Evidence",
+          "rootCause": "Root Cause"
+        },
+        "terminateNode": "Terminate Node",
+        "viewLogs": "View Logs"
+      },
+      "new": {
+        "associatedWo": "Associated Wo",
+        "createFailed": "Create Failed",
+        "detectionNode": "Detection Node",
+        "discrepancyIntelligence": "Discrepancy Intelligence",
+        "establishNcr": "Establish Ncr",
+        "issueTitleProtocol": "Issue Title Protocol",
+        "ncrCreated": "Ncr Created",
+        "ncrParameters": "Ncr Parameters",
+        "recordedSuccess": "Recorded Success",
+        "relatedProduct": "Related Product",
+        "severityMagnitude": "Severity Magnitude",
+        "subtitle": "Subtitle",
+        "title": "Title",
+        "titleDescRequired": "Title Desc Required",
+        "validationError": "Validation Error"
+      }
+    },
+    "newCAPA": "New Capa",
+    "newInspection": "New Inspection",
+    "newNCR": "New Ncr",
+    "newProtocol": "New Protocol",
+    "stats": {
+      "activeSyncGates": "Active Sync Gates",
+      "firstPassVelocity": "First Pass Velocity",
+      "globalAnomalies": "Global Anomalies",
+      "resolutionProtocols": "Resolution Protocols"
+    },
+    "tabs": {
+      "anomalies": "Anomalies",
+      "customerSatisfaction": "Customer Satisfaction",
+      "protocols": "Protocols",
+      "syncGates": "Sync Gates"
+    }
+  },
+  "Reconnecting": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "RFQ_001_20250115": {
+    "pdf": "Pdf"
+  },
+  "Search": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "Syncing": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "training": {
+    "certifications": {
+      "detail": {
+        "awardedTo": "Awarded To",
+        "certificateOfAchievement": "Certificate Of Achievement",
+        "downloadCertificate": "Download Certificate",
+        "expiresOn": "Expires On",
+        "finalScore": "Final Score",
+        "issueDate": "Issue Date",
+        "scopeOfCertification": "Scope Of Certification",
+        "title": "Title"
+      },
+      "new": {
+        "certificationDetails": "Certification Details",
+        "certificationTitle": "Certification Title",
+        "defaultIssuer": "Default Issuer",
+        "expiryDate": "Expiry Date",
+        "finalScore": "Final Score",
+        "issueDate": "Issue Date",
+        "issuingAuthority": "Issuing Authority",
+        "registerCertification": "Register Certification",
+        "scorePlaceholder": "Score Placeholder",
+        "subtitle": "Subtitle",
+        "teamMember": "Team Member",
+        "teamMemberPlaceholder": "Team Member Placeholder",
+        "title": "Title",
+        "toast": {
+          "success": {
+            "description": "Description",
+            "title": "Title"
+          }
+        }
+      }
+    },
+    "enroll": {
+      "configureParams": "Configure Params",
+      "establishEnrollment": "Establish Enrollment",
+      "initiateEnrollment": "Initiate Enrollment",
+      "rationalOptimization": "Rational Optimization",
+      "reasonPlaceholder": "Reason Placeholder",
+      "selectProgram": "Select Program",
+      "strategicProgramNode": "Strategic Program Node",
+      "subtitle": "Subtitle",
+      "title": "Title",
+      "toast": {
+        "success": {
+          "description": "Description",
+          "title": "Title"
+        }
+      }
+    },
+    "enrollEmployee": "Enroll Employee",
+    "initializeActivity": "Initialize Activity",
+    "matrix": {
+      "competencyMatrix": "Competency Matrix",
+      "departmentNode": "Department Node",
+      "exportMatrix": "Export Matrix",
+      "operativeNode": "Operative Node",
+      "searchPlaceholder": "Search Placeholder",
+      "strategicAvg": "Strategic Avg",
+      "subtitle": "Subtitle",
+      "title": "Title"
+    },
+    "newCertification": "New Certification",
+    "newTrainingProgram": "New Training Program",
+    "programs": {
+      "detail": {
+        "continueLearning": "Continue Learning",
+        "curriculum": "Curriculum",
+        "details": "Details",
+        "programDescription": "Program Description"
+      },
+      "new": {
+        "category": "Category",
+        "createProgram": "Create Program",
+        "durationPlaceholder": "Duration Placeholder",
+        "estimatedDuration": "Estimated Duration",
+        "instructor": "Instructor",
+        "programDetails": "Program Details",
+        "programTitle": "Program Title",
+        "skillLevel": "Skill Level",
+        "subtitle": "Subtitle",
+        "title": "Title",
+        "toast": {
+          "success": {
+            "description": "Description",
+            "title": "Title"
+          }
+        }
+      }
+    },
+    "skillsMatrix": "Skills Matrix",
+    "stats": {
+      "activeSkillNodes": "Active Skill Nodes",
+      "operationalProtocols": "Operational Protocols",
+      "synchronizationPulse": "Synchronization Pulse",
+      "thresholdAlerts": "Threshold Alerts"
+    },
+    "tabs": {
+      "certifications": "Certifications",
+      "programs": "Programs",
+      "records": "Records"
+    }
+  },
+  "components": {
+    "factoryFloor": {
+      "machineStatus": {
+        "productionIssue": "Production Issue",
+        "qualityAlert": "Quality Alert",
+        "safetyAlert": "Safety Alert",
+        "maintenanceRequired": "Maintenance Required"
+      }
     }
   }
 }

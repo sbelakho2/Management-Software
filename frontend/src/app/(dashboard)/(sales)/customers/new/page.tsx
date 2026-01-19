@@ -93,20 +93,21 @@ function ContactCard({
   onRemove: () => void;
   onSetPrimary: () => void;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="border rounded-lg p-4 space-y-4">
+    <div className="border border-rams-line rounded-rams-sm p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
-          <span className="font-medium">Contact {index + 1}</span>
+          <span className="font-medium">{t('pages.customers.new.contact')} {index + 1}</span>
           {contact.isPrimary && (
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Primary</span>
+            <span className="text-xs bg-rams-orange/10 text-rams-orange px-2 py-0.5 rounded-rams-sm">{t('pages.customers.new.primary')}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {!contact.isPrimary && (
             <Button variant="ghost" size="sm" onClick={onSetPrimary}>
-              Set as Primary
+              {t('pages.customers.new.setAsPrimary')}
             </Button>
           )}
           <Button variant="ghost" size="icon-sm" onClick={onRemove}>
@@ -117,40 +118,40 @@ function ContactCard({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label>Full Name</Label>
+          <Label>{t('pages.customers.new.fullName')}</Label>
           <Input
             value={contact.name}
             onChange={(e) => onChange({ ...contact, name: e.target.value })}
-            placeholder="John Doe"
+            placeholder={t('pages.customers.new.fullNamePlaceholder')}
             className="mt-1.5"
           />
         </div>
         <div>
-          <Label>Job Title</Label>
+          <Label>{t('pages.customers.new.jobTitle')}</Label>
           <Input
             value={contact.title}
             onChange={(e) => onChange({ ...contact, title: e.target.value })}
-            placeholder="Procurement Manager"
+            placeholder={t('pages.customers.new.jobTitlePlaceholder')}
             className="mt-1.5"
           />
         </div>
         <div>
-          <Label>Email</Label>
+          <Label>{t('pages.customers.new.email')}</Label>
           <Input
             type="email"
             value={contact.email}
             onChange={(e) => onChange({ ...contact, email: e.target.value })}
-            placeholder="john@company.com"
+            placeholder={t('pages.customers.new.emailPlaceholder')}
             className="mt-1.5"
           />
         </div>
         <div>
-          <Label>Phone</Label>
+          <Label>{t('pages.customers.new.phone')}</Label>
           <Input
             type="tel"
             value={contact.phone}
             onChange={(e) => onChange({ ...contact, phone: e.target.value })}
-            placeholder="+1 (555) 123-4567"
+            placeholder={t('pages.customers.new.phonePlaceholder')}
             className="mt-1.5"
           />
         </div>
@@ -284,23 +285,23 @@ export default function CustomerFormPage() {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Company name is required';
+      newErrors.name = t('pages.customers.new.validation.companyNameRequired');
     }
     if (!formData.code.trim()) {
-      newErrors.code = 'Customer code is required';
+      newErrors.code = t('pages.customers.new.validation.customerCodeRequired');
     }
     if (!formData.industry) {
-      newErrors.industry = 'Industry is required';
+      newErrors.industry = t('pages.customers.new.validation.industryRequired');
     }
     if (formData.contacts.length === 0) {
-      newErrors.contacts = 'At least one contact is required';
+      newErrors.contacts = t('pages.customers.new.validation.contactRequired');
     }
     formData.contacts.forEach((contact, index) => {
       if (!contact.name.trim()) {
-        newErrors[`contact_${index}_name`] = 'Contact name is required';
+        newErrors[`contact_${index}_name`] = t('pages.customers.new.validation.contactNameRequired');
       }
       if (!contact.email.trim()) {
-        newErrors[`contact_${index}_email`] = 'Contact email is required';
+        newErrors[`contact_${index}_email`] = t('pages.customers.new.validation.contactEmailRequired');
       }
     });
 
@@ -312,8 +313,8 @@ export default function CustomerFormPage() {
     if (!validate()) {
       toast({
         variant: 'destructive',
-        title: 'Validation Error',
-        description: 'Please fix the errors before saving.',
+        title: t('pages.customers.new.toast.validationError'),
+        description: t('pages.customers.new.toast.fixErrors'),
       });
       return;
     }
@@ -326,15 +327,15 @@ export default function CustomerFormPage() {
         await createCustomer(formData);
       }
       toast({
-        title: isEditing ? 'Customer updated' : 'Customer created',
+        title: isEditing ? t('pages.customers.new.toast.customerUpdated') : t('pages.customers.new.toast.customerCreated'),
         description: formData.name,
       });
       router.push('/customers');
     } catch {
       toast({
         variant: 'destructive',
-        title: 'Error saving customer',
-        description: 'Please try again.',
+        title: t('pages.customers.new.toast.errorSaving'),
+        description: t('pages.customers.new.toast.tryAgain'),
       });
     } finally {
       setIsSaving(false);
@@ -363,16 +364,16 @@ export default function CustomerFormPage() {
           </Button>
           <div>
             <h1 className="text-3xl font-heading font-bold tracking-tight ">
-              {isEditing ? 'Edit Customer' : 'New Customer'}
+              {isEditing ? t('pages.customers.new.editTitle') : t('pages.customers.new.newTitle')}
             </h1>
             <p className="text-muted-foreground">
-              {isEditing ? `Editing ${formData.name}` : 'Add a new customer to your CRM'}
+              {isEditing ? t('pages.customers.new.editingDescription', { name: formData.name }) : t('pages.customers.new.newDescription')}
             </p>
           </div>
         </div>
         <Button onClick={handleSave} disabled={isSaving}>
           <Save className="mr-2 h-4 w-4" />
-          {isSaving ? 'Saving...' : 'Save Customer'}
+          {isSaving ? t('pages.customers.new.saving') : t('pages.customers.new.saveCustomer')}
         </Button>
       </div>
 
@@ -384,23 +385,23 @@ export default function CustomerFormPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
-                Company Information
+                {t('pages.customers.new.companyInfo')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Label required>Company Name</Label>
+                  <Label required>{t('pages.customers.new.companyName')}</Label>
                   <Input
                     value={formData.name}
                     onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                    placeholder="Acme Corporation"
+                    placeholder={t('pages.customers.new.companyNamePlaceholder')}
                     className={cn('mt-1.5', errors.name && 'border-danger')}
                   />
                   {errors.name && <p className="text-sm text-danger mt-1">{errors.name}</p>}
                 </div>
                 <div>
-                  <Label required>Customer Code</Label>
+                  <Label required>{t('pages.customers.new.customerCode')}</Label>
                   <div className="flex gap-2 mt-1.5">
                     <Input
                       value={formData.code}
@@ -409,19 +410,19 @@ export default function CustomerFormPage() {
                       className={cn(errors.code && 'border-danger')}
                     />
                     <Button variant="outline" type="button" onClick={generateCode}>
-                      Generate
+                      {t('pages.customers.new.generate')}
                     </Button>
                   </div>
                   {errors.code && <p className="text-sm text-danger mt-1">{errors.code}</p>}
                 </div>
                 <div>
-                  <Label required>Industry</Label>
+                  <Label required>{t('pages.customers.new.industry')}</Label>
                   <Select
                     value={formData.industry}
                     onValueChange={(v) => setFormData((prev) => ({ ...prev, industry: v }))}
                   >
                     <SelectTrigger className={cn('mt-1.5', errors.industry && 'border-danger')}>
-                      <SelectValue placeholder="Select industry" />
+                      <SelectValue placeholder={t('pages.customers.new.selectIndustry')} />
                     </SelectTrigger>
                     <SelectContent>
                       {industries.map((industry) => (
@@ -432,7 +433,7 @@ export default function CustomerFormPage() {
                   {errors.industry && <p className="text-sm text-danger mt-1">{errors.industry}</p>}
                 </div>
                 <div>
-                  <Label>Status</Label>
+                  <Label>{t('pages.customers.new.status')}</Label>
                   <Select
                     value={formData.status}
                     onValueChange={(v: 'active' | 'inactive' | 'prospect') => setFormData((prev) => ({ ...prev, status: v }))}
@@ -441,14 +442,14 @@ export default function CustomerFormPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="prospect">Prospect</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="prospect">{t('pages.customers.status.prospect')}</SelectItem>
+                      <SelectItem value="active">{t('pages.customers.status.active')}</SelectItem>
+                      <SelectItem value="inactive">{t('pages.customers.status.inactive')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label>Website</Label>
+                  <Label>{t('pages.customers.new.website')}</Label>
                   <div className="relative mt-1.5">
                     <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -468,12 +469,12 @@ export default function CustomerFormPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="h-5 w-5" />
-                Address
+                {t('pages.customers.new.address')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Street Address</Label>
+                <Label>{t('pages.customers.new.streetAddress')}</Label>
                 <Input
                   value={formData.address.street}
                   onChange={(e) => setFormData((prev) => ({ 
@@ -486,7 +487,7 @@ export default function CustomerFormPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <Label>City</Label>
+                  <Label>{t('pages.customers.new.city')}</Label>
                   <Input
                     value={formData.address.city}
                     onChange={(e) => setFormData((prev) => ({ 
@@ -498,7 +499,7 @@ export default function CustomerFormPage() {
                   />
                 </div>
                 <div>
-                  <Label>State / Province</Label>
+                  <Label>{t('pages.customers.new.stateProvince')}</Label>
                   <Input
                     value={formData.address.state}
                     onChange={(e) => setFormData((prev) => ({ 
@@ -510,7 +511,7 @@ export default function CustomerFormPage() {
                   />
                 </div>
                 <div>
-                  <Label>Postal Code</Label>
+                  <Label>{t('pages.customers.new.postalCode')}</Label>
                   <Input
                     value={formData.address.postalCode}
                     onChange={(e) => setFormData((prev) => ({ 
@@ -522,7 +523,7 @@ export default function CustomerFormPage() {
                   />
                 </div>
                 <div>
-                  <Label>Country</Label>
+                  <Label>{t('pages.customers.new.country')}</Label>
                   <Select
                     value={formData.address.country}
                     onValueChange={(v) => setFormData((prev) => ({ 
@@ -550,13 +551,13 @@ export default function CustomerFormPage() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <User className="h-5 w-5" />
-                  Contacts
+                  {t('pages.customers.new.contacts')}
                 </CardTitle>
-                <CardDescription>Add contacts for this customer</CardDescription>
+                <CardDescription>{t('pages.customers.new.contactsDescription')}</CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={handleAddContact}>
                 <Plus className="mr-2 h-4 w-4" />
-                Add Contact
+                {t('pages.customers.new.addContact')}
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -574,12 +575,12 @@ export default function CustomerFormPage() {
                 />
               ))}
               {formData.contacts.length === 0 && (
-                <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                  <User className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <p className="mt-2 text-muted-foreground">No contacts added</p>
+                <div className="text-center py-8 border border-dashed border-rams-line rounded-rams-sm bg-rams-panel/30">
+                  <User className="mx-auto h-8 w-8 text-muted-foreground/40" />
+                  <p className="mt-2 text-muted-foreground">{t('pages.customers.new.noContacts')}</p>
                   <Button variant="outline" size="sm" className="mt-4" onClick={handleAddContact}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Add First Contact
+                    {t('pages.customers.new.addFirstContact')}
                   </Button>
                 </div>
               )}
@@ -592,27 +593,27 @@ export default function CustomerFormPage() {
           {/* Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>Internal Notes</CardTitle>
-              <CardDescription>Notes for internal use only</CardDescription>
+              <CardTitle>{t('pages.customers.new.internalNotes')}</CardTitle>
+              <CardDescription>{t('pages.customers.new.internalNotesDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Add notes about this customer..."
+                placeholder={t('pages.customers.new.notesPlaceholder')}
                 rows={6}
               />
             </CardContent>
           </Card>
 
           {/* Tips */}
-          <Card className="bg-muted/50">
+          <Card className="bg-rams-panel border-rams-line">
             <CardContent className="pt-4">
-              <h4 className="font-medium mb-2">Tips</h4>
+              <h4 className="font-medium mb-2">{t('pages.customers.new.tips')}</h4>
               <ul className="text-sm text-muted-foreground space-y-2">
-                <li>• Customer codes should be unique and easy to remember</li>
-                <li>• Mark your main point of contact as Primary</li>
-                <li>• Add notes about special requirements or preferences</li>
+                <li>• {t('pages.customers.new.tip1')}</li>
+                <li>• {t('pages.customers.new.tip2')}</li>
+                <li>• {t('pages.customers.new.tip3')}</li>
               </ul>
             </CardContent>
           </Card>

@@ -81,34 +81,34 @@ export default function CurrencySettingsPage() {
 
   return (
     <div className="space-y-8 page-fade-in">
-      <div>
-        <h1 className="text-4xl font-heading font-bold tracking-tight">Multi-Currency Settings</h1>
-        <p className="text-muted-foreground">Configure base currency and manage FX rates</p>
+      <div className="border-b border-rams-line pb-6">
+        <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.finance.currency.title') || 'Multi-Currency Settings'}</h1>
+        <p className="text-2xs font-mono uppercase tracking-widest text-rams-muted">{t('pages.finance.currency.subtitle') || 'Configure base currency and manage FX rates'}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader>
-            <CardTitle className="text-base">Currency Configuration</CardTitle>
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+          <CardHeader className="border-b border-rams-line">
+            <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.currency.currencyConfiguration') || 'Currency Configuration'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Base Currency</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.baseCurrency') || 'Base Currency'}</label>
                 <Input
                   value={settingsForm.baseCurrency}
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, baseCurrency: e.target.value.toUpperCase() }))}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Reporting Currency</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.reportingCurrency') || 'Reporting Currency'}</label>
                 <Input
                   value={settingsForm.reportingCurrency}
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, reportingCurrency: e.target.value.toUpperCase() }))}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Allowed Currencies</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.allowedCurrencies') || 'Allowed Currencies'}</label>
                 <Input
                   value={settingsForm.allowedCurrencies}
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, allowedCurrencies: e.target.value.toUpperCase() }))}
@@ -116,11 +116,11 @@ export default function CurrencySettingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">FX Source</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.fxSource') || 'FX Source'}</label>
                 <Input
                   value={settingsForm.fxSource}
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, fxSource: e.target.value }))}
-                  placeholder="Manual"
+                  placeholder={t('pages.finance.currency.manualPlaceholder') || 'Manual'}
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -132,24 +132,24 @@ export default function CurrencySettingsPage() {
                   className="h-4 w-4"
                 />
                 <label htmlFor="auto-update" className="text-xs font-semibold text-muted-foreground">
-                  Auto-update FX rates
+                  {t('pages.finance.currency.autoUpdateFxRates') || 'Auto-update FX rates'}
                 </label>
               </div>
             </div>
             <Button onClick={handleSaveSettings} disabled={loading} className="w-full">
-              Save Settings
+              {t('pages.finance.currency.saveSettings') || 'Save Settings'}
             </Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader>
-            <CardTitle className="text-base">Add FX Rate</CardTitle>
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+          <CardHeader className="border-b border-rams-line">
+            <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.currency.addFxRate') || 'Add FX Rate'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">As Of</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.asOf') || 'As Of'}</label>
                 <Input
                   type="date"
                   value={rateForm.asOf}
@@ -157,7 +157,7 @@ export default function CurrencySettingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Rate</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.rate') || 'Rate'}</label>
                 <Input
                   type="number"
                   value={rateForm.rate}
@@ -165,7 +165,7 @@ export default function CurrencySettingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">From</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.from') || 'From'}</label>
                 <Input
                   value={rateForm.fromCurrency}
                   onChange={(e) => setRateForm((prev) => ({ ...prev, fromCurrency: e.target.value.toUpperCase() }))}
@@ -173,7 +173,7 @@ export default function CurrencySettingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">To</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.currency.to') || 'To'}</label>
                 <Input
                   value={rateForm.toCurrency}
                   onChange={(e) => setRateForm((prev) => ({ ...prev, toCurrency: e.target.value.toUpperCase() }))}
@@ -182,32 +182,32 @@ export default function CurrencySettingsPage() {
               </div>
             </div>
             <Button onClick={handleUpsertRate} disabled={loading} className="w-full">
-              Save Rate
+              {t('pages.finance.currency.saveRate') || 'Save Rate'}
             </Button>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-base">FX Rates</CardTitle>
+      <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+        <CardHeader className="border-b border-rams-line">
+          <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.currency.fxRates') || 'FX Rates'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">As Of</th>
-                <th className="py-3 px-4 text-left font-medium">Pair</th>
-                <th className="py-3 px-4 text-left font-medium">Rate</th>
-                <th className="py-3 px-4 text-left font-medium">Status</th>
+              <tr className="border-b border-rams-line bg-rams-panel">
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.currency.asOf') || 'As Of'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.currency.pair') || 'Pair'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.currency.rate') || 'Rate'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
               </tr>
             </thead>
             <tbody>
               {fxRates.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No FX rates available.</td></tr>
+                <tr><td colSpan={4} className="py-8 text-center text-rams-muted">{t('pages.finance.currency.noFxRates') || 'No FX rates available.'}</td></tr>
               ) : (
                 fxRates.map((rate: any) => (
-                  <tr key={rate.id} className="border-b hover:bg-muted/50">
+                  <tr key={rate.id} className="border-b border-rams-line hover:bg-rams-panel transition-none">
                     <td className="py-3 px-4 text-muted-foreground">{rate.as_of}</td>
                     <td className="py-3 px-4 font-medium">{rate.from_currency} → {rate.to_currency}</td>
                     <td className="py-3 px-4 text-muted-foreground">{rate.rate}</td>

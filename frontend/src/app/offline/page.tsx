@@ -9,20 +9,20 @@ import { useI18n } from '@/contexts/i18n-context';
 export default function OfflinePage() {
   const { t } = useI18n();
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4 page-fade-in">
+    <div className="min-h-screen flex items-center justify-center bg-rams-chassis p-4 page-fade-in">
       <SkipToContent targetId="main-content" />
       <main id="main-content" className="text-center max-w-md w-full">
-        <div className="premium-glass p-10 rounded-[2.5rem] shadow-premium border border-white/20 dark:border-white/5 space-y-8 transition-all duration-500 hover:shadow-premium-hover">
-          <div className="inline-flex items-center justify-center w-24 h-24 bg-primary/10 rounded-[2rem] mb-2 shadow-glow">
-            <WifiOff className="h-12 w-12 text-primary animate-pulse" />
+        <div className="bg-rams-module p-10 border border-rams-line rounded-rams-sm space-y-8 transition-none">
+          <div className="inline-flex items-center justify-center w-24 h-24 bg-rams-panel border border-rams-line rounded-rams-sm mb-2">
+            <WifiOff className="h-12 w-12 text-rams-orange" />
           </div>
           
           <div className="space-y-3">
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
               Connection Lost
             </h1>
             
-            <p className="text-muted-foreground font-medium text-sm">
+            <p className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">
               The Sensei OS intelligence link has been interrupted. 
               Some core features are currently unavailable.
             </p>
@@ -31,45 +31,45 @@ export default function OfflinePage() {
           <div className="space-y-4 pt-4">
             <Button
               onClick={() => window.location.reload()}
-              className="w-full h-12 text-base rounded-2xl shadow-glow subtle-shine"
-              size="xl"
+              className="w-full h-10 rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] transition-none"
+              size="default"
             >
-              <RefreshCw className="mr-2 h-5 w-5" />
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
               Re-establish Link
             </Button>
             
             <Button
               asChild
               variant="outline"
-              className="w-full h-12 text-base rounded-2xl"
-              size="xl"
+              className="w-full h-10 rounded-rams-sm border-rams-line transition-none"
+              size="default"
             >
               <Link href="/">
-                <Home className="mr-2 h-5 w-5" />
+                <Home className="mr-2 h-3.5 w-3.5" />
                 Return to Base
               </Link>
             </Button>
           </div>
 
-          <div className="p-5 bg-primary/5 rounded-2xl text-left border border-primary/10">
-            <h2 className="font-heading font-bold text-[10px] uppercase tracking-[0.2em] text-primary/60 mb-3">Offline Capabilities</h2>
-            <ul className="text-xs text-muted-foreground/80 space-y-2 font-medium">
+          <div className="p-5 bg-rams-panel/20 border border-rams-line text-left">
+            <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-rams-orange mb-3">Offline Capabilities</h2>
+            <ul className="text-[10px] font-mono font-bold text-muted-foreground/60 space-y-2 uppercase tracking-widest">
               <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                <div className="h-1.5 w-1.5 bg-rams-green" />
                 Cached intelligence data
               </li>
               <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                <div className="h-1.5 w-1.5 bg-rams-green" />
                 Previously synchronized pages
               </li>
               <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
+                <div className="h-1.5 w-1.5 bg-rams-green" />
                 Draft synchronization on reconnect
               </li>
             </ul>
           </div>
 
-          <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-muted-foreground/30 pt-4">
+          <p className="text-[9px] uppercase tracking-[0.3em] font-black text-muted-foreground/30 pt-4">
             Sensei OS • Precision Continuity
           </p>
         </div>

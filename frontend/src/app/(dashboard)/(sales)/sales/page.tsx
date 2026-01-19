@@ -52,34 +52,35 @@ import { useI18n } from '@/contexts/i18n-context';
 type RFQItem = RFQ;
 
 
-const statusConfig: Record<RFQStatus, { label: string; color: string }> = {
-  new: { label: 'New', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' },
-  reviewing: { label: 'Reviewing', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' },
-  quoting: { label: 'Quoting', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' },
-  submitted: { label: 'Submitted', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' },
-  won: { label: 'Won', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' },
-  lost: { label: 'Lost', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300' },
-  no_bid: { label: 'No Bid', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
-  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
+const statusConfig: Record<RFQStatus, { labelKey: string; color: string }> = {
+  new: { labelKey: 'pages.sales.status.new', color: 'bg-rams-steel/20 text-rams-steel border border-rams-steel/30' },
+  reviewing: { labelKey: 'pages.sales.status.reviewing', color: 'bg-rams-orange/20 text-rams-orange border border-rams-orange/30' },
+  quoting: { labelKey: 'pages.sales.status.quoting', color: 'bg-rams-muted/20 text-foreground/80 border border-rams-line' },
+  submitted: { labelKey: 'pages.sales.status.submitted', color: 'bg-rams-steel/20 text-rams-steel border border-rams-steel/30' },
+  won: { labelKey: 'pages.sales.status.won', color: 'bg-rams-green/20 text-rams-green border border-rams-green/30' },
+  lost: { labelKey: 'pages.sales.status.lost', color: 'bg-rams-red/20 text-rams-red border border-rams-red/30' },
+  no_bid: { labelKey: 'pages.sales.status.noBid', color: 'bg-rams-panel text-muted-foreground border border-rams-line' },
+  cancelled: { labelKey: 'pages.sales.status.cancelled', color: 'bg-rams-panel text-muted-foreground border border-rams-line' },
 };
 
-const priorityConfig: Record<Priority, { label: string; color: string }> = {
-  low: { label: 'Low', color: 'secondary' },
-  medium: { label: 'Medium', color: 'warning' },
-  high: { label: 'High', color: 'danger' },
-  urgent: { label: 'Urgent', color: 'destructive' },
+const priorityConfig: Record<Priority, { labelKey: string; color: string }> = {
+  low: { labelKey: 'pages.sales.priority.low', color: 'secondary' },
+  medium: { labelKey: 'pages.sales.priority.medium', color: 'warning' },
+  high: { labelKey: 'pages.sales.priority.high', color: 'danger' },
+  urgent: { labelKey: 'pages.sales.priority.urgent', color: 'destructive' },
 };
 
-const kanbanColumns: { status: RFQStatus; title: string }[] = [
-  { status: 'new', title: 'New' },
-  { status: 'reviewing', title: 'Reviewing' },
-  { status: 'quoting', title: 'Quoting' },
-  { status: 'submitted', title: 'Submitted' },
+const kanbanColumns: { status: RFQStatus; titleKey: string }[] = [
+  { status: 'new', titleKey: 'pages.sales.kanban.new' },
+  { status: 'reviewing', titleKey: 'pages.sales.kanban.reviewing' },
+  { status: 'quoting', titleKey: 'pages.sales.kanban.quoting' },
+  { status: 'submitted', titleKey: 'pages.sales.kanban.submitted' },
 ];
 
 // Components
 function RFQListItem({ rfq }: { rfq: RFQItem }) {
   const router = useRouter();
+  const { t } = useI18n();
   const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
@@ -90,7 +91,7 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
       <td className="py-3 px-4">
         <div>
           <p className="font-medium">{rfq.rfq_number}</p>
-          <p className="text-sm text-muted-foreground">{rfq.customer?.name || 'Unknown'}</p>
+          <p className="text-sm text-muted-foreground">{rfq.customer?.name || t('pages.sales.unknownPartner')}</p>
         </div>
       </td>
       <td className="py-3 px-4">
@@ -98,12 +99,12 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
       </td>
       <td className="py-3 px-4">
         <Badge className={statusConfig[rfq.status].color}>
-          {statusConfig[rfq.status].label}
+          {t(statusConfig[rfq.status].labelKey)}
         </Badge>
       </td>
       <td className="py-3 px-4">
         <Badge variant={priorityConfig[rfq.priority].color as 'secondary' | 'warning' | 'danger' | 'destructive'}>
-          {priorityConfig[rfq.priority].label}
+          {t(priorityConfig[rfq.priority].labelKey)}
         </Badge>
       </td>
       <td className="py-3 px-4">
@@ -125,10 +126,10 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
             <span className="text-sm">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
           </div>
         ) : (
-          <span className="text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground">{t('pages.sales.unassigned')}</span>
         )}
       </td>
-      <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+      <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>'
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm">
@@ -139,27 +140,27 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
             <DropdownMenuItem asChild>
               <Link href={`/pipeline/${rfq.id}`}>
                 <Eye className="mr-2 h-4 w-4" />
-                View
+                {t('common.view')}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={`/pipeline/${rfq.id}?mode=edit`}>
                 <Edit className="mr-2 h-4 w-4" />
-                Edit
+                {t('common.edit')}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem>
               <Copy className="mr-2 h-4 w-4" />
-              Duplicate
+              {t('common.duplicate')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <Archive className="mr-2 h-4 w-4" />
-              Archive
+              {t('common.archive')}
             </DropdownMenuItem>
             <DropdownMenuItem className="text-danger">
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {t('common.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -169,34 +170,35 @@ function RFQListItem({ rfq }: { rfq: RFQItem }) {
 }
 
 function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
+  const { t } = useI18n();
   const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
     <Link href={`/pipeline/${rfq.id}`} className="group">
-      <Card className="mb-4 transition-all duration-500 hover:shadow-glow hover:-translate-y-1 group border-border/40 bg-card/60 backdrop-blur-sm rounded-[1.5rem]">
+      <Card className="mb-4 group border-rams-line bg-rams-module hover:bg-rams-panel rounded-rams-sm">
         <CardContent className="p-5 space-y-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="font-mono text-[10px] font-bold text-primary/60">{rfq.rfq_number}</p>
-              <p className="font-heading font-bold text-sm tracking-tight group-hover:text-primary transition-colors mt-0.5">{rfq.customer?.name || 'Unknown Partner'}</p>
+              <p className="font-mono text-[10px] font-bold text-rams-orange/60">{rfq.rfq_number}</p>
+              <p className="font-sans font-black text-xs uppercase tracking-tight group-hover:text-rams-orange mt-0.5">{rfq.customer?.name || t('pages.sales.unknownPartner')}</p>
             </div>
-            <Badge variant={priorityConfig[rfq.priority].color as any} className="text-[9px] font-bold uppercase tracking-widest rounded-md px-1.5 py-0">
-              {priorityConfig[rfq.priority].label}
+            <Badge variant={priorityConfig[rfq.priority].color as any} className="text-[9px] font-black uppercase tracking-widest rounded-rams-sm px-1.5 py-0">
+              {t(priorityConfig[rfq.priority].labelKey)}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed font-medium">{rfq.title}</p>
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest pt-4 border-t border-border/10">
-            <span className={cn(isOverdue ? 'text-danger' : 'text-muted-foreground/60')}>
-              DUE {formatRelativeTime(new Date(rfq.due_date))}
+          <p className="text-[10px] text-muted-foreground/60 line-clamp-2 leading-relaxed font-medium">{rfq.title}</p>
+          <div className="flex items-center justify-between text-[9px] font-mono font-bold uppercase tracking-widest pt-4 border-t border-rams-line">
+            <span className={cn(isOverdue ? 'text-rams-red' : 'text-muted-foreground/40')}>
+              {t('pages.sales.due')} {formatRelativeTime(new Date(rfq.due_date))}
             </span>
             {rfq.estimated_value && (
-              <span className="text-foreground/80 font-heading">{formatCurrency(rfq.estimated_value)}</span>
+              <span className="text-foreground/80 font-mono">{formatCurrency(rfq.estimated_value)}</span>
             )}
           </div>
           {rfq.assigned_user && (
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/5">
-              <Avatar fallback={rfq.assigned_user.full_name || rfq.assigned_user.email} size="xs" className="ring-2 ring-background" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-rams-line">
+              <Avatar fallback={rfq.assigned_user.full_name || rfq.assigned_user.email} size="xs" className="border border-rams-line" />
+              <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
             </div>
           )}
         </CardContent>
@@ -205,7 +207,8 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
   );
 }
 
-function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatus; rfqs: RFQItem[] }) {
+function KanbanColumn({ titleKey, status, rfqs }: { titleKey: string; status: RFQStatus; rfqs: RFQItem[] }) {
+  const { t } = useI18n();
   const statusItems = rfqs.filter((r) => r.status === status);
   const totalValue = statusItems.reduce((sum, r) => sum + (r.estimated_value || 0), 0);
 
@@ -213,19 +216,19 @@ function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatu
     <div className="flex-1 min-w-[300px] max-w-[380px]">
       <div className="flex items-center justify-between mb-6 px-2">
         <div className="flex items-center gap-3">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{title}</h3>
-          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[9px] font-bold rounded-full">
+          <h3 className="text-[10px] font-mono font-black uppercase tracking-[0.2em] text-muted-foreground/60">{t(titleKey)}</h3>
+          <Badge variant="secondary" className="bg-rams-orange/10 text-rams-orange border-none text-[9px] font-mono font-bold rounded-rams-sm">
             {statusItems.length}
           </Badge>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+        <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
           {formatCurrency(totalValue)}
         </span>
       </div>
-      <div className="bg-muted/10 rounded-[2.5rem] p-4 min-h-[600px] border border-border/5">
+      <div className="bg-rams-panel/30 rounded-rams-sm p-4 min-h-[600px] border border-rams-line">
         {statusItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-border/20 rounded-[2rem] text-muted-foreground/40 m-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest">Empty Stage</p>
+          <div className="flex flex-col items-center justify-center h-40 border border-dashed border-rams-line rounded-rams-sm text-muted-foreground/40 m-2">
+            <p className="text-[9px] font-mono font-bold uppercase tracking-widest">{t('pages.sales.emptyStage')}</p>
           </div>
         ) : (
           statusItems.map((rfq) => (
@@ -300,21 +303,23 @@ function PipelinePageContent() {
   return (
     <div className="space-y-8 page-fade-in" data-testid="pipeline-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
-            Pipeline Velocity
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+            {t('pages.sales.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            Strategic RFQ management, opportunity tracking, and revenue forecasting
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.sales.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>STATION: SALES-01</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           {hasPageAccess('/pipeline/new', userRoles) && (
-            <Button size="lg" className="rounded-xl shadow-glow subtle-shine" asChild>
+            <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" asChild>
               <Link href="/pipeline/new">
                 <Plus className="mr-2 h-4 w-4" />
-                New Opportunity
+                {t('pages.sales.newOpportunity')}
               </Link>
             </Button>
           )}
@@ -326,7 +331,7 @@ function PipelinePageContent() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search RFQs..."
+            placeholder={t('pages.sales.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -337,10 +342,10 @@ function PipelinePageContent() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            {Object.entries(statusConfig).map(([value, { label }]) => (
+            <SelectItem value="all">{t('pages.sales.allStatus')}</SelectItem>
+            {Object.entries(statusConfig).map(([value, { labelKey }]) => (
               <SelectItem key={value} value={value}>
-                {label}
+                {t(labelKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -350,10 +355,10 @@ function PipelinePageContent() {
             <SelectValue placeholder="Priority" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Priority</SelectItem>
-            {Object.entries(priorityConfig).map(([value, { label }]) => (
+            <SelectItem value="all">{t('pages.sales.allPriority')}</SelectItem>
+            {Object.entries(priorityConfig).map(([value, { labelKey }]) => (
               <SelectItem key={value} value={value}>
-                {label}
+                {t(labelKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -387,13 +392,13 @@ function PipelinePageContent() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left text-sm font-medium">RFQ</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Title</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Status</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Priority</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Due Date</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Value</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Assignee</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.rfq')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.title')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.status')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.priority')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.dueDate')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.value')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.assignee')}</th>
                   <th className="py-3 px-4 text-left text-sm font-medium w-10"></th>
                 </tr>
               </thead>
@@ -401,7 +406,7 @@ function PipelinePageContent() {
                 {filteredRFQs.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                      No RFQs found
+                      {t('pages.sales.noRfqsFound')}
                     </td>
                   </tr>
                 ) : (
@@ -418,7 +423,7 @@ function PipelinePageContent() {
           {kanbanColumns.map((col) => (
             <KanbanColumn
               key={col.status}
-              title={col.title}
+              titleKey={col.titleKey}
               status={col.status}
               rfqs={filteredRFQs}
             />
@@ -429,10 +434,10 @@ function PipelinePageContent() {
       {/* Summary */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <p>
-          Showing {filteredRFQs.length} of {rfqs.length} RFQs
+          {t('pages.sales.showingCount', { filtered: filteredRFQs.length, total: rfqs.length })}
         </p>
         <p>
-          Total Value: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimated_value || 0), 0))}
+          {t('pages.sales.totalValue')}: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimated_value || 0), 0))}
         </p>
       </div>
     </div>

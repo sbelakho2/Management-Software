@@ -44,11 +44,43 @@ class UserStatus(str, Enum):
 
 
 class RoleType(str, Enum):
-    """Predefined role types."""
+    """
+    Predefined role types aligned with frontend UserRole.
     
+    Role Hierarchy (lower = more privileged):
+    - ADMIN (0): Full system access, superuser capabilities
+    - CEO (5): Full executive access to all insights and data
+    - GM (10): General Manager, site-wide operations access
+    - EXEC (15): Executive level, strategic insights
+    - FINANCE (20): Financial operations and reporting
+    - ACCOUNTANT (25): Accounting operations
+    - HR (30): Human resources management
+    - OPS (35): Operations management
+    - QUALITY (40): Quality assurance and control
+    - AUDITOR (45): Audit and compliance
+    - IT (50): Information technology
+    - SALES (55): Sales operations
+    - PURCHASING (60): Procurement and purchasing
+    - SALES_ENGINEER (65): Technical sales support
+    - ESTIMATOR (70): Cost estimation
+    - SUPPLY_CHAIN (75): Supply chain management
+    - LOGISTICS (80): Logistics and shipping
+    - MAINTENANCE (85): Equipment maintenance
+    - WAREHOUSE (90): Warehouse operations
+    - ENGINEERING (92): Engineering and design
+    - SUPERVISOR (95): Team supervision
+    - TEAM_LEAD (97): Team leadership
+    - OPERATOR (98): Machine/process operators
+    - VIEWER (100): Read-only access
+    """
+    
+    # Executive & Admin Roles
     ADMIN = "admin"
     CEO = "ceo"
     GM = "gm"
+    EXEC = "exec"
+    
+    # Department Head Roles
     FINANCE = "finance"
     ACCOUNTANT = "accountant"
     HR = "hr"
@@ -56,15 +88,23 @@ class RoleType(str, Enum):
     QUALITY = "quality"
     AUDITOR = "auditor"
     IT = "it"
+    
+    # Specialized Roles
+    SALES = "sales"
+    PURCHASING = "purchasing"
+    SALES_ENGINEER = "sales_engineer"
+    ESTIMATOR = "estimator"
+    SUPPLY_CHAIN = "supply_chain"
+    LOGISTICS = "logistics"
+    MAINTENANCE = "maintenance"
+    WAREHOUSE = "warehouse"
+    ENGINEERING = "engineering"
+    
+    # Operational Roles
     SUPERVISOR = "supervisor"
     TEAM_LEAD = "team_lead"
     OPERATOR = "operator"
     VIEWER = "viewer"
-    # Legacy/Extended mapping
-    SALES_ENGINEER = "sales_engineer"
-    ESTIMATOR = "estimator"
-    SUPPLY_CHAIN = "supply_chain"
-    EXEC = "exec"
 
 
 class User(Base, TimestampMixin, SoftDeleteMixin):

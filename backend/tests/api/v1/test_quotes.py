@@ -994,6 +994,7 @@ class TestQuoteWorkflow:
             request=request,
             db=db,
             current_user=mock_user,
+            _=None,
         )
         
         assert response.success is True
@@ -1020,6 +1021,7 @@ class TestQuoteWorkflow:
             request=request,
             db=db,
             current_user=mock_user,
+            _=None,
         )
         
         assert response.success is True
@@ -1048,6 +1050,7 @@ class TestQuoteWorkflow:
                 request=request,
                 db=db,
                 current_user=mock_user,
+                _=None,
             )
     
     @pytest.mark.asyncio
@@ -1522,6 +1525,7 @@ class TestEdgeCases:
                 request=request,
                 db=db,
                 current_user=mock_user,
+                _=None,
             )
     
     @pytest.mark.asyncio

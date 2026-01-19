@@ -21,39 +21,37 @@ export function SettingsPageShell({ title, description, children }: SettingsPage
     await new Promise(resolve => setTimeout(resolve, 800));
     setIsSaving(false);
     toast({
-      title: 'Settings updated',
-      description: `Your ${title.toLowerCase()} have been successfully saved.`,
+      title: 'Settings Synchronized',
+      description: `Target ${title.toUpperCase()} parameters updated in registry.`,
     });
   };
 
   return (
-    <div className="space-y-8 page-fade-in max-w-4xl">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
-          <h1 className="text-3xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {title}
           </h1>
-          <p className="text-muted-foreground font-medium text-sm">{description}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{description}</p>
         </div>
-        <Button onClick={handleSave} disabled={isSaving} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
+        <Button onClick={handleSave} disabled={isSaving} className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
           {isSaving ? (
             <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Synchronizing...
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              SYNCHRONIZING...
             </>
           ) : (
             <>
-              <Save className="mr-2 h-5 w-5" />
-              Save Configuration
+              <Save className="mr-2 h-3.5 w-3.5" />
+              SAVE_CONFIGURATION
             </>
           )}
         </Button>
       </div>
-      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
-        <CardContent className="pt-8 p-8 md:p-10">
-          {children}
-        </CardContent>
-      </Card>
+      <div className="bg-rams-module">
+        {children}
+      </div>
     </div>
   );
 }

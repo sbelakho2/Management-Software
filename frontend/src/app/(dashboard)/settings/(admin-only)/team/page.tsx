@@ -46,6 +46,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { cn, formatDate, getInitials } from '@/lib/utils';
 import { useI18n } from '@/contexts/i18n-context';
 
@@ -69,20 +77,21 @@ const mockMembers: TeamMember[] = [
   { id: '6', name: 'Michael Brown', email: 'mbrown@sensei.ma', role: 'user', department: 'Warehouse', status: 'disabled' },
 ];
 
-const roleConfig: Record<TeamMember['role'], { label: string; variant: BadgeProps['variant']; description: string }> = {
-  admin: { label: 'Admin', variant: 'danger', description: 'Full access to all features and settings' },
-  manager: { label: 'Manager', variant: 'warning', description: 'Can manage team and approve workflows' },
-  user: { label: 'User', variant: 'default', description: 'Standard access to assigned features' },
-  viewer: { label: 'Viewer', variant: 'secondary', description: 'Read-only access' },
+const roleConfig: Record<TeamMember['role'], { labelKey: string; variant: BadgeProps['variant']; descriptionKey: string }> = {
+  admin: { labelKey: 'settings.team.roles.admin', variant: 'danger', descriptionKey: 'settings.team.roles.adminDesc' },
+  manager: { labelKey: 'settings.team.roles.manager', variant: 'warning', descriptionKey: 'settings.team.roles.managerDesc' },
+  user: { labelKey: 'settings.team.roles.user', variant: 'default', descriptionKey: 'settings.team.roles.userDesc' },
+  viewer: { labelKey: 'settings.team.roles.viewer', variant: 'secondary', descriptionKey: 'settings.team.roles.viewerDesc' },
 };
 
-const statusConfig: Record<TeamMember['status'], { label: string; variant: BadgeProps['variant']; icon: typeof CheckCircle }> = {
-  active: { label: 'Active', variant: 'success', icon: CheckCircle },
-  invited: { label: 'Invited', variant: 'warning', icon: Clock },
-  disabled: { label: 'Disabled', variant: 'secondary', icon: Ban },
+const statusConfig: Record<TeamMember['status'], { labelKey: string; variant: BadgeProps['variant']; icon: typeof CheckCircle }> = {
+  active: { labelKey: 'settings.team.status.active', variant: 'success', icon: CheckCircle },
+  invited: { labelKey: 'settings.team.status.invited', variant: 'warning', icon: Clock },
+  disabled: { labelKey: 'settings.team.status.disabled', variant: 'secondary', icon: Ban },
 };
 
 function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useI18n();
   const [email, setEmail] = React.useState('');
   const [role, setRole] = React.useState<TeamMember['role']>('user');
   const [department, setDepartment] = React.useState('');
@@ -99,24 +108,22 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite Team Member</DialogTitle>
-          <DialogDescription>
-            Send an invitation to join your organization
-          </DialogDescription>
+          <DialogTitle>{t('settings.team.inviteDialog.title')}</DialogTitle>
+          <DialogDescription>{t('settings.team.inviteDialog.description')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
+            <Label htmlFor="email">{t('settings.team.inviteDialog.emailLabel')}</Label>
             <Input
               id="email"
               type="email"
-              placeholder="colleague@example.com"
+              placeholder={t('settings.team.inviteDialog.emailPlaceholder')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
+            <Label htmlFor="role">{t('settings.team.inviteDialog.roleLabel')}</Label>
             <Select value={role} onValueChange={(v) => setRole(v as TeamMember['role'])}>
               <SelectTrigger id="role">
                 <SelectValue />
@@ -125,8 +132,8 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
                 {Object.entries(roleConfig).map(([key, cfg]) => (
                   <SelectItem key={key} value={key}>
                     <div className="flex items-center gap-2">
-                      <Badge variant={cfg.variant} size="sm">{cfg.label}</Badge>
-                      <span className="text-xs text-muted-foreground">{cfg.description}</span>
+                      <Badge variant={cfg.variant} size="sm">{t(cfg.labelKey)}</Badge>
+                      <span className="text-xs text-muted-foreground">{t(cfg.descriptionKey)}</span>
                     </div>
                   </SelectItem>
                 ))}
@@ -134,27 +141,27 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="department">Department</Label>
+            <Label htmlFor="department">{t('settings.team.inviteDialog.departmentLabel')}</Label>
             <Select value={department} onValueChange={setDepartment}>
               <SelectTrigger id="department">
-                <SelectValue placeholder="Select department" />
+                <SelectValue placeholder={t('settings.team.inviteDialog.departmentPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Management">Management</SelectItem>
-                <SelectItem value="Engineering">Engineering</SelectItem>
-                <SelectItem value="Production">Production</SelectItem>
-                <SelectItem value="Quality">Quality</SelectItem>
-                <SelectItem value="Sales">Sales</SelectItem>
-                <SelectItem value="Warehouse">Warehouse</SelectItem>
+                <SelectItem value="Management">{t('settings.team.departments.management')}</SelectItem>
+                <SelectItem value="Engineering">{t('settings.team.departments.engineering')}</SelectItem>
+                <SelectItem value="Production">{t('settings.team.departments.production')}</SelectItem>
+                <SelectItem value="Quality">{t('settings.team.departments.quality')}</SelectItem>
+                <SelectItem value="Sales">{t('settings.team.departments.sales')}</SelectItem>
+                <SelectItem value="Warehouse">{t('settings.team.departments.warehouse')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button onClick={handleInvite} disabled={!email}>
             <Mail className="mr-2 h-4 w-4" />
-            Send Invitation
+            {t('settings.team.inviteDialog.sendInvitation')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -163,82 +170,77 @@ function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
 }
 
 function MemberRow({ member }: { member: TeamMember }) {
+  const { t } = useI18n();
   const roleCfg = roleConfig[member.role];
   const statusCfg = statusConfig[member.status];
   const StatusIcon = statusCfg.icon;
 
   return (
-    <tr className="border-b last:border-0 hover:bg-muted/50">
-      <td className="p-3">
-        <div className="flex items-center gap-3">
-          <Avatar>
-            <AvatarFallback>{getInitials(member.name)}</AvatarFallback>
+    <TableRow className="transition-none cursor-help group">
+      <TableCell>
+        <div className="flex items-center gap-4">
+          <Avatar className="h-9 w-9 rounded-none border border-rams-line">
+            <AvatarFallback className="bg-rams-panel text-muted-foreground/40 font-mono font-black text-xs">{getInitials(member.name)}</AvatarFallback>
           </Avatar>
           <div>
-            <p className="font-medium">{member.name}</p>
-            <p className="text-sm text-muted-foreground">{member.email}</p>
+            <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{member.name}</p>
+            <p className="text-[9px] font-mono font-bold text-muted-foreground/40 lowercase">{member.email}</p>
           </div>
         </div>
-      </td>
-      <td className="p-3">
-        <Badge variant={roleCfg.variant} size="sm">{roleCfg.label}</Badge>
-      </td>
-      <td className="p-3 text-sm">{member.department}</td>
-      <td className="p-3">
-        <Badge variant={statusCfg.variant} size="sm" className="gap-1">
-          <StatusIcon className="h-3 w-3" />
-          {statusCfg.label}
+      </TableCell>
+      <TableCell>
+        <Badge variant={roleCfg.variant} size="sm">{t(roleCfg.labelKey).toUpperCase()}</Badge>
+      </TableCell>
+      <TableCell className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{member.department}</TableCell>
+      <TableCell>
+        <Badge variant={statusCfg.variant} size="sm" className="gap-1.5 h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+          <StatusIcon className="h-2.5 w-2.5" />
+          {t(statusCfg.labelKey)}
         </Badge>
-      </td>
-      <td className="p-3 text-sm text-muted-foreground">
+      </TableCell>
+      <TableCell className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase">
         {member.lastActive 
-          ? formatDate(new Date(member.lastActive), { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+          ? formatDate(new Date(member.lastActive)).toUpperCase()
           : member.invitedAt 
-            ? `Invited ${formatDate(new Date(member.invitedAt), { month: 'short', day: 'numeric' })}`
-            : '—'}
-      </td>
-      <td className="p-3">
+            ? t('settings.team.invitedAt', { date: formatDate(new Date(member.invitedAt)).toUpperCase() })
+            : t('settings.team.valueUnavailable')}
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-rams-sm">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
+              <Edit className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.refineNode')}
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <Key className="mr-2 h-4 w-4" />
-              Change Role
+              <Key className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.rotateRole')}
             </DropdownMenuItem>
             {member.status === 'invited' && (
               <DropdownMenuItem>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Resend Invitation
+                <RefreshCw className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.resendSync')}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             {member.status === 'active' ? (
-              <DropdownMenuItem className="text-warning">
-                <Ban className="mr-2 h-4 w-4" />
-                Disable Account
+              <DropdownMenuItem className="text-rams-red">
+                <Ban className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.deauthorize')}
               </DropdownMenuItem>
             ) : member.status === 'disabled' ? (
-              <DropdownMenuItem className="text-success">
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Re-enable Account
+              <DropdownMenuItem className="text-rams-green">
+                <CheckCircle className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.reauthorize')}
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem className="text-danger">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Remove
+            <DropdownMenuItem className="text-rams-red">
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> {t('settings.team.actions.terminateProtocol')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -262,96 +264,79 @@ export default function TeamSettingsPage() {
   const invitedCount = mockMembers.filter(m => m.status === 'invited').length;
 
   return (
-    <div className="space-y-8 page-fade-in max-w-5xl">
+    <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">
-              Personnel Directory
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+              {t('settings.team.title')}
             </h1>
-            <p className="text-muted-foreground font-medium text-sm">Manage organizational hierarchy, access layers, and identity nodes</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{t('settings.team.subtitle')}</p>
           </div>
         </div>
-        <Button onClick={() => setInviteOpen(true)} className="rounded-2xl shadow-glow subtle-shine h-12 px-8" size="lg">
-          <UserPlus className="mr-2 h-5 w-5" />
-          Invite Protocol
+        <Button onClick={() => setInviteOpen(true)} size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+          <UserPlus className="mr-2 h-3.5 w-3.5" />
+          {t('settings.team.inviteProtocol')}
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-6 sm:grid-cols-3">
-        <Card className="hover:border-primary/20 transition-colors">
-          <CardContent className="p-6 flex items-center gap-5">
-            <div className="p-3 bg-primary/10 rounded-2xl shadow-sm">
-              <Users className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <p className="text-3xl font-heading font-bold tracking-tight ">{mockMembers.length}</p>
-              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Total Intelligence Nodes</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="hover:border-success/20 transition-colors">
-          <CardContent className="p-6 flex items-center gap-5">
-            <div className="p-3 bg-success/10 rounded-2xl shadow-sm">
-              <CheckCircle className="h-6 w-6 text-success" />
-            </div>
-            <div>
-              <p className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{activeCount}</p>
-              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Active Operatives</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="hover:border-warning/20 transition-colors">
-          <CardContent className="p-6 flex items-center gap-5">
-            <div className="p-3 bg-warning/10 rounded-2xl shadow-sm">
-              <Clock className="h-6 w-6 text-warning" />
-            </div>
-            <div>
-              <p className="text-3xl font-heading font-bold tracking-tight text-amber-600 dark:text-amber-500">{invitedCount}</p>
-              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60">Pending Sync</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-0 sm:grid-cols-3 border border-rams-line bg-rams-line">
+        <div className="bg-rams-module p-6 border-r group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('settings.team.intelligenceNodes')}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{mockMembers.length}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('settings.team.totalRegistry')}</p>
+        </div>
+        <div className="bg-rams-module p-6 border-r group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('settings.team.activeOperatives')}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{activeCount}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{t('settings.team.pulseNominal')}</p>
+        </div>
+        <div className="bg-rams-module p-6 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('settings.team.pendingSync')}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{invitedCount}</div>
+          <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">{t('settings.team.waitingForGate')}</p>
+        </div>
       </div>
 
       {/* Filters & Table */}
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/40 bg-muted/5 p-6">
+      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
+        <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
           <div className="flex flex-col lg:flex-row gap-6">
             <div className="relative flex-1 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
               <Input
-                placeholder="Search operatives by name or intelligence tag..."
-                className="pl-11 h-12 bg-background/50 border-border/50"
+                placeholder={t('settings.team.searchPlaceholder')}
+                className="pl-10 h-10 text-[10px] bg-rams-panel"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-1 bg-rams-panel p-1 border border-rams-line rounded-none">
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-40 h-12 rounded-xl bg-background border-border/50">
-                  <SelectValue placeholder="Access Role" />
+                <SelectTrigger className="w-36 h-8 rounded-none border-none bg-transparent text-[9px] font-black uppercase tracking-widest">
+                  <SelectValue placeholder={t('settings.team.filters.role')} />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
-                  <SelectItem value="all" className="rounded-xl m-1">All Roles</SelectItem>
+                <SelectContent>
+                  <SelectItem value="all">{t('settings.team.filters.allRoles')}</SelectItem>
                   {Object.entries(roleConfig).map(([key, cfg]) => (
-                    <SelectItem key={key} value={key} className="rounded-xl m-1">{cfg.label}</SelectItem>
+                    <SelectItem key={key} value={key}>{t(cfg.labelKey).toUpperCase()}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <div className="w-px bg-rams-line/30" />
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40 h-12 rounded-xl bg-background border-border/50">
-                  <SelectValue placeholder="Node Status" />
+                <SelectTrigger className="w-36 h-8 rounded-none border-none bg-transparent text-[9px] font-black uppercase tracking-widest">
+                  <SelectValue placeholder={t('settings.team.filters.status')} />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
-                  <SelectItem value="all" className="rounded-xl m-1">All Status</SelectItem>
+                <SelectContent>
+                  <SelectItem value="all">{t('settings.team.filters.allStatus')}</SelectItem>
                   {Object.entries(statusConfig).map(([key, cfg]) => (
-                    <SelectItem key={key} value={key} className="rounded-xl m-1">{cfg.label}</SelectItem>
+                    <SelectItem key={key} value={key}>{t(cfg.labelKey).toUpperCase()}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -360,55 +345,43 @@ export default function TeamSettingsPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th>Operative Identity</th>
-                  <th>Access Authorization</th>
-                  <th>Department Node</th>
-                  <th>Sync Status</th>
-                  <th>Last Pulse</th>
-                  <th className="w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('settings.team.table.operativeIdentity')}</TableHead>
+                  <TableHead>{t('settings.team.table.accessLayer')}</TableHead>
+                  <TableHead>{t('settings.team.table.departmentNode')}</TableHead>
+                  <TableHead>{t('settings.team.table.syncStatus')}</TableHead>
+                  <TableHead>{t('settings.team.table.lastPulse')}</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map((member) => (
                   <MemberRow key={member.id} member={member} />
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           {filtered.length === 0 && (
-            <div className="text-center py-20 bg-muted/5">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6 shadow-inner-soft">
-                <Users className="h-10 w-10 text-muted-foreground/30" />
-              </div>
-              <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No operatives identified within current search parameters</p>
+            <div className="text-center py-24 bg-rams-module relative overflow-hidden">
+              <Users className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4 relative z-10" />
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60 relative z-10">{t('settings.team.zeroOperativesIdentified')}</p>
+              <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Roles Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-heading flex items-center gap-3">
-            <Shield className="h-5 w-5 text-primary/60" />
-            Access Layer Definitions
-          </CardTitle>
-          <CardDescription className="text-xs font-medium uppercase tracking-wider">Parameters for organizational permission nodes</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(roleConfig).map(([key, cfg]) => (
-              <div key={key} className="p-5 rounded-2xl border border-border/40 bg-muted/30 group hover:border-primary/20 transition-all">
-                <Badge variant={cfg.variant} size="lg" className="mb-4">{cfg.label}</Badge>
-                <p className="text-xs font-medium text-muted-foreground/80 leading-relaxed">{cfg.description}</p>
-              </div>
-            ))}
+      {/* Roles Grid */}
+      <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-2 lg:grid-cols-4">
+        {Object.entries(roleConfig).map(([key, cfg]) => (
+          <div key={key} className="p-6 bg-rams-module hover:bg-rams-panel transition-none group cursor-help">
+            <Badge variant={cfg.variant} size="sm" className="mb-4 h-4 px-1 rounded-none text-[8px] font-black uppercase tracking-widest">{cfg.label.toUpperCase()}</Badge>
+            <p className="text-[10px] font-medium text-muted-foreground/60 leading-relaxed uppercase">{cfg.description}</p>
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
 
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
     </div>

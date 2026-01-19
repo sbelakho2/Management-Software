@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const { login, isLoading, error, clearError, resetAuth } = useAuthStore();
   const { t, isRTL } = useI18n();
   
   const [email, setEmail] = React.useState('');
@@ -25,35 +25,24 @@ export default function LoginPage() {
   const [localError, setLocalError] = React.useState<string | null>(null);
   const hasLoggedIn = React.useRef(false);
 
+  const [mounted, setMounted] = React.useState(false);
+  const [showStoreError, setShowStoreError] = React.useState(false);
+
   // Use safe redirect to prevent open redirect vulnerability
   const from = getSafeRedirectPath(searchParams.get('from'), '/today');
 
-  // Clear any stale tokens and errors when landing on login page (only on initial mount)
-  // This prevents "session expired" flash when tokens are invalid
-  // But we skip this if user has already logged in (to avoid race condition)
+  // Clear any stale auth state on mount - this prevents redirect loops
+  // when user has expired tokens in localStorage
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && !hasLoggedIn.current) {
-      try {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        // Also clear persisted zustand auth state to prevent stale errors
-        localStorage.removeItem('auth-storage');
-      } catch {
-        // localStorage not available
-      }
-      // Clear any existing error in the store
-      clearError();
-    }
-  }, [clearError]);
-
-  React.useEffect(() => {
-    return () => clearError();
-  }, [clearError]);
+    resetAuth();
+    setMounted(true);
+  }, [resetAuth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
     clearError();
+    setShowStoreError(true); // Now we want to show errors from login attempts
 
     if (!email || !password) {
       setLocalError('Please fill in all fields');
@@ -70,6 +59,9 @@ export default function LoginPage() {
     }
   };
 
+  // Only show store error if user has attempted login, otherwise only show local errors
+  const displayError = localError || (showStoreError ? error : null);
+
   return (
     <div className={cn("space-y-8", isRTL && "text-right")}>
       <div>
@@ -81,9 +73,9 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {(error || localError) && (
-        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red animate-in slide-in-from-top-2 duration-300 rounded-rams-sm">
-          <AlertDescription className="font-mono font-black uppercase tracking-widest text-[9px]">{error || localError}</AlertDescription>
+      {displayError && (
+        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red rounded-rams-sm">
+          <AlertDescription className="font-mono font-black uppercase tracking-widest text-[9px]">{displayError}</AlertDescription>
         </Alert>
       )}
 
@@ -108,7 +100,7 @@ export default function LoginPage() {
               placeholder="USER_IDENTIFIER@COMPANY.COM"
               autoComplete="email"
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
@@ -141,7 +133,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               autoComplete="current-password"
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none", isRTL ? "pr-11 pl-11" : "pl-11 pr-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none", isRTL ? "pr-11 pl-11" : "pl-11 pr-11")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
@@ -176,7 +168,7 @@ export default function LoginPage() {
 
       <div className="relative">
         <div className="absolute inset-0 flex items-center" aria-hidden="true">
-          <div className="w-full border-t border-rams-border/30"></div>
+          <div className="w-full border-t border-rams-line"></div>
         </div>
         <div className="relative flex justify-center text-[8px] uppercase tracking-[0.3em] font-black">
           <span className="bg-rams-module px-4 text-muted-foreground/30">

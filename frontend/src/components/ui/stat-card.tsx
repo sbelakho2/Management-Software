@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { TrendingUp, TrendingDown, Minus, LucideIcon } from 'lucide-react';
 
 /**
@@ -45,12 +46,12 @@ export interface StatCardProps {
 }
 
 const iconColorMap = {
-  primary: 'bg-rams-panel border-rams-border text-muted-foreground',
+  primary: 'bg-rams-panel border-rams-line text-muted-foreground',
   success: 'bg-rams-green/10 border-rams-green/20 text-rams-green',
   warning: 'bg-rams-orange/10 border-rams-orange/20 text-rams-orange',
   danger: 'bg-rams-red/10 border-rams-red/20 text-rams-red',
   info: 'bg-rams-steel/10 border-rams-steel/20 text-rams-steel',
-  muted: 'bg-rams-panel border-rams-border text-muted-foreground/60',
+  muted: 'bg-rams-panel border-rams-line text-muted-foreground/60',
 };
 
 const trendColorMap = {
@@ -193,22 +194,22 @@ const statusConfig = {
   operational: {
     color: 'bg-emerald-400',
     pingColor: 'bg-emerald-400',
-    label: 'All Systems Operational',
+    labelKey: 'common.status.allSystemsOperational',
   },
   warning: {
     color: 'bg-amber-400',
     pingColor: 'bg-amber-400',
-    label: 'Minor Issues Detected',
+    labelKey: 'common.status.minorIssuesDetected',
   },
   critical: {
     color: 'bg-red-500',
     pingColor: 'bg-red-500',
-    label: 'Critical Alert',
+    labelKey: 'common.status.criticalAlert',
   },
   offline: {
     color: 'bg-gray-400',
     pingColor: 'bg-gray-400',
-    label: 'System Offline',
+    labelKey: 'common.status.systemOffline',
   },
 };
 
@@ -217,6 +218,7 @@ export function AmbientStatus({
   label,
   className,
 }: AmbientStatusProps) {
+  const { t } = useI18n();
   const config = statusConfig[status];
   const showPing = status !== 'offline';
 
@@ -228,7 +230,7 @@ export function AmbientStatus({
         )}
         <span className={cn('ambient-status-dot-solid', config.color)} />
       </span>
-      <span className="ambient-status-label">{label || config.label}</span>
+      <span className="ambient-status-label">{label || t(config.labelKey)}</span>
     </div>
   );
 }

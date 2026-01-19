@@ -30,28 +30,28 @@ export default function AndonReportsPage() {
     <div className="space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">Intelligence Reports</h1>
-            <p className="text-muted-foreground font-medium">Generated summaries and organizational performance documents</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('andon.reports.title') || 'Intelligence Reports'}</h1>
+            <p className="text-muted-foreground font-medium">{t('andon.reports.subtitle') || 'Generated summaries and organizational performance documents'}</p>
           </div>
         </div>
-        <Button size="lg" className="rounded-xl shadow-glow subtle-shine">
+        <Button size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
           <FileText className="mr-2 h-4 w-4" />
-          Generate Report
+          {t('andon.reports.generateReport') || 'Generate Report'}
         </Button>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="relative flex-1 max-w-sm group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-              <Input placeholder="Search reports..." className="pl-11 h-11 bg-background/50 border-border/50 rounded-xl" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-rams-orange transition-colors" />
+              <Input placeholder={t('andon.reports.searchPlaceholder') || 'Search reports...'} className="pl-11 h-11 bg-rams-panel border-rams-line rounded-rams-sm" />
             </div>
-            <Button variant="outline" size="icon" className="rounded-xl border-border/50 h-11 w-11">
+            <Button variant="outline" size="icon" className="rounded-rams-sm border-rams-line h-11 w-11">
               <Filter className="h-4 w-4" />
             </Button>
           </div>
@@ -60,10 +60,10 @@ export default function AndonReportsPage() {
 
       <div className="grid gap-4">
         {reports.map((report) => (
-          <Card key={report.id} className="group hover:-translate-y-1 transition-all duration-300">
+          <Card key={report.id} className="rounded-rams-sm border border-rams-line bg-rams-module group">
             <CardContent className="p-6 flex items-center justify-between">
               <div className="flex items-center gap-5">
-                <div className="p-3 bg-primary/10 text-primary rounded-2xl shadow-sm transition-transform duration-500 group-hover:scale-110">
+                <div className="p-3 bg-rams-panel border border-rams-line text-rams-orange">
                   <FileText className="h-6 w-6" />
                 </div>
                 <div>
@@ -78,19 +78,19 @@ export default function AndonReportsPage() {
                   </div>
                 </div>
               </div>
-              <Button variant="outline" size="sm" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
+              <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line hover:bg-rams-panel transition-none">
                 <Download className="mr-2 h-4 w-4" />
-                Download
+                {t('andon.reports.download') || 'Download'}
               </Button>
             </CardContent>
           </Card>
         ))}
         {reports.length === 0 && (
-          <div className="text-center py-20 bg-muted/5 rounded-[3rem] border-2 border-dashed border-border/20">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-[2rem] bg-muted mb-6">
+          <div className="text-center py-20 bg-rams-panel border-2 border-dashed border-rams-line">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-rams-module border border-rams-line mb-6">
               <FileText className="h-10 w-10 text-muted-foreground/30" />
             </div>
-            <p className="text-sm font-heading font-bold text-muted-foreground/60 tracking-tight">No intelligence reports generated.</p>
+            <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('andon.reports.empty') || 'No intelligence reports generated.'}</p>
           </div>
         )}
       </div>

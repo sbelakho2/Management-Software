@@ -23,6 +23,21 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useProductionStore } from '@/stores/production';
 import { cn, formatDate, formatCurrency } from '@/lib/utils';
 import { useI18n } from '@/contexts/i18n-context';
@@ -47,18 +62,18 @@ export default function WorkOrderDetailsPage() {
   if (!workOrder) {
     return (
       <div className="flex items-center justify-center h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="h-8 w-8 border border-rams-line bg-rams-panel animate-pulse"></div>
       </div>
     );
   }
 
   const statusConfig = {
-    planned: { label: 'Planned', color: 'bg-blue-100 text-blue-800', icon: Calendar },
-    in_progress: { label: 'In Progress', color: 'bg-green-100 text-green-800', icon: Play },
-    on_hold: { label: 'On Hold', color: 'bg-yellow-100 text-yellow-800', icon: Pause },
-    completed: { label: 'Completed', color: 'bg-slate-100 text-slate-800', icon: CheckCircle },
-    cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800', icon: AlertTriangle },
-    released: { label: 'Released', color: 'bg-indigo-100 text-indigo-800', icon: Calendar },
+    planned: { label: t('production.status.planned') || 'Planned', color: 'bg-blue-100 text-blue-800', icon: Calendar, variant: 'secondary' as const },
+    in_progress: { label: t('production.status.inProgress') || 'In Progress', color: 'bg-green-100 text-green-800', icon: Play, variant: 'success' as const },
+    on_hold: { label: t('production.status.onHold') || 'On Hold', color: 'bg-yellow-100 text-yellow-800', icon: Pause, variant: 'warning' as const },
+    completed: { label: t('production.status.completed') || 'Completed', color: 'bg-slate-100 text-slate-800', icon: CheckCircle, variant: 'default' as const },
+    cancelled: { label: t('production.status.cancelled') || 'Cancelled', color: 'bg-red-100 text-red-800', icon: AlertTriangle, variant: 'destructive' as const },
+    released: { label: t('production.status.released') || 'Released', color: 'bg-indigo-100 text-indigo-800', icon: Calendar, variant: 'secondary' as const },
   };
 
   const StatusIcon = statusConfig[workOrder.status as keyof typeof statusConfig]?.icon || Clock;
@@ -66,110 +81,133 @@ export default function WorkOrderDetailsPage() {
   const canStart = ['planned', 'released', 'on_hold'].includes(workOrder.status);
 
   return (
-    <div className="space-y-8 page-fade-in">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight ">{workOrder.work_order_number}</h1>
-              <Badge className={cn('rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider', statusConfig[workOrder.status as keyof typeof statusConfig]?.color)}>
-                {statusConfig[workOrder.status as keyof typeof statusConfig]?.label}
+              <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{workOrder.work_order_number}</h1>
+              <Badge variant={statusConfig[workOrder.status as keyof typeof statusConfig]?.variant || 'secondary'} size="sm" className="h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+                {statusConfig[workOrder.status as keyof typeof statusConfig]?.label.toUpperCase()}
               </Badge>
             </div>
-            <p className="text-muted-foreground font-medium text-sm">{(workOrder as any).product?.name || 'Unknown Product'} Node</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2 mt-1">
+              <span>{(workOrder as any).product?.name || t('production.detail.unknownProduct') || 'Unknown Product'} {t('production.detail.node') || 'Node'}</span>
+              <span className="opacity-30">|</span>
+              <span>STATION: PRODUCTION-SYNC-01</span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {canStart ? (
-            <Button size="lg" className="rounded-xl bg-emerald-600 hover:bg-emerald-700 shadow-glow subtle-shine text-white">
-              <Play className="h-4 w-4 mr-2" />
-              Initiate Execution
+            <Button size="default" className="rounded-rams-sm bg-rams-green text-white font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none hover:bg-rams-green/90">
+              <Play className="h-3.5 w-3.5 mr-2" />
+              {t('production.detail.initiateExecution') || 'INITIATE_EXECUTION'}
             </Button>
           ) : (
-            <Button variant="outline" size="lg" className="rounded-xl border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700">
-              <Pause className="h-4 w-4 mr-2" />
-              Suspend Protocol
+            <Button variant="outline" size="default" className="rounded-rams-sm border-rams-orange/30 bg-rams-orange/5 text-rams-orange font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none hover:bg-rams-orange/10">
+              <Pause className="h-3.5 w-3.5 mr-2" />
+              {t('production.detail.suspendProtocol') || 'SUSPEND_PROTOCOL'}
             </Button>
           )}
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 border border-rams-line rounded-rams-sm">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>
+                <FileText className="mr-2 h-3.5 w-3.5" /> {t('production.detail.exportSpec') || 'EXPORT_SPEC'}
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <History className="mr-2 h-3.5 w-3.5" /> {t('production.detail.viewHistory') || 'VIEW_HISTORY'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-rams-red">
+                <AlertTriangle className="mr-2 h-3.5 w-3.5" /> {t('production.detail.escalateAnomaly') || 'ESCALATE_ANOMALY'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle className="text-lg font-heading">Production Velocity</CardTitle>
-              <CardDescription className="text-xs font-medium uppercase tracking-wider">Real-time execution status and synchronization</CardDescription>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
+                <Activity className="h-4 w-4 text-rams-orange" />
+                {t('production.detail.executionVelocity') || 'Execution Velocity'}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-8">
+            <CardContent className="p-8 space-y-8">
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
-                  <span>Overall Completion Pulse</span>
-                  <span className="text-primary">0%</span>
+                <div className="flex items-center justify-between text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/60">
+                  <span>{t('production.detail.aggregationPulse') || 'Aggregation Completion Pulse'}</span>
+                  <span className="text-rams-orange">0%</span>
                 </div>
-                <Progress value={0} className="h-3 rounded-full bg-primary/10" />
+                <div className="h-1 bg-rams-panel border border-rams-line overflow-hidden">
+                  <div className="h-full bg-rams-orange transition-all duration-1000" style={{ width: '0%' }} />
+                </div>
               </div>
 
-              <div className="grid gap-6 sm:grid-cols-3">
-                <div className="p-5 rounded-2xl bg-primary/5 border border-primary/10 text-center">
-                  <p className="text-3xl font-heading font-bold tracking-tight ">{(workOrder as any).quantity}</p>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Target Units</p>
+              <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-3">
+                <div className="bg-rams-module p-6 text-center group hover:bg-rams-panel/50 transition-none cursor-help">
+                  <p className="text-[24px] font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{(workOrder as any).quantity}</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 mt-2">{t('production.detail.targetMagnitude') || 'Target Magnitude'}</p>
                 </div>
-                <div className="p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 text-center">
-                  <div className="text-3xl font-heading font-bold tracking-tight text-emerald-600 dark:text-emerald-500">{(workOrder as any).quantity_completed}</div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Passed Gate</p>
+                <div className="bg-rams-module p-6 text-center group hover:bg-rams-panel/50 transition-none cursor-help">
+                  <p className="text-[24px] font-mono font-bold tracking-tight text-rams-green tabular-nums">{(workOrder as any).quantity_completed}</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 mt-2">{t('production.detail.gateVerified') || 'Gate Verified'}</p>
                 </div>
-                <div className="p-5 rounded-2xl bg-rose-500/5 border border-rose-500/10 text-center">
-                  <div className="text-3xl font-heading font-bold tracking-tight text-red-600 dark:text-red-500">0</div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Rejected</p>
+                <div className="bg-rams-module p-6 text-center group hover:bg-rams-panel/50 transition-none cursor-help">
+                  <p className="text-[24px] font-mono font-bold tracking-tight text-rams-red tabular-nums">0</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 mt-2">{t('production.detail.scrapDeviation') || 'Scrap Deviation'}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Tabs defaultValue="operations">
-            <TabsList>
-              <TabsTrigger value="operations">Operations</TabsTrigger>
-              <TabsTrigger value="bom">BOM / Parts</TabsTrigger>
-              <TabsTrigger value="quality">Quality Checks</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
+          <Tabs defaultValue="operations" className="animate-in fade-in duration-500">
+            <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit">
+              <TabsTrigger value="operations">{t('production.detail.tabs.operations') || 'OPERATIONS_DEPT'}</TabsTrigger>
+              <TabsTrigger value="bom">{t('production.detail.tabs.bom') || 'RESOURCE_BOM'}</TabsTrigger>
+              <TabsTrigger value="quality">{t('production.detail.tabs.quality') || 'QUALITY_GATES'}</TabsTrigger>
+              <TabsTrigger value="history">{t('production.detail.tabs.history') || 'EVENT_LOG'}</TabsTrigger>
             </TabsList>
-            <TabsContent value="operations" className="mt-4">
-              <Card>
+            <TabsContent value="operations" className="mt-6 space-y-4">
+              <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden">
                 <CardContent className="p-0">
-                  <div className="divide-y">
-                    {/* Mock operations since they aren't in the base store model yet */}
+                  <div className="divide-y divide-rams-line/30">
                     {[
-                      { id: '1', name: 'Material Preparation', station: 'ST-01', status: 'completed', time: '2h 15m' },
-                      { id: '2', name: 'CNC Machining', station: 'CNC-04', status: 'in_progress', time: '1h 45m' },
-                      { id: '3', name: 'Surface Grinding', station: 'GR-02', status: 'pending', time: '0m' },
-                      { id: '4', name: 'Final Inspection', station: 'QC-01', status: 'pending', time: '0m' },
+                      { id: '1', name: 'Material Ingestion', station: 'ST-01', status: 'completed', time: '2H 15M' },
+                      { id: '2', name: 'CNC Precision Routing', station: 'CNC-04', status: 'in_progress', time: '1H 45M' },
+                      { id: '3', name: 'Surface Hardening', station: 'GR-02', status: 'pending', time: '—' },
+                      { id: '4', name: 'Final Sync Inspection', station: 'QC-01', status: 'pending', time: '—' },
                     ].map((op) => (
-                      <div key={op.id} className="p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-4">
+                      <div key={op.id} className="p-5 flex items-center justify-between hover:bg-rams-panel transition-none group cursor-help">
+                        <div className="flex items-center gap-6">
                           <div className={cn(
-                            "h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold",
-                            op.status === 'completed' ? "bg-green-100 text-green-700" :
-                            op.status === 'in_progress' ? "bg-blue-100 text-blue-700 animate-pulse" :
-                            "bg-muted text-muted-foreground"
+                            "h-10 w-10 border flex items-center justify-center text-[10px] font-mono font-black tabular-nums transition-none",
+                            op.status === 'completed' ? "bg-rams-green/5 border-rams-green/20 text-rams-green" :
+                            op.status === 'in_progress' ? "bg-rams-orange/10 border-rams-orange text-rams-orange animate-pulse shadow-[0_0_10px_rgba(255,190,0,0.1)]" :
+                            "bg-rams-panel border-rams-line text-muted-foreground/20"
                           )}>
-                            {op.id}
+                            {op.id.padStart(2, '0')}
                           </div>
                           <div>
-                            <div className="font-medium">{op.name}</div>
-                            <div className="text-xs text-muted-foreground">Station: {op.station}</div>
+                            <div className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{op.name}</div>
+                            <div className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-0.5">STATION: {op.station}</div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-sm text-muted-foreground">{op.time}</div>
-                          <Badge variant={op.status === 'completed' ? 'success' : op.status === 'in_progress' ? 'default' : 'secondary' as any}>
-                            {op.status.replace('_', ' ')}
+                        <div className="flex items-center gap-8">
+                          <div className="text-[10px] font-mono font-bold text-muted-foreground/30 tabular-nums uppercase">{op.time}</div>
+                          <Badge variant={op.status === 'completed' ? 'success' : op.status === 'in_progress' ? 'warning' : 'secondary'} size="sm" className="h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+                            {op.status.toUpperCase()}
                           </Badge>
                         </div>
                       </div>
@@ -178,64 +216,61 @@ export default function WorkOrderDetailsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
-            <TabsContent value="bom" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">Required Materials</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Package className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                    <p>Bill of Materials information will be loaded here.</p>
-                  </div>
+            <TabsContent value="bom" className="mt-6">
+              <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+                <CardContent className="p-12 text-center">
+                  <Package className="h-12 w-12 mx-auto mb-4 opacity-10" />
+                  <p className="text-[10px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">Retrieving Bill of Materials protocol nodes...</p>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Schedule</CardTitle>
+        <div className="space-y-8">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Temporal Schedule</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Start Date</span>
-                <span className="font-medium">{workOrder.scheduled_start ? formatDate(workOrder.scheduled_start) : '-'}</span>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>Start Horizon</span>
+                <span className="font-mono font-bold text-foreground/80">{workOrder.scheduled_start ? formatDate(workOrder.scheduled_start).toUpperCase() : '—'}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">End Date</span>
-                <span className="font-medium">{workOrder.scheduled_end ? formatDate(workOrder.scheduled_end) : '-'}</span>
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>Target Terminal</span>
+                <span className="font-mono font-bold text-foreground/80">{workOrder.scheduled_end ? formatDate(workOrder.scheduled_end).toUpperCase() : '—'}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Lead Time</span>
-                <span className="font-medium">5 Days</span>
+              <div className="border-t border-rams-line pt-4">
+                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                  <span>Standard Lead Time</span>
+                  <span className="font-mono font-bold text-foreground/60 uppercase">05 DAYS</span>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Assigned Resources</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Resource Allocation</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-primary" />
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center gap-4 group">
+                <div className="h-10 w-10 rounded-none bg-rams-panel border border-rams-line flex items-center justify-center text-muted-foreground/40 group-hover:border-rams-orange transition-none">
+                  <Users className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium">Operations Team A</div>
-                  <div className="text-xs text-muted-foreground">3 Operators assigned</div>
+                  <div className="text-[11px] font-black uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">Operations Team Alpha</div>
+                  <div className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase mt-0.5">03 Active Operatives Assigned</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-primary" />
+              <div className="flex items-center gap-4 group">
+                <div className="h-10 w-10 rounded-none bg-rams-panel border border-rams-line flex items-center justify-center text-muted-foreground/40 group-hover:border-rams-orange transition-none">
+                  <FileText className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium">Standard Work</div>
-                  <div className="text-xs text-muted-foreground">SW-WO-2024-V2</div>
+                  <div className="text-[11px] font-black uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">Standard Work Protocol</div>
+                  <div className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase mt-0.5">SW-WO-2024-V2 // SYNCED</div>
                 </div>
               </div>
             </CardContent>

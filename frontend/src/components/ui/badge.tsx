@@ -10,10 +10,10 @@ const badgeVariants = cva(
         default:
           'border-black/10 bg-rams-orange text-black',
         secondary:
-          'border-rams-border bg-rams-panel text-muted-foreground',
+          'border-rams-line bg-rams-panel text-muted-foreground',
         destructive:
           'border-transparent bg-rams-red text-white',
-        outline: 'text-foreground border-rams-border bg-transparent',
+        outline: 'text-foreground border-rams-line bg-transparent',
         ghost: 'border-transparent bg-transparent text-foreground',
         primary:
           'border-black/10 bg-rams-orange text-black',
@@ -28,7 +28,7 @@ const badgeVariants = cva(
         active:
           'border-rams-green/20 bg-rams-green/10 text-rams-green',
         inactive:
-          'border-rams-border bg-rams-panel/50 text-muted-foreground/60',
+          'border-rams-line bg-rams-panel/50 text-muted-foreground/60',
         completed:
           'border-rams-steel/20 bg-rams-steel/10 text-rams-steel',
         failed:

@@ -277,7 +277,12 @@ class TestCTQCRUD:
             make_result(scalars_all=ctqs),
         ]
 
-        response = await list_ctqs(mock_db, mock_user, page=1, page_size=20)
+        response = await list_ctqs(
+            mock_db, mock_user,
+            category=None, priority=None, status=None, part_number=None,
+            rfq_id=None, is_customer_critical=None, search=None,
+            page=1, page_size=20
+        )
 
         assert response.success is True
         assert len(response.data) == 2
@@ -294,7 +299,10 @@ class TestCTQCRUD:
         ]
 
         response = await list_ctqs(
-            mock_db, mock_user, category=CTQCategory.DIMENSIONAL, page=1, page_size=20
+            mock_db, mock_user,
+            category=CTQCategory.DIMENSIONAL, priority=None, status=None, part_number=None,
+            rfq_id=None, is_customer_critical=None, search=None,
+            page=1, page_size=20
         )
 
         assert response.success is True

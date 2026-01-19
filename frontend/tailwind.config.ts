@@ -68,14 +68,15 @@ const config: Config = {
         },
         // Sensei-Rams 3.0 - Industrial Functional Palette
         rams: {
-          chassis: '#F2F2F2',
-          module: '#E6E6E6',
-          panel: '#D9D9D9',
-          line: '#CCCCCC',
-          orange: '#FFBE00',
-          red: '#D62D2D',
-          green: '#2D8C3C',
-          steel: '#4A90E2',
+          chassis: 'var(--rams-chassis, #F2F2F2)',
+          module: 'var(--rams-module, #E6E6E6)',
+          panel: 'var(--rams-panel, #D9D9D9)',
+          border: 'var(--rams-border, #CCCCCC)',
+          line: 'var(--rams-line, #CCCCCC)',
+          orange: 'var(--rams-accent, var(--rams-orange, #FFBE00))',
+          red: 'var(--rams-red, #D62D2D)',
+          green: 'var(--rams-green, #2D8C3C)',
+          steel: 'var(--rams-steel, #4A90E2)',
         },
       },
       borderRadius: {

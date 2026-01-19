@@ -11,14 +11,35 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, resetAuth } = useAuthStore();
   const router = useRouter();
 
-  React.useEffect(() => {
-    if (isAuthenticated && !isLoading) {
-      router.push('/today');
+  const isTokenValid = React.useCallback((token: string | null) => {
+    if (!token) return false;
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    try {
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (typeof payload.exp !== 'number') return true;
+      return payload.exp > Math.floor(Date.now() / 1000);
+    } catch {
+      return false;
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, []);
+
+  React.useEffect(() => {
+    // Only redirect if we have both: isAuthenticated state AND a valid token in localStorage
+    // This prevents redirect loops when Zustand state is stale but tokens are expired
+    if (isAuthenticated && !isLoading) {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+      if (isTokenValid(token)) {
+        router.push('/today');
+      } else {
+        // State says authenticated but no token - reset the stale state
+        resetAuth();
+      }
+    }
+  }, [isAuthenticated, isLoading, router, resetAuth, isTokenValid]);
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-rams-chassis page-fade-in">
@@ -26,20 +47,6 @@ export default function AuthLayout({
       
       {/* Industrial Bezel Frame */}
       <div className="fixed inset-0 border-[8px] border-rams-chassis pointer-events-none z-[100] hidden md:block" aria-hidden="true" />
-      
-      {/* Screw Details */}
-      <div className="fixed top-2 left-2 z-[101] hidden md:block opacity-30 select-none text-foreground">
-        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
-      </div>
-      <div className="fixed top-2 right-2 z-[101] hidden md:block opacity-30 select-none text-foreground">
-        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
-      </div>
-      <div className="fixed bottom-2 left-2 z-[101] hidden md:block opacity-30 select-none text-foreground">
-        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
-      </div>
-      <div className="fixed bottom-2 right-2 z-[101] hidden md:block opacity-30 select-none text-foreground">
-        <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1" /><path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1" /></svg>
-      </div>
 
       <div className="flex-1 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
@@ -59,7 +66,7 @@ export default function AuthLayout({
         </div>
 
         <main id="main-content" className="sm:mx-auto sm:w-full sm:max-w-md">
-          <div className="bg-rams-module border border-rams-border rounded-rams-sm p-8 sm:p-10 relative overflow-hidden">
+          <div className="bg-rams-module border border-rams-line rounded-rams-sm p-8 sm:p-10 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-rams-orange/20" />
             {children}
           </div>
@@ -67,7 +74,7 @@ export default function AuthLayout({
       </div>
       
       {/* System Metadata Bar (Bottom) */}
-      <div className="fixed bottom-0 left-0 right-0 h-8 bg-rams-chassis z-[100] border-t border-rams-border px-6 hidden md:flex items-center justify-between text-[10px] font-mono opacity-60 uppercase tracking-widest pointer-events-none">
+      <div className="fixed bottom-0 left-0 right-0 h-8 bg-rams-chassis z-[100] border-t border-rams-line px-6 hidden md:flex items-center justify-between text-[10px] font-mono opacity-60 uppercase tracking-widest pointer-events-none">
         <div className="flex gap-6">
           <span>STATION: AUTH-01</span>
           <span>OS_VER: 3.0.0-RAMS</span>

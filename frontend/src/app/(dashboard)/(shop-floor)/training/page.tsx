@@ -96,6 +96,7 @@ const formatConfig: Record<string, { label: string; color: string }> = {
 };
 
 function TrainingStats() {
+  const { t } = useI18n();
   const { skills, trainings, records } = useTrainingStore();
   
   const expiringCount = records.filter(r => {
@@ -103,21 +104,21 @@ function TrainingStats() {
   }).length;
 
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Skill Nodes</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.activeSkillNodes') || 'Active Skill Nodes'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{skills.length}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Operational Protocols</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.operationalProtocols') || 'Operational Protocols'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{trainings.length}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Synchronization Pulse</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.synchronizationPulse') || 'Synchronization Pulse'}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{records.filter(r => r.status === 'in_progress').length}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">Threshold Alerts</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">{t('training.stats.thresholdAlerts') || 'Threshold Alerts'}</p>
         <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', expiringCount > 0 ? 'text-rams-red' : 'text-foreground/90')}>
           {expiringCount}
         </p>
@@ -127,6 +128,7 @@ function TrainingStats() {
 }
 
 function CertificationsTab() {
+  const { t } = useI18n();
   const router = useRouter();
   const { skills, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
@@ -152,7 +154,7 @@ function CertificationsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search skills..."
+            placeholder={t('pages.training.certifications.searchPlaceholder') || 'Search skills...'}
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -163,7 +165,7 @@ function CertificationsTab() {
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
+            <SelectItem value="all">{t('common.allCategories') || 'All Categories'}</SelectItem>
             {categories.map(cat => (
               <SelectItem key={cat} value={cat}>{cat}</SelectItem>
             ))}
@@ -188,10 +190,10 @@ function CertificationsTab() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Edit</DropdownMenuItem>
-                    <DropdownMenuItem>View Certified Employees</DropdownMenuItem>
+                    <DropdownMenuItem>{t('common.edit') || 'Edit'}</DropdownMenuItem>
+                    <DropdownMenuItem>{t('pages.training.certifications.viewCertifiedEmployees') || 'View Certified Employees'}</DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-danger">Archive</DropdownMenuItem>
+                    <DropdownMenuItem className="text-danger">{t('common.archive') || 'Archive'}</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -200,16 +202,16 @@ function CertificationsTab() {
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  Valid {skill.recertification_interval_days / 30} months
+                  {t('pages.training.certifications.validMonths') || 'Valid'} {skill.recertification_interval_days / 30} {t('common.months') || 'months'}
                 </div>
-                {skill.is_safety_critical && <Badge variant="destructive" size="sm">Safety</Badge>}
+                {skill.is_safety_critical && <Badge variant="destructive" size="sm">{t('pages.training.certifications.safety') || 'Safety'}</Badge>}
               </div>
             </CardContent>
           </Card>
         ))}
         {filtered.length === 0 && !isLoading && (
           <div className="col-span-full py-12 text-center text-muted-foreground">
-            No skills found
+            {t('pages.training.certifications.noSkillsFound') || 'No skills found'}
           </div>
         )}
       </div>
@@ -218,6 +220,7 @@ function CertificationsTab() {
 }
 
 function ProgramsTab() {
+  const { t } = useI18n();
   const router = useRouter();
   const { trainings, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
@@ -235,7 +238,7 @@ function ProgramsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search programs..."
+            placeholder={t('pages.training.programs.searchPlaceholder') || 'Search programs...'}
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -246,7 +249,7 @@ function ProgramsTab() {
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="all">{t('pages.training.programs.allTypes') || 'All Types'}</SelectItem>
             <SelectItem value="INTERNAL">Internal</SelectItem>
             <SelectItem value="EXTERNAL">External</SelectItem>
             <SelectItem value="ON_THE_JOB">On the Job</SelectItem>
@@ -259,10 +262,10 @@ function ProgramsTab() {
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>
-              <th className="text-left p-3 font-medium text-sm">Program</th>
-              <th className="text-left p-3 font-medium text-sm">Type</th>
-              <th className="text-left p-3 font-medium text-sm">Dates</th>
-              <th className="text-center p-3 font-medium text-sm">Enrolled</th>
+              <th className="text-left p-3 font-medium text-sm">{t('pages.training.programs.table.program') || 'Program'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('common.type') || 'Type'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('pages.training.programs.table.dates') || 'Dates'}</th>
+              <th className="text-center p-3 font-medium text-sm">{t('common.enrolled') || 'Enrolled'}</th>
               <th className="p-3 w-10"></th>
             </tr>
           </thead>
@@ -296,7 +299,7 @@ function ProgramsTab() {
             })}
             {filtered.length === 0 && !isLoading && (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-muted-foreground">No programs found</td>
+                <td colSpan={5} className="p-8 text-center text-muted-foreground">{t('pages.training.programs.noProgramsFound') || 'No programs found'}</td>
               </tr>
             )}
           </tbody>
@@ -307,6 +310,7 @@ function ProgramsTab() {
 }
 
 function RecordsTab() {
+  const { t } = useI18n();
   const { records, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
@@ -324,7 +328,7 @@ function RecordsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by employee or training..."
+            placeholder={t('pages.training.records.searchPlaceholder') || 'Search by employee or training...'}
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -335,7 +339,7 @@ function RecordsTab() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="all">{t('common.allStatus') || 'All Status'}</SelectItem>
             {Object.entries(recordStatusConfig).map(([key, cfg]) => (
               <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
             ))}
@@ -343,7 +347,7 @@ function RecordsTab() {
         </Select>
         <Button variant="outline">
           <Download className="mr-2 h-4 w-4" />
-          Export
+          {t('common.export') || 'Export'}
         </Button>
       </div>
 
@@ -351,12 +355,12 @@ function RecordsTab() {
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>
-              <th className="text-left p-3 font-medium text-sm">Employee</th>
-              <th className="text-left p-3 font-medium text-sm">Training</th>
-              <th className="text-left p-3 font-medium text-sm">Status</th>
-              <th className="text-left p-3 font-medium text-sm">Enrolled</th>
-              <th className="text-left p-3 font-medium text-sm">Completed</th>
-              <th className="text-center p-3 font-medium text-sm">Score</th>
+              <th className="text-left p-3 font-medium text-sm">{t('pages.training.records.table.employee') || 'Employee'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('pages.training.records.table.training') || 'Training'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('common.status') || 'Status'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('common.enrolled') || 'Enrolled'}</th>
+              <th className="text-left p-3 font-medium text-sm">{t('common.completed') || 'Completed'}</th>
+              <th className="text-center p-3 font-medium text-sm">{t('pages.training.records.table.score') || 'Score'}</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -407,7 +411,7 @@ function RecordsTab() {
             })}
             {filtered.length === 0 && !isLoading && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-muted-foreground">No records found</td>
+                <td colSpan={6} className="p-8 text-center text-muted-foreground">{t('pages.training.records.noRecordsFound') || 'No records found'}</td>
               </tr>
             )}
           </tbody>
@@ -443,7 +447,7 @@ function TrainingPageContent() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="training-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.training.title')}
@@ -457,28 +461,28 @@ function TrainingPageContent() {
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => router.push('/training/matrix')}>
             <TrendingUp className="mr-2 h-3.5 w-3.5" />
-            Skills Matrix
+            {t('training.skillsMatrix') || 'Skills Matrix'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
                 <Plus className="mr-2 h-3.5 w-3.5" />
-                Initialize Activity
+                {t('training.initializeActivity') || 'Initialize Activity'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => router.push('/training/certifications/new')}>
                 <Award className="mr-2 h-3.5 w-3.5" />
-                New Certification
+                {t('training.newCertification') || 'New Certification'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/training/programs/new')}>
                 <BookOpen className="mr-2 h-3.5 w-3.5" />
-                New Training Program
+                {t('training.newTrainingProgram') || 'New Training Program'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push('/training/enroll')}>
                 <User className="mr-2 h-3.5 w-3.5" />
-                Enroll Employee
+                {t('training.enrollEmployee') || 'Enroll Employee'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -489,8 +493,8 @@ function TrainingPageContent() {
       <TrainingStats />
 
       {/* Main Content (Modular Rack) */}
-      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
-        <CardHeader className="p-0 border-b border-rams-border bg-rams-panel/20">
+      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
+        <CardHeader className="p-0 border-b border-rams-line bg-rams-panel/20">
           <div className="flex">
             <button
               className={cn(
@@ -503,12 +507,12 @@ function TrainingPageContent() {
             >
               <div className="flex items-center gap-2">
                 <Award className="h-3.5 w-3.5" />
-                Certifications
+                {t('training.tabs.certifications') || 'Certifications'}
               </div>
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line',
                 activeTab === 'programs'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
@@ -517,12 +521,12 @@ function TrainingPageContent() {
             >
               <div className="flex items-center gap-2">
                 <BookOpen className="h-3.5 w-3.5" />
-                Programs
+                {t('training.tabs.programs') || 'Programs'}
               </div>
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-border/30',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line',
                 activeTab === 'records'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
                   : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
@@ -531,7 +535,7 @@ function TrainingPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5" />
-                Records
+                {t('training.tabs.records') || 'Records'}
               </div>
             </button>
           </div>

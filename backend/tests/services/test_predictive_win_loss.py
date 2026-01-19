@@ -117,7 +117,8 @@ def prediction_model() -> WinLossPredictionModel:
 def prediction_engine(historical_rfqs: list[HistoricalRFQ]) -> PredictiveWinLossEngine:
     """Create configured prediction engine."""
     engine = PredictiveWinLossEngine()
-    engine.add_historical_data(historical_rfqs)
+    # Use async_train=False to avoid Celery/Redis connection in tests
+    engine.add_historical_data(historical_rfqs, async_train=False)
     return engine
 
 
@@ -862,7 +863,8 @@ class TestPredictiveWinLossEngine:
         """Test adding historical data."""
         engine = PredictiveWinLossEngine()
         
-        engine.add_historical_data(historical_rfqs)
+        # Use async_train=False to avoid Celery/Redis connection in tests
+        engine.add_historical_data(historical_rfqs, async_train=False)
         
         assert len(engine._historical_data) == len(historical_rfqs)
     
@@ -1046,8 +1048,8 @@ class TestIntegration:
         # Create engine
         engine = create_win_loss_predictor()
         
-        # Add historical data
-        engine.add_historical_data(historical_rfqs)
+        # Add historical data (use async_train=False to avoid Celery/Redis)
+        engine.add_historical_data(historical_rfqs, async_train=False)
         
         # Make prediction
         features = {
@@ -1099,15 +1101,15 @@ class TestIntegration:
         """Test that confidence interval narrows with more data."""
         engine = create_win_loss_predictor()
         
-        # Small dataset
-        engine.add_historical_data(historical_rfqs[:10])
+        # Small dataset (use async_train=False to avoid Celery/Redis)
+        engine.add_historical_data(historical_rfqs[:10], async_train=False)
         
         features = {"price_competitiveness": 0.7, "dfm_score": 0.8}
         result1 = engine.predict("RFQ-1", features)
         width1 = result1.confidence_interval.interval_width
         
-        # Add more data
-        engine.add_historical_data(historical_rfqs[10:])
+        # Add more data (use async_train=False to avoid Celery/Redis)
+        engine.add_historical_data(historical_rfqs[10:], async_train=False)
         
         result2 = engine.predict("RFQ-2", features)
         width2 = result2.confidence_interval.interval_width

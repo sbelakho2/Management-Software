@@ -51,11 +51,11 @@ import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type { RFQStatus, Priority, RFQ } from '@/types';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
-const STAGES: Array<{ id: RFQStatus; label: string }> = [
-  { id: 'new', label: 'New' },
-  { id: 'reviewing', label: 'Reviewing' },
-  { id: 'quoting', label: 'Quoting' },
-  { id: 'submitted', label: 'Submitted' },
+const STAGES: Array<{ id: RFQStatus; labelKey: string }> = [
+  { id: 'new', labelKey: 'pages.pipeline.stages.new' },
+  { id: 'reviewing', labelKey: 'pages.pipeline.stages.reviewing' },
+  { id: 'quoting', labelKey: 'pages.pipeline.stages.quoting' },
+  { id: 'submitted', labelKey: 'pages.pipeline.stages.submitted' },
 ];
 
 export default function PipelinePage() {
@@ -233,12 +233,12 @@ export default function PipelinePage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'new': return <Badge variant="secondary">New</Badge>;
-      case 'reviewing': return <Badge variant="default">Reviewing</Badge>;
-      case 'quoting': return <Badge variant="warning">Quoting</Badge>;
-      case 'submitted': return <Badge variant="success">Submitted</Badge>;
-      case 'won': return <Badge variant="success">Won</Badge>;
-      case 'lost': return <Badge variant="destructive">Lost</Badge>;
+      case 'new': return <Badge variant="secondary">{t('pages.pipeline.statusBadges.new')}</Badge>;
+      case 'reviewing': return <Badge variant="default">{t('pages.pipeline.statusBadges.reviewing')}</Badge>;
+      case 'quoting': return <Badge variant="warning">{t('pages.pipeline.statusBadges.quoting')}</Badge>;
+      case 'submitted': return <Badge variant="success">{t('pages.pipeline.statusBadges.submitted')}</Badge>;
+      case 'won': return <Badge variant="success">{t('pages.pipeline.statusBadges.won')}</Badge>;
+      case 'lost': return <Badge variant="destructive">{t('pages.pipeline.statusBadges.lost')}</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
   };
@@ -246,14 +246,14 @@ export default function PipelinePage() {
   if (!isTestEnv && isLoading && rfqs.length === 0) {
     return (
       <div className="space-y-8">
-        <div className="flex items-center justify-between border-b border-rams-border pb-8">
+        <div className="flex items-center justify-between border-b border-rams-line pb-8">
           <Skeleton className="h-8 w-48 rounded-rams-sm" />
           <Skeleton className="h-10 w-32 rounded-rams-sm" />
         </div>
-        <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-          {[1, 2, 3, 4].map(i => <div key={i} className="bg-rams-module p-6 border-r border-rams-border last:border-r-0"><Skeleton className="h-12 w-full rounded-rams-sm" /></div>)}
+        <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+          {[1, 2, 3, 4].map(i => <div key={i} className="bg-rams-module p-6 border-r border-rams-line last:border-r-0"><Skeleton className="h-12 w-full rounded-rams-sm" /></div>)}
         </div>
-        <Skeleton className="h-96 w-full rounded-rams-sm border border-rams-border" />
+        <Skeleton className="h-96 w-full rounded-rams-sm border border-rams-line" />
       </div>
     );
   }
@@ -261,7 +261,7 @@ export default function PipelinePage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="pipeline-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.pipeline.title')}
@@ -269,44 +269,44 @@ export default function PipelinePage() {
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
             <span>{t('pages.pipeline.subtitle')}</span>
             <span className="opacity-30">|</span>
-            <span>STATION: PIPELINE-01</span>
+            <span>{t('pages.pipeline.station')}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => exportRFQs()} disabled={isLoading}>
             <Download className="mr-2 h-3.5 w-3.5" />
-            Export Intel
+            {t('common.export')}
           </Button>
           <Button asChild size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase">
             <Link href="/pipeline/new">
               <Plus className="mr-2 h-3.5 w-3.5" />
-              New Opportunity
+              {t('pages.pipeline.actions.newRfq')}
             </Link>
           </Button>
         </div>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
-        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Intel Nodes</p>
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
+        <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.activeIntelNodes')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.activeRFQs}</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2">{effectiveStats.overdueCount} Critical Thresholds</p>
+          <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2">{effectiveStats.overdueCount} {t('pages.pipeline.stats.criticalThresholds')}</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Pipeline Magnitude</p>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.pipelineMagnitude')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(effectiveStats.totalValue)}</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">Across {effectiveStats.totalRFQs} RFQs</p>
+          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">{t('pages.pipeline.stats.acrossRfqs', { count: effectiveStats.totalRFQs })}</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Response Velocity</p>
+        <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.responseVelocity')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.avgResponseTime}h</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2">Optimal range identified</p>
+          <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2">{t('pages.pipeline.stats.optimalRangeIdentified')}</p>
         </div>
-        <div className="bg-rams-module p-6 border-b border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Conversion Rate</p>
+        <div className="bg-rams-module p-6 border-b border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.conversionRate')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.conversionRate}%</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">Protocol: ALPHA_VARIANCE</p>
+          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">{t('pages.pipeline.stats.protocolAlphaVariance')}</p>
         </div>
       </div>
 
@@ -317,7 +317,7 @@ export default function PipelinePage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
               <Input
-                placeholder="SEARCH_PROTOCOLS..."
+                placeholder={t('common.search')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10 h-10 text-[10px]"
@@ -326,31 +326,31 @@ export default function PipelinePage() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px] h-10 text-[10px]">
                 <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
-                <SelectValue placeholder="STATUS_STATE" />
+                <SelectValue placeholder={t('common.status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">ALL_STAGES</SelectItem>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
                 {STAGES.map(stage => (
-                  <SelectItem key={stage.id} value={stage.id}>{stage.label.toUpperCase()}</SelectItem>
+                  <SelectItem key={stage.id} value={stage.id}>{t(stage.labelKey)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-[160px] h-10 text-[10px]">
                 <AlertCircle className="mr-2 h-3.5 w-3.5 opacity-40" />
-                <SelectValue placeholder="PRIORITY_LVL" />
+                <SelectValue placeholder={t('common.priority.label')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">ALL_PRIORITIES</SelectItem>
-                <SelectItem value="urgent">URGENT</SelectItem>
-                <SelectItem value="high">HIGH</SelectItem>
-                <SelectItem value="medium">MEDIUM</SelectItem>
-                <SelectItem value="low">LOW</SelectItem>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                <SelectItem value="urgent">{t('common.priority.urgent')}</SelectItem>
+                <SelectItem value="high">{t('common.priority.high')}</SelectItem>
+                <SelectItem value="medium">{t('common.priority.medium')}</SelectItem>
+                <SelectItem value="low">{t('common.priority.low')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm">
+          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-line rounded-rams-sm">
             <Button
               variant={view === 'list' ? 'default' : 'ghost'}
               size="sm"
@@ -358,7 +358,7 @@ export default function PipelinePage() {
               className={cn("h-8 px-3 rounded-none", view === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
             >
               <LayoutList className="mr-2 h-3.5 w-3.5" />
-              LIST
+              {t('pages.pipeline.views.list')}
             </Button>
             <Button
               variant={view === 'board' ? 'default' : 'ghost'}
@@ -367,7 +367,7 @@ export default function PipelinePage() {
               className={cn("h-8 px-3 rounded-none", view === 'board' ? "bg-rams-orange text-black" : "text-muted-foreground")}
             >
               <LayoutGrid className="mr-2 h-3.5 w-3.5" />
-              BOARD
+              {t('pages.pipeline.views.board')}
             </Button>
           </div>
         </div>
@@ -388,13 +388,13 @@ export default function PipelinePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>RFQ_NUMBER</TableHead>
-                  <TableHead>OPPORTUNITY_TITLE</TableHead>
-                  <TableHead>CUSTOMER_NODE</TableHead>
-                  <TableHead>STATUS_STATE</TableHead>
-                  <TableHead>PRIORITY_LVL</TableHead>
-                  <TableHead className="text-right">EST_VALUE</TableHead>
-                  <TableHead>THRESHOLD_DATE</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.rfqNumber')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.opportunityTitle')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.customerNode')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.statusState')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.priorityLvl')}</TableHead>
+                  <TableHead className="text-right">{t('pages.pipeline.tableHeaders.estValue')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.thresholdDate')}</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -403,16 +403,16 @@ export default function PipelinePage() {
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-24">
                       <div className="flex flex-col items-center gap-4">
-                        <div className="p-4 bg-rams-panel border border-rams-border rounded-none">
+                        <div className="p-4 bg-rams-panel border border-rams-line rounded-none">
                           <Plus className="h-8 w-8 text-muted-foreground/20" />
                         </div>
                         <div>
-                          <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
-                          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new opportunity</p>
+                          <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.pipeline.emptyState.title')}</p>
+                          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">{t('pages.pipeline.emptyState.description')}</p>
                         </div>
                         {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
                           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-rams-orange hover:bg-rams-orange/5">
-                            RESET_FILTERS
+                            {t('pages.pipeline.actions.resetFilters')}
                           </Button>
                         )}
                       </div>
@@ -432,7 +432,7 @@ export default function PipelinePage() {
                         </span>
                       </TableCell>
                       <TableCell className="font-sans font-bold text-[11px] uppercase tracking-tight text-muted-foreground/60">
-                        {rfq.customer?.name || 'Unknown'}
+                        {rfq.customer?.name || t('pages.pipeline.unknown')}
                       </TableCell>
                       <TableCell>{getStatusBadge(rfq.status)}</TableCell>
                       <TableCell>
@@ -441,7 +441,7 @@ export default function PipelinePage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono font-bold tabular-nums">
-                        {formatCurrency(rfq.estimated_value, rfq.currency)}
+                        {formatCurrency(rfq.estimated_value ?? 0, rfq.currency)}
                       </TableCell>
                       <TableCell className="font-mono text-[10px] uppercase tracking-tighter text-muted-foreground/60">
                         {rfq.due_date ? formatDate(new Date(rfq.due_date)) : 'N/A'}
@@ -455,14 +455,14 @@ export default function PipelinePage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => router.push(`/pipeline/${rfq.id}`)}>
-                              <ArrowRight className="mr-2 h-3.5 w-3.5" /> ANALYZE
+                              <ArrowRight className="mr-2 h-3.5 w-3.5" /> {t('pages.pipeline.actions.analyze')}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => router.push(`/quotes/new?rfq=${rfq.id}`)}>
-                              <Plus className="mr-2 h-3.5 w-3.5" /> INITIALIZE_QUOTE
+                              <Plus className="mr-2 h-3.5 w-3.5" /> {t('pages.pipeline.actions.initializeQuote')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-rams-red" onClick={() => deleteRFQ(rfq.id)}>
-                              TERMINATE_NODE
+                              {t('pages.pipeline.actions.terminateNode')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

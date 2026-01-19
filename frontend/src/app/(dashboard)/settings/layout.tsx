@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface SettingsLayoutProps {
   children: React.ReactNode;
@@ -27,28 +28,29 @@ interface SettingsLayoutProps {
 
 const sections = [
   // Personal
-  { id: 'profile', label: 'Profile', icon: User, href: '/settings/profile', category: 'personal', adminOnly: false },
-  { id: 'account', label: 'Account', icon: Settings, href: '/settings/account', category: 'personal', adminOnly: false },
-  { id: 'appearance', label: 'Appearance', icon: Palette, href: '/settings/appearance', category: 'personal', adminOnly: false },
-  { id: 'security', label: 'Security', icon: Shield, href: '/settings/security', category: 'personal', adminOnly: false },
-  { id: 'notifications', label: 'Notifications', icon: Bell, href: '/settings/notifications', category: 'personal', adminOnly: false },
-  { id: 'language', label: 'Language', icon: Globe, href: '/settings/language', category: 'personal', adminOnly: false },
+  { id: 'profile', labelKey: 'settings.profile.title', icon: User, href: '/settings/profile', category: 'personal', adminOnly: false },
+  { id: 'account', labelKey: 'settings.account.title', icon: Settings, href: '/settings/account', category: 'personal', adminOnly: false },
+  { id: 'appearance', labelKey: 'settings.appearance.title', icon: Palette, href: '/settings/appearance', category: 'personal', adminOnly: false },
+  { id: 'security', labelKey: 'settings.security.title', icon: Shield, href: '/settings/security', category: 'personal', adminOnly: false },
+  { id: 'notifications', labelKey: 'settings.notifications.title', icon: Bell, href: '/settings/notifications', category: 'personal', adminOnly: false },
+  { id: 'language', labelKey: 'settings.localization.title', icon: Globe, href: '/settings/language', category: 'personal', adminOnly: false },
   
   // Organization (admin only)
-  { id: 'company', label: 'Company', icon: Building2, href: '/settings/company', category: 'organization', adminOnly: true },
-  { id: 'team', label: 'Team Members', icon: Users, href: '/settings/team', category: 'organization', adminOnly: true },
-  { id: 'api', label: 'API Keys', icon: Key, href: '/settings/api', category: 'organization', adminOnly: true },
-  { id: 'integrations', label: 'Integrations', icon: Link2, href: '/settings/integrations', category: 'organization', adminOnly: true },
+  { id: 'company', labelKey: 'pages.settings.company.title', icon: Building2, href: '/settings/company', category: 'organization', adminOnly: true },
+  { id: 'team', labelKey: 'pages.settings.team.title', icon: Users, href: '/settings/team', category: 'organization', adminOnly: true },
+  { id: 'api', labelKey: 'pages.settings.api.title', icon: Key, href: '/settings/api', category: 'organization', adminOnly: true },
+  { id: 'integrations', labelKey: 'pages.settings.integrations.title', icon: Link2, href: '/settings/integrations', category: 'organization', adminOnly: true },
   
   // System (admin only)
-  { id: 'data', label: 'Data Management', icon: Database, href: '/settings/data', category: 'system', adminOnly: true },
-  { id: 'email', label: 'Email Settings', icon: Mail, href: '/settings/email', category: 'system', adminOnly: true },
-  { id: 'mobile', label: 'Mobile App', icon: Smartphone, href: '/settings/mobile', category: 'system', adminOnly: true },
+  { id: 'data', labelKey: 'pages.settings.data.title', icon: Database, href: '/settings/data', category: 'system', adminOnly: true },
+  { id: 'email', labelKey: 'pages.settings.email.title', icon: Mail, href: '/settings/email', category: 'system', adminOnly: true },
+  { id: 'mobile', labelKey: 'pages.settings.mobile.title', icon: Smartphone, href: '/settings/mobile', category: 'system', adminOnly: true },
 ];
 
 export default function SettingsLayout({ children }: SettingsLayoutProps) {
   const pathname = usePathname();
   const { user } = useAuthStore();
+  const { t } = useI18n();
   const isAdmin = user?.role === 'admin';
 
   // If we are on the main settings page, we might want a different layout or just show the cards.
@@ -63,15 +65,15 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   const orgSections = filteredSections.filter(s => s.category === 'organization');
   const systemSections = filteredSections.filter(s => s.category === 'system');
 
-  const NavSection = ({ title, items }: { title: string; items: typeof sections }) => {
+  const NavSection = ({ titleKey, items }: { titleKey: string; items: typeof sections }) => {
     if (items.length === 0) return null;
     
     return (
       <div className="mb-8">
-        <h3 className="px-4 mb-3 text-[10px] font-bold text-muted-foreground/50 uppercase tracking-[0.2em]">
-          {title}
+        <h3 className="px-4 mb-3 text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.25em]">
+          {t(titleKey)}
         </h3>
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {items.map((section) => {
             const Icon = section.icon;
             const isActive = pathname === section.href;
@@ -80,14 +82,14 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
                 key={section.id}
                 href={section.href}
                 className={cn(
-                  'flex items-center gap-3 px-4 py-2.5 text-sm rounded-xl transition-all duration-300 group',
+                  'flex items-center gap-3 px-4 py-2 text-[11px] font-bold uppercase tracking-wider rounded-rams-sm transition-none group border border-transparent',
                   isActive 
-                    ? 'bg-primary text-primary-foreground shadow-glow font-semibold scale-[1.02]' 
-                    : 'hover:bg-primary/5 text-muted-foreground hover:text-primary'
+                    ? 'bg-rams-panel text-foreground border-rams-line shadow-[inset_2px_0_0_0_#FFBE00]' 
+                    : 'text-muted-foreground/60 hover:bg-rams-panel/50 hover:text-foreground'
                 )}
               >
-                <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-110", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
-                <span className="truncate tracking-tight">{section.label}</span>
+                <Icon className={cn("h-3.5 w-3.5 shrink-0 transition-none", isActive ? "text-rams-orange" : "text-muted-foreground/40 group-hover:text-foreground")} />
+                <span className="truncate">{t(section.labelKey)}</span>
               </Link>
             );
           })}
@@ -97,16 +99,20 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-12 page-fade-in">
+    <div className="flex flex-col lg:flex-row gap-12 page-fade-in pb-12">
       <aside className="w-full lg:w-64 shrink-0 hidden lg:block">
-        <div className="sticky top-24">
-          <NavSection title="Personal" items={personalSections} />
-          {orgSections.length > 0 && <NavSection title="Organization" items={orgSections} />}
-          {systemSections.length > 0 && <NavSection title="System" items={systemSections} />}
+        <div className="sticky top-8 bg-rams-module border border-rams-line rounded-rams-sm p-4">
+          <NavSection titleKey="pages.settings.sections.personal" items={personalSections} />
+          {orgSections.length > 0 && <NavSection titleKey="pages.settings.sections.organizational" items={orgSections} />}
+          {systemSections.length > 0 && <NavSection titleKey="pages.settings.sections.system" items={systemSections} />}
         </div>
       </aside>
       <main className="flex-1 max-w-4xl">
-        {children}
+        <div className="bg-rams-module border border-rams-line rounded-rams-sm p-8 min-h-[600px] relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-rams-orange/10" />
+          {children}
+          <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
+        </div>
       </main>
     </div>
   );

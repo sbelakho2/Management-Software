@@ -24,6 +24,7 @@ import {
   Gauge,
   FlaskConical,
   Zap,
+  Clock,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -128,15 +129,15 @@ const categoryIcons: Record<CTQCategory, React.ReactNode> = {
 };
 
 const categoryColors: Record<CTQCategory, string> = {
-  dimensional: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
-  surface: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
-  material: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
-  mechanical: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
-  electrical: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
-  visual: 'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300',
-  functional: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300',
-  environmental: 'bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300',
-  other: 'bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-300',
+  dimensional: 'bg-rams-steel/10 text-rams-steel',
+  surface: 'bg-rams-green/10 text-rams-green',
+  material: 'bg-rams-panel text-foreground/70',
+  mechanical: 'bg-rams-orange/10 text-rams-orange',
+  electrical: 'bg-rams-orange/10 text-rams-orange',
+  visual: 'bg-rams-steel/10 text-rams-steel',
+  functional: 'bg-rams-green/10 text-rams-green',
+  environmental: 'bg-rams-red/10 text-rams-red',
+  other: 'bg-rams-panel text-muted-foreground',
 };
 
 const priorityColors: Record<CTQPriority, any> = {
@@ -209,13 +210,13 @@ export default function CTQPage() {
     try {
       await deleteCTQ(id);
       toast({
-        title: 'Success',
-        description: 'CTQ deleted successfully.',
+        title: t('common.success'),
+        description: t('pages.ctq.deleteSuccess'),
       });
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to delete CTQ.',
+        title: t('common.error'),
+        description: t('pages.ctq.deleteError'),
         variant: 'destructive',
       });
     }
@@ -223,15 +224,15 @@ export default function CTQPage() {
 
   const handleExport = async () => {
     toast({
-      title: 'Info',
-      description: 'Exporting CTQs...',
+      title: t('common.info'),
+      description: t('pages.ctq.exportingCTQs'),
     });
   };
 
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="ctq-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.ctq.title')}
@@ -243,52 +244,52 @@ export default function CTQPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line">
             <History className="h-3.5 w-3.5 mr-2" />
-            Legacy Data
+            {t('pages.ctq.legacyData') || 'Legacy Data'}
           </Button>
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={handleExport}>
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-2" />
-            Export Intel
+            {t('pages.ctq.exportIntel') || 'Export Intel'}
           </Button>
           {hasPageAccess('/ctq/new', userRoles) && (
             <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => router.push('/ctq/new')}>
               <Plus className="mr-2 h-3.5 w-3.5" />
-              Initialize CTQ
+              {t('pages.ctq.initializeCTQ') || 'Initialize CTQ'}
             </Button>
           )}
         </div>
       </div>
 
       {/* Stats Grid (Industrial Modules) */}
-      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-6 border border-rams-border bg-rams-border">
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Total CTQ Nodes</p>
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-6 border border-rams-line bg-rams-line">
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.totalCTQNodes') || 'Total CTQ Nodes'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats?.total || 0}</div>
-          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{stats.active} Active Sync</p>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{stats.active} {t('pages.ctq.activeSync') || 'Active Sync'}</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Approved Nodes</p>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.approvedNodes') || 'Approved Nodes'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.approved}</div>
           <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{((stats.approved / (stats.total || 1)) * 100).toFixed(1)}% GATE_PASS</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Critical Gates</p>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.criticalGates') || 'Critical Gates'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.critical}</div>
           <p className="text-[9px] font-mono font-bold text-rams-red uppercase tracking-widest mt-2">HIGH_SPEC_RISK</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Pass Rate</p>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.meanPassRate') || 'Mean Pass Rate'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats.average_pass_rate.toFixed(1)}%</div>
           <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">SYNC_VELOCITY</p>
         </div>
-        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Measured Today</p>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.measuredToday') || 'Measured Today'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.measured_today}</div>
           <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">PULSE_DETECTIONS</p>
         </div>
-        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-border group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Aggregated Log</p>
+        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.ctq.aggregatedLog') || 'Aggregated Log'}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">
             {ctqs.reduce((sum, ctq) => sum + ctq.measurement_count, 0)}
           </div>
@@ -302,7 +303,7 @@ export default function CTQPage() {
           <div className="relative flex-1 min-w-[240px] group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
             <Input
-              placeholder="SEARCH_CTQ_NODES..."
+              placeholder={t('pages.ctq.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 h-10 text-[10px]"
@@ -314,14 +315,14 @@ export default function CTQPage() {
               <SelectValue placeholder="CATEGORY_NODE" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_CATEGORIES</SelectItem>
-              <SelectItem value="dimensional">DIMENSIONAL</SelectItem>
-              <SelectItem value="surface">SURFACE_FINISH</SelectItem>
-              <SelectItem value="material">MATERIAL_NODE</SelectItem>
-              <SelectItem value="mechanical">MECHANICAL</SelectItem>
-              <SelectItem value="electrical">ELECTRICAL</SelectItem>
-              <SelectItem value="visual">VISUAL_GATE</SelectItem>
-              <SelectItem value="functional">FUNCTIONAL_SYNC</SelectItem>
+              <SelectItem value="all">{t('pages.ctq.filters.allCategories')}</SelectItem>
+              <SelectItem value="dimensional">{t('pages.ctq.filters.dimensional')}</SelectItem>
+              <SelectItem value="surface">{t('pages.ctq.filters.surfaceFinish')}</SelectItem>
+              <SelectItem value="material">{t('pages.ctq.filters.materialNode')}</SelectItem>
+              <SelectItem value="mechanical">{t('pages.ctq.filters.mechanical')}</SelectItem>
+              <SelectItem value="electrical">{t('pages.ctq.filters.electrical')}</SelectItem>
+              <SelectItem value="visual">{t('pages.ctq.filters.visualGate')}</SelectItem>
+              <SelectItem value="functional">{t('pages.ctq.filters.functionalSync')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -330,10 +331,10 @@ export default function CTQPage() {
               <SelectValue placeholder="PRIORITY_LVL" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_PRIORITIES</SelectItem>
-              <SelectItem value="critical">CRITICAL_NODE</SelectItem>
-              <SelectItem value="major">MAJOR_RISK</SelectItem>
-              <SelectItem value="minor">MINOR_PROTOCOL</SelectItem>
+              <SelectItem value="all">{t('pages.ctq.filters.allPriorities')}</SelectItem>
+              <SelectItem value="critical">{t('pages.ctq.filters.criticalNode')}</SelectItem>
+              <SelectItem value="major">{t('pages.ctq.filters.majorRisk')}</SelectItem>
+              <SelectItem value="minor">{t('pages.ctq.filters.minorProtocol')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -342,31 +343,31 @@ export default function CTQPage() {
               <SelectValue placeholder="STATUS_STATE" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_STATUS</SelectItem>
-              <SelectItem value="draft">DRAFT_MODE</SelectItem>
-              <SelectItem value="active">ACTIVE_SYNC</SelectItem>
-              <SelectItem value="under_review">UNDER_REVIEW</SelectItem>
-              <SelectItem value="approved">APPROVED_GATE</SelectItem>
-              <SelectItem value="obsolete">OBSOLETE_NODE</SelectItem>
+              <SelectItem value="all">{t('pages.ctq.filters.allStatus')}</SelectItem>
+              <SelectItem value="draft">{t('pages.ctq.filters.draftMode')}</SelectItem>
+              <SelectItem value="active">{t('pages.ctq.filters.activeSync')}</SelectItem>
+              <SelectItem value="under_review">{t('pages.ctq.filters.underReview')}</SelectItem>
+              <SelectItem value="approved">{t('pages.ctq.filters.approvedGate')}</SelectItem>
+              <SelectItem value="obsolete">{t('pages.ctq.filters.obsoleteNode')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
       {/* CTQ Table */}
-      <Card className="rounded-rams-sm overflow-hidden border-rams-border shadow-none">
+      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>CTQ_IDENTIFIER</TableHead>
-                <TableHead>CHARACTERISTIC</TableHead>
-                <TableHead>CATEGORY_NODE</TableHead>
-                <TableHead>PRIORITY</TableHead>
-                <TableHead>STATUS_NODE</TableHead>
-                <TableHead>SPECIFICATION</TableHead>
-                <TableHead>PASS_RATE_KPI</TableHead>
-                <TableHead>LATEST_SYNC</TableHead>
+                <TableHead>{t('pages.ctq.table.identifier')}</TableHead>
+                <TableHead>{t('pages.ctq.table.characteristic')}</TableHead>
+                <TableHead>{t('pages.ctq.table.categoryNode')}</TableHead>
+                <TableHead>{t('pages.ctq.table.priority')}</TableHead>
+                <TableHead>{t('pages.ctq.table.statusNode')}</TableHead>
+                <TableHead>{t('pages.ctq.table.specification')}</TableHead>
+                <TableHead>{t('pages.ctq.table.passRateKpi')}</TableHead>
+                <TableHead>{t('pages.ctq.table.latestSync')}</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -389,8 +390,8 @@ export default function CTQPage() {
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-24">
                     <FileText className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
-                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero CTQ protocols identified</p>
-                    <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new specification</p>
+                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.ctq.zeroCTQProtocols') || 'Zero CTQ protocols identified'}</p>
+                    <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">{t('pages.ctq.adjustParameters') || 'Adjust parameters or initialize new specification'}</p>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -428,7 +429,7 @@ export default function CTQPage() {
                         <div className="flex justify-between text-[9px] font-mono font-bold tabular-nums">
                           <span className={cn(ctq.pass_rate >= 95 ? 'text-rams-green' : 'text-rams-orange')}>{Math.round(ctq.pass_rate)}%</span>
                         </div>
-                        <div className="h-1 bg-rams-panel border border-rams-border/30 overflow-hidden">
+                        <div className="h-1 bg-rams-panel border border-rams-line overflow-hidden">
                           <div className={cn(
                             "h-full transition-all duration-500",
                             ctq.pass_rate >= 95 ? 'bg-rams-green' : 'bg-rams-orange'
@@ -455,17 +456,17 @@ export default function CTQPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}`)}>
-                            <Eye className="mr-2 h-3.5 w-3.5" /> ANALYZE
+                            <Eye className="mr-2 h-3.5 w-3.5" /> {t('pages.ctq.actions.analyze')}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}/edit`)}>
-                            <Edit className="mr-2 h-3.5 w-3.5" /> REFINE
+                            <Edit className="mr-2 h-3.5 w-3.5" /> {t('pages.ctq.actions.refine')}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => router.push(`/ctq/${ctq.id}/measure`)}>
-                            <Gauge className="mr-2 h-3.5 w-3.5 text-rams-orange" /> MEASURE
+                            <Gauge className="mr-2 h-3.5 w-3.5 text-rams-orange" /> {t('pages.ctq.actions.measure')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-rams-red" onClick={() => handleDelete(ctq.id)}>
-                            TERMINATE_NODE
+                            {t('pages.ctq.actions.terminate')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

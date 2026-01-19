@@ -36,89 +36,93 @@ export default function NewTaskPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      toast({ title: 'Task Protocol Established', description: 'The task has been assigned successfully.' });
+      toast({ title: t('pages.tasks.new.taskCreated'), description: t('pages.tasks.new.taskCreatedDescription') });
       router.push('/tasks');
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to create task.', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('pages.tasks.new.taskCreateError'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 page-fade-in">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="max-w-3xl mx-auto space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
-            <ChevronLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Assignment</h1>
-            <p className="text-muted-foreground font-medium text-sm">Assign a new strategic task node to yourself or a teammate</p>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.tasks.new.title')}</h1>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>{t('pages.tasks.new.subtitle')}</span>
+              <span className="opacity-30">|</span>
+              <span>{t('pages.tasks.new.station')}</span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12 px-8" onClick={() => router.back()}>Abort</Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8" onClick={handleSubmit} disabled={isSubmitting}>
-            <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Synchronizing...' : 'Create Assignment'}
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.back()}>{t('pages.tasks.new.discard')}</Button>
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none" onClick={handleSubmit} disabled={isSubmitting}>
+            <Save className="h-3.5 w-3.5 mr-2" />
+            {isSubmitting ? t('pages.tasks.new.synchronizing') : t('pages.tasks.new.createAssignment')}
           </Button>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
-          <CardHeader className="pb-8 border-b border-border/5 bg-muted/5 p-8">
-            <CardTitle className="text-lg font-heading">Protocol Parameters</CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Configure the assignment metadata and priority layer</CardDescription>
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.tasks.new.protocolParameters')}</CardTitle>
+            <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('pages.tasks.new.configureMetadata')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-8 p-8">
-            <div className="space-y-3">
-              <Label htmlFor="title" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Assignment Title *</Label>
+            <div className="space-y-2">
+              <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.tasks.new.assignmentTitle')} *</Label>
               <Input
                 id="title"
-                placeholder="Specify the strategic objective..."
-                className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50"
+                placeholder={t('pages.tasks.new.titlePlaceholder')}
+                className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 required
               />
             </div>
             <div className="grid md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <Label htmlFor="priority" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Priority Layer</Label>
+              <div className="space-y-2">
+                <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('common.priorityLayer')}</Label>
                 <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
-                  <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+                  <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="rounded-2xl shadow-premium">
-                    <SelectItem value="low" className="rounded-xl m-1">Low</SelectItem>
-                    <SelectItem value="medium" className="rounded-xl m-1">Medium</SelectItem>
-                    <SelectItem value="high" className="rounded-xl m-1">High</SelectItem>
-                    <SelectItem value="urgent" className="rounded-xl m-1">Urgent</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="low">{t('common.priority.low')}</SelectItem>
+                    <SelectItem value="medium">{t('common.priority.medium')}</SelectItem>
+                    <SelectItem value="high">{t('common.priority.high')}</SelectItem>
+                    <SelectItem value="urgent">{t('common.priority.urgent')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-3">
-                <Label htmlFor="dueDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Temporal Horizon</Label>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('common.temporalHorizon')}</Label>
                 <div className="relative">
                   <Input
                     id="dueDate"
                     type="date"
-                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                    className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                     value={form.dueDate}
                     onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                   />
                 </div>
               </div>
             </div>
-            <div className="space-y-3">
-              <Label htmlFor="description" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Detailed Intelligence</Label>
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('common.detailedIntelligence')}</Label>
               <div className="relative">
                 <Textarea
                   id="description"
-                  placeholder="Incorporate additional context and required outcomes for this protocol..."
-                  className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all min-h-[160px] resize-none"
+                  placeholder={t('pages.tasks.new.descriptionPlaceholder')}
+                  className="rounded-rams-sm bg-rams-panel border-rams-line text-[11px] uppercase leading-relaxed min-h-[160px] resize-none"
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />

@@ -72,6 +72,9 @@ from sensei.api.v1.endpoints import (
     edge_ai,
     ai_health,
     sites,
+    warehouse,
+    it_monitoring,
+    auditor,
 )
 
 api_router = APIRouter()
@@ -145,3 +148,6 @@ api_router.include_router(factory_launchpad.router, prefix="/launchpad", tags=["
 api_router.include_router(edge_ai.router, prefix="/edge-ai", tags=["Edge AI"])
 api_router.include_router(ai_health.router, prefix="/ai", tags=["AI Readiness"])
 api_router.include_router(sites.router, tags=["Sites"])
+api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
+api_router.include_router(it_monitoring.router, prefix="/it", tags=["IT Monitoring"])
+api_router.include_router(auditor.router, prefix="/auditor", tags=["Auditor"])

@@ -34,33 +34,33 @@ export default function AndonHistoryPage() {
     <div className="space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">Anomalous History</h1>
-            <p className="text-muted-foreground font-medium text-sm">Historical log of organizational signal events and resolution protocols</p>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('andon.history.title') || 'Anomalous History'}</h1>
+            <p className="text-muted-foreground font-medium text-sm">{t('andon.history.subtitle') || 'Historical log of organizational signal events and resolution protocols'}</p>
           </div>
         </div>
-        <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
+        <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-panel transition-none">
           <Download className="mr-2 h-4 w-4" />
-          Export Telemetry
+          {t('andon.history.exportTelemetry') || 'Export Telemetry'}
         </Button>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="relative flex-1 max-w-sm group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
-              <Input placeholder="Search event nodes..." className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-rams-orange transition-colors" />
+              <Input placeholder={t('andon.history.searchPlaceholder') || 'Search event nodes...'} className="pl-11 h-12 bg-rams-panel border-rams-line rounded-rams-sm" />
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="lg" className="rounded-xl border-border/50 h-12">
+              <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line h-12">
                 <Calendar className="mr-2 h-4 w-4" />
-                Strategic Window
+                {t('andon.history.strategicWindow') || 'Strategic Window'}
               </Button>
-              <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl border-border/50">
+              <Button variant="outline" size="icon" className="h-12 w-12 rounded-rams-sm border-rams-line">
                 <Filter className="h-4 w-4" />
               </Button>
             </div>
@@ -68,23 +68,23 @@ export default function AndonHistoryPage() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="p-5 text-left">Temporal Node</th>
-                  <th className="p-5 text-left">Signal Type</th>
-                  <th className="p-5 text-left">Station Node</th>
-                  <th className="p-5 text-left">Anomalous Context</th>
-                  <th className="p-5 text-left">Resolution Agent</th>
-                  <th className="p-5 text-center">Protocol Duration</th>
+                  <th className="p-5 text-left">{t('andon.history.table.temporalNode') || 'Temporal Node'}</th>
+                  <th className="p-5 text-left">{t('andon.history.table.signalType') || 'Signal Type'}</th>
+                  <th className="p-5 text-left">{t('andon.history.table.stationNode') || 'Station Node'}</th>
+                  <th className="p-5 text-left">{t('andon.history.table.anomalousContext') || 'Anomalous Context'}</th>
+                  <th className="p-5 text-left">{t('andon.history.table.resolutionAgent') || 'Resolution Agent'}</th>
+                  <th className="p-5 text-center">{t('andon.history.table.protocolDuration') || 'Protocol Duration'}</th>
                 </tr>
               </thead>
               <tbody>
                 {historyEvents.map((event) => (
-                  <tr key={event.id} className="group hover:bg-primary/5 transition-all duration-300">
+                  <tr key={event.id} className="group hover:bg-rams-panel transition-none">
                     <td className="p-5 text-sm font-medium text-foreground/80">{event.date}</td>
                     <td className="p-5">
                       <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-background/50">{event.type}</Badge>
@@ -93,7 +93,7 @@ export default function AndonHistoryPage() {
                     <td className="p-5 text-sm font-medium text-foreground/70">{event.issue}</td>
                     <td className="p-5 text-sm font-medium text-foreground/70">{event.resolvedBy}</td>
                     <td className="p-5 text-center">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/5 text-primary text-[10px] font-bold">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rams-panel border border-rams-line text-[10px] font-bold">
                         <Clock className="h-3 w-3" />
                         {event.duration}
                       </div>

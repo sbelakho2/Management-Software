@@ -74,6 +74,7 @@ class ApiClient {
   private refreshPromise: Promise<void> | null = null;
 
   constructor() {
+    console.log('[API CLIENT] Initializing with API_ROOT:', API_ROOT);
     this.client = axios.create({
       baseURL: `${API_ROOT}/api/v1`,
       headers: {
@@ -106,9 +107,11 @@ class ApiClient {
         }
 
         const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+        const requestUrl = originalRequest?.url || '';
+        const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register') || requestUrl.includes('/auth/refresh');
 
         // Handle 401 - token expired
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
           originalRequest._retry = true;
 
           try {

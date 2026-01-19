@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Save, X, Factory } from 'lucide-react';
+import { ChevronLeft, Save, X, Factory, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,8 +41,8 @@ export default function NewWorkOrderPage() {
     e.preventDefault();
     if (!form.productId || form.quantity <= 0 || !form.dueDate) {
       toast({
-        title: 'Validation Error',
-        description: 'Please fill in all required fields.',
+        title: t('production.new.validationError') || 'Validation Error',
+        description: t('production.new.fillRequired') || 'Please fill in all required fields.',
         variant: 'destructive',
       });
       return;
@@ -59,14 +59,14 @@ export default function NewWorkOrderPage() {
         notes: form.notes,
       });
       toast({
-        title: 'Work Order Created',
-        description: `Order ${form.orderNumber} has been scheduled.`,
+        title: t('production.new.workOrderCreated') || 'Work Order Created',
+        description: t('production.new.orderScheduled', { orderNumber: form.orderNumber }) || `Order ${form.orderNumber} has been scheduled.`,
       });
       router.push('/production');
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to create work order.',
+        title: t('common.error') || 'Error',
+        description: t('production.new.createFailed') || 'Failed to create work order.',
         variant: 'destructive',
       });
     } finally {
@@ -75,76 +75,90 @@ export default function NewWorkOrderPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 page-fade-in">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="max-w-3xl mx-auto space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
-            <ChevronLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+            <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Execution Node</h1>
-            <p className="text-muted-foreground font-medium text-sm">Schedule and establish a new organizational production run</p>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('production.new.title') || 'Initialize Execution Node'}</h1>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>{t('production.new.subtitle') || 'Production Schedule Entry'}</span>
+              <span className="opacity-30">|</span>
+              <span>STATION: SCHEDULING-01</span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12 px-8" onClick={() => router.back()} disabled={isSubmitting}>Abort</Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8 font-bold" onClick={handleSubmit} disabled={isSubmitting}>
-            <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Synchronizing...' : 'Establish Order'}
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.back()} disabled={isSubmitting}>
+            {t('common.abort') || 'ABORT'}
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting} size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                {t('common.synchronizing') || 'SYNCHRONIZING...'}
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-3.5 w-3.5" />
+                {t('production.new.establishOrder') || 'ESTABLISH_ORDER'}
+              </>
+            )}
           </Button>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium overflow-hidden">
-          <CardHeader className="pb-8 border-b border-border/5 bg-muted/5 p-8">
-            <CardTitle className="text-lg font-heading">Operational Parameters</CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Specify product nodes, magnitude, and strategic horizons</CardDescription>
+      <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('production.new.operationalParameters') || 'Operational Parameters'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-8 p-8">
             <div className="grid md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <Label htmlFor="orderNumber" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Work Order Identity</Label>
+              <div className="space-y-2">
+                <Label htmlFor="orderNumber" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.workOrderIdentity') || 'Work Order Identity'}</Label>
                 <Input
                   id="orderNumber"
                   value={form.orderNumber}
                   readOnly
-                  className="h-12 rounded-2xl bg-muted/20 border-border/50 text-muted-foreground/60 font-mono font-bold"
+                  className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-muted-foreground/40 font-mono font-bold text-[11px]"
                 />
               </div>
-              <div className="space-y-3">
-                <Label htmlFor="priority" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Priority Layer</Label>
+              <div className="space-y-2">
+                <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.priorityLayer') || 'Priority Layer'}</Label>
                 <Select
                   value={form.priority}
                   onValueChange={(value) => setForm({ ...form, priority: value })}
                 >
-                  <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
+                  <SelectTrigger id="priority" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="rounded-2xl shadow-premium">
-                    <SelectItem value="low" className="rounded-xl m-1">Low Velocity</SelectItem>
-                    <SelectItem value="normal" className="rounded-xl m-1">Standard Node</SelectItem>
-                    <SelectItem value="high" className="rounded-xl m-1">High Priority</SelectItem>
-                    <SelectItem value="urgent" className="rounded-xl m-1">Urgent Escalation</SelectItem>
-                    <SelectItem value="critical" className="rounded-xl m-1">Critical Threshold</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="low">LOW_VELOCITY</SelectItem>
+                    <SelectItem value="normal">STANDARD_NODE</SelectItem>
+                    <SelectItem value="high">HIGH_PRIORITY</SelectItem>
+                    <SelectItem value="urgent">URGENT_ESCALATION</SelectItem>
+                    <SelectItem value="critical">CRITICAL_THRESHOLD</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="product" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Target Product Node *</Label>
+            <div className="space-y-2">
+              <Label htmlFor="product" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.targetProduct') || 'Target Product Node'} *</Label>
               <Select
                 value={form.productId}
                 onValueChange={(value) => setForm({ ...form, productId: value })}
               >
-                <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
-                  <SelectValue placeholder="Identify target product in mesh..." />
+                <SelectTrigger id="product" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                  <SelectValue placeholder="IDENTIFY_TARGET_PRODUCT..." />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
+                <SelectContent>
                   {products.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)} className="rounded-xl m-1">
-                      {(p as any).partNumber || (p as any).part_number} - {p.name}
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {((p as any).partNumber || (p as any).part_number || '').toUpperCase()} - {p.name.toUpperCase()}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -152,25 +166,25 @@ export default function NewWorkOrderPage() {
             </div>
 
             <div className="grid md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <Label htmlFor="quantity" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Magnitude (Quantity) *</Label>
+              <div className="space-y-2">
+                <Label htmlFor="quantity" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.magnitude') || 'Magnitude (Quantity)'} *</Label>
                 <Input
                   id="quantity"
                   type="number"
                   min="1"
-                  className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                  className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                   value={form.quantity}
                   onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
                   required
                 />
               </div>
-              <div className="space-y-3">
-                <Label htmlFor="dueDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Temporal Horizon *</Label>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.temporalHorizon') || 'Temporal Horizon'} *</Label>
                 <div className="relative">
                   <Input
                     id="dueDate"
                     type="date"
-                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                    className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                     value={form.dueDate}
                     onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                     required
@@ -179,12 +193,12 @@ export default function NewWorkOrderPage() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="notes" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Production Intel & Notes</Label>
+            <div className="space-y-2">
+              <Label htmlFor="notes" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Production Intel & Notes</Label>
               <Textarea
                 id="notes"
-                placeholder="Incorporate special instructions for the shop floor nodes..."
-                className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all min-h-[120px] resize-none"
+                placeholder="INCORPORATE_SPECIAL_INSTRUCTIONS..."
+                className="rounded-rams-sm bg-rams-panel border-rams-line text-[11px] uppercase leading-relaxed h-32 resize-none"
                 rows={4}
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useI18n } from '@/contexts/i18n-context';
 import { useProjectManagementStore } from '@/stores/project-management-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,7 @@ import { CheckCircle2, Circle, AlertCircle, ArrowRight, Loader2 } from 'lucide-r
 import { formatRelativeTime } from '@/lib/utils';
 
 export function MyWorkDashboard() {
+  const { t } = useI18n();
   const { myWork, fetchMyWork, isLoading } = useProjectManagementStore();
 
   React.useEffect(() => {
@@ -33,11 +35,11 @@ export function MyWorkDashboard() {
   if (!hasWork) {
     return (
       <div className="text-center py-12 industrial-panel bg-rams-panel/20 border-dashed">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-border mb-4">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-line mb-4">
           <CheckCircle2 className="h-8 w-8 text-muted-foreground/20" />
         </div>
-        <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Strategic Clarity</p>
-        <p className="text-[9px] text-muted-foreground/30 mt-1 uppercase tracking-[0.2em]">No assignments identified</p>
+        <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">{t('pages.today.myWork.strategicClarity')}</p>
+        <p className="text-[9px] text-muted-foreground/30 mt-1 uppercase tracking-[0.2em]">{t('pages.today.myWork.noAssignments')}</p>
       </div>
     );
   }
@@ -48,12 +50,12 @@ export function MyWorkDashboard() {
         <section className="space-y-4">
           <h3 className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 flex items-center gap-3 px-1">
             <div className="h-1.5 w-1.5 bg-rams-orange" />
-            STRATEGIC_USER_STORIES
+            {t('pages.today.myWork.strategicUserStories')}
           </h3>
           <div className="grid gap-1">
             {stories.slice(0, 5).map(story => (
               <Link key={story.id} href={`/project-management/${story.project_id}?tab=backlog&story=${story.id}`} className="block group">
-                <div className="flex items-center justify-between p-4 bg-rams-module border border-rams-border hover:border-rams-orange/40 transition-none">
+                <div className="flex items-center justify-between p-4 bg-rams-module border border-rams-line hover:border-rams-orange/40 transition-none">
                   <div className="flex items-center gap-4 min-w-0">
                     <span className="text-[9px] font-mono font-bold text-rams-orange bg-rams-orange/5 px-2 py-1 border border-rams-orange/20 shrink-0">US-{story.ref}</span>
                     <span className="text-[11px] font-black uppercase tracking-tight truncate text-foreground/80 group-hover:text-rams-orange transition-none">{story.subject}</span>
@@ -73,7 +75,7 @@ export function MyWorkDashboard() {
         <section className="space-y-4">
           <h3 className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/50 flex items-center gap-3 px-1">
             <div className="h-1.5 w-1.5 bg-rams-red" />
-            CRITICAL_ANOMALIES
+            {t('pages.today.myWork.criticalAnomalies')}
           </h3>
           <div className="grid gap-1">
             {issues.slice(0, 5).map(issue => (

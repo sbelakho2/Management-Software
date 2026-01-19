@@ -32,11 +32,11 @@ const employees = [
 const skillNames = ['CNC', 'AS9100', 'Quality', 'Safety'];
 
 const levelConfig = {
-  0: { label: 'None', color: 'bg-slate-100 text-slate-400' },
-  1: { label: 'Novice', color: 'bg-red-100 text-red-700' },
-  2: { label: 'Intermediate', color: 'bg-orange-100 text-orange-700' },
-  3: { label: 'Advanced', color: 'bg-blue-100 text-blue-700' },
-  4: { label: 'Expert', color: 'bg-green-100 text-green-700' },
+  0: { label: 'None', color: 'bg-rams-panel text-muted-foreground/40' },
+  1: { label: 'Novice', color: 'bg-rams-red/10 text-rams-red' },
+  2: { label: 'Intermediate', color: 'bg-rams-orange/10 text-rams-orange' },
+  3: { label: 'Advanced', color: 'bg-rams-steel/10 text-rams-steel' },
+  4: { label: 'Expert', color: 'bg-rams-green/10 text-rams-green' },
 };
 
 export default function TrainingMatrixPage() {
@@ -45,47 +45,47 @@ export default function TrainingMatrixPage() {
   const [search, setSearch] = React.useState('');
 
   return (
-    <div className="space-y-8 page-fade-in">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">Skills Architecture</h1>
-            <p className="text-muted-foreground font-medium text-sm">Visualize and manage organizational competency nodes</p>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('training.matrix.title') || 'Skills Architecture'}</h1>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{t('training.matrix.subtitle') || 'Visualize and manage organizational competency nodes'}</p>
           </div>
         </div>
-        <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-          <Download className="mr-2 h-4 w-4" />
-          Export Matrix
+        <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none">
+          <Download className="mr-2 h-3.5 w-3.5" />
+          {t('training.matrix.exportMatrix') || 'Export Matrix'}
         </Button>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative flex-1 max-w-sm group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 group-focus-within:text-primary transition-colors" />
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40" />
               <Input
-                placeholder="Search operatives by node identity..."
-                className="pl-11 h-12 bg-background/50 border-border/50 rounded-xl"
+                placeholder={t('training.matrix.searchPlaceholder') || 'Search operatives by node identity...'}
+                className="pl-9 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <div className="flex items-center gap-3">
               <Select defaultValue="all">
-                <SelectTrigger className="w-48 h-12 rounded-xl bg-background/50 border-border/50">
-                  <SelectValue placeholder="Department Node" />
+                <SelectTrigger className="w-48 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                  <SelectValue placeholder={t('training.matrix.departmentNode') || 'Department Node'} />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
-                  <SelectItem value="all" className="rounded-xl m-1">All Departments</SelectItem>
-                  <SelectItem value="ops" className="rounded-xl m-1">Operations</SelectItem>
-                  <SelectItem value="quality" className="rounded-xl m-1">Quality</SelectItem>
+                <SelectContent className="rounded-rams-sm border-rams-line">
+                  <SelectItem value="all">{t('common.allDepartments') || 'All Departments'}</SelectItem>
+                  <SelectItem value="ops">{t('common.operations') || 'Operations'}</SelectItem>
+                  <SelectItem value="quality">{t('common.quality') || 'Quality'}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl border-border/50">
+              <Button variant="outline" size="icon" className="h-10 w-10 rounded-rams-sm border-rams-line">
                 <Filter className="h-4 w-4" />
               </Button>
             </div>
@@ -93,15 +93,15 @@ export default function TrainingMatrixPage() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
-        <CardHeader className="border-b border-border/10 bg-muted/5 p-6">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+        <CardHeader className="border-b border-rams-line bg-rams-panel/20 p-6">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-heading">Competency Matrix</CardTitle>
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.matrix.competencyMatrix') || 'Competency Matrix'}</CardTitle>
             <div className="flex flex-wrap items-center gap-6">
               {Object.entries(levelConfig).map(([level, cfg]) => (
                 <div key={level} className="flex items-center gap-2">
-                  <div className={cn("w-2.5 h-2.5 rounded-full shadow-sm", cfg.color.split(' ')[0])} />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{cfg.label}</span>
+                  <div className={cn("w-2 h-2", cfg.color.split(' ')[0])} />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">{cfg.label}</span>
                 </div>
               ))}
             </div>
@@ -112,11 +112,11 @@ export default function TrainingMatrixPage() {
             <table className="w-full border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <th className="p-5 text-left sticky left-0 bg-background/80 backdrop-blur-md z-20 border-r border-border/10 min-w-[240px]">Operative Node</th>
+                  <th className="p-5 text-left sticky left-0 bg-rams-module z-20 border-r border-rams-line min-w-[240px] text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">{t('training.matrix.operativeNode') || 'Operative Node'}</th>
                   {skillNames.map(skill => (
-                    <th key={skill} className="p-5 text-center min-w-[140px]">{skill}</th>
+                    <th key={skill} className="p-5 text-center min-w-[140px] text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">{skill}</th>
                   ))}
-                  <th className="p-5 text-center min-w-[140px]">Strategic Avg</th>
+                  <th className="p-5 text-center min-w-[140px] text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">{t('training.matrix.strategicAvg') || 'Strategic Avg'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -125,15 +125,15 @@ export default function TrainingMatrixPage() {
                   const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
                   
                   return (
-                    <tr key={emp.id} className="group hover:bg-primary/5 transition-all duration-300">
-                      <td className="p-5 sticky left-0 bg-background/80 backdrop-blur-md z-10 border-r border-border/10 transition-colors group-hover:bg-transparent">
+                    <tr key={emp.id} className="group hover:bg-rams-panel transition-none">
+                      <td className="p-5 sticky left-0 bg-rams-module z-10 border-r border-rams-line transition-none group-hover:bg-rams-panel">
                         <div className="flex items-center gap-4">
-                          <Avatar size="sm" className="ring-2 ring-background shadow-sm">
-                            <AvatarFallback className="font-heading font-bold bg-muted/30">{getInitials(emp.name)}</AvatarFallback>
+                          <Avatar size="sm" className="border border-rams-line">
+                            <AvatarFallback className="font-mono font-bold text-[10px] bg-rams-panel">{getInitials(emp.name)}</AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-heading font-bold text-sm tracking-tight text-foreground/80 group-hover:text-primary transition-colors">{emp.name}</p>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{emp.role}</p>
+                            <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{emp.name}</p>
+                            <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{emp.role}</p>
                           </div>
                         </div>
                       </td>
@@ -143,7 +143,7 @@ export default function TrainingMatrixPage() {
                         return (
                           <td key={skill} className="p-5 text-center">
                             <div className={cn(
-                              "inline-flex items-center justify-center w-12 h-12 rounded-2xl font-heading font-bold text-base shadow-inner-soft transition-all duration-500 group-hover:scale-110 cursor-default border border-transparent hover:border-primary/20",
+                              "inline-flex items-center justify-center w-10 h-10 font-mono font-bold text-sm border border-rams-line transition-none cursor-default",
                               cfg.color
                             )}>
                               {score}
@@ -153,10 +153,10 @@ export default function TrainingMatrixPage() {
                       })}
                       <td className="p-5 text-center">
                         <div className="flex flex-col items-center gap-2">
-                          <span className="font-heading font-bold text-base tracking-tight">{avg.toFixed(1)}</span>
-                          <div className="w-20 h-1.5 bg-muted/20 rounded-full overflow-hidden shadow-inner-soft">
+                          <span className="font-mono font-bold text-sm tabular-nums">{avg.toFixed(1)}</span>
+                          <div className="w-20 h-1 bg-rams-panel border border-rams-line overflow-hidden">
                             <div 
-                              className="h-full bg-gradient-to-r from-primary to-primary/60 transition-all duration-1000" 
+                              className="h-full bg-rams-orange transition-none" 
                               style={{ width: `${(avg / 4) * 100}%` }} 
                             />
                           </div>

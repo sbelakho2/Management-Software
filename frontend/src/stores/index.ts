@@ -20,3 +20,6 @@ export { useTrainingStore } from './training';
 export { useFinanceStore } from './finance';
 export { useSitesStore } from './sites';
 export { useMrpStore } from './mrp';
+export { useWarehouseStore } from './warehouse';
+export { useITStore } from './it-monitoring';
+export { useAuditorStore } from './auditor';

@@ -35,9 +35,9 @@ export default function ForgotPasswordPage() {
 
   if (isSubmitted) {
     return (
-      <div className={cn("space-y-8 text-center animate-in fade-in zoom-in-95 duration-500", isRTL && "text-right")}>
+      <div className={cn("space-y-8 text-center", isRTL && "text-right")}>
         <div className="flex justify-center">
-          <div className="rounded-none bg-rams-green/5 p-5 border border-rams-green/20">
+          <div className="rounded-rams-sm bg-rams-green/5 p-5 border border-rams-green/20">
             <CheckCircle2 className="h-10 w-10 text-rams-green" />
           </div>
         </div>
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
       </div>
 
       {error && (
-        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red animate-in slide-in-from-top-2 duration-300 rounded-rams-sm">
+        <Alert variant="destructive" className="bg-rams-red/5 border-rams-red/20 text-rams-red rounded-rams-sm">
           <AlertDescription className="font-mono font-black uppercase tracking-widest text-[9px]">{error}</AlertDescription>
         </Alert>
       )}
@@ -99,7 +99,7 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="USER_IDENTIFIER@COMPANY.COM"
               required
-              className={cn("rounded-rams-sm border-rams-border bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
+              className={cn("rounded-rams-sm border-rams-line bg-rams-panel transition-none", isRTL ? "pr-11" : "pl-11")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}

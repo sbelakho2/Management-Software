@@ -14,6 +14,7 @@ import { DesignSystemProvider } from '@/components/ui/design-system';
 import { RUMProvider } from '@/components/ui/performance-rum';
 import { I18nProvider } from '@/contexts/i18n-context';
 import { useAuthStore } from '@/stores';
+import { AppearanceInitializer } from '@/components/appearance-initializer';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -57,6 +58,7 @@ export function Providers({ children }: ProvidersProps) {
           enableSystem
           disableTransitionOnChange
         >
+          <AppearanceInitializer />
           <I18nProvider>
             <TooltipProvider delayDuration={0}>
               <DesignSystemProvider>

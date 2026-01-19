@@ -58,7 +58,7 @@ export default function ProjectDetailPage() {
   React.useEffect(() => {
     if (error) {
       toast({
-        title: 'Error loading project',
+        title: t('pages.projectManagement.errors.loadingProject'),
         description: error,
         variant: 'destructive',
       });
@@ -70,7 +70,7 @@ export default function ProjectDetailPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-10 w-10 rounded-rams-sm" />
           <div className="space-y-2">
             <Skeleton className="h-6 w-48" />
             <Skeleton className="h-4 w-24" />
@@ -84,8 +84,8 @@ export default function ProjectDetailPage() {
   if (!selectedProject && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
-        <h2 className="text-3xl font-heading font-bold tracking-tight ">Project Not Found</h2>
-        <Button onClick={() => router.push('/project-management')}>Back to Projects</Button>
+        <h2 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.projectManagement.detail.notFound')}</h2>
+        <Button onClick={() => router.push('/project-management')} className="rounded-rams-sm">{t('pages.projectManagement.detail.backToProjects')}</Button>
       </div>
     );
   }
@@ -95,19 +95,19 @@ export default function ProjectDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/project-management')}>
+          <Button variant="ghost" size="icon" onClick={() => router.push('/project-management')} className="rounded-rams-sm">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">{selectedProject?.name}</h1>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{selectedProject?.name}</h1>
+            <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60">
               <span>{selectedProject?.slug}</span>
               <span>•</span>
-              <Badge variant="outline" className="capitalize">
+              <Badge variant="outline" className="rounded-none border-rams-line uppercase">
                 {selectedProject?.status.replace('_', ' ')}
               </Badge>
               <span>•</span>
-              <span className="capitalize">{selectedProject?.project_type}</span>
+              <span className="uppercase">{selectedProject?.project_type}</span>
             </div>
           </div>
         </div>
@@ -119,39 +119,39 @@ export default function ProjectDetailPage() {
       {/* Main Content */}
       <Tabs defaultValue="dashboard" className="space-y-4">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-transparent p-0">
-            <TabsTrigger value="dashboard" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <BarChart3 className="h-4 w-4" /> Dashboard
+            <TabsTrigger value="dashboard" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <BarChart3 className="h-4 w-4" /> {t('common.dashboard')}
             </TabsTrigger>
-            <TabsTrigger value="board" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <Layout className="h-4 w-4" /> Board
+            <TabsTrigger value="board" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <Layout className="h-4 w-4" /> {t('common.board')}
             </TabsTrigger>
-            <TabsTrigger value="backlog" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <ListTodo className="h-4 w-4" /> Backlog
+            <TabsTrigger value="backlog" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <ListTodo className="h-4 w-4" /> {t('pages.projectManagement.detail.backlog')}
             </TabsTrigger>
-            <TabsTrigger value="sprints" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <Calendar className="h-4 w-4" /> Sprints
+            <TabsTrigger value="sprints" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <Calendar className="h-4 w-4" /> {t('pages.projectManagement.detail.sprints')}
             </TabsTrigger>
-            <TabsTrigger value="epics" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <Layers className="h-4 w-4" /> Epics
+            <TabsTrigger value="epics" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <Layers className="h-4 w-4" /> {t('pages.projectManagement.detail.epics')}
             </TabsTrigger>
-            <TabsTrigger value="milestones" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <Flag className="h-4 w-4" /> Milestones
+            <TabsTrigger value="milestones" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <Flag className="h-4 w-4" /> {t('pages.projectManagement.detail.milestones')}
             </TabsTrigger>
             {selectedProject?.enable_issues !== false && (
-              <TabsTrigger value="issues" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                  <AlertCircle className="h-4 w-4" /> Issues
+              <TabsTrigger value="issues" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                  <AlertCircle className="h-4 w-4" /> {t('pages.projectManagement.detail.issues')}
               </TabsTrigger>
             )}
             {selectedProject?.enable_wiki !== false && (
-              <TabsTrigger value="wiki" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                  <FileText className="h-4 w-4" /> Wiki
+              <TabsTrigger value="wiki" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                  <FileText className="h-4 w-4" /> {t('pages.projectManagement.detail.wiki')}
               </TabsTrigger>
             )}
-            <TabsTrigger value="activity" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <History className="h-4 w-4" /> Activity
+            <TabsTrigger value="activity" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <History className="h-4 w-4" /> {t('pages.projectManagement.detail.activity')}
             </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground border">
-                <Settings className="h-4 w-4" /> Settings
+            <TabsTrigger value="settings" className="gap-2 data-[state=active]:bg-rams-orange data-[state=active]:text-black rounded-none border border-rams-line">
+                <Settings className="h-4 w-4" /> {t('common.settings')}
             </TabsTrigger>
         </TabsList>
 

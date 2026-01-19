@@ -21,6 +21,7 @@ import React, {
   useRef,
   ReactNode,
 } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -852,13 +853,14 @@ export function AndonAlert({
   onAcknowledge,
   className = '',
 }: AndonAlertProps) {
+  const { t } = useI18n();
   if (!active) return null;
 
   const typeConfig = {
-    production: { color: 'bg-yellow-500', icon: '⚙️', label: 'Production Issue' },
-    quality: { color: 'bg-red-600', icon: '⚠️', label: 'Quality Alert' },
-    safety: { color: 'bg-red-700', icon: '🛑', label: 'Safety Alert' },
-    maintenance: { color: 'bg-blue-600', icon: '🔧', label: 'Maintenance Required' },
+    production: { color: 'bg-yellow-500', icon: '⚙️', labelKey: 'components.factoryFloor.machineStatus.productionIssue' },
+    quality: { color: 'bg-red-600', icon: '⚠️', labelKey: 'components.factoryFloor.machineStatus.qualityAlert' },
+    safety: { color: 'bg-red-700', icon: '🛑', labelKey: 'components.factoryFloor.machineStatus.safetyAlert' },
+    maintenance: { color: 'bg-blue-600', icon: '🔧', labelKey: 'components.factoryFloor.machineStatus.maintenanceRequired' },
   };
 
   const config = typeConfig[type];
@@ -877,7 +879,7 @@ export function AndonAlert({
       <div className="flex items-center gap-4">
         <span className="text-5xl">{config.icon}</span>
         <div className="flex-1">
-          <h3 className="text-2xl font-bold">{config.label}</h3>
+          <h3 className="text-2xl font-bold">{t(config.labelKey)}</h3>
           {message && <p className="text-lg mt-1">{message}</p>}
         </div>
         {onAcknowledge && (

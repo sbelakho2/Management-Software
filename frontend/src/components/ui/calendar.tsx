@@ -148,7 +148,7 @@ export function Calendar({
         <div className="flex items-center justify-between px-1">
           <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/80">{format(monthDate, 'MMMM yyyy')}</h2>
         </div>
-        <div className="flex w-full border-b border-rams-border/30 pb-2">
+        <div className="flex w-full border-b border-rams-line/30 pb-2">
           {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((dayName) => (
             <div key={dayName} className="h-9 w-9 text-center text-[9px] text-muted-foreground/40 font-mono font-black uppercase tracking-tighter flex items-center justify-center">
               {dayName}

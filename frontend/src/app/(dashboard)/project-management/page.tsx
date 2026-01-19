@@ -18,24 +18,24 @@ import { useToast } from '@/hooks/use-toast';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useProjectManagementStore, type Project, type ProjectStatus, type ProjectType } from '@/stores/project-management-store';
 
-const statusTone: Record<ProjectStatus, { label: string; className: string }> = {
-  planning: { label: 'Planning', className: 'bg-muted text-muted-foreground' },
-  active: { label: 'Active', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' },
-  on_hold: { label: 'On Hold', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100' },
-  completed: { label: 'Completed', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100' },
-  archived: { label: 'Archived', className: 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-200' },
-  cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+const statusTone: Record<ProjectStatus, { labelKey: string; className: string }> = {
+  planning: { labelKey: 'pages.projectManagement.status.planning', className: 'bg-rams-muted/10 text-rams-muted' },
+  active: { labelKey: 'pages.projectManagement.status.active', className: 'bg-rams-green/10 text-rams-green' },
+  on_hold: { labelKey: 'pages.projectManagement.status.onHold', className: 'bg-rams-orange/10 text-rams-orange' },
+  completed: { labelKey: 'pages.projectManagement.status.completed', className: 'bg-rams-steel/10 text-rams-steel' },
+  archived: { labelKey: 'pages.projectManagement.status.archived', className: 'bg-rams-muted/10 text-rams-muted' },
+  cancelled: { labelKey: 'pages.projectManagement.status.cancelled', className: 'bg-rams-red/10 text-rams-red' },
 };
 
-const typeLabel: Record<ProjectType, string> = {
-  standard: 'Standard',
-  scrum: 'Scrum',
-  kanban: 'Kanban',
-  hybrid: 'Hybrid',
-  npi: 'NPI',
-  kaizen: 'Kaizen',
-  a3: 'A3',
-  maintenance: 'Maintenance',
+const typeLabels: Record<ProjectType, string> = {
+  standard: 'pages.projectManagement.types.standard',
+  scrum: 'pages.projectManagement.types.scrum',
+  kanban: 'pages.projectManagement.types.kanban',
+  hybrid: 'pages.projectManagement.types.hybrid',
+  npi: 'pages.projectManagement.types.npi',
+  kaizen: 'pages.projectManagement.types.kaizen',
+  a3: 'pages.projectManagement.types.a3',
+  maintenance: 'pages.projectManagement.types.maintenance',
 };
 
 import { BarChart, CHART_TYPE } from '@/components/ui/data-visualization';
@@ -72,7 +72,7 @@ export default function ProjectManagementPage() {
   React.useEffect(() => {
     if (error) {
       toast({
-        title: 'Project Management Error',
+        title: t('pages.projectManagement.errors.loadingProject'),
         description: error,
         variant: 'destructive',
       });
@@ -92,7 +92,7 @@ export default function ProjectManagementPage() {
 
   const onSubmitCreate = async () => {
     if (!createForm.name.trim()) {
-      toast({ title: 'Project name required', variant: 'destructive' });
+      toast({ title: t('pages.projectManagement.errors.nameRequired'), variant: 'destructive' });
       return;
     }
     try {
@@ -103,7 +103,7 @@ export default function ProjectManagementPage() {
         status: createForm.status,
         is_private: createForm.is_private,
       });
-      toast({ title: 'Project created', description: created.name });
+      toast({ title: t('common.projectCreated'), description: created.name });
       setCreateOpen(false);
       setCreateForm({ name: '', description: '', project_type: 'standard', status: 'planning', is_private: false });
     } catch {
@@ -111,10 +111,14 @@ export default function ProjectManagementPage() {
     }
   };
 
+  // Helper to get translated status label
+  const getStatusLabel = (status: ProjectStatus) => t(statusTone[status].labelKey);
+  const getTypeLabel = (type: ProjectType) => t(typeLabels[type]);
+
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="pm-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.projectManagement.title')}
@@ -122,18 +126,18 @@ export default function ProjectManagementPage() {
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
             <span>{t('pages.projectManagement.subtitle')}</span>
             <span className="opacity-30">|</span>
-            <span>STATION: PM-01</span>
+            <span>{t('pages.projectManagement.station')}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-border rounded-rams-sm mr-2">
+          <div className="flex items-center gap-1 bg-rams-panel p-1 border border-rams-line rounded-rams-sm mr-2">
             <Button
               variant={view === 'list' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setView('list')}
               className={cn("h-8 px-3 rounded-none", view === 'list' ? "bg-rams-orange text-black" : "text-muted-foreground")}
             >
-              LIST
+              {t('common.list')}
             </Button>
             <Button
               variant={view === 'portfolio' ? 'default' : 'ghost'}
@@ -141,31 +145,31 @@ export default function ProjectManagementPage() {
               onClick={() => setView('portfolio')}
               className={cn("h-8 px-3 rounded-none", view === 'portfolio' ? "bg-rams-orange text-black" : "text-muted-foreground")}
             >
-              PORTFOLIO
+              {t('pages.projectManagement.portfolio')}
             </Button>
           </div>
           <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => setCreateOpen(true)} data-testid="pm-create-project">
             <Plus className="mr-2 h-3.5 w-3.5" />
-            INITIALIZE_INITIATIVE
+            {t('pages.projectManagement.actions.newInitiative')}
           </Button>
         </div>
       </div>
 
       {view === 'portfolio' ? (
-        <div className="grid gap-0 md:grid-cols-2 border border-rams-border bg-rams-border">
+        <div className="grid gap-0 md:grid-cols-2 border border-rams-line bg-rams-line">
           <Card className="rounded-none border-0 border-r border-b md:border-b-0">
             <CardHeader className="pb-6">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Initiative Distribution</CardTitle>
-              <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">High-level portfolio nodes by status</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.projectManagement.sections.distribution')}</CardTitle>
+              <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('pages.projectManagement.distributionDescription')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[240px] flex items-center justify-center bg-rams-panel/20 border border-rams-border/50 relative overflow-hidden">
+              <div className="h-[240px] flex items-center justify-center bg-rams-panel/20 border border-rams-line relative overflow-hidden">
                 <BarChart 
                   data={[
-                    { label: 'Planning', value: projects.filter(p => p.status === 'planning').length, color: '#94a3b8' },
-                    { label: 'Active', value: projects.filter(p => p.status === 'active').length, color: '#FFBE00' },
-                    { label: 'On Hold', value: projects.filter(p => p.status === 'on_hold').length, color: '#D62D2D' },
-                    { label: 'Completed', value: projects.filter(p => p.status === 'completed').length, color: '#2D8C3C' },
+                    { label: t('pages.projectManagement.status.planning'), value: projects.filter(p => p.status === 'planning').length, color: '#94a3b8' },
+                    { label: t('pages.projectManagement.status.active'), value: projects.filter(p => p.status === 'active').length, color: '#FFBE00' },
+                    { label: t('pages.projectManagement.status.onHold'), value: projects.filter(p => p.status === 'on_hold').length, color: '#D62D2D' },
+                    { label: t('pages.projectManagement.status.completed'), value: projects.filter(p => p.status === 'completed').length, color: '#2D8C3C' },
                   ]}
                 />
                 <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
@@ -177,10 +181,10 @@ export default function ProjectManagementPage() {
               <div className="text-6xl font-mono font-bold tracking-tight text-rams-green tabular-nums">
                 {projects.length > 0 ? Math.round((projects.filter(p => p.status === 'active' || p.status === 'completed').length / projects.length) * 100) : 0}%
               </div>
-              <div className="absolute -inset-8 border border-rams-green/20 animate-pulse" />
+              <div className="absolute -inset-8 border border-rams-green/20" />
             </div>
-            <p className="text-[9px] font-mono font-black uppercase tracking-[0.3em] text-rams-green mt-12">Portfolio Health Index</p>
-            <p className="text-[10px] font-sans font-bold text-muted-foreground/60 uppercase mt-2">Strategic Velocity Optimal</p>
+            <p className="text-[9px] font-mono font-black uppercase tracking-[0.3em] text-rams-green mt-12">{t('pages.projectManagement.sections.healthIndex')}</p>
+            <p className="text-[10px] font-sans font-bold text-muted-foreground/60 uppercase mt-2">{t('pages.projectManagement.labels.velocityOptimal')}</p>
           </Card>
         </div>
       ) : (
@@ -190,7 +194,7 @@ export default function ProjectManagementPage() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="SEARCH_INITIATIVES..."
+              placeholder={t('pages.projectManagement.search.placeholder')}
               className="pl-10 h-10 text-[10px]"
               data-testid="pm-search"
             />
@@ -207,15 +211,15 @@ export default function ProjectManagementPage() {
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-24 text-center border border-dashed border-rams-border bg-rams-panel/20">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-border mb-6">
+            <div className="py-24 text-center border border-dashed border-rams-line bg-rams-panel/20">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-rams-module border border-rams-line mb-6">
                 <FolderKanban className="h-8 w-8 text-muted-foreground/20" />
               </div>
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero initiative protocols identified</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.projectManagement.emptyState')}</p>
               <div className="mt-8">
                 <Button variant="outline" className="rounded-rams-sm" onClick={() => setCreateOpen(true)}>
                   <Plus className="mr-2 h-3.5 w-3.5" />
-                  INITIATE_FIRST_PROTOCOL
+                  {t('pages.projectManagement.actions.createFirst')}
                 </Button>
               </div>
             </div>
@@ -226,7 +230,7 @@ export default function ProjectManagementPage() {
                 return (
                   <Link key={p.id} href={`/project-management/${p.id}`} className="block group">
                     <Card className="h-full rounded-rams-sm group hover:border-rams-orange/40 transition-none" data-testid={`pm-project-${p.id}`}>
-                      <CardHeader className="pb-4 bg-rams-panel/10 border-b border-rams-border/30">
+                      <CardHeader className="pb-4 bg-rams-panel/10 border-b border-rams-line">
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
                             <CardTitle className="group-hover:text-rams-orange transition-none">{p.name}</CardTitle>
@@ -234,11 +238,11 @@ export default function ProjectManagementPage() {
                           </div>
                           <div className="flex items-center gap-2">
                             {p.is_private ? (
-                              <div className="p-2 bg-rams-panel border border-rams-border text-rams-red/40" title="Private Protocol">
+                              <div className="p-2 bg-rams-panel border border-rams-line text-rams-red/40" title={t('pages.projectManagement.labels.privateProtocol')}>
                                 <Lock className="h-3.5 w-3.5" />
                               </div>
                             ) : (
-                              <div className="p-2 bg-rams-panel border border-rams-border text-rams-green/40" title="Shared Intelligence">
+                              <div className="p-2 bg-rams-panel border border-rams-line text-rams-green/40" title={t('pages.projectManagement.labels.sharedIntelligence')}>
                                 <Globe className="h-3.5 w-3.5" />
                               </div>
                             )}
@@ -247,11 +251,11 @@ export default function ProjectManagementPage() {
                       </CardHeader>
                       <CardContent className="p-6 space-y-6">
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline" className={cn('rounded-none border-rams-border font-black', tone.className)}>{tone.label.toUpperCase()}</Badge>
-                          <Badge variant="outline" className="rounded-none border-rams-border text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{typeLabel[p.project_type].toUpperCase()}</Badge>
+                          <Badge variant="outline" className={cn('rounded-none border-rams-line font-black', tone.className)}>{getStatusLabel(p.status).toUpperCase()}</Badge>
+                          <Badge variant="outline" className="rounded-none border-rams-line text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{getTypeLabel(p.project_type).toUpperCase()}</Badge>
                         </div>
-                        <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed font-medium h-10">{p.description || 'No description protocol established.'}</p>
-                        <div className="pt-6 border-t border-rams-border/30 flex items-center justify-between">
+                        <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed font-medium h-10">{p.description || t('pages.projectManagement.noDescription')}</p>
+                        <div className="pt-6 border-t border-rams-line flex items-center justify-between">
                           <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30">
                             PULSE {formatRelativeTime(p.updated_at).toUpperCase()}
                           </p>
@@ -267,35 +271,35 @@ export default function ProjectManagementPage() {
         </div>
       )}
 
-      {/* Create Dialog (Industrialized) */}
+      {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl" data-testid="pm-create-dialog">
           <DialogHeader>
-            <DialogTitle>INITIALIZE_INITIATIVE_PROTOCOL</DialogTitle>
+            <DialogTitle>{t('pages.projectManagement.createDialog.title')}</DialogTitle>
             <DialogDescription>
-              Create a new space for project intelligence, strategic alignment and cross-module work.
+              {t('pages.projectManagement.createDialog.description')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-6 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="pm-name">INITIATIVE_IDENTITY</Label>
+              <Label htmlFor="pm-name">{t('pages.projectManagement.createDialog.name')}</Label>
               <Input
                 id="pm-name"
                 value={createForm.name}
                 onChange={(e) => setCreateForm((s) => ({ ...s, name: e.target.value }))}
-                placeholder="e.g., NPI - WING BRACKET..."
+                placeholder={t('pages.projectManagement.createDialog.namePlaceholder')}
                 data-testid="pm-create-name"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="pm-desc">PROTOCOL_SCOPE</Label>
+              <Label htmlFor="pm-desc">{t('pages.projectManagement.createDialog.description')}</Label>
               <Textarea
                 id="pm-desc"
                 value={createForm.description}
                 onChange={(e) => setCreateForm((s) => ({ ...s, description: e.target.value }))}
-                placeholder="Detail scope, objectives, and key strategic deliverables..."
+                placeholder={t('pages.projectManagement.createDialog.descriptionPlaceholder')}
                 rows={4}
                 data-testid="pm-create-description"
               />
@@ -303,7 +307,7 @@ export default function ProjectManagementPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="grid gap-2">
-                <Label>ENGINEERING_TYPE</Label>
+                <Label>{t('pages.projectManagement.createDialog.type')}</Label>
                 <Select
                   value={createForm.project_type}
                   onValueChange={(v) => setCreateForm((s) => ({ ...s, project_type: v as ProjectType }))}
@@ -312,9 +316,9 @@ export default function ProjectManagementPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(typeLabel).map(([k, lbl]) => (
+                    {Object.entries(typeLabels).map(([k, labelKey]) => (
                       <SelectItem key={k} value={k}>
-                        {lbl.toUpperCase()}
+                        {t(labelKey).toUpperCase()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -322,7 +326,7 @@ export default function ProjectManagementPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label>STATUS_STATE</Label>
+                <Label>{t('pages.projectManagement.createDialog.status')}</Label>
                 <Select
                   value={createForm.status}
                   onValueChange={(v) => setCreateForm((s) => ({ ...s, status: v as ProjectStatus }))}
@@ -333,7 +337,7 @@ export default function ProjectManagementPage() {
                   <SelectContent>
                     {Object.entries(statusTone).map(([k, v]) => (
                       <SelectItem key={k} value={k}>
-                        {v.label.toUpperCase()}
+                        {t(v.labelKey).toUpperCase()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -341,10 +345,10 @@ export default function ProjectManagementPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-4 bg-rams-panel border border-rams-border/50">
+            <div className="flex items-center justify-between p-4 bg-rams-panel border border-rams-line">
               <div>
-                <Label className="text-foreground">PRIVATE_NODE_RESTRICTION</Label>
-                <p className="text-[9px] text-muted-foreground/60 uppercase font-mono mt-1">Restrict visibility to invited team members only</p>
+                <Label className="text-foreground">{t('pages.projectManagement.createDialog.visibility')}</Label>
+                <p className="text-[9px] text-muted-foreground/60 uppercase font-mono mt-1">{t('pages.projectManagement.createDialog.visibilityDescription')}</p>
               </div>
               <Button
                 type="button"
@@ -352,19 +356,19 @@ export default function ProjectManagementPage() {
                 size="sm"
                 onClick={() => setCreateForm((s) => ({ ...s, is_private: !s.is_private }))}
                 data-testid="pm-create-visibility"
-                className="h-8 rounded-none border-rams-border"
+                className="h-8 rounded-none border-rams-line"
               >
-                {createForm.is_private ? 'PRIVATE' : 'GLOBAL'}
+                {createForm.is_private ? t('common.private') : t('common.public')}
               </Button>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-              CANCEL_PROTOCOL
+              {t('common.cancel')}
             </Button>
             <Button onClick={onSubmitCreate} data-testid="pm-create-submit">
-              INITIALIZE_INITIATIVE
+              {t('pages.projectManagement.actions.createProject')}
             </Button>
           </DialogFooter>
         </DialogContent>

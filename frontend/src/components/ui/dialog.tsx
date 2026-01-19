@@ -42,7 +42,7 @@ const DialogContent = React.forwardRef<
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-100',
         'data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]',
         'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
-        'rounded-rams-sm border-rams-border',
+        'rounded-rams-sm border-rams-line',
         className
       )}
       {...props}
@@ -63,7 +63,7 @@ const DialogHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col space-y-1 text-left border-b border-rams-border/30 pb-4 mb-2',
+      'flex flex-col space-y-1 text-left border-b border-rams-line/30 pb-4 mb-2',
       className
     )}
     {...props}
@@ -77,7 +77,7 @@ const DialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 border-t border-rams-border/30 pt-4 mt-2',
+      'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 border-t border-rams-line/30 pt-4 mt-2',
       className
     )}
     {...props}

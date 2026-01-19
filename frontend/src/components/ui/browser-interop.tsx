@@ -658,6 +658,24 @@ function getTranslation(obj: Translations, path: string): string | undefined {
   return typeof current === 'string' ? current : undefined;
 }
 
+/**
+ * Convert a translation key to a human-readable fallback
+ * e.g., "pages.pipeline.newOpportunity" -> "New Opportunity"
+ */
+function keyToReadableFallback(key: string): string {
+  const lastPart = key.split('.').pop() || key;
+  const withSpaces = lastPart
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/([0-9]+)/g, ' $1 ')
+    .trim();
+  return withSpaces
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 interface I18nProviderProps {
   children: ReactNode;
   defaultLocale?: LocaleType;
@@ -707,11 +725,16 @@ export function I18nProvider({
   // Translation function
   const t = useCallback((key: string, params?: Record<string, string | number>): string => {
     const localeTranslations = mergedTranslations[locale] || mergedTranslations[LOCALE.EN_US];
-    let value = getTranslation(localeTranslations, key) || key;
+    let value = getTranslation(localeTranslations, key);
+    
+    // Return human-readable fallback if no translation found
+    if (value === undefined) {
+      value = keyToReadableFallback(key);
+    }
 
     if (params) {
       Object.entries(params).forEach(([paramKey, paramValue]) => {
-        value = value.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramValue));
+        value = value!.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramValue));
       });
     }
 

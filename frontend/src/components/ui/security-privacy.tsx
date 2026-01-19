@@ -23,6 +23,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -430,12 +431,12 @@ export interface PrivacyIndicatorProps {
   className?: string;
 }
 
-const STATUS_CONFIG: Record<SyncStatus, { icon: string; color: string; label: string; animate?: boolean }> = {
-  [SYNC_STATUS.IDLE]: { icon: '⚪', color: 'text-gray-400', label: 'Idle' },
-  [SYNC_STATUS.SYNCING]: { icon: '🔄', color: 'text-blue-500', label: 'Syncing...', animate: true },
-  [SYNC_STATUS.PROCESSING]: { icon: '⚙️', color: 'text-yellow-500', label: 'Processing...', animate: true },
-  [SYNC_STATUS.COMPLETE]: { icon: '✅', color: 'text-green-500', label: 'Complete' },
-  [SYNC_STATUS.ERROR]: { icon: '❌', color: 'text-red-500', label: 'Error' },
+const STATUS_CONFIG: Record<SyncStatus, { icon: string; color: string; labelKey: string; animate?: boolean }> = {
+  [SYNC_STATUS.IDLE]: { icon: '⚪', color: 'text-gray-400', labelKey: 'common.status.idle' },
+  [SYNC_STATUS.SYNCING]: { icon: '🔄', color: 'text-blue-500', labelKey: 'common.status.syncing', animate: true },
+  [SYNC_STATUS.PROCESSING]: { icon: '⚙️', color: 'text-yellow-500', labelKey: 'common.status.processing', animate: true },
+  [SYNC_STATUS.COMPLETE]: { icon: '✅', color: 'text-green-500', labelKey: 'common.status.complete' },
+  [SYNC_STATUS.ERROR]: { icon: '❌', color: 'text-red-500', labelKey: 'common.status.error' },
 };
 
 const SIZE_CLASSES = {
@@ -457,6 +458,7 @@ export function PrivacyIndicator({
   size = 'md',
   className = '',
 }: PrivacyIndicatorProps) {
+  const { t } = useI18n();
   const config = STATUS_CONFIG[status];
 
   return (
@@ -471,7 +473,7 @@ export function PrivacyIndicator({
       </span>
       {showLabel && (
         <span className={config.color}>
-          {label || config.label}
+          {label || t(config.labelKey)}
         </span>
       )}
     </div>

@@ -9,29 +9,35 @@ import { useI18n } from '@/contexts/i18n-context';
 export default function AccountSettingsPage() {
   const { t } = useI18n();
   return (
-    <SettingsPageShell title="Account Node" description="Manage your primary identity credentials and authentication layers">
-      <div className="space-y-10 max-w-xl">
-        <div className="space-y-3">
-          <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Primary Email Protocol</Label>
-          <Input defaultValue="admin@sensei-manuf.com" className="h-12" />
-        </div>
+    <SettingsPageShell title={t('settings.account.title')} description={t('settings.account.description')}>
+      <div className="space-y-12 py-6">
+        <section className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('settings.account.primaryEmail')}</Label>
+            <Input defaultValue="admin@sensei-manuf.com" className="bg-rams-panel border-rams-line h-10 text-[11px]" />
+          </div>
+        </section>
         
-        <div className="pt-8 border-t border-border/10">
-          <h3 className="text-xl font-heading font-bold tracking-tight mb-6">Credential Rotation</h3>
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Current Password</Label>
-              <Input type="password" placeholder="••••••••" className="h-12" />
+        <section className="pt-10 border-t border-rams-line space-y-8">
+          <div>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground/70">{t('settings.account.credentialRotation')}</h3>
+            <p className="text-[9px] text-muted-foreground/40 uppercase tracking-widest mt-1">{t('settings.account.credentialRotationDesc')}</p>
+          </div>
+          
+          <div className="space-y-6 max-w-md">
+            <div className="space-y-2">
+              <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('settings.account.currentPassword')}</Label>
+              <Input type="password" placeholder="••••••••" className="bg-rams-panel border-rams-line h-10 text-[11px]" />
             </div>
-            <div className="space-y-3">
-              <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">New Intelligence Key</Label>
-              <Input type="password" placeholder="••••••••" className="h-12" />
+            <div className="space-y-2">
+              <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('settings.account.newPassword')}</Label>
+              <Input type="password" placeholder="••••••••" className="bg-rams-panel border-rams-line h-10 text-[11px]" />
             </div>
-            <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-              Update Credentials
+            <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line text-[9px] font-black uppercase tracking-widest h-10 px-6 transition-none">
+              {t('settings.account.updateCredentials')}
             </Button>
           </div>
-        </div>
+        </section>
       </div>
     </SettingsPageShell>
   );

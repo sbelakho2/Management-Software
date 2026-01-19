@@ -69,8 +69,8 @@ function SQDCPCard({
   };
 
   return (
-    <Card className={cn('rounded-rams-sm border border-rams-border bg-rams-module transition-none group', statusColors[status])}>
-      <CardHeader className="pb-4 border-b border-rams-border/30 bg-rams-panel/10">
+    <Card className={cn('rounded-rams-sm border border-rams-line bg-rams-module transition-none group', statusColors[status])}>
+      <CardHeader className="pb-4 border-b border-rams-line bg-rams-panel/10">
         <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Icon className="h-4 w-4" />
@@ -81,7 +81,7 @@ function SQDCPCard({
       </CardHeader>
       <CardContent className="p-4 space-y-1">
         {metrics.map((metric, idx) => (
-          <div key={idx} className="flex items-center justify-between p-3 bg-rams-panel/40 border border-rams-border/50 hover:bg-rams-panel transition-none">
+          <div key={idx} className="flex items-center justify-between p-3 bg-rams-panel/40 border border-rams-line hover:bg-rams-panel transition-none">
             <span className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/60">{metric.label}</span>
             <div className="flex items-center gap-3">
               <span className="text-xl font-mono font-bold tabular-nums text-foreground/80">{metric.value}</span>
@@ -152,7 +152,7 @@ export default function ObeyaPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="obeya-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90 flex items-center gap-3">
             <Shield className="h-6 w-6 text-rams-orange" />
@@ -165,56 +165,56 @@ export default function ObeyaPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border" onClick={() => fetchCognitiveInsights()} disabled={isLoading}>
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={() => fetchCognitiveInsights()} disabled={isLoading}>
             <RefreshCw className={cn("h-3.5 w-3.5 mr-2", isLoading && "animate-spin")} />
-            Sync Intel
+            {t('pages.obeya.syncIntel')}
           </Button>
-          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-border">
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line">
             <Settings className="h-3.5 w-3.5 mr-2" />
-            Parameters
+            {t('pages.obeya.parameters')}
           </Button>
           <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => router.push('/obeya/new')}>
             <Plus className="mr-2 h-3.5 w-3.5" />
-            Initialize Board
+            {t('pages.obeya.initializeBoard')}
           </Button>
         </div>
       </div>
 
       {/* Tabs for different views */}
       <Tabs defaultValue="overview" className="space-y-8 animate-in fade-in duration-700">
-        <TabsList className="bg-rams-panel border border-rams-border p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
-          <TabsTrigger value="overview">OVERVIEW</TabsTrigger>
-          <TabsTrigger value="intelligence">SENSEI_AI</TabsTrigger>
-          <TabsTrigger value="sqdcp">SQDCP_DETAIL</TabsTrigger>
-          <TabsTrigger value="exceptions">EXCEPTIONS</TabsTrigger>
+        <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
+          <TabsTrigger value="overview">{t('pages.obeya.tabs.overview')}</TabsTrigger>
+          <TabsTrigger value="intelligence">{t('pages.obeya.tabs.senseiAi')}</TabsTrigger>
+          <TabsTrigger value="sqdcp">{t('pages.obeya.tabs.sqdcpDetail')}</TabsTrigger>
+          <TabsTrigger value="exceptions">{t('pages.obeya.tabs.exceptions')}</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+          <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
             <Card className="rounded-none border-0 border-r border-b lg:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Predictive Breaches</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.predictiveBreaches')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{summary.metrics.warnings}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-orange mt-2 flex items-center gap-1">
                 <TrendingDown className="h-3 w-3" /> TRENDING_TOWARD_RED
               </p>
             </Card>
             <Card className="rounded-none border-0 border-r border-b lg:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Silo Bottlenecks</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.siloBottlenecks')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{summary.cross_functional.active_alerts}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2 flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" /> INTER-DEPT_FRICTION
               </p>
             </Card>
             <Card className="rounded-none border-0 border-r border-b md:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Rebalance Ops</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.rebalanceOps')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-steel tabular-nums">{summary.cross_functional.pending_rebalances}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-steel mt-2 flex items-center gap-1">
                 <Users className="h-3 w-3" /> SKILL_GAP_NODES
               </p>
             </Card>
             <Card className="rounded-none border-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Heijunka Tips</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.heijunkaTips')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{summary.heijunka.pending_suggestions}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2 flex items-center gap-1">
                 <Activity className="h-3 w-3" /> SMOOTHING_PROTOCOLS
@@ -223,11 +223,11 @@ export default function ObeyaPage() {
           </div>
 
           <div className="grid gap-8 lg:grid-cols-2">
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Activity className="h-4 w-4 text-rams-orange" />
-                  Primary North Stars
+                  {t('pages.obeya.primaryNorthStars')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-6">
@@ -255,19 +255,19 @@ export default function ObeyaPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Shield className="h-4 w-4 text-rams-orange" />
-                  Recent Silo Alerts
+                  {t('pages.obeya.recentSiloAlerts')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y divide-rams-border/30">
+                <div className="divide-y divide-rams-line/30">
                   {siloAlerts.map((alert: any) => (
                     <div key={alert.alert_id} className="flex items-start gap-4 p-4 hover:bg-rams-panel transition-none group">
                       <div className={cn(
-                        "mt-0.5 p-2 rounded-rams-sm border border-rams-border",
+                        "mt-0.5 p-2 rounded-rams-sm border border-rams-line",
                         alert.severity === 'critical' ? 'bg-rams-red/5 text-rams-red border-rams-red/20' : 'bg-rams-orange/5 text-rams-orange border-rams-orange/20'
                       )}>
                         <AlertTriangle className="h-4 w-4" />
@@ -297,22 +297,22 @@ export default function ObeyaPage() {
         {/* Intelligence Tab */}
         <TabsContent value="intelligence" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="grid gap-8 lg:grid-cols-2">
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                     <Users className="h-4 w-4 text-rams-orange" />
-                    Resource Rebalancing
+                    {t('pages.obeya.resourceRebalancing')}
                   </CardTitle>
                   <Badge variant="default" className="animate-pulse h-4 px-1 text-[8px] font-black uppercase">AI_SYNC</Badge>
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 {rebalanceSuggestions.map((s: any) => (
-                  <div key={s.suggestion_id} className="p-4 bg-rams-panel/40 border border-rams-border/50 space-y-4 group hover:bg-rams-panel transition-none">
+                  <div key={s.suggestion_id} className="p-4 bg-rams-panel/40 border border-rams-line space-y-4 group hover:bg-rams-panel transition-none">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="font-mono text-[9px] rounded-none border-rams-border h-4">{s.from_work_center}</Badge>
+                        <Badge variant="outline" className="font-mono text-[9px] rounded-none border-rams-line h-4">{s.from_work_center}</Badge>
                         <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
                         <Badge variant="default" className="font-mono text-[9px] rounded-none h-4">{s.to_work_center}</Badge>
                       </div>
@@ -326,8 +326,8 @@ export default function ObeyaPage() {
                       <p className="text-[8px] uppercase font-black tracking-widest text-muted-foreground/40">RECOMMENDED_OPERATORS</p>
                       <div className="flex flex-wrap gap-2">
                         {s.operators.map((op: string) => (
-                          <div key={op} className="flex items-center gap-2 bg-rams-module border border-rams-border px-2 py-1 rounded-none text-[10px] font-bold uppercase">
-                            <Avatar className="h-4 w-4 rounded-none border border-rams-border/20">
+                          <div key={op} className="flex items-center gap-2 bg-rams-module border border-rams-line px-2 py-1 rounded-none text-[10px] font-bold uppercase">
+                            <Avatar className="h-4 w-4 rounded-none border border-rams-line">
                               <AvatarFallback className="text-[8px] font-mono">{getInitials(op)}</AvatarFallback>
                             </Avatar>
                             {op}
@@ -347,12 +347,12 @@ export default function ObeyaPage() {
               </CardContent>
             </Card>
 
-            <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-              <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+            <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                     <Activity className="h-4 w-4 text-rams-green" />
-                    Heijunka Leveling
+                    {t('pages.obeya.heijunkaLeveling')}
                   </CardTitle>
                   <Badge variant="success" className="h-4 px-1 text-[8px] font-black uppercase">PRESCRIPTIVE</Badge>
                 </div>
@@ -371,7 +371,7 @@ export default function ObeyaPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Current Pattern</p>
-                        <div className="h-12 w-full bg-rams-panel rounded-none flex items-end gap-0.5 p-1 border border-rams-border/30">
+                        <div className="h-12 w-full bg-rams-panel rounded-none flex items-end gap-0.5 p-1 border border-rams-line">
                           {[40, 80, 20, 90, 30].map((h, i) => <div key={i} className="flex-1 bg-rams-red/40" style={{height: `${h}%`}} />)}
                         </div>
                       </div>
@@ -425,12 +425,12 @@ export default function ObeyaPage() {
         </TabsContent>
 
         <TabsContent value="exceptions" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-            <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+          <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Anomalies & Exceptions</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y divide-rams-border/30">
+              <div className="divide-y divide-rams-line/30">
                 {items.filter(i => i.status === 'blocked' || i.is_escalated).map(item => (
                   <div key={item.id} className="flex items-center gap-4 p-4 hover:bg-rams-panel transition-none group">
                     <div className="p-2 rounded-rams-sm bg-rams-red/5 text-rams-red border border-rams-red/20 group-hover:bg-rams-red group-hover:text-white transition-none">

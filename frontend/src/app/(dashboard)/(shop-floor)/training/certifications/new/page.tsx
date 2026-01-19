@@ -25,65 +25,69 @@ export default function NewCertificationPage() {
     setIsSubmitting(true);
     setTimeout(() => {
       toast({
-        title: 'Certification Registered',
-        description: 'New certification has been added to the system.',
+        title: t('training.certifications.new.toast.success.title') || 'Certification Registered',
+        description: t('training.certifications.new.toast.success.description') || 'New certification has been added to the system.',
       });
       router.push('/training');
     }, 1000);
   };
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-2xl mx-auto space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Certification</h1>
-            <p className="text-muted-foreground">Register a new certificate for a team member</p>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('training.certifications.new.title') || 'New Certification'}</h1>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>{t('training.certifications.new.subtitle') || 'Register a new certificate for a team member'}</span>
+              <span className="opacity-30">|</span>
+              <span>STATION: ACADEMY-REG-01</span>
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? 'Saving...' : 'Register Certification'}
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.back()}>{t('common.cancel') || 'Cancel'}</Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting} className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+            <Save className="h-3.5 w-3.5 mr-2" />
+            {isSubmitting ? (t('common.saving') || 'Saving...') : (t('training.certifications.new.registerCertification') || 'Register Certification')}
           </Button>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Certification Details</CardTitle>
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+        <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.certifications.new.certificationDetails') || 'Certification Details'}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="p-8">
+          <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-2">
-              <Label htmlFor="title">Certification Title *</Label>
-              <Input id="title" required />
+              <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.certificationTitle') || 'Certification Title'} *</Label>
+              <Input id="title" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" required />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
-                <Label htmlFor="user">Team Member</Label>
-                <Input id="user" placeholder="Name or Employee ID" />
+                <Label htmlFor="user" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.teamMember') || 'Team Member'}</Label>
+                <Input id="user" placeholder={t('training.certifications.new.teamMemberPlaceholder') || 'Name or Employee ID'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="score">Final Score / Grade</Label>
-                <Input id="score" placeholder="e.g., 95% or Pass" />
+                <Label htmlFor="score" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.finalScore') || 'Final Score / Grade'}</Label>
+                <Input id="score" placeholder={t('training.certifications.new.scorePlaceholder') || 'e.g., 95% or Pass'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
-                <Label htmlFor="issueDate">Issue Date</Label>
-                <Input id="issueDate" type="date" />
+                <Label htmlFor="issueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.issueDate') || 'Issue Date'}</Label>
+                <Input id="issueDate" type="date" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expiryDate">Expiry Date</Label>
-                <Input id="expiryDate" type="date" />
+                <Label htmlFor="expiryDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.expiryDate') || 'Expiry Date'}</Label>
+                <Input id="expiryDate" type="date" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="issuer">Issuing Authority</Label>
-              <Input id="issuer" defaultValue="Internal Training Dept" />
+              <Label htmlFor="issuer" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.issuingAuthority') || 'Issuing Authority'}</Label>
+              <Input id="issuer" defaultValue={t('training.certifications.new.defaultIssuer') || 'Internal Training Dept'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
             </div>
           </form>
         </CardContent>

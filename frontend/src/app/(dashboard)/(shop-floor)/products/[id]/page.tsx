@@ -44,6 +44,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { cn, formatCurrency, formatNumber, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useI18n } from '@/contexts/i18n-context';
@@ -138,9 +146,9 @@ const mockProduct: Product = {
 };
 
 const statusConfig = {
-  active: { label: 'Active', variant: 'success' as const },
-  inactive: { label: 'Inactive', variant: 'secondary' as const },
-  discontinued: { label: 'Discontinued', variant: 'danger' as const },
+  active: { labelKey: 'common.active', variant: 'success' as const },
+  inactive: { labelKey: 'common.inactive', variant: 'secondary' as const },
+  discontinued: { labelKey: 'common.discontinued', variant: 'danger' as const },
 };
 
 function ProductDetailSkeleton() {
@@ -236,9 +244,9 @@ export default function ProductDetailPage() {
   if (!product) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-lg font-medium">Product not found</h2>
+        <h2 className="text-lg font-medium">{t('products.detail.notFound') || 'Product not found'}</h2>
         <Button className="mt-4" onClick={() => router.push('/products')}>
-          Back to Products
+          {t('products.detail.backToProducts') || 'Back to Products'}
         </Button>
       </div>
     );
@@ -253,65 +261,60 @@ export default function ProductDetailPage() {
   const bomCost = (product.bom ?? []).reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
 
   return (
-    <div className="space-y-8 page-fade-in">
+    <div className="space-y-8 page-fade-in pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.push('/products')}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.push('/products')}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-base font-bold text-primary/60 tracking-tight">{product.partNumber}</span>
-              <Badge variant={config.variant} className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{config.label}</Badge>
+              <span className="font-mono text-sm font-bold text-rams-orange tracking-tight tabular-nums">{product.partNumber}</span>
+              <Badge variant={config.variant} size="sm">{t(config.labelKey).toUpperCase()}</Badge>
               {isLowStock && product.status === 'active' && (
-                <Badge variant="warning" className="gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                  <AlertTriangle className="h-3 w-3" />
-                  Low Stock
+                <Badge variant="warning" size="sm" className="gap-1.5 h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  STOCK_LOW
                 </Badge>
               )}
             </div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">{product.name}</h1>
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90 mt-1">{product.name}</h1>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setIsEditing(true)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Master Data
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => setIsEditing(true)}>
+            <Edit className="mr-2 h-3.5 w-3.5" />
+            {t('products.detail.refineMasterData') || 'REFINE_MASTER_DATA'}
           </Button>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setShowAdjustDialog(true)}>
-            <Boxes className="mr-2 h-4 w-4" />
-            Adjust Inventory
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => setShowAdjustDialog(true)}>
+            <Boxes className="mr-2 h-3.5 w-3.5" />
+            {t('products.detail.adjustInventory') || 'ADJUST_INVENTORY'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-xl h-12 w-12 border border-border/40">
-                <MoreHorizontal className="h-5 w-5" />
+              <Button variant="ghost" size="icon" className="h-10 w-10 border border-rams-line rounded-rams-sm">
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-2xl shadow-premium">
-              <DropdownMenuItem className="rounded-xl m-1">
-                <Copy className="mr-2 h-4 w-4" />
-                Clone Product
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>
+                <Copy className="mr-2 h-3.5 w-3.5" /> {t('products.detail.cloneNode') || 'CLONE_NODE'}
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl m-1">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                View Analytics
+              <DropdownMenuItem>
+                <BarChart3 className="mr-2 h-3.5 w-3.5" /> {t('products.detail.analyzeIntel') || 'ANALYZE_INTEL'}
               </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-xl m-1">
-                <History className="mr-2 h-4 w-4" />
-                View History
+              <DropdownMenuItem>
+                <History className="mr-2 h-3.5 w-3.5" /> {t('products.detail.viewLogs') || 'VIEW_LOGS'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {product.status === 'active' ? (
-                <DropdownMenuItem className="text-warning rounded-xl m-1">
-                  <Archive className="mr-2 h-4 w-4" />
-                  Deactivate
+                <DropdownMenuItem className="text-rams-red">
+                  <Archive className="mr-2 h-3.5 w-3.5" /> {t('products.detail.deauthorize') || 'DE-AUTHORIZE'}
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem className="text-success rounded-xl m-1">
-                  <Package className="mr-2 h-4 w-4" />
-                  Activate
+                <DropdownMenuItem className="text-rams-green">
+                  <Package className="mr-2 h-3.5 w-3.5" /> {t('products.detail.authorize') || 'AUTHORIZE'}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -320,176 +323,165 @@ export default function ProductDetailPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid gap-4 sm:grid-cols-5">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(product.listPrice)}</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">List Price</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardContent className="pt-6 text-center">
-            <p className={cn(
-              'text-3xl font-heading font-bold tracking-tight',
-              margin >= 40 ? 'text-emerald-600 dark:text-emerald-500' : margin >= 25 ? 'text-amber-600 dark:text-amber-500' : 'text-red-600 dark:text-red-500'
-            )}>
-              {margin.toFixed(1)}%
-            </p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Gross Margin</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardContent className="pt-6 text-center">
-            <p className={cn('text-3xl font-heading font-bold tracking-tight', isLowStock && 'text-amber-600 dark:text-amber-500')}>
-              {formatNumber(product.inventoryQty)}
-            </p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">In Stock</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight ">{formatNumber(product.stats.totalSold)}</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Total Sold</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardContent className="pt-6 text-center">
-            <p className="text-3xl font-heading font-bold tracking-tight ">{winRate.toFixed(0)}%</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mt-2">Win Rate</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-5">
+        <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.marketValuation') || 'Market Valuation'}</p>
+          <p className="text-2xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(product.listPrice)}</p>
+        </div>
+        <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.fiscalMargin') || 'Fiscal Margin'}</p>
+          <p className={cn(
+            'text-2xl font-mono font-bold tracking-tight tabular-nums',
+            margin >= 40 ? 'text-rams-green' : margin >= 25 ? 'text-rams-orange' : 'text-rams-red'
+          )}>
+            {margin.toFixed(1)}%
+          </p>
+        </div>
+        <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.nodeMagnitude') || 'Node Magnitude'}</p>
+          <p className={cn('text-2xl font-mono font-bold tracking-tight tabular-nums', isLowStock && 'text-rams-red')}>
+            {formatNumber(product.inventoryQty)}
+          </p>
+        </div>
+        <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.totalCycles') || 'Total Cycles'}</p>
+          <p className="text-2xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatNumber(product.stats.totalSold)}</p>
+        </div>
+        <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.winProbability') || 'Win Probability'}</p>
+          <p className="text-2xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{winRate.toFixed(0)}%</p>
+        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
         {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-8">
           {/* Description */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Description</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('products.detail.contextualIntelligence') || 'Contextual Intelligence'}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">{product.description}</p>
+            <CardContent className="p-6">
+              <p className="text-xs font-medium text-muted-foreground uppercase leading-relaxed">{product.description}</p>
             </CardContent>
           </Card>
 
           {/* Specifications */}
           {product.specifications && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Specifications
+            <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+              <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  <Settings className="h-4 w-4 text-rams-orange" />
+                  {t('products.detail.nodeSpecifications') || 'Node Specifications'}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <dl className="grid gap-2 sm:grid-cols-2">
+              <CardContent className="p-0">
+                <div className="grid gap-px bg-rams-line sm:grid-cols-2 border-t border-rams-line">
                   {Object.entries(product.specifications).map(([key, value]) => (
-                    <div key={key} className="flex justify-between border-b py-2">
-                      <dt className="text-muted-foreground">{key}</dt>
-                      <dd className="font-medium">{value}</dd>
+                    <div key={key} className="flex justify-between items-center p-4 bg-rams-module hover:bg-rams-panel transition-none">
+                      <dt className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{key}</dt>
+                      <dd className="text-[11px] font-bold text-foreground/80 uppercase">{value}</dd>
                     </div>
                   ))}
-                </dl>
+                </div>
               </CardContent>
             </Card>
           )}
 
           {/* Bill of Materials */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-rams-line bg-rams-panel/20 p-6">
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Layers className="h-5 w-5" />
-                  Bill of Materials
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-rams-orange" />
+                  {t('products.detail.billOfMaterials') || 'Bill of Materials (BOM)'}
                 </CardTitle>
-                <CardDescription>Components required to manufacture this product</CardDescription>
+                <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('products.detail.bomDescription') || 'Component architecture required for manufacture'}</CardDescription>
               </div>
-              <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Component
+              <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                {t('products.detail.addComponent') || 'ADD_COMPONENT'}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="py-3 px-4 text-left font-medium">Part #</th>
-                      <th className="py-3 px-4 text-left font-medium">Name</th>
-                      <th className="py-3 px-4 text-right font-medium">Qty</th>
-                      <th className="py-3 px-4 text-left font-medium">UoM</th>
-                      <th className="py-3 px-4 text-right font-medium">Unit Cost</th>
-                      <th className="py-3 px-4 text-right font-medium">Extended</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>PART_NODE</TableHead>
+                      <TableHead>SPECIFICATION</TableHead>
+                      <TableHead className="text-right">MAGNITUDE</TableHead>
+                      <TableHead>UOM</TableHead>
+                      <TableHead className="text-right">UNIT_COST</TableHead>
+                      <TableHead className="text-right">EXTENDED</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {product.bom.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="py-3 px-4 font-mono text-sm">{item.partNumber}</td>
-                        <td className="py-3 px-4">{item.name}</td>
-                        <td className="py-3 px-4 text-right">{item.quantity}</td>
-                        <td className="py-3 px-4">{item.unitOfMeasure}</td>
-                        <td className="py-3 px-4 text-right">{formatCurrency(item.unitCost)}</td>
-                        <td className="py-3 px-4 text-right font-medium">{formatCurrency(item.quantity * item.unitCost)}</td>
-                      </tr>
+                      <TableRow key={item.id} className="transition-none hover:bg-rams-panel">
+                        <TableCell className="font-mono font-bold text-rams-orange text-[10px] tabular-nums">{item.partNumber}</TableCell>
+                        <TableCell className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{item.name}</TableCell>
+                        <TableCell className="text-right font-mono font-bold tabular-nums text-foreground/70">{item.quantity}</TableCell>
+                        <TableCell className="text-[10px] font-bold text-muted-foreground/40 uppercase">{item.unitOfMeasure}</TableCell>
+                        <TableCell className="text-right font-mono font-bold tabular-nums text-muted-foreground/60">{formatCurrency(item.unitCost)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold tabular-nums text-foreground/90">{formatCurrency(item.quantity * item.unitCost)}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/30 font-bold">
-                      <td colSpan={5} className="py-3 px-4 text-right">Total BOM Cost</td>
-                      <td className="py-3 px-4 text-right">{formatCurrency(bomCost)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    <TableRow className="bg-rams-panel/30">
+                      <TableCell colSpan={5} className="text-right text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Aggregated BOM Protocol Cost</TableCell>
+                      <TableCell className="text-right font-mono font-bold text-sm text-rams-orange tabular-nums">{formatCurrency(bomCost)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
 
           {/* Inventory Transactions */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-rams-line bg-rams-panel/20 p-6">
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="h-5 w-5" />
-                  Recent Inventory Activity
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  <History className="h-4 w-4 text-rams-orange" />
+                  {t('products.detail.nodeTelemetry') || 'Node Telemetry Activity'}
                 </CardTitle>
               </div>
-              <Button variant="outline" size="sm">
-                View All
+              <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
+                {t('products.detail.viewAllCycles') || 'VIEW_ALL_CYCLES'}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y">
+              <div className="divide-y divide-rams-line/30">
                 {product.recentTransactions.map((tx) => (
-                  <div key={tx.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3">
+                  <div key={tx.id} className="flex items-center justify-between px-6 py-4 hover:bg-rams-panel transition-none group">
+                    <div className="flex items-center gap-4">
                       <div className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center',
-                        tx.type === 'in' ? 'bg-success/10' : 
-                        tx.type === 'out' ? 'bg-danger/10' : 'bg-warning/10'
+                        'w-8 h-8 rounded-none border flex items-center justify-center transition-none',
+                        tx.type === 'in' ? 'bg-rams-green/5 border-rams-green/20 text-rams-green' : 
+                        tx.type === 'out' ? 'bg-rams-red/5 border-rams-red/20 text-rams-red' : 
+                        'bg-rams-panel border-rams-line text-muted-foreground/40'
                       )}>
                         {tx.type === 'in' ? (
-                          <Plus className={cn('h-4 w-4 text-success')} />
+                          <Plus className="h-4 w-4" />
                         ) : tx.type === 'out' ? (
-                          <Minus className={cn('h-4 w-4 text-danger')} />
+                          <Minus className="h-4 w-4" />
                         ) : (
-                          <Settings className={cn('h-4 w-4 text-warning')} />
+                          <Settings className="h-4 w-4" />
                         )}
                       </div>
                       <div>
-                        <p className="font-medium">{tx.reference}</p>
-                        <p className="text-sm text-muted-foreground">{tx.notes}</p>
+                        <p className="font-mono font-bold text-xs tabular-nums text-foreground/80 group-hover:text-rams-orange transition-none">{tx.reference}</p>
+                        <p className="text-[10px] text-muted-foreground/40 uppercase font-medium mt-0.5">{tx.notes}</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className={cn(
-                        'font-mono font-medium',
-                        tx.quantity > 0 ? 'text-success' : 'text-danger'
+                        'font-mono font-bold text-sm tabular-nums',
+                        tx.quantity > 0 ? 'text-rams-green' : 'text-rams-red'
                       )}>
                         {tx.quantity > 0 ? '+' : ''}{tx.quantity}
                       </p>
-                      <p className="text-sm text-muted-foreground">{formatDate(new Date(tx.createdAt))}</p>
+                      <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/20">{formatDate(new Date(tx.createdAt)).toUpperCase()}</p>
                     </div>
                   </div>
                 ))}
@@ -499,104 +491,106 @@ export default function ProductDetailPage() {
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* Pricing */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Pricing
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-rams-orange" />
+                {t('products.detail.fiscalParameters') || 'Fiscal Parameters'}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Standard Cost</span>
-                <span className="font-medium">{formatCurrency(product.standardCost)}</span>
+            <CardContent className="p-6 space-y-4">
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>Standard Cost Protocol</span>
+                <span className="font-mono font-bold text-foreground/80">{formatCurrency(product.standardCost)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">List Price</span>
-                <span className="font-medium">{formatCurrency(product.listPrice)}</span>
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>Strategic List Price</span>
+                <span className="font-mono font-bold text-foreground/80">{formatCurrency(product.listPrice)}</span>
               </div>
-              <div className="flex justify-between border-t pt-3">
-                <span className="text-muted-foreground">Margin</span>
-                <span className={cn(
-                  'font-medium',
-                  margin >= 40 ? 'text-success' : margin >= 25 ? 'text-warning' : 'text-danger'
-                )}>
-                  {margin.toFixed(1)}%
-                </span>
+              <div className="border-t border-rams-line pt-4">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                  <span className="text-muted-foreground/40">Fiscal Margin KPI</span>
+                  <span className={cn(
+                    'font-mono font-bold text-lg tabular-nums',
+                    margin >= 40 ? 'text-rams-green' : margin >= 25 ? 'text-rams-orange' : 'text-rams-red'
+                  )}>
+                    {margin.toFixed(1)}%
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">BOM Cost</span>
-                <span>{formatCurrency(bomCost)}</span>
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                <span>BOM_SYNC_COST</span>
+                <span className="font-mono font-bold">{formatCurrency(bomCost)}</span>
               </div>
             </CardContent>
           </Card>
 
           {/* Inventory */}
-          <Card className={cn(isLowStock && product.status === 'active' && 'border-warning')}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Boxes className="h-4 w-4" />
-                Inventory
+          <Card className={cn("rounded-rams-sm border bg-rams-module shadow-none", isLowStock && product.status === 'active' ? 'border-rams-red/30 bg-rams-red/5' : 'border-rams-line')}>
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                <Boxes className="h-4 w-4 text-rams-orange" />
+                {t('products.detail.magnitudePulse') || 'Magnitude Pulse'}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">On Hand</span>
-                <span className={cn('font-medium', isLowStock && 'text-warning')}>
-                  {formatNumber(product.inventoryQty)} {product.unitOfMeasure}
+            <CardContent className="p-6 space-y-4">
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span>Authorized Inventory</span>
+                <span className={cn('font-mono font-bold text-lg tabular-nums', isLowStock && 'text-rams-red')}>
+                  {formatNumber(product.inventoryQty)} {product.unitOfMeasure.toUpperCase()}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Reorder Point</span>
-                <span>{formatNumber(product.reorderPoint)} {product.unitOfMeasure}</span>
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                <span>Reorder Threshold</span>
+                <span className="font-mono font-bold">{formatNumber(product.reorderPoint)} {product.unitOfMeasure.toUpperCase()}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Min. Order Qty</span>
-                <span>{formatNumber(product.minimumOrderQty)} {product.unitOfMeasure}</span>
+              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
+                <span>Minimum Sync Magnitude</span>
+                <span className="font-mono font-bold">{formatNumber(product.minimumOrderQty)} {product.unitOfMeasure.toUpperCase()}</span>
               </div>
               {isLowStock && product.status === 'active' && (
-                <div className="flex items-center gap-2 text-warning bg-warning/10 p-2 rounded text-sm">
-                  <AlertTriangle className="h-4 w-4" />
-                  Below reorder point
+                <div className="flex items-center gap-3 p-3 bg-rams-red/5 border border-rams-red/20 text-rams-red mt-4">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <p className="text-[9px] font-black uppercase tracking-widest">THRESHOLD_BREACH: RESTOCK_REQUIRED</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Lead Time */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Lead Time
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                <Clock className="h-4 w-4 text-rams-orange" />
+                {t('products.detail.temporalVelocity') || 'Temporal Velocity'}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-heading font-bold tracking-tight ">{product.leadTimeDays} days</p>
-              <p className="text-sm text-muted-foreground">Standard manufacturing time</p>
+            <CardContent className="p-6">
+              <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{product.leadTimeDays} DAYS</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">Standard Manufacturing Horizon</p>
             </CardContent>
           </Card>
 
           {/* Meta */}
-          <Card>
-            <CardContent className="pt-4 space-y-3 text-sm">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardContent className="p-6 space-y-4 text-[10px] font-black uppercase tracking-widest">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Category</span>
-                <span>{product.category}</span>
+                <span className="text-muted-foreground/40">Taxonomy_Node</span>
+                <span className="text-foreground/70">{product.category}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Unit of Measure</span>
-                <span>{product.unitOfMeasure}</span>
+                <span className="text-muted-foreground/40">Unit_Protocol</span>
+                <span className="text-foreground/70">{product.unitOfMeasure}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Created</span>
-                <span>{formatDate(new Date(product.createdAt))}</span>
+                <span className="text-muted-foreground/40">Node_Initialized</span>
+                <span className="text-foreground/70 font-mono">{formatDate(new Date(product.createdAt)).toUpperCase()}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Last Updated</span>
-                <span>{formatDate(new Date(product.updatedAt))}</span>
+                <span className="text-muted-foreground/40">Latest_Sync</span>
+                <span className="text-foreground/70 font-mono">{formatDate(new Date(product.updatedAt)).toUpperCase()}</span>
               </div>
             </CardContent>
           </Card>
@@ -605,20 +599,21 @@ export default function ProductDetailPage() {
 
       {/* Adjust Inventory Dialog */}
       <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Adjust Inventory</DialogTitle>
-            <DialogDescription>
-              Current stock: {formatNumber(product.inventoryQty)} {product.unitOfMeasure}
+        <DialogContent className="rounded-rams-sm border-rams-line bg-rams-module">
+          <DialogHeader className="border-b border-rams-line pb-4">
+            <DialogTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('products.detail.adjustDialog.title') || 'Adjust Magnitude Protocol'}</DialogTitle>
+            <DialogDescription className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
+              Current registered stock: {formatNumber(product.inventoryQty)} {product.unitOfMeasure.toUpperCase()}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div>
-              <Label>Adjustment Quantity</Label>
-              <div className="flex items-center gap-2 mt-1.5">
+          <div className="py-8 space-y-8">
+            <div className="space-y-4">
+              <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Adjustment Magnitude</Label>
+              <div className="flex items-center gap-1">
                 <Button
                   variant="outline"
                   size="icon"
+                  className="rounded-none border-rams-line h-12 w-12 hover:bg-rams-panel transition-none"
                   onClick={() => setAdjustmentQty((prev) => prev - 1)}
                 >
                   <Minus className="h-4 w-4" />
@@ -627,36 +622,37 @@ export default function ProductDetailPage() {
                   type="number"
                   value={adjustmentQty}
                   onChange={(e) => setAdjustmentQty(parseInt(e.target.value) || 0)}
-                  className="text-center"
+                  className="h-12 rounded-none border-rams-line bg-rams-panel text-center text-xl font-mono font-bold tabular-nums"
                 />
                 <Button
                   variant="outline"
                   size="icon"
+                  className="rounded-none border-rams-line h-12 w-12 hover:bg-rams-panel transition-none"
                   onClick={() => setAdjustmentQty((prev) => prev + 1)}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                New stock: {formatNumber(product.inventoryQty + adjustmentQty)} {product.unitOfMeasure}
+              <p className="text-[9px] font-mono font-black uppercase text-muted-foreground/30 text-center tracking-widest">
+                PROJECTED_NEW_MAGNITUDE: {formatNumber(product.inventoryQty + adjustmentQty)} {product.unitOfMeasure.toUpperCase()}
               </p>
             </div>
-            <div>
-              <Label>Notes</Label>
+            <div className="space-y-2">
+              <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Protocol Reason / Notes</Label>
               <Input
                 value={adjustmentNotes}
                 onChange={(e) => setAdjustmentNotes(e.target.value)}
-                placeholder="Reason for adjustment"
-                className="mt-1.5"
+                placeholder="Reason for adjustment protocol..."
+                className="h-10 rounded-none border-rams-line bg-rams-panel text-[11px] uppercase font-medium"
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdjustDialog(false)}>
-              Cancel
+          <DialogFooter className="border-t border-rams-line pt-4">
+            <Button variant="ghost" className="rounded-none text-[9px] font-black uppercase tracking-widest h-10 px-6 transition-none" onClick={() => setShowAdjustDialog(false)}>
+              {t('common.abortProtocol') || 'ABORT_PROTOCOL'}
             </Button>
-            <Button onClick={handleAdjustInventory} disabled={adjustmentQty === 0}>
-              Apply Adjustment
+            <Button onClick={handleAdjustInventory} disabled={adjustmentQty === 0} className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[9px] h-10 px-8 transition-none">
+              {t('products.detail.adjustDialog.apply') || 'APPLY_MAGNITUDE_SHIFT'}
             </Button>
           </DialogFooter>
         </DialogContent>

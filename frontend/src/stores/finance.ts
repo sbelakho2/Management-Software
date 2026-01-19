@@ -1,6 +1,45 @@
 import { create } from 'zustand';
 import { apiClient } from '@/api/client';
 
+interface DashboardStats {
+  revenue_mtd: number;
+  revenue_change: number;
+  gross_margin: number;
+  margin_change: number;
+  opex: number;
+  budget_utilization: number;
+  liquidity_reserve: number;
+  liquidity_status: string;
+  total_accounts: number;
+  active_accounts: number;
+  total_journal_entries: number;
+  pending_approvals: number;
+  overdue_invoices: number;
+  overdue_amount: number;
+}
+
+interface RevenueByProduct {
+  name: string;
+  revenue: number;
+  percentage: number;
+}
+
+interface ExpenseBreakdown {
+  category: string;
+  amount: number;
+  percentage: number;
+  status: string;
+}
+
+interface PendingApproval {
+  id: string;
+  type: string;
+  description: string;
+  amount: number;
+  requestor: string;
+  submitted: string;
+}
+
 interface FinanceState {
   accounts: any[];
   journalEntries: any[];
@@ -11,6 +50,10 @@ interface FinanceState {
   taxJurisdictions: any[];
   taxRates: any[];
   taxTransactions: any[];
+  dashboardStats: DashboardStats | null;
+  revenueByProduct: RevenueByProduct[];
+  expenseBreakdown: ExpenseBreakdown[];
+  pendingApprovals: PendingApproval[];
   loading: boolean;
   error: string | null;
 
@@ -31,9 +74,14 @@ interface FinanceState {
   createTaxRate: (payload: any) => Promise<void>;
   fetchTaxTransactions: (referenceId?: string) => Promise<void>;
   createTaxTransaction: (payload: any) => Promise<void>;
+  fetchDashboardStats: () => Promise<void>;
+  fetchRevenueByProduct: () => Promise<void>;
+  fetchExpenseBreakdown: () => Promise<void>;
+  fetchPendingApprovals: () => Promise<void>;
+  fetchAll: () => Promise<void>;
 }
 
-export const useFinanceStore = create<FinanceState>((set) => ({
+export const useFinanceStore = create<FinanceState>((set, get) => ({
   accounts: [],
   journalEntries: [],
   currencySettings: null,
@@ -43,6 +91,10 @@ export const useFinanceStore = create<FinanceState>((set) => ({
   taxJurisdictions: [],
   taxRates: [],
   taxTransactions: [],
+  dashboardStats: null,
+  revenueByProduct: [],
+  expenseBreakdown: [],
+  pendingApprovals: [],
   loading: false,
   error: null,
 
@@ -226,5 +278,55 @@ export const useFinanceStore = create<FinanceState>((set) => ({
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
+  },
+
+  fetchDashboardStats: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<DashboardStats>('/finance/dashboard-stats');
+      set({ dashboardStats: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchRevenueByProduct: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<RevenueByProduct[]>('/finance/revenue-by-product');
+      set({ revenueByProduct: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchExpenseBreakdown: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<ExpenseBreakdown[]>('/finance/expense-breakdown');
+      set({ expenseBreakdown: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchPendingApprovals: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<PendingApproval[]>('/finance/pending-approvals');
+      set({ pendingApprovals: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  fetchAll: async () => {
+    const { fetchDashboardStats, fetchRevenueByProduct, fetchExpenseBreakdown, fetchPendingApprovals } = get();
+    await Promise.all([
+      fetchDashboardStats(),
+      fetchRevenueByProduct(),
+      fetchExpenseBreakdown(),
+      fetchPendingApprovals(),
+    ]);
   },
 }));

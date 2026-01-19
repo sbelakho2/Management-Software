@@ -16,6 +16,7 @@ import {
   Clock,
   RefreshCw,
   Terminal,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,173 +26,207 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import { ContentCard, SectionHeader } from '@/components/ui/content-card';
+import { useITStore } from '@/stores';
+import { PageGuard } from '@/components/layout/page-guard';
+import { IT_ROLES } from '@/lib/page-access';
 
-// Demo data
-const systemStatus = {
-  apiHealth: 'healthy',
-  dbHealth: 'healthy',
-  cacheHealth: 'healthy',
-  queueHealth: 'degraded',
+// Fallback demo data when API is not available
+const fallbackSystemHealth = {
+  api_health: 'healthy',
+  db_health: 'healthy',
+  cache_health: 'healthy',
+  queue_health: 'healthy',
   uptime: '99.98%',
-  lastIncident: '12 days ago',
+  last_incident: '12 days ago',
 };
 
-const serverStats = {
-  cpuUsage: 42,
-  memoryUsage: 68,
-  diskUsage: 54,
-  activeConnections: 234,
+const fallbackServerStats = {
+  cpu_usage: 42,
+  memory_usage: 68,
+  disk_usage: 54,
+  active_connections: 234,
 };
 
-const recentAlerts = [
-  { id: 1, type: 'warning', message: 'High memory usage on worker-3', time: '15 min ago', resolved: false },
-  { id: 2, type: 'info', message: 'Scheduled backup completed', time: '2 hours ago', resolved: true },
-  { id: 3, type: 'error', message: 'Failed login attempt detected', time: '4 hours ago', resolved: true },
-  { id: 4, type: 'info', message: 'SSL certificate renewed', time: '1 day ago', resolved: true },
+const fallbackAlerts = [
+  { id: '1', type: 'warning' as const, message: 'High memory usage on worker-3', time: '15 min ago', resolved: false },
+  { id: '2', type: 'info' as const, message: 'Scheduled backup completed', time: '2 hours ago', resolved: true },
+  { id: '3', type: 'error' as const, message: 'Failed login attempt detected', time: '4 hours ago', resolved: true },
+  { id: '4', type: 'info' as const, message: 'SSL certificate renewed', time: '1 day ago', resolved: true },
 ];
 
-const activeUsers = [
-  { id: 1, name: 'Operations Team', count: 45, trend: 'up' },
-  { id: 2, name: 'Sales Team', count: 23, trend: 'stable' },
-  { id: 3, name: 'Quality Team', count: 12, trend: 'up' },
-  { id: 4, name: 'Admin Users', count: 8, trend: 'stable' },
+const fallbackActiveUsers = [
+  { name: 'Operations Team', count: 45, trend: 'up' as const },
+  { name: 'Sales Team', count: 23, trend: 'stable' as const },
+  { name: 'Quality Team', count: 12, trend: 'up' as const },
+  { name: 'Admin Users', count: 8, trend: 'stable' as const },
 ];
 
-const services = [
-  { name: 'API Gateway', status: 'healthy', latency: '45ms' },
-  { name: 'Database Primary', status: 'healthy', latency: '12ms' },
-  { name: 'Database Replica', status: 'healthy', latency: '15ms' },
-  { name: 'Redis Cache', status: 'healthy', latency: '2ms' },
-  { name: 'Message Queue', status: 'degraded', latency: '156ms' },
-  { name: 'ML Service', status: 'healthy', latency: '89ms' },
+const fallbackServices = [
+  { name: 'API Gateway', status: 'healthy' as const, latency: '45ms' },
+  { name: 'Database Primary', status: 'healthy' as const, latency: '12ms' },
+  { name: 'Database Replica', status: 'healthy' as const, latency: '15ms' },
+  { name: 'Redis Cache', status: 'healthy' as const, latency: '2ms' },
+  { name: 'Message Queue', status: 'healthy' as const, latency: '23ms' },
+  { name: 'ML Service', status: 'healthy' as const, latency: '89ms' },
 ];
 
 function StatusIndicator({ status }: { status: 'healthy' | 'degraded' | 'down' }) {
   const styles = {
-    healthy: 'bg-emerald-500',
-    degraded: 'bg-amber-500',
-    down: 'bg-destructive',
+    healthy: 'bg-rams-green',
+    degraded: 'bg-rams-orange',
+    down: 'bg-rams-red',
   };
 
   return (
-    <span className={`inline-block h-2 w-2 rounded-full ${styles[status]}`} />
+    <span className={`inline-block h-2 w-2 ${styles[status]}`} />
   );
 }
 
 export default function ITDashboard() {
   const { t } = useI18n();
+  const { 
+    systemHealth,
+    serverStats: apiServerStats,
+    services: apiServices,
+    alerts: apiAlerts,
+    activeUsers: apiActiveUsers,
+    isLoading,
+    fetchAll
+  } = useITStore();
+
+  // Fetch data on mount
+  React.useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  // Use API data or fallback to demo data
+  const systemStatus = systemHealth || fallbackSystemHealth;
+  const serverStats = apiServerStats || fallbackServerStats;
+  const services = apiServices.length > 0 ? apiServices : fallbackServices;
+  const recentAlerts = apiAlerts.length > 0 ? apiAlerts : fallbackAlerts;
+  const activeUsers = apiActiveUsers.length > 0 ? apiActiveUsers : fallbackActiveUsers;
   return (
-    <div className="space-y-8 page-fade-in">
+    <PageGuard requiredRoles={IT_ROLES}>
+    <div className="space-y-8 page-fade-in pb-12" data-testid="it-dashboard">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
-          <h1 className="text-4xl font-heading font-bold tracking-tight ">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90 flex items-center gap-3">
+            <Server className="h-6 w-6 text-rams-orange" />
             {t('pages.it.title')}
           </h1>
-          <p className="text-muted-foreground font-medium">
-            {t('pages.it.subtitle')}
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+            <span>{t('pages.it.subtitle')}</span>
+            <span className="opacity-30">|</span>
+            <span>{t('pages.it.station')}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <AmbientStatus 
-            status={systemStatus.queueHealth === 'degraded' ? 'warning' : 'operational'} 
-            label={systemStatus.queueHealth === 'degraded' ? 'Message Queue Degraded' : 'All Systems Nominal'}
+            status={systemStatus.queue_health === 'degraded' ? 'warning' : 'operational'} 
+            label={systemStatus.queue_health === 'degraded' ? t('pages.it.messageQueueDegraded') : t('pages.it.allSystemsNominal')}
           />
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh Status
+          <Button 
+            variant="outline" 
+            size="default" 
+            className="rounded-rams-sm border-rams-line"
+            onClick={() => fetchAll()}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            )}
+            {t('pages.it.refreshSync') || 'Refresh Sync'}
           </Button>
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary">
-            <Terminal className="mr-2 h-4 w-4" />
-            Live Logs
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line">
+            <Terminal className="mr-2 h-3.5 w-3.5" />
+            {t('pages.it.liveLogs') || 'Live Logs'}
           </Button>
         </div>
       </div>
 
       {/* System Status Banner */}
-      <Card className="bg-emerald-500/[0.03] dark:bg-emerald-500/[0.02] border-emerald-500/20 rounded-[2.5rem] shadow-glow backdrop-blur-md overflow-hidden relative">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500/50 to-transparent" />
-        <CardContent className="py-6 px-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <div className="flex items-center gap-5">
-              <div className="p-4 rounded-[1.5rem] bg-emerald-500/10 text-emerald-600 shadow-inner-soft">
-                <CheckCircle2 className="h-8 w-8" />
+      <Card className="rounded-rams-sm bg-rams-module border border-rams-line overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-1 bg-rams-green/20" />
+        <CardContent className="py-8 px-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-8">
+            <div className="flex items-center gap-6">
+              <div className="p-4 rounded-none bg-rams-panel border border-rams-line text-rams-green group">
+                <CheckCircle2 className="h-10 w-10" />
               </div>
               <div>
-                <p className="font-heading font-bold text-xl tracking-tight text-emerald-800 dark:text-emerald-200">Global Infrastructure Synchronized</p>
-                <p className="text-xs font-bold uppercase tracking-widest text-emerald-600/60 mt-1">
-                  Uptime: {systemStatus.uptime} • Continuous Pulse established {systemStatus.lastIncident}
+                <p className="font-sans font-black text-2xl uppercase tracking-tight text-foreground/90">{t('pages.it.globalInfrastructureSynchronized') || 'Global Infrastructure Synchronized'}</p>
+                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40 mt-2">
+                  {t('pages.it.uptime') || 'Uptime'}: {systemStatus.uptime} • {t('pages.it.continuousPulseEstablished') || 'Continuous Pulse established'} {systemStatus.last_incident.toUpperCase()}
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 px-4 py-1.5 rounded-xl font-bold uppercase tracking-[0.2em] text-[10px]">
+            <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green px-4 py-1 h-8 font-black uppercase tracking-[0.2em] text-[10px]">
               <Activity className="h-3 w-3 mr-2 animate-pulse" />
-              Real-time Node
+              {t('pages.it.activeComputeNode')}
             </Badge>
           </div>
         </CardContent>
+        <div className="absolute inset-0 perforated-bg opacity-5 pointer-events-none" />
       </Card>
 
-      {/* Resource Usage - Using Shared StatCard */}
-      <StatSection label="Resource Metrics" columns={4}>
-        <StatCard
-          value={serverStats.cpuUsage}
-          label="CPU Usage"
-          icon={Server}
-          iconColor={serverStats.cpuUsage > 80 ? 'danger' : serverStats.cpuUsage > 60 ? 'warning' : 'success'}
-          goal={{ current: serverStats.cpuUsage, target: 100 }}
-        />
-        <StatCard
-          value={serverStats.memoryUsage}
-          label="Memory Usage"
-          icon={HardDrive}
-          iconColor={serverStats.memoryUsage > 80 ? 'danger' : serverStats.memoryUsage > 60 ? 'warning' : 'success'}
-          goal={{ current: serverStats.memoryUsage, target: 100 }}
-          critical={serverStats.memoryUsage > 80}
-        />
-        <StatCard
-          value={serverStats.diskUsage}
-          label="Disk Usage"
-          icon={HardDrive}
-          iconColor={serverStats.diskUsage > 80 ? 'danger' : serverStats.diskUsage > 60 ? 'warning' : 'success'}
-          goal={{ current: serverStats.diskUsage, target: 100 }}
-        />
-        <StatCard
-          value={serverStats.activeConnections}
-          label="Active Connections"
-          icon={Wifi}
-          iconColor="primary"
-        />
-      </StatSection>
+      {/* Resource Usage */}
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.it.cpuUtilization') || 'CPU Utilization'}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{serverStats.cpu_usage}%</div>
+          <div className="mt-4 h-1 bg-rams-panel border border-rams-line overflow-hidden">
+            <div className={cn("h-full bg-rams-orange", serverStats.cpu_usage > 80 && "bg-rams-red")} style={{ width: `${serverStats.cpu_usage}%` }} />
+          </div>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.it.memoryPulse') || 'Memory Pulse'}</p>
+          <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", serverStats.memory_usage > 80 ? "text-rams-red" : "text-foreground/90")}>{serverStats.memory_usage}%</div>
+          <div className="mt-4 h-1 bg-rams-panel border border-rams-line overflow-hidden">
+            <div className={cn("h-full bg-rams-orange", serverStats.memory_usage > 80 && "bg-rams-red")} style={{ width: `${serverStats.memory_usage}%` }} />
+          </div>
+        </div>
+        <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.it.diskSaturation') || 'Disk Saturation'}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{serverStats.disk_usage}%</div>
+          <div className="mt-4 h-1 bg-rams-panel border border-rams-line overflow-hidden">
+            <div className="h-full bg-rams-steel" style={{ width: `${serverStats.disk_usage}%` }} />
+          </div>
+        </div>
+        <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none">
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.it.activeSockets') || 'Active Sockets'}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{serverStats.active_connections}</div>
+          <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.it.connectionsSynced')}</p>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-8 lg:grid-cols-2">
         {/* Service Status */}
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden shadow-premium">
-          <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
-                <Server className="h-5 w-5" />
-              </div>
-              Intelligence Node Status
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden shadow-none">
+          <CardHeader className="border-b border-rams-line bg-rams-panel/20 p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Server className="h-4 w-4 text-rams-orange" />
+              {t('pages.it.intelligenceNodeCluster') || 'Intelligence Node Cluster'}
             </CardTitle>
-            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Distributed service protocol health</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-border/5">
+            <div className="divide-y divide-rams-line/30">
               {services.map((service) => (
-                <div key={service.name} className="flex items-center justify-between p-5 transition-all hover:bg-primary/5 group">
+                <div key={service.name} className="flex items-center justify-between p-5 transition-none hover:bg-rams-panel group">
                   <div className="flex items-center gap-4">
-                    <div className="p-2.5 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110">
+                    <div className="p-2 rounded-none bg-rams-panel border border-rams-line text-foreground/20 group-hover:border-rams-orange/40 transition-none">
                       <StatusIndicator status={service.status as any} />
                     </div>
                     <div>
-                      <p className="font-heading font-bold text-sm tracking-tight text-foreground/80">{service.name}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">LATENCY: {service.latency}</p>
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{service.name}</p>
+                      <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.it.latency')}: {service.latency.toUpperCase()}</p>
                     </div>
                   </div>
-                  <Badge variant={service.status === 'healthy' ? 'success' : 'warning'} className="rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest">
-                    {service.status}
+                  <Badge variant={service.status === 'healthy' ? 'success' : 'warning'} size="sm" className="h-4 px-1">
+                    {service.status.toUpperCase()}
                   </Badge>
                 </div>
               ))}
@@ -200,38 +235,35 @@ export default function ITDashboard() {
         </Card>
 
         {/* Recent Alerts */}
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden shadow-premium">
-          <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-danger/10 text-danger shadow-sm">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              Telemetry Alerts
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden shadow-none">
+          <CardHeader className="border-b border-rams-line bg-rams-panel/20 p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 text-rams-red">
+              <AlertTriangle className="h-4 w-4" />
+              {t('pages.it.telemetryAnomalies') || 'Telemetry Anomalies'}
             </CardTitle>
-            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Real-time anomalous activity stream</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-border/5">
+            <div className="divide-y divide-rams-line/30">
               {recentAlerts.map((alert) => (
-                <div key={alert.id} className="p-5 flex items-start gap-4 hover:bg-danger/[0.02] transition-all group">
+                <div key={alert.id} className="p-5 flex items-start gap-4 hover:bg-rams-panel transition-none group">
                   <div className={cn(
-                    "p-2 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110",
-                    alert.type === 'error' ? 'text-danger' : alert.type === 'warning' ? 'text-warning' : 'text-primary'
+                    "mt-0.5 p-2 rounded-none bg-rams-panel border border-rams-line transition-none",
+                    alert.type === 'error' ? 'text-rams-red border-rams-red/20' : alert.type === 'warning' ? 'text-rams-orange border-rams-orange/20' : 'text-muted-foreground'
                   )}>
                     {alert.type === 'error' ? <XCircle className="h-4 w-4" /> : 
                      alert.type === 'warning' ? <AlertTriangle className="h-4 w-4" /> : 
                      <Activity className="h-4 w-4" />}
                   </div>
                   <div className="flex-1">
-                    <p className={cn("text-sm font-medium leading-relaxed", !alert.resolved && 'font-heading font-bold text-foreground/90')}>
+                    <p className={cn("text-xs font-medium uppercase leading-relaxed text-foreground/70 group-hover:text-foreground transition-none")}>
                       {alert.message}
                     </p>
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{alert.time}</span>
+                    <div className="flex items-center gap-4 mt-2">
+                      <span className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/30">{alert.time.toUpperCase()}</span>
                       {alert.resolved ? (
-                        <Badge variant="success" className="bg-emerald-500/5 text-emerald-600 border-none text-[8px] h-4 font-black uppercase tracking-widest">RESOLVED</Badge>
+                        <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.resolved')}</Badge>
                       ) : (
-                        <Badge variant="destructive" className="animate-pulse text-[8px] h-4 font-black uppercase tracking-widest">ACTIVE</Badge>
+                        <Badge variant="destructive" className="animate-pulse rounded-none text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.activeBreach')}</Badge>
                       )}
                     </div>
                   </div>
@@ -242,33 +274,30 @@ export default function ITDashboard() {
         </Card>
 
         {/* Active Users */}
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden shadow-premium">
-          <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
-                <Users className="h-5 w-5" />
-              </div>
-              Connected Operatives
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden shadow-none">
+          <CardHeader className="border-b border-rams-line bg-rams-panel/20 p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Users className="h-4 w-4 text-rams-orange" />
+              {t('pages.it.connectedOperatives') || 'Connected Operatives'}
             </CardTitle>
-            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Distributed service engagement by node group</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-border/5">
-              {activeUsers.map((group) => (
-                <div key={group.id} className="p-5 flex items-center justify-between transition-all hover:bg-primary/5 group">
+            <div className="divide-y divide-rams-line/30">
+              {activeUsers.map((group, index) => (
+                <div key={group.name || index} className="p-5 flex items-center justify-between transition-none hover:bg-rams-panel group">
                   <div className="flex items-center gap-4">
-                    <div className="p-2.5 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110">
-                      <Users className="h-5 w-5 text-muted-foreground/40" />
+                    <div className="p-2 rounded-none bg-rams-panel border border-rams-line text-muted-foreground/20 group-hover:border-rams-orange/40 transition-none">
+                      <Users className="h-4 w-4" />
                     </div>
                     <div>
-                      <p className="font-heading font-bold text-sm tracking-tight text-foreground/80">{group.name}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{group.count} ACTIVE NODES</p>
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{group.name}</p>
+                      <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{group.count} {t('pages.it.activeNodes')}</p>
                     </div>
                   </div>
                   {group.trend === 'up' ? (
-                    <Badge variant="success" className="bg-emerald-500/5 text-emerald-600 border-none text-[8px] h-4 font-black uppercase tracking-widest">VOLATILE UP</Badge>
+                    <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.trafficUp')}</Badge>
                   ) : (
-                    <Badge variant="secondary" className="bg-muted/10 text-muted-foreground/60 border-none text-[8px] h-4 font-black uppercase tracking-widest">{group.trend}</Badge>
+                    <Badge variant="secondary" className="rounded-none bg-rams-panel text-muted-foreground/40 border-rams-line text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.stable')}</Badge>
                   )}
                 </div>
               ))}
@@ -277,45 +306,42 @@ export default function ITDashboard() {
         </Card>
 
         {/* Security Overview */}
-        <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden shadow-premium text-left">
-          <CardHeader className="border-b border-border/5 bg-muted/5 p-6">
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-primary/10 text-primary shadow-sm">
-                <Shield className="h-5 w-5" />
-              </div>
-              Security Protocol
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden shadow-none text-left">
+          <CardHeader className="border-b border-rams-line bg-rams-panel/20 p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Shield className="h-4 w-4 text-rams-orange" />
+              {t('pages.it.securitySyncProtocol') || 'Security Sync Protocol'}
             </CardTitle>
-            <CardDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 pl-11">Distributed firewall and compliance nodes</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-border/5">
-              <div className="flex items-center justify-between p-5 transition-all hover:bg-primary/5 group">
+            <div className="divide-y divide-rams-line/30">
+              <div className="flex items-center justify-between p-5 transition-none hover:bg-rams-panel group">
                 <div className="flex items-center gap-4">
-                  <div className="p-2.5 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110">
-                    <Lock className="h-4 w-4 text-emerald-600" />
+                  <div className="p-2 rounded-none bg-rams-panel border border-rams-line text-rams-green/40 group-hover:border-rams-orange/40 transition-none">
+                    <Lock className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="font-heading font-bold text-sm tracking-tight text-foreground/80">SSL Certificate</p>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">RSA 4096-BIT SYNCHRONIZED</p>
+                    <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{t('pages.it.sslCertificate')}</p>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.it.rsaSynchronized')}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="bg-emerald-500/5 text-emerald-600 border-none text-[8px] h-4 font-black uppercase tracking-widest">VALID NODE</Badge>
+                <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.validNode')}</Badge>
               </div>
-              <div className="flex items-center justify-between p-5 transition-all hover:bg-primary/5 group">
+              <div className="flex items-center justify-between p-5 transition-none hover:bg-rams-panel group">
                 <div className="flex items-center gap-4">
-                  <div className="p-2.5 rounded-xl bg-background shadow-sm transition-transform group-hover:scale-110">
-                    <Shield className="h-4 w-4 text-emerald-600" />
+                  <div className="p-2 rounded-none bg-rams-panel border border-rams-line text-rams-green/40 group-hover:border-rams-orange/40 transition-none">
+                    <Shield className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="font-heading font-bold text-sm tracking-tight text-foreground/80">Firewall Architecture</p>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">DISTRIBUTED WAF ACTIVE</p>
+                    <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{t('pages.it.firewallArchitecture')}</p>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.it.distributedWafActive')}</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="bg-emerald-500/5 text-emerald-600 border-none text-[8px] h-4 font-black uppercase tracking-widest">ACTIVE</Badge>
+                <Badge variant="outline" className="rounded-none border-rams-green/20 bg-rams-green/5 text-rams-green text-[8px] h-4 font-black uppercase tracking-widest px-1">{t('pages.it.active')}</Badge>
               </div>
-              <div className="p-5">
-                <Button variant="outline" className="w-full rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-11">
-                  Update Security Policies
+              <div className="p-6 bg-rams-panel/10">
+                <Button variant="outline" className="w-full rounded-rams-sm border-rams-line text-[9px] font-black uppercase tracking-widest h-10 transition-none">
+                  {t('pages.it.updateSecurityPolicies')}
                 </Button>
               </div>
             </div>
@@ -323,5 +349,6 @@ export default function ITDashboard() {
         </Card>
       </div>
     </div>
+    </PageGuard>
   );
 }

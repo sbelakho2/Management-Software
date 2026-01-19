@@ -14,6 +14,7 @@ import { useTodayStore } from '@/stores/today';
 import { hasPageAccess } from '@/lib/page-access';
 import { UserRole } from '@/types';
 import { MyWorkDashboard } from './_components/my-work-dashboard';
+import { DrillAnswerModal } from './_components/drill-answer-modal';
 
 type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -115,6 +116,7 @@ export default function TodayPage() {
 	const [headerDate, setHeaderDate] = React.useState('');
 	const isTestEnv = process.env.NODE_ENV === 'test';
 	const [mounted, setMounted] = React.useState(isTestEnv);
+	const [drillModalOpen, setDrillModalOpen] = React.useState(false);
 
 	const userRoles = React.useMemo(() => {
 		if (!user) return [] as UserRole[];
@@ -301,9 +303,9 @@ export default function TodayPage() {
 		return (
 			<div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
 				<AlertCircle className="h-12 w-12 text-destructive" />
-				<p className="text-muted-foreground">Failed to load today&apos;s data</p>
+				<p className="text-muted-foreground">{t('pages.today.errorLoading')}</p>
 				<Button onClick={() => user && fetchTodayScreen(user.id, user.full_name || '')}>
-					Try Again
+					{t('common.tryAgain')}
 				</Button>
 			</div>
 		);
@@ -315,7 +317,7 @@ export default function TodayPage() {
 
 	return (
 		<div className="space-y-8 page-fade-in pb-12">
-			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+			<div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
 				<div className="space-y-1">
 					<h1
 						className="text-2xl font-sans font-black uppercase tracking-tight opacity-90"
@@ -326,7 +328,7 @@ export default function TodayPage() {
 					<p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
 						<span suppressHydrationWarning>{headerDate}</span>
 						<span className="opacity-30">|</span>
-						<span>STATION_STATUS: OPTIMAL</span>
+						<span>{t('pages.today.stationStatus')}</span>
 					</p>
 				</div>
 
@@ -335,7 +337,7 @@ export default function TodayPage() {
 						<Button asChild size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-6 border border-black/10 hover:bg-rams-orange/90 transition-none">
 							<Link href="/pipeline/new">
 								<Plus className="mr-2 h-3.5 w-3.5" />
-								Initialize RFQ
+								{t('pages.today.initializeRFQ')}
 							</Link>
 						</Button>
 					)}
@@ -343,7 +345,7 @@ export default function TodayPage() {
 			</div>
 
 			{/* KPI Cards (Industrial Modules) */}
-			<div className="grid gap-px border border-rams-border bg-rams-border">
+			<div className="grid gap-px border border-rams-line bg-rams-line">
 				{kpis.map((kpi) => (
 					<div key={kpi.id} className="bg-rams-module p-6 group">
 						<Link href={kpi.href} className="block group-hover:bg-rams-panel transition-none -m-6 p-6">
@@ -362,16 +364,16 @@ export default function TodayPage() {
 
 			<div className="grid gap-8 lg:grid-cols-3">
 				<article className="lg:col-span-2 space-y-8">
-					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
-						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
-							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Top Priorities [Protocol-01]</h2>
+					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">{t('pages.today.topPriorities')}</h2>
 							<Target className="h-4 w-4 text-muted-foreground/40" />
 						</div>
 						<div className="p-1 space-y-1">
 							{priorities.map((p, idx) => (
-								<div key={p.id} className="flex items-center justify-between p-4 bg-rams-chassis border border-rams-border/50 group hover:border-rams-orange/40 transition-none">
+								<div key={p.id} className="flex items-center justify-between p-4 bg-rams-chassis border border-rams-line group hover:border-rams-orange/40 transition-none">
 									<div className="flex items-center gap-6">
-										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-rams-sm bg-rams-panel border border-rams-border font-mono font-bold text-xs">
+										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-rams-sm bg-rams-panel border border-rams-line font-mono font-bold text-xs">
 											0{idx + 1}
 										</div>
 										<div className="space-y-1">
@@ -379,16 +381,16 @@ export default function TodayPage() {
 												{p.title}
 											</Link>
 											<div className="flex items-center gap-3">
-												<Badge role="status" variant="outline" className="rounded-none border-rams-border text-[9px] font-black uppercase tracking-widest px-1.5 py-0 h-4 bg-rams-panel">
+												<Badge role="status" variant="outline" className="rounded-none border-rams-line text-[9px] font-black uppercase tracking-widest px-1.5 py-0 h-4 bg-rams-panel">
 													{p.priority}
 												</Badge>
-												<span className="text-[9px] text-muted-foreground/40 font-mono font-bold uppercase tracking-widest">Target_Today</span>
+											<span className="text-[9px] text-muted-foreground/40 font-mono font-bold uppercase tracking-widest">{t('pages.today.targetToday')}</span>
 											</div>
 										</div>
 									</div>
 									<Button variant="ghost" size="sm" asChild className="rounded-rams-sm text-[10px] font-black uppercase tracking-widest hover:bg-rams-orange/10 hover:text-rams-orange transition-none">
 										<Link href={p.href}>
-											Execute <ArrowRight className="ml-2 h-3 w-3" />
+											{t('common.execute')} <ArrowRight className="ml-2 h-3 w-3" />
 										</Link>
 									</Button>
 								</div>
@@ -396,9 +398,9 @@ export default function TodayPage() {
 						</div>
 					</div>
 
-					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
-						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
-							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-rams-red">Critical Anomalies</h2>
+					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-rams-red">{t('pages.today.criticalAnomalies')}</h2>
 							<AlertCircle className="h-4 w-4 text-rams-red/40" />
 						</div>
 						<div className="p-1 space-y-1">
@@ -417,7 +419,7 @@ export default function TodayPage() {
 											<p className="text-[9px] font-mono font-bold text-rams-red/60 uppercase tracking-widest">{a.when}</p>
 										</div>
 									</div>
-									<ArrowRight className="h-3 w-3 text-rams-red/30 group-hover:translate-x-1 transition-transform" />
+									<ArrowRight className="h-3 w-3 text-rams-red/30 group-hover:text-rams-red transition-none" />
 								</div>
 							))}
 						</div>
@@ -425,15 +427,15 @@ export default function TodayPage() {
 				</article>
 
 				<article className="space-y-8">
-					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
-						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
-							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Assigned_Tasks</h2>
+					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">{t('pages.today.assignedTasks')}</h2>
 							<CheckCircle2 className="h-4 w-4 text-muted-foreground/40" />
 						</div>
 						<div className="p-4 space-y-4">
 							{tasks.map((t) => (
 								<div key={t.id} className="flex items-start gap-3 group">
-									<div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center border border-rams-border group-hover:border-rams-orange transition-colors">
+									<div className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center border border-rams-line group-hover:border-rams-orange transition-colors">
 										<div className="h-1.5 w-1.5 bg-transparent group-hover:bg-rams-orange transition-colors" />
 									</div>
 									<div className="space-y-1">
@@ -445,24 +447,24 @@ export default function TodayPage() {
 								</div>
 							))}
 							{tasks.length === 0 && (
-								<p className="text-[10px] font-mono font-bold text-muted-foreground/40 text-center py-4 uppercase">Status: All_Clear</p>
+									<p className="text-[10px] font-mono font-bold text-muted-foreground/40 text-center py-4 uppercase">{t('pages.today.allClearStatus')}</p>
 							)}
 						</div>
 					</div>
 
-					<div className="bg-rams-module border border-rams-border rounded-rams-sm overflow-hidden">
-						<div className="px-6 py-4 border-b border-rams-border bg-rams-panel flex items-center justify-between">
-							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Priority_RFQs</h2>
+					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">{t('pages.today.priorityRfqs')}</h2>
 							<Target className="h-4 w-4 text-muted-foreground/40" />
 						</div>
 						<div className="p-4 space-y-3">
 							{priorityRfqs.map((r) => (
-								<div key={r.id} className="p-3 border border-rams-border bg-rams-chassis hover:bg-rams-panel transition-none group">
+								<div key={r.id} className="p-3 border border-rams-line bg-rams-chassis hover:bg-rams-panel transition-none group">
 									<Link href={r.href} className="font-sans font-black text-[11px] uppercase tracking-tight block text-foreground/80 group-hover:text-rams-orange">
-										{r.customer} // {r.title}
-									</Link>
+										{r.customer} — {r.title}
+								</Link>
 									<div className="flex items-center gap-2 mt-2">
-										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-panel border border-rams-border">{r.priority}</span>
+										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-panel border border-rams-line">{r.priority}</span>
 										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-orange text-black">{r.status}</span>
 									</div>
 								</div>
@@ -471,24 +473,33 @@ export default function TodayPage() {
 					</div>
 
 					<div className="bg-rams-orange p-8 rounded-rams-sm border border-black/10 relative overflow-hidden group">
-						<div className="absolute top-0 right-0 p-4 opacity-5 group-hover:rotate-12 transition-transform duration-500">
+						<div className="absolute top-0 right-0 p-4 opacity-5">
 							<Zap className="h-32 w-32 text-black" />
 						</div>
 						<div className="relative z-10 space-y-6">
 							<div className="flex items-center justify-between">
-								<h2 className="text-black font-black uppercase tracking-tighter text-lg leading-none">Sensei_Daily_Drill</h2>
-								<span className="text-[8px] font-black uppercase tracking-widest px-1 border border-black/20">Maturity_Lvl_4</span>
+								<h2 className="text-black font-black uppercase tracking-tighter text-lg leading-none">{t('pages.today.senseiDailyDrill')}</h2>
+								<span className="text-[8px] font-black uppercase tracking-widest px-1 border border-black/20">{t('pages.today.maturityLevel')} 4</span>
 							</div>
 							<p className="text-black/80 font-sans font-bold text-sm leading-tight uppercase">
-								{microDrillItems.length > 0 ? microDrillItems[0].question : "Initialize daily protocol analysis for risk mitigation."}
+								{microDrillItems.length > 0 ? microDrillItems[0].question : t('pages.today.defaultDrillQuestion')}
 							</p>
-							<Button className="w-full bg-black text-white hover:bg-black/90 rounded-none h-10 text-[10px] font-black uppercase tracking-widest transition-none">
-								Execute Answer
+							<Button
+								onClick={() => setDrillModalOpen(true)}
+								className="w-full bg-black text-white hover:bg-black/90 rounded-none h-10 text-[10px] font-black uppercase tracking-widest transition-none"
+							>
+								{t('pages.today.executeAnswer')}
 							</Button>
 						</div>
 					</div>
 				</article>
 			</div>
+
+			<DrillAnswerModal
+				open={drillModalOpen}
+				onOpenChange={setDrillModalOpen}
+				drill={microDrillItems.length > 0 ? microDrillItems[0] : { id: 'default', question: t('pages.today.defaultDrillQuestion'), hint: t('pages.today.defaultDrillHint') }}
+			/>
 		</div>
 	);
 }

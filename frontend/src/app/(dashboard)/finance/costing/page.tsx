@@ -110,127 +110,127 @@ export default function CostingPage() {
 
   return (
     <div className="space-y-8 page-fade-in">
-      <div>
-        <h1 className="text-4xl font-heading font-bold tracking-tight">Costing Rollups</h1>
-        <p className="text-muted-foreground">Persist standard costs and track variance rollups</p>
+      <div className="border-b border-rams-line pb-6">
+        <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('pages.finance.costing.title') || 'Costing Rollups'}</h1>
+        <p className="text-2xs font-mono uppercase tracking-widest text-rams-muted">{t('pages.finance.costing.subtitle') || 'Persist standard costs and track variance rollups'}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader>
-            <CardTitle className="text-base">Standard Cost</CardTitle>
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+          <CardHeader className="border-b border-rams-line">
+            <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.costing.standardCost') || 'Standard Cost'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">SKU</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.sku') || 'SKU'}</label>
                 <Input value={standardForm.sku} onChange={(e) => setStandardForm((prev) => ({ ...prev, sku: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Currency</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.currency') || 'Currency'}</label>
                 <Input value={standardForm.currency} onChange={(e) => setStandardForm((prev) => ({ ...prev, currency: e.target.value.toUpperCase() }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Effective Date</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.effectiveDate') || 'Effective Date'}</label>
                 <Input type="date" value={standardForm.effectiveDate} onChange={(e) => setStandardForm((prev) => ({ ...prev, effectiveDate: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Material Unit Cost</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.materialUnitCost') || 'Material Unit Cost'}</label>
                 <Input type="number" value={standardForm.materialUnitCost} onChange={(e) => setStandardForm((prev) => ({ ...prev, materialUnitCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Labor Unit Cost</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.laborUnitCost') || 'Labor Unit Cost'}</label>
                 <Input type="number" value={standardForm.laborUnitCost} onChange={(e) => setStandardForm((prev) => ({ ...prev, laborUnitCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Overhead Unit Cost</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.overheadUnitCost') || 'Overhead Unit Cost'}</label>
                 <Input type="number" value={standardForm.overheadUnitCost} onChange={(e) => setStandardForm((prev) => ({ ...prev, overheadUnitCost: e.target.value }))} />
               </div>
             </div>
-            <Button onClick={handleSaveStandard} disabled={loading} className="w-full">Save Standard Cost</Button>
+            <Button onClick={handleSaveStandard} disabled={loading} className="w-full">{t('pages.finance.costing.saveStandardCost') || 'Save Standard Cost'}</Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-          <CardHeader>
-            <CardTitle className="text-base">Cost Rollup Entry</CardTitle>
+        <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+          <CardHeader className="border-b border-rams-line">
+            <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.costing.costRollupEntry') || 'Cost Rollup Entry'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Work Order</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.workOrder') || 'Work Order'}</label>
                 <Input value={rollupForm.workOrderId} onChange={(e) => setRollupForm((prev) => ({ ...prev, workOrderId: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Finished SKU</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.finishedSku') || 'Finished SKU'}</label>
                 <Input value={rollupForm.finishedSku} onChange={(e) => setRollupForm((prev) => ({ ...prev, finishedSku: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Planned Qty</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.plannedQty') || 'Planned Qty'}</label>
                 <Input type="number" value={rollupForm.plannedQuantity} onChange={(e) => setRollupForm((prev) => ({ ...prev, plannedQuantity: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Completed Qty</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.completedQty') || 'Completed Qty'}</label>
                 <Input type="number" value={rollupForm.completedQuantity} onChange={(e) => setRollupForm((prev) => ({ ...prev, completedQuantity: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Actual Material</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.actualMaterial') || 'Actual Material'}</label>
                 <Input type="number" value={rollupForm.actualMaterialCost} onChange={(e) => setRollupForm((prev) => ({ ...prev, actualMaterialCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Actual Labor</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.actualLabor') || 'Actual Labor'}</label>
                 <Input type="number" value={rollupForm.actualLaborCost} onChange={(e) => setRollupForm((prev) => ({ ...prev, actualLaborCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Actual Overhead</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.actualOverhead') || 'Actual Overhead'}</label>
                 <Input type="number" value={rollupForm.actualOverheadCost} onChange={(e) => setRollupForm((prev) => ({ ...prev, actualOverheadCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Relieved Cost</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.relievedCost') || 'Relieved Cost'}</label>
                 <Input type="number" value={rollupForm.relievedActualCost} onChange={(e) => setRollupForm((prev) => ({ ...prev, relievedActualCost: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Variance Material</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.varianceMaterial') || 'Variance Material'}</label>
                 <Input type="number" value={rollupForm.varianceMaterial} onChange={(e) => setRollupForm((prev) => ({ ...prev, varianceMaterial: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Variance Labor</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.varianceLabor') || 'Variance Labor'}</label>
                 <Input type="number" value={rollupForm.varianceLabor} onChange={(e) => setRollupForm((prev) => ({ ...prev, varianceLabor: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Variance Overhead</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.varianceOverhead') || 'Variance Overhead'}</label>
                 <Input type="number" value={rollupForm.varianceOverhead} onChange={(e) => setRollupForm((prev) => ({ ...prev, varianceOverhead: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Variance Total</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.costing.varianceTotal') || 'Variance Total'}</label>
                 <Input type="number" value={rollupForm.varianceTotal} onChange={(e) => setRollupForm((prev) => ({ ...prev, varianceTotal: e.target.value }))} />
               </div>
             </div>
-            <Button onClick={handleCreateRollup} disabled={loading} className="w-full">Record Rollup</Button>
+            <Button onClick={handleCreateRollup} disabled={loading} className="w-full">{t('pages.finance.costing.recordRollup') || 'Record Rollup'}</Button>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-base">Standard Costs</CardTitle>
+      <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+        <CardHeader className="border-b border-rams-line">
+          <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.costing.standardCosts') || 'Standard Costs'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">SKU</th>
-                <th className="py-3 px-4 text-left font-medium">Effective</th>
-                <th className="py-3 px-4 text-left font-medium">Total Unit</th>
-                <th className="py-3 px-4 text-left font-medium">Currency</th>
+              <tr className="border-b border-rams-line bg-rams-panel">
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.sku') || 'SKU'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.effective') || 'Effective'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.totalUnit') || 'Total Unit'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.currency') || 'Currency'}</th>
               </tr>
             </thead>
             <tbody>
               {standardCosts.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No standard costs.</td></tr>
+                <tr><td colSpan={4} className="py-8 text-center text-rams-muted">{t('pages.finance.costing.noStandardCosts') || 'No standard costs.'}</td></tr>
               ) : (
                 standardCosts.map((cost: any) => (
-                  <tr key={cost.id} className="border-b hover:bg-muted/50">
+                  <tr key={cost.id} className="border-b border-rams-line hover:bg-rams-panel transition-none">
                     <td className="py-3 px-4 font-medium">{cost.sku}</td>
                     <td className="py-3 px-4 text-muted-foreground">{cost.effective_date}</td>
                     <td className="py-3 px-4 text-muted-foreground">{cost.total_unit_cost}</td>
@@ -243,26 +243,26 @@ export default function CostingPage() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-        <CardHeader>
-          <CardTitle className="text-base">Cost Rollups</CardTitle>
+      <Card className="rounded-rams-sm border-rams-line bg-rams-module">
+        <CardHeader className="border-b border-rams-line">
+          <CardTitle className="text-2xs font-mono font-bold uppercase tracking-widest text-rams-muted">{t('pages.finance.costing.costRollups') || 'Cost Rollups'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <table className="w-full">
             <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">Work Order</th>
-                <th className="py-3 px-4 text-left font-medium">SKU</th>
-                <th className="py-3 px-4 text-left font-medium">Variance</th>
-                <th className="py-3 px-4 text-left font-medium">Currency</th>
+              <tr className="border-b border-rams-line bg-rams-panel">
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.workOrder') || 'Work Order'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.sku') || 'SKU'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.variance') || 'Variance'}</th>
+                <th className="py-3 px-4 text-left font-medium">{t('pages.finance.costing.currency') || 'Currency'}</th>
               </tr>
             </thead>
             <tbody>
               {costRollups.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No rollups recorded.</td></tr>
+                <tr><td colSpan={4} className="py-8 text-center text-rams-muted">{t('pages.finance.costing.noRollups') || 'No rollups recorded.'}</td></tr>
               ) : (
                 costRollups.map((rollup: any) => (
-                  <tr key={rollup.id} className="border-b hover:bg-muted/50">
+                  <tr key={rollup.id} className="border-b border-rams-line hover:bg-rams-panel transition-none">
                     <td className="py-3 px-4 font-medium">{rollup.work_order_id}</td>
                     <td className="py-3 px-4 text-muted-foreground">{rollup.finished_sku}</td>
                     <td className="py-3 px-4 text-muted-foreground">{rollup.variance_total}</td>

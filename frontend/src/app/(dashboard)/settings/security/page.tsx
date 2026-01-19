@@ -81,14 +81,15 @@ const mockActivity: LoginActivity[] = [
 ];
 
 const activityConfig = {
-  login_success: { label: 'Successful login', icon: CheckCircle, color: 'text-success' },
-  login_failed: { label: 'Failed login attempt', icon: XCircle, color: 'text-danger' },
-  logout: { label: 'Logged out', icon: LogOut, color: 'text-muted-foreground' },
-  password_changed: { label: 'Password changed', icon: Key, color: 'text-warning' },
-  '2fa_enabled': { label: '2FA enabled', icon: Shield, color: 'text-success' },
+  login_success: { labelKey: 'settings.security.activity.loginSuccess', icon: CheckCircle, color: 'text-rams-green' },
+  login_failed: { labelKey: 'settings.security.activity.loginFailed', icon: XCircle, color: 'text-rams-red' },
+  logout: { labelKey: 'settings.security.activity.logout', icon: LogOut, color: 'text-muted-foreground' },
+  password_changed: { labelKey: 'settings.security.activity.passwordChanged', icon: Key, color: 'text-rams-orange' },
+  '2fa_enabled': { labelKey: 'settings.security.activity.twoFactorEnabled', icon: Shield, color: 'text-rams-green' },
 };
 
 function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useI18n();
   const [currentPassword, setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
@@ -110,14 +111,12 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Change Password</DialogTitle>
-          <DialogDescription>
-            Enter your current password and a new password
-          </DialogDescription>
+          <DialogTitle>{t('settings.security.changePassword')}</DialogTitle>
+          <DialogDescription>{t('settings.security.changePasswordDesc')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="currentPassword">Current Password</Label>
+            <Label htmlFor="currentPassword">{t('settings.security.currentPassword')}</Label>
             <div className="relative">
               <Input
                 id="currentPassword"
@@ -128,7 +127,7 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="newPassword">New Password</Label>
+            <Label htmlFor="newPassword">{t('settings.security.newPassword')}</Label>
             <div className="relative">
               <Input
                 id="newPassword"
@@ -138,11 +137,11 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               />
             </div>
             {newPassword && !isStrongPassword && (
-              <p className="text-xs text-danger">Password must be at least 8 characters with uppercase and number</p>
+              <p className="text-xs text-rams-red">{t('settings.security.passwordStrengthHint')}</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm New Password</Label>
+            <Label htmlFor="confirmPassword">{t('settings.security.confirmPassword')}</Label>
             <div className="relative">
               <Input
                 id="confirmPassword"
@@ -152,7 +151,7 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               />
             </div>
             {confirmPassword && !passwordsMatch && (
-              <p className="text-xs text-danger">Passwords do not match</p>
+              <p className="text-xs text-rams-red">{t('settings.security.passwordsDoNotMatch')}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -162,12 +161,12 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
             >
               {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              {showPasswords ? 'Hide' : 'Show'} passwords
+              {showPasswords ? t('settings.security.passwordVisibility.hide') : t('settings.security.passwordVisibility.show')} {t('settings.security.passwordVisibility.label')}
             </button>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
           <Button 
             onClick={handleSubmit} 
             disabled={!currentPassword || !passwordsMatch || !isStrongPassword || isLoading}
@@ -175,10 +174,10 @@ function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Changing...
+                {t('settings.security.changingPassword')}
               </>
             ) : (
-              'Change Password'
+              t('settings.security.changePassword')
             )}
           </Button>
         </DialogFooter>
@@ -207,174 +206,171 @@ export default function SecuritySettingsPage() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in max-w-4xl">
+    <div className="space-y-8 animate-in fade-in duration-150 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.push('/settings')}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.push('/settings')}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">
-              Security Protocol
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+              {t('settings.security.title')}
             </h1>
-            <p className="text-muted-foreground font-medium text-sm">Manage authentication layers and active organizational sessions</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{t('settings.security.subtitle')}</p>
           </div>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Password */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <Key className="h-5 w-5 text-primary/60" />
-              Authentication
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Key className="h-4 w-4 text-rams-orange" />
+              {t('settings.security.authenticationKeys')}
             </CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Access credentials and encryption keys</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="p-5 rounded-2xl bg-muted/30 border border-border/40 flex items-center justify-between">
+          <CardContent className="p-6">
+            <div className="p-5 rounded-none bg-rams-panel/40 border border-rams-line flex items-center justify-between group">
               <div>
-                <p className="font-heading font-bold text-sm tracking-tight">Access Password</p>
-                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">Last rotated 3 days ago</p>
+                <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 transition-none group-hover:text-rams-orange">{t('settings.security.accessPassword')}</p>
+                <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('settings.security.lastRotated')}</p>
               </div>
-              <Button variant="outline" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => setPasswordDialogOpen(true)}>
-                Update Keys
+              <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line text-[9px] font-black uppercase tracking-widest h-10 px-6 transition-none" onClick={() => setPasswordDialogOpen(true)}>
+                {t('settings.security.updateKeys')}
               </Button>
             </div>
           </CardContent>
         </Card>
 
         {/* Two-Factor Authentication */}
-        <Card className={cn("lg:col-span-1", is2FAEnabled ? 'border-success/20 bg-success/[0.02]' : 'border-warning/20 bg-warning/[0.02]')}>
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <Smartphone className="h-5 w-5 text-primary/60" />
-              Verification Layer
+        <Card className={cn("rounded-rams-sm border bg-rams-module", is2FAEnabled ? 'border-rams-green/30 bg-rams-green/5' : 'border-rams-orange/30 bg-rams-orange/5')}>
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-rams-orange" />
+              {t('settings.security.verificationLayer')}
               {is2FAEnabled ? (
-                <Badge variant="success" size="sm" className="ml-auto">Active</Badge>
+                <Badge variant="success" size="sm" className="ml-auto h-4 px-1 text-[8px] font-black uppercase">{t('settings.security.active')}</Badge>
               ) : (
-                <Badge variant="warning" size="sm" className="ml-auto">At Risk</Badge>
+                <Badge variant="warning" size="sm" className="ml-auto h-4 px-1 text-[8px] font-black uppercase">{t('settings.security.atRisk')}</Badge>
               )}
             </CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Multi-factor identity synchronization</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="p-5 rounded-2xl bg-background/50 border border-border/40 flex items-center justify-between">
+          <CardContent className="p-6 space-y-4">
+            <div className="p-5 rounded-none bg-rams-panel/40 border border-rams-line flex items-center justify-between">
               <div className="flex-1">
-                <p className="font-heading font-bold text-sm tracking-tight">Authenticator Protocol</p>
-                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground/60">
+                <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{t('settings.security.authenticatorProtocol')}</p>
+                <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1 leading-relaxed">
                   {is2FAEnabled 
-                    ? 'Synchronized with external token generator'
-                    : 'Enable 2FA for industrial-grade security'}
+                    ? t('settings.security.syncedWithToken')
+                    : t('settings.security.enable2faDesc')}
                 </p>
               </div>
               <Switch 
                 checked={is2FAEnabled} 
                 onCheckedChange={setIs2FAEnabled}
-                className="data-[state=checked]:bg-success"
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Active Sessions */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <Monitor className="h-5 w-5 text-primary/60" />
-              Active Intelligence Nodes
+        <Card className="lg:col-span-2 rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-rams-orange" />
+              {t('settings.security.activeIntelligenceNodes')}
             </CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Authorized devices currently connected to the OS</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 pt-0">
-            {mockSessions.map((session) => (
-              <div 
-                key={session.id} 
-                className={cn(
-                  'flex items-center justify-between p-5 rounded-2xl border transition-all duration-300 group',
-                  session.isCurrent ? 'border-primary/30 bg-primary/5 shadow-sm' : 'border-border/40 hover:border-primary/20'
-                )}
-              >
-                <div className="flex items-center gap-5">
-                  <div className={cn('p-3 rounded-xl shadow-inner-soft transition-transform duration-500 group-hover:scale-110', session.isCurrent ? 'bg-primary text-primary-foreground shadow-glow' : 'bg-muted text-muted-foreground')}>
-                    {session.device === 'Mobile' ? (
-                      <Smartphone className="h-5 w-5" />
-                    ) : (
-                      <Monitor className="h-5 w-5" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-heading font-bold text-sm tracking-tight">{session.browser}</p>
-                      {session.isCurrent && (
-                        <Badge variant="success" size="sm">Primary Node</Badge>
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-line/30">
+              {mockSessions.map((session) => (
+                <div 
+                  key={session.id} 
+                  className={cn(
+                    'flex items-center justify-between p-6 transition-none group',
+                    session.isCurrent ? 'bg-rams-panel/40 shadow-[inset_2px_0_0_0_#2D8C3C]' : 'hover:bg-rams-panel/20'
+                  )}
+                >
+                  <div className="flex items-center gap-6">
+                    <div className={cn('p-3 rounded-none border border-rams-line transition-none', session.isCurrent ? 'bg-rams-module text-rams-green' : 'bg-rams-panel text-muted-foreground/40')}>
+                      {session.device === 'Mobile' ? (
+                        <Smartphone className="h-5 w-5" />
+                      ) : (
+                        <Monitor className="h-5 w-5" />
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                        <Globe className="h-3 w-3" />
-                        {session.location} • {session.ip}
+                    <div>
+                      <div className="flex items-center gap-4">
+                        <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{session.browser}</p>
+                        {session.isCurrent && (
+                          <Badge variant="success" size="sm" className="h-4 px-1 text-[8px] font-black uppercase tracking-widest">{t('settings.security.primaryNode')}</Badge>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                        <Clock className="h-3 w-3" />
-                        Last Activity: {formatDate(new Date(session.lastActive), { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })}
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-2">
+                        <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
+                          <Globe className="h-3 w-3" />
+                          {session.location.toUpperCase()} • {session.ip}
+                        </div>
+                        <div className="flex items-center gap-2 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
+                          <Clock className="h-3 w-3" />
+                          {t('settings.security.pulse')}: {formatDate(new Date(session.lastActive)).toUpperCase()}
+                        </div>
                       </div>
                     </div>
                   </div>
+                  {!session.isCurrent && (
+                    <Button 
+                      variant="ghost" 
+                      size="default" 
+                      className="text-rams-red hover:bg-rams-red/5 rounded-rams-sm px-4 h-9 text-[9px] font-black uppercase tracking-widest transition-none border border-transparent hover:border-rams-red/20"
+                      onClick={() => handleRevokeSession(session)}
+                    >
+                      <LogOut className="mr-2 h-3.5 w-3.5" />
+                      {t('settings.security.terminateNode')}
+                    </Button>
+                  )}
                 </div>
-                {!session.isCurrent && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-danger hover:text-danger hover:bg-danger/10 rounded-xl px-4"
-                    onClick={() => handleRevokeSession(session)}
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    De-authorize
-                  </Button>
-                )}
-              </div>
-            ))}
-            <div className="pt-4">
-              <Button variant="outline" className="w-full h-12 text-danger hover:text-danger hover:bg-danger/5 border-danger/20 rounded-xl font-heading">
+              ))}
+            </div>
+            <div className="p-6 bg-rams-panel/10 border-t border-rams-line">
+              <Button variant="outline" className="w-full h-12 text-rams-red hover:bg-rams-red/5 border-rams-red/20 rounded-rams-sm text-[10px] font-black uppercase tracking-widest transition-none">
                 <LogOut className="mr-2 h-4 w-4" />
-                Terminate All Remote Sessions
+                {t('settings.security.terminateAllRemoteSessions')}
               </Button>
             </div>
           </CardContent>
         </Card>
 
         {/* Login Activity */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg font-heading flex items-center gap-3">
-              <Shield className="h-5 w-5 text-primary/60" />
-              Event Telemetry
+        <Card className="lg:col-span-2 rounded-rams-sm border border-rams-line bg-rams-module overflow-hidden">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+              <Shield className="h-4 w-4 text-rams-orange" />
+              {t('settings.security.eventTelemetryLog')}
             </CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Historical log of security-related events</CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
+          <CardContent className="p-0">
+            <div className="divide-y divide-rams-line/30">
               {mockActivity.map((activity) => {
                 const config = activityConfig[activity.action];
                 const Icon = config.icon;
                 return (
-                  <div key={activity.id} className="flex items-center gap-5 p-4 rounded-xl hover:bg-muted/30 transition-colors border-b border-border/10 last:border-0">
-                    <div className={cn('p-2.5 rounded-lg shadow-sm', config.color, 'bg-background')}>
+                  <div key={activity.id} className="flex items-center gap-6 p-5 hover:bg-rams-panel/40 transition-none group">
+                    <div className={cn('p-2.5 rounded-none border border-rams-line transition-none bg-rams-panel', config.color)}>
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1">
-                      <p className="font-heading font-bold text-sm tracking-tight">{config.label}</p>
-                      <div className="flex items-center gap-3 mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
-                        <span>{activity.device}</span>
-                        <span>•</span>
-                        <span>{activity.location}</span>
+                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{t(config.labelKey)}</p>
+                      <div className="flex items-center gap-4 mt-1 text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
+                        <span>{activity.device.toUpperCase()}</span>
+                        <span className="opacity-30">•</span>
+                        <span>{activity.location.toUpperCase()}</span>
                       </div>
                     </div>
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
-                      {formatDate(new Date(activity.timestamp), { month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric' })}
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-tighter text-muted-foreground/30">
+                      {formatDate(new Date(activity.timestamp)).toUpperCase()}
                     </div>
                   </div>
                 );
@@ -385,32 +381,28 @@ export default function SecuritySettingsPage() {
       </div>
 
       {/* Security Recommendations */}
-      <Card className="border-warning/20 bg-warning/[0.02]">
-        <CardHeader>
-          <CardTitle className="text-lg font-heading flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning" />
-            Security Recommendations
+      <Card className="rounded-rams-sm border border-rams-orange/30 bg-rams-orange/5">
+        <CardHeader className="bg-rams-orange/10 border-b border-rams-orange/20">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-rams-orange" />
+            {t('settings.security.securitySyncRecommendations')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-background/50 border border-border/40">
-            <div className="p-2 rounded-lg bg-success/10 text-success">
-              <CheckCircle className="h-5 w-5" />
+        <CardContent className="p-6 space-y-4">
+          {[
+            { labelKey: 'settings.security.securityRecommendation1', status: 'success' },
+            { labelKey: 'settings.security.securityRecommendation2', status: 'success' },
+            { labelKey: 'settings.security.securityRecommendation3', status: 'warning' },
+          ].map((item, idx) => (
+            <div key={idx} className="flex items-center gap-4 p-4 bg-rams-module border border-rams-line group">
+              <div className={cn('p-2 rounded-none border transition-none', 
+                item.status === 'success' ? 'bg-rams-green/5 text-rams-green border-rams-green/20' : 'bg-rams-orange/5 text-rams-orange border-rams-orange/20'
+              )}>
+                {item.status === 'success' ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              </div>
+              <span className="text-[11px] font-medium uppercase text-foreground/70">{t(item.labelKey)}</span>
             </div>
-            <span className="text-sm font-medium">Two-factor authentication is active and synchronized</span>
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-background/50 border border-border/40">
-            <div className="p-2 rounded-lg bg-success/10 text-success">
-              <CheckCircle className="h-5 w-5" />
-            </div>
-            <span className="text-sm font-medium">Identity credentials rotated within recommended threshold</span>
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-background/50 border border-border/40">
-            <div className="p-2 rounded-lg bg-warning/10 text-warning">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <span className="text-sm font-medium">Consider terminating legacy sessions to minimize surface area</span>
-          </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -420,17 +412,17 @@ export default function SecuritySettingsPage() {
       />
 
       <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-rams-sm border-rams-line bg-rams-module">
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke Session</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will sign out the device in {selectedSession?.location}. Are you sure?
+            <AlertDialogTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('settings.security.terminateNodeAuthorization')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs font-medium uppercase leading-relaxed text-muted-foreground/60">
+              {t('settings.security.terminateNodeDescription', { location: selectedSession?.location?.toUpperCase() ?? '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRevokeSession} className="bg-danger text-danger-foreground hover:bg-danger/90">
-              Revoke Session
+          <AlertDialogFooter className="border-t border-rams-line pt-4 mt-2">
+            <AlertDialogCancel className="rounded-none text-[9px] font-black uppercase tracking-widest h-9">{t('settings.security.cancelProtocol')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRevokeSession} className="rounded-none bg-rams-red text-white hover:bg-rams-red/90 text-[9px] font-black uppercase tracking-widest h-9">
+              {t('settings.security.terminateNode')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -43,7 +43,7 @@ export default function DashboardLayout({
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center gap-8 bg-rams-chassis relative overflow-hidden">
         <div className="relative">
-          <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-border">
+          <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-line">
             <div className="h-10 w-10 bg-rams-orange text-black flex items-center justify-center font-mono font-black text-2xl border border-black/10">
               S
             </div>

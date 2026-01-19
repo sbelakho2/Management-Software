@@ -40,6 +40,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { cn, formatCurrency, formatNumber } from '@/lib/utils';
 import { useProductStore } from '@/stores/products';
 import type { Product as APIProduct } from '@/api/products';
@@ -64,12 +72,13 @@ interface Product {
 
 
 const statusConfig = {
-  active: { label: 'Active', variant: 'success' as const },
-  inactive: { label: 'Inactive', variant: 'secondary' as const },
-  discontinued: { label: 'Discontinued', variant: 'danger' as const },
+  active: { labelKey: 'common.active', variant: 'success' as const },
+  inactive: { labelKey: 'common.inactive', variant: 'secondary' as const },
+  discontinued: { labelKey: 'pages.products.status.discontinued', variant: 'danger' as const },
 };
 
 function ProductStats({ products }: { products: Product[] }) {
+  const { t } = useI18n();
   const stats = React.useMemo(() => {
     const active = products.filter((p) => p.status === 'active').length;
     const lowStock = products.filter((p) => p.inventoryQty <= p.reorderPoint && p.status === 'active').length;
@@ -81,23 +90,23 @@ function ProductStats({ products }: { products: Product[] }) {
   }, [products]);
 
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Active Inventory Nodes</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.products.stats.activeInventoryNodes')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.active}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Stock Abnormalities</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.products.stats.stockAbnormalities')}</p>
         <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', stats.lowStock > 0 ? 'text-rams-red' : 'text-foreground/90')}>
           {stats.lowStock}
         </p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Aggregated Revenue</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.products.stats.aggregatedRevenue')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(stats.totalRevenue)}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Mean Margin KPI</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.products.stats.meanMarginKPI')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.avgMargin.toFixed(1)}%</p>
       </div>
     </div>
@@ -106,6 +115,7 @@ function ProductStats({ products }: { products: Product[] }) {
 
 function ProductRow({ product }: { product: Product }) {
   const router = useRouter();
+  const { t } = useI18n();
   const config = statusConfig[product.status];
   const margin = ((product.listPrice - product.standardCost) / product.listPrice) * 100;
   const isLowStock = product.inventoryQty <= product.reorderPoint && product.status === 'active';
@@ -123,7 +133,7 @@ function ProductRow({ product }: { product: Product }) {
       </TableCell>
       <TableCell className="font-sans font-bold text-[11px] uppercase tracking-tight text-muted-foreground/60">{product.category}</TableCell>
       <TableCell>
-        <Badge variant={config.variant} size="sm">{config.label.toUpperCase()}</Badge>
+        <Badge variant={config.variant} size="sm">{t(config.labelKey).toUpperCase()}</Badge>
       </TableCell>
       <TableCell className="text-right font-mono font-bold tabular-nums">{formatCurrency(product.standardCost)}</TableCell>
       <TableCell className="text-right font-mono font-bold tabular-nums">{formatCurrency(product.listPrice)}</TableCell>
@@ -152,29 +162,29 @@ function ProductRow({ product }: { product: Product }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => router.push(`/products/${product.id}`)}>
-              <Eye className="mr-2 h-3.5 w-3.5" /> ANALYZE
+              <Eye className="mr-2 h-3.5 w-3.5" /> {t('common.viewDetails')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push(`/products/${product.id}?mode=edit`)}>
-              <Edit className="mr-2 h-3.5 w-3.5" /> MODIFY
+              <Edit className="mr-2 h-3.5 w-3.5" /> {t('common.edit')}
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <Copy className="mr-2 h-3.5 w-3.5" /> DUPLICATE_NODE
+              <Copy className="mr-2 h-3.5 w-3.5" /> {t('common.duplicate')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
-              <Layers className="mr-2 h-3.5 w-3.5" /> VIEW_BOM
+              <Layers className="mr-2 h-3.5 w-3.5" /> {t('pages.products.viewBom')}
             </DropdownMenuItem>
             <DropdownMenuItem>
-              <BarChart3 className="mr-2 h-3.5 w-3.5" /> VIEW_INTEL
+              <BarChart3 className="mr-2 h-3.5 w-3.5" /> {t('pages.products.viewAnalytics')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             {product.status === 'active' ? (
               <DropdownMenuItem className="text-rams-red">
-                <Archive className="mr-2 h-3.5 w-3.5" /> DEACTIVATE_NODE
+                <Archive className="mr-2 h-3.5 w-3.5" /> {t('common.deactivate')}
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem className="text-rams-green">
-                <Package className="mr-2 h-3.5 w-3.5" /> ACTIVATE_NODE
+                <Package className="mr-2 h-3.5 w-3.5" /> {t('common.activate')}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -238,7 +248,7 @@ export default function ProductsPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="products-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.products.title')}
@@ -246,21 +256,21 @@ export default function ProductsPage() {
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
             <span>{t('pages.products.subtitle')}</span>
             <span className="opacity-30">|</span>
-            <span>STATION: INVENTORY-01</span>
+            <span>{t('pages.products.station')}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
             <Download className="mr-2 h-3.5 w-3.5" />
-            Export Intel
+            {t('pages.products.exportIntel')}
           </Button>
           <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}}>
             <Upload className="mr-2 h-3.5 w-3.5" />
-            Import
+            {t('pages.products.import')}
           </Button>
           <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase" onClick={() => router.push('/products/new')}>
             <Plus className="mr-2 h-3.5 w-3.5" />
-            Initialize Node
+            {t('pages.products.initializeNode')}
           </Button>
         </div>
       </div>
@@ -274,7 +284,7 @@ export default function ProductsPage() {
           <div className="relative flex-1 min-w-[240px] group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 transition-colors group-focus-within:text-rams-orange" />
             <Input
-              placeholder="SEARCH_INVENTORY_NODES..."
+              placeholder={t('common.search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 h-10 text-[10px]"
@@ -283,22 +293,22 @@ export default function ProductsPage() {
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[140px] h-10 text-[10px]">
               <Filter className="mr-2 h-3.5 w-3.5 opacity-40" />
-              <SelectValue placeholder="STATUS_STATE" />
+              <SelectValue placeholder={t('common.status')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_STATUS</SelectItem>
-              <SelectItem value="active">ACTIVE</SelectItem>
-              <SelectItem value="inactive">INACTIVE</SelectItem>
-              <SelectItem value="discontinued">DISCONTINUED</SelectItem>
+              <SelectItem value="all">{t('common.allStatus')}</SelectItem>
+              <SelectItem value="active">{t('common.active')}</SelectItem>
+              <SelectItem value="inactive">{t('common.inactive')}</SelectItem>
+              <SelectItem value="discontinued">{t('pages.products.status.discontinued')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-[160px] h-10 text-[10px]">
               <Layers className="mr-2 h-3.5 w-3.5 opacity-40" />
-              <SelectValue placeholder="CATEGORY_CAT" />
+              <SelectValue placeholder={t('common.category')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_CATEGORIES</SelectItem>
+              <SelectItem value="all">{t('common.allCategories')}</SelectItem>
               {categories.map((category) => (
                 <SelectItem key={category} value={category}>{category.toUpperCase()}</SelectItem>
               ))}
@@ -307,12 +317,12 @@ export default function ProductsPage() {
           <Select value={stockFilter} onValueChange={setStockFilter}>
             <SelectTrigger className="w-[140px] h-10 text-[10px]">
               <Package className="mr-2 h-3.5 w-3.5 opacity-40" />
-              <SelectValue placeholder="STOCK_LEVEL" />
+              <SelectValue placeholder={t('pages.products.stockLevel')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">ALL_STOCK</SelectItem>
-              <SelectItem value="low">LOW_STOCK_⚠</SelectItem>
-              <SelectItem value="out">OUT_OF_STOCK</SelectItem>
+              <SelectItem value="all">{t('pages.products.allStock')}</SelectItem>
+              <SelectItem value="low">{t('pages.products.lowStock')}</SelectItem>
+              <SelectItem value="out">{t('pages.products.outOfStock')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -324,15 +334,15 @@ export default function ProductsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>PRODUCT_IDENTITY</TableHead>
-                <TableHead>CATEGORY_NODE</TableHead>
-                <TableHead>STATUS_STATE</TableHead>
-                <TableHead className="text-right">STD_COST</TableHead>
-                <TableHead className="text-right">LIST_PRICE</TableHead>
-                <TableHead className="text-right">MARGIN_KPI</TableHead>
-                <TableHead className="text-center">INVENTORY</TableHead>
-                <TableHead className="text-center">LEAD_TIME</TableHead>
-                <TableHead className="text-right">TOTAL_SOLD</TableHead>
+                <TableHead>{t('pages.products.table.product')}</TableHead>
+                <TableHead>{t('common.category')}</TableHead>
+                <TableHead>{t('common.status')}</TableHead>
+                <TableHead className="text-right">{t('pages.products.table.standardCost')}</TableHead>
+                <TableHead className="text-right">{t('pages.products.table.listPrice')}</TableHead>
+                <TableHead className="text-right">{t('pages.products.table.margin')}</TableHead>
+                <TableHead className="text-center">{t('pages.products.table.inventory')}</TableHead>
+                <TableHead className="text-center">{t('pages.products.table.leadTime')}</TableHead>
+                <TableHead className="text-right">{t('pages.products.table.totalSold')}</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -347,8 +357,8 @@ export default function ProductsPage() {
           <div className="text-center py-24">
             <Package className="mx-auto h-12 w-12 text-muted-foreground/20" />
             <div className="mt-4">
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero nodes identified</p>
-              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">Adjust parameters or initialize new product node</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.products.emptyState.title')}</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">{t('pages.products.emptyState.description')}</p>
             </div>
           </div>
         )}

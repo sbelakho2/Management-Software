@@ -32,66 +32,66 @@ export default function MaintenanceMobilePage() {
     <div className="space-y-6 page-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold tracking-tight">Maintenance Mobile</h1>
-          <p className="text-sm text-muted-foreground">Quick actions for floor use</p>
+          <h1 className="text-2xl font-heading font-bold tracking-tight">{t('pages.maintenance.mobile.title') || 'Maintenance Mobile'}</h1>
+          <p className="text-sm text-muted-foreground">{t('pages.maintenance.mobile.subtitle') || 'Quick actions for floor use'}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => router.push('/maintenance')}>
-          Back
+          {t('common.back') || 'Back'}
         </Button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold">Open Work Orders</CardTitle>
+            <CardTitle className="text-sm font-semibold">{t('pages.maintenance.mobile.openWorkOrders') || 'Open Work Orders'}</CardTitle>
             <Wrench className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-3">
               <p className="text-2xl font-bold">{stats?.total_work_orders || 0}</p>
-              <Badge variant="secondary">Assigned</Badge>
+              <Badge variant="secondary">{t('common.assigned') || 'Assigned'}</Badge>
             </div>
-            <Button className="mt-3 w-full" size="sm">View Work Orders</Button>
+            <Button className="mt-3 w-full" size="sm">{t('pages.maintenance.mobile.viewWorkOrders') || 'View Work Orders'}</Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold">PM Due</CardTitle>
-            <Clock className="h-4 w-4 text-warning" />
+            <CardTitle className="text-sm font-semibold">{t('pages.maintenance.mobile.pmDue') || 'PM Due'}</CardTitle>
+            <Clock className="h-4 w-4 text-rams-orange" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-3">
               <p className="text-2xl font-bold">{stats?.overdue_pms || 0}</p>
-              <Badge variant="warning">Overdue</Badge>
+              <Badge variant="warning">{t('common.overdue') || 'Overdue'}</Badge>
             </div>
-            <Button variant="outline" className="mt-3 w-full" size="sm">Review PMs</Button>
+            <Button variant="outline" className="mt-3 w-full" size="sm">{t('pages.maintenance.mobile.reviewPMs') || 'Review PMs'}</Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold">Active LOTO</CardTitle>
-            <ShieldAlert className="h-4 w-4 text-danger" />
+            <CardTitle className="text-sm font-semibold">{t('pages.maintenance.mobile.activeLOTO') || 'Active LOTO'}</CardTitle>
+            <ShieldAlert className="h-4 w-4 text-rams-red" />
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-3">
               <p className="text-2xl font-bold">{stats?.assets_by_status?.down || 0}</p>
-              <Badge variant="danger">Critical</Badge>
+              <Badge variant="danger">{t('common.critical') || 'Critical'}</Badge>
             </div>
-            <Button variant="outline" className="mt-3 w-full" size="sm">View LOTO</Button>
+            <Button variant="outline" className="mt-3 w-full" size="sm">{t('pages.maintenance.mobile.viewLOTO') || 'View LOTO'}</Button>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold">Scan Asset/Tool</CardTitle>
-            <Scan className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-semibold">{t('pages.maintenance.mobile.scanAssetTool') || 'Scan Asset/Tool'}</CardTitle>
+            <Scan className="h-4 w-4 text-rams-orange" />
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Use barcode or RFID to open records.</p>
+            <p className="text-sm text-muted-foreground">{t('pages.maintenance.mobile.scanDescription') || 'Use barcode or RFID to open records.'}</p>
             <Button className="mt-3 w-full" size="sm" onClick={() => setScannerEnabled((prev) => !prev)}>
-              {scannerEnabled ? 'Stop Scanner' : 'Launch Scanner'}
+              {scannerEnabled ? (t('pages.maintenance.mobile.stopScanner') || 'Stop Scanner') : (t('pages.maintenance.mobile.launchScanner') || 'Launch Scanner')}
             </Button>
             {scannerEnabled && (
               <div className="mt-4 space-y-3">
@@ -114,15 +114,15 @@ export default function MaintenanceMobilePage() {
         </Card>
       </div>
 
-      <Card className="rounded-2xl border-border/40 bg-card/40 backdrop-blur-md">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module">
         <CardHeader>
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            Quick Incident Log
+            <AlertTriangle className="h-4 w-4 text-rams-orange" />
+            {t('pages.maintenance.mobile.quickIncidentLog') || 'Quick Incident Log'}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Button variant="outline" className="w-full" size="sm">Log Downtime</Button>
+          <Button variant="outline" className="w-full" size="sm">{t('pages.maintenance.mobile.logDowntime') || 'Log Downtime'}</Button>
         </CardContent>
       </Card>
 

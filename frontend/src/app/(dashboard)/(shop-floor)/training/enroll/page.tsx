@@ -31,51 +31,51 @@ export default function EnrollTrainingPage() {
     setIsSubmitting(true);
     setTimeout(() => {
       toast({
-        title: 'Enrolled Successfully',
-        description: 'You have been added to the training program.',
+        title: t('training.enroll.toast.success.title') || 'Enrolled Successfully',
+        description: t('training.enroll.toast.success.description') || 'You have been added to the training program.',
       });
       router.push('/training');
     }, 1000);
   };
   return (
-    <div className="max-w-2xl mx-auto space-y-8 page-fade-in">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.back()}>
-          <ChevronLeft className="h-5 w-5" />
+    <div className="max-w-2xl mx-auto space-y-8 page-fade-in pb-12">
+      <div className="flex items-center gap-4 border-b border-rams-line pb-8">
+        <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+          <ChevronLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight ">Enrollment Protocol</h1>
-          <p className="text-muted-foreground font-medium text-sm">Join a new organizational development program</p>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('training.enroll.title') || 'Enrollment Protocol'}</h1>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{t('training.enroll.subtitle') || 'Join a new organizational development program'}</p>
         </div>
       </div>
-      <Card className="rounded-[2.5rem] border-border/40 bg-card/40 backdrop-blur-md shadow-premium">
-        <CardHeader className="pb-8">
-          <CardTitle className="text-lg font-heading">Initiate Enrollment</CardTitle>
-          <CardDescription className="text-xs font-medium uppercase tracking-wider">Configure your training node parameters</CardDescription>
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+        <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.enroll.initiateEnrollment') || 'Initiate Enrollment'}</CardTitle>
+          <CardDescription className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/50 mt-1">{t('training.enroll.configureParams') || 'Configure your training node parameters'}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
-            <div className="space-y-3">
-              <Label htmlFor="program" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Program Node</Label>
+            <div className="space-y-2">
+              <Label htmlFor="program" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.enroll.strategicProgramNode') || 'Strategic Program Node'}</Label>
               <Select required>
-                <SelectTrigger className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
-                  <SelectValue placeholder="Select a program node" />
+                <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                  <SelectValue placeholder={t('training.enroll.selectProgram') || 'Select a program node'} />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl shadow-premium">
+                <SelectContent className="rounded-rams-sm border-rams-line">
                   {programs.map(p => (
-                    <SelectItem key={p.id} value={p.id} className="rounded-xl m-1">{p.title}</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-3">
-              <Label htmlFor="reason" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Rational Optimization Context (Optional)</Label>
-              <Input id="reason" placeholder="e.g. Skill gap resolution, maturity escalation..." className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft" />
+            <div className="space-y-2">
+              <Label htmlFor="reason" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.enroll.rationalOptimization') || 'Rational Optimization Context (Optional)'}</Label>
+              <Input id="reason" placeholder={t('training.enroll.reasonPlaceholder') || 'e.g. Skill gap resolution, maturity escalation...'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
             </div>
             <div className="pt-6 flex gap-4">
-              <Button type="button" variant="outline" className="flex-1 rounded-xl border-primary/20 hover:bg-primary/5 text-primary h-12" onClick={() => router.back()}>Abort</Button>
-              <Button type="submit" className="flex-1 rounded-xl shadow-glow subtle-shine h-12 font-bold" disabled={isSubmitting}>
-                {isSubmitting ? 'Synchronizing...' : 'Establish Enrollment'}
+              <Button type="button" variant="outline" className="flex-1 rounded-rams-sm border-rams-line h-10 transition-none" onClick={() => router.back()}>{t('common.abort') || 'Abort'}</Button>
+              <Button type="submit" className="flex-1 rounded-rams-sm bg-rams-orange text-black font-black h-10 uppercase tracking-widest text-[10px] transition-none" disabled={isSubmitting}>
+                {isSubmitting ? (t('common.synchronizing') || 'Synchronizing...') : (t('training.enroll.establishEnrollment') || 'Establish Enrollment')}
               </Button>
             </div>
           </form>

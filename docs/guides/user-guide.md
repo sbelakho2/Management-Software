@@ -527,6 +527,27 @@ ML-driven insights for data-backed decision making.
 - **Resource Leveling**: Prescriptive advice on rebalancing personnel and assets.
 - **Trend Analysis**: Long-term tracking of KPIs across all departments.
 
+### AI-Powered Insights
+
+Sensei OS provides 57 AI insight categories across 8 domains:
+
+| Domain | Example Insights |
+|--------|------------------|
+| Production & Operations | OEE, bottleneck analysis, forecasts |
+| Quality & Compliance | SPC, defect predictions, compliance |
+| Inventory & Supply Chain | Reorder points, supplier scoring |
+| Maintenance & Equipment | Predictive maintenance, reliability |
+| Financial & Cost | Profitability, margin trends |
+| Workforce & HR | Productivity, skill gaps |
+| Sales & Customer | Pipeline health, win/loss patterns |
+| Strategic & Executive | KPIs, competitive analysis |
+
+**Role-Based Access**: Your access to insights depends on your role. Each role is configured to see insights relevant to their responsibilities.
+
+**Role-Specific Guides**:
+- See your role's AI Insights Guide in `/docs/Resources/{YourRole}/`
+- Or see the full [AI Insights Access Reference](../Resources/AI_INSIGHTS_ACCESS.md)
+
 ## 📅 Today Screen
 
 Daily operational dashboard for managers.

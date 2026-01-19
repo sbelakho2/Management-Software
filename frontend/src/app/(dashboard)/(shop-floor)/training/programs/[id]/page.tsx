@@ -35,54 +35,54 @@ export default function ProgramDetailsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+    <div className="space-y-8 page-fade-in pb-12">
+      <div className="flex items-center gap-4 border-b border-rams-line pb-8">
+        <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">{program.title}</h1>
-            <Badge variant="outline">{program.level}</Badge>
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{program.title}</h1>
+            <Badge variant="outline" className="rounded-none text-[8px] font-black uppercase tracking-widest h-4 px-1 border-rams-line">{program.level}</Badge>
           </div>
-          <p className="text-muted-foreground">{program.category}</p>
+          <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">{program.category} | STATION: ACADEMY-PROG-01</p>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Program Description</CardTitle>
+      <div className="grid gap-8 md:grid-cols-3">
+        <div className="md:col-span-2 space-y-8">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.programs.detail.programDescription') || 'Program Description'}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm leading-relaxed">{program.description}</p>
+            <CardContent className="p-8">
+              <p className="text-xs font-medium text-foreground/70 uppercase leading-relaxed">{program.description}</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Curriculum</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.programs.detail.curriculum') || 'Curriculum'}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            <CardContent className="p-0">
+              <div className="divide-y divide-rams-line/30">
                 {program.modules.map((module, idx) => (
-                  <div key={module.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">
+                  <div key={module.id} className="flex items-center justify-between p-5 hover:bg-rams-panel transition-none group">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-8 w-8 items-center justify-center bg-rams-panel border border-rams-line text-[10px] font-mono font-bold">
                         {idx + 1}
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{module.title}</p>
-                        <p className="text-xs text-muted-foreground">{module.duration}</p>
+                        <p className="text-xs font-black uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{module.title}</p>
+                        <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-0.5">{module.duration}</p>
                       </div>
                     </div>
                     {module.status === 'completed' ? (
-                      <CheckCircle className="h-5 w-5 text-emerald-500" />
+                      <CheckCircle className="h-5 w-5 text-rams-green" />
                     ) : module.status === 'in_progress' ? (
-                      <Badge variant="secondary">In Progress</Badge>
+                      <Badge variant="warning" size="sm" className="rounded-none text-[8px] font-black h-4">{t('common.inProgress') || 'In Progress'}</Badge>
                     ) : (
-                      <Badge variant="outline">Scheduled</Badge>
+                      <Badge variant="secondary" size="sm" className="rounded-none text-[8px] font-black h-4">{t('common.scheduled') || 'Scheduled'}</Badge>
                     )}
                   </div>
                 ))}
@@ -91,32 +91,32 @@ export default function ProgramDetailsPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
+        <div className="space-y-8">
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('training.programs.detail.details') || 'Details'}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-sm py-2 border-b">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" /> Duration
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-b border-rams-line pb-4">
+                <span className="flex items-center gap-3">
+                  <Clock className="h-3.5 w-3.5 opacity-40" /> {t('common.duration') || 'Duration'}
                 </span>
-                <span className="font-medium">{program.duration}</span>
+                <span className="font-mono font-bold text-foreground/80">{program.duration}</span>
               </div>
-              <div className="flex items-center justify-between text-sm py-2 border-b">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Users className="h-4 w-4" /> Instructor
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-b border-rams-line pb-4">
+                <span className="flex items-center gap-3">
+                  <Users className="h-3.5 w-3.5 opacity-40" /> {t('common.instructor') || 'Instructor'}
                 </span>
-                <span className="font-medium">{program.instructor}</span>
+                <span className="font-bold text-foreground/80">{program.instructor}</span>
               </div>
-              <div className="flex items-center justify-between text-sm py-2">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <BookOpen className="h-4 w-4" /> Enrolled
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                <span className="flex items-center gap-3">
+                  <BookOpen className="h-3.5 w-3.5 opacity-40" /> {t('common.enrolled') || 'Enrolled'}
                 </span>
-                <span className="font-medium">{program.enrolledCount} active users</span>
+                <span className="font-bold text-foreground/80">{program.enrolledCount} {t('common.activeUsers') || 'active users'}</span>
               </div>
               <div className="pt-4">
-                <Button className="w-full">Continue Learning</Button>
+                <Button className="w-full rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 transition-none">{t('training.programs.detail.continueLearning') || 'Continue Learning'}</Button>
               </div>
             </CardContent>
           </Card>

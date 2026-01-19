@@ -15,6 +15,8 @@ import {
   Package,
   AlertTriangle,
   Plus,
+  Target,
+  Shield,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -108,9 +110,9 @@ function TaskCard({ task }: { task: TaskItem }) {
   const cfg = priorityConfig[task.priority];
 
   return (
-    <div className="flex items-center justify-between p-4 bg-rams-panel/40 border border-rams-border/50 hover:bg-rams-panel transition-none group">
+    <div className="flex items-center justify-between p-4 bg-rams-panel/40 border border-rams-line hover:bg-rams-panel transition-none group">
       <div className="flex items-center gap-4 min-w-0">
-        <div className="p-2 rounded-rams-sm bg-rams-module border border-rams-border group-hover:border-rams-orange transition-none">
+        <div className="p-2 rounded-rams-sm bg-rams-module border border-rams-line group-hover:border-rams-orange transition-none">
           {statusIcons[task.status]}
         </div>
         <div className="min-w-0">
@@ -139,11 +141,11 @@ function TaskCard({ task }: { task: TaskItem }) {
 
 function ActivityCard({ activity }: { activity: ActivityItem }) {
   return (
-    <div className="flex items-start gap-4 p-4 bg-rams-panel/20 border border-rams-border/30 hover:bg-rams-panel transition-none group">
-      <Avatar fallback={activity.user.name} size="sm" className="rounded-rams-sm border border-rams-border/20" />
+    <div className="flex items-start gap-4 p-4 bg-rams-panel/20 border border-rams-line hover:bg-rams-panel transition-none group">
+      <Avatar fallback={activity.user.name} size="sm" className="rounded-rams-sm border border-rams-line" />
       <div className="flex-1 min-w-0">
         <p className="font-sans font-black text-[11px] uppercase tracking-tight text-foreground/80 leading-snug group-hover:text-rams-orange transition-none">
-          <span className="text-muted-foreground/40">{activity.user.name.split(' ')[0]}</span> // {activity.description}
+          <span className="text-muted-foreground/40">{activity.user.name.split(' ')[0]}</span> — {activity.description}
         </p>
         <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/20 mt-2">
           {formatRelativeTime(new Date(activity.timestamp)).toUpperCase()}
@@ -176,7 +178,7 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
 
   return (
     <Link href={`/pipeline/${rfq.id}`} className="group block h-full">
-      <Card className="rounded-rams-sm border border-rams-border bg-rams-module hover:border-rams-orange/40 transition-none h-full">
+      <Card className="rounded-rams-sm border border-rams-line bg-rams-module hover:border-rams-orange/40 transition-none h-full">
         <CardContent className="p-5 space-y-6">
           <div className="flex items-start justify-between">
             <div>
@@ -188,7 +190,7 @@ function RFQCard({ rfq }: { rfq: RFQSummary }) {
             </Badge>
           </div>
           <p className="text-xs font-medium text-muted-foreground/60 line-clamp-2 uppercase leading-relaxed">{rfq.title}</p>
-          <div className="flex items-center justify-between pt-6 border-t border-rams-border/30">
+          <div className="flex items-center justify-between pt-6 border-t border-rams-line">
             <Badge 
               variant="outline"
               className={cn(
@@ -282,13 +284,13 @@ export default function TodayPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="ops-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-            Operations Command
+            {t('pages.ops.title')}
           </h1>
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
-            <span>Real-time Production Pulse</span>
+            <span>{t('pages.ops.subtitle')}</span>
             <span className="opacity-30">|</span>
             <span>STATION: OPS-CENTER-01</span>
           </p>
@@ -296,13 +298,13 @@ export default function TodayPage() {
         <div className="flex items-center gap-3">
           <AmbientStatus 
             status={(data?.abnormalities || []).length > 0 ? 'warning' : 'operational'} 
-            label={(data?.abnormalities || []).length > 0 ? 'Issues Detected' : 'All Systems Operational'}
+            label={(data?.abnormalities || []).length > 0 ? t('pages.ops.issuesDetected') : t('pages.ops.allSystemsOperational')}
           />
           {hasPageAccess('/pipeline/new', userRoles) && (
             <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" asChild>
               <Link href="/pipeline/new">
                 <Plus className="mr-2 h-3.5 w-3.5" />
-                Initialize RFQ
+                {t('pages.ops.initializeRfq')}
               </Link>
             </Button>
           )}
@@ -310,9 +312,9 @@ export default function TodayPage() {
       </div>
 
       {/* KPI Stats */}
-      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-border bg-rams-border">
+      <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
         {kpis.map((kpi) => (
-          <div key={kpi.id} className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0 group hover:bg-rams-panel transition-none cursor-help">
+          <div key={kpi.id} className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0 group hover:bg-rams-panel transition-none cursor-help">
             <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{kpi.label}</p>
             <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{kpi.value}</div>
             {kpi.change !== undefined && (
@@ -333,17 +335,17 @@ export default function TodayPage() {
 
       <div className="grid gap-8 lg:grid-cols-3">
         {/* Tasks */}
-        <Card className="lg:col-span-2 rounded-rams-sm overflow-hidden border-rams-border">
-          <CardHeader className="bg-rams-panel/20 border-b border-rams-border flex flex-row items-center justify-between">
+        <Card className="lg:col-span-2 rounded-rams-sm overflow-hidden border-rams-line">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                 <Target className="h-4 w-4 text-rams-orange" />
-                Strategic Priorities
+                {t('pages.ops.strategicPriorities')}
               </CardTitle>
             </div>
             <Button variant="ghost" size="sm" asChild className="rounded-rams-sm text-[9px] font-black uppercase tracking-widest hover:bg-rams-orange/10 hover:text-rams-orange transition-none">
               <Link href="/tasks">
-                View All <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                {t('common.viewAll')} <ArrowRight className="ml-2 h-3.5 w-3.5" />
               </Link>
             </Button>
           </CardHeader>
@@ -360,21 +362,21 @@ export default function TodayPage() {
         </Card>
 
         {/* Abnormalities */}
-        <Card className="rounded-rams-sm overflow-hidden border-rams-border">
-          <CardHeader className="bg-rams-panel/20 border-b border-rams-border">
+        <Card className="rounded-rams-sm overflow-hidden border-rams-line">
+          <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
             <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 text-rams-red">
               <AlertTriangle className="h-4 w-4" />
-              Critical Anomalies
+              {t('pages.ops.criticalAnomalies')}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {(data?.abnormalities || []).length === 0 ? (
               <div className="py-12 text-center text-muted-foreground/20">
                 <Shield className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                <p className="text-[9px] font-mono font-black uppercase tracking-widest">System Stable</p>
+                <p className="text-[9px] font-mono font-black uppercase tracking-widest">{t('pages.ops.systemStable')}</p>
               </div>
             ) : (
-              <div className="divide-y divide-rams-border/30">
+              <div className="divide-y divide-rams-line/30">
                 {data?.abnormalities.map((a: any) => (
                   <div key={a.id} className="p-4 flex items-start gap-4 hover:bg-rams-red/5 transition-none group">
                     <div className="mt-0.5 p-2 rounded-rams-sm bg-rams-red/5 border border-rams-red/20 text-rams-red">

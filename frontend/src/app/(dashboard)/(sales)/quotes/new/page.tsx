@@ -336,10 +336,10 @@ function NewQuotePageContent() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">New Quote</h1>
+            <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.quotes.new.title')}</h1>
             {rfqId && (
               <p className="text-muted-foreground">
-                For RFQ: <Link href={`/pipeline/${rfqId}`} className="text-primary hover:underline">RFQ-2024-0089</Link>
+                {t('pages.quotes.new.forRfq')}: <Link href={`/pipeline/${rfqId}`} className="text-primary hover:underline">RFQ-2024-0089</Link>
               </p>
             )}
           </div>
@@ -347,11 +347,11 @@ function NewQuotePageContent() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => handleSave(true)} disabled={isSaving}>
             <Save className="mr-2 h-4 w-4" />
-            Save Draft
+            {t('pages.quotes.new.saveDraft')}
           </Button>
           <Button onClick={() => setShowSubmitDialog(true)} disabled={isSaving}>
             <Send className="mr-2 h-4 w-4" />
-            Submit for Approval
+            {t('pages.quotes.new.submitForApproval')}
           </Button>
         </div>
       </div>
@@ -363,39 +363,39 @@ function NewQuotePageContent() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Line Items</CardTitle>
-                <CardDescription>Add products and pricing</CardDescription>
+                <CardTitle>{t('pages.quotes.new.lineItems')}</CardTitle>
+                <CardDescription>{t('pages.quotes.new.addProductsAndPricing')}</CardDescription>
               </div>
               <Button size="sm" onClick={handleAddLineItem}>
                 <Plus className="mr-2 h-4 w-4" />
-                Add Item
+                {t('pages.quotes.new.addItem')}
               </Button>
             </CardHeader>
             <CardContent>
               {formData.lineItems.length === 0 ? (
-                <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                  <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-medium">No line items</h3>
-                  <p className="text-muted-foreground">Add items to your quote</p>
+                <div className="text-center py-12 border border-dashed border-rams-line rounded-rams-sm bg-rams-panel/30">
+                  <FileText className="mx-auto h-12 w-12 text-muted-foreground/40" />
+                  <h3 className="mt-4 text-lg font-medium">{t('pages.quotes.new.noLineItems')}</h3>
+                  <p className="text-muted-foreground">{t('pages.quotes.new.addItemsToQuote')}</p>
                   <Button className="mt-4" onClick={handleAddLineItem}>
                     <Plus className="mr-2 h-4 w-4" />
-                    Add First Item
+                    {t('pages.quotes.new.addFirstItem')}
                   </Button>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="py-2 px-2 text-left font-medium">Part #</th>
-                        <th className="py-2 px-2 text-left font-medium">Description</th>
-                        <th className="py-2 px-2 text-right font-medium">Qty</th>
-                        <th className="py-2 px-2 text-left font-medium">UoM</th>
-                        <th className="py-2 px-2 text-right font-medium">Unit Price</th>
-                        <th className="py-2 px-2 text-right font-medium">Extended</th>
-                        <th className="py-2 px-2 text-right font-medium">Cost</th>
-                        <th className="py-2 px-2 text-right font-medium">Margin</th>
-                        <th className="py-2 px-2 text-right font-medium">Lead</th>
+                      <tr className="border-b border-rams-line bg-rams-panel">
+                        <th className="py-2 px-2 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Part #</th>
+                        <th className="py-2 px-2 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Description</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Qty</th>
+                        <th className="py-2 px-2 text-left font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">UoM</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Unit Price</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Extended</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Cost</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Margin</th>
+                        <th className="py-2 px-2 text-right font-mono font-black text-[9px] uppercase tracking-widest text-muted-foreground/60">Lead</th>
                         <th className="py-2 px-2"></th>
                       </tr>
                     </thead>
@@ -418,11 +418,11 @@ function NewQuotePageContent() {
           {/* Terms & Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>Terms & Notes</CardTitle>
+              <CardTitle>{t('pages.quotes.new.termsAndNotes')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Terms and Conditions</Label>
+                <Label>{t('pages.quotes.new.termsAndConditions')}</Label>
                 <Textarea
                   value={formData.termsAndConditions}
                   onChange={(e) => setFormData((prev) => ({ ...prev, termsAndConditions: e.target.value }))}
@@ -431,11 +431,11 @@ function NewQuotePageContent() {
                 />
               </div>
               <div>
-                <Label>Internal Notes</Label>
+                <Label>{t('pages.quotes.new.internalNotes')}</Label>
                 <Textarea
                   value={formData.notes}
                   onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Notes for internal use only (not visible to customer)"
+                  placeholder={t('pages.quotes.new.internalNotesPlaceholder')}
                   rows={3}
                   className="mt-1.5"
                 />
@@ -450,12 +450,12 @@ function NewQuotePageContent() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calculator className="h-5 w-5" />
-                Quote Summary
+                {t('pages.quotes.new.quoteSummary')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Valid Until</Label>
+                <Label>{t('pages.quotes.new.validUntil')}</Label>
                 <Input
                   type="date"
                   value={formData.validUntil}
@@ -466,12 +466,12 @@ function NewQuotePageContent() {
 
               <div className="border-t pt-4 space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">{t('pages.quotes.new.subtotal')}</span>
                   <span className="font-medium">{formatCurrency(calculations.subtotal)}</span>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Label className="w-20">Discount</Label>
+                  <Label className="w-20">{t('pages.quotes.new.discount')}</Label>
                   <Select 
                     value={formData.discountType} 
                     onValueChange={(v: 'percentage' | 'amount') => setFormData((prev) => ({ ...prev, discountType: v }))}
@@ -494,13 +494,13 @@ function NewQuotePageContent() {
                 </div>
                 {calculations.discount > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Discount</span>
+                    <span>{t('pages.quotes.new.discount')}</span>
                     <span>-{formatCurrency(calculations.discount)}</span>
                   </div>
                 )}
 
                 <div className="flex items-center gap-2">
-                  <Label className="w-20">Tax Rate</Label>
+                  <Label className="w-20">{t('pages.quotes.new.taxRate')}</Label>
                   <div className="relative flex-1">
                     <Input
                       type="number"
@@ -514,24 +514,24 @@ function NewQuotePageContent() {
                 </div>
                 {calculations.tax > 0 && (
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Tax</span>
+                    <span>{t('pages.quotes.new.tax')}</span>
                     <span>{formatCurrency(calculations.tax)}</span>
                   </div>
                 )}
 
                 <div className="flex justify-between border-t pt-3 text-lg font-bold">
-                  <span>Total</span>
+                  <span>{t('pages.quotes.new.total')}</span>
                   <span>{formatCurrency(calculations.total)}</span>
                 </div>
               </div>
 
               <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Cost</span>
+                  <span className="text-muted-foreground">{t('pages.quotes.new.totalCost')}</span>
                   <span>{formatCurrency(calculations.totalCost)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Overall Margin</span>
+                  <span className="text-muted-foreground">{t('pages.quotes.new.overallMargin')}</span>
                   <span className={cn(
                     'font-medium',
                     calculations.margin >= 30 ? 'text-success' : 
@@ -546,14 +546,14 @@ function NewQuotePageContent() {
 
           {/* Validation */}
           {formData.lineItems.length > 0 && formData.lineItems.some((item) => item.unitPrice === 0) && (
-            <Card className="border-warning">
+            <Card className="border-rams-orange">
               <CardContent className="py-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <AlertCircle className="h-5 w-5 text-rams-orange shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-medium text-warning">Incomplete pricing</p>
+                    <p className="font-medium text-rams-orange">{t('pages.quotes.new.incompletePricing')}</p>
                     <p className="text-sm text-muted-foreground">
-                      Some line items have $0.00 unit price
+                      {t('pages.quotes.new.zeroPriceWarning')}
                     </p>
                   </div>
                 </div>
@@ -567,19 +567,19 @@ function NewQuotePageContent() {
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Submit Quote for Approval</DialogTitle>
+            <DialogTitle>{t('pages.quotes.new.submitDialog.title')}</DialogTitle>
             <DialogDescription>
-              This quote will be sent to your manager for approval before it can be sent to the customer.
+              {t('pages.quotes.new.submitDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="bg-muted rounded-lg p-4 space-y-2">
+            <div className="bg-rams-panel rounded-rams-sm p-4 space-y-2 border border-rams-line">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Total</span>
+                <span className="text-muted-foreground">{t('pages.quotes.new.total')}</span>
                 <span className="font-bold">{formatCurrency(calculations.total)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Margin</span>
+                <span className="text-muted-foreground">{t('pages.quotes.new.margin')}</span>
                 <span className={cn(
                   'font-medium',
                   calculations.margin >= 30 ? 'text-success' : 
@@ -589,20 +589,20 @@ function NewQuotePageContent() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Valid Until</span>
+                <span className="text-muted-foreground">{t('pages.quotes.new.validUntil')}</span>
                 <span>{formatDate(new Date(formData.validUntil))}</span>
               </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={() => {
               setShowSubmitDialog(false);
               handleSave(false);
             }} disabled={isSaving}>
-              Submit for Approval
+              {t('pages.quotes.new.submitForApproval')}
             </Button>
           </DialogFooter>
         </DialogContent>

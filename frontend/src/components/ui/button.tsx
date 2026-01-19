@@ -13,9 +13,9 @@ const buttonVariants = cva(
         destructive:
           'bg-rams-red text-white hover:bg-rams-red/90',
         outline:
-          'border-rams-border bg-rams-panel/50 hover:bg-rams-panel hover:border-rams-border/80 text-foreground/80',
+          'border-rams-line bg-rams-panel/50 hover:bg-rams-panel hover:border-rams-line/80 text-foreground/80',
         secondary:
-          'bg-rams-module text-foreground/70 border-rams-border hover:bg-rams-panel',
+          'bg-rams-module text-foreground/70 border-rams-line hover:bg-rams-panel',
         ghost: 'hover:bg-rams-panel hover:text-foreground text-foreground/60 transition-none',
         link: 'text-rams-orange underline-offset-4 hover:underline',
         success:

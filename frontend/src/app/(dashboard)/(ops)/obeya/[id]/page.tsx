@@ -287,14 +287,14 @@ export default function ObeyaItemDetailPage() {
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
         <FileText className="h-16 w-16 text-muted-foreground" />
         <div className="text-center">
-          <h2 className="text-3xl font-heading font-bold tracking-tight ">Item Not Found</h2>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.obeyaDetail.notFound') || 'Item Not Found'}</h2>
           <p className="text-muted-foreground mt-2">
-            The Obeya item you're looking for doesn't exist or has been deleted.
+            {t('pages.obeyaDetail.notFoundDescription') || "The Obeya item you're looking for doesn't exist or has been deleted."}
           </p>
         </div>
         <Button onClick={() => router.push('/obeya')}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Obeya Board
+          {t('pages.obeyaDetail.backToObeya') || 'Back to Obeya Board'}
         </Button>
       </div>
     );
@@ -314,7 +314,7 @@ export default function ObeyaItemDetailPage() {
               {item.is_escalated && (
                 <Badge variant="destructive" className="gap-1">
                   <Flag className="h-3 w-3" />
-                  Escalated
+                  {t('common.escalated') || 'Escalated'}
                 </Badge>
               )}
             </div>
@@ -339,11 +339,11 @@ export default function ObeyaItemDetailPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-4 w-4" />
-            Edit
+            {t('common.edit') || 'Edit'}
           </Button>
           <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
             <Trash2 className="mr-2 h-4 w-4" />
-            Delete
+            {t('common.delete') || 'Delete'}
           </Button>
         </div>
       </div>
@@ -354,9 +354,9 @@ export default function ObeyaItemDetailPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <div>
-              <p className="font-medium">Overdue by {item.days_overdue} days</p>
+              <p className="font-medium">{t('pages.obeyaDetail.overdueBy', { days: item.days_overdue }) || `Overdue by ${item.days_overdue} days`}</p>
               <p className="text-sm text-muted-foreground">
-                Due date was {new Date(item.due_date!).toLocaleDateString()}
+                {t('pages.obeyaDetail.dueDateWas') || 'Due date was'} {new Date(item.due_date!).toLocaleDateString()}
               </p>
             </div>
           </CardContent>
@@ -368,7 +368,7 @@ export default function ObeyaItemDetailPage() {
           <CardContent className="pt-4 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" />
             <div>
-              <p className="font-medium">Blocked</p>
+              <p className="font-medium">{t('common.blocked') || 'Blocked'}</p>
               <p className="text-sm text-muted-foreground">{item.blocked_reason}</p>
             </div>
           </CardContent>
@@ -381,11 +381,11 @@ export default function ObeyaItemDetailPage() {
           {/* Description */}
           <Card>
             <CardHeader>
-              <CardTitle>Description</CardTitle>
+              <CardTitle>{t('common.description') || 'Description'}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                {item.description || 'No description provided.'}
+                {item.description || (t('pages.obeyaDetail.noDescription') || 'No description provided.')}
               </p>
             </CardContent>
           </Card>
@@ -394,24 +394,24 @@ export default function ObeyaItemDetailPage() {
           {item.category === 'kpi' && (
             <Card>
               <CardHeader>
-                <CardTitle>KPI Metrics</CardTitle>
+                <CardTitle>{t('pages.obeyaDetail.kpiMetrics') || 'KPI Metrics'}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <Label className="text-sm font-medium">Target</Label>
+                    <Label className="text-sm font-medium">{t('common.target') || 'Target'}</Label>
                     <p className="text-3xl font-heading font-bold tracking-tight ">
                       {item.kpi_target} {item.kpi_unit}
                     </p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium">Actual</Label>
+                    <Label className="text-sm font-medium">{t('common.actual') || 'Actual'}</Label>
                     <p className="text-3xl font-heading font-bold tracking-tight ">
                       {item.kpi_actual} {item.kpi_unit}
                     </p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium">Trend</Label>
+                    <Label className="text-sm font-medium">{t('common.trend') || 'Trend'}</Label>
                     <div className="flex items-center gap-2 mt-1">
                       <TrendingUp className={cn(
                         'h-5 w-5',

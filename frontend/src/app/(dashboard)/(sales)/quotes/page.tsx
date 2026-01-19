@@ -39,6 +39,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { cn, formatCurrency, formatDate, getInitials } from '@/lib/utils';
 import { useQuoteStore } from '@/stores/quotes';
 import type { QuoteStatus } from '@/types';
@@ -62,17 +70,18 @@ interface Quote {
 }
 
 
-const statusConfig: Record<Quote['status'], { label: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
-  draft: { label: 'Draft', variant: 'secondary', icon: FileText },
-  pending_approval: { label: 'Pending Approval', variant: 'warning', icon: Clock },
-  approved: { label: 'Approved', variant: 'default', icon: CheckCircle },
-  sent: { label: 'Sent', variant: 'default', icon: Send },
-  accepted: { label: 'Accepted', variant: 'success', icon: CheckCircle },
-  rejected: { label: 'Rejected', variant: 'danger', icon: XCircle },
-  expired: { label: 'Expired', variant: 'outline', icon: Calendar },
+const statusConfig: Record<Quote['status'], { labelKey: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
+  draft: { labelKey: 'common.draft', variant: 'secondary', icon: FileText },
+  pending_approval: { labelKey: 'pages.quotes.status.pendingApproval', variant: 'warning', icon: Clock },
+  approved: { labelKey: 'common.approved', variant: 'default', icon: CheckCircle },
+  sent: { labelKey: 'pages.quotes.status.sent', variant: 'default', icon: Send },
+  accepted: { labelKey: 'pages.quotes.status.accepted', variant: 'success', icon: CheckCircle },
+  rejected: { labelKey: 'pages.quotes.status.rejected', variant: 'danger', icon: XCircle },
+  expired: { labelKey: 'pages.quotes.status.expired', variant: 'outline', icon: Calendar },
 };
 
 function QuoteStats({ quotes }: { quotes: Quote[] }) {
+  const { t } = useI18n();
   const stats = React.useMemo(() => {
     const pending = quotes.filter((q) => q.status === 'pending_approval').length;
     const sent = quotes.filter((q) => q.status === 'sent').length;
@@ -85,21 +94,21 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
   }, [quotes]);
 
   return (
-    <div className="grid gap-0 md:grid-cols-4 border border-rams-border bg-rams-border">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Pending Approval</p>
+    <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.quotes.stats.pendingApproval')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.pending}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Sent To Customer</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.quotes.stats.sentToCustomer')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.sent}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-border last:border-r-0">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Pipeline Value</p>
+      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.quotes.stats.pipelineValue')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(stats.totalValue)}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-border">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">Avg. Margin</p>
+      <div className="bg-rams-module p-6 border-b border-rams-line">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.quotes.stats.avgMargin')}</p>
         <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats.avgMargin.toFixed(1)}%</p>
       </div>
     </div>
@@ -108,6 +117,7 @@ function QuoteStats({ quotes }: { quotes: Quote[] }) {
 
 function QuoteRow({ quote }: { quote: Quote }) {
   const router = useRouter();
+  const { t } = useI18n();
   const config = statusConfig[quote.status];
   const StatusIcon = config.icon;
   const isExpiringSoon = new Date(quote.valid_until).getTime() - new Date().getTime() < 1000 * 60 * 60 * 24 * 7;
@@ -119,7 +129,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
       <TableCell>
         <div>
           <p className="font-mono font-bold text-rams-orange tabular-nums">{quote.quote_number}</p>
-          <p className="text-[9px] font-mono uppercase tracking-tight text-muted-foreground/40">Protocol: {quote.rfq_number}</p>
+          <p className="text-[9px] font-mono uppercase tracking-tight text-muted-foreground/40">{t('pages.quotes.rfqNumber')}: {quote.rfq_number}</p>
         </div>
       </TableCell>
       <TableCell>
@@ -127,7 +137,7 @@ function QuoteRow({ quote }: { quote: Quote }) {
       </TableCell>
       <TableCell>
         <Badge variant={config.variant} size="sm">
-          {config.label}
+          {t(config.labelKey)}
         </Badge>
       </TableCell>
       <TableCell className="text-right">
@@ -146,12 +156,12 @@ function QuoteRow({ quote }: { quote: Quote }) {
       <TableCell>
         <div className={cn("font-mono text-[10px] uppercase tracking-tighter", isExpiringSoon ? 'text-rams-orange' : 'text-muted-foreground/60')}>
           {formatDate(new Date(quote.valid_until))}
-          {isExpiringSoon && <span className="text-[8px] ml-1 opacity-60">(EXPIRING)</span>}
+          {isExpiringSoon && <span className="text-[8px] ml-1 opacity-60">({t('pages.quotes.labels.expiresSoon')})</span>}
         </div>
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
-          <Avatar className="h-6 w-6 rounded-none border border-rams-border">
+          <Avatar className="h-6 w-6 rounded-none border border-rams-line">
             <AvatarImage src={quote.created_by.avatar} />
             <AvatarFallback className="text-[8px] bg-rams-panel font-mono font-black">{getInitials(quote.created_by.name)}</AvatarFallback>
           </Avatar>
@@ -171,38 +181,38 @@ function QuoteRow({ quote }: { quote: Quote }) {
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => router.push(`/quotes/${quote.id}`)}>
               <Eye className="mr-2 h-3.5 w-3.5" />
-              Analyze
+              {t('pages.quotes.actions.analyze')}
             </DropdownMenuItem>
             <DropdownMenuItem>
               <Copy className="mr-2 h-3.5 w-3.5" />
-              Clone Protocol
+              {t('pages.quotes.actions.cloneProtocol')}
             </DropdownMenuItem>
             <DropdownMenuItem>
               <FileText className="mr-2 h-3.5 w-3.5" />
-              Export Protocol
+              {t('pages.quotes.actions.exportProtocol')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             {quote.status === 'draft' && (
               <DropdownMenuItem>
                 <Send className="mr-2 h-3.5 w-3.5" />
-                Initiate Approval
+                {t('pages.quotes.actions.initiateApproval')}
               </DropdownMenuItem>
             )}
             {quote.status === 'approved' && (
               <DropdownMenuItem>
                 <Send className="mr-2 h-3.5 w-3.5 text-rams-orange" />
-                Transmit Protocol
+                {t('pages.quotes.actions.transmitProtocol')}
               </DropdownMenuItem>
             )}
             {quote.status === 'sent' && (
               <>
                 <DropdownMenuItem className="text-rams-green font-black">
                   <CheckCircle className="mr-2 h-3.5 w-3.5" />
-                  Protocol Won
+                  {t('pages.quotes.actions.protocolWon')}
                 </DropdownMenuItem>
                 <DropdownMenuItem className="text-rams-red font-black">
                   <XCircle className="mr-2 h-3.5 w-3.5" />
-                  Protocol Lost
+                  {t('pages.quotes.actions.protocolLost')}
                 </DropdownMenuItem>
               </>
             )}
@@ -254,7 +264,7 @@ export default function QuotesPage() {
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="quotes-page">
       {/* Header */}
-      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-border pb-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
             {t('pages.quotes.title')}
@@ -268,7 +278,7 @@ export default function QuotesPage() {
         <div className="flex items-center gap-3">
           <Button size="default" className="rounded-rams-sm" onClick={() => router.push('/quotes/new')}>
             <Plus className="mr-2 h-3.5 w-3.5" />
-            Initialize Quotation
+            {t('pages.quotes.initializeQuotation')}
           </Button>
         </div>
       </div>
@@ -281,7 +291,7 @@ export default function QuotesPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
           <Input
-            placeholder="SEARCH_PROTOCOLS..."
+            placeholder={t('pages.quotes.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 h-10 text-[10px]"
@@ -293,14 +303,14 @@ export default function QuotesPage() {
             <SelectValue placeholder="STATUS_FILTER" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">ALL_PROTOCOLS</SelectItem>
-            <SelectItem value="draft">DRAFT</SelectItem>
-            <SelectItem value="pending_approval">PENDING_REVIEW</SelectItem>
-            <SelectItem value="approved">APPROVED</SelectItem>
-            <SelectItem value="sent">TRANSMITTED</SelectItem>
-            <SelectItem value="accepted">ACCEPTED</SelectItem>
-            <SelectItem value="rejected">REJECTED</SelectItem>
-            <SelectItem value="expired">EXPIRED</SelectItem>
+            <SelectItem value="all">{t('pages.quotes.filters.allProtocols')}</SelectItem>
+            <SelectItem value="draft">{t('pages.quotes.filters.draft')}</SelectItem>
+            <SelectItem value="pending_approval">{t('pages.quotes.filters.pendingReview')}</SelectItem>
+            <SelectItem value="approved">{t('pages.quotes.filters.approved')}</SelectItem>
+            <SelectItem value="sent">{t('pages.quotes.filters.transmitted')}</SelectItem>
+            <SelectItem value="accepted">{t('pages.quotes.filters.accepted')}</SelectItem>
+            <SelectItem value="rejected">{t('pages.quotes.filters.rejected')}</SelectItem>
+            <SelectItem value="expired">{t('pages.quotes.filters.expired')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -311,14 +321,14 @@ export default function QuotesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>QUOTE_PROTOCOL</TableHead>
-                <TableHead>CUSTOMER_NODE</TableHead>
-                <TableHead>STATUS_STATE</TableHead>
-                <TableHead className="text-right">TOTAL_VALUE</TableHead>
-                <TableHead className="text-right">MARGIN_KPI</TableHead>
-                <TableHead>VALID_THRU</TableHead>
-                <TableHead>OPERATOR</TableHead>
-                <TableHead className="text-center">VER</TableHead>
+                <TableHead>{t('pages.quotes.table.quoteProtocol')}</TableHead>
+                <TableHead>{t('pages.quotes.table.customerNode')}</TableHead>
+                <TableHead>{t('pages.quotes.table.statusState')}</TableHead>
+                <TableHead className="text-right">{t('pages.quotes.table.totalValue')}</TableHead>
+                <TableHead className="text-right">{t('pages.quotes.table.marginKpi')}</TableHead>
+                <TableHead>{t('pages.quotes.table.validThru')}</TableHead>
+                <TableHead>{t('pages.quotes.table.operator')}</TableHead>
+                <TableHead className="text-center">{t('pages.quotes.table.version')}</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -333,11 +343,11 @@ export default function QuotesPage() {
           <div className="text-center py-16">
             <FileText className="mx-auto h-12 w-12 text-muted-foreground/20" />
             <div className="mt-4">
-              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero protocols identified</p>
+              <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.quotes.emptyState.title')}</p>
               <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-1">
                 {searchQuery || statusFilter !== 'all' 
-                  ? 'Adjust filtering parameters' 
-                  : 'Initialize your first pricing protocol'}
+                  ? t('pages.quotes.emptyState.adjustFilters')
+                  : t('pages.quotes.emptyState.initializeFirst')}
               </p>
             </div>
           </div>

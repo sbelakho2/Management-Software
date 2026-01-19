@@ -14,6 +14,7 @@ import {
   AlertCircle,
   Clock,
   Briefcase,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -123,8 +124,8 @@ export default function NewRFQPage() {
     if (!formData.title || !formData.customer_id) {
       toast({
         variant: 'destructive',
-        title: 'Required Fields Missing',
-        description: 'Please provide a title and customer.',
+        title: t('pages.pipeline.new.validation.requiredFieldsMissing'),
+        description: t('pages.pipeline.new.validation.provideTitleAndCustomer'),
       });
       return;
     }
@@ -133,15 +134,15 @@ export default function NewRFQPage() {
     try {
       await createRFQ(formData as any);
       toast({
-        title: 'RFQ Created',
-        description: 'The new RFQ has been successfully created.',
+        title: t('pages.pipeline.new.toast.rfqCreated'),
+        description: t('pages.pipeline.new.toast.rfqCreatedDescription'),
       });
       router.push('/pipeline');
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to create RFQ. Please try again.',
+        title: t('common.error'),
+        description: t('pages.pipeline.new.toast.rfqCreateFailed'),
       });
     } finally {
       setIsSaving(false);
@@ -149,173 +150,178 @@ export default function NewRFQPage() {
   };
 
   return (
-    <div className="space-y-8 page-fade-in max-w-5xl mx-auto">
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-8 page-fade-in pb-12">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary transition-all" onClick={() => router.back()}>
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-panel transition-none" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-3xl font-heading font-bold tracking-tight ">
-              New Intelligence Opportunity
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
+              {t('pages.pipeline.new.title')}
             </h1>
-            <p className="text-muted-foreground font-medium text-sm">Initiate a new Request for Quote protocol</p>
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
+              <span>{t('pages.pipeline.new.subtitle')}</span>
+              <span className="opacity-30">|</span>
+              <span>{t('pages.pipeline.new.station')}</span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => router.back()}>
-            Discard
+          <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.back()}>
+            {t('common.discard')}
           </Button>
-          <Button onClick={handleSave} disabled={isSaving} size="lg" className="rounded-xl shadow-glow subtle-shine h-12 px-8">
-            <Save className="mr-2 h-5 w-5" />
-            {isSaving ? 'Synchronizing...' : 'Establish RFQ'}
+          <Button onClick={handleSave} disabled={isSaving} size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                {t('common.synchronizing')}
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-3.5 w-3.5" />
+                {t('pages.pipeline.new.establishProtocol')}
+              </>
+            )}
           </Button>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-8">
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle className="text-lg font-heading flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                  <FileText className="h-5 w-5" />
-                </div>
-                Opportunity Parameters
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
+                <FileText className="h-4 w-4 text-rams-orange" />
+                {t('pages.pipeline.new.opportunityParameters')}
               </CardTitle>
-              <CardDescription className="text-xs font-medium uppercase tracking-wider pl-11">Core intelligence for the request protocol</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div className="sm:col-span-2 space-y-2.5">
-                  <Label htmlFor="title" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Title</Label>
+            <CardContent className="p-8 space-y-8">
+              <div className="grid gap-8 sm:grid-cols-2">
+                <div className="sm:col-span-2 space-y-2">
+                  <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.strategicTitle')}</Label>
                   <Input
                     id="title"
                     value={formData.title}
                     onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                    placeholder="e.g. Precision Parts for Aerospace Project"
-                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50"
+                    placeholder={t('pages.pipeline.new.placeholders.title')}
+                    className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider"
                   />
                 </div>
-                <div className="space-y-2.5">
-                  <Label htmlFor="customer" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Customer Node</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="customer" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.customerNode')}</Label>
                   <Input
                     id="customer"
                     value={formData.customer_id}
                     onChange={(e) => setFormData((prev) => ({ ...prev, customer_id: e.target.value }))}
-                    placeholder="Search intelligence partners..."
-                    className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft"
+                    placeholder={t('pages.pipeline.new.placeholders.customer')}
+                    className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider"
                   />
                 </div>
-                <div className="space-y-2.5">
-                  <Label htmlFor="priority" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Priority Layer</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.priorityLayer')}</Label>
                   <Select
                     value={formData.priority}
                     onValueChange={(v: Priority) => setFormData((prev) => ({ ...prev, priority: v }))}
                   >
-                    <SelectTrigger id="priority" className="h-12 rounded-2xl bg-background/50 border-border/50 shadow-inner-soft">
-                      <SelectValue placeholder="Select priority" />
+                    <SelectTrigger id="priority" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                      <SelectValue placeholder={t('common.priority.label')} />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl shadow-premium">
-                      <SelectItem value="low" className="rounded-xl m-1">Low</SelectItem>
-                      <SelectItem value="medium" className="rounded-xl m-1">Medium</SelectItem>
-                      <SelectItem value="high" className="rounded-xl m-1">High</SelectItem>
-                      <SelectItem value="urgent" className="rounded-xl m-1">Urgent</SelectItem>
+                    <SelectContent>
+                      <SelectItem value="low">{t('pages.pipeline.new.priority.low')}</SelectItem>
+                      <SelectItem value="medium">{t('pages.pipeline.new.priority.medium')}</SelectItem>
+                      <SelectItem value="high">{t('pages.pipeline.new.priority.high')}</SelectItem>
+                      <SelectItem value="urgent">{t('pages.pipeline.new.priority.urgent')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div className="space-y-2.5">
-                <Label htmlFor="description" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Detailed Context</Label>
+              <div className="space-y-2">
+                <Label htmlFor="description" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.detailedContext')}</Label>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Additional intelligence regarding the RFQ protocol..."
-                  className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft focus:border-primary/50 transition-all resize-none"
+                  placeholder={t('pages.pipeline.new.placeholders.description')}
+                  className="rounded-rams-sm bg-rams-panel border-rams-line text-[11px] uppercase leading-relaxed h-32"
                   rows={4}
                 />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/5 bg-muted/5 p-6">
-              <div className="space-y-1">
-                <CardTitle className="text-lg font-heading flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                    <Briefcase className="h-5 w-5" />
-                  </div>
-                  Line Intelligence
-                </CardTitle>
-                <CardDescription className="text-xs font-medium uppercase tracking-wider">Product nodes and quantity requirements</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleAddLineItem} className="rounded-xl border-primary/20 text-primary hover:bg-primary/5">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Node
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-rams-line bg-rams-panel/20 p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
+                <Briefcase className="h-4 w-4 text-rams-orange" />
+                {t('pages.pipeline.new.labels.lineIntelligence')}
+              </CardTitle>
+              <Button variant="outline" size="sm" onClick={handleAddLineItem} className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
+                <Plus className="mr-2 h-3.5 w-3.5" />
+                {t('pages.pipeline.new.labels.addNode')}
               </Button>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="space-y-6">
+            <CardContent className="p-8">
+              <div className="space-y-8">
                 {formData.line_items.map((item, index) => (
-                  <div key={item.id} className="grid gap-6 border border-border/10 rounded-[1.5rem] p-6 relative bg-muted/10 group transition-all hover:bg-muted/20">
+                  <div key={item.id} className="grid gap-8 border border-rams-line bg-rams-panel/10 p-6 relative group transition-none">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute top-4 right-4 h-8 w-8 text-muted-foreground/40 hover:text-danger hover:bg-danger/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                      className="absolute top-2 right-2 h-7 w-7 text-muted-foreground/20 hover:text-rams-red hover:bg-rams-red/5 rounded-none opacity-0 group-hover:opacity-100 transition-none"
                       onClick={() => handleRemoveLineItem(item.id)}
                       disabled={formData.line_items.length === 1}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
-                    <div className="grid gap-6 sm:grid-cols-4">
+                    <div className="grid gap-8 sm:grid-cols-4">
                       <div className="sm:col-span-1 space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Part Node</Label>
+                        <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 ml-1">{t('pages.pipeline.new.labels.partNode')}</Label>
                         <Input
                           value={item.part_number}
                           onChange={(e) => handleUpdateLineItem(item.id, { part_number: e.target.value })}
-                          placeholder="PN-XXXX"
-                          className="h-11 rounded-xl bg-background/50 border-border/50"
+                          placeholder={t('pages.pipeline.new.placeholders.partNumber')}
+                          className="h-9 rounded-none bg-rams-module border-rams-line text-[10px] font-mono font-bold"
                         />
                       </div>
                       <div className="sm:col-span-3 space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Specification</Label>
+                        <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 ml-1">{t('pages.pipeline.new.labels.specification')}</Label>
                         <Input
                           value={item.description}
                           onChange={(e) => handleUpdateLineItem(item.id, { description: e.target.value })}
-                          placeholder="Node description protocol..."
-                          className="h-11 rounded-xl bg-background/50 border-border/50"
+                          placeholder={t('pages.pipeline.new.placeholders.itemDescription')}
+                          className="h-9 rounded-none bg-rams-module border-rams-line text-[10px] font-bold uppercase"
                         />
                       </div>
                     </div>
-                    <div className="grid gap-6 sm:grid-cols-3">
+                    <div className="grid gap-8 sm:grid-cols-3">
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Magnitude</Label>
+                        <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 ml-1">{t('pages.pipeline.new.labels.magnitude')}</Label>
                         <Input
                           type="number"
                           value={item.quantity}
                           onChange={(e) => handleUpdateLineItem(item.id, { quantity: Number(e.target.value) })}
-                          className="h-11 rounded-xl bg-background/50 border-border/50"
+                          className="h-9 rounded-none bg-rams-module border-rams-line text-[10px] font-mono font-bold"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Unit Protocol</Label>
+                        <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 ml-1">{t('pages.pipeline.new.labels.unitProtocol')}</Label>
                         <Input
                           value={item.unit_of_measure}
                           onChange={(e) => handleUpdateLineItem(item.id, { unit_of_measure: e.target.value })}
-                          placeholder="pcs, kg, etc."
-                          className="h-11 rounded-xl bg-background/50 border-border/50"
+                          placeholder={t('pages.pipeline.new.placeholders.unit')}
+                          className="h-9 rounded-none bg-rams-module border-rams-line text-[10px] font-bold uppercase"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 ml-1">Target Valuation</Label>
+                        <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40 ml-1">{t('pages.pipeline.new.labels.targetValuation')}</Label>
                         <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/30" />
+                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/20" />
                           <Input
                             type="number"
                             value={item.target_price || ''}
                             onChange={(e) => handleUpdateLineItem(item.id, { target_price: Number(e.target.value) })}
-                            className="pl-9 h-11 rounded-xl bg-background/50 border-border/50"
+                            className="pl-9 h-9 rounded-none bg-rams-module border-rams-line text-[10px] font-mono font-bold"
                           />
                         </div>
                       </div>
@@ -328,64 +334,64 @@ export default function NewRFQPage() {
         </div>
 
         <div className="space-y-8">
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle className="text-lg font-heading">Temporal Horizon</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.pipeline.new.labels.temporalHorizon')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2.5">
-                <Label htmlFor="receivedDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Ingestion Date</Label>
+            <CardContent className="p-6 space-y-8">
+              <div className="space-y-2">
+                <Label htmlFor="receivedDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.ingestionDate')}</Label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/20" />
                   <Input
                     id="receivedDate"
                     type="date"
                     value={formData.received_date}
                     onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value }))}
-                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
+                    className="pl-10 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                   />
                 </div>
               </div>
-              <div className="space-y-2.5">
-                <Label htmlFor="dueDate" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Strategic Deadline</Label>
+              <div className="space-y-2">
+                <Label htmlFor="dueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.strategicDeadline')}</Label>
                 <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/20" />
                   <Input
                     id="dueDate"
                     type="date"
                     value={formData.due_date}
                     onChange={(e) => setFormData((prev) => ({ ...prev, due_date: e.target.value }))}
-                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
+                    className="pl-10 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                   />
                 </div>
               </div>
-              <div className="pt-4 border-t border-border/5">
-                <Label htmlFor="estimatedValue" className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 ml-1">Estimated Magnitude</Label>
-                <div className="relative mt-2.5">
-                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/40" />
+              <div className="pt-8 border-t border-rams-line">
+                <Label htmlFor="estimatedValue" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.pipeline.new.labels.estimatedMagnitude')}</Label>
+                <div className="relative mt-2">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/20" />
                   <Input
                     id="estimatedValue"
                     type="number"
                     value={formData.estimated_value}
                     onChange={(e) => setFormData((prev) => ({ ...prev, estimated_value: Number(e.target.value) }))}
-                    className="pl-10 h-12 rounded-xl bg-background/50 border-border/50 shadow-inner-soft"
+                    className="pl-10 h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold"
                   />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
-            <CardHeader>
-              <CardTitle className="text-lg font-heading">Protocol Notes</CardTitle>
+          <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
+            <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.pipeline.new.labels.protocolNotes')}</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-6">
               <Textarea
                 id="internalNotes"
                 value={formData.notes}
                 onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Confidential intelligence, restricted access..."
-                className="rounded-[1.5rem] bg-background/50 border-border/50 shadow-inner-soft transition-all focus:border-primary/50 resize-none"
+                placeholder={t('pages.pipeline.new.placeholders.notes')}
+                className="rounded-rams-sm bg-rams-panel border-rams-line text-[11px] uppercase leading-relaxed h-48 resize-none"
                 rows={6}
               />
             </CardContent>

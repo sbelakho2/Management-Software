@@ -232,8 +232,8 @@ class PermissionChecker:
         token_data: Annotated[TokenData, Depends(get_token_data)],
     ) -> bool:
         """Check if user has required permission."""
-        # Superusers have all permissions
-        if "admin" in token_data.roles:
+        # Admin and CEO have all permissions (full system access)
+        if "admin" in token_data.roles or "ceo" in token_data.roles:
             return True
         
         if self.required_permission not in token_data.permissions:
@@ -247,7 +247,16 @@ class PermissionChecker:
 
 class RoleChecker:
     """
-    Dependency class for checking user roles.
+    Dependency class for checking user roles with hierarchy support.
+    
+    Role hierarchy levels (lower = more privileged):
+    - admin: 0 (full system access)
+    - ceo: 5 (executive full access)
+    - gm: 10
+    - exec: 15
+    - All others: 20+
+    
+    Users with admin or ceo roles automatically pass all role checks.
     
     Usage:
         @router.get("/admin")
@@ -257,6 +266,34 @@ class RoleChecker:
         ):
             ...
     """
+    
+    # Role hierarchy levels (lower = more privileged)
+    ROLE_HIERARCHY = {
+        "admin": 0,
+        "ceo": 5,
+        "gm": 10,
+        "exec": 15,
+        "finance": 20,
+        "accountant": 25,
+        "hr": 30,
+        "ops": 35,
+        "quality": 40,
+        "auditor": 45,
+        "it": 50,
+        "sales": 55,
+        "purchasing": 60,
+        "sales_engineer": 65,
+        "estimator": 70,
+        "supply_chain": 75,
+        "logistics": 80,
+        "maintenance": 85,
+        "warehouse": 90,
+        "engineering": 92,
+        "supervisor": 95,
+        "team_lead": 97,
+        "operator": 98,
+        "viewer": 100,
+    }
     
     def __init__(self, required_roles: list[str]):
         """
@@ -271,12 +308,34 @@ class RoleChecker:
         self,
         token_data: Annotated[TokenData, Depends(get_token_data)],
     ) -> bool:
-        """Check if user has any of the required roles."""
-        if not any(role in token_data.roles for role in self.required_roles):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied: requires one of {self.required_roles}",
-            )
+        """Check if user has any of the required roles or higher privilege."""
+        user_roles = token_data.roles
+        
+        # Admin and CEO always have access (hierarchy level 0 and 5)
+        if "admin" in user_roles or "ceo" in user_roles:
+            return True
+        
+        # Check direct role match
+        if any(role in user_roles for role in self.required_roles):
+            return True
+        
+        # Check hierarchy: user with lower hierarchy level can access higher level resources
+        user_min_level = min(
+            (self.ROLE_HIERARCHY.get(r, 100) for r in user_roles),
+            default=100
+        )
+        required_min_level = min(
+            (self.ROLE_HIERARCHY.get(r, 100) for r in self.required_roles),
+            default=0
+        )
+        
+        if user_min_level <= required_min_level:
+            return True
+        
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: requires one of {self.required_roles}",
+        )
         
         return True
 

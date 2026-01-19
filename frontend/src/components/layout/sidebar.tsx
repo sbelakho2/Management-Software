@@ -31,7 +31,7 @@ import { SkipToContent } from '@/components/ui/accessibility';
 import { useI18n } from '@/contexts/i18n-context';
 
 const bottomNavItems: NavItem[] = [
-  { label: 'Settings', href: '/settings', icon: Shield },
+  { labelKey: 'navigation.settings', label: 'Settings', href: '/settings', icon: Shield },
 ];
 
 export function Sidebar() {
@@ -62,11 +62,13 @@ export function Sidebar() {
       }))
       .filter((section) => section.items.length > 0);
 
-    const isAdmin = userRoles.includes('admin' as UserRole);
-    if (isAdmin && !sections.some((s) => s.title === 'Administration')) {
+    // CEO and Admin both have access to Administration section
+    const hasAdminAccess = userRoles.includes('admin' as UserRole) || userRoles.includes('ceo' as UserRole);
+    if (hasAdminAccess && !sections.some((s) => s.title === 'Administration')) {
       sections.push({
+        titleKey: 'navigation.administration',
         title: 'Administration',
-        items: [{ label: 'Admin Panel', href: '/admin', icon: Shield }],
+        items: [{ labelKey: 'navigation.adminPanel', label: 'Admin Panel', href: '/admin', icon: Shield }],
       });
     }
 
@@ -89,7 +91,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-6 top-6 z-40 flex h-[calc(100vh-6rem)] flex-col rounded-rams-sm border border-rams-border bg-rams-module transition-all duration-300 ease-in-out',
+        'fixed left-6 top-6 z-40 flex h-[calc(100vh-6rem)] flex-col rounded-rams-sm border border-rams-line bg-rams-module transition-all duration-300 ease-in-out',
         // Mobile: slide in from left, always full width when visible
         'max-md:-translate-x-[calc(100%+1.5rem)] max-md:w-64 max-md:left-6',
         isMobileVisible && 'max-md:translate-x-0',
@@ -100,7 +102,7 @@ export function Sidebar() {
       )}
     >
       {/* Logo Area (Mechanical Feel) */}
-      <div className="flex h-20 items-center justify-between px-6 border-b border-rams-border">
+      <div className="flex h-20 items-center justify-between px-6 border-b border-rams-line">
         {!isCollapsed && (
           <Link href="/today" className="flex items-center gap-3 group">
             <div className="flex h-10 w-10 items-center justify-center rounded-rams-sm bg-rams-orange text-black font-mono font-black border border-black/10">
@@ -125,7 +127,7 @@ export function Sidebar() {
         <Button
           variant="outline"
           className={cn(
-            'w-full justify-start text-muted-foreground border-rams-border bg-rams-panel hover:bg-rams-panel/80 transition-none rounded-rams-sm',
+            'w-full justify-start text-muted-foreground border-rams-line bg-rams-panel hover:bg-rams-panel/80 transition-none rounded-rams-sm',
             isCollapsed ? 'px-0 justify-center h-12 w-12 mx-auto' : 'px-4 h-11'
           )}
           onClick={() => setCommandPaletteOpen(true)}
@@ -135,7 +137,7 @@ export function Sidebar() {
           {!isCollapsed && (
             <>
               <span className={cn("flex-1 text-[10px] font-bold uppercase tracking-widest", isRTL ? "mr-3 text-right" : "ml-3 text-left")}>{t('common.search')}</span>
-              <kbd className={cn("pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded-sm border border-rams-border bg-rams-chassis px-1.5 font-mono text-[9px] font-bold text-muted-foreground/60", isRTL ? "mr-auto" : "ml-auto")}>
+              <kbd className={cn("pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded-sm border border-rams-line bg-rams-chassis px-1.5 font-mono text-[9px] font-bold text-muted-foreground/60", isRTL ? "mr-auto" : "ml-auto")}>
                 ⌘K
               </kbd>
             </>
@@ -149,12 +151,13 @@ export function Sidebar() {
           <div key={section.title} className={cn('mb-6', idx === 0 && 'mt-2')}>
             {!isCollapsed && (
               <h3 className="mb-3 px-6 text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/40 border-l-2 border-rams-orange/20 ml-2">
-                {section.title}
+                {t(section.titleKey) || section.title}
               </h3>
             )}
             <ul className="space-y-0.5 px-2">
               {section.items.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+                const translatedLabel = t(item.labelKey) || item.label;
                 return (
                   <li key={item.href}>
                     {isCollapsed ? (
@@ -168,14 +171,14 @@ export function Sidebar() {
                                 ? 'bg-rams-orange text-black font-black border-black/10' 
                                 : 'text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                             )}
-                            aria-label={item.label}
+                            aria-label={translatedLabel}
                             aria-current={isActive ? 'page' : undefined}
                           >
                             <item.icon className="h-5 w-5" />
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">
-                          {item.label}
+                        <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-line rounded-none">
+                          {translatedLabel}
                         </TooltipContent>
                       </Tooltip>
                     ) : (
@@ -184,16 +187,16 @@ export function Sidebar() {
                         className={cn(
                           'flex h-10 items-center gap-3 rounded-rams-sm px-4 transition-none group relative overflow-hidden border border-transparent',
                           isActive 
-                            ? 'bg-rams-panel text-foreground font-black border-rams-border shadow-[inset_2px_0_0_0_#FFBE00]' 
+                            ? 'bg-rams-panel text-foreground font-black border-rams-line shadow-[inset_2px_0_0_0_#FFBE00]' 
                             : 'text-muted-foreground hover:bg-rams-panel/50 hover:text-foreground'
                         )}
                       >
                         <item.icon className={cn("h-4 w-4 shrink-0 transition-none", isActive ? "text-rams-orange" : "text-muted-foreground group-hover:text-foreground")} />
-                        <span className="truncate text-[11px] font-bold uppercase tracking-wider">{item.label}</span>
+                        <span className="truncate text-[11px] font-bold uppercase tracking-wider">{translatedLabel}</span>
                         {item.badge && item.badge > 0 && (
                           <span className={cn(
                             "ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-rams-sm px-1 text-[9px] font-black border",
-                            isActive ? "bg-rams-orange text-black border-black/10" : "bg-rams-panel text-muted-foreground border-rams-border"
+                            isActive ? "bg-rams-orange text-black border-black/10" : "bg-rams-panel text-muted-foreground border-rams-line"
                           )}>
                             {item.badge}
                           </span>
@@ -209,10 +212,11 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom Navigation (Service Module) */}
-      <div className="border-t border-rams-border bg-rams-panel/30 p-2">
+      <div className="border-t border-rams-line bg-rams-panel/30 p-2">
         <ul className="space-y-0.5 mb-4">
           {filteredBottomNavItems.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+            const translatedLabel = t(item.labelKey) || item.label;
             return (
               <li key={item.href}>
                 {isCollapsed ? (
@@ -223,17 +227,17 @@ export function Sidebar() {
                         className={cn(
                           'flex h-10 w-10 items-center justify-center rounded-rams-sm mx-auto transition-none border',
                           isActive 
-                            ? 'bg-rams-panel text-foreground border-rams-border' 
+                            ? 'bg-rams-panel text-foreground border-rams-line' 
                             : 'border-transparent text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                         )}
-                        aria-label={item.label}
+                        aria-label={translatedLabel}
                         aria-current={isActive ? 'page' : undefined}
                       >
                         <item.icon className="h-4 w-4" />
                       </Link>
                     </TooltipTrigger>
-                    <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">
-                      {item.label}
+                    <TooltipContent side="right" className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-line rounded-none">
+                      {translatedLabel}
                     </TooltipContent>
                   </Tooltip>
                 ) : (
@@ -242,12 +246,12 @@ export function Sidebar() {
                     className={cn(
                       'flex h-9 items-center gap-3 rounded-rams-sm px-3 transition-none border',
                       isActive 
-                        ? 'bg-rams-panel text-foreground font-bold border-rams-border' 
+                        ? 'bg-rams-panel text-foreground font-bold border-rams-line' 
                         : 'border-transparent text-muted-foreground hover:bg-rams-panel hover:text-foreground'
                     )}
                   >
                     <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")} />
-                    <span className="truncate text-[10px] font-bold uppercase tracking-widest">{item.label}</span>
+                    <span className="truncate text-[10px] font-bold uppercase tracking-widest">{translatedLabel}</span>
                   </Link>
                 )}
               </li>
@@ -257,7 +261,7 @@ export function Sidebar() {
 
         {/* User Module */}
         {user && (
-          <div className="mt-2 pt-2 border-t border-rams-border/50">
+          <div className="mt-2 pt-2 border-t border-rams-line/50">
             {isCollapsed ? (
               <Link
                 href="/settings/profile"
@@ -274,14 +278,14 @@ export function Sidebar() {
             ) : (
               <Link
                 href="/settings/profile"
-                className="flex items-center gap-3 rounded-rams-sm p-2 hover:bg-rams-panel border border-transparent hover:border-rams-border transition-none"
+                className="flex items-center gap-3 rounded-rams-sm p-2 hover:bg-rams-panel border border-transparent hover:border-rams-line transition-none"
               >
                 <Avatar
                   src={user.avatar_url}
                   alt={user.full_name}
                   fallback={user.full_name}
                   size="sm"
-                  className="rounded-rams-sm border border-rams-border/20"
+                  className="rounded-rams-sm border border-rams-line/20"
                 />
                 <div className="flex-1 overflow-hidden">
                   <p className="truncate text-[11px] font-black uppercase tracking-tight">{user.full_name}</p>
@@ -324,7 +328,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn('h-8 transition-none rounded-rams-sm hover:bg-rams-panel hover:text-foreground border border-transparent hover:border-rams-border', isCollapsed ? 'mx-auto w-10' : 'w-full px-4 justify-start')}
+            className={cn('h-8 transition-none rounded-rams-sm hover:bg-rams-panel hover:text-foreground border border-transparent hover:border-rams-line', isCollapsed ? 'mx-auto w-10' : 'w-full px-4 justify-start')}
             onClick={() => setSidebarState(isCollapsed ? 'expanded' : 'collapsed')}
           >
             {isCollapsed ? (
@@ -353,7 +357,7 @@ export function FloatingNotifications() {
           <Button
             variant="ghost"
             size="icon"
-            className="relative rounded-rams-sm h-10 w-10 border border-rams-border bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
+            className="relative rounded-rams-sm h-10 w-10 border border-rams-line bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
             onClick={toggleNotificationPanel}
             aria-label={t('navigation.notifications')}
           >
@@ -365,7 +369,7 @@ export function FloatingNotifications() {
             )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-border rounded-none">{t('navigation.notifications')}</TooltipContent>
+        <TooltipContent className="font-mono text-[10px] uppercase font-bold bg-rams-panel text-foreground border-rams-line rounded-none">{t('navigation.notifications')}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -379,7 +383,7 @@ export function MobileMenuButton() {
     <Button
       variant="ghost"
       size="icon"
-      className="fixed top-4 left-4 z-40 md:hidden rounded-rams-sm h-10 w-10 border border-rams-border bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
+      className="fixed top-4 left-4 z-40 md:hidden rounded-rams-sm h-10 w-10 border border-rams-line bg-rams-panel shadow-none hover:bg-rams-module hover:text-foreground transition-none"
       onClick={() => setSidebarState(sidebarState === 'hidden' ? 'expanded' : 'hidden')}
       aria-label={sidebarState === 'hidden' ? t('accessibility.openMenu') : t('accessibility.closeMenu')}
     >
@@ -409,7 +413,7 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, setSidebarState]);
 
   return (
-    <div className="min-h-screen bg-rams-chassis selection:bg-rams-orange/30 selection:text-black">
+    <div className="min-h-screen bg-rams-chassis ">
       <SkipToContent targetId="main-content" />
       
       {/* Floating UI Elements */}

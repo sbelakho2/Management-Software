@@ -74,7 +74,7 @@ export default function A3DetailsPage() {
   }
 
   if (!a3) {
-    return <div className="py-12 text-center">A3 Report not found</div>;
+    return <div className="py-12 text-center">{t('a3.detail.notFound') || 'A3 Report not found'}</div>;
   }
 
   // Helper to find specific sections
@@ -86,7 +86,7 @@ export default function A3DetailsPage() {
     <div className="space-y-8 page-fade-in">
       <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 transition-all" onClick={() => router.push('/a3')}>
+          <Button variant="ghost" size="icon" className="rounded-rams-sm hover:bg-rams-orange/10 transition-none" onClick={() => router.push('/a3')}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
@@ -98,49 +98,49 @@ export default function A3DetailsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-xl border-primary/20 hover:bg-primary/5 text-primary" onClick={() => toast({ title: 'Export', description: 'Starting PDF export...' })}>
+          <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-orange/5" onClick={() => toast({ title: 'Export', description: 'Starting PDF export...' })}>
             <Download className="h-4 w-4 mr-2" />
-            Export Protocol
+            {t('a3.detail.exportProtocol') || 'Export Protocol'}
           </Button>
-          <Button size="lg" className="rounded-xl shadow-glow subtle-shine" onClick={() => setIsEditing(true)}>
+          <Button size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black" onClick={() => setIsEditing(true)}>
             <Edit className="h-4 w-4 mr-2" />
-            Refine Analysis
+            {t('a3.detail.refineAnalysis') || 'Refine Analysis'}
           </Button>
         </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
-        <Card className="lg:col-span-2 rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+        <Card className="lg:col-span-2 rounded-rams-sm border-rams-line bg-rams-module">
           <CardHeader>
-            <CardTitle className="text-lg font-heading">Structural Analysis</CardTitle>
-            <CardDescription className="text-xs font-medium uppercase tracking-wider">Decomposition of organizational abnormalities</CardDescription>
+            <CardTitle className="text-lg font-heading">{t('a3.detail.structuralAnalysis.title') || 'Structural Analysis'}</CardTitle>
+            <CardDescription className="text-xs font-medium uppercase tracking-wider">{t('a3.detail.structuralAnalysis.subtitle') || 'Decomposition of organizational abnormalities'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-10">
             <section className="space-y-3">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-                1. Background Architecture
+                {t('a3.detail.sections.background') || '1. Background Architecture'}
               </h3>
               <p className="text-sm leading-relaxed whitespace-pre-wrap pl-3.5 border-l border-primary/10">{getSectionContent('background')}</p>
             </section>
             <section className="space-y-3">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-                2. Current State Synchronization
+                {t('a3.detail.sections.currentState') || '2. Current State Synchronization'}
               </h3>
               <p className="text-sm leading-relaxed whitespace-pre-wrap pl-3.5 border-l border-primary/10">{getSectionContent('current_condition')}</p>
             </section>
             <section className="space-y-3">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-                3. Strategic Targets
+                {t('a3.detail.sections.strategicTargets') || '3. Strategic Targets'}
               </h3>
               <p className="text-sm leading-relaxed whitespace-pre-wrap pl-3.5 border-l border-primary/10">{getSectionContent('goal')}</p>
             </section>
             <section className="space-y-3">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary/60 flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary/40" />
-                4. Root Cause Intelligence
+                {t('a3.detail.sections.rootCauseIntelligence') || '4. Root Cause Intelligence'}
               </h3>
               <p className="text-sm leading-relaxed whitespace-pre-wrap pl-3.5 border-l border-primary/10">{getSectionContent('root_cause')}</p>
             </section>
@@ -148,14 +148,14 @@ export default function A3DetailsPage() {
         </Card>
 
         <div className="space-y-8">
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <Card className="rounded-rams-sm border-rams-line bg-rams-module">
             <CardHeader>
-              <CardTitle className="text-lg font-heading">Protocol Velocity</CardTitle>
+              <CardTitle className="text-lg font-heading">{t('a3.detail.protocolVelocity.title') || 'Protocol Velocity'}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
                 <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                  <span>Execution Pulse</span>
+                  <span>{t('a3.detail.protocolVelocity.executionPulse') || 'Execution Pulse'}</span>
                   <span className="text-primary">{a3.progress_percentage}%</span>
                 </div>
                 <Progress value={a3.progress_percentage} className="h-2 bg-primary/10" />
@@ -163,36 +163,36 @@ export default function A3DetailsPage() {
               
               <div className="space-y-4 pt-4 border-t border-border/10">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Status Node</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{t('a3.detail.protocolVelocity.statusNode') || 'Status Node'}</span>
                   <Badge variant="secondary" className="capitalize rounded-md font-bold">{a3.status}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Priority Layer</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{t('a3.detail.protocolVelocity.priorityLayer') || 'Priority Layer'}</span>
                   <Badge variant={a3.priority === 'critical' || a3.priority === 'high' ? 'destructive' : 'warning'} className="capitalize rounded-md font-bold">
                     {a3.priority}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Logic Type</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">{t('a3.detail.protocolVelocity.logicType') || 'Logic Type'}</span>
                   <span className="text-xs font-bold capitalize text-foreground/80">{a3.a3_type.replace('_', ' ')}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[2rem] border-border/40 bg-card/40 backdrop-blur-md">
+          <Card className="rounded-rams-sm border-rams-line bg-rams-module">
             <CardHeader>
-              <CardTitle className="text-lg font-heading">Implementation</CardTitle>
-              <CardDescription className="text-xs font-medium uppercase tracking-wider">Countermeasures and follow-up protocol</CardDescription>
+              <CardTitle className="text-lg font-heading">{t('a3.detail.implementation.title') || 'Implementation'}</CardTitle>
+              <CardDescription className="text-xs font-medium uppercase tracking-wider">{t('a3.detail.implementation.subtitle') || 'Countermeasures and follow-up protocol'}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
                 <section className="space-y-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Countermeasures</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('a3.detail.implementation.countermeasures') || 'Countermeasures'}</h4>
                   <p className="text-sm font-medium">{getSectionContent('countermeasures')}</p>
                 </section>
                 <section className="space-y-2 pt-6 border-t border-border/10">
-                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">Implementation Timeline</h4>
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">{t('a3.detail.implementation.timeline') || 'Implementation Timeline'}</h4>
                   <p className="text-sm font-medium">{getSectionContent('implementation_plan')}</p>
                 </section>
               </div>
