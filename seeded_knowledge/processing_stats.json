@@ -1,0 +1,19 @@
+{
+  "books_processed": 52,
+  "traces_extracted": 1697,
+  "chunks_created": 6666,
+  "by_language": {
+    "en": 43,
+    "fr": 5,
+    "es": 4
+  },
+  "by_domain": {
+    "psychology": 5,
+    "management": 34,
+    "accounting": 1,
+    "finance": 8,
+    "quality": 2,
+    "tps_lean": 2
+  },
+  "timestamp": "2026-01-20T18:45:40.451197"
+}

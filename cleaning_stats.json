@@ -1,0 +1,27 @@
+{
+  "total_processed": 190,
+  "total_cleaned": 188,
+  "total_rejected": 2,
+  "bytes_removed": 11260345,
+  "by_language": {
+    "en": 188
+  },
+  "cleaning_details": [
+    {
+      "file": "en_704a8e2356ba36c4_NASA Technical Reports Server (NTRS) 20110001378_ A Case Study_ Using Delmia at .txt",
+      "original_size": 6750,
+      "cleaned_size": 3561,
+      "reduction_pct": 47.2,
+      "valid": false,
+      "reason": "Too few valid sentences (5)"
+    },
+    {
+      "file": "en_ea6b14fd05f20026_DTIC ADA566960_ Improve Environmental Management Systems by Auditing with Lean S.txt",
+      "original_size": 11191,
+      "cleaned_size": 1874,
+      "reduction_pct": 83.3,
+      "valid": false,
+      "reason": "Low vocabulary (96 unique words)"
+    }
+  ]
+}

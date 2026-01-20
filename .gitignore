@@ -237,25 +237,46 @@ frontend/tsconfig.tsbuildinfo
 # ============================================
 # Book Downloads & Knowledge Distillation
 # ============================================
-# Downloaded books directory (raw text files - ignore contents but keep directory)
-downloaded_books/*
+# Downloaded books - ALL subdirectories (txt, cleaned, filtered_out, pdf, epub, etc.)
+downloaded_books/txt/
+downloaded_books/cleaned/
+downloaded_books/filtered_out/
+downloaded_books/pdf/
+downloaded_books/epub/
+downloaded_books/raw/
+downloaded_books/*.txt
+downloaded_books/*.pdf
+downloaded_books/*.epub
 !downloaded_books/.gitkeep
+!downloaded_books/README.md
+!downloaded_books/*.py
+
+# Alternative book directories
 books/
 raw_books/
+cleaned_books/
 
 # Book download scripts and temp files
 download_progress.json
 download_log.json
+download_state.json
 book_download.log
 gutenberg_books_catalog.json
 relevant_books_filtered.json
 downloaded_resources.json
+*.download.tmp
 
 # Large resource files (should be managed separately)
 world_class_resource_links.json
 
 # Generated knowledge modules (will be committed when ready)
 # distilled_knowledge/
+
+# Model training data and outputs
+training_data/
+model_outputs/
+*.jsonl
+distilled_*.json
 
 # ============================================
 # Temporary Development Scripts
