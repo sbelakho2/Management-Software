@@ -7,7 +7,7 @@ name = "sensei-os-backend"
 version = "1.0.0"
 description = "Sensei OS - Intelligent Management & Teaching System Backend"
 readme = "README.md"
-license = "Proprietary"
+license = {text = "Proprietary"}
 requires-python = ">=3.11"
 authors = [
     { name = "Starz Morocco", email = "dev@starzmorocco.com" }
@@ -28,6 +28,7 @@ dependencies = [
     "sqlalchemy>=2.0.25",
     "alembic>=1.13.1",
     "asyncpg>=0.29.0",
+    "pgvector>=0.2.4",
     "psycopg2-binary>=2.9.9",
     "pydantic>=2.5.3",
     "pydantic-settings>=2.1.0",
@@ -40,6 +41,8 @@ dependencies = [
     "celery>=5.3.6",
     "apscheduler>=3.10.4",
     "httpx>=0.26.0",
+    "beautifulsoup4>=4.12.0",
+    "pypdf>=4.0.0",
     "tenacity>=8.2.3",
     "structlog>=24.1.0",
     "pyotp>=2.9.0",

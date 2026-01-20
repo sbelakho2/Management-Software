@@ -197,6 +197,42 @@ function clearAllArtifacts(): void {
   }
 }
 
+const API_BASE_URL = process.env.E2E_API_URL || 'http://localhost:8000';
+
+async function checkBackendHealth(page: Page): Promise<boolean> {
+  try {
+    const response = await page.request.get(`${API_BASE_URL}/api/v1/health`, { timeout: 5000 });
+    return response.ok();
+  } catch {
+    return false;
+  }
+}
+
+async function bootstrapRoleUser(page: Page, role: string): Promise<{ success: boolean; token?: string; error?: string }> {
+  const email = `${role}@${EMAIL_DOMAIN}`;
+  
+  try {
+    const response = await page.request.post(`${API_BASE_URL}/api/v1/dev/bootstrap-user`, {
+      data: {
+        email,
+        password: TEST_PASSWORD,
+        full_name: `${role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, ' ')} User`,
+        roles: [role],
+      },
+      timeout: 10000,
+    });
+    
+    if (response.ok()) {
+      const data = await response.json();
+      return { success: true, token: data.access_token };
+    }
+    const text = await response.text().catch(() => '');
+    return { success: false, error: `HTTP ${response.status()}: ${text.slice(0, 200)}` };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
+  }
+}
+
 async function loginAsRole(
   page: Page,
   role: string,
@@ -214,6 +250,29 @@ async function loginAsRole(
       // ignore
     }
   };
+
+  // Bootstrap user first to ensure they exist
+  const bootstrap = await bootstrapRoleUser(page, role);
+  if (bootstrap.success && bootstrap.token) {
+    log(`bootstrap success, got token`);
+    // Set the token directly and navigate
+    await page.evaluate((token) => {
+      localStorage.setItem('access_token', token);
+    }, bootstrap.token);
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    await page.waitForTimeout(500);
+    
+    // Check if we're authenticated
+    const url = page.url();
+    if (!url.includes('/login')) {
+      await page.screenshot({ path: path.join(roleDir, '02-after-login.png'), fullPage: true, timeout: 15000 }).catch(() => undefined);
+      return true;
+    }
+    log(`bootstrap token didn't work, falling back to form login`);
+  } else {
+    log(`bootstrap failed: ${bootstrap.error || 'unknown'}, trying form login`);
+  }
 
   for (let attempt = 1; attempt <= 8; attempt++) {
     const beforeCounts = capture?.snapshotCounts();
@@ -676,9 +735,21 @@ async function clickButtonsAndScreenshot(
 }
 
 test.describe.serial('Role-based UI Audit with Screenshots', () => {
-  test.beforeAll(() => {
+  test.beforeAll(async ({ browser }) => {
     // Keep runs deterministic: start from a clean artifact slate.
     clearAllArtifacts();
+    
+    // Check backend health before running tests
+    const page = await browser.newPage();
+    const backendHealthy = await checkBackendHealth(page);
+    await page.close();
+    
+    if (!backendHealthy) {
+      console.error(`\n❌ Backend is not reachable at ${API_BASE_URL}`);
+      console.error(`   Please ensure the backend is running before running this test.\n`);
+      throw new Error(`Backend is not reachable at ${API_BASE_URL}. Start the backend first.`);
+    }
+    console.log(`✅ Backend health check passed at ${API_BASE_URL}`);
   });
 
   // Create one test per role

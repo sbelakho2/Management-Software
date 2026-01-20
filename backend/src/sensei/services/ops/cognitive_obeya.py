@@ -299,9 +299,88 @@ class AsyncPrescriptiveMetricAnalyzer:
                 for r in records
             ]
 
-        # Perform discovery (Placeholder for discovery logic that was using in-memory dicts)
-        # In production, this would query WorkOrder models, etc.
-        return []
+        # Perform automated causal discovery by querying related models
+        from sensei.models.work_order import WorkOrder
+        from sensei.models.rfq import RFQ
+        from sensei.models.quality import NonConformance
+        
+        discovered_links: list[CausalLink] = []
+        lookback = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        # Discover links from Work Orders
+        wo_result = await db.execute(
+            select(WorkOrder).where(
+                WorkOrder.updated_at > lookback
+            ).limit(50)
+        )
+        for wo in wo_result.scalars().all():
+            wo_dict = {
+                "id": str(wo.id),
+                "description": wo.description or f"Work Order {wo.work_order_number}",
+                "quality_issues": getattr(wo, 'defect_count', 0) or 0,
+                "delivery_delay": max(0, (wo.actual_end_date - wo.due_date).days) if wo.actual_end_date and wo.due_date else 0,
+                "cost_overrun": getattr(wo, 'cost_variance', 0.0) or 0.0,
+                "safety_incidents": getattr(wo, 'safety_incidents', 0) or 0,
+            }
+            link = self._evaluate_work_order_link(latest, wo_dict)
+            if link:
+                discovered_links.append(link)
+        
+        # Discover links from RFQs/Supplier Quotes
+        rfq_result = await db.execute(
+            select(RFQ).where(
+                RFQ.updated_at > lookback
+            ).limit(50)
+        )
+        for rfq in rfq_result.scalars().all():
+            quote_dict = {
+                "id": str(rfq.id),
+                "supplier": rfq.customer_name or "Unknown",
+                "quality_rating": getattr(rfq, 'supplier_quality_rating', 1.0) or 1.0,
+                "delivery_rating": getattr(rfq, 'supplier_delivery_rating', 1.0) or 1.0,
+                "cost_variance": getattr(rfq, 'cost_variance', 0.0) or 0.0,
+            }
+            link = self._evaluate_supplier_link(latest, quote_dict)
+            if link:
+                discovered_links.append(link)
+        
+        # Discover links from Non-Conformances (as incidents)
+        nc_result = await db.execute(
+            select(NonConformance).where(
+                NonConformance.created_at > lookback,
+                NonConformance.status != "closed"
+            ).limit(50)
+        )
+        for nc in nc_result.scalars().all():
+            incident_dict = {
+                "id": str(nc.id),
+                "description": nc.description or f"NCR {nc.id}",
+                "severity": getattr(nc, 'severity_score', 3) or 3,
+                "category": "quality" if latest.category == MetricCategory.QUALITY else "safety",
+            }
+            link = self._evaluate_incident_link(latest, incident_dict)
+            if link:
+                discovered_links.append(link)
+        
+        # Persist discovered links for future queries
+        for link in discovered_links:
+            record = CausalLinkRecord(
+                id=link.link_id,
+                metric_id=link.metric_id,
+                source_type=link.source_type,
+                source_id=link.source_id,
+                source_description=link.source_description,
+                confidence=link.confidence,
+                impact_value=link.impact_value,
+                detected_at=link.detected_at,
+                explanation=link.explanation,
+            )
+            db.add(record)
+        
+        if discovered_links:
+            await db.commit()
+        
+        return discovered_links
     
     def _evaluate_work_order_link(
         self,
@@ -1535,10 +1614,17 @@ class AsyncCognitiveObeya:
         heijunka_count_stmt = select(func.count(HeijunkaSuggestionRecord.id)).where(HeijunkaSuggestionRecord.status == "pending")
         heijunka_count = (await db.execute(heijunka_count_stmt)).scalar() or 0
         
+        # Count active trend warnings (within last 14 days and not resolved)
+        warning_cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        warning_count_stmt = select(func.count(TrendWarningRecord.id)).where(
+            TrendWarningRecord.detected_at > warning_cutoff
+        )
+        warning_count = (await db.execute(warning_count_stmt)).scalar() or 0
+        
         return {
             "metrics": {
                 "total_recorded": metric_count,
-                "active_trend_warnings": 0, # Placeholder for active warnings query
+                "active_trend_warnings": warning_count,
             },
             "cross_functional": {
                 "active_silo_alerts": silo_count,

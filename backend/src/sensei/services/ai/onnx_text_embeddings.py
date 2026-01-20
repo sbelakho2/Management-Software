@@ -79,9 +79,13 @@ class ONNXTextEmbedder:
             return
 
         # Local imports keep module import cheap.
-        import onnxruntime as ort
-        import torch
-        from transformers import AutoModel, AutoTokenizer
+        try:
+            import onnxruntime as ort
+            from transformers import AutoTokenizer
+        except ImportError:
+            # Fallback not really supported here but let's not crash
+            return
+
         from sensei.services.ai.onnx_model_init import get_model_registry
 
         self._config.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -100,9 +104,15 @@ class ONNXTextEmbedder:
             if reg_path.name == target_path.name:
                 target_path = reg_path
 
-        tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)
-
         if not target_path.exists():
+            try:
+                import torch
+                from transformers import AutoModel
+            except ImportError:
+                return
+
+            tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)
+
             # Export base ONNX if missing
             if not onnx_path.exists():
                 model = AutoModel.from_pretrained(self._config.model_id)
@@ -146,6 +156,7 @@ class ONNXTextEmbedder:
                     optimize_model=True,
                 )
 
+        tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)
         sess = ort.InferenceSession(
             target_path.as_posix(),
             providers=["CPUExecutionProvider"],

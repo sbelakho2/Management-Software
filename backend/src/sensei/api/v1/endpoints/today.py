@@ -37,6 +37,8 @@ from sensei.services.ops.today_screen import (
 
 from sensei.api.deps import CurrentUser, DBSession
 
+from sensei.core.redis import redis_client
+
 router = APIRouter(prefix="/today", tags=["today-screen"])
 
 
@@ -424,7 +426,7 @@ async def get_user_priorities(
     include_unselected: bool = Query(default=True),
 ) -> list[PriorityResponseSchema]:
     """Get all priorities for a user."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     priorities = await service.get_user_priorities(
         user_id=user_id,
         include_selected=include_selected,
@@ -444,7 +446,7 @@ async def add_priority(
     data: PriorityCreateSchema,
 ) -> PriorityResponseSchema:
     """Add a new priority for a user."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     priority = await service.add_priority(
         user_id=user_id,
         entity_type=data.entity_type,
@@ -469,7 +471,7 @@ async def set_top_priorities(
     data: SetTopPrioritiesSchema,
 ) -> list[PriorityResponseSchema]:
     """Set the user's top 3 priorities (max 3)."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     try:
         priorities = await service.set_top_priorities(
             user_id=user_id,
@@ -490,7 +492,7 @@ async def set_top_priorities(
 )
 async def remove_priority(user_id: UUID, priority_id: UUID) -> None:
     """Remove a priority."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     if not await service.remove_priority(user_id, priority_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -514,7 +516,7 @@ async def get_risks(
     top_n: int | None = None,
 ) -> list[RiskResponseSchema]:
     """Get risks, optionally filtered by category."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     
     if category is not None or top_n is not None:
         risks_by_cat = await service.get_risks_by_category(user_id=current_user.id, category=category, top_n=top_n)
@@ -536,7 +538,7 @@ async def get_risks_by_category(
     top_n: int | None = None,
 ) -> list[RisksByCategorySchema]:
     """Get risks grouped by category."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     risks_by_cat = await service.get_risks_by_category(user_id=current_user.id, top_n=top_n)
     
     return [
@@ -559,7 +561,7 @@ async def get_top_risks(
     top_n: int = Query(5, ge=1, le=50),
 ) -> list[RiskResponseSchema]:
     """Get top N risks by risk score."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     risks = await service.get_top_risks(user_id=current_user.id, top_n=top_n)
     return [_risk_to_response(r) for r in risks]
 
@@ -575,7 +577,7 @@ async def add_risk(
     data: RiskCreateSchema,
 ) -> RiskResponseSchema:
     """Add a new risk."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     risk = await service.add_risk(
         user_id=current_user.id,
         title=data.title,
@@ -610,7 +612,7 @@ async def get_commitments(
     include_completed: bool = False,
 ) -> list[CommitmentResponseSchema]:
     """Get commitments with optional filtering."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     commitments = await service.get_commitments(
         user_id=current_user.id,
         target_date=target_date,
@@ -631,7 +633,7 @@ async def add_commitment(
     data: CommitmentCreateSchema,
 ) -> CommitmentResponseSchema:
     """Add a new commitment."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     commitment = await service.add_commitment(
         user_id=current_user.id,
         title=data.title,
@@ -658,7 +660,7 @@ async def complete_commitment(
     commitment_id: UUID,
 ) -> CommitmentResponseSchema:
     """Mark a commitment as completed."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     commitment = await service.complete_commitment(user_id=current_user.id, commitment_id=commitment_id)
     if commitment is None:
         raise HTTPException(
@@ -684,7 +686,7 @@ async def get_abnormalities(
     severity: int | None = None,
 ) -> list[AbnormalityResponseSchema]:
     """Get abnormalities with optional filtering."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     abnormalities = await service.get_abnormalities(
         user_id=current_user.id,
         abnormality_type=abnormality_type,
@@ -700,7 +702,7 @@ async def get_abnormalities(
 )
 async def get_abnormality_counts(current_user: CurrentUser) -> dict[str, int]:
     """Get counts of abnormalities by type for current user."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     counts = await service.get_abnormality_counts(user_id=current_user.id)
     return {k.value if hasattr(k, "value") else str(k): v for k, v in counts.items()}
 
@@ -716,7 +718,7 @@ async def add_abnormality(
     data: AbnormalityCreateSchema,
 ) -> AbnormalityResponseSchema:
     """Add a new abnormality."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     abnormality = await service.add_abnormality(
         user_id=current_user.id,
         title=data.title,
@@ -743,7 +745,7 @@ async def resolve_abnormality(
     abnormality_id: UUID,
 ) -> None:
     """Resolve (remove) an abnormality."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     if not await service.resolve_abnormality(user_id=current_user.id, abnormality_id=abnormality_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -766,7 +768,7 @@ async def get_todays_drills(
     count: int = Query(3, ge=1, le=10),
 ) -> list[MicroDrillResponseSchema]:
     """Get micro-drill questions for today."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     drills = await service.get_todays_drills(user_id, count=count)
     return [_drill_to_response(d) for d in drills]
 
@@ -782,7 +784,7 @@ async def add_micro_drill(
     data: MicroDrillCreateSchema,
 ) -> MicroDrillResponseSchema:
     """Add a new micro-drill question."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     drill = await service.add_micro_drill(
         user_id=current_user.id,
         question=data.question,
@@ -807,7 +809,7 @@ async def complete_drill(
     data: DrillCompletionSchema,
 ) -> DrillCompletionResultSchema:
     """Record drill completion."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     result = await service.complete_drill(user_id, drill_id, correct=data.correct)
     return DrillCompletionResultSchema(
         streak=result["streak"],
@@ -823,7 +825,7 @@ async def complete_drill(
 )
 async def get_drill_progress(user_id: UUID) -> DrillProgressSchema:
     """Get user's drill progress."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     progress = await service.get_drill_progress(user_id)
     return DrillProgressSchema(
         drills_completed_today=progress["drills_completed_today"],
@@ -845,7 +847,7 @@ async def get_drill_progress(user_id: UUID) -> DrillProgressSchema:
 )
 async def get_lsw_summary(user_id: UUID) -> LSWChecklistSummarySchema:
     """Get LSW checklist summary for a user."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     summary = service.get_lsw_summary(user_id)
     return LSWChecklistSummarySchema(
         daily_status=summary.daily_status,
@@ -874,7 +876,7 @@ async def get_lsw_summary(user_id: UUID) -> LSWChecklistSummarySchema:
 )
 async def get_quick_metrics(user_id: UUID) -> list[QuickMetricSchema]:
     """Get quick metrics for the Today screen."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     metrics = service.get_quick_metrics(user_id)
     return [
         QuickMetricSchema(
@@ -909,7 +911,7 @@ async def get_today_screen(
     user_name: str = Query(..., min_length=1),
 ) -> TodayScreenDataSchema:
     """Get complete Today screen data for a user."""
-    service = get_today_screen_service()
+    service = get_today_screen_service(redis_client_override=redis_client)
     normalized_user_name = (user_name or "").strip() or "User"
     screen = await service.get_today_screen(user_id, normalized_user_name, db=db)
 

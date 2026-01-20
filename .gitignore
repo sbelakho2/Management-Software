@@ -233,3 +233,58 @@ frontend/*.log
 frontend/playwright*.log
 frontend/.swc/
 frontend/tsconfig.tsbuildinfo
+
+# ============================================
+# Book Downloads & Knowledge Distillation
+# ============================================
+# Downloaded books directory (raw text files - ignore contents but keep directory)
+downloaded_books/*
+!downloaded_books/.gitkeep
+books/
+raw_books/
+
+# Book download scripts and temp files
+download_progress.json
+download_log.json
+book_download.log
+gutenberg_books_catalog.json
+relevant_books_filtered.json
+downloaded_resources.json
+
+# Large resource files (should be managed separately)
+world_class_resource_links.json
+
+# Generated knowledge modules (will be committed when ready)
+# distilled_knowledge/
+
+# ============================================
+# Temporary Development Scripts
+# ============================================
+# These are one-off scripts that shouldn't be in repo
+catalog_ai_services.py
+check_counts.py
+cognitive_ingestor.py
+collect_world_class_links.py
+download_150_resources.py
+download_and_distill_books.py
+robust_book_downloader.py
+seed_all_services.py
+test_world_class_quality.py
+world_class_ingestor.py
+ai_services_catalog.json
+system_training_report.json
+
+# ============================================
+# Additional Log Files
+# ============================================
+ingestion.log
+*.log
+!.gitkeep
+
+# ============================================
+# Temporary Files at Root
+# ============================================
+# Shell script artifacts
+*.sh.bak
+book_downloader_v2.py
+gutenberg_catalog.json

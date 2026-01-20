@@ -27,9 +27,30 @@ from sensei.models.project_management import UserStory, ProjectMilestone, Projec
 from sqlalchemy import select, or_, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sensei.core.time import now_utc, utcnow_naive
+from sensei.services.ops.today_screen_models import (
+    RiskCategory, AbnormalityType, CommitmentType, PriorityLevel,
+    LSWChecklistStatus, ShopFloorAreaType, ShopFloorAlertSeverity,
+    Priority, Risk, Commitment, Abnormality, MicroDrill,
+    LSWChecklistSummary, QuickMetric, WorkOrderAtRisk, CriticalAndon,
+    StationEfficiency, CellOEE, KanbanAlert, ExpiringCertification,
+    WIPViolation, CAPAVerification, ScheduledTraining, ShopFloorSummary,
+    TodayScreenData
+)
 
 def _utcnow() -> datetime:
     return utcnow_naive()
+
+
+class UUIDEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles UUIDs."""
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, Enum):
+            return obj.value
+        return super().default(obj)
 
 
 class InMemoryRedis:
@@ -578,7 +599,7 @@ class AsyncTodayScreenService:
                 await self._redis.delete(key)
             return
         
-        serialized = data if isinstance(self._redis, InMemoryRedis) else {k: json.dumps(v) for k, v in data.items()}
+        serialized = data if isinstance(self._redis, InMemoryRedis) else {k: json.dumps(v, cls=UUIDEncoder) for k, v in data.items()}
         # We delete and recreate to ensure it exactly matches the provided data
         # In a high-concurrency environment, Lua would be better.
         async with self._redis.pipeline(transaction=True) as pipe:
@@ -601,7 +622,7 @@ class AsyncTodayScreenService:
         """Save an item to a global store in Redis."""
         key = f"today:global:{store_name}"
         if self._redis:
-            val = data if isinstance(self._redis, InMemoryRedis) else json.dumps(data)
+            val = data if isinstance(self._redis, InMemoryRedis) else json.dumps(data, cls=UUIDEncoder)
             await self._redis.hset(key, item_id, val)
             await self._redis.expire(key, 86400)
 
@@ -1050,6 +1071,75 @@ class AsyncTodayScreenService:
         
         return drill
     
+    async def _seed_default_drills(self, user_id: UUID) -> None:
+        """Seed default micro-drills for a new user."""
+        default_drills = [
+            {
+                "question": "What is your #1 priority focus today and why?",
+                "answer": "Review the top priorities section and articulate your main focus.",
+                "hint": "Check the Top 3 Priorities section.",
+                "category": "priorities",
+                "difficulty": 1,
+            },
+            {
+                "question": "Which risk category requires the most attention today?",
+                "answer": "Review risks by category: Delivery, Quality, Cash, Reputation.",
+                "hint": "Look at the risk breakdown by category.",
+                "category": "risk_management",
+                "difficulty": 2,
+            },
+            {
+                "question": "What commitment is most time-critical today?",
+                "answer": "Check commitments sorted by due time.",
+                "hint": "Review your Today's Commitments list.",
+                "category": "commitments",
+                "difficulty": 1,
+            },
+            {
+                "question": "Are there any abnormalities that could escalate if not addressed?",
+                "answer": "Review abnormalities and assess escalation potential.",
+                "hint": "Check the Abnormalities section for overdue items.",
+                "category": "abnormalities",
+                "difficulty": 2,
+            },
+            {
+                "question": "What is the current status of your LSW checklist?",
+                "answer": "Check Leader Standard Work completion percentage.",
+                "hint": "Review the LSW Summary section.",
+                "category": "lsw",
+                "difficulty": 1,
+            },
+            {
+                "question": "Which customer requires immediate follow-up today?",
+                "answer": "Review pending RFQs and quotes with approaching deadlines.",
+                "hint": "Check quotes due and follow-up commitments.",
+                "category": "customer_focus",
+                "difficulty": 2,
+            },
+            {
+                "question": "What is the biggest bottleneck in your current workflow?",
+                "answer": "Identify stalled items or blocked tasks requiring escalation.",
+                "hint": "Look for stalled RFQs or blocked tasks in abnormalities.",
+                "category": "continuous_improvement",
+                "difficulty": 3,
+            },
+        ]
+        
+        for drill_data in default_drills:
+            drill = MicroDrill(
+                id=uuid4(),
+                question=drill_data["question"],
+                answer=drill_data["answer"],
+                hint=drill_data["hint"],
+                category=drill_data["category"],
+                difficulty=drill_data["difficulty"],
+                context_entity_type=None,
+                context_entity_id=None,
+            )
+            drills_store = await self._get_store(user_id, "micro_drills")
+            drills_store[str(drill.id)] = asdict(drill)
+            await self._save_store(user_id, "micro_drills", drills_store)
+    
     async def get_todays_drills(
         self,
         user_id: UUID,
@@ -1057,6 +1147,15 @@ class AsyncTodayScreenService:
     ) -> list[MicroDrill]:
         """Get today's micro-drill questions for a user."""
         drills_data = await self._get_store(user_id, "micro_drills")
+        logging.info(f"[DRILL DEBUG] user_id={user_id}, drills_data={bool(drills_data)}, len={len(drills_data)}")
+        
+        # Seed default drills if none exist
+        if not drills_data:
+            logging.info(f"[DRILL DEBUG] Seeding default drills for user {user_id}")
+            await self._seed_default_drills(user_id)
+            drills_data = await self._get_store(user_id, "micro_drills")
+            logging.info(f"[DRILL DEBUG] After seeding: len={len(drills_data)}")
+        
         drills = [MicroDrill(**d) for d in drills_data.values()]
         
         # Get user progress
@@ -2170,15 +2269,19 @@ class AsyncTodayScreenService:
 
 
 class TodayScreenService:
-    """Async-friendly wrapper around AsyncTodayScreenService using in-memory Redis."""
+    """Async-friendly wrapper around AsyncTodayScreenService."""
 
-    def __init__(self) -> None:
-        self._redis = InMemoryRedis()
+    def __init__(self, redis_client: Any = None) -> None:
+        # Use the provided redis_client or fall back to InMemoryRedis for testing
+        self._redis = redis_client if redis_client is not None else InMemoryRedis()
         self._async = AsyncTodayScreenService(redis=self._redis)
         self._default_user_id = uuid4()
-        self._risks = self._redis._hashes.setdefault(f"today:{self._default_user_id}:risks", {})
-        self._commitments = self._redis._hashes.setdefault(f"today:{self._default_user_id}:commitments", {})
-        self._abnormalities = self._redis._hashes.setdefault(f"today:{self._default_user_id}:abnormalities", {})
+        self.logger = logging.getLogger(__name__)
+        # Only set up in-memory hashes if using InMemoryRedis
+        if isinstance(self._redis, InMemoryRedis):
+            self._risks = self._redis._hashes.setdefault(f"today:{self._default_user_id}:risks", {})
+            self._commitments = self._redis._hashes.setdefault(f"today:{self._default_user_id}:commitments", {})
+            self._abnormalities = self._redis._hashes.setdefault(f"today:{self._default_user_id}:abnormalities", {})
 
     def _run(self, coro):
         try:
@@ -2188,15 +2291,8 @@ class TodayScreenService:
         return coro
 
     async def _get_todays_drills_async(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
-        drills_data = await self._async._get_store(user_id, "micro_drills")
-        if not drills_data:
-            drills_data = await self._async._get_store(self._default_user_id, "micro_drills")
-
-        drills = [MicroDrill(**d) for d in drills_data.values()]
-        progress = await self._async._get_store(user_id, "drill_progress")
-        completed_today = progress.get("completed_today", []) if isinstance(progress, dict) else []
-        available = [d for d in drills if str(d.id) not in completed_today]
-        return available[:count]
+        # Use the async service's method which includes seeding logic
+        return await self._async.get_todays_drills(user_id, count=count)
 
     def get_todays_drills(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
         return self._run(self._get_todays_drills_async(user_id, count=count))
@@ -2322,11 +2418,11 @@ class TodayScreenService:
 _service: TodayScreenService | None = None
 
 
-def get_today_screen_service() -> TodayScreenService:
+def get_today_screen_service(redis_client_override: Any = None) -> TodayScreenService:
     """Get or create the Today screen service instance."""
     global _service
     if _service is None:
-        _service = TodayScreenService()
+        _service = TodayScreenService(redis_client=redis_client_override)
     return _service
 
 

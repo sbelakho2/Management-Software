@@ -318,14 +318,20 @@ class SHAPExplainer:
     """
     SHAP-like feature importance explainer.
     
-    Uses a simplified Shapley value approximation.
+    Uses a simplified Shapley value approximation with deterministic
+    random sampling for reproducible explanations.
     """
     
-    def __init__(self, model_predict: Callable[[dict[str, float]], float]):
-        """Initialize explainer with prediction function."""
+    def __init__(
+        self,
+        model_predict: Callable[[dict[str, float]], float],
+        random_seed: int = 42,
+    ):
+        """Initialize explainer with prediction function and random seed."""
         self.model_predict = model_predict
         self._baseline: Optional[dict[str, float]] = None
         self._baseline_prediction: float = 0.5
+        self._rng = random.Random(random_seed)
     
     def set_baseline(self, baseline_features: dict[str, float]) -> None:
         """Set baseline (expected) feature values."""
@@ -404,13 +410,13 @@ class SHAPExplainer:
             without_feature = self._baseline_prediction
             return with_feature - without_feature
         
-        # Sample coalition permutations
+        # Sample coalition permutations using seeded RNG for reproducibility
         for _ in range(n_samples):
             # Random subset size
-            k = random.randint(0, len(other_features))
+            k = self._rng.randint(0, len(other_features))
             
             # Random subset
-            subset = random.sample(other_features, k) if k > 0 else []
+            subset = self._rng.sample(other_features, k) if k > 0 else []
             
             # Compute marginal contribution
             with_feature_dict = {
@@ -461,12 +467,18 @@ class LIMEExplainer:
     """
     LIME-like local interpretable model explanation.
     
-    Creates local linear approximations around predictions.
+    Creates local linear approximations around predictions with
+    deterministic random perturbations for reproducible explanations.
     """
     
-    def __init__(self, model_predict: Callable[[dict[str, float]], float]):
-        """Initialize explainer."""
+    def __init__(
+        self,
+        model_predict: Callable[[dict[str, float]], float],
+        random_seed: int = 42,
+    ):
+        """Initialize explainer with random seed for reproducibility."""
         self.model_predict = model_predict
+        self._rng = random.Random(random_seed)
     
     def explain(
         self,
@@ -522,8 +534,8 @@ class LIMEExplainer:
             distance_sq = 0.0
             
             for name, value in features.items():
-                # Add Gaussian noise
-                noise = random.gauss(0, kernel_width * abs(value + 0.1))
+                # Add Gaussian noise using seeded RNG for reproducibility
+                noise = self._rng.gauss(0, kernel_width * abs(value + 0.1))
                 perturbed[name] = value + noise
                 distance_sq += noise ** 2
             
@@ -943,10 +955,12 @@ class PredictiveWinLossEngine:
         self,
         confidence_level: float = DEFAULT_CONFIDENCE_LEVEL,
         explainer_type: ExplainerType = ExplainerType.SHAP,
+        random_seed: int = 42,
     ):
-        """Initialize engine."""
+        """Initialize engine with optional random seed for reproducibility."""
         self.confidence_level = confidence_level
         self.explainer_type = explainer_type
+        self._random_seed = random_seed
         
         # Components
         self.model = WinLossPredictionModel()
@@ -954,9 +968,9 @@ class PredictiveWinLossEngine:
         self.ci_calculator = ConfidenceIntervalCalculator(confidence_level)
         self.counterfactual_analyzer = CounterfactualAnalyzer(self.model.predict)
         
-        # Explainers
-        self._shap_explainer = SHAPExplainer(self.model.predict)
-        self._lime_explainer = LIMEExplainer(self.model.predict)
+        # Explainers with deterministic seeds for reproducible explanations
+        self._shap_explainer = SHAPExplainer(self.model.predict, random_seed=random_seed)
+        self._lime_explainer = LIMEExplainer(self.model.predict, random_seed=random_seed)
         
         # Data storage
         self._historical_data: list[HistoricalRFQ] = []

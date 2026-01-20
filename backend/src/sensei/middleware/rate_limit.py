@@ -37,63 +37,70 @@ class RateLimitConfig:
 # Default rate limits by endpoint pattern
 # NOTE: Limits are per-user (authenticated) or per-IP (unauthenticated)
 # Tuned for enterprise multi-user ERP with 50-500 concurrent users
+# Production-appropriate values that don't hide performance bottlenecks
 DEFAULT_RATE_LIMITS: Dict[str, RateLimitConfig] = {
     # Auth endpoints - stricter limits to prevent brute force
     # But allow for shared office IPs and legitimate password failures
     "/api/v1/auth/login": RateLimitConfig(
-        requests_per_minute=15,       # 15/min allows retries, typos
-        requests_per_hour=60,         # 60/hr handles office IP sharing
-        burst_size=5,                 # Allow rapid retries
-        block_duration_seconds=180,   # 3 minute block (not 5)
+        requests_per_minute=10,       # 10/min - stricter for security
+        requests_per_hour=30,         # 30/hr - prevents sustained attacks
+        burst_size=3,                 # Allow quick retries for typos
+        block_duration_seconds=300,   # 5 minute block for abuse
     ),
     "/api/v1/auth/register": RateLimitConfig(
-        requests_per_minute=10,       # Admin bulk creation support
-        requests_per_hour=50,         # Onboarding events
-        burst_size=3,
+        requests_per_minute=5,        # Registration should be rare
+        requests_per_hour=20,         # Onboarding events
+        burst_size=2,
         block_duration_seconds=300,   # 5 minute block
     ),
     "/api/v1/auth/password-reset": RateLimitConfig(
-        requests_per_minute=5,        # Slightly relaxed
-        requests_per_hour=20,
+        requests_per_minute=3,        # Very rare operation
+        requests_per_hour=10,
         burst_size=2,
-        block_duration_seconds=300,
+        block_duration_seconds=600,   # 10 minute block for abuse
     ),
     "/api/v1/auth/totp": RateLimitConfig(
-        requests_per_minute=10,       # MFA can require retries
-        requests_per_hour=60,
+        requests_per_minute=6,        # MFA can require retries
+        requests_per_hour=30,
         burst_size=3,
-        block_duration_seconds=180,
+        block_duration_seconds=300,
     ),
-    # Search endpoints - power users search constantly
+    # Search endpoints - still needs to be responsive but not unlimited
     "/api/v1/search": RateLimitConfig(
-        requests_per_minute=120,      # 2/sec for typeahead
-        requests_per_hour=3000,       # Heavy search users
-        burst_size=20,                # Autocomplete bursts
+        requests_per_minute=60,       # 1/sec for typeahead
+        requests_per_hour=1500,       # Reasonable for heavy search users
+        burst_size=10,                # Autocomplete bursts
     ),
-    # Export endpoints - resource intensive but needed
+    # Export endpoints - resource intensive
     "/api/v1/export": RateLimitConfig(
-        requests_per_minute=10,       # Doubled from 5
-        requests_per_hour=100,        # Reports throughout day
+        requests_per_minute=5,        # Exports are heavy
+        requests_per_hour=50,         # Reports throughout day
+        burst_size=2,
+    ),
+    # ML/AI endpoints - CPU intensive, needs tighter control
+    "/api/v1/ml": RateLimitConfig(
+        requests_per_minute=10,       # Reduced for CPU protection
+        requests_per_hour=100,
         burst_size=3,
     ),
-    # ML/AI endpoints - CPU intensive
-    "/api/v1/ml": RateLimitConfig(
-        requests_per_minute=20,
-        requests_per_hour=200,
+    # AI insights - role-based but still needs limits
+    "/api/v1/ai": RateLimitConfig(
+        requests_per_minute=30,       # AI queries can be expensive
+        requests_per_hour=500,
         burst_size=5,
     ),
     # Bulk operations - very resource intensive
     "/api/v1/bulk": RateLimitConfig(
-        requests_per_minute=5,
-        requests_per_hour=30,
+        requests_per_minute=3,
+        requests_per_hour=20,
         burst_size=2,
     ),
     # Default for all other API endpoints
-    # ERP users make many requests: dashboard loads, list views, etc.
+    # Production-appropriate: reveals bottlenecks that dev limits would hide
     "/api/v1": RateLimitConfig(
-        requests_per_minute=200,      # ~3 req/sec sustained
-        requests_per_hour=5000,       # Heavy users
-        burst_size=30,                # Dashboard loads
+        requests_per_minute=60,       # 1 req/sec sustained (down from 200)
+        requests_per_hour=1500,       # Reasonable daily usage (down from 5000)
+        burst_size=15,                # Dashboard loads (down from 30)
     ),
 }
 

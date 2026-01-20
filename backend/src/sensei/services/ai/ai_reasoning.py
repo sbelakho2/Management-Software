@@ -1,7 +1,7 @@
-"""E2E AI Intelligence & Sensei Reasoning Service (Development Plan 20.4).
+"""E2E AI Intelligence & Seeded Reasoning Service (Development Plan 20.4).
 
 This service validates AI 2.0 capabilities:
-- Advanced RAG Quality (Hybrid Search, BGE-Reranker)
+- Seeded Reasoning (Expert Principles from Distilled Books)
 - Continuous Learning Loop (Corrections, Dynamic Few-Shot Injection)
 - Predictive Accuracy (Win-Rate explainability, Anomaly Detection)
 """
@@ -10,24 +10,20 @@ from __future__ import annotations
 
 import numpy as np
 import random
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import logging
 from sensei.services.ai.onnx_text_embeddings import ONNXTextEmbedder
-from typing import TYPE_CHECKING, Optional
+from sensei.services.ai.reasoning_engine import SenseiReasoningEngine, RootCauseSuggestion
+from typing import TYPE_CHECKING, Optional, List, Dict
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-
-class RerankerModel(str, Enum):
-    BGE_RERANKER_BASE = "bge-reranker-base"
-    BGE_RERANKER_LARGE = "bge-reranker-large"
-    COHERE_RERANK = "cohere-rerank"
 
 
 class AnomalyType(str, Enum):
@@ -39,27 +35,6 @@ class AnomalyType(str, Enum):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-@dataclass
-class SearchChunk:
-    """A document chunk from the search index."""
-    id: UUID = field(default_factory=uuid4)
-    content: str = ""
-    source: str = ""
-    relevance_score: float = 0.0
-    rerank_score: float = 0.0
-    metadata: dict = field(default_factory=dict)
-
-
-@dataclass
-class SearchResult:
-    """Hybrid search result with reranking."""
-    query: str = ""
-    chunks: list[SearchChunk] = field(default_factory=list)
-    reranker_model: RerankerModel = RerankerModel.BGE_RERANKER_BASE
-    top_k: int = 3
-    precision_at_k: float = 0.0
 
 
 @dataclass
@@ -113,14 +88,17 @@ class AIReasoningService:
 
     ALLOWED_ROLES = {"admin", "ceo", "exec", "bi", "analyst", "gm", "superuser"}
 
-    def __init__(self, embedder: Optional[ONNXTextEmbedder] = None) -> None:
+    def __init__(self, embedder: Optional[ONNXTextEmbedder] = None, reasoning_engine: Optional[SenseiReasoningEngine] = None) -> None:
         self._search_history: list[SearchResult] = []
         self._corrections: list[Correction] = []
         self._few_shot_examples: list[FewShotExample] = []
         self._predictions: list[PredictionExplanation] = []
         self._anomalies: list[AnomalyEvent] = []
 
-        # Simulated document index.
+        # Seeded reasoning engine
+        self._reasoning_engine = reasoning_engine or SenseiReasoningEngine()
+
+        # Simulated document index (DEPRECATED: Prefer seeded traces)
         self._documents: list[SearchChunk] = []
         self._embeddings: list[np.ndarray] = []
         
@@ -153,160 +131,37 @@ class AIReasoningService:
         if role.lower() not in self.ALLOWED_ROLES:
             raise PermissionError(f"Role '{role}' cannot access AI reasoning services")
 
-    # ---- Advanced RAG Quality ----
+    # ---- Seeded Reasoning (Replacing RAG) ----
 
-    def index_document(
+    def ingest_expert_trace(
         self,
         role: str,
         *,
-        content: str,
-        source: str,
-        metadata: dict | None = None,
-    ) -> SearchChunk:
-        """Index a document for search.
-
-        Args:
-            role: User role performing action.
-            content: Document content.
-            source: Document source identifier.
-            metadata: Additional metadata.
-
-        Returns:
-            Indexed chunk.
-        """
+        principle: str,
+        source_book: str,
+        recommendations: List[str] = None,
+    ) -> Dict[str, Any]:
+        """Ingest an expert reasoning trace from distilled books."""
         self._check_role(role)
+        trace = {
+            "findings": {
+                "distilled_principle": principle,
+                "source_book": source_book
+            },
+            "recommendations": recommendations or []
+        }
+        self._reasoning_engine.load_seeded_knowledge([trace])
+        return trace
 
-        chunk = SearchChunk(
-            content=content,
-            source=source,
-            metadata=metadata or {},
-        )
-        self._documents.append(chunk)
-        
-        # Real embedding
-        embedding = self._embedder.embed_text(content)
-        self._embeddings.append(np.array(embedding))
-        
-        return chunk
-
-    def hybrid_search(
+    def seeded_reasoning(
         self,
         role: str,
         *,
-        query: str,
-        top_k: int = 3,
-        reranker: RerankerModel = RerankerModel.BGE_RERANKER_BASE,
-        alpha: float = 0.5,
-    ) -> SearchResult:
-        """Perform hybrid search with reranking.
-
-        Args:
-            role: User role performing search.
-            query: Search query.
-            top_k: Number of top results to return.
-            reranker: Reranker model to use.
-            alpha: Weight for semantic vs keyword (0.0 to 1.0).
-
-        Returns:
-            Search result with reranked chunks.
-        """
+        problem_statement: str,
+    ) -> List[RootCauseSuggestion]:
+        """Perform seeded reasoning based on ingested expert traces."""
         self._check_role(role)
-
-        if not self._documents:
-            return SearchResult(query=query, top_k=top_k)
-
-        # 1. Semantic Search (Real)
-        query_vec = np.array(self._embedder.embed_text(query))
-        doc_vecs = np.stack(self._embeddings)
-        
-        # Cosine similarity (embeddings are L2 normalized in ONNXTextEmbedder)
-        semantic_scores = np.dot(doc_vecs, query_vec)
-
-        # 2. Keyword Search (FTS-like)
-        query_lower = query.lower()
-        query_words = set(query_lower.split())
-        keyword_scores = []
-        for doc in self._documents:
-            content_lower = doc.content.lower()
-            matching_words = sum(1 for w in query_words if w in content_lower)
-            keyword_score = matching_words / max(len(query_words), 1)
-            keyword_scores.append(keyword_score)
-        keyword_scores = np.array(keyword_scores)
-
-        # 3. Hybrid Combination
-        hybrid_scores = alpha * semantic_scores + (1 - alpha) * keyword_scores
-
-        scored_chunks = []
-        for i, doc in enumerate(self._documents):
-            scored_doc = SearchChunk(
-                id=doc.id,
-                content=doc.content,
-                source=doc.source,
-                relevance_score=float(hybrid_scores[i]),
-                metadata=doc.metadata,
-            )
-            scored_chunks.append(scored_doc)
-
-        # Sort by hybrid score.
-        scored_chunks.sort(key=lambda x: x.relevance_score, reverse=True)
-
-        # 4. Rerank top candidates
-        # For now, simulate reranking with a more stable logic if we don't have a real reranker model.
-        # We'll use a mock rerank boost that depends on both scores.
-        candidates = scored_chunks[:top_k * 2]
-
-        for i, chunk in enumerate(candidates):
-            # In production, this would call a real BGE-Reranker ONNX model.
-            # Here we simulate it by rewarding chunks that have high scores in BOTH methods.
-            idx = next(j for j, d in enumerate(self._documents) if d.id == chunk.id)
-            bonus = 0.1 if (semantic_scores[idx] > 0.5 and keyword_scores[idx] > 0.5) else 0.0
-            chunk.rerank_score = min(1.0, chunk.relevance_score + bonus)
-
-        # Sort by rerank score and take top_k.
-        candidates.sort(key=lambda x: x.rerank_score, reverse=True)
-        top_chunks = candidates[:top_k]
-
-        # Calculate precision at k (based on rerank score threshold).
-        relevant_in_top = sum(1 for c in top_chunks if c.rerank_score > 0.4)
-        precision = relevant_in_top / top_k if top_k > 0 else 0.0
-
-        result = SearchResult(
-            query=query,
-            chunks=top_chunks,
-            reranker_model=reranker,
-            top_k=top_k,
-            precision_at_k=precision,
-        )
-
-        self._search_history.append(result)
-        return result
-
-    def verify_top_k_precision(
-        self,
-        role: str,
-        *,
-        result: SearchResult,
-        expected_sources: list[str],
-    ) -> tuple[bool, float]:
-        """Verify top K results contain expected sources.
-
-        Args:
-            role: User role performing verification.
-            result: Search result to verify.
-            expected_sources: Sources that should be in top K.
-
-        Returns:
-            Tuple of (all_found, precision).
-        """
-        self._check_role(role)
-
-        result_sources = {c.source for c in result.chunks}
-        expected_set = set(expected_sources)
-
-        found = result_sources & expected_set
-        precision = len(found) / len(expected_set) if expected_set else 1.0
-
-        return found == expected_set, precision
+        return self._reasoning_engine.analyze_root_cause(problem_statement)
 
     # ---- Continuous Learning Loop ----
 

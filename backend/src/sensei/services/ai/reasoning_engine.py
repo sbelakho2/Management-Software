@@ -451,6 +451,11 @@ class SocraticMentor:
         self.default_persona = default_persona
         self._prompt_counter = 0
         self._session_prompts: List[ChallengingPrompt] = []
+        self._expert_traces: List[Dict[str, Any]] = []
+
+    def add_expert_trace(self, trace: Dict[str, Any]) -> None:
+        """Add an expert reasoning trace from seeded book knowledge."""
+        self._expert_traces.append(trace)
     
     def generate_prompts(
         self,
@@ -480,6 +485,14 @@ class SocraticMentor:
         key_terms = self._extract_key_terms(content)
         
         for prompt_type in focus_types[:max_prompts]:
+            # Inject expert knowledge if available
+            relevant_expert_prompt = None
+            if self._expert_traces and random.random() > 0.5:
+                trace = random.choice(self._expert_traces)
+                principle = trace.get("findings", {}).get("distilled_principle", "")
+                source = trace.get("findings", {}).get("source_book", "expert knowledge")
+                relevant_expert_prompt = f"Based on '{source}', we should consider: {principle}. How does this apply to your current thinking?"
+
             templates = self.PROMPT_TEMPLATES.get(persona, {}).get(prompt_type, [])
             
             if not templates:
@@ -491,7 +504,7 @@ class SocraticMentor:
             template = random.choice(templates)
             
             # Fill in placeholders
-            question = template
+            question = relevant_expert_prompt or template
             if "{term}" in question and key_terms:
                 question = question.replace("{term}", random.choice(key_terms))
             if "{aspect}" in question:
@@ -721,6 +734,11 @@ class FiveWhysAssistant:
     def __init__(self):
         self._historical_causes: List[Tuple[str, LeanWasteCategory]] = []
         self._suggestion_cache: Dict[str, List[RootCauseSuggestion]] = {}
+        self._expert_traces: List[Dict[str, Any]] = []
+
+    def add_expert_trace(self, trace: Dict[str, Any]) -> None:
+        """Add an expert reasoning trace from seeded book knowledge."""
+        self._expert_traces.append(trace)
     
     def add_historical_cause(
         self,
@@ -779,6 +797,23 @@ class FiveWhysAssistant:
                         evidence_needed=self._get_evidence_needs(pattern["pattern"]),
                     )
                     suggestions.append(suggestion)
+
+        # Match against seeded expert traces (distilled books)
+        for trace in self._expert_traces:
+            findings = trace.get("findings", {})
+            distilled_principle = findings.get("distilled_principle", "")
+            
+            # Simple keyword match for expert traces
+            if any(kw in all_text for kw in distilled_principle.lower().split() if len(kw) > 4):
+                suggestion = RootCauseSuggestion(
+                    why_number=next_why,
+                    suggested_cause=f"Expert Principle: {distilled_principle}",
+                    confidence=0.85,
+                    waste_category=LeanWasteCategory.MUDA, # Default for expert principles
+                    similar_historical_causes=[findings.get("source_book", "Distilled Knowledge")],
+                    evidence_needed=trace.get("recommendations", [])
+                )
+                suggestions.append(suggestion)
         
         # Add general "go deeper" suggestions if few matches
         if len(suggestions) < 2:
@@ -932,6 +967,13 @@ class SenseiReasoningEngine:
         for cause in a3.root_causes:
             for waste in a3.waste_categories:
                 self.five_whys.add_historical_cause(cause, waste)
+
+    def load_seeded_knowledge(self, expert_traces: List[Dict[str, Any]]) -> None:
+        """Load seeded expert traces from distilled books into the reasoning engine."""
+        for trace in expert_traces:
+            self.five_whys.add_expert_trace(trace)
+            self.mentor.add_expert_trace(trace)
+        logger.info(f"Loaded {len(expert_traces)} seeded expert traces into Reasoning Engine.")
     
     def suggest_countermeasures(
         self,

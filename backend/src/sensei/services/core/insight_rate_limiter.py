@@ -57,167 +57,167 @@ class RateLimitConfig:
 
 
 # Default rate limits by role (from most to least privileged)
-# These are VERY generous for factory environments with:
-# - Dashboard auto-refresh every 5-10 seconds
-# - Multiple concurrent users per shift (20-50+ operators)
-# - Real-time monitoring needs
-# - Heavy batch operations during shift changes
-# - Report generation spikes
+# Production-appropriate values that:
+# - Support dashboard auto-refresh (5-10 second intervals)
+# - Allow multiple concurrent users per shift
+# - Enable real-time monitoring needs
+# - Don't hide performance bottlenecks in development
+# - Protect against runaway queries or abuse
 DEFAULT_RATE_LIMITS: dict[str, RateLimitConfig] = {
-    # Admin and CEO - Essentially unlimited for factory oversight
+    # Admin and CEO - High but not unlimited for oversight
     "admin": RateLimitConfig(
-        requests_per_minute=10000,
-        requests_per_hour=100000,
-        burst_allowance=500,
+        requests_per_minute=500,    # Down from 10000 - still 8/sec
+        requests_per_hour=5000,     # Down from 100000
+        burst_allowance=50,         # Down from 500
         burst_window_seconds=5,
     ),
     "ceo": RateLimitConfig(
-        requests_per_minute=10000,
-        requests_per_hour=100000,
-        burst_allowance=500,
+        requests_per_minute=500,    # Down from 10000
+        requests_per_hour=5000,     # Down from 100000
+        burst_allowance=50,         # Down from 500
         burst_window_seconds=5,
     ),
     
-    # Executive roles - Very high limits for real-time dashboards
+    # Executive roles - High limits for real-time dashboards
     "gm": RateLimitConfig(
-        requests_per_minute=5000,
-        requests_per_hour=50000,
-        burst_allowance=250,
+        requests_per_minute=300,    # Down from 5000
+        requests_per_hour=3000,     # Down from 50000
+        burst_allowance=30,         # Down from 250
         burst_window_seconds=10,
     ),
     "exec": RateLimitConfig(
-        requests_per_minute=3000,
-        requests_per_hour=30000,
-        burst_allowance=150,
+        requests_per_minute=200,    # Down from 3000
+        requests_per_hour=2000,     # Down from 30000
+        burst_allowance=20,         # Down from 150
         burst_window_seconds=10,
     ),
     
-    # Department heads - High limits for operational monitoring
+    # Department heads - Reasonable limits for operational monitoring
     "finance": RateLimitConfig(
-        requests_per_minute=2000,
-        requests_per_hour=20000,
-        burst_allowance=100,
+        requests_per_minute=150,    # Down from 2000
+        requests_per_hour=1500,     # Down from 20000
+        burst_allowance=15,         # Down from 100
         burst_window_seconds=10,
     ),
     "hr": RateLimitConfig(
-        requests_per_minute=2000,
-        requests_per_hour=20000,
-        burst_allowance=100,
+        requests_per_minute=150,    # Down from 2000
+        requests_per_hour=1500,     # Down from 20000
+        burst_allowance=15,         # Down from 100
         burst_window_seconds=10,
     ),
     "ops": RateLimitConfig(
-        requests_per_minute=3000,  # Higher for production monitoring
-        requests_per_hour=30000,
-        burst_allowance=150,
+        requests_per_minute=200,    # Down from 3000 - higher for production monitoring
+        requests_per_hour=2000,     # Down from 30000
+        burst_allowance=20,         # Down from 150
         burst_window_seconds=10,
     ),
     "quality": RateLimitConfig(
-        requests_per_minute=3000,  # Higher for SPC monitoring
-        requests_per_hour=30000,
-        burst_allowance=150,
+        requests_per_minute=200,    # Down from 3000 - higher for SPC monitoring
+        requests_per_hour=2000,     # Down from 30000
+        burst_allowance=20,         # Down from 150
         burst_window_seconds=10,
     ),
     "it": RateLimitConfig(
-        requests_per_minute=2000,
-        requests_per_hour=20000,
-        burst_allowance=100,
+        requests_per_minute=150,    # Down from 2000
+        requests_per_hour=1500,     # Down from 20000
+        burst_allowance=15,         # Down from 100
         burst_window_seconds=10,
     ),
     
-    # Specialized roles - Generous limits for daily work
+    # Specialized roles - Appropriate limits for daily work
     "accountant": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "auditor": RateLimitConfig(
-        requests_per_minute=1500,
-        requests_per_hour=15000,
-        burst_allowance=100,
+        requests_per_minute=120,    # Down from 1500
+        requests_per_hour=1200,     # Down from 15000
+        burst_allowance=12,         # Down from 100
         burst_window_seconds=10,
     ),
     "sales_engineer": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "estimator": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "sales": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "purchasing": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "supply_chain": RateLimitConfig(
-        requests_per_minute=1500,  # Higher for inventory monitoring
-        requests_per_hour=15000,
-        burst_allowance=100,
+        requests_per_minute=120,    # Down from 1500 - slightly higher for inventory
+        requests_per_hour=1200,     # Down from 15000
+        burst_allowance=12,         # Down from 100
         burst_window_seconds=10,
     ),
     "logistics": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     "warehouse": RateLimitConfig(
-        requests_per_minute=1500,  # Higher for inventory ops
-        requests_per_hour=15000,
-        burst_allowance=100,
+        requests_per_minute=120,    # Down from 1500 - slightly higher for inventory ops
+        requests_per_hour=1200,     # Down from 15000
+        burst_allowance=12,         # Down from 100
         burst_window_seconds=10,
     ),
     "maintenance": RateLimitConfig(
-        requests_per_minute=2000,  # Higher for equipment monitoring
-        requests_per_hour=20000,
-        burst_allowance=100,
+        requests_per_minute=150,    # Down from 2000 - higher for equipment monitoring
+        requests_per_hour=1500,     # Down from 20000
+        burst_allowance=15,         # Down from 100
         burst_window_seconds=10,
     ),
     "engineering": RateLimitConfig(
-        requests_per_minute=1500,
-        requests_per_hour=15000,
-        burst_allowance=100,
+        requests_per_minute=120,    # Down from 1500
+        requests_per_hour=1200,     # Down from 15000
+        burst_allowance=12,         # Down from 100
         burst_window_seconds=10,
     ),
     
     # Supervisory roles - Good limits for shift management
     "supervisor": RateLimitConfig(
-        requests_per_minute=1500,
-        requests_per_hour=15000,
-        burst_allowance=100,
+        requests_per_minute=120,    # Down from 1500
+        requests_per_hour=1200,     # Down from 15000
+        burst_allowance=12,         # Down from 100
         burst_window_seconds=10,
     ),
     "team_lead": RateLimitConfig(
-        requests_per_minute=1000,
-        requests_per_hour=10000,
-        burst_allowance=75,
+        requests_per_minute=100,    # Down from 1000
+        requests_per_hour=1000,     # Down from 10000
+        burst_allowance=10,         # Down from 75
         burst_window_seconds=10,
     ),
     
-    # Operational roles - Generous for shop floor use
+    # Operational roles - Reasonable for shop floor use
     "operator": RateLimitConfig(
-        requests_per_minute=500,  # Operators may have tablets refreshing often
-        requests_per_hour=5000,
-        burst_allowance=50,
+        requests_per_minute=60,     # Down from 500 - 1 per second
+        requests_per_hour=600,      # Down from 5000
+        burst_allowance=10,         # Down from 50
         burst_window_seconds=10,
     ),
     
-    # Viewer - Still generous for dashboards
+    # Viewer - Limited but functional for dashboards
     "viewer": RateLimitConfig(
-        requests_per_minute=300,
-        requests_per_hour=3000,
+        requests_per_minute=30,     # Down from 300
+        requests_per_hour=300,      # Down from 3000,
         burst_allowance=30,
         burst_window_seconds=10,
     ),

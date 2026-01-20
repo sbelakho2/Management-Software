@@ -43,20 +43,19 @@ from sensei.models.learning import (
     LearningStatus,
     ProgressStatus,
 )
-from sensei.services.ai.reasoning_engine import A3Phase, MentorPersona
-from sensei.services.ai.socratic_pedagogy_rag import SocraticPedagogyRAG
+from sensei.services.ai.reasoning_engine import A3Phase, MentorPersona, SenseiReasoningEngine
 
 
 router = APIRouter()
 
 
 # =============================================================================
-# Socratic Pedagogy RAG
+# Socratic Seeded Coaching
 # =============================================================================
 
 
-class SocraticRAGRequest(BaseModel):
-    """Request for retrieval-augmented Socratic coaching."""
+class SocraticCoachingRequest(BaseModel):
+    """Request for seeded Socratic coaching."""
 
     query: str = Field(..., min_length=1, max_length=2000)
     phase: A3Phase = Field(default=A3Phase.CURRENT_STATE)
@@ -67,7 +66,7 @@ class SocraticRAGRequest(BaseModel):
     max_prompts: int = Field(default=3, ge=1, le=5)
 
 
-class SocraticRAGSource(BaseModel):
+class SocraticCoachingSource(BaseModel):
     """A retrieved learning unit reference."""
 
     unit_id: UUID
@@ -78,8 +77,8 @@ class SocraticRAGSource(BaseModel):
     relevance_score: float
 
 
-class SocraticRAGPrompt(BaseModel):
-    """A Socratic prompt derived from the reasoning engine."""
+class SocraticCoachingPrompt(BaseModel):
+    """A Socratic prompt derived from the seeded reasoning engine."""
 
     id: str
     prompt_type: str
@@ -91,12 +90,12 @@ class SocraticRAGPrompt(BaseModel):
     follow_up_prompts: list[str]
 
 
-class SocraticRAGResponse(BaseModel):
-    """Response for Socratic pedagogy RAG coaching."""
+class SocraticCoachingResponse(BaseModel):
+    """Response for Socratic pedagogy coaching."""
 
     query: str
-    sources: list[SocraticRAGSource]
-    prompts: list[SocraticRAGPrompt]
+    sources: list[SocraticCoachingSource]
+    prompts: list[SocraticCoachingPrompt]
 
 
 # =============================================================================
@@ -1427,53 +1426,64 @@ async def delete_path(
 
 
 @router.post(
-    "/socratic-rag",
-    response_model=APIResponse[SocraticRAGResponse],
-    summary="Socratic RAG coaching",
+    "/socratic-coaching",
+    response_model=APIResponse[SocraticCoachingResponse],
+    summary="Socratic Seeded Coaching",
     description=(
-        "Retrieve relevant published learning units and generate Socratic prompts "
-        "to guide the user toward evidence-based thinking."
+        "Use the Seeded Reasoning Engine to generate Socratic prompts "
+        "and recommend relevant learning units to guide the user."
     ),
 )
-async def socratic_rag(
-    data: SocraticRAGRequest,
+async def socratic_coaching(
+    data: SocraticCoachingRequest,
     db: DBSession,
     current_user: CurrentUser,
-) -> APIResponse[SocraticRAGResponse]:
-    # Retrieve candidate units (published only).
+) -> APIResponse[SocraticCoachingResponse]:
+    # 1. Retrieve candidate units (Simple keyword match for 'sources').
     stmt = select(LearningUnit).where(LearningUnit.is_published == True)  # noqa: E712
     if data.category:
         stmt = stmt.where(LearningUnit.category == data.category.value)
-    if data.difficulty:
-        stmt = stmt.where(LearningUnit.difficulty == data.difficulty.value)
-
+    
     result = await db.execute(stmt)
-    units = result.scalars().all()
+    all_units = result.scalars().all()
+    
+    # Simple relevance scoring
+    scored_units = []
+    query_terms = set(data.query.lower().split())
+    for unit in all_units:
+        content_terms = set((unit.title + " " + (unit.content or "")).lower().split())
+        match_count = len(query_terms & content_terms)
+        if match_count > 0:
+            relevance = match_count / len(query_terms)
+            scored_units.append((unit, relevance))
+    
+    scored_units.sort(key=lambda x: x[1], reverse=True)
+    top_units = scored_units[:data.max_sources]
 
-    coach = SocraticPedagogyRAG()
-    retrieved, prompts = coach.coach(
-        query=data.query,
-        units=units,
+    # 2. Generate Socratic Prompts from Reasoning Engine (Seeded Knowledge)
+    engine = SenseiReasoningEngine()
+    # In a real scenario, we would load expert traces from DB here
+    prompts = engine.generate_socratic_prompts(
+        content=data.query,
         phase=data.phase,
-        persona=data.persona,
-        max_sources=data.max_sources,
+        persona=data.persona or MentorPersona.THE_SENSEI,
         max_prompts=data.max_prompts,
     )
 
     sources = [
-        SocraticRAGSource(
-            unit_id=item.unit.id,
-            code=item.unit.code,
-            title=item.unit.title,
-            category=item.unit.category,
-            difficulty=item.unit.difficulty,
-            relevance_score=item.relevance_score,
+        SocraticCoachingSource(
+            unit_id=u.id,
+            code=u.code,
+            title=u.title,
+            category=u.category,
+            difficulty=u.difficulty,
+            relevance_score=rel,
         )
-        for item in retrieved
+        for u, rel in top_units
     ]
 
     prompt_models = [
-        SocraticRAGPrompt(
+        SocraticCoachingPrompt(
             id=p.id,
             prompt_type=p.prompt_type.value,
             question=p.question,
@@ -1487,7 +1497,7 @@ async def socratic_rag(
     ]
 
     return build_response(
-        SocraticRAGResponse(
+        SocraticCoachingResponse(
             query=data.query,
             sources=sources,
             prompts=prompt_models,

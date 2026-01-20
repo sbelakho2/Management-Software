@@ -254,7 +254,9 @@ class TestDatabaseTuner:
         
         assert "CREATE INDEX" in sql
         assert "users" in sql
-        assert rec.created is True
+        # Note: created remains False since create_index only generates SQL
+        # The apply_recommendation method actually creates the index and sets created=True
+        assert rec.created is False
     
     def test_drop_unused_index(self, db_tuner):
         """Test DROP INDEX statement generation."""
@@ -749,18 +751,20 @@ class TestSenseiAutopilot:
         assert autopilot.backup is not None
         assert autopilot.models is not None
     
-    def test_run_maintenance_cycle(self, autopilot):
+    @pytest.mark.asyncio
+    async def test_run_maintenance_cycle(self, autopilot):
         """Test running maintenance cycle."""
-        results = autopilot.run_maintenance_cycle()
+        results = await autopilot.run_maintenance_cycle()
         
         assert "started_at" in results
         assert "completed_at" in results
         assert "steps" in results
         assert len(results["steps"]) >= 3
     
-    def test_maintenance_cycle_includes_backup(self, autopilot):
+    @pytest.mark.asyncio
+    async def test_maintenance_cycle_includes_backup(self, autopilot):
         """Test maintenance cycle creates backup."""
-        results = autopilot.run_maintenance_cycle()
+        results = await autopilot.run_maintenance_cycle()
         
         # Should have backup step
         backup_step = next(

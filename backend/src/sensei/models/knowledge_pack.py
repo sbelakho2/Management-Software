@@ -205,9 +205,9 @@ class KnowledgeChunk(Base, TimestampMixin):
         default=list,
     )
     
-    # Vector Embedding (1536 dimensions for OpenAI ada-002 or similar)
+    # Vector Embedding (384 dimensions for MiniLM)
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(1536),
+        Vector(384),
         nullable=True,
     )
     

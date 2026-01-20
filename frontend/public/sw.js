@@ -1,12 +1,22 @@
 /**
  * SENSEI Manufacturing PWA Service Worker
  * Provides offline caching, background sync, and push notifications
+ * 
+ * Cache versioning strategy: Update CACHE_VERSION on each deploy
+ * to trigger cache invalidation and refresh.
  */
 
-const CACHE_NAME = 'sensei-cache-v1';
-const STATIC_CACHE_NAME = 'sensei-static-v1';
-const DYNAMIC_CACHE_NAME = 'sensei-dynamic-v1';
-const API_CACHE_NAME = 'sensei-api-v1';
+// Cache version - UPDATE THIS ON EACH DEPLOY
+const CACHE_VERSION = 'v2';
+const BUILD_TIMESTAMP = '2026-01-19T00:00:00Z'; // Set by build process
+
+const CACHE_NAME = `sensei-cache-${CACHE_VERSION}`;
+const STATIC_CACHE_NAME = `sensei-static-${CACHE_VERSION}`;
+const DYNAMIC_CACHE_NAME = `sensei-dynamic-${CACHE_VERSION}`;
+const API_CACHE_NAME = `sensei-api-${CACHE_VERSION}`;
+
+// All cache names that should be kept (for cleanup)
+const CURRENT_CACHES = [CACHE_NAME, STATIC_CACHE_NAME, DYNAMIC_CACHE_NAME, API_CACHE_NAME];
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -15,6 +25,8 @@ const STATIC_ASSETS = [
   '/offline',
   '/icons/icon-192x192.svg',
   '/icons/icon-512x512.svg',
+  '/today', // Pre-cache critical routes
+  '/login',
 ];
 
 // API routes to cache with network-first strategy
@@ -60,11 +72,8 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           cacheNames
             .filter((name) => {
-              // Delete old versions of our caches
-              return name.startsWith('sensei-') && 
-                     name !== STATIC_CACHE_NAME && 
-                     name !== DYNAMIC_CACHE_NAME &&
-                     name !== API_CACHE_NAME;
+              // Delete any cache that starts with 'sensei-' but isn't in our current list
+              return name.startsWith('sensei-') && !CURRENT_CACHES.includes(name);
             })
             .map((name) => {
               console.log('[SW] Deleting old cache:', name);
@@ -75,6 +84,18 @@ self.addEventListener('activate', (event) => {
       .then(() => {
         // Take control of all pages immediately
         return self.clients.claim();
+      })
+      .then(() => {
+        // Notify all clients about the update
+        return self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'SW_UPDATED',
+              version: CACHE_VERSION,
+              timestamp: BUILD_TIMESTAMP,
+            });
+          });
+        });
       })
   );
 });

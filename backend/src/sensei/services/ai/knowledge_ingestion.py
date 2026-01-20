@@ -400,6 +400,8 @@ class QualityFilter:
             r"follow us on",
             r"^advertisement$",
             r"sponsored content",
+            r"restore access to 500,000\+ books",
+            r"controlled digital lending",
         ]
         
         text_lower = text.lower()
@@ -599,6 +601,14 @@ class KnowledgePackIngestionService:
             else:
                 normalized = self.content_normalizer.normalize_plain_text(content_bytes.decode("utf-8"))
             
+            # Clean null bytes which PostgreSQL doesn't support in text fields
+            normalized = normalized.replace("\x00", "")
+            raw_content_str = content_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
+            
+            # Check for restricted access placeholders (Archive.org)
+            if "restore access to 500,000" in normalized.lower() or "controlled digital lending" in normalized.lower():
+                return None, f"Restricted content placeholder detected: {url}"
+            
             # Calculate content hash
             content_hash = hashlib.sha256(normalized.encode()).hexdigest()
             
@@ -618,7 +628,7 @@ class KnowledgePackIngestionService:
                 license_text=license_text,
                 attribution_text=attribution,
                 original_format=format_type,
-                raw_content=content_bytes.decode("utf-8", errors="ignore"),
+                raw_content=raw_content_str,
                 normalized_content=normalized,
                 word_count=len(normalized.split()),
                 content_hash=content_hash,
@@ -679,7 +689,7 @@ class KnowledgePackIngestionService:
             # Create chunk
             chunk = KnowledgeChunk(
                 document_id=document.id,
-                chunk_text=chunk_dict["chunk_text"],
+                chunk_text=chunk_dict["chunk_text"].replace("\x00", ""),
                 chunk_index=chunk_dict["chunk_index"],
                 heading=chunk_dict.get("heading"),
                 parent_heading=chunk_dict.get("parent_heading"),

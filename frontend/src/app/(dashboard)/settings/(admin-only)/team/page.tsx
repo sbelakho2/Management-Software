@@ -377,8 +377,8 @@ export default function TeamSettingsPage() {
       <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-2 lg:grid-cols-4">
         {Object.entries(roleConfig).map(([key, cfg]) => (
           <div key={key} className="p-6 bg-rams-module hover:bg-rams-panel transition-none group cursor-help">
-            <Badge variant={cfg.variant} size="sm" className="mb-4 h-4 px-1 rounded-none text-[8px] font-black uppercase tracking-widest">{cfg.label.toUpperCase()}</Badge>
-            <p className="text-[10px] font-medium text-muted-foreground/60 leading-relaxed uppercase">{cfg.description}</p>
+            <Badge variant={cfg.variant} size="sm" className="mb-4 h-4 px-1 rounded-none text-[8px] font-black uppercase tracking-widest">{t(cfg.labelKey).toUpperCase()}</Badge>
+            <p className="text-[10px] font-medium text-muted-foreground/60 leading-relaxed uppercase">{t(cfg.descriptionKey)}</p>
           </div>
         ))}
       </div>

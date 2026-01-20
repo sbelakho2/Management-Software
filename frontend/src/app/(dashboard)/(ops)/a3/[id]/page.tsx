@@ -23,6 +23,7 @@ import { useA3Store } from '@/stores/a3';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useI18n } from '@/contexts/i18n-context';
+import { A3WorkflowActions } from '@/components/a3/workflow-actions';
 
 export default function A3DetailsPage() {
   const { t } = useI18n();
@@ -102,12 +103,23 @@ export default function A3DetailsPage() {
             <Download className="h-4 w-4 mr-2" />
             {t('a3.detail.exportProtocol') || 'Export Protocol'}
           </Button>
-          <Button size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black" onClick={() => setIsEditing(true)}>
+          <Button size="lg" className="rounded-rams-sm bg-rams-orange text-black font-black" onClick={() => router.push(`/a3/${id}/edit`)}>
             <Edit className="h-4 w-4 mr-2" />
             {t('a3.detail.refineAnalysis') || 'Refine Analysis'}
           </Button>
         </div>
       </div>
+
+      {/* Workflow Actions Bar */}
+      <Card className="rounded-rams-sm border-rams-line bg-rams-module/50">
+        <CardContent className="py-4">
+          <A3WorkflowActions 
+            a3Id={id as string} 
+            currentStatus={a3.status} 
+            onStatusChange={loadA3} 
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-8 lg:grid-cols-3">
         <Card className="lg:col-span-2 rounded-rams-sm border-rams-line bg-rams-module">

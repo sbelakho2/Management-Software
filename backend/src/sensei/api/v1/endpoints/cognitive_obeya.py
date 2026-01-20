@@ -44,10 +44,14 @@ async def get_obeya_dashboard(
         unit=""
     )
     
-    # Delivery: On-time delivery rate (simplified)
-    total_wo = await db.scalar(select(func.count(WorkOrder.id)))
+    # Delivery: On-time delivery rate (properly calculated by comparing due_date vs actual_end_date)
+    total_wo = await db.scalar(select(func.count(WorkOrder.id)).where(WorkOrder.status == "completed"))
     on_time_wo = await db.scalar(
-        select(func.count(WorkOrder.id)).where(WorkOrder.status == "completed") # Placeholder logic
+        select(func.count(WorkOrder.id)).where(
+            WorkOrder.status == "completed",
+            # On-time means actual_end_date <= due_date, or due_date is null (no deadline)
+            (WorkOrder.actual_end_date <= WorkOrder.due_date) | (WorkOrder.due_date == None)
+        )
     )
     otd_rate = (on_time_wo / total_wo * 100) if total_wo and total_wo > 0 else 95.0
     await obeya.record_metric(

@@ -164,7 +164,8 @@ class TFIDFScorer:
     def _tokenize(self, text: str) -> List[str]:
         """Tokenize text into terms."""
         text = text.lower()
-        terms = re.findall(r'[a-z0-9]+', text)
+        # Use \w+ for unicode-aware word matching
+        terms = re.findall(r'\w+', text)
         # Remove stopwords
         stopwords = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
                      'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
@@ -243,22 +244,36 @@ class ONNXCrossEncoder:
         self._init_attempted = True
         
         try:
-            import onnxruntime as ort
-            import torch
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
-            
+            try:
+                import onnxruntime as ort
+                from transformers import AutoTokenizer
+            except ImportError as e:
+                logger.warning(f"Required libraries for ONNX not found: {e}")
+                self._use_fallback = True
+                self._is_loaded = True
+                return False
+
             self._config.cache_dir.mkdir(parents=True, exist_ok=True)
             model_slug = self._config.model_id.replace("/", "__")
             onnx_path = self._config.cache_dir / f"{model_slug}_reranker.onnx"
             quant_path = self._config.cache_dir / f"{model_slug}_reranker.int8.onnx"
             
-            tokenizer = AutoTokenizer.from_pretrained(self._config.model_id)
-            
             target_path = quant_path if self._config.quantize_int8 else onnx_path
             
             if not target_path.exists():
-                logger.info(f"Exporting cross-encoder model to ONNX: {self._config.model_id}")
+                logger.info(f"Attempting to export cross-encoder model to ONNX: {self._config.model_id}")
                 
+                try:
+                    import torch
+                    from transformers import AutoModelForSequenceClassification
+                except ImportError:
+                    logger.warning("torch or transformers not available for ONNX export, using fallback")
+                    self._use_fallback = True
+                    self._is_loaded = True
+                    return False
+
+                tokenizer = AutoTokenizer.from_pretrained(self._config.model_id)
+
                 # Export base ONNX if missing
                 if not onnx_path.exists():
                     model = AutoModelForSequenceClassification.from_pretrained(self._config.model_id)
@@ -311,6 +326,9 @@ class ONNXCrossEncoder:
                         weight_type=QuantType.QInt8,
                         optimize_model=True,
                     )
+
+            # Load tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(self._config.model_id)
             
             # Load the session
             sess = ort.InferenceSession(

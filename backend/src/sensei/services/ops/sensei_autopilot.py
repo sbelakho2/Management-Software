@@ -18,11 +18,14 @@ from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any, Callable
 import hashlib
+import logging
 import os
 import re
 import threading
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -427,10 +430,35 @@ class DatabaseTuner:
             f"ON {recommendation.table_name} ({cols})"
         )
         
-        recommendation.created = True
-        self._created_indexes.append(index_name)
-        
         return sql
+
+    async def apply_recommendation(self, db: Any, recommendation: IndexRecommendation) -> bool:
+        """Apply an index recommendation to the database."""
+        sql = self.create_index(recommendation)
+        logger.info(f"Applying index recommendation: {sql}")
+        try:
+            # We assume db is an AsyncSession
+            if hasattr(db, "execute"):
+                from sqlalchemy import text
+                await db.execute(text(sql))
+                # Note: We don't commit here, usually handled by caller or session middleware
+                # but for DDL, some DBs require it or auto-commit.
+            
+            recommendation.created = True
+            self._created_indexes.append(f"idx_{recommendation.table_name}_{'_'.join(recommendation.column_names)}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to apply index recommendation: {str(e)}")
+            return False
+
+    async def apply_high_priority_recommendations(self, db: Any) -> int:
+        """Apply all high-priority recommendations."""
+        recommendations = [r for r in self._index_recommendations if r.priority == 1 and not r.created]
+        count = 0
+        for rec in recommendations:
+            if await self.apply_recommendation(db, rec):
+                count += 1
+        return count
     
     def drop_unused_index(self, index_name: str, table_name: str) -> str:
         """Generate DROP INDEX statement."""
@@ -550,14 +578,20 @@ class StorageManager:
     def find_orphaned_files(
         self,
         db_references: set[str],
+        min_age_days: int = 7,
     ) -> list[StorageItem]:
-        """Find files not referenced in database."""
+        """Find files not referenced in database with a safety grace period."""
         orphans = []
+        now = datetime.now(timezone.utc)
+        grace_period = timedelta(days=min_age_days)
         
         for item in self._storage_items:
+            # Only consider items older than the grace period to avoid
+            # deleting files that were just uploaded but not yet referenced in DB
             if item.item_id not in db_references:
-                item.is_orphaned = True
-                orphans.append(item)
+                if (now - item.created_at) > grace_period:
+                    item.is_orphaned = True
+                    orphans.append(item)
         
         return orphans
     
@@ -1157,8 +1191,8 @@ class SenseiAutopilot:
         """Get model lifecycle manager."""
         return self._model_manager
     
-    def run_maintenance_cycle(self) -> dict[str, Any]:
-        """Run a complete maintenance cycle."""
+    async def run_maintenance_cycle(self, db: Any = None, apply_indexes: bool = False) -> dict[str, Any]:
+        """Run a complete maintenance cycle with autonomous actions."""
         results = {
             "started_at": datetime.now(timezone.utc).isoformat(),
             "steps": [],
@@ -1171,11 +1205,16 @@ class SenseiAutopilot:
             "bloated_tables": len(bloated),
         })
         
-        # 2. Generate index recommendations
+        # 2. Generate and optionally apply index recommendations
         recommendations = self._db_tuner.generate_recommendations()
+        applied_count = 0
+        if apply_indexes and db:
+            applied_count = await self._db_tuner.apply_high_priority_recommendations(db)
+            
         results["steps"].append({
             "step": "index_analysis",
             "recommendations": len(recommendations),
+            "applied_count": applied_count,
         })
         
         # 3. Check storage
@@ -1183,6 +1222,7 @@ class SenseiAutopilot:
         results["steps"].append({
             "step": "storage_check",
             "total_items": summary["total_items"],
+            "ingestion_paused": summary["ingestion_paused"],
         })
         
         # 4. Backup if needed

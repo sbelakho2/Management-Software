@@ -22,7 +22,7 @@ from enum import Enum
 from typing import Optional, Iterable
 from uuid import UUID, uuid4
 
-from sensei.services.ai.advanced_rag import AdvancedRAGService, RetrievalStrategy
+from sensei.services.ai.reasoning_engine import SenseiReasoningEngine, A3Phase, MentorPersona
 
 
 # =============================================================================
@@ -511,8 +511,8 @@ class ManagementReviewPack:
 class QMSQualityService:
     """In-memory Advanced QMS service."""
 
-    def __init__(self, rag_service: Optional[AdvancedRAGService] = None) -> None:
-        self.rag_service = rag_service
+    def __init__(self, reasoning_engine: Optional[SenseiReasoningEngine] = None) -> None:
+        self.reasoning_engine = reasoning_engine
         self.documents: dict[UUID, QMSDocument] = {}
         self.revisions: dict[UUID, QMSDocumentRevision] = {}
         self.external_documents: dict[UUID, ExternalDocument] = {}
@@ -1431,37 +1431,30 @@ class QMSQualityService:
 
     async def suggest_8d_insights(self, complaint_id: UUID) -> dict[str, Any]:
         """
-        Use RAG to suggest root causes and corrective actions based on historical complaints/8Ds.
+        Use Seeded Reasoning Engine to suggest root causes and corrective actions.
         """
         self._require(complaint_id in self.complaints, "complaint not found")
         c = self.complaints[complaint_id]
 
-        if not self.rag_service:
-            return {"suggestions": [], "message": "RAG service not available"}
+        if not self.reasoning_engine:
+            return {"suggestions": [], "message": "Reasoning engine not available"}
 
-        # Search for similar historical quality issues
-        query = f"Historical root causes and corrective actions for: {c.title} {c.description}"
-        results = await self.rag_service.retrieve(
-            query=query,
-            strategy=RetrievalStrategy.HYBRID,
-            limit=5,
-        )
-
-        # Synthesize suggestions from historical context
-        # In a real implementation, we would pass these chunks to a local LLM.
-        # Here we return the raw relevant historical context for human review.
-        suggestions = []
-        for res in results:
-            # Assume metadata contains the historical resolution
-            source = res.metadata.get("source", "historical_record")
-            text = res.text
-            suggestions.append({"source": source, "content": text})
+        # Use reasoning engine for analysis
+        problem_statement = f"{c.title}: {c.description}"
+        suggestions = self.reasoning_engine.analyze_root_cause(problem_statement)
 
         return {
             "complaint_id": complaint_id,
-            "suggestions": suggestions,
-            "suggested_root_cause": suggestions[0]["content"] if suggestions else "No historical match found",
-            "suggested_actions": [s["content"] for s in suggestions[:3]],
+            "suggestions": [
+                {
+                    "content": s.suggested_cause,
+                    "confidence": s.confidence,
+                    "waste_category": s.waste_category.value,
+                    "evidence_needed": s.evidence_needed
+                } for s in suggestions
+            ],
+            "suggested_root_cause": suggestions[0].suggested_cause if suggestions else "No expert patterns matched",
+            "suggested_actions": [s.suggested_cause for s in suggestions[:3]],
         }
 
     def generate_management_review_pack(self, period_start: date, period_end: date, prepared_by: str, notes: str = "") -> ManagementReviewPack:

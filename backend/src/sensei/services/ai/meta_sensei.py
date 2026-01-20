@@ -127,7 +127,7 @@ class StandardTemplate:
 
 @dataclass
 class KnowledgeChunk:
-    """A chunk of knowledge in the RAG store."""
+    """A chunk of knowledge in the local seeded knowledge store."""
     id: str
     content: str
     embedding: list[float]

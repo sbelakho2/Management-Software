@@ -9,7 +9,7 @@ Enterprise manufacturing management platform grounded in Lean/TPS principles. Se
 - **Quality**: NCR/CAPA workflow, inspections, audits, traceability
 - **Project Management**: Obeya room, A3 problem solving, milestones, backlog
 - **Today Screen**: Operations command center (priorities, risks, commitments)
-- **AI/ML**: Semantic search, document intelligence, edge inference, coaching
+- **AI/ML**: Seeded reasoning, document intelligence, edge inference, coaching
 - **PWA**: Offline-ready experience for shop-floor teams
 
 ## Architecture

@@ -1257,7 +1257,7 @@
           "avgOrder": "Pedido promedio",
           "openRfqs": "RFQ abiertas",
           "totalRevenue": "Total Ingresos",
-          "totalRfqs": "Total de RFQ",
+          "pipelineMagnitude": "Magnitud del embudo",
           "winRate": "Tasa de éxito"
         },
         "viewAll": "Ver todo",
@@ -1613,9 +1613,9 @@
       "sections": {
         "delete": "Eliminar nodo",
         "edit": "Editar parámetros",
-        "overview": "Resumen financiero"
-      },
+        "overview": "Resumen financiero",
         "view": "Ver especificación"
+      },
       "stats": {
         "cashPosition": "Posición de caja",
         "ebitdaMargin": "Margen EBITDA",
@@ -2075,17 +2075,17 @@
           "title": "p. ej., piezas de precisión para proyecto aeroespacial"
         },
         "priority": {
-          "high": "PRIORIDAD_ALTA",
-          "low": "PRIORIDAD_BAJA",
-          "medium": "PRIORIDAD_MEDIA",
-          "urgent": "URGENTE"
+          "high": "Prioridad alta",
+          "low": "Prioridad baja",
+          "medium": "Prioridad media",
+          "urgent": "Urgente"
         },
-        "station": "ESTACIÓN: PIPELINE-ENTRY-01",
+        "station": "Estación: PIPELINE-ENTRY-01",
         "subtitle": "Nueva RFQ",
         "title": "Nueva RFQ",
         "toast": {
           "rfqCreateFailed": "No se pudo crear la RFQ. Inténtalo de nuevo.",
-          "rfqCreated": "RFQ Creado",
+          "rfqCreated": "RFQ creada",
           "rfqCreatedDescription": "La nueva RFQ se creó correctamente."
         },
         "validation": {
@@ -2113,7 +2113,7 @@
         "submitted": "Enviada",
         "won": "Ganada"
       },
-      "station": "ESTACIÓN: PIPELINE-01",
+      "station": "Estación: PIPELINE-01",
       "stats": {
         "acrossRfqs": "En {{count}} RFQ",
         "activeIntelNodes": "Nodos de inteligencia activos",
@@ -2122,9 +2122,9 @@
         "criticalThresholds": "Umbrales críticos",
         "openRfqs": "RFQs abiertas",
         "optimalRangeIdentified": "Rango óptimo identificado",
-        "pipelineMagnitude": "Magnitud del pipeline",
-        "pipelineValue": "Valor del pipeline",
-        "protocolAlphaVariance": "Protocolo: VARIANZA_ALPHA",
+        "pipelineMagnitude": "Magnitud del embudo",
+        "pipelineValue": "Valor del embudo",
+        "protocolAlphaVariance": "Protocolo: varianza alpha",
         "responseVelocity": "Velocidad de respuesta"
       },
       "statusBadges": {
@@ -2176,7 +2176,7 @@
         "statusState": "Estado",
         "workCenter": "Centro de trabajo"
       },
-      "protocolProductionNode": "PROTOCOLO: PRODUCTION_NODE",
+      "protocolProductionNode": "Protocolo: nodo de producción",
       "station": "ESTACIÓN: PRODUCCIÓN-01",
       "stats": {
         "activeOrders": "Órdenes activas",
@@ -2359,10 +2359,10 @@
         "nodeInjectionDesc": "Inyecta nodos de producto directamente en el registro",
         "orDefineManualSpec": "O definir especificación manual...",
         "priorities": {
-          "high": "PRIORIDAD_ALTA",
-          "low": "PRIORIDAD_BAJA",
-          "medium": "PRIORIDAD_MEDIA",
-          "urgent": "URGENTE"
+          "high": "Prioridad alta",
+          "low": "Prioridad baja",
+          "medium": "Prioridad media",
+          "urgent": "Urgente"
         },
         "priorityLayer": "Capa de prioridad",
         "requisitionParameters": "Parámetros de requisición",
@@ -2372,17 +2372,17 @@
         "savedAsDraft": "Requisición guardada como borrador",
         "searchProductNodes": "Buscar nodos de producto...",
         "selectProductNode": "Seleccionar nodo de producto...",
-        "station": "ESTACIÓN: REQ-ENTRY-01",
-        "submitForApproval": "ENVIAR_PARA_APROBACIÓN",
+        "station": "Estación: REQ-ENTRY-01",
+        "submitForApproval": "Enviar para aprobación",
         "submittedForApproval": "Requisición enviada para aprobación",
         "subtitle": "Ingreso de demanda de compras",
         "success": "Éxito",
         "tableHeaders": {
-          "estPrice": "PRECIO_EST",
-          "magnitude": "MAGNITUD",
+          "estPrice": "Precio estimado",
+          "magnitude": "Magnitud",
           "productNodeDesc": "Nodo de producto / descripción",
-          "subtotal": "SUBTOTAL",
-          "uom": "UDM"
+          "subtotal": "Subtotal",
+          "uom": "UdM"
         },
         "thresholdDate": "Fecha umbral (obligatorio para)",
         "title": "Iniciar protocolo de requisición",
@@ -2696,7 +2696,7 @@
       "stats": {
         "avgMargin": "Margen promedio",
         "pendingApproval": "Pendientes de aprobación",
-        "pipelineValue": "Valor del pipeline",
+        "pipelineValue": "Valor del embudo",
         "sentToCustomer": "Enviada al cliente",
         "sentToCustomers": "Enviadas a clientes"
       },
@@ -2923,11 +2923,11 @@
         "configureMetadata": "Configurar metadatos",
         "createAssignment": "Crear asignación",
         "descriptionPlaceholder": "Describe la tarea...",
-        "discard": "DESCARTAR",
+        "discard": "Descartar",
         "protocolParameters": "Parámetros del protocolo",
         "station": "ESTACIÓN: TAREA-ENTRY-01",
         "subtitle": "Crear tarea",
-        "synchronizing": "SINCRONIZANDO...",
+        "synchronizing": "Sincronizando...",
         "taskCreateError": "No se pudo crear la tarea.",
         "taskCreated": "Protocolo de tarea creado",
         "taskCreatedDescription": "La tarea se asignó correctamente.",
@@ -3656,14 +3656,14 @@
       "emailNotifications": "Notificaciones por correo",
       "inAppNotifications": "Notificaciones en la app",
       "inboundRfqSignal": "Señal de RFQ entrante",
-      "inboundRfqSignalDesc": "Cuando un nuevo RFQ entra en el pipeline o se asigna",
+      "inboundRfqSignalDesc": "Cuando una nueva RFQ entra en el embudo o se asigna",
       "inspectionThreshold": "Umbral de inspección",
       "inspectionThresholdDesc": "Recordatorios para próximas sincronizaciones de compuertas de calidad",
       "marketing": "Comunicaciones de marketing",
       "marketingDesc": "Noticias de productos y contenido promocional",
       "mentions": "Menciones y respuestas",
       "mentionsDesc": "Recibe notificaciones cuando alguien te menciona",
-      "pipelineCommerce": "Señales de pipeline y comercio",
+      "pipelineCommerce": "Señales de embudo y comercio",
       "productionFloorTelemetry": "Telemetría del piso de producción",
       "pushNotifications": "Notificaciones push",
       "qualityAssuranceAlerts": "Alertas de aseguramiento de calidad",
@@ -3688,46 +3688,46 @@
       }
     },
     "roleInsights": {
-      "title": "Asignaciones de insights por rol",
-      "subtitle": "Configura a qué insights de IA puede acceder cada rol",
+      "title": "Asignaciones de perspectivas por rol",
+      "subtitle": "Configura a qué perspectivas de IA puede acceder cada rol",
       "export": "Exportar",
       "saveChanges": "Guardar cambios",
-      "exportFilePrefix": "insights-por-rol",
-      "infoTitle": "Sobre el control de acceso a insights por rol",
-      "infoBody": "Los insights de IA se organizan por nivel de sensibilidad. El CEO y el administrador tienen acceso total (bloqueado). Otros roles pueden personalizarse según las necesidades de la organización. Los cambios se auditan y se pueden exportar para cumplimiento.",
+      "exportFilePrefix": "perspectivas-por-rol",
+      "infoTitle": "Sobre el control de acceso a perspectivas por rol",
+      "infoBody": "Las perspectivas de IA se organizan por nivel de sensibilidad. El CEO y el administrador tienen acceso total (bloqueado). Otros roles pueden personalizarse según las necesidades de la organización. Los cambios se auditan y se pueden exportar para cumplimiento.",
       "tabs": {
         "matrix": "Matriz de acceso",
         "roles": "Por rol",
         "audit": "Registro de auditoría"
       },
       "filters": {
-        "searchPlaceholder": "Buscar insights...",
+        "searchPlaceholder": "Buscar perspectivas...",
         "sensitivityPlaceholder": "Filtrar por sensibilidad",
         "rolePlaceholder": "Filtrar por rol",
         "allSensitivities": "Todas las sensibilidades",
         "allRoles": "Todos los roles"
       },
       "table": {
-        "insightHeader": "Insight"
+        "insightHeader": "Perspectiva"
       },
       "tooltip": {
         "level": "Nivel: {level}",
         "locked": "{role} tiene acceso total (bloqueado)"
       },
       "roleCard": {
-        "insightsAccess": "Acceso a insights",
+        "insightsAccess": "Acceso a perspectivas",
         "levelBadge": "Nivel {level}",
         "fullAccess": "Acceso total",
         "editMappings": "Editar asignaciones"
       },
       "audit": {
         "title": "Registro de cambios",
-        "description": "Rastrea todos los cambios realizados en las asignaciones de insights por rol para cumplimiento y auditoría de seguridad",
+        "description": "Rastrea todos los cambios realizados en las asignaciones de perspectivas por rol para cumplimiento y auditoría de seguridad",
         "headers": {
           "timestamp": "Marca de tiempo",
           "action": "Acción",
           "role": "Rol",
-          "insight": "Insight",
+          "insight": "Perspectiva",
           "performedBy": "Realizado por",
           "reason": "Motivo"
         },
@@ -3755,43 +3755,43 @@
         "medium": "Media",
         "high": "Alta",
         "critical": "Crítica",
-        "lowDesc": "Insights operativos generales",
-        "mediumDesc": "Insights específicos del departamento",
-        "highDesc": "Insights empresariales sensibles",
+        "lowDesc": "Perspectivas operativas generales",
+        "mediumDesc": "Perspectivas específicas del departamento",
+        "highDesc": "Perspectivas empresariales sensibles",
         "criticalDesc": "Solo para ejecutivos"
       },
       "categories": {
         "production": {
           "name": "Producción y operaciones",
-          "description": "Métricas de producción en tiempo real, eficiencia e insights operativos"
+          "description": "Métricas de producción en tiempo real, eficiencia y perspectivas operativas"
         },
         "quality": {
           "name": "Calidad y cumplimiento",
-          "description": "Métricas de calidad, análisis de defectos e insights de cumplimiento"
+          "description": "Métricas de calidad, análisis de defectos y perspectivas de cumplimiento"
         },
         "inventory": {
           "name": "Inventario y cadena de suministro",
-          "description": "Niveles de inventario, salud de la cadena de suministro e insights de compras"
+          "description": "Niveles de inventario, salud de la cadena de suministro y perspectivas de compras"
         },
         "maintenance": {
           "name": "Mantenimiento y equipos",
-          "description": "Salud de equipos, mantenimiento predictivo e insights de fiabilidad"
+          "description": "Salud de equipos, mantenimiento predictivo y perspectivas de fiabilidad"
         },
         "financial": {
           "name": "Finanzas y análisis de costos",
-          "description": "Rendimiento financiero, análisis de costos e insights de rentabilidad"
+          "description": "Rendimiento financiero, análisis de costos y perspectivas de rentabilidad"
         },
         "workforce": {
           "name": "Personal y RR. HH.",
-          "description": "Analítica de personal, productividad e insights de RR. HH."
+          "description": "Analítica de personal, productividad y perspectivas de RR. HH."
         },
         "sales": {
           "name": "Ventas y clientes",
-          "description": "Rendimiento de ventas, análisis de pipeline e insights de clientes"
+          "description": "Rendimiento de ventas, análisis del embudo y perspectivas de clientes"
         },
         "strategic": {
           "name": "Estrategia y dirección",
-          "description": "Insights estratégicos de alto nivel y paneles ejecutivos"
+          "description": "Perspectivas estratégicas de alto nivel y paneles ejecutivos"
         }
       },
       "insights": {
@@ -3821,7 +3821,7 @@
         },
         "spc_analysis": {
           "name": "Análisis SPC",
-          "description": "Insights de control estadístico de procesos"
+          "description": "Perspectivas de control estadístico de procesos"
         },
         "defect_predictions": {
           "name": "Predicciones de defectos",
@@ -3833,7 +3833,7 @@
         },
         "audit_readiness": {
           "name": "Preparación para auditoría",
-          "description": "Insights de preparación de auditorías"
+          "description": "Perspectivas de preparación de auditorías"
         },
         "inventory_levels": {
           "name": "Niveles de inventario",
@@ -3853,7 +3853,7 @@
         },
         "cost_optimization": {
           "name": "Optimización de costos",
-          "description": "Insights de costos de compras"
+          "description": "Perspectivas de costos de compras"
         },
         "equipment_health": {
           "name": "Salud de equipos",
@@ -3869,7 +3869,7 @@
         },
         "asset_lifecycle": {
           "name": "Ciclo de vida de activos",
-          "description": "Insights del ciclo de vida de activos"
+          "description": "Perspectivas del ciclo de vida de activos"
         },
         "reliability_metrics": {
           "name": "Métricas de confiabilidad",
@@ -3892,7 +3892,7 @@
           "description": "Predicciones de ingresos con IA"
         },
         "cash_flow_insights": {
-          "name": "Insights de flujo de caja",
+          "name": "Perspectivas de flujo de caja",
           "description": "Análisis de posición de caja"
         },
         "workforce_productivity": {
@@ -3912,19 +3912,19 @@
           "description": "Predicciones de rotación con IA"
         },
         "compensation_insights": {
-          "name": "Insights de compensación",
+          "name": "Perspectivas de compensación",
           "description": "Análisis de salarios y beneficios"
         },
         "sales_pipeline": {
-          "name": "Pipeline de ventas",
-          "description": "Salud y velocidad del pipeline"
+          "name": "Embudo de ventas",
+          "description": "Salud y velocidad del embudo"
         },
         "win_loss_analysis": {
           "name": "Análisis de ganancias/pérdidas",
           "description": "Patrones de resultados de acuerdos"
         },
         "customer_insights": {
-          "name": "Insights de clientes",
+          "name": "Perspectivas de clientes",
           "description": "Análisis del comportamiento del cliente"
         },
         "quote_optimization": {
@@ -3941,7 +3941,7 @@
         },
         "competitive_analysis": {
           "name": "Análisis competitivo",
-          "description": "Insights de posicionamiento de mercado"
+          "description": "Perspectivas de posicionamiento de mercado"
         },
         "strategic_recommendations": {
           "name": "Recomendaciones estratégicas",

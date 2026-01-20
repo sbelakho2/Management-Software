@@ -14,9 +14,6 @@ from sensei.services.ai.ai_reasoning import (
     Correction,
     FewShotExample,
     PredictionExplanation,
-    RerankerModel,
-    SearchChunk,
-    SearchResult,
 )
 
 
@@ -31,75 +28,41 @@ def svc() -> AIReasoningService:
     return AIReasoningService()
 
 
-class TestHybridSearchPrecision:
-    def test_bge_reranker_top_3_precision(self, svc: AIReasoningService) -> None:
-        # Index test documents.
-        svc.index_document(
+class TestSeededReasoning:
+    def test_seeded_reasoning_matches_expert_trace(self, svc: AIReasoningService) -> None:
+        # Ingest expert trace (Seeded model logic)
+        svc.ingest_expert_trace(
             "admin",
-            content="Product quality control procedures and best practices",
-            source="quality_docs",
-        )
-        svc.index_document(
-            "admin",
-            content="Manufacturing floor safety guidelines and compliance",
-            source="safety_docs",
-        )
-        svc.index_document(
-            "admin",
-            content="Quality inspection checklist for production line",
-            source="quality_checklist",
-        )
-        svc.index_document(
-            "admin",
-            content="HR policies and employee handbook",
-            source="hr_docs",
+            principle="Overproduction is the root of all waste",
+            source_book="The Toyota Way",
+            recommendations=["Implement Kanban", "Reduce batch sizes"]
         )
 
-        result = svc.hybrid_search(
+        # Query reasoning engine
+        results = svc.seeded_reasoning(
             "admin",
-            query="quality control production",
-            top_k=3,
-            reranker=RerankerModel.BGE_RERANKER_BASE,
+            problem_statement="Overproduction is causing our inventory to pile up."
         )
 
-        assert len(result.chunks) == 3
-        assert result.reranker_model == RerankerModel.BGE_RERANKER_BASE
+        assert len(results) > 0
+        # Should match "overproduction" or "inventory" keyword
+        assert any("Overproduction" in s.suggested_cause for s in results)
+        assert any("The Toyota Way" in str(s.similar_historical_causes) for s in results)
 
-        # Quality-related docs should be in top results.
-        sources = {c.source for c in result.chunks}
-        assert "quality_docs" in sources or "quality_checklist" in sources
-
-    def test_verify_top_k_contains_expected(self, svc: AIReasoningService) -> None:
-        # Index documents.
-        svc.index_document("admin", content="RFQ pricing strategy", source="rfq_pricing")
-        svc.index_document("admin", content="Quote generation workflow", source="quote_workflow")
-        svc.index_document("admin", content="Customer onboarding process", source="onboarding")
-
-        result = svc.hybrid_search("admin", query="RFQ pricing", top_k=3)
-
-        found, precision = svc.verify_top_k_precision(
+    def test_verify_reasoning_confidence(self, svc: AIReasoningService) -> None:
+        svc.ingest_expert_trace(
             "admin",
-            result=result,
-            expected_sources=["rfq_pricing"],
+            principle="Standard work is the foundation for improvement",
+            source_book="Taiichi Ohno's Workplace Management",
         )
 
-        assert precision > 0  # At least partial match.
-
-    def test_rerank_improves_ordering(self, svc: AIReasoningService) -> None:
-        # Index documents.
-        svc.index_document("admin", content="Machine learning model training", source="ml_training")
-        svc.index_document("admin", content="Training program for operators", source="operator_training")
-
-        result = svc.hybrid_search(
+        results = svc.seeded_reasoning(
             "admin",
-            query="operator training program",
-            top_k=2,
-            reranker=RerankerModel.BGE_RERANKER_LARGE,
+            problem_statement="We need to improve our standard work procedures."
         )
 
-        # Rerank scores should be populated.
-        for chunk in result.chunks:
-            assert chunk.rerank_score >= 0
+        assert len(results) > 0
+        assert results[0].confidence >= 0.8
 
 
 class TestContinuousLearningLoop:
@@ -344,7 +307,7 @@ class TestAnomalyDetection:
 class TestRBACEnforcement:
     def test_viewer_cannot_access(self, svc: AIReasoningService) -> None:
         with pytest.raises(PermissionError):
-            svc.hybrid_search("viewer", query="test")
+            svc.seeded_reasoning("viewer", problem_statement="test")
 
     def test_operator_cannot_access(self, svc: AIReasoningService) -> None:
         with pytest.raises(PermissionError):
@@ -356,7 +319,7 @@ class TestRBACEnforcement:
             )
 
     def test_admin_can_access(self, svc: AIReasoningService) -> None:
-        result = svc.hybrid_search("admin", query="test")
+        result = svc.seeded_reasoning("admin", problem_statement="test")
         assert result is not None
 
     def test_analyst_can_access(self, svc: AIReasoningService) -> None:
