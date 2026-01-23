@@ -337,10 +337,12 @@ class WhatIfSimulationService:
         
         # Calculate totals
         simulated_subtotal = sum(
-            item.simulated_line_total for item in simulated_line_items
+            (item.simulated_line_total for item in simulated_line_items),
+            Decimal(0),
         )
         simulated_total_cost = sum(
-            item.simulated_cost_total for item in simulated_line_items
+            (item.simulated_cost_total for item in simulated_line_items),
+            Decimal(0),
         )
         
         # Apply discount adjustments

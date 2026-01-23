@@ -1021,25 +1021,25 @@ class SPCScrapReworkService:
         by_station: dict[str, Decimal] = {}
         by_product: dict[str, Decimal] = {}
 
-        for rec in self._scrap_records.values():
-            if start_date <= rec.recorded_at <= end_date:
-                total_scrap += rec.total_cost
+        for scrap_rec in self._scrap_records.values():
+            if start_date <= scrap_rec.recorded_at <= end_date:
+                total_scrap += scrap_rec.total_cost
                 scrap_count += 1
 
-                key = f"scrap:{rec.reason.value}"
-                by_reason[key] = by_reason.get(key, Decimal("0")) + rec.total_cost
-                by_station[rec.station_id] = by_station.get(rec.station_id, Decimal("0")) + rec.total_cost
-                by_product[rec.product_id] = by_product.get(rec.product_id, Decimal("0")) + rec.total_cost
+                key = f"scrap:{scrap_rec.reason.value}"
+                by_reason[key] = by_reason.get(key, Decimal("0")) + scrap_rec.total_cost
+                by_station[scrap_rec.station_id] = by_station.get(scrap_rec.station_id, Decimal("0")) + scrap_rec.total_cost
+                by_product[scrap_rec.product_id] = by_product.get(scrap_rec.product_id, Decimal("0")) + scrap_rec.total_cost
 
-        for rec in self._rework_records.values():
-            if rec.completed_at and start_date <= rec.completed_at <= end_date:
-                total_rework += rec.total_cost
+        for rework_rec in self._rework_records.values():
+            if rework_rec.completed_at and start_date <= rework_rec.completed_at <= end_date:
+                total_rework += rework_rec.total_cost
                 rework_count += 1
 
-                key = f"rework:{rec.reason.value}"
-                by_reason[key] = by_reason.get(key, Decimal("0")) + rec.total_cost
-                by_station[rec.station_id] = by_station.get(rec.station_id, Decimal("0")) + rec.total_cost
-                by_product[rec.product_id] = by_product.get(rec.product_id, Decimal("0")) + rec.total_cost
+                key = f"rework:{rework_rec.reason.value}"
+                by_reason[key] = by_reason.get(key, Decimal("0")) + rework_rec.total_cost
+                by_station[rework_rec.station_id] = by_station.get(rework_rec.station_id, Decimal("0")) + rework_rec.total_cost
+                by_product[rework_rec.product_id] = by_product.get(rework_rec.product_id, Decimal("0")) + rework_rec.total_cost
 
         return COPQSummary(
             period_start=start_date,

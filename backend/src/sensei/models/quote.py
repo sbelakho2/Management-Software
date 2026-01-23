@@ -93,6 +93,8 @@ class SupplierQuoteStatus(str, Enum):
     UNDER_REVIEW = "under_review"
     SELECTED = "selected"
     NOT_SELECTED = "not_selected"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
     EXPIRED = "expired"
 
 
@@ -510,17 +512,6 @@ class QuoteLineItem(Base, TimestampMixin):
                 self.margin_percentage = (
                     (self.line_total - self.cost_total) / self.line_total
                 ) * 100
-
-
-class SupplierQuoteStatus(str, Enum):
-    """Status of supplier quote."""
-    
-    REQUESTED = "requested"
-    RECEIVED = "received"
-    UNDER_REVIEW = "under_review"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
 
 
 class SupplierQuote(Base, TimestampMixin, AuditMixin):

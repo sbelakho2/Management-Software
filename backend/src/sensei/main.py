@@ -68,7 +68,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Initialize and start backup scheduler
     try:
-        backup_service = DatabaseBackupService(storage_client=storage_client)
+        from sensei.core.database import async_session_factory
+        backup_service = DatabaseBackupService(
+            db_session_factory=async_session_factory,
+            backup_storage_path=settings.BACKUP_STORAGE_PATH if hasattr(settings, 'BACKUP_STORAGE_PATH') else "/tmp/backups",
+            database_url=str(settings.DATABASE_URL),
+            s3_client=storage_client,
+        )
         backup_scheduler = BackupSchedulerService(backup_service=backup_service)
         backup_scheduler.start()
         app.state.backup_scheduler = backup_scheduler

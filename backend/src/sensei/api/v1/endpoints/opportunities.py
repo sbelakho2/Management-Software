@@ -11,7 +11,7 @@ Provides full CRUD and workflow operations for Sales Opportunities:
 import inspect
 from datetime import datetime, date, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -405,13 +405,18 @@ async def list_opportunities(
     
     # Assigned to filter
     if assigned_to_id:
-        query = query.where(Opportunity.assigned_to_id == assigned_to_id)
-        count_query = count_query.where(Opportunity.assigned_to_id == assigned_to_id)
+        query = query.where(Opportunity.owner_id == assigned_to_id)
+        count_query = count_query.where(Opportunity.owner_id == assigned_to_id)
     
-    # Closed filter
+    # Closed filter (use stage comparison since is_closed is a computed property)
     if is_closed is not None:
-        query = query.where(Opportunity.is_closed == is_closed)
-        count_query = count_query.where(Opportunity.is_closed == is_closed)
+        closed_stages = [OpportunityStage.CLOSED_WON.value, OpportunityStage.CLOSED_LOST.value]
+        if is_closed:
+            query = query.where(Opportunity.stage.in_(closed_stages))
+            count_query = count_query.where(Opportunity.stage.in_(closed_stages))
+        else:
+            query = query.where(Opportunity.stage.notin_(closed_stages))
+            count_query = count_query.where(Opportunity.stage.notin_(closed_stages))
     
     # Won filter
     if is_won is not None:
@@ -438,7 +443,7 @@ async def list_opportunities(
     
     # Get total count
     total_result = await db.execute(count_query)
-    total = total_result.scalar()
+    total = total_result.scalar() or 0
     
     # Apply sorting
     sort_orders = parse_sort_param(sort)
@@ -503,9 +508,7 @@ async def create_opportunity(
     # Calculate weighted amount
     opp.calculate_weighted_amount()
     
-    maybe_awaitable = db.add(opp)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(opp)
     await db.commit()
     await db.refresh(opp)
     
@@ -659,13 +662,11 @@ async def change_opportunity_stage(
     
     # Handle closed stages
     if new_stage == OpportunityStage.CLOSED_WON:
-        opp.is_closed = True
         opp.is_won = True
-        opp.actual_close_date = date.today()
+        opp.actual_close_date = datetime.combine(date.today(), datetime.min.time())
     elif new_stage == OpportunityStage.CLOSED_LOST:
-        opp.is_closed = True
         opp.is_won = False
-        opp.actual_close_date = date.today()
+        opp.actual_close_date = datetime.combine(date.today(), datetime.min.time())
     
     opp.updated_by_id = current_user.id
     
@@ -677,9 +678,7 @@ async def change_opportunity_stage(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        maybe_awaitable = db.add(note)
-        if inspect.isawaitable(maybe_awaitable):
-            await maybe_awaitable
+        db.add(note)
     
     await db.commit()
     await db.refresh(opp)
@@ -715,10 +714,9 @@ async def close_opportunity_won(
         raise ConflictError(message="Opportunity is already closed")
     
     opp.stage = OpportunityStage.CLOSED_WON.value
-    opp.is_closed = True
     opp.is_won = True
     opp.probability = 100
-    opp.actual_close_date = request.actual_close_date or date.today()
+    opp.actual_close_date = datetime.combine(request.actual_close_date or date.today(), datetime.min.time())
     opp.calculate_weighted_amount()
     opp.updated_by_id = current_user.id
     
@@ -730,9 +728,7 @@ async def close_opportunity_won(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        maybe_awaitable = db.add(note)
-        if inspect.isawaitable(maybe_awaitable):
-            await maybe_awaitable
+        db.add(note)
     
     await db.commit()
     await db.refresh(opp)
@@ -768,10 +764,9 @@ async def close_opportunity_lost(
         raise ConflictError(message="Opportunity is already closed")
     
     opp.stage = OpportunityStage.CLOSED_LOST.value
-    opp.is_closed = True
     opp.is_won = False
     opp.probability = 0
-    opp.actual_close_date = request.actual_close_date or date.today()
+    opp.actual_close_date = datetime.combine(request.actual_close_date or date.today(), datetime.min.time())
     opp.close_reason = request.close_reason
     opp.competitor_id = request.competitor_id
     opp.calculate_weighted_amount()
@@ -790,9 +785,7 @@ async def close_opportunity_lost(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    maybe_awaitable = db.add(note)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(note)
     
     await db.commit()
     await db.refresh(opp)
@@ -837,7 +830,6 @@ async def reopen_opportunity(
         new_stage = OpportunityStage.NEGOTIATION  # Default to negotiation
     
     opp.stage = new_stage.value
-    opp.is_closed = False
     opp.is_won = None
     opp.actual_close_date = None
     opp.probability = STAGE_PROBABILITIES.get(new_stage.value, 50)
@@ -851,9 +843,7 @@ async def reopen_opportunity(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    maybe_awaitable = db.add(note)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(note)
     
     await db.commit()
     await db.refresh(opp)
@@ -939,9 +929,7 @@ async def add_opportunity_note(
         created_by_id=current_user.id,
     )
     
-    maybe_awaitable = db.add(note)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(note)
     await db.commit()
     await db.refresh(note)
     
@@ -977,8 +965,6 @@ async def update_opportunity_note(
     update_dict = note_data.model_dump(exclude_unset=True)
     for field, value in update_dict.items():
         setattr(note, field, value)
-    
-    note.updated_by_id = current_user.id
     
     await db.commit()
     await db.refresh(note)
@@ -1031,23 +1017,24 @@ async def get_pipeline_summary(
     """
     Get pipeline summary by stage.
     """
-    # Base query - only open opportunities
-    base_filter = [
+    # Base query - only open opportunities (not closed)
+    closed_stages = [OpportunityStage.CLOSED_WON.value, OpportunityStage.CLOSED_LOST.value]
+    base_filter: list[Any] = [
         Opportunity.deleted_at.is_(None),
-        Opportunity.is_closed == False,
+        Opportunity.stage.notin_(closed_stages),
     ]
     
     if account_id:
         base_filter.append(Opportunity.account_id == account_id)
     
     if assigned_to_id:
-        base_filter.append(Opportunity.assigned_to_id == assigned_to_id)
+        base_filter.append(Opportunity.owner_id == assigned_to_id)
     
     # Get summary by stage
     result = await db.execute(
         select(
             Opportunity.stage,
-            func.count(Opportunity.id).label("count"),
+            func.count(Opportunity.id).label("opp_count"),
             func.sum(Opportunity.amount).label("total_amount"),
             func.sum(Opportunity.weighted_amount).label("weighted_amount"),
         )
@@ -1063,15 +1050,19 @@ async def get_pipeline_summary(
     total_weighted = Decimal("0")
     
     for row in rows:
+        row_count = int(row.opp_count) if row.opp_count else 0
+        row_total = Decimal(str(row.total_amount)) if row.total_amount else Decimal("0")
+        row_weighted = Decimal(str(row.weighted_amount)) if row.weighted_amount else Decimal("0")
+        
         stage_data = {
-            "count": row.count,
-            "total_amount": float(row.total_amount or 0),
-            "weighted_amount": float(row.weighted_amount or 0),
+            "count": row_count,
+            "total_amount": float(row_total),
+            "weighted_amount": float(row_weighted),
         }
         stages[row.stage] = stage_data
-        total_count += row.count
-        total_amount += row.total_amount or Decimal("0")
-        total_weighted += row.weighted_amount or Decimal("0")
+        total_count += row_count
+        total_amount += row_total
+        total_weighted += row_weighted
     
     summary = {
         "stages": stages,
@@ -1098,9 +1089,10 @@ async def get_forecast(
     Get forecast for a period.
     """
     # Base filter - open opportunities with expected close in period
-    base_filter = [
+    closed_stages = [OpportunityStage.CLOSED_WON.value, OpportunityStage.CLOSED_LOST.value]
+    base_filter: list[Any] = [
         Opportunity.deleted_at.is_(None),
-        Opportunity.is_closed == False,
+        Opportunity.stage.notin_(closed_stages),
         Opportunity.close_date >= period_start,
         Opportunity.close_date <= period_end,
     ]
@@ -1109,7 +1101,7 @@ async def get_forecast(
         base_filter.append(Opportunity.account_id == account_id)
     
     if assigned_to_id:
-        base_filter.append(Opportunity.assigned_to_id == assigned_to_id)
+        base_filter.append(Opportunity.owner_id == assigned_to_id)
     
     # Get opportunities
     result = await db.execute(
@@ -1118,26 +1110,27 @@ async def get_forecast(
     opportunities = result.scalars().all()
     
     # Calculate totals by probability bands
-    bands = {
-        "commit": {"min_prob": 80, "count": 0, "amount": Decimal("0")},
-        "best_case": {"min_prob": 50, "count": 0, "amount": Decimal("0")},
-        "pipeline": {"min_prob": 0, "count": 0, "amount": Decimal("0")},
-    }
+    commit_count = 0
+    commit_amount = Decimal("0")
+    best_case_count = 0
+    best_case_amount = Decimal("0")
+    pipeline_count = 0
+    pipeline_amount = Decimal("0")
     
     for opp in opportunities:
         prob = opp.probability or 0
         amount = opp.amount or Decimal("0")
         
-        bands["pipeline"]["count"] += 1
-        bands["pipeline"]["amount"] += amount
+        pipeline_count += 1
+        pipeline_amount += amount
         
         if prob >= 50:
-            bands["best_case"]["count"] += 1
-            bands["best_case"]["amount"] += amount
+            best_case_count += 1
+            best_case_amount += amount
         
         if prob >= 80:
-            bands["commit"]["count"] += 1
-            bands["commit"]["amount"] += amount
+            commit_count += 1
+            commit_amount += amount
     
     forecast = {
         "period": {
@@ -1145,16 +1138,16 @@ async def get_forecast(
             "end": period_end.isoformat(),
         },
         "commit": {
-            "count": bands["commit"]["count"],
-            "amount": float(bands["commit"]["amount"]),
+            "count": commit_count,
+            "amount": float(commit_amount),
         },
         "best_case": {
-            "count": bands["best_case"]["count"],
-            "amount": float(bands["best_case"]["amount"]),
+            "count": best_case_count,
+            "amount": float(best_case_amount),
         },
         "pipeline": {
-            "count": bands["pipeline"]["count"],
-            "amount": float(bands["pipeline"]["amount"]),
+            "count": pipeline_count,
+            "amount": float(pipeline_amount),
         },
         "weighted_pipeline": sum(
             float(o.weighted_amount or 0) for o in opportunities

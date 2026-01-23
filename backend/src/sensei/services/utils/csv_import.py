@@ -397,7 +397,7 @@ class CSVImportService:
             quotechar=config.quotechar,
         )
         
-        headers = reader.fieldnames or []
+        headers: list[str] = list(reader.fieldnames or [])
         rows = list(reader)
         
         return headers, rows
@@ -428,7 +428,7 @@ class CSVImportService:
                 continue
             
             # Try fuzzy matching
-            best_match = self._find_best_match(normalized, default_mappings.keys())
+            best_match = self._find_best_match(normalized, list(default_mappings.keys()))
             if best_match:
                 mapping = default_mappings[best_match]
                 mapping.source_columns = [header]

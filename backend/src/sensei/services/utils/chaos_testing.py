@@ -568,11 +568,12 @@ class ChaosTestingService:
         if not test:
             raise ValueError(f"Job retry test {test_id} not found")
         
-        validation = {
+        checks: list[dict[str, Any]] = []
+        validation: dict[str, Any] = {
             "test_id": test_id,
             "job_type": test.job_type,
             "passed": False,
-            "checks": [],
+            "checks": checks,
         }
         
         # Check 1: Retries occurred
@@ -584,7 +585,7 @@ class ChaosTestingService:
         }
         if test.failure_count > 0 and len(test.attempts) < 2:
             retry_check["passed"] = False
-        validation["checks"].append(retry_check)
+        checks.append(retry_check)
         
         # Check 2: Recovery matches expectation
         recovery_check = {
@@ -593,7 +594,7 @@ class ChaosTestingService:
             "actual_recovery": test.final_status == "recovered",
             "passed": (test.final_status == "recovered") == test.expected_recovery,
         }
-        validation["checks"].append(recovery_check)
+        checks.append(recovery_check)
         
         # Check 3: Failure point captured
         failure_point_check = {
@@ -604,10 +605,10 @@ class ChaosTestingService:
                 for a in test.attempts
             ),
         }
-        validation["checks"].append(failure_point_check)
+        checks.append(failure_point_check)
         
         # Overall pass/fail
-        validation["passed"] = all(c["passed"] for c in validation["checks"])
+        validation["passed"] = all(c["passed"] for c in checks)
         
         return validation
     
@@ -949,16 +950,16 @@ class ChaosTestingService:
                     run.failed_tests += 1
         
         # Execute circuit breaker tests
-        for test in self._circuit_breaker_tests.values():
-            if test.actual_state_after is None:
+        for cb_test in self._circuit_breaker_tests.values():
+            if cb_test.actual_state_after is None:
                 # Find matching breaker
                 for breaker in self._circuit_breakers.values():
-                    if breaker.component == test.component:
-                        self.execute_circuit_breaker_test(test.id, breaker.id)
+                    if breaker.component == cb_test.component:
+                        self.execute_circuit_breaker_test(cb_test.id, breaker.id)
                         break
-                run.circuit_breaker_tests.append(test)
+                run.circuit_breaker_tests.append(cb_test)
                 run.total_tests += 1
-                if test.passed:
+                if cb_test.passed:
                     run.passed_tests += 1
                 else:
                     run.failed_tests += 1

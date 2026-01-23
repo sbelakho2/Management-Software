@@ -92,7 +92,7 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "work_orders"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Work order identification
     work_order_number: Mapped[str] = mapped_column(
@@ -287,7 +287,7 @@ class WorkOrderOperation(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "work_order_operations"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Work order and routing reference
     work_order_id: Mapped[int] = mapped_column(

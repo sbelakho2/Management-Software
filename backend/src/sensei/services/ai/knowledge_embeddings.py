@@ -6,7 +6,7 @@ and provides semantic search capabilities via pgvector.
 """
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 from sqlalchemy import select
@@ -14,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.knowledge_pack import KnowledgeChunk, KnowledgeDocument
 from sensei.core.config import settings
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ class EmbeddingService:
         """
         self.provider = "local"
         self.model_name = model_name or "all-MiniLM-L6-v2"
-        self._model = None
+        self._model: Any = None
         self.embedding_dim = self._get_model_dimension(self.model_name)
         logger.info(f"Initialized EmbeddingService with local model: {self.model_name} (CPU)")
     

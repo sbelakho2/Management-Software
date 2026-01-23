@@ -13,7 +13,7 @@ class PDCACycleRecord(Base, TimestampMixin):
     """Database model for a PDCA cycle."""
     __tablename__ = "tps_pdca_cycles"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     problem_statement: Mapped[str] = mapped_column(Text, nullable=False)
     current_phase: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -29,7 +29,7 @@ class KataSessionRecord(Base, TimestampMixin):
     """Database model for a Kata session."""
     __tablename__ = "tps_kata_sessions"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     challenge: Mapped[str] = mapped_column(Text, nullable=False)
     current_step: Mapped[str] = mapped_column(String(50), nullable=False)
     current_condition: Mapped[str] = mapped_column(Text, nullable=False)
@@ -43,7 +43,7 @@ class MudaDetectionRecord(Base, TimestampMixin):
     """Database model for Muda detection."""
     __tablename__ = "tps_muda_detections"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     muda_type: Mapped[str] = mapped_column(String(50), nullable=False)
     location: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -56,7 +56,7 @@ class TPSAndonEventRecord(Base, TimestampMixin):
     """Database model for TPS Teacher Andon events."""
     __tablename__ = "tps_andon_events"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     station_id: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[AndonStatus] = mapped_column(Enum(AndonStatus), nullable=False)
     issue_description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -71,7 +71,7 @@ class JidokaResponseRecord(Base, TimestampMixin):
     """Database model for Jidoka system responses."""
     __tablename__ = "tps_jidoka_responses"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     trigger: Mapped[str] = mapped_column(Text, nullable=False)
     action: Mapped[JidokaAction] = mapped_column(Enum(JidokaAction), nullable=False)
     details: Mapped[str] = mapped_column(Text, nullable=False)

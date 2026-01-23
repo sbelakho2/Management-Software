@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, List, Optional
 from uuid import UUID
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,10 +19,13 @@ from sensei.api.deps import DBSession, CurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.core.database import get_db_session
+from sensei.core.external_db import get_starz_erp_session
 from sensei.models.inventory import Warehouse, Location, InventoryLevel, StockMove
 from sensei.models.product import Product
+from sensei.services.external.starz_ingestion import StarzErpIngestionService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Schemas
@@ -359,11 +363,21 @@ async def get_inventory_levels(
 
 
 @router.post("/sync", response_model=dict)
-async def sync_inventory(db: DBSession, current_user: CurrentUser) -> Any:
-    """Trigger inventory synchronization (placeholder for real-time stock sync)."""
-    # In production, this would trigger a sync with external systems or recount
-    return {
-        "success": True,
-        "message": "Inventory synchronization initiated",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+async def sync_inventory(
+    db: DBSession, 
+    current_user: CurrentUser,
+    starz_db: AsyncSession = Depends(get_starz_erp_session)
+) -> Any:
+    """Trigger inventory synchronization from starzERP."""
+    service = StarzErpIngestionService()
+    try:
+        stats = await service.run_full_ingestion(starz_db, db)
+        return {
+            "success": True,
+            "message": "Inventory synchronization completed",
+            "stats": stats,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Sync failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Synchronization failed: {str(e)}")

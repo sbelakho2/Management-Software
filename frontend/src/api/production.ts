@@ -136,6 +136,9 @@ export const productionApi = {
   updateWorkOrder: (id: number, data: UpdateWorkOrderData): Promise<WorkOrder> => 
     apiClient.patch(`/work-orders/${id}`, data),
   
-  getStats: (): Promise<ProductionStats> => 
+  getStats: (): Promise<ProductionStats> =>
     apiClient.get('/work-orders/stats'),
+
+  acknowledgeHandover: (id: number): Promise<any> =>
+    apiClient.post(`/production/handovers/${id}/acknowledge`),
 };

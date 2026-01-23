@@ -291,9 +291,7 @@ async def create_attachment(
         tags=parsed_tags,
     )
 
-    maybe_awaitable = db.add(attachment)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(attachment)
     await db.commit()
     await db.refresh(attachment)
 
@@ -346,9 +344,7 @@ async def create_attachment_metadata(
         custom_metadata=data.custom_metadata,
     )
 
-    maybe_awaitable = db.add(attachment)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(attachment)
     await db.commit()
     await db.refresh(attachment)
 
@@ -368,7 +364,7 @@ async def get_attachment(
     query = select(Attachment).where(
         and_(
             Attachment.id == attachment_id,
-            Attachment.is_deleted == False,  # noqa: E712
+            Attachment.deleted_at.is_(None),  # noqa: E712
         )
     )
     result = await db.execute(query)
@@ -398,10 +394,10 @@ async def list_attachments(
 ) -> dict[str, Any]:
     """List attachments with filtering."""
     # Build query
-    conditions = []
+    conditions: list[Any] = []
 
     if not include_deleted:
-        conditions.append(Attachment.is_deleted == False)  # noqa: E712
+        conditions.append(Attachment.deleted_at.is_(None))  # noqa: E712
 
     if entity_type:
         conditions.append(Attachment.entity_type == entity_type)
@@ -458,7 +454,7 @@ async def update_attachment(
     query = select(Attachment).where(
         and_(
             Attachment.id == attachment_id,
-            Attachment.is_deleted == False,  # noqa: E712
+            Attachment.deleted_at.is_(None),  # noqa: E712
         )
     )
     result = await db.execute(query)
@@ -528,7 +524,7 @@ async def restore_attachment(
     query = select(Attachment).where(
         and_(
             Attachment.id == attachment_id,
-            Attachment.is_deleted == True,  # noqa: E712
+            Attachment.is_deleted.is_(True),  # noqa: E712
         )
     )
     result = await db.execute(query)
@@ -573,7 +569,7 @@ async def create_version(
     query = select(Attachment).where(
         and_(
             Attachment.id == attachment_id,
-            Attachment.is_deleted == False,  # noqa: E712
+            Attachment.deleted_at.is_(None),  # noqa: E712
         )
     )
     result = await db.execute(query)
@@ -599,9 +595,7 @@ async def create_version(
         revision=attachment.revision,
         is_current=False,
     )
-    maybe_awaitable = db.add(version)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(version)
 
     # Stream new file to storage
     new_filename = file.filename or attachment.original_filename
@@ -752,9 +746,7 @@ async def restore_version(
         change_reason=f"Before restoring to version {version_number}",
         is_current=False,
     )
-    maybe_awaitable = db.add(current_version)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(current_version)
 
     # Restore attachment from version
     attachment.filename = version.filename
@@ -798,7 +790,7 @@ async def get_entity_attachments(
     ]
 
     if not include_deleted:
-        conditions.append(Attachment.is_deleted == False)  # noqa: E712
+        conditions.append(Attachment.deleted_at.is_(None))  # noqa: E712
 
     if category:
         conditions.append(Attachment.category == category.value)
@@ -828,7 +820,7 @@ async def get_my_uploads(
     """Get attachments uploaded by the current user."""
     conditions = [
         Attachment.uploaded_by_id == current_user.id,
-        Attachment.is_deleted == False,  # noqa: E712
+        Attachment.deleted_at.is_(None),  # noqa: E712
     ]
 
     if category:
@@ -867,7 +859,7 @@ async def get_recent_attachments(
     """Get recently uploaded attachments."""
     query = (
         select(Attachment)
-        .where(Attachment.is_deleted == False)  # noqa: E712
+        .where(Attachment.deleted_at.is_(None))  # noqa: E712
         .order_by(Attachment.uploaded_at.desc())
         .limit(limit)
     )
@@ -888,7 +880,7 @@ async def get_attachments_by_category(
     """Get attachment counts grouped by category."""
     query = (
         select(Attachment.category, func.count(Attachment.id).label("count"))
-        .where(Attachment.is_deleted == False)  # noqa: E712
+        .where(Attachment.deleted_at.is_(None))  # noqa: E712
         .group_by(Attachment.category)
     )
     result = await db.execute(query)
@@ -911,8 +903,8 @@ async def get_confidential_attachments(
 ) -> dict[str, Any]:
     """Get all confidential attachments."""
     conditions = [
-        Attachment.is_confidential == True,  # noqa: E712
-        Attachment.is_deleted == False,  # noqa: E712
+        Attachment.is_confidential.is_(True),  # noqa: E712
+        Attachment.deleted_at.is_(None),  # noqa: E712
     ]
 
     # Count

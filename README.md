@@ -5,12 +5,17 @@ Enterprise manufacturing management platform grounded in Lean/TPS principles. Se
 ## Key Capabilities
 
 - **Sales Pipeline**: Opportunities, RFQs, quotes, and approvals
-- **Production**: Work orders, standard work, training matrix, Andon alerts
+- **Production**: Work orders, digital shift handover, standard work, training matrix, Andon alerts
 - **Quality**: NCR/CAPA workflow, inspections, audits, traceability
 - **Project Management**: Obeya room, A3 problem solving, milestones, backlog
-- **Today Screen**: Operations command center (priorities, risks, commitments)
-- **AI/ML**: Seeded reasoning, document intelligence, edge inference, coaching
+- **Today Screen**: Operations command center (priorities, risks, commitments, real-time pulse)
+- **AI/ML**: Multilingual on-device training, document intelligence, edge inference, coaching
 - **PWA**: Offline-ready experience for shop-floor teams
+
+**Key Technologies**:
+- Multilingual embeddings: `paraphrase-multilingual-MiniLM-L12-v2` (50+ languages)
+- ONNX Runtime (INT8 quantization) for CPU inference
+- Optional translation: `Helsinki-NLP/opus-mt-*` models
 
 ## Architecture
 

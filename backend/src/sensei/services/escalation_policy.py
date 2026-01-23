@@ -744,8 +744,8 @@ class EscalationPolicyService:
                         "risk_score": risk_score,
                         "status": status,
                         "target_resolution_date": target_date.isoformat() if target_date else None,
-                        "identified_date": risk.get("identified_date").isoformat() 
-                            if risk.get("identified_date") else None,
+                        "identified_date": id_date.isoformat() 
+                            if (id_date := risk.get("identified_date")) is not None else None,
                     },
                 )
                 result.items.append(item)
@@ -1219,7 +1219,7 @@ class EscalationJobRunner:
         results: dict[str, EscalationResult],
     ) -> dict[str, Any]:
         """Generate a summary of escalation results."""
-        summary = {
+        summary: dict[str, Any] = {
             "total_policies_run": len(results),
             "total_evaluated": 0,
             "total_escalated": 0,

@@ -292,6 +292,7 @@ def get_default_pipeline_stages() -> list[PipelineStage]:
             type=PipelineStageType.PROSPECT,
             order=0,
             probability=10,
+            is_active=True,
             required_fields=["customer_name", "contact_email"],
             auto_tasks=["Initial contact", "Qualify lead"],
         ),
@@ -301,6 +302,7 @@ def get_default_pipeline_stages() -> list[PipelineStage]:
             type=PipelineStageType.QUALIFICATION,
             order=1,
             probability=25,
+            is_active=True,
             required_fields=["budget", "timeline", "decision_maker"],
             auto_tasks=["Complete RFQ", "Technical review"],
         ),
@@ -310,6 +312,7 @@ def get_default_pipeline_stages() -> list[PipelineStage]:
             type=PipelineStageType.PROPOSAL,
             order=2,
             probability=50,
+            is_active=True,
             required_fields=["quote_number"],
             auto_tasks=["Create quote", "Send proposal"],
         ),
@@ -319,6 +322,7 @@ def get_default_pipeline_stages() -> list[PipelineStage]:
             type=PipelineStageType.NEGOTIATION,
             order=3,
             probability=75,
+            is_active=True,
             required_fields=[],
             auto_tasks=["Negotiate terms", "Final approval"],
         ),
@@ -388,6 +392,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Check Today dashboard for urgent items and due dates",
             frequency=LSWFrequency.DAILY,
             category="operations",
+            is_required=True,
             order=1,
         ),
         LSWChecklistItem(
@@ -396,6 +401,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review and respond to customer inquiries",
             frequency=LSWFrequency.DAILY,
             category="communication",
+            is_required=True,
             order=2,
         ),
         LSWChecklistItem(
@@ -404,6 +410,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Update opportunity stages and notes",
             frequency=LSWFrequency.DAILY,
             category="sales",
+            is_required=True,
             order=3,
         ),
         LSWChecklistItem(
@@ -412,6 +419,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Brief touchpoint with team members",
             frequency=LSWFrequency.DAILY,
             category="leadership",
+            is_required=True,
             order=4,
         ),
     ]
@@ -423,6 +431,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review pipeline health with sales team",
             frequency=LSWFrequency.WEEKLY,
             category="sales",
+            is_required=True,
             order=1,
         ),
         LSWChecklistItem(
@@ -431,6 +440,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Update metrics and action items on Obeya board",
             frequency=LSWFrequency.WEEKLY,
             category="operations",
+            is_required=True,
             order=2,
         ),
         LSWChecklistItem(
@@ -439,6 +449,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review quality metrics and open NCRs",
             frequency=LSWFrequency.WEEKLY,
             category="quality",
+            is_required=True,
             order=3,
         ),
         LSWChecklistItem(
@@ -447,6 +458,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Generate and review Week in Review report",
             frequency=LSWFrequency.WEEKLY,
             category="reporting",
+            is_required=True,
             order=4,
         ),
     ]
@@ -458,6 +470,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review monthly KPI targets vs actuals",
             frequency=LSWFrequency.MONTHLY,
             category="operations",
+            is_required=True,
             order=1,
         ),
         LSWChecklistItem(
@@ -466,6 +479,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review team metrics and development needs",
             frequency=LSWFrequency.MONTHLY,
             category="leadership",
+            is_required=True,
             order=2,
         ),
         LSWChecklistItem(
@@ -474,6 +488,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Identify one process improvement opportunity",
             frequency=LSWFrequency.MONTHLY,
             category="continuous_improvement",
+            is_required=True,
             order=3,
         ),
         LSWChecklistItem(
@@ -482,6 +497,7 @@ def get_default_lsw_items() -> LSWCadenceConfig:
             description="Review training completion and gaps",
             frequency=LSWFrequency.MONTHLY,
             category="training",
+            is_required=True,
             order=4,
         ),
     ]
@@ -582,7 +598,12 @@ class SetupWizardService:
     def _initialize_steps(self, wizard: WizardProgress) -> None:
         """Initialize all steps with default data."""
         for step in self.STEP_ORDER:
-            wizard.steps[step] = WizardStepData(step=step)
+            wizard.steps[step] = WizardStepData(
+                step=step,
+                status=WizardStatus.NOT_STARTED,
+                started_at=None,
+                completed_at=None,
+            )
     
     def start_wizard(
         self,
@@ -614,6 +635,7 @@ class SetupWizardService:
             status=WizardStatus.IN_PROGRESS,
             current_step=request.skip_to_step or WizardStep.WELCOME,
             started_at=datetime.now(timezone.utc),
+            completed_at=None,
         )
         self._initialize_steps(wizard)
         
@@ -723,7 +745,12 @@ class SetupWizardService:
         
         step_data = wizard.steps.get(request.step)
         if not step_data:
-            step_data = WizardStepData(step=request.step)
+            step_data = WizardStepData(
+                step=request.step,
+                status=WizardStatus.NOT_STARTED,
+                started_at=None,
+                completed_at=None,
+            )
             wizard.steps[request.step] = step_data
         
         # Validate data
@@ -774,7 +801,12 @@ class SetupWizardService:
         target_index = self.get_step_index(step)
         
         if target_index <= current_index or all(
-            wizard.steps.get(s, WizardStepData(step=s)).status == WizardStatus.COMPLETED
+            wizard.steps.get(s, WizardStepData(
+                step=s,
+                status=WizardStatus.NOT_STARTED,
+                started_at=None,
+                completed_at=None,
+            )).status == WizardStatus.COMPLETED
             for s in self.STEP_ORDER[:target_index]
         ):
             wizard.current_step = step
@@ -792,37 +824,72 @@ class SetupWizardService:
         summary = GetWizardSummaryResponse()
         
         # Organization profile
-        org_data = wizard.steps.get(WizardStep.ORGANIZATION_PROFILE, WizardStepData(step=WizardStep.ORGANIZATION_PROFILE)).data
+        org_data = wizard.steps.get(WizardStep.ORGANIZATION_PROFILE, WizardStepData(
+            step=WizardStep.ORGANIZATION_PROFILE,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if org_data:
             summary.organization_profile = OrganizationProfile(**org_data)
         
         # Pipeline stages
-        stages_data = wizard.steps.get(WizardStep.PIPELINE_STAGES, WizardStepData(step=WizardStep.PIPELINE_STAGES)).data
+        stages_data = wizard.steps.get(WizardStep.PIPELINE_STAGES, WizardStepData(
+            step=WizardStep.PIPELINE_STAGES,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if stages_data.get("stages"):
             summary.pipeline_stages = [PipelineStage(**s) for s in stages_data["stages"]]
         
         # Approval thresholds
-        thresholds_data = wizard.steps.get(WizardStep.APPROVAL_THRESHOLDS, WizardStepData(step=WizardStep.APPROVAL_THRESHOLDS)).data
+        thresholds_data = wizard.steps.get(WizardStep.APPROVAL_THRESHOLDS, WizardStepData(
+            step=WizardStep.APPROVAL_THRESHOLDS,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if thresholds_data.get("thresholds"):
             summary.approval_thresholds = [ApprovalThreshold(**t) for t in thresholds_data["thresholds"]]
         
         # Role assignments
-        roles_data = wizard.steps.get(WizardStep.ROLE_ASSIGNMENTS, WizardStepData(step=WizardStep.ROLE_ASSIGNMENTS)).data
+        roles_data = wizard.steps.get(WizardStep.ROLE_ASSIGNMENTS, WizardStepData(
+            step=WizardStep.ROLE_ASSIGNMENTS,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if roles_data.get("assignments"):
             summary.role_assignments = [RoleAssignment(**r) for r in roles_data["assignments"]]
         
         # Templates
-        templates_data = wizard.steps.get(WizardStep.TEMPLATES, WizardStepData(step=WizardStep.TEMPLATES)).data
+        templates_data = wizard.steps.get(WizardStep.TEMPLATES, WizardStepData(
+            step=WizardStep.TEMPLATES,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if templates_data.get("templates"):
             summary.templates = [TemplateConfig(**t) for t in templates_data["templates"]]
         
         # LSW cadence
-        lsw_data = wizard.steps.get(WizardStep.LSW_CADENCE, WizardStepData(step=WizardStep.LSW_CADENCE)).data
+        lsw_data = wizard.steps.get(WizardStep.LSW_CADENCE, WizardStepData(
+            step=WizardStep.LSW_CADENCE,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if lsw_data:
             summary.lsw_cadence = LSWCadenceConfig(**lsw_data)
         
         # First Obeya
-        obeya_data = wizard.steps.get(WizardStep.FIRST_OBEYA, WizardStepData(step=WizardStep.FIRST_OBEYA)).data
+        obeya_data = wizard.steps.get(WizardStep.FIRST_OBEYA, WizardStepData(
+            step=WizardStep.FIRST_OBEYA,
+            status=WizardStatus.NOT_STARTED,
+            started_at=None,
+            completed_at=None,
+        )).data
         if obeya_data:
             summary.first_obeya = ObeyaConfig(**obeya_data)
         
@@ -840,12 +907,18 @@ class SetupWizardService:
                 success=False,
                 applied_configs=[],
                 errors=["Wizard not found"],
+                redirect_url=None,
             )
         
         # Validate all steps are complete (except welcome and complete)
         incomplete_steps = []
         for step in self.STEP_ORDER[1:-1]:  # Skip welcome and complete
-            step_data = wizard.steps.get(step, WizardStepData(step=step))
+            step_data = wizard.steps.get(step, WizardStepData(
+                step=step,
+                status=WizardStatus.NOT_STARTED,
+                started_at=None,
+                completed_at=None,
+            ))
             if step_data.status not in [WizardStatus.COMPLETED, WizardStatus.SKIPPED]:
                 incomplete_steps.append(step.value)
         
@@ -854,6 +927,7 @@ class SetupWizardService:
                 success=False,
                 applied_configs=[],
                 errors=[f"Incomplete steps: {', '.join(incomplete_steps)}"],
+                redirect_url=None,
             )
         
         applied_configs: list[str] = []
@@ -863,31 +937,66 @@ class SetupWizardService:
             # Apply each configuration (in production, this would call other services)
             try:
                 # Organization profile
-                if wizard.steps.get(WizardStep.ORGANIZATION_PROFILE, WizardStepData(step=WizardStep.ORGANIZATION_PROFILE)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.ORGANIZATION_PROFILE, WizardStepData(
+                    step=WizardStep.ORGANIZATION_PROFILE,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("Organization Profile")
                 
                 # Pipeline stages
-                if wizard.steps.get(WizardStep.PIPELINE_STAGES, WizardStepData(step=WizardStep.PIPELINE_STAGES)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.PIPELINE_STAGES, WizardStepData(
+                    step=WizardStep.PIPELINE_STAGES,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("Pipeline Stages")
                 
                 # Approval thresholds
-                if wizard.steps.get(WizardStep.APPROVAL_THRESHOLDS, WizardStepData(step=WizardStep.APPROVAL_THRESHOLDS)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.APPROVAL_THRESHOLDS, WizardStepData(
+                    step=WizardStep.APPROVAL_THRESHOLDS,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("Approval Thresholds")
                 
                 # Role assignments
-                if wizard.steps.get(WizardStep.ROLE_ASSIGNMENTS, WizardStepData(step=WizardStep.ROLE_ASSIGNMENTS)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.ROLE_ASSIGNMENTS, WizardStepData(
+                    step=WizardStep.ROLE_ASSIGNMENTS,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("Role Assignments")
                 
                 # Templates
-                if wizard.steps.get(WizardStep.TEMPLATES, WizardStepData(step=WizardStep.TEMPLATES)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.TEMPLATES, WizardStepData(
+                    step=WizardStep.TEMPLATES,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("Templates")
                 
                 # LSW cadence
-                if wizard.steps.get(WizardStep.LSW_CADENCE, WizardStepData(step=WizardStep.LSW_CADENCE)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.LSW_CADENCE, WizardStepData(
+                    step=WizardStep.LSW_CADENCE,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("LSW Cadence")
                 
                 # First Obeya
-                if wizard.steps.get(WizardStep.FIRST_OBEYA, WizardStepData(step=WizardStep.FIRST_OBEYA)).status == WizardStatus.COMPLETED:
+                if wizard.steps.get(WizardStep.FIRST_OBEYA, WizardStepData(
+                    step=WizardStep.FIRST_OBEYA,
+                    status=WizardStatus.NOT_STARTED,
+                    started_at=None,
+                    completed_at=None,
+                )).status == WizardStatus.COMPLETED:
                     applied_configs.append("First Obeya")
                 
             except Exception as e:
@@ -901,6 +1010,7 @@ class SetupWizardService:
             wizard.steps[WizardStep.COMPLETE] = WizardStepData(
                 step=WizardStep.COMPLETE,
                 status=WizardStatus.COMPLETED,
+                started_at=datetime.now(timezone.utc),
                 completed_at=datetime.now(timezone.utc),
             )
         

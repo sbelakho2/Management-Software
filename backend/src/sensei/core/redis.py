@@ -26,7 +26,7 @@ redis_client = create_redis_client()
 async def check_redis_connection(client: redis.Redis) -> bool:
     """Check if the Redis connection is healthy."""
     try:
-        await client.ping()
+        await client.ping()  # type: ignore[misc]
         return True
     except Exception:
         return False

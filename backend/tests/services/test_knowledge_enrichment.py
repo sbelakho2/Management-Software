@@ -255,7 +255,7 @@ class TestIngestion:
         over-processing, inventory, motion, and defects.
         """
 
-        chunks = svc.ingest_content(
+        chunks = svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -276,7 +276,7 @@ class TestIngestion:
         This pull system reduces inventory waste and improves flow.
         """
 
-        chunks = svc.ingest_content(
+        chunks = svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -304,7 +304,7 @@ class TestChunking:
         # Create a large paragraph
         large_content = "Kaizen is continuous improvement. " * 50
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -341,7 +341,7 @@ class TestEmbedding:
         It provides a systematic approach to continuous improvement.
         """
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -379,7 +379,7 @@ class TestAlignment:
         Identifying muda (waste) is the first step in improvement.
         """
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -490,7 +490,7 @@ class TestSearch:
         when to produce or move parts. This pull-based approach reduces overproduction.
         """
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -515,7 +515,7 @@ class TestSearch:
         Error-proofing is essential for built-in quality.
         """
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -547,7 +547,7 @@ class TestStatistics:
         It identifies waste and opportunities for improvement.
         """
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-1",
@@ -622,7 +622,7 @@ class TestAuditTrail:
             simulated_content=b"Test content",
         )
 
-        svc.ingest_content(
+        svc.ingest_content_inmemory(
             actor_id="curator1",
             actor_roles=curator_roles,
             correlation_id="cor-2",

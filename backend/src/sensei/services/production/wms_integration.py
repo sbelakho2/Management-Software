@@ -1118,9 +1118,10 @@ class WMSIntegrationService:
             record.updated_at = datetime.now(timezone.utc)
             
             # Update location usage
-            loc = self._locations.get(task.from_location_id)
-            if loc:
-                loc.current_usage -= picked_quantity
+            if task.from_location_id:
+                loc = self._locations.get(task.from_location_id)
+                if loc:
+                    loc.current_usage -= picked_quantity
         
         # Record transaction
         self._record_transaction(
@@ -1276,7 +1277,7 @@ class WMSIntegrationService:
         else:
             records = self.get_inventory_by_location(location_id)
         
-        system_qty = sum(r.quantity for r in records)
+        system_qty: Decimal = sum((r.quantity for r in records), Decimal("0"))
         
         count = CycleCount(
             id=str(uuid4()),
@@ -1339,7 +1340,7 @@ class WMSIntegrationService:
                     count.part_id, 
                     location_id=count.location_id
                 )
-                if records:
+                if records and count.counted_quantity is not None:
                     self.adjust_inventory(
                         record_id=records[0].id,
                         new_quantity=count.counted_quantity,

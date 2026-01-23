@@ -416,7 +416,7 @@ class KnowledgeEnrichmentService:
 
     async def get_sources(self, db: AsyncSession) -> list[KnowledgeSourceRecord]:
         """Get all knowledge sources from database."""
-        stmt = select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.is_active == True)
+        stmt = select(KnowledgeSourceRecord).where(KnowledgeSourceRecord.is_active.is_(True))
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
@@ -777,10 +777,10 @@ class KnowledgeEnrichmentService:
         return updated
 
     # --------------------------------------------------------
-    # Step 2: Semantic Ingestion
+    # Step 2: Semantic Ingestion (In-Memory)
     # --------------------------------------------------------
 
-    def ingest_content(
+    def ingest_content_inmemory(
         self,
         actor_id: str,
         actor_roles: set[str],
@@ -789,7 +789,7 @@ class KnowledgeEnrichmentService:
         raw_content: str,
         tag: str | None = None,
     ) -> list[SemanticChunk]:
-        """Ingest raw content and create semantic chunks (Step 2)."""
+        """Ingest raw content and create semantic chunks (Step 2) - in-memory version."""
         self._require_curator(actor_roles)
 
         if source_id not in self._sources:
@@ -857,7 +857,7 @@ class KnowledgeEnrichmentService:
 
             # Split large chunks
             sentences = re.split(r"(?<=[.!?])\s+", chunk.content)
-            current = []
+            current: list[str] = []
             current_len = 0
 
             for sent in sentences:

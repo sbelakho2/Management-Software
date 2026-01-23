@@ -292,7 +292,7 @@ async def create_ctq(
     stmt = select(CTQ).where(
         and_(
             CTQ.ctq_number == data.ctq_number,
-            CTQ.is_deleted == False,
+            CTQ.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -365,7 +365,7 @@ async def get_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -397,7 +397,7 @@ async def list_ctqs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[CTQResponse]:
-    base_conditions = [CTQ.is_deleted == False]
+    base_conditions: list[Any] = [CTQ.deleted_at.is_(None)]
 
     if category and isinstance(category, CTQCategory):
         base_conditions.append(CTQ.category == category.value)
@@ -462,7 +462,7 @@ async def update_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -499,14 +499,13 @@ async def delete_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[None]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
     if not ctq:
         raise NotFoundError(f"CTQ {ctq_id} not found")
 
-    ctq.is_deleted = True
     ctq.deleted_at = _now_utc()
     ctq.deleted_by_id = current_user.id
     await db.flush()
@@ -531,7 +530,7 @@ async def activate_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -564,7 +563,7 @@ async def submit_for_review(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -597,7 +596,7 @@ async def approve_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -632,7 +631,7 @@ async def obsolete_ctq(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -670,7 +669,7 @@ async def create_measurement(
 ) -> APIResponse[MeasurementResponse]:
     # Check CTQ exists
     ctq_stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     ctq_result = await db.execute(ctq_stmt)
     ctq = ctq_result.scalar_one_or_none()
@@ -728,14 +727,14 @@ async def list_measurements(
 ) -> PaginatedResponse[MeasurementResponse]:
     # Check CTQ exists
     ctq_stmt = select(CTQ).where(
-        and_(CTQ.id == ctq_id, CTQ.is_deleted == False)
+        and_(CTQ.id == ctq_id, CTQ.deleted_at.is_(None))
     )
     ctq_result = await db.execute(ctq_stmt)
     ctq = ctq_result.scalar_one_or_none()
     if not ctq:
         raise NotFoundError(f"CTQ {ctq_id} not found")
 
-    base_conditions = [CTQMeasurement.ctq_id == ctq_id]
+    base_conditions: list[Any] = [CTQMeasurement.ctq_id == ctq_id]
 
     if result and isinstance(result, MeasurementResult):
         base_conditions.append(CTQMeasurement.result == result.value)
@@ -876,7 +875,7 @@ async def get_ctq_by_number(
     current_user: CurrentUser,
 ) -> APIResponse[CTQResponse]:
     stmt = select(CTQ).where(
-        and_(CTQ.ctq_number == ctq_number, CTQ.is_deleted == False)
+        and_(CTQ.ctq_number == ctq_number, CTQ.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     ctq = result.scalar_one_or_none()
@@ -901,9 +900,9 @@ async def get_critical_ctqs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[CTQResponse]:
-    base_conditions = [
-        CTQ.is_deleted == False,
-        CTQ.is_customer_critical == True,
+    base_conditions: list[Any] = [
+        CTQ.deleted_at.is_(None),
+        CTQ.is_customer_critical.is_(True),
     ]
 
     count_stmt = select(func.count(CTQ.id)).where(and_(*base_conditions))

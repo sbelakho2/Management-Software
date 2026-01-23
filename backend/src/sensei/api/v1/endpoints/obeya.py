@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -302,9 +302,7 @@ async def create_obeya_item(
         owner_id=data.assigned_to_id or current_user.id,
     )
 
-    maybe_awaitable = db.add(item)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(item)
     await db.flush()
     await db.refresh(item)
 
@@ -326,7 +324,7 @@ async def get_obeya_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -358,7 +356,7 @@ async def list_obeya_items(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[ObeyaItemResponse]:
-    base_conditions = [ObeyaItem.is_deleted == False]
+    base_conditions: list[Any] = [ObeyaItem.deleted_at.is_(None)]
 
     if board and isinstance(board, ObeyaBoard):
         base_conditions.append(ObeyaItem.board == board.value)
@@ -421,7 +419,7 @@ async def update_obeya_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -469,7 +467,7 @@ async def delete_obeya_item(
     current_user: CurrentUser,
 ) -> APIResponse:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -501,7 +499,7 @@ async def start_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -538,7 +536,7 @@ async def block_item(
     blocked_reason: Optional[str] = Query(default=None),
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -574,7 +572,7 @@ async def unblock_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -610,7 +608,7 @@ async def set_waiting(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -646,7 +644,7 @@ async def complete_item(
     resolution: Optional[str] = Query(default=None),
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -684,7 +682,7 @@ async def cancel_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -720,7 +718,7 @@ async def escalate_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -758,7 +756,7 @@ async def deescalate_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -797,7 +795,7 @@ async def resolve_item(
     current_user: CurrentUser,
 ) -> APIResponse[ObeyaItemResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -861,7 +859,7 @@ async def add_comment(
     current_user: CurrentUser,
 ) -> APIResponse[CommentResponse]:
     stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     item = result.scalar_one_or_none()
@@ -878,9 +876,7 @@ async def add_comment(
         attachments=data.attachments,
     )
 
-    maybe_awaitable = db.add(comment)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(comment)
     await db.flush()
     await db.refresh(comment)
 
@@ -905,7 +901,7 @@ async def list_comments(
 ) -> PaginatedResponse[CommentResponse]:
     # Check item exists
     item_stmt = select(ObeyaItem).where(
-        and_(ObeyaItem.id == item_id, ObeyaItem.is_deleted == False)
+        and_(ObeyaItem.id == item_id, ObeyaItem.deleted_at.is_(None))
     )
     item_result = await db.execute(item_stmt)
     item = item_result.scalar_one_or_none()
@@ -1032,7 +1028,7 @@ async def get_board_items(
 ) -> PaginatedResponse[ObeyaItemResponse]:
     board_value = board.value if isinstance(board, ObeyaBoard) else board
     base_conditions = [
-        ObeyaItem.is_deleted == False,
+        ObeyaItem.deleted_at.is_(None),
         ObeyaItem.board == board_value,
     ]
 
@@ -1075,7 +1071,7 @@ async def get_overdue_items(
 ) -> PaginatedResponse[ObeyaItemResponse]:
     now = datetime.now(timezone.utc)
     base_conditions = [
-        ObeyaItem.is_deleted == False,
+        ObeyaItem.deleted_at.is_(None),
         ObeyaItem.due_date < now,
         ObeyaItem.status.notin_([
             ObeyaStatus.COMPLETED.value,
@@ -1121,7 +1117,7 @@ async def get_my_items(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[ObeyaItemResponse]:
     base_conditions = [
-        ObeyaItem.is_deleted == False,
+        ObeyaItem.deleted_at.is_(None),
         ObeyaItem.assigned_to_id == current_user.id,
         ObeyaItem.status.notin_([
             ObeyaStatus.COMPLETED.value,
@@ -1167,8 +1163,8 @@ async def get_escalated_items(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[ObeyaItemResponse]:
     base_conditions = [
-        ObeyaItem.is_deleted == False,
-        ObeyaItem.is_escalated == True,
+        ObeyaItem.deleted_at.is_(None),
+        ObeyaItem.is_escalated.is_(True),
         ObeyaItem.status.notin_([
             ObeyaStatus.COMPLETED.value,
             ObeyaStatus.CANCELLED.value,

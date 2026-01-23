@@ -49,6 +49,7 @@ class AbnormalityType(str, Enum):
     WIP_LIMIT_VIOLATION = "wip_limit_violation"  # Production area exceeding WIP limits
     EXPIRING_CERTIFICATION = "expiring_certification"  # Operator certification expiring soon
     MISSING_SKILL_GAP = "missing_skill_gap"  # Skill gap identified for scheduled production
+    OPEN_NC_CRITICAL = "open_nc_critical"  # Open critical non-conformances
 
 
 class CommitmentType(str, Enum):
@@ -62,6 +63,26 @@ class CommitmentType(str, Enum):
     NCR_RESPONSE = "ncr_response"
     AUDIT = "audit"
     SHIPMENT = "shipment"
+    
+    # Additional commitment types
+    CALL_SCHEDULED = "call_scheduled"
+    APPROVAL_NEEDED = "approval_needed"
+    MEETING = "meeting"
+    TASK_DUE = "task_due"
+    DELIVERY_DUE = "delivery_due"
+    
+    # Project Management commitments
+    PROJECT_MILESTONE_DUE = "project_milestone_due"
+    USER_STORY_DUE = "user_story_due"
+    SUBTASK_DUE = "subtask_due"
+    
+    # Shop Floor commitments (Phase 3)
+    TRAINING_SESSION = "training_session"
+    AUDIT_SCHEDULED = "audit_scheduled"
+    MAINTENANCE_DUE = "maintenance_due"
+    CERTIFICATION_RENEWAL = "certification_renewal"
+    SHIFT_HANDOFF = "shift_handoff"
+    PRODUCTION_TARGET = "production_target"
 
 
 class PriorityLevel(str, Enum):
@@ -85,6 +106,7 @@ class LSWChecklistStatus(str, Enum):
 class ShopFloorAreaType(str, Enum):
     """Types of shop floor areas."""
     
+    WORK_CENTER = "work_center"
     STATION = "station"
     CELL = "cell"
     LINE = "line"
@@ -229,19 +251,22 @@ class QuickMetric:
 
 
 @dataclass
+@dataclass
 class WorkOrderAtRisk:
     """A work order that is at risk of being late."""
     
-    id: UUID
+    work_order_id: UUID
     work_order_number: str
-    product_name: str
+    job_name: str
     customer_name: str
-    due_date: date
-    estimated_completion: date
-    risk_reason: str
-    severity: ShopFloorAlertSeverity
-    station_name: str | None = None
-    current_status: str = "in_progress"
+    scheduled_ship_date: date
+    days_until_due: int
+    current_operation: str
+    work_center_id: UUID
+    work_center_name: str
+    reason_at_risk: str
+    estimated_delay_hours: float | None = None
+    priority: int = 3
 
 
 @dataclass
@@ -249,15 +274,21 @@ class CriticalAndon:
     """An active critical Andon alert."""
     
     id: UUID
-    station_id: UUID
-    station_name: str
+    work_center_id: UUID
+    work_center_name: str
     andon_type: str
-    symptom: str
-    severity: ShopFloorAlertSeverity
-    triggered_at: datetime
-    duration_minutes: int
-    assigned_to_name: str | None = None
-    is_acknowledged: bool = False
+    raised_at: datetime
+    minutes_open: int
+    station_id: UUID | None = None
+    station_name: str | None = None
+    description: str | None = None
+    title: str | None = None
+    raised_by_id: UUID | None = None
+    raised_by_name: str | None = None
+    acknowledged: bool = False
+    acknowledged_by_id: UUID | None = None
+    acknowledged_by_name: str | None = None
+    severity: ShopFloorAlertSeverity = ShopFloorAlertSeverity.CRITICAL
 
 
 @dataclass
@@ -266,11 +297,15 @@ class StationEfficiency:
     
     station_id: UUID
     station_name: str
-    target_output: int
-    actual_output: int
-    efficiency_pct: float
-    status: ShopFloorAlertSeverity
-    bottleneck_score: float = 0.0
+    work_center_id: UUID
+    work_center_name: str
+    current_efficiency: float
+    target_efficiency: float
+    variance: float
+    trend: str
+    is_below_target: bool
+    operator_id: UUID | None = None
+    operator_name: str | None = None
 
 
 @dataclass
@@ -279,11 +314,15 @@ class CellOEE:
     
     cell_id: UUID
     cell_name: str
+    work_center_id: UUID
+    work_center_name: str
+    current_oee: float
+    target_oee: float
     availability: float
     performance: float
     quality: float
-    oee: float
-    status: ShopFloorAlertSeverity
+    is_below_threshold: bool
+    variance: float
 
 
 @dataclass
@@ -291,12 +330,17 @@ class KanbanAlert:
     """Alert for a Kanban signal."""
     
     id: UUID
-    part_number: str
-    part_name: str
-    location: str
-    status: str  # critical, empty, below_min
-    due_date: datetime | None = None
-    quantity_needed: int = 0
+    material_code: str
+    material_name: str
+    bin_location: str
+    work_center_id: UUID
+    work_center_name: str
+    quantity_needed: float
+    unit: str
+    due_date: date
+    days_overdue: int
+    supplier_name: str | None = None
+    replenishment_status: str = "pending"
 
 
 @dataclass
@@ -304,11 +348,15 @@ class ExpiringCertification:
     """Alert for an expiring operator certification."""
     
     id: UUID
-    operator_name: str
+    user_id: UUID
+    user_name: str
     certification_name: str
-    expiry_date: date
+    certification_type: str
+    expiration_date: date
     days_until_expiry: int
-    is_critical: bool = False
+    is_expired: bool
+    required_for_work_centers: List[str]
+    renewal_training_id: UUID | None = None
 
 
 @dataclass
@@ -316,11 +364,15 @@ class WIPViolation:
     """Violation of Work-In-Progress limits."""
     
     id: UUID
-    area_name: str
+    work_center_id: UUID
+    work_center_name: str
+    cell_id: UUID | None
+    cell_name: str | None
     current_wip: int
     wip_limit: int
-    excess_count: int
-    severity: ShopFloorAlertSeverity
+    violation_amount: int
+    started_at: datetime
+    duration_minutes: int
 
 
 @dataclass
@@ -328,11 +380,16 @@ class CAPAVerification:
     """Due verification for a CAPA."""
     
     id: UUID
-    ncr_number: str
-    action_description: str
+    capa_number: str
+    title: str
+    capa_type: str
+    verification_due_date: date
+    days_until_due: int
+    is_overdue: bool
+    owner_id: UUID
     owner_name: str
-    due_date: date
-    verification_method: str
+    original_nc_id: UUID | None = None
+    effectiveness_check: bool = False
 
 
 @dataclass
@@ -340,30 +397,71 @@ class ScheduledTraining:
     """Upcoming training session."""
     
     id: UUID
-    training_name: str
-    trainer_name: str
-    scheduled_at: datetime
-    location: str
+    title: str
+    description: str | None
+    training_type: str
+    scheduled_date: date
+    scheduled_time: str
     duration_minutes: int
+    location: str | None
+    instructor_name: str | None
     attendee_count: int
+    max_attendees: int | None
+    is_user_enrolled: bool
 
 
 @dataclass
 class ShopFloorSummary:
     """Aggregated summary of shop floor status."""
     
-    total_stations: int
-    active_stations: int
+    work_orders_at_risk: list[WorkOrderAtRisk]
+    work_orders_at_risk_count: int
     critical_andons: list[CriticalAndon]
+    unacknowledged_andon_count: int
+    avg_andon_response_minutes: float
     low_efficiency_stations: list[StationEfficiency]
     low_oee_cells: list[CellOEE]
-    work_orders_at_risk: list[WorkOrderAtRisk]
+    overall_oee: float
     overdue_kanbans: list[KanbanAlert]
+    pending_kanban_count: int
     expiring_certifications: list[ExpiringCertification]
+    expired_certification_count: int
+    expiring_soon_count: int
     wip_violations: list[WIPViolation]
+    total_wip_violation_count: int
     capa_verifications_due: list[CAPAVerification]
+    overdue_capa_count: int
     scheduled_trainings: list[ScheduledTraining]
-    overall_oee: float = 0.0
+    training_sessions_today: int
+    total_stations: int = 0
+    active_stations: int = 0
+
+
+@dataclass
+class HandoverNoteSummary:
+    """Summary of a shift handover note."""
+    
+    id: int
+    station_id: int
+    severity: str
+    safety: str
+    quality: str
+    delivery: str
+    cost: str
+    people: str
+    notes: str
+    created_at: datetime
+
+
+@dataclass
+class GlobalPulseSummary:
+    """Summary of a global pulse announcement."""
+    
+    id: int
+    message: str
+    severity: str
+    highlight_metric_name: Optional[str] = None
+    highlight_metric_value: Optional[str] = None
 
 
 @dataclass
@@ -396,6 +494,10 @@ class TodayScreenData:
     
     lsw_summary: LSWChecklistSummary | None = None
     quick_metrics: list[QuickMetric] = field(default_factory=list)
+    
+    # Real-time awareness (The Pulse & Handovers)
+    active_pulses: list[GlobalPulseSummary] = field(default_factory=list)
+    active_handovers: list[HandoverNoteSummary] = field(default_factory=list)
     
     # Shop Floor / MES data
     shop_floor_summary: ShopFloorSummary | None = None

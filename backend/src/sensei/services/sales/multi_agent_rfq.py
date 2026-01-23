@@ -392,7 +392,7 @@ class TechnicalAgent(BaseAgent):
     
     def _analyze_tolerances(self, rfq: RFQSpec) -> list[AgentFinding]:
         """Analyze tolerance specifications."""
-        findings = []
+        findings: list[AgentFinding] = []
         
         dims = rfq.dimension_specs
         if not dims:
@@ -1347,7 +1347,7 @@ class AgentOrchestrator:
         # Run debate rounds
         for round_num in range(1, self.max_debate_rounds + 1):
             # Check for consensus
-            position_counts = defaultdict(int)
+            position_counts: dict[str, int] = defaultdict(int)
             for pos in positions:
                 position_counts[pos.position] += 1
             
@@ -1377,7 +1377,7 @@ class AgentOrchestrator:
         
         # No consensus reached - coordinator decides
         # Weighted by confidence
-        weighted_positions = defaultdict(float)
+        weighted_positions: dict[str, float] = defaultdict(float)
         for pos in positions:
             weighted_positions[pos.position] += pos.confidence
         

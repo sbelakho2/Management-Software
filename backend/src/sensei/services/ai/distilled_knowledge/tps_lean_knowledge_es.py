@@ -267,8 +267,8 @@ class TPSLeanKnowledgeES:
         keyword_lower = keyword.lower()
         return [
             p for p in cls.PRINCIPLES
-            if any(keyword_lower in kw.lower() for kw in p["keywords"])
-            or keyword_lower in p["principle"].lower()
+            if any(keyword_lower in str(kw).lower() for kw in p["keywords"])  # type: ignore[union-attr]
+            or keyword_lower in str(p["principle"]).lower()
         ]
     
     @classmethod
@@ -294,7 +294,7 @@ class TPSLeanKnowledgeES:
         for principle in cls.PRINCIPLES:
             # Calculate relevance score
             principle_words = set(principle["principle"].lower().split())
-            keyword_words = set(kw.lower() for kw in principle["keywords"])
+            keyword_words = set(str(kw).lower() for kw in principle["keywords"])
             
             # Word overlap with principle
             p_overlap = len(query_words & principle_words) / max(1, len(query_words))
@@ -312,5 +312,5 @@ class TPSLeanKnowledgeES:
                 })
         
         # Sort by relevance and return top results
-        results.sort(key=lambda x: x["relevance_score"], reverse=True)
+        results.sort(key=lambda x: x["relevance_score"], reverse=True)  # type: ignore[arg-type, return-value]
         return results[:max_results]

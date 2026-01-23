@@ -11,7 +11,7 @@ class AdminGate(Base, TimestampMixin):
     """System configuration gate model."""
     __tablename__ = "admin_gates"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     phase: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -25,7 +25,7 @@ class ApprovalWorkflow(Base, TimestampMixin):
     """Approval workflow configuration model."""
     __tablename__ = "approval_workflows"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     type: Mapped[str] = mapped_column(String(100), nullable=False) # quote, etc.
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     threshold_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -40,7 +40,7 @@ class Template(Base, TimestampMixin):
     """System template model (A3, Obeya, Email, etc.)."""
     __tablename__ = "templates"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     type: Mapped[str] = mapped_column(String(100), nullable=False) # a3, obeya, email, report
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -54,7 +54,7 @@ class LearningCadence(Base, TimestampMixin):
     """Learning frequency and requirement model."""
     __tablename__ = "learning_cadences"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     frequency: Mapped[str] = mapped_column(String(50), nullable=False) # daily, weekly, monthly, quarterly
     duration_minutes: Mapped[int] = mapped_column(Integer, default=30)
@@ -68,7 +68,7 @@ class FeatureFlag(Base, TimestampMixin):
     """System feature flag model."""
     __tablename__ = "feature_flags"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

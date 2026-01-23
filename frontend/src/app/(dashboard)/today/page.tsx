@@ -15,6 +15,8 @@ import { hasPageAccess } from '@/lib/page-access';
 import { UserRole } from '@/types';
 import { MyWorkDashboard } from './_components/my-work-dashboard';
 import { DrillAnswerModal } from './_components/drill-answer-modal';
+import { SenseiPulse } from './_components/sensei-pulse';
+import { ShiftHandoverCard } from './_components/shift-handover-card';
 
 type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -290,6 +292,9 @@ export default function TodayPage() {
 
 	const lswSummary = (todayData?.lsw_summary || null) as LswSummary | null;
 
+	const activePulses = todayData?.active_pulses || [];
+	const activeHandovers = todayData?.active_handovers || [];
+
 	// Render gates (after all hooks have run)
 	if (!mounted || (!isTestEnv && loading)) {
 		return (
@@ -344,6 +349,8 @@ export default function TodayPage() {
 				</div>
 			</div>
 
+			<SenseiPulse pulses={activePulses} />
+
 			{/* KPI Cards (Industrial Modules) */}
 			<div className="grid gap-px border border-rams-line bg-rams-line">
 				{kpis.map((kpi) => (
@@ -363,6 +370,7 @@ export default function TodayPage() {
 			</div>
 
 			<div className="grid gap-8 lg:grid-cols-3">
+				<ShiftHandoverCard handovers={activeHandovers} />
 				<article className="lg:col-span-2 space-y-8">
 					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
 						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">

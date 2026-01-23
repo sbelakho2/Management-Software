@@ -277,8 +277,8 @@ class ConditionBasedMaintenancePredictor:
         y = []
         
         # Group data by equipment
-        equipment_readings = {}
-        equipment_maintenance = {}
+        equipment_readings: dict[int, list[Any]] = {}
+        equipment_maintenance: dict[int, list[Any]] = {}
         
         for reading in condition_readings:
             if reading.equipment_id not in equipment_readings:
@@ -420,7 +420,7 @@ class ConditionBasedMaintenancePredictor:
         recent_readings: List[Any],
     ) -> List[Dict]:
         """Check if any readings exceed critical thresholds."""
-        critical_issues = []
+        critical_issues: List[Dict[str, Any]] = []
         
         if not recent_readings:
             return critical_issues

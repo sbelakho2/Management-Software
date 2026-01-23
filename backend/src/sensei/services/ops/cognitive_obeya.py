@@ -316,9 +316,9 @@ class AsyncPrescriptiveMetricAnalyzer:
         for wo in wo_result.scalars().all():
             wo_dict = {
                 "id": str(wo.id),
-                "description": wo.description or f"Work Order {wo.work_order_number}",
+                "description": wo.notes or f"Work Order {wo.work_order_number}",
                 "quality_issues": getattr(wo, 'defect_count', 0) or 0,
-                "delivery_delay": max(0, (wo.actual_end_date - wo.due_date).days) if wo.actual_end_date and wo.due_date else 0,
+                "delivery_delay": max(0, (wo.actual_end - wo.scheduled_end).days) if wo.actual_end and wo.scheduled_end else 0,
                 "cost_overrun": getattr(wo, 'cost_variance', 0.0) or 0.0,
                 "safety_incidents": getattr(wo, 'safety_incidents', 0) or 0,
             }
@@ -335,7 +335,7 @@ class AsyncPrescriptiveMetricAnalyzer:
         for rfq in rfq_result.scalars().all():
             quote_dict = {
                 "id": str(rfq.id),
-                "supplier": rfq.customer_name or "Unknown",
+                "supplier": getattr(rfq, 'customer_notes', None) or "Unknown",
                 "quality_rating": getattr(rfq, 'supplier_quality_rating', 1.0) or 1.0,
                 "delivery_rating": getattr(rfq, 'supplier_delivery_rating', 1.0) or 1.0,
                 "cost_variance": getattr(rfq, 'cost_variance', 0.0) or 0.0,
@@ -943,69 +943,6 @@ class CrossFunctionalSynergyEngine:
                     resolution_status="open",
                 )
                 self.silo_alerts.append(alert)
-
-    def get_active_silo_alerts(self) -> list[SiloAlert]:
-        return [a for a in self.silo_alerts if a.resolution_status == "open"]
-
-    def analyze_resource_rebalancing(self) -> list[ResourceRebalance]:
-        suggestions = []
-
-        overloaded = [
-            wc for wc in self.work_centers.values()
-            if wc.utilization > 0.9
-        ]
-        underloaded = [
-            wc for wc in self.work_centers.values()
-            if wc.utilization < 0.6
-        ]
-
-        if not overloaded or not underloaded:
-            return suggestions
-
-        for over_wc in overloaded:
-            for under_wc in underloaded:
-                available_operators = [
-                    op for op in self.operators.values()
-                    if op.current_work_center == under_wc.work_center_id
-                    and op.available
-                ]
-
-                if not available_operators:
-                    continue
-
-                required_skills = self._infer_required_skills(over_wc.name)
-
-                matching_operators = []
-                for op in available_operators:
-                    match_score = self._calculate_skill_match(op.skills, required_skills)
-                    if match_score >= 0.6:
-                        matching_operators.append((op, match_score))
-
-                if matching_operators:
-                    matching_operators.sort(key=lambda x: x[1], reverse=True)
-                    top_matches = matching_operators[:2]
-
-                    avg_score = sum(m[1] for m in top_matches) / len(top_matches)
-                    expected_improvement = min(
-                        0.2,
-                        (over_wc.utilization - 0.8) * len(top_matches) * 0.1
-                    )
-
-                    suggestion = ResourceRebalance(
-                        suggestion_id=str(uuid.uuid4()),
-                        source_work_center=under_wc.work_center_id,
-                        target_work_center=over_wc.work_center_id,
-                        operator_ids=[m[0].operator_id for m in top_matches],
-                        skill_match_score=avg_score,
-                        reason=f"Rebalance from {under_wc.name} ({under_wc.utilization:.0%} util) "
-                               f"to {over_wc.name} ({over_wc.utilization:.0%} util)",
-                        expected_improvement=expected_improvement,
-                        suggested_at=datetime.now(timezone.utc),
-                    )
-                    suggestions.append(suggestion)
-
-        self.rebalance_suggestions.extend(suggestions)
-        return suggestions
     
     def register_work_center(
         self,
@@ -1050,7 +987,7 @@ class CrossFunctionalSynergyEngine:
         Suggests moving operators between Work Centers based on
         real-time Skill Gap Index and current WIP volume.
         """
-        suggestions = []
+        suggestions: list[ResourceRebalance] = []
         
         # Find overloaded and underloaded work centers
         overloaded = [
@@ -1341,9 +1278,13 @@ class AsyncHeijunkaAdvisor:
         
         self.suggestions.append(suggestion)
         return suggestion
-    
+
+
+class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
+    """In-memory Heijunka Advisor for sync use cases and tests."""
+
     def get_all_suggestions(self) -> list[HeijunkaSuggestion]:
-        """Get all Heijunka suggestions."""
+        """Get all Heijunka suggestions from in-memory store."""
         return self.suggestions
     
     def apply_suggestion(self, suggestion_id: str) -> bool:
@@ -1361,10 +1302,6 @@ class AsyncHeijunkaAdvisor:
                 suggestion.status = f"dismissed: {reason}"
                 return True
         return False
-
-
-class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
-    """In-memory Heijunka Advisor for sync use cases and tests."""
 
     def record_demand(self, product: str, quantities: list[int]) -> None:
         self.demand_data[product] = quantities

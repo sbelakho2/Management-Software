@@ -774,7 +774,7 @@ class TemplateCloningService:
         )
         
         # Mark previous as not current
-        if result.success:
+        if result.success and result.target_id:
             source_quote["is_current"] = False
             self._save_entity(CloneableEntityType.QUOTE, quote_id, source_quote)
             
@@ -791,7 +791,7 @@ class TemplateCloningService:
         quote_id: UUID,
     ) -> list[dict[str, Any]]:
         """Get all versions of a quote chain."""
-        versions = []
+        versions: list[dict[str, Any]] = []
         
         # Find the root quote
         current = self._get_entity(CloneableEntityType.QUOTE, quote_id)

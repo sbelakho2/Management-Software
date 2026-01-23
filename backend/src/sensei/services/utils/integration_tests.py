@@ -1394,7 +1394,7 @@ class IntegrationTestService:
 
     def get_test_coverage(self) -> dict[str, list[str]]:
         """Get coverage by workflow area."""
-        coverage = {
+        coverage: dict[str, list[str]] = {
             "rfq_workflow": [],
             "qualification_workflow": [],
             "quote_workflow": [],

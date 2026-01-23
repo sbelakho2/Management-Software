@@ -13,7 +13,7 @@ class ExceptionRecord(Base, TimestampMixin):
     """Database model for a single exception/red item."""
     __tablename__ = "exception_items"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(50), nullable=False)

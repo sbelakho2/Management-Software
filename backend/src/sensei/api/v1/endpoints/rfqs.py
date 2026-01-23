@@ -25,9 +25,10 @@ from sqlalchemy.orm import selectinload
 
 from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
+from typing import TypeAlias
 
 # Role-based access for RFQ outcome decisions (win/lose/no-bid require elevated privileges)
-AllowRFQDecision = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")
+AllowRFQDecision: TypeAlias = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")  # type: ignore[valid-type]
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (

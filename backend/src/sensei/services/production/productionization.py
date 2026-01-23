@@ -140,7 +140,7 @@ class FilterSpec:
 
 
 @dataclass(frozen=True)
-class GLAccountModel:
+class GLAccountDataclass:
     """Chart of Accounts model (SQLAlchemy simulation)."""
 
     id: UUID
@@ -155,7 +155,7 @@ class GLAccountModel:
 
 
 @dataclass(frozen=True)
-class OpeningBalanceModel:
+class OpeningBalanceDataclass:
     """Opening balance model."""
 
     id: UUID
@@ -225,7 +225,7 @@ class InventoryItemModel:
 
 
 @dataclass(frozen=True)
-class InventoryLevelModel:
+class InventoryLevelDataclass:
     """Inventory level/on-hand model."""
 
     id: UUID
@@ -1169,12 +1169,12 @@ class ProductionizationService:
     """In-memory productionization service for tests and local usage."""
 
     def __init__(self) -> None:
-        self._gl_accounts: dict[UUID, GLAccountModel] = {}
-        self._opening_balances: dict[UUID, OpeningBalanceModel] = {}
+        self._gl_accounts: dict[UUID, GLAccountDataclass] = {}
+        self._opening_balances: dict[UUID, OpeningBalanceDataclass] = {}
         self._suppliers: dict[UUID, SupplierModel] = {}
         self._customers: dict[UUID, CustomerModel] = {}
         self._inventory_items: dict[UUID, InventoryItemModel] = {}
-        self._inventory_levels: dict[UUID, InventoryLevelModel] = {}
+        self._inventory_levels: dict[UUID, InventoryLevelDataclass] = {}
         self._import_batches: dict[UUID, ImportBatch] = {}
         self._audit: list[AuditEvent] = []
 
@@ -1258,14 +1258,14 @@ class ProductionizationService:
         account_type: str,
         parent_id: UUID | None = None,
         normal_balance: str = "debit",
-    ) -> GLAccountModel:
+    ) -> GLAccountDataclass:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
         if any(a.account_code == account_code for a in self._gl_accounts.values()):
             raise ValueError(f"Account code {account_code} already exists")
 
-        account = GLAccountModel(
+        account = GLAccountDataclass(
             id=uuid4(),
             account_code=account_code,
             account_name=account_name,
@@ -1517,14 +1517,14 @@ class ProductionizationService:
         location_id: str,
         quantity_on_hand: Decimal,
         quantity_reserved: Decimal = Decimal("0"),
-    ) -> InventoryLevelModel:
+    ) -> InventoryLevelDataclass:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_WRITE_ROLES, "MES write access required")
 
         if item_id not in self._inventory_items:
             raise ValueError("item_id not found")
 
-        level = InventoryLevelModel(
+        level = InventoryLevelDataclass(
             id=uuid4(),
             item_id=item_id,
             location_id=location_id,
@@ -1692,7 +1692,7 @@ class ProductionizationService:
         debit_amount: Decimal,
         credit_amount: Decimal = Decimal("0"),
         currency: str = "USD",
-    ) -> OpeningBalanceModel:
+    ) -> OpeningBalanceDataclass:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_WRITE_ROLES, "Finance write access required")
 
@@ -1700,7 +1700,7 @@ class ProductionizationService:
             raise ValueError("account_id not found")
 
         net_amount = debit_amount - credit_amount
-        balance = OpeningBalanceModel(
+        balance = OpeningBalanceDataclass(
             id=uuid4(),
             account_id=account_id,
             period_start=period_start,
@@ -1725,7 +1725,7 @@ class ProductionizationService:
         *,
         actor_roles: Iterable[str],
         account_id: UUID | None = None,
-    ) -> list[OpeningBalanceModel]:
+    ) -> list[OpeningBalanceDataclass]:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _FINANCE_READ_ROLES, "Finance read access required")
 

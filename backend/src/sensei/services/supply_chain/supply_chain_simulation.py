@@ -501,7 +501,7 @@ class MonteCarloSimulator:
         scenarios: list[DisruptionScenario],
     ) -> list[DisruptionScenario]:
         """Determine which disruptions occur in this run."""
-        active = []
+        active: list[DisruptionScenario] = []
         
         for scenario in scenarios:
             # Check if this disruption occurs
@@ -714,7 +714,7 @@ class ImpactAnalyzer:
 class MitigationAdvisor:
     """Recommends mitigation strategies based on simulation results."""
     
-    STRATEGY_INFO = {
+    STRATEGY_INFO: dict[MitigationStrategy, dict[str, Any]] = {
         MitigationStrategy.SAFETY_STOCK: {
             "description": "Maintain safety stock of critical materials",
             "effectiveness": 0.75,

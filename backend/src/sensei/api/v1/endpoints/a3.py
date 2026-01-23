@@ -270,7 +270,7 @@ async def create_a3(
     stmt = select(A3).where(
         and_(
             A3.a3_number == data.a3_number,
-            A3.is_deleted == False,
+            A3.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -338,7 +338,7 @@ async def get_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -374,7 +374,7 @@ async def list_a3s(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[A3Response]:
-    base_conditions = [A3.is_deleted == False]
+    base_conditions: list[Any] = [A3.deleted_at.is_(None)]
 
     if a3_type and isinstance(a3_type, A3Type):
         base_conditions.append(A3.a3_type == a3_type.value)
@@ -455,7 +455,7 @@ async def update_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -493,14 +493,13 @@ async def delete_a3(
     current_user: CurrentUser,
 ) -> APIResponse[None]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
     if not a3:
         raise NotFoundError(f"A3 {a3_id} not found")
 
-    a3.is_deleted = True
     a3.deleted_at = _now_utc()
     a3.deleted_by_id = current_user.id
     await db.flush()
@@ -525,7 +524,7 @@ async def start_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -562,7 +561,7 @@ async def submit_for_review(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -635,7 +634,7 @@ async def review_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -670,7 +669,7 @@ async def approve_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -711,7 +710,7 @@ async def reject_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -749,7 +748,7 @@ async def implement_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -785,7 +784,7 @@ async def close_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -822,7 +821,7 @@ async def cancel_a3(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -866,7 +865,7 @@ async def add_section(
 ) -> APIResponse[A3SectionResponse]:
     # Check A3 exists
     a3_stmt = select(A3).where(
-        and_(A3.id == a3_id, A3.is_deleted == False)
+        and_(A3.id == a3_id, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     a3_result = await db.execute(a3_stmt)
     a3 = a3_result.scalar_one_or_none()
@@ -1148,7 +1147,7 @@ async def get_a3_by_number(
     current_user: CurrentUser,
 ) -> APIResponse[A3Response]:
     stmt = select(A3).where(
-        and_(A3.a3_number == a3_number, A3.is_deleted == False)
+        and_(A3.a3_number == a3_number, A3.deleted_at.is_(None))
     ).options(selectinload(A3.sections))
     result = await db.execute(stmt)
     a3 = result.scalar_one_or_none()
@@ -1176,8 +1175,8 @@ async def get_my_a3s(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[A3Response]:
-    base_conditions = [
-        A3.is_deleted == False,
+    base_conditions: list[Any] = [
+        A3.deleted_at.is_(None),
         or_(
             A3.author_id == current_user.id,
             A3.sponsor_id == current_user.id,
@@ -1228,8 +1227,8 @@ async def get_pending_review(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[A3Response]:
-    base_conditions = [
-        A3.is_deleted == False,
+    base_conditions: list[Any] = [
+        A3.deleted_at.is_(None),
         A3.status == A3Status.REVIEW.value,
     ]
 

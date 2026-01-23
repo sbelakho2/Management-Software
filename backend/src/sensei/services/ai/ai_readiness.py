@@ -132,7 +132,7 @@ class AIReadinessService:
         """
         Run a real-time performance verification (Golden Samples).
         """
-        results = {"status": "success", "measurements": []}
+        results: Dict[str, Any] = {"status": "success", "measurements": []}
         start_time = time.perf_counter()
         
         # Test Embeddings

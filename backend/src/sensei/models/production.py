@@ -23,12 +23,99 @@ from sqlalchemy import (
     UniqueConstraint,
     CheckConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin
 
+from uuid import UUID as PyUUID
+
 if TYPE_CHECKING:
     from sensei.models.work_center import WorkCenter, Station
+    from sensei.models.user import User
+    from sensei.models.work_order import WorkOrder
+
+
+class HandoverSeverity(enum.Enum):
+    """Severity of a handover note or pulse message."""
+
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class ShiftHandoverNote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
+    """
+    Digital shift handover note.
+
+    Allows operators to pass critical information between shifts,
+    structured around SQDCP principles.
+    """
+
+    __tablename__ = "shift_handover_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
+    station_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("stations.id"), nullable=False, index=True
+    )
+    work_order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("work_orders.id"), nullable=True, index=True
+    )
+
+    severity: Mapped[HandoverSeverity] = mapped_column(
+        Enum(HandoverSeverity), nullable=False, default=HandoverSeverity.INFO
+    )
+
+    # Structured fields
+    safety: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    quality: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    delivery: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cost: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    people: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # Acknowledgement
+    acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    acknowledged_by_id: Mapped[Optional["PyUUID"]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    station: Mapped["Station"] = relationship("Station", backref="handover_notes")
+    work_order: Mapped[Optional["WorkOrder"]] = relationship("WorkOrder")
+    acknowledged_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[acknowledged_by_id]
+    )
+
+    def __repr__(self) -> str:
+        return f"<ShiftHandoverNote(id={self.id}, station_id={self.station_id}, severity={self.severity.value})>"
+
+
+class GlobalPulse(Base, TimestampMixin, AuditMixin):
+    """
+    Real-time site-wide announcement (The Pulse).
+
+    A cutting-edge feature to keep all 24 roles aligned with critical
+    site status and goals in real-time.
+    """
+
+    __tablename__ = "global_pulses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    severity: Mapped[HandoverSeverity] = mapped_column(
+        Enum(HandoverSeverity), nullable=False, default=HandoverSeverity.INFO
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Specific metrics to highlight in the pulse
+    highlight_metric_name: Mapped[Optional[str]] = mapped_column(String(100))
+    highlight_metric_value: Mapped[Optional[str]] = mapped_column(String(50))
+
+    def __repr__(self) -> str:
+        return f"<GlobalPulse(id={self.id}, active={self.is_active}, message='{self.message[:20]}...')>"
 
 
 class CellType(enum.Enum):
@@ -68,7 +155,7 @@ class ProductionCell(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "production_cells"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Cell identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -201,7 +288,7 @@ class CellPerformance(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "cell_performances"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Cell and shift
     cell_id: Mapped[int] = mapped_column(

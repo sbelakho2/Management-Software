@@ -452,8 +452,8 @@ class LayoutModel:
     
     def __init__(self, model_path: Path | None = None):
         self.model_path = model_path or Path("models/layout_detection.onnx")
-        self._model = None
-        self._session = None
+        self._model: bool | None = None
+        self._session: Any = None
         self._use_fallback = False
     
     def load(self) -> None:
@@ -595,9 +595,9 @@ class TableStructureModel:
     
     def __init__(self, model_path: Path | None = None):
         self.model_path = model_path or Path("models/table_structure.onnx")
-        self._model = None
-        self._session = None
-        self._ocr_engine = None
+        self._model: bool | None = None
+        self._session: Any = None
+        self._ocr_engine: OCREngine | None = None
     
     def load(self) -> None:
         """Load the table structure model."""
@@ -665,6 +665,8 @@ class TableStructureModel:
             return self._recognize_with_heuristics(table_image, table_bbox, table_id)
         
         # Run inference
+        if self._session is None:
+            return self._recognize_with_heuristics(table_image, table_bbox, table_id)
         input_name = self._session.get_inputs()[0].name
         outputs = self._session.run(None, {input_name: img})
         
@@ -687,6 +689,8 @@ class TableStructureModel:
                 logger.warning(f"Table model outputs could not be parsed: {exc}")
         
         # Use OCR to extract cell contents
+        if self._ocr_engine is None:
+            self._ocr_engine = OCREngine()
         text, words = self._ocr_engine.extract_text(table_image)
         
         # Group words into cells based on positions (simplified)
@@ -840,15 +844,6 @@ class TableStructureModel:
             confidence=0.50,
         )
         
-        return ExtractedTable(
-            table_id=table_id,
-            cells=cells,
-            num_rows=4,
-            num_cols=4,
-            headers=headers,
-            bbox=table_bbox,
-            confidence=0.88,
-        )
 
 
 # =============================================================================
@@ -960,7 +955,7 @@ class OCREngine:
             # Placeholder: In production, could use simple edge detection
             # to identify text regions
             full_text = "[OCR not available - install pytesseract for text extraction]"
-            words = []
+            words: list[dict[str, Any]] = []
             
             return full_text, words
             
@@ -1252,7 +1247,7 @@ class KeyValueExtractor:
         """
         Extract key-value pairs from text.
         """
-        results = []
+        results: list[KeyValuePair] = []
         text_lower = text.lower()
         
         for field_type, patterns in self.FIELD_PATTERNS.items():
@@ -1429,13 +1424,12 @@ class DocumentIntelligenceService:
         self.kv_extractor = KeyValueExtractor()
         self.drawing_processor = EngineeringDrawingProcessor()
         
+        self.vlm_enricher: VisionLLMEnricher | None = None
         if self.config.enable_vlm_enrichment:
             self.vlm_enricher = VisionLLMEnricher(
                 provider=self.config.vlm_provider,
                 model=self.config.vlm_model,
             )
-        else:
-            self.vlm_enricher = None
     
     async def process_document(
         self,

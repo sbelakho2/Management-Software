@@ -421,7 +421,7 @@ async def create_skill(
     stmt = select(Skill).where(
         and_(
             Skill.code == data.code,
-            Skill.is_deleted == False,
+            Skill.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -464,7 +464,7 @@ async def get_skill(
     current_user: CurrentUser,
 ) -> APIResponse[SkillResponse]:
     stmt = select(Skill).where(
-        and_(Skill.id == skill_id, Skill.is_deleted == False)
+        and_(Skill.id == skill_id, Skill.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     skill = result.scalar_one_or_none()
@@ -492,7 +492,7 @@ async def list_skills(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[SkillResponse]:
-    base_conditions = [Skill.is_deleted == False]
+    base_conditions: list[Any] = [Skill.deleted_at.is_(None)]
 
     if category and isinstance(category, SkillCategory):
         base_conditions.append(Skill.skill_category == category)
@@ -550,7 +550,7 @@ async def update_skill(
     current_user: CurrentUser,
 ) -> APIResponse[SkillResponse]:
     stmt = select(Skill).where(
-        and_(Skill.id == skill_id, Skill.is_deleted == False)
+        and_(Skill.id == skill_id, Skill.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     skill = result.scalar_one_or_none()
@@ -582,14 +582,13 @@ async def delete_skill(
     current_user: CurrentUser,
 ) -> APIResponse[None]:
     stmt = select(Skill).where(
-        and_(Skill.id == skill_id, Skill.is_deleted == False)
+        and_(Skill.id == skill_id, Skill.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     skill = result.scalar_one_or_none()
     if not skill:
         raise NotFoundError(f"Skill {skill_id} not found")
 
-    skill.is_deleted = True
     skill.deleted_at = _now_utc()
     skill.deleted_by_id = current_user.id
     await db.flush()
@@ -621,7 +620,7 @@ async def create_skill_requirement(
 
     # Check skill exists
     skill_stmt = select(Skill).where(
-        and_(Skill.id == data.skill_id, Skill.is_deleted == False)
+        and_(Skill.id == data.skill_id, Skill.deleted_at.is_(None))
     )
     skill_result = await db.execute(skill_stmt)
     if not skill_result.scalar_one_or_none():
@@ -703,7 +702,7 @@ async def list_skill_requirements(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[SkillRequirementResponse]:
-    base_conditions = []
+    base_conditions: list[Any] = []
 
     if skill_id is not None and isinstance(skill_id, int):
         base_conditions.append(SkillRequirement.skill_id == skill_id)
@@ -717,7 +716,7 @@ async def list_skill_requirements(
     if base_conditions:
         where_clause = and_(*base_conditions)
     else:
-        where_clause = True
+        where_clause = SkillRequirement.id.isnot(None)  # Always true condition
 
     count_stmt = select(func.count(SkillRequirement.id)).where(where_clause)
     count_result = await db.execute(count_stmt)
@@ -786,7 +785,7 @@ async def create_training(
 ) -> APIResponse[TrainingResponse]:
     # Check skill exists
     skill_stmt = select(Skill).where(
-        and_(Skill.id == data.skill_id, Skill.is_deleted == False)
+        and_(Skill.id == data.skill_id, Skill.deleted_at.is_(None))
     )
     skill_result = await db.execute(skill_stmt)
     if not skill_result.scalar_one_or_none():
@@ -865,7 +864,7 @@ async def get_training(
     current_user: CurrentUser,
 ) -> APIResponse[TrainingResponse]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
@@ -897,7 +896,7 @@ async def list_trainings(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TrainingResponse]:
-    base_conditions = [Training.is_deleted == False]
+    base_conditions: list[Any] = [Training.deleted_at.is_(None)]
 
     if skill_id is not None and isinstance(skill_id, int):
         base_conditions.append(Training.skill_id == skill_id)
@@ -962,7 +961,7 @@ async def update_training(
     current_user: CurrentUser,
 ) -> APIResponse[TrainingResponse]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
@@ -996,14 +995,13 @@ async def delete_training(
     current_user: CurrentUser,
 ) -> APIResponse[None]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
     if not training:
         raise NotFoundError(f"Training {training_id} not found")
 
-    training.is_deleted = True
     training.deleted_at = _now_utc()
     training.deleted_by_id = current_user.id
     await db.flush()
@@ -1028,7 +1026,7 @@ async def start_training(
     current_user: CurrentUser,
 ) -> APIResponse[TrainingResponse]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
@@ -1064,7 +1062,7 @@ async def complete_training(
     current_user: CurrentUser,
 ) -> APIResponse[TrainingResponse]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
@@ -1100,7 +1098,7 @@ async def cancel_training(
     current_user: CurrentUser,
 ) -> APIResponse[TrainingResponse]:
     stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     result = await db.execute(stmt)
     training = result.scalar_one_or_none()
@@ -1143,7 +1141,7 @@ async def enroll_participant(
 ) -> APIResponse[ParticipantResponse]:
     # Check training exists
     training_stmt = select(Training).where(
-        and_(Training.id == training_id, Training.is_deleted == False)
+        and_(Training.id == training_id, Training.deleted_at.is_(None))
     ).options(selectinload(Training.participants))
     training_result = await db.execute(training_stmt)
     training = training_result.scalar_one_or_none()
@@ -1228,7 +1226,7 @@ async def list_participants(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[ParticipantResponse]:
-    base_conditions = [TrainingParticipant.training_id == training_id]
+    base_conditions: list[Any] = [TrainingParticipant.training_id == training_id]
 
     if enrollment_status and isinstance(enrollment_status, EnrollmentStatus):
         base_conditions.append(TrainingParticipant.enrollment_status == enrollment_status)
@@ -1390,7 +1388,7 @@ async def create_user_skill(
 ) -> APIResponse[UserSkillResponse]:
     # Check skill exists
     skill_stmt = select(Skill).where(
-        and_(Skill.id == data.skill_id, Skill.is_deleted == False)
+        and_(Skill.id == data.skill_id, Skill.deleted_at.is_(None))
     )
     skill_result = await db.execute(skill_stmt)
     if not skill_result.scalar_one_or_none():
@@ -1471,7 +1469,7 @@ async def list_user_skills(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[UserSkillResponse]:
-    base_conditions = []
+    base_conditions: list[Any] = []
 
     if user_id is not None and isinstance(user_id, UUID):
         base_conditions.append(UserSkill.user_id == user_id)
@@ -1490,7 +1488,7 @@ async def list_user_skills(
     if base_conditions:
         where_clause = and_(*base_conditions)
     else:
-        where_clause = True
+        where_clause = UserSkill.id.isnot(None)  # Always true condition
 
     count_stmt = select(func.count(UserSkill.id)).where(where_clause)
     count_result = await db.execute(count_stmt)

@@ -49,7 +49,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
     
     # In partitioned tables, the partition key must be part of the primary key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # type: ignore[assignment]
     # Timestamp (not using TimestampMixin as we don't need updated_at)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

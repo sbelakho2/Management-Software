@@ -689,17 +689,17 @@ class AILearningRecommendationsService:
                 
                 # Generate recommendations for gap units
                 for unit_code in gap_units[:2]:
-                    unit = next((u for u in units if u.code == unit_code), None)
-                    if unit:
+                    gap_unit = next((u for u in units if u.code == unit_code), None)
+                    if gap_unit:
                         recommendations.append(LearningRecommendation(
                             recommendation_type=RecommendationType.SKILL_GAP,
                             priority=RecommendationPriority.HIGH,
-                            unit_id=unit.id,
-                            unit_code=unit.code,
-                            unit_title=unit.title,
-                            category=unit.category,
-                            difficulty=unit.difficulty,
-                            estimated_duration_minutes=unit.duration_minutes,
+                            unit_id=gap_unit.id,
+                            unit_code=gap_unit.code,
+                            unit_title=gap_unit.title,
+                            category=gap_unit.category,
+                            difficulty=gap_unit.difficulty,
+                            estimated_duration_minutes=gap_unit.duration_minutes,
                             reason=f"Address skill gap in {category.value}",
                             relevance_score=Decimal("0.85"),
                             confidence=Decimal("0.8"),

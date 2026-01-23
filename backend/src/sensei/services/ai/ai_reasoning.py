@@ -19,6 +19,7 @@ from sensei.services.ai.onnx_text_embeddings import ONNXTextEmbedder
 from sensei.services.ai.reasoning_engine import SenseiReasoningEngine, RootCauseSuggestion
 from typing import TYPE_CHECKING, Optional, List, Dict
 from uuid import UUID, uuid4
+from typing import Any
 
 if TYPE_CHECKING:
     pass
@@ -83,6 +84,23 @@ class AnomalyEvent:
     description: str = ""
 
 
+@dataclass
+class SearchResult:
+    """A search result for internal tracking."""
+    query: str = ""
+    timestamp: datetime = field(default_factory=_utcnow)
+    results_count: int = 0
+
+
+@dataclass
+class SearchChunk:
+    """A document chunk for embedding-based search (deprecated)."""
+    id: UUID = field(default_factory=uuid4)
+    text: str = ""
+    source: str = ""
+    embedding: Optional[List[float]] = None
+
+
 class AIReasoningService:
     """E2E validation service for AI 2.0 capabilities."""
 
@@ -139,7 +157,7 @@ class AIReasoningService:
         *,
         principle: str,
         source_book: str,
-        recommendations: List[str] = None,
+        recommendations: List[str] | None = None,
     ) -> Dict[str, Any]:
         """Ingest an expert reasoning trace from distilled books."""
         self._check_role(role)

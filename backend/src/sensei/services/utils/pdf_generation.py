@@ -18,6 +18,13 @@ from typing import Optional, Any
 from uuid import UUID, uuid4
 import base64
 import hashlib
+import json
+import logging
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML
+import io
+
+logger = logging.getLogger(__name__)
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -35,6 +42,12 @@ class PDFDocumentType(str, Enum):
     RFQ_SUMMARY = "rfq_summary"
     A3_REPORT = "a3_report"
     TRAINING_CERTIFICATE = "training_certificate"
+    
+    # starzERP legacy documents
+    STARZ_PAYSLIP = "starz_payslip"
+    STARZ_PURCHASE_ORDER = "starz_purchase_order"
+    STARZ_QUOTATION = "starz_quotation"
+    STARZ_WMS_LABEL = "starz_wms_label"
 
 
 class PDFLanguage(str, Enum):
@@ -410,6 +423,49 @@ class EightDReportPDFData:
 
 
 @dataclass
+class StarzPayslipPDFData:
+    """Data for generating a starzERP Payslip PDF."""
+    
+    employee_id: int
+    registration_number: str
+    first_name: str
+    last_name: str
+    month: int
+    year: int
+    salary_base: float
+    salary_type: str
+    active_status: bool
+    # Additional fields matching bulletin_de_paie.html.twig
+    cin: str
+    category: str
+
+
+@dataclass
+class StarzPurchaseOrderPDFData:
+    """Data for generating a starzERP Purchase Order PDF."""
+    
+    order_id: int
+    order_number: str
+    supplier_name: str
+    items: list[dict[str, Any]]
+    total_amount: float
+    status: str
+    created_at: datetime
+
+
+@dataclass
+class StarzWmsLabelPDFData:
+    """Data for generating a starzERP WMS Label PDF."""
+    
+    lpn_code: str
+    product_name: str
+    quantity: float
+    unit: str
+    warehouse_code: str
+    location_code: Optional[str] = None
+
+
+@dataclass
 class PDFGenerationRequest:
     """Request to generate a PDF."""
     
@@ -463,6 +519,13 @@ class PDFGenerationService:
         self._generation_requests: dict[UUID, PDFGenerationRequest] = {}
         self._default_templates: dict[PDFDocumentType, UUID] = {}
         self._register_default_templates()
+        
+        # Jinja2 environment for starzERP legacy documents
+        import os
+        template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates", "external", "starz")
+        if not os.path.exists(template_dir):
+            os.makedirs(template_dir, exist_ok=True)
+        self._jinja_env = Environment(loader=FileSystemLoader(template_dir))
     
     def _register_default_templates(self) -> None:
         """Register default templates for each document type."""
@@ -657,6 +720,26 @@ class PDFGenerationService:
         )
         self._templates[eight_d_template.id] = eight_d_template
         self._default_templates[PDFDocumentType.EIGHT_D_REPORT] = eight_d_template.id
+
+        # Starz legacy templates
+        for doc_type in [
+            PDFDocumentType.STARZ_PAYSLIP,
+            PDFDocumentType.STARZ_PURCHASE_ORDER,
+            PDFDocumentType.STARZ_QUOTATION,
+            PDFDocumentType.STARZ_WMS_LABEL,
+        ]:
+            template = PDFTemplate(
+                id=uuid4(),
+                name=f"Starz {doc_type.value} Template",
+                document_type=doc_type,
+                branding=BrandingConfig(template=PDFBrandTemplate.DEFAULT),
+                watermark=WatermarkConfig(watermark_type=WatermarkType.NONE),
+                default_options=PDFGenerationOptions(),
+                sections=[],
+                is_default=True,
+            )
+            self._templates[template.id] = template
+            self._default_templates[doc_type] = template.id
     
     # Template Management
     
@@ -792,7 +875,7 @@ class PDFGenerationService:
         Returns: (base64_content, page_count)
         """
         # Build a structured document representation
-        document = {
+        document: dict[str, Any] = {
             "document_type": document_type.value,
             "generated_at": _utcnow().isoformat(),
             "language": options.language.value,
@@ -908,6 +991,33 @@ class PDFGenerationService:
         
         return content_base64, page_count
     
+    def _generate_starz_pdf(
+        self,
+        document_type: PDFDocumentType,
+        data: Any,
+    ) -> tuple[str, int]:
+        """Generate PDF using WeasyPrint and Jinja2 for starzERP legacy documents."""
+        template_name = f"{document_type.value}.html"
+        try:
+            template = self._jinja_env.get_template(template_name)
+        except Exception:
+            # Fallback or create a basic one if it doesn't exist
+            logger.warning(f"Template {template_name} not found, using generic starz template")
+            template_name = "generic_starz.html"
+            template = self._jinja_env.get_template(template_name)
+
+        html_out = template.render(data=data, now=_utcnow())
+        
+        # Generate PDF using WeasyPrint
+        pdf_file = io.BytesIO()
+        HTML(string=html_out).write_pdf(pdf_file)
+        pdf_bytes = pdf_file.getvalue()
+        
+        content_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        # For page count, WeasyPrint doesn't easily return it without extra steps, 
+        # but for simple documents it's usually 1-2.
+        return content_base64, 1
+
     def generate_pdf(
         self,
         document_type: PDFDocumentType,
@@ -950,12 +1060,23 @@ class PDFGenerationService:
             options = template.default_options
         
         # Generate content
-        content_base64, page_count = self._generate_pdf_content(
-            document_type=document_type,
-            data=data,
-            options=options,
-            template=template,
-        )
+        if document_type in [
+            PDFDocumentType.STARZ_PAYSLIP,
+            PDFDocumentType.STARZ_PURCHASE_ORDER,
+            PDFDocumentType.STARZ_QUOTATION,
+            PDFDocumentType.STARZ_WMS_LABEL,
+        ]:
+            content_base64, page_count = self._generate_starz_pdf(
+                document_type=document_type,
+                data=data,
+            )
+        else:
+            content_base64, page_count = self._generate_pdf_content(
+                document_type=document_type,
+                data=data,
+                options=options,
+                template=template,
+            )
         
         # Calculate hash for content verification
         content_hash = hashlib.sha256(content_base64.encode()).hexdigest()
@@ -1113,6 +1234,56 @@ class PDFGenerationService:
             generated_by=generated_by,
             options=options,
             template_id=template_id,
+        )
+
+    def generate_starz_payslip(
+        self,
+        data: StarzPayslipPDFData,
+        generated_by: UUID,
+    ) -> GeneratedPDF:
+        """Generate a Starz legacy Payslip PDF."""
+        # Use a random UUID for source_entity_id since it's an external integer ID
+        # In a real system, you might want to use a deterministic UUID based on the integer ID
+        import uuid
+        entity_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"starz_employee_{data.employee_id}")
+        return self.generate_pdf(
+            document_type=PDFDocumentType.STARZ_PAYSLIP,
+            data=data,
+            source_entity_type="starz_employee",
+            source_entity_id=entity_uuid,
+            generated_by=generated_by,
+        )
+
+    def generate_starz_purchase_order(
+        self,
+        data: StarzPurchaseOrderPDFData,
+        generated_by: UUID,
+    ) -> GeneratedPDF:
+        """Generate a Starz legacy Purchase Order PDF."""
+        import uuid
+        entity_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"starz_po_{data.order_id}")
+        return self.generate_pdf(
+            document_type=PDFDocumentType.STARZ_PURCHASE_ORDER,
+            data=data,
+            source_entity_type="starz_purchase_order",
+            source_entity_id=entity_uuid,
+            generated_by=generated_by,
+        )
+
+    def generate_starz_wms_label(
+        self,
+        data: StarzWmsLabelPDFData,
+        generated_by: UUID,
+    ) -> GeneratedPDF:
+        """Generate a Starz legacy WMS Label PDF."""
+        import uuid
+        entity_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"starz_lpn_{data.lpn_code}")
+        return self.generate_pdf(
+            document_type=PDFDocumentType.STARZ_WMS_LABEL,
+            data=data,
+            source_entity_type="starz_license_plate",
+            source_entity_id=entity_uuid,
+            generated_by=generated_by,
         )
     
     # PDF Retrieval

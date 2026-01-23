@@ -709,7 +709,7 @@ class SelfHealingEngine:
         service_name: str,
     ) -> dict[str, Any]:
         """Perform deep health check."""
-        result = {
+        result: dict[str, Any] = {
             "service": service_name,
             "checks": [],
             "overall": "healthy",
@@ -1193,7 +1193,7 @@ class SenseiAutopilot:
     
     async def run_maintenance_cycle(self, db: Any = None, apply_indexes: bool = False) -> dict[str, Any]:
         """Run a complete maintenance cycle with autonomous actions."""
-        results = {
+        results: dict[str, Any] = {
             "started_at": datetime.now(timezone.utc).isoformat(),
             "steps": [],
         }

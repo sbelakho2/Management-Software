@@ -779,50 +779,48 @@ class IncidentFlowService:
         end_date: Optional[datetime] = None,
     ) -> IncidentMetrics:
         """Get incident metrics for a time period."""
-        incidents = self._incidents.values()
+        incidents_list = list(self._incidents.values())
 
         if start_date:
-            incidents = [i for i in incidents if i.detected_at >= start_date]
+            incidents_list = [i for i in incidents_list if i.detected_at >= start_date]
         if end_date:
-            incidents = [i for i in incidents if i.detected_at <= end_date]
+            incidents_list = [i for i in incidents_list if i.detected_at <= end_date]
 
-        incidents = list(incidents)
-
-        metrics = IncidentMetrics(total_incidents=len(incidents))
+        metrics = IncidentMetrics(total_incidents=len(incidents_list))
 
         # Count by severity
         for sev in IncidentSeverity:
-            count = len([i for i in incidents if i.severity == sev])
+            count = len([i for i in incidents_list if i.severity == sev])
             metrics.by_severity[sev.value] = count
 
         # Count by status
         for status in IncidentStatus:
-            count = len([i for i in incidents if i.status == status])
+            count = len([i for i in incidents_list if i.status == status])
             metrics.by_status[status.value] = count
 
         # Count by category
         for cat in IncidentCategory:
-            count = len([i for i in incidents if i.category == cat])
+            count = len([i for i in incidents_list if i.category == cat])
             metrics.by_category[cat.value] = count
 
         # Calculate MTTA
         acknowledged_incidents = [
-            i for i in incidents if i.acknowledged_at is not None
+            i for i in incidents_list if i.acknowledged_at is not None
         ]
         if acknowledged_incidents:
             total_tta = sum(
-                (i.acknowledged_at - i.detected_at).total_seconds() / 60
+                (i.acknowledged_at - i.detected_at).total_seconds() / 60  # type: ignore[operator, misc]
                 for i in acknowledged_incidents
             )
             metrics.mean_time_to_acknowledge_minutes = total_tta / len(acknowledged_incidents)
 
         # Calculate MTTR
         resolved_incidents = [
-            i for i in incidents if i.resolved_at is not None
+            i for i in incidents_list if i.resolved_at is not None
         ]
         if resolved_incidents:
             total_ttr = sum(
-                (i.resolved_at - i.detected_at).total_seconds() / 3600
+                (i.resolved_at - i.detected_at).total_seconds() / 3600  # type: ignore[operator, misc]
                 for i in resolved_incidents
             )
             metrics.mean_time_to_resolve_hours = total_ttr / len(resolved_incidents)

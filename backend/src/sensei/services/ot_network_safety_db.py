@@ -156,7 +156,7 @@ class OTNetworkSafetyService:
 
         query = select(NetworkZone).order_by(NetworkZone.name)
         if not include_inactive:
-            query = query.where(NetworkZone.is_active == True)
+            query = query.where(NetworkZone.is_active.is_(True))
         
         result = await self._session.execute(query)
         return result.scalars().all()
@@ -260,7 +260,7 @@ class OTNetworkSafetyService:
 
         # Get all active zones
         result = await self._session.execute(
-            select(NetworkZone).where(NetworkZone.is_active == True)
+            select(NetworkZone).where(NetworkZone.is_active.is_(True))
         )
         zones = result.scalars().all()
 

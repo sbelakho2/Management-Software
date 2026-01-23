@@ -1367,7 +1367,7 @@ class ERPIntegrationService:
         erp_data: dict[str, Any],
     ) -> list[str]:
         """Detect conflicts between Sensei and ERP data."""
-        conflicts = []
+        conflicts: list[str] = []
         
         # Get field mappings for comparison
         mapping = self.get_entity_mapping(entity_type)

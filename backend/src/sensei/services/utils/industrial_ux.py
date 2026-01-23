@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from uuid import UUID, uuid4
 
 
@@ -186,7 +186,7 @@ class IndustrialUXService:
         self,
         *,
         scanned_value: str,
-        lookup_entity: callable | None = None,  # Optional function to resolve entity.
+        lookup_entity: Callable[..., Any] | None = None,  # Optional function to resolve entity.
     ) -> ScanResult:
         """Process a barcode scan and determine navigation target."""
         scanned = scanned_value.strip().upper()

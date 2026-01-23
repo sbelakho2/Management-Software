@@ -8,7 +8,7 @@ FastAPI dependencies for:
 - Request validation
 """
 
-from typing import Annotated, Optional
+from typing import Annotated, Optional, TYPE_CHECKING, TypeAlias
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -22,8 +22,8 @@ from sensei.core.database import async_session_factory
 from sensei.core.redis import redis_client
 from sensei.core.security import TokenData, decode_token, get_rate_limit_key
 
-
-# =============================================================================
+if TYPE_CHECKING:
+    from sensei.models.user import User# =============================================================================
 # Database Session Dependency
 # =============================================================================
 
@@ -123,7 +123,7 @@ async def get_optional_token_data(
 async def get_current_user(
     db: DBSession,
     token_data: Annotated[TokenData, Depends(get_token_data)],
-):
+) -> "User":
     """
     Get current authenticated user from database.
     
@@ -167,8 +167,8 @@ async def get_current_user(
 
 
 async def get_current_active_user(
-    user = Depends(get_current_user),
-):
+    user: "User" = Depends(get_current_user),
+) -> "User":
     """
     Get current active user (alias for get_current_user).
     
@@ -178,8 +178,8 @@ async def get_current_active_user(
 
 
 async def get_current_superuser(
-    user = Depends(get_current_user),
-):
+    user: "User" = Depends(get_current_user),
+) -> "User":
     """
     Get current user and verify they are a superuser.
     
@@ -195,13 +195,10 @@ async def get_current_superuser(
 
 
 # Type aliases for common dependencies
-CurrentUser = Annotated[object, Depends(get_current_user)]
-CurrentActiveUser = Annotated[object, Depends(get_current_active_user)]
-CurrentSuperuser = Annotated[object, Depends(get_current_superuser)]
-
-
-# =============================================================================
-# Permission Checking Dependencies
+# Note: Using forward reference to avoid circular import
+CurrentUser = Annotated["User", Depends(get_current_user)]
+CurrentActiveUser = Annotated["User", Depends(get_current_active_user)]
+CurrentSuperuser = Annotated["User", Depends(get_current_superuser)]
 # =============================================================================
 
 
@@ -345,7 +342,7 @@ def require_permission(permission: str):
     Decorator-style permission requirement.
     
     Usage:
-        RequireRead = require_permission("resource:read")
+        RequireRead: TypeAlias = require_permission("resource:read")
         
         @router.get("/resource")
         async def get_resource(
@@ -357,12 +354,16 @@ def require_permission(permission: str):
     return Annotated[bool, Depends(PermissionChecker(permission))]
 
 
-def require_role(*roles: str):
+# Type alias for role requirements - use TypeAlias annotation when assigning
+RoleDependency: TypeAlias = Annotated[bool, Depends(RoleChecker([]))]
+
+
+def require_role(*roles: str) -> type[bool]:
     """
     Decorator-style role requirement.
     
     Usage:
-        RequireAdmin = require_role("admin", "gm")
+        RequireAdmin: TypeAlias = require_role("admin", "gm")
         
         @router.get("/admin")
         async def admin_endpoint(
@@ -371,7 +372,7 @@ def require_role(*roles: str):
         ):
             ...
     """
-    return Annotated[bool, Depends(RoleChecker(list(roles)))]
+    return Annotated[bool, Depends(RoleChecker(list(roles)))]  # type: ignore[return-value]
 
 
 # =============================================================================

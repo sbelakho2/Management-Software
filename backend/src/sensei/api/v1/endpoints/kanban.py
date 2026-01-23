@@ -575,7 +575,7 @@ async def get_kanban_board(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", board_id)
+        raise NotFoundError("Kanban board", str(board_id))
     return build_response(KanbanBoardResponse.from_model(board))
 
 
@@ -596,7 +596,7 @@ async def update_kanban_board(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", board_id)
+        raise NotFoundError("Kanban board", str(board_id))
 
     # Check for code conflict
     if data.code and data.code != board.code:
@@ -655,7 +655,7 @@ async def delete_kanban_board(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", board_id)
+        raise NotFoundError("Kanban board", str(board_id))
 
     board.deleted_at = _now_utc()
     board.updated_by_id = current_user.id
@@ -762,7 +762,7 @@ async def create_kanban_card(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", data.board_id)
+        raise NotFoundError("Kanban board", str(data.board_id))
 
     # Check for duplicate card number on board
     existing = (
@@ -840,7 +840,7 @@ async def get_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
     return build_response(KanbanCardResponse.from_model(card))
 
 
@@ -861,7 +861,7 @@ async def update_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     update_data = data.model_dump(exclude_unset=True)
 
@@ -909,7 +909,7 @@ async def delete_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     card.deleted_at = _now_utc()
     card.updated_by_id = current_user.id
@@ -942,7 +942,7 @@ async def move_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     if card.status == CardStatus.COMPLETED:
         raise ConflictError("Cannot move a completed card")
@@ -1018,7 +1018,7 @@ async def block_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     if card.status != CardStatus.ACTIVE:
         raise ConflictError(f"Cannot block card in status: {card.status.value}")
@@ -1063,7 +1063,7 @@ async def unblock_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     if card.status != CardStatus.BLOCKED:
         raise ConflictError("Card is not blocked")
@@ -1109,7 +1109,7 @@ async def complete_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     if card.status == CardStatus.COMPLETED:
         raise ConflictError("Card is already completed")
@@ -1159,7 +1159,7 @@ async def cancel_kanban_card(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     if card.status == CardStatus.COMPLETED:
         raise ConflictError("Cannot cancel a completed card")
@@ -1206,7 +1206,7 @@ async def override_wip_limit(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     card.wip_limit_override = True
     card.wip_limit_override_by_id = current_user.id
@@ -1243,7 +1243,7 @@ async def list_card_history(
         )
     ).scalar_one_or_none()
     if not card:
-        raise NotFoundError("Kanban card", card_id)
+        raise NotFoundError("Kanban card", str(card_id))
 
     query = select(KanbanCardHistory).where(KanbanCardHistory.card_id == card_id)
 
@@ -1289,7 +1289,7 @@ async def list_board_metrics(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", board_id)
+        raise NotFoundError("Kanban board", str(board_id))
 
     query = select(KanbanMetrics).where(KanbanMetrics.board_id == board_id)
 
@@ -1333,7 +1333,7 @@ async def get_board_stats(
         )
     ).scalar_one_or_none()
     if not board:
-        raise NotFoundError("Kanban board", board_id)
+        raise NotFoundError("Kanban board", str(board_id))
 
     # Get cards (not deleted)
     cards = [c for c in board.cards if c.deleted_at is None]

@@ -160,7 +160,7 @@ class GenerationRequest:
     """Request to generate an email draft."""
     
     id: UUID = field(default_factory=uuid4)
-    context: EmailContext = field(default_factory=EmailContext)
+    context: EmailContext = field(default_factory=lambda: EmailContext())
     sender_name: str = ""
     sender_title: Optional[str] = None
     sender_email: str = ""
@@ -447,7 +447,7 @@ class AIEmailDraftingService:
         )
         
         # Assemble plain text body
-        body_parts = [
+        body_parts: list[str | list[str]] = [
             salutation,
             "",
             opening,

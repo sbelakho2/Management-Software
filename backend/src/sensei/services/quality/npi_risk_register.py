@@ -790,7 +790,8 @@ class NPIRiskRegisterService:
         
         risk.reviews.append(review)
         risk.last_review_date = review.completed_date
-        risk.next_review_date = review.completed_date + timedelta(days=risk.review_frequency_days)
+        if review.completed_date is not None:
+            risk.next_review_date = review.completed_date + timedelta(days=risk.review_frequency_days)
         risk.updated_at = datetime.now(timezone.utc)
         
         return risk
@@ -1246,13 +1247,13 @@ class NPIRiskRegisterService:
             by_priority[priority.value] = count
         
         # Category counts
-        by_category = {}
+        by_category: dict[str, int] = {}
         for risk in risks:
             cat = risk.category.value
             by_category[cat] = by_category.get(cat, 0) + 1
         
         # Phase counts
-        by_phase = {}
+        by_phase: dict[str, int] = {}
         for risk in risks:
             phase = risk.phase.value
             by_phase[phase] = by_phase.get(phase, 0) + 1

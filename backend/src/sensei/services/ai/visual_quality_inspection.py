@@ -31,11 +31,12 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import numpy as np
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.strategic_v2 import InspectionFeedback, TrainingSample
 from sensei.services.core.local_first_infrastructure import get_local_first_service, ModelPrecision, ModelSize
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -431,7 +432,7 @@ class VisionEnrichmentSuite:
             critical_zones = standard_work_context.get("critical_zones", [])
             for zone in critical_zones:
                 for defect in result.defects:
-                    if self._is_in_zone(defect.bbox, zone):
+                    if defect.bbox and self._is_in_zone(defect.bbox, zone):
                         defect.severity = DefectSeverity.CRITICAL
                         defect.metadata["enriched_reason"] = "In critical zone defined by Standard Work"
         
@@ -626,14 +627,14 @@ class PatchCoreDetector(AnomalyDetector):
             
         logger.info(f"Fitting PatchCore on {len(normal_images)} images")
         
-        all_patches = []
+        patches_list: list[np.ndarray] = []
         for img in normal_images:
             patches = self._extract_patches(img)
-            all_patches.append(patches)
+            patches_list.append(patches)
         
-        if not all_patches: return
+        if not patches_list: return
         
-        all_patches = np.concatenate(all_patches, axis=0)
+        all_patches = np.concatenate(patches_list, axis=0)
         
         # Coreset subsampling (Simplified for production logic demonstration)
         n_keep = max(1, int(len(all_patches) * self.coreset_ratio))
@@ -696,11 +697,11 @@ class PatchCoreDetector(AnomalyDetector):
         
         # In production: Use FAISS for efficient search
         # Simple distance for demo
-        distances = []
+        distances_list: list[float] = []
         for p in patches:
             d = np.linalg.norm(self.memory_bank - p, axis=1)
-            distances.append(np.min(d))
-        distances = np.array(distances)
+            distances_list.append(float(np.min(d)))
+        distances = np.array(distances_list)
         
         anomaly_score = np.max(distances)
         
@@ -725,6 +726,8 @@ class PatchCoreDetector(AnomalyDetector):
 
     def save(self, path: Path) -> None:
         """Save model to disk."""
+        if self.memory_bank is None or self.image_size is None:
+            raise ValueError("Cannot save model without memory_bank and image_size")
         np.savez(
             path,
             memory_bank=self.memory_bank,
@@ -775,7 +778,7 @@ class YOLODefectDetector(DefectDetector):
         self.model_path = Path(model_path) if model_path else Path(f"models/yolov8{model_size}.onnx")
         self.model_size = model_size
         self.device = device
-        self._session = None
+        self._session: bool | None = None
         self._local_service = get_local_first_service()
     
     def load(self) -> None:
@@ -1192,6 +1195,7 @@ class AsyncContinuousLearningManager:
                 "is_correct_count": len([r for r in feedback_records if r.is_correct]),
             },
             feedback_count=len(feedback_records),
+            created_at=_utcnow(),
         )
 
     def get_training_recommendations(self) -> dict[str, Any]:

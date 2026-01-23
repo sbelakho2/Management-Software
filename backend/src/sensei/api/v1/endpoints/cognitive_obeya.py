@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, TypeAlias
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -19,11 +19,14 @@ from sensei.models.rfq import RFQ
 
 router = APIRouter()
 
+# Role requirements
+AllowObeya: TypeAlias = require_role("admin", "gm", "ceo", "ops")  # type: ignore[valid-type]
+
 @router.get("/dashboard", response_model=APIResponse)
 async def get_obeya_dashboard(
     db: DBSession,
     user: CurrentUser,
-    _: require_role("admin", "gm", "ceo", "ops") = None,
+    _: AllowObeya,
 ):
     """
     Get Cognitive Obeya dashboard with real-time prescriptive analytics.
@@ -44,16 +47,16 @@ async def get_obeya_dashboard(
         unit=""
     )
     
-    # Delivery: On-time delivery rate (properly calculated by comparing due_date vs actual_end_date)
+    # Delivery: On-time delivery rate (properly calculated by comparing scheduled_end vs actual_end)
     total_wo = await db.scalar(select(func.count(WorkOrder.id)).where(WorkOrder.status == "completed"))
     on_time_wo = await db.scalar(
         select(func.count(WorkOrder.id)).where(
             WorkOrder.status == "completed",
-            # On-time means actual_end_date <= due_date, or due_date is null (no deadline)
-            (WorkOrder.actual_end_date <= WorkOrder.due_date) | (WorkOrder.due_date == None)
+            # On-time means actual_end <= scheduled_end, or scheduled_end is null (no deadline)
+            (WorkOrder.actual_end <= WorkOrder.scheduled_end) | (WorkOrder.scheduled_end == None)
         )
     )
-    otd_rate = (on_time_wo / total_wo * 100) if total_wo and total_wo > 0 else 95.0
+    otd_rate = ((on_time_wo or 0) / total_wo * 100) if total_wo and total_wo > 0 else 95.0
     await obeya.record_metric(
         db=db,
         category=MetricCategory.DELIVERY,
@@ -95,7 +98,7 @@ async def get_metric_insights(
     metric_id: str,
     db: DBSession,
     user: CurrentUser,
-    _: require_role("admin", "gm", "ceo", "ops") = None,
+    _: AllowObeya,
 ):
     """Get prescriptive insights for a specific metric."""
     obeya = get_cognitive_obeya()

@@ -224,7 +224,7 @@ class PatchCoreDetector(AnomalyDetector):
         anomaly_map: AnomalyMap | None,
     ) -> list[DetectedDefect]:
         """Convert anomaly scores to detected defects."""
-        defects = []
+        defects: list[DetectedDefect] = []
         
         if score < self.threshold:
             return defects

@@ -12,6 +12,29 @@ export interface TodayScreenData {
   quick_metrics: any[];
   lsw_summary: any;
   todays_micro_drills: any[];
+  active_pulses: GlobalPulseSummary[];
+  active_handovers: HandoverNoteSummary[];
+}
+
+export interface GlobalPulseSummary {
+  id: number;
+  message: string;
+  severity: string;
+  highlight_metric_name?: string;
+  highlight_metric_value?: string;
+}
+
+export interface HandoverNoteSummary {
+  id: number;
+  station_id: number;
+  severity: string;
+  safety: string;
+  quality: string;
+  delivery: string;
+  cost: string;
+  people: string;
+  notes: string;
+  created_at: string;
 }
 
 export const todayApi = {

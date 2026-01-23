@@ -372,8 +372,9 @@ class CSVExportService:
         
         # Apply sorting
         if config.sort_by:
+            sort_field = config.sort_by
             entities.sort(
-                key=lambda e: e.get(config.sort_by) or "",
+                key=lambda e: e.get(sort_field) or "",  # type: ignore[arg-type]
                 reverse=config.sort_descending,
             )
         

@@ -232,7 +232,7 @@ async def create_standard_work(
         and_(
             StandardWork.document_number == data.document_number,
             StandardWork.version == 1,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -289,7 +289,7 @@ async def get_standard_work(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -327,7 +327,7 @@ async def list_standard_works(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
     # Build base query
-    base_conditions = [StandardWork.is_deleted == False]
+    base_conditions: list[Any] = [StandardWork.deleted_at.is_(None)]
 
     # Apply filters
     if status and isinstance(status, StandardWorkStatus):
@@ -419,7 +419,7 @@ async def update_standard_work(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -467,7 +467,7 @@ async def delete_standard_work(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -475,8 +475,7 @@ async def delete_standard_work(
     if not standard_work:
         raise NotFoundError(f"Standard work document {standard_work_id} not found")
 
-    # Soft delete
-    standard_work.is_deleted = True
+    # Soft delete (setting deleted_at makes is_deleted return True)
     standard_work.deleted_at = _now_utc()
     standard_work.deleted_by_id = current_user.id
     await db.flush()
@@ -504,7 +503,7 @@ async def submit_for_approval(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -549,7 +548,7 @@ async def approve_standard_work(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -568,7 +567,7 @@ async def approve_standard_work(
             StandardWork.document_number == standard_work.document_number,
             StandardWork.status == StandardWorkStatus.APPROVED,
             StandardWork.id != standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     prev_result = await db.execute(prev_stmt)
@@ -623,7 +622,7 @@ async def reject_standard_work(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -668,7 +667,7 @@ async def create_revision(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -687,7 +686,7 @@ async def create_revision(
         and_(
             StandardWork.document_number == standard_work.document_number,
             StandardWork.status == StandardWorkStatus.DRAFT,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     draft_result = await db.execute(draft_stmt)
@@ -729,7 +728,7 @@ async def mark_obsolete(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -777,7 +776,7 @@ async def update_content(
     stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -794,7 +793,7 @@ async def update_content(
     content = standard_work.content_json or {}
     update_data = data.model_dump(exclude_unset=True)
 
-    if "steps" in update_data and update_data["steps"] is not None:
+    if "steps" in update_data and data.steps is not None:
         content["steps"] = [step.model_dump() for step in data.steps]
     for key in ["safety_warnings", "required_ppe", "required_tools", "revision_notes"]:
         if key in update_data:
@@ -837,7 +836,7 @@ async def list_versions(
     check_stmt = select(StandardWork).where(
         and_(
             StandardWork.id == standard_work_id,
-            StandardWork.is_deleted == False,
+            StandardWork.deleted_at.is_(None),
         )
     )
     check_result = await db.execute(check_stmt)
@@ -920,9 +919,9 @@ async def get_by_document_number(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
-    base_conditions = [
+    base_conditions: list[Any] = [
         StandardWork.document_number == document_number,
-        StandardWork.is_deleted == False,
+        StandardWork.deleted_at.is_(None),
     ]
 
     if not include_all_versions:
@@ -978,10 +977,10 @@ async def get_by_station(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
-    base_conditions = [
+    base_conditions: list[Any] = [
         StandardWork.station_id == station_id,
         StandardWork.status == StandardWorkStatus.APPROVED,
-        StandardWork.is_deleted == False,
+        StandardWork.deleted_at.is_(None),
     ]
 
     if document_type and isinstance(document_type, StandardWorkType):
@@ -1036,10 +1035,10 @@ async def get_by_product(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
-    base_conditions = [
+    base_conditions: list[Any] = [
         StandardWork.product_id == product_id,
         StandardWork.status == StandardWorkStatus.APPROVED,
-        StandardWork.is_deleted == False,
+        StandardWork.deleted_at.is_(None),
     ]
 
     if document_type and isinstance(document_type, StandardWorkType):
@@ -1093,10 +1092,10 @@ async def get_pending_review(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
     today = _today()
-    base_conditions = [
+    base_conditions: list[Any] = [
         StandardWork.status == StandardWorkStatus.APPROVED,
         StandardWork.review_date <= today,
-        StandardWork.is_deleted == False,
+        StandardWork.deleted_at.is_(None),
     ]
 
     # Count query
@@ -1147,9 +1146,9 @@ async def get_expired(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[StandardWorkResponse]:
     today = _today()
-    base_conditions = [
+    base_conditions: list[Any] = [
         StandardWork.expiration_date < today,
-        StandardWork.is_deleted == False,
+        StandardWork.deleted_at.is_(None),
     ]
 
     # Count query

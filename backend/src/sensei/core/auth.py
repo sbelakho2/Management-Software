@@ -194,7 +194,7 @@ class AuthService:
             if not totp_code and not backup_code:
                 raise TwoFactorRequiredError(user.id)
             
-            if totp_code and not verify_totp(user.totp_secret, totp_code):
+            if totp_code and user.totp_secret and not verify_totp(user.totp_secret, totp_code):
                 await self._record_failed_attempt(email, user.id)
                 raise InvalidTwoFactorError()
             
@@ -229,7 +229,9 @@ class AuthService:
         tokens = create_token_pair(payload)
         
         # Store refresh token JTI in Redis for revocation tracking
-        await self._store_refresh_token(user.id, get_token_jti(tokens.refresh_token))
+        jti = get_token_jti(tokens.refresh_token)
+        if jti:
+            await self._store_refresh_token(user.id, jti)
         
         logger.info(
             "User authenticated",
@@ -291,7 +293,9 @@ class AuthService:
         tokens = create_token_pair(payload)
         
         # Store new refresh token
-        await self._store_refresh_token(user.id, get_token_jti(tokens.refresh_token))
+        new_jti = get_token_jti(tokens.refresh_token)
+        if new_jti:
+            await self._store_refresh_token(user.id, new_jti)
         
         logger.info(
             "Tokens refreshed",
@@ -577,7 +581,7 @@ class AuthService:
         role_result = await self.db.execute(
             select(Role.name).join(UserRole).where(
                 UserRole.user_id == user_id,
-                Role.is_active == True,
+                Role.is_active.is_(True),
             )
         )
         roles = [r[0] for r in role_result.fetchall()]
@@ -592,7 +596,7 @@ class AuthService:
                 UserRole
             ).where(
                 UserRole.user_id == user_id,
-                Role.is_active == True,
+                Role.is_active.is_(True),
             ).distinct()
         )
         permissions = [f"{p[0]}:{p[1]}" for p in perm_result.fetchall()]
@@ -661,18 +665,18 @@ class AuthService:
         
         # Clear any rate limiting
         key = get_rate_limit_key(user.email, "login")
-        await redis_client.delete(key)
+        await redis_client.delete(key)  # type: ignore[misc]
         
         lockout_key = get_lockout_key(user.email)
-        await redis_client.delete(lockout_key)
+        await redis_client.delete(lockout_key)  # type: ignore[misc]
     
     async def _store_refresh_token(self, user_id: UUID, jti: str) -> None:
         """Store refresh token JTI for the user."""
         key = f"user_tokens:{user_id}"
-        await redis_client.sadd(key, jti)
+        await redis_client.sadd(key, jti)  # type: ignore[misc]
         
         # Set expiry to refresh token lifetime
-        await redis_client.expire(key, settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
+        await redis_client.expire(key, settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)  # type: ignore[misc]
     
     async def _is_token_revoked(self, jti: str) -> bool:
         """Check if token is revoked."""

@@ -243,7 +243,7 @@ class ConditionReading(Base):
     __tablename__ = "condition_readings"
     
     # In partitioned tables, the partition key must be part of the primary key
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # type: ignore[assignment]
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), primary_key=True, index=True
     )
@@ -271,7 +271,7 @@ class MaintenanceRecord(Base, TimestampMixin):
     """
     __tablename__ = "maintenance_records"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     equipment_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("stations.id"), nullable=False, index=True
     )

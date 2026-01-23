@@ -168,7 +168,7 @@ class MissingEvidenceDetector:
                 'suggestions': List[str],
             }
         """
-        results = {
+        results: dict[str, Any] = {
             'overall_score': 0.0,
             'is_complete': True,
             'missing_items': [],
@@ -322,6 +322,9 @@ class MissingEvidenceDetector:
     
     def _ml_predict(self, report: Any) -> float:
         """Use ML model to predict evidence completeness score."""
+        if self.tfidf_vectorizer is None or self.text_classifier is None:
+            return 0.0
+        
         text = self._extract_text_from_report(report)
         
         # Extract features
@@ -342,7 +345,7 @@ class MissingEvidenceDetector:
     ) -> float:
         """Calculate overall score using rule-based approach."""
         # Section completeness (50%)
-        avg_section_score = np.mean(list(section_scores.values()))
+        avg_section_score = float(np.mean(list(section_scores.values())))
         
         # Evidence presence (50%)
         evidence_score = (

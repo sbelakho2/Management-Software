@@ -2202,37 +2202,6 @@ async def restore_non_conformance(
     return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
 
 
-@router.post("/non-conformances/{nc_id}/close", response_model=APIResponse[NonConformanceResponse])
-async def close_non_conformance(
-    nc_id: int,
-    db: DBSession,
-    current_user: CurrentUser,
-    closure_notes: Optional[str] = None,
-) -> APIResponse[NonConformanceResponse]:
-    result = await db.execute(
-        select(NonConformance).where(
-            NonConformance.id == nc_id,
-            NonConformance.deleted_at.is_(None),
-        )
-    )
-    nc = result.scalar_one_or_none()
-
-    if not nc:
-        raise NotFoundError("Non-conformance", str(nc_id))
-
-    nc.status = NCStatus.CLOSED
-    nc.closed_at = now_utc()
-    nc.closed_by_id = getattr(current_user, "id", None)
-    nc.closure_notes = closure_notes
-    nc.updated_by_id = getattr(current_user, "id", None)
-    nc.updated_at = now_utc()
-
-    await db.commit()
-    await db.refresh(nc)
-
-    return build_updated_response(data=nc_to_response(nc), resource_name="Non-conformance")
-
-
 # =============================================================================
 # CAPA endpoints
 # =============================================================================

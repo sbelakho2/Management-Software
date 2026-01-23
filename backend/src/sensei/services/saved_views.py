@@ -177,7 +177,7 @@ class FilterCondition:
     def _get_field_value(self, entity: dict[str, Any], field_path: str) -> Any:
         """Get a field value from an entity, supporting nested paths."""
         parts = field_path.split(".")
-        value = entity
+        value: Any = entity
         for part in parts:
             if isinstance(value, dict):
                 value = value.get(part)
@@ -495,7 +495,7 @@ class SavedView:
     def _get_field_value(self, entity: dict[str, Any], field_path: str) -> Any:
         """Get a field value from an entity."""
         parts = field_path.split(".")
-        value = entity
+        value: Any = entity
         for part in parts:
             if isinstance(value, dict):
                 value = value.get(part)
@@ -934,8 +934,8 @@ class SavedViewsService:
                 view.is_default = False
         
         # Set new default
-        view = self.get_view(view_id)
-        if view and view_id in self._views:
+        target_view = self.get_view(view_id)
+        if target_view and view_id in self._views:
             self._views[view_id].is_default = True
             return True
         

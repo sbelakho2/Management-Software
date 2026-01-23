@@ -75,7 +75,7 @@ class Product(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "products"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     part_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     revision: Mapped[str] = mapped_column(String(20), nullable=False, default="A")
@@ -190,7 +190,7 @@ class BOMItem(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "bom_items"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Parent product
     product_id: Mapped[int] = mapped_column(
@@ -276,7 +276,7 @@ class Routing(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "routings"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Product and sequence
     product_id: Mapped[int] = mapped_column(

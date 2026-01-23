@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -202,7 +203,7 @@ async def upsert_fx_rate(
         as_of=payload.as_of,
         from_currency=payload.from_currency,
         to_currency=payload.to_currency,
-        rate=payload.rate,
+        rate=Decimal(str(payload.rate)),
     )
     await db.commit()
     await db.refresh(rate)
@@ -231,9 +232,9 @@ async def upsert_standard_cost(
         sku=payload.sku,
         currency=payload.currency,
         effective_date=payload.effective_date,
-        material_unit_cost=payload.material_unit_cost,
-        labor_unit_cost=payload.labor_unit_cost,
-        overhead_unit_cost=payload.overhead_unit_cost,
+        material_unit_cost=Decimal(str(payload.material_unit_cost)),
+        labor_unit_cost=Decimal(str(payload.labor_unit_cost)),
+        overhead_unit_cost=Decimal(str(payload.overhead_unit_cost)),
     )
     await db.commit()
     await db.refresh(record)

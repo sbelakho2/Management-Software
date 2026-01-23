@@ -655,18 +655,18 @@ class RBACSecurityAuditService:
         
         for user_id, roles in user_high_priv.items():
             if len(roles) > 1:
-                assignment = next((a for a in self._user_roles if a.user_id == user_id), None)
-                if assignment:
+                user_assignment = next((a for a in self._user_roles if a.user_id == user_id), None)
+                if user_assignment:
                     findings.append(AuditFinding(
                         id=self._generate_finding_id(),
                         category=AuditCategory.PRIVILEGE_ESCALATION,
                         severity=AuditSeverity.MEDIUM,
                         title="User with multiple high-privilege roles",
-                        description=f"User '{assignment.user_email}' has multiple high-privilege roles: {roles}.",
+                        description=f"User '{user_assignment.user_email}' has multiple high-privilege roles: {roles}.",
                         affected_entity_type="user",
                         affected_entity_id=str(user_id),
                         recommendation="Review if user needs all these roles.",
-                        evidence={"roles": roles, "user_email": assignment.user_email},
+                        evidence={"roles": roles, "user_email": user_assignment.user_email},
                     ))
         
         # Check for self-assigned roles

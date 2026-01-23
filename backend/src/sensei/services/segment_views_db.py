@@ -223,7 +223,7 @@ class SegmentViewsService:
             conditions.append(Segment.visibility == vis_str)
         
         if only_pinned:
-            conditions.append(Segment.is_pinned == True)
+            conditions.append(Segment.is_pinned.is_(True))
         
         if team_id:
             conditions.append(Segment.team_id == team_id)
@@ -289,7 +289,7 @@ class SegmentViewsService:
                     and_(
                         SegmentShare.segment_id == segment_id,
                         SegmentShare.shared_with_id == user_id,
-                        SegmentShare.can_edit == True,
+                        SegmentShare.can_edit.is_(True),
                     )
                 )
             )
@@ -520,7 +520,7 @@ class SegmentViewsService:
                 and_(
                     Segment.owner_id == user_id,
                     Segment.module == module_str,
-                    Segment.is_default == True,
+                    Segment.is_default.is_(True),
                 )
             )
             .values(is_default=False)
@@ -556,7 +556,7 @@ class SegmentViewsService:
                 and_(
                     Segment.owner_id == user_id,
                     Segment.module == module_str,
-                    Segment.is_default == True,
+                    Segment.is_default.is_(True),
                 )
             )
         )

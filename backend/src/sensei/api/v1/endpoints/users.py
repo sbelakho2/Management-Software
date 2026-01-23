@@ -608,7 +608,7 @@ async def get_user(
     roles_result = await db.execute(
         select(Role.name).join(UserRole).where(
             UserRole.user_id == user_id,
-            Role.is_active == True,
+            Role.is_active.is_(True),
         )
     )
     roles = [r[0] for r in roles_result.fetchall()]
@@ -619,7 +619,7 @@ async def get_user(
             RolePermission
         ).join(Role).join(UserRole).where(
             UserRole.user_id == user_id,
-            Role.is_active == True,
+            Role.is_active.is_(True),
         ).distinct()
     )
     permissions = [f"{p[0]}:{p[1]}" for p in perms_result.fetchall()]

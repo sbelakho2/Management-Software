@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Any
 from uuid import UUID, uuid4
 
 from sensei.services.ai.reasoning_engine import SenseiReasoningEngine, A3Phase, MentorPersona

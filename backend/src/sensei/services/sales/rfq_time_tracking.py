@@ -635,7 +635,7 @@ class RFQTimeTrackingService:
         elapsed = session.active_elapsed_seconds
         target = self._task_targets.get(session.task_type)
         
-        result = {
+        result: dict[str, Any] = {
             "session_id": str(session.id),
             "task_type": session.task_type.value,
             "status": session.status.value,
@@ -932,8 +932,8 @@ class RFQTimeTrackingService:
         # Trend calculation (compare first half vs second half)
         mid = start + (end - start) / 2
         
-        first_half_compliance = 0
-        second_half_compliance = 0
+        first_half_compliance: float = 0.0
+        second_half_compliance: float = 0.0
         first_half_count = 0
         second_half_count = 0
         
@@ -1067,7 +1067,7 @@ class RFQTimeTrackingService:
                 user_ids.add(session.user_id)
         
         # Get stats for each user
-        user_stats = []
+        user_stats: list[dict[str, Any]] = []
         
         for uid in user_ids:
             stats = self.get_performance_stats(task_type, start, end, uid)
@@ -1084,8 +1084,8 @@ class RFQTimeTrackingService:
         user_stats.sort(key=lambda x: x["target_compliance_rate"], reverse=True)
         
         # Set ranks
-        for i, stats in enumerate(user_stats[:limit]):
-            stats["efficiency_rank"] = i + 1
+        for i, user_stat in enumerate(user_stats[:limit]):
+            user_stat["efficiency_rank"] = i + 1
         
         return user_stats[:limit]
     
@@ -1164,11 +1164,11 @@ class RFQTimeTrackingService:
                     to_expire.append(session.id)
         
         for sid in to_expire:
-            session = self._sessions.get(sid)
-            if session:
-                session.status = TaskSessionStatus.EXPIRED
-                session.completed_at = now
-                self._archive_session(session)
+            expiring_session = self._sessions.get(sid)
+            if expiring_session:
+                expiring_session.status = TaskSessionStatus.EXPIRED
+                expiring_session.completed_at = now
+                self._archive_session(expiring_session)
         
         return len(to_expire)
     

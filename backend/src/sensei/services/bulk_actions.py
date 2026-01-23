@@ -211,7 +211,7 @@ class ValidationResult:
     ) -> None:
         """Add an error."""
         self.is_valid = False
-        error = {"message": message}
+        error: dict[str, Any] = {"message": message}
         if entity_id:
             error["entity_id"] = entity_id
         if field:
@@ -229,7 +229,7 @@ class ValidationResult:
         entity_id: UUID | None = None,
     ) -> None:
         """Add a warning."""
-        warning = {"message": message}
+        warning: dict[str, Any] = {"message": message}
         if entity_id:
             warning["entity_id"] = entity_id
         self.warnings.append(warning)
@@ -385,7 +385,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle status update for an entity."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         new_status = params.get("status")
         
         entity = self._get_entity(entity_type, entity_id)
@@ -406,7 +406,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle owner assignment."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         new_owner_id = params.get("owner_id")
         
         entity = self._get_entity(entity_type, entity_id)
@@ -427,7 +427,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle due date update."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         new_due_date = params.get("due_date")
         
         entity = self._get_entity(entity_type, entity_id)
@@ -448,7 +448,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle priority update."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         new_priority = params.get("priority")
         
         entity = self._get_entity(entity_type, entity_id)
@@ -469,7 +469,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle adding tags."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         tags_to_add = params.get("tags", [])
         
         entity = self._get_entity(entity_type, entity_id)
@@ -491,7 +491,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle removing tags."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         tags_to_remove = params.get("tags", [])
         
         entity = self._get_entity(entity_type, entity_id)
@@ -513,7 +513,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle archiving an entity."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         
         entity = self._get_entity(entity_type, entity_id)
         if not entity:
@@ -536,7 +536,7 @@ class BulkActionsService:
         params: dict[str, Any],
     ) -> tuple[bool, str | None, Any, Any]:
         """Handle restoring an archived entity."""
-        entity_type = params.get("_entity_type")
+        entity_type: EntityType = params["_entity_type"]
         
         entity = self._get_entity(entity_type, entity_id)
         if not entity:

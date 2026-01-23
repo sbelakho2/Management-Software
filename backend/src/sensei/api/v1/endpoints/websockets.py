@@ -23,7 +23,7 @@ async def websocket_endpoint(
         await websocket.close(code=1008)
         return
 
-    user: User = await get_current_user_from_token(token)
+    user: User | None = await get_current_user_from_token(token)
     if not user:
         await websocket.close(code=1008)
         return

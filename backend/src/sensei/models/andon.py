@@ -78,7 +78,7 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "andon_events"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Event identification
     event_number: Mapped[str] = mapped_column(
@@ -284,7 +284,7 @@ class AndonEscalation(Base, TimestampMixin):
 
     __tablename__ = "andon_escalations"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Andon reference
     andon_event_id: Mapped[int] = mapped_column(
@@ -355,7 +355,7 @@ class AndonRecurrencePattern(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "andon_recurrence_patterns"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Pattern identification
     station_id: Mapped[int] = mapped_column(

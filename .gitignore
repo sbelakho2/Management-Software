@@ -264,6 +264,8 @@ book_download.log
 gutenberg_books_catalog.json
 relevant_books_filtered.json
 downloaded_resources.json
+massive_progress.json
+cleaning_stats.json
 *.download.tmp
 
 # Large resource files (should be managed separately)
@@ -294,6 +296,26 @@ test_world_class_quality.py
 world_class_ingestor.py
 ai_services_catalog.json
 system_training_report.json
+book_downloader_v2.py
+book_cleaner.py
+thorough_book_cleaner.py
+massive_downloader.py
+broad_downloader.py
+enhanced_downloader.py
+final_downloader.py
+five_lang_downloader.py
+libgen_downloader.py
+libgen_vg_download.py
+libgen_vg_expanded.py
+libgen_vg_fixed.py
+multilingual_downloader.py
+robust_downloader.py
+targeted_downloader.py
+ultra_strict_filter.py
+strict_filter.py
+build_catalog_libgen_annas.py
+libgen_download.py
+libgen_vg_expanded.py
 
 # ============================================
 # Additional Log Files

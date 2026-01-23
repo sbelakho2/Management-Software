@@ -313,7 +313,7 @@ class LessonRecommender:
         Uses leave-one-out cross-validation.
         """
         # Group completions by user
-        user_completions = {}
+        user_completions: dict[int, list[Any]] = {}
         for c in completions:
             if c.user_id not in user_completions:
                 user_completions[c.user_id] = []
@@ -384,7 +384,7 @@ def generate_recommendations_for_all_users(
     logger.info(f"Generating recommendations for {len(users)} users")
     
     # Group completions by user
-    user_completions = {}
+    user_completions: dict[int, list[Any]] = {}
     for c in completions:
         if c.user_id not in user_completions:
             user_completions[c.user_id] = []

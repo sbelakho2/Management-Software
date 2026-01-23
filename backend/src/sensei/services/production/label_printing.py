@@ -623,7 +623,7 @@ class LabelPrintingService:
         """Parse DataMatrix barcode data."""
         parts = barcode_data.split("|")
         
-        result = {
+        result: dict[str, Any] = {
             "entity_type": parts[0].lower() if len(parts) > 0 else None,
             "entity_id": parts[1] if len(parts) > 1 else None,
             "additional": {},

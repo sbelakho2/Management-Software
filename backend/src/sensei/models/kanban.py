@@ -88,7 +88,7 @@ class KanbanBoard(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "kanban_boards"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Board identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -232,7 +232,7 @@ class KanbanCard(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "kanban_cards"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Card identification
     card_number: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
@@ -423,7 +423,7 @@ class KanbanCardHistory(Base, TimestampMixin):
 
     __tablename__ = "kanban_card_history"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Card reference
     card_id: Mapped[int] = mapped_column(
@@ -460,7 +460,7 @@ class KanbanMetrics(Base, TimestampMixin):
 
     __tablename__ = "kanban_metrics"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Board and date
     board_id: Mapped[int] = mapped_column(

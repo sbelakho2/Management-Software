@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import pickle
 import statistics
 import uuid
@@ -1414,7 +1415,7 @@ class ExperimentTracker:
             ]
         
         # Collect all metrics
-        all_metrics = set()
+        all_metrics: set[str] = set()
         for exp in experiments:
             all_metrics.update(exp.metrics.keys())
         

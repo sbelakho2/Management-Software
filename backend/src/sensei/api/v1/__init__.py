@@ -43,6 +43,8 @@ from sensei.api.v1.endpoints import (
     kpi,
     conditions,
     today,
+    production_handovers,
+    pulse,
     backups,
     backup_scheduler,
     exceptions,
@@ -119,6 +121,8 @@ api_router.include_router(lsw.router)
 api_router.include_router(kpi.router)
 api_router.include_router(conditions.router)
 api_router.include_router(today.router)
+api_router.include_router(production_handovers.router)
+api_router.include_router(pulse.router)
 api_router.include_router(backups.router, prefix="/backups", tags=["Backups"])
 api_router.include_router(backup_scheduler.router, prefix="/backup-scheduler", tags=["Backup Scheduler"])
 api_router.include_router(exceptions.router, prefix="/exceptions", tags=["Exceptions"])

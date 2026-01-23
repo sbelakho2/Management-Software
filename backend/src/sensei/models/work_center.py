@@ -83,7 +83,7 @@ class WorkCenter(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "work_centers"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -163,7 +163,7 @@ class Station(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "stations"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

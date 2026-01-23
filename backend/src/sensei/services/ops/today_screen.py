@@ -17,7 +17,9 @@ import asyncio
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, date, timedelta, timezone
 from enum import Enum
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, Coroutine, TypeVar
+
+T = TypeVar("T")
 from uuid import UUID, uuid4
 
 from sensei.core.redis import redis_client
@@ -34,8 +36,10 @@ from sensei.services.ops.today_screen_models import (
     LSWChecklistSummary, QuickMetric, WorkOrderAtRisk, CriticalAndon,
     StationEfficiency, CellOEE, KanbanAlert, ExpiringCertification,
     WIPViolation, CAPAVerification, ScheduledTraining, ShopFloorSummary,
-    TodayScreenData
+    TodayScreenData, HandoverNoteSummary, GlobalPulseSummary
 )
+from sensei.services.production.handover_service import get_handover_service
+from sensei.services.ops.pulse_service import get_pulse_service
 
 def _utcnow() -> datetime:
     return utcnow_naive()
@@ -93,479 +97,9 @@ class InMemoryRedis:
         return None
 
 
-class RiskCategory(str, Enum):
-    """Categories of risks for Today screen."""
-    
-    DELIVERY = "delivery"
-    QUALITY = "quality"
-    CASH = "cash"
-    REPUTATION = "reputation"
-    SAFETY = "safety"
-    COST = "cost"
-
-
-class AbnormalityType(str, Enum):
-    """Types of abnormalities to surface."""
-    
-    # Quote-to-Cash abnormalities
-    LATE_QUOTE = "late_quote"
-    STALLED_RFQ = "stalled_rfq"
-    MISSING_CTQ = "missing_ctq"
-    OVERDUE_APPROVAL = "overdue_approval"
-    EXPIRED_QUOTE = "expired_quote"
-    BLOCKED_TASK = "blocked_task"
-    RECURRING_ISSUE = "recurring_issue"
-    LOW_MARGIN = "low_margin"
-    MISSING_FOLLOW_UP = "missing_follow_up"
-    
-    # Project Management abnormalities
-    LATE_USER_STORY = "late_user_story"
-    OVERDUE_PROJECT_MILESTONE = "overdue_project_milestone"
-    STALLED_PROJECT_TASK = "stalled_project_task"
-    
-    # Shop Floor abnormalities (Phase 3)
-    CRITICAL_ANDON = "critical_andon"  # Critical Andon events requiring acknowledgement
-    WORK_ORDER_AT_RISK = "work_order_at_risk"  # Work orders at risk of missing due date
-    CAPA_VERIFICATION_DUE = "capa_verification_due"  # CAPA verifications due today
-    STATION_LOW_EFFICIENCY = "station_low_efficiency"  # Stations with efficiency < target
-    CELL_LOW_OEE = "cell_low_oee"  # Cells with OEE < threshold
-    KANBAN_OVERDUE = "kanban_overdue"  # Material Kanban cards overdue for replenishment
-    EXPIRING_CERTIFICATION = "expiring_certification"  # Certifications expiring soon
-    WIP_LIMIT_VIOLATION = "wip_limit_violation"  # WIP limit exceeded
-    OPEN_NC_CRITICAL = "open_nc_critical"  # Open critical non-conformances
-
-
-class CommitmentType(str, Enum):
-    """Types of commitments."""
-    
-    # Quote-to-Cash commitments
-    QUOTE_DUE = "quote_due"
-    CALL_SCHEDULED = "call_scheduled"
-    FOLLOW_UP = "follow_up"
-    APPROVAL_NEEDED = "approval_needed"
-    MEETING = "meeting"
-    TASK_DUE = "task_due"
-    DELIVERY_DUE = "delivery_due"
-    
-    # Project Management commitments
-    PROJECT_MILESTONE_DUE = "project_milestone_due"
-    USER_STORY_DUE = "user_story_due"
-    SUBTASK_DUE = "subtask_due"
-    
-    # Shop Floor commitments (Phase 3)
-    TRAINING_SESSION = "training_session"  # Scheduled training sessions
-    AUDIT_SCHEDULED = "audit_scheduled"  # Quality audits scheduled
-    MAINTENANCE_DUE = "maintenance_due"  # Preventive maintenance due
-    CERTIFICATION_RENEWAL = "certification_renewal"  # Certifications that need renewal
-    SHIFT_HANDOFF = "shift_handoff"  # Shift handoff meeting
-    PRODUCTION_TARGET = "production_target"  # Production targets/milestones
-
-
-class PriorityLevel(str, Enum):
-    """Priority levels."""
-    
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
-class LSWChecklistStatus(str, Enum):
-    """Status of LSW checklist."""
-    
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    OVERDUE = "overdue"
-
-
-class ShopFloorAreaType(str, Enum):
-    """Types of shop floor areas."""
-    
-    WORK_CENTER = "work_center"
-    CELL = "cell"
-    STATION = "station"
-    LINE = "line"
-    DEPARTMENT = "department"
-
-
-class ShopFloorAlertSeverity(str, Enum):
-    """Severity levels for shop floor alerts."""
-    
-    CRITICAL = "critical"  # Immediate attention required
-    WARNING = "warning"  # Needs attention soon
-    INFO = "info"  # Informational
-
-
-@dataclass
-class Priority:
-    """A priority item for the Today screen."""
-    
-    id: UUID
-    title: str
-    description: str | None
-    entity_type: str  # "rfq", "quote", "task", etc.
-    entity_id: UUID
-    priority_level: PriorityLevel
-    due_date: date | None
-    owner_id: UUID | None
-    owner_name: str | None
-    is_user_selected: bool = False  # User-forced selection
-    rank: int = 0  # 1, 2, 3 for top 3
-    created_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class Risk:
-    """A risk item for the Today screen."""
-    
-    id: UUID
-    title: str
-    description: str | None
-    category: RiskCategory
-    severity: int  # 1-10
-    probability: int  # 1-10
-    risk_score: int  # severity * probability
-    entity_type: str | None
-    entity_id: UUID | None
-    owner_id: UUID | None
-    owner_name: str | None
-    mitigation: str | None
-    due_date: date | None
-    status: str = "open"
-    created_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class Commitment:
-    """A commitment item for the Today screen."""
-    
-    id: UUID
-    title: str
-    description: str | None
-    commitment_type: CommitmentType
-    entity_type: str | None
-    entity_id: UUID | None
-    due_date: date
-    due_time: str | None  # "14:00" format
-    owner_id: UUID | None
-    owner_name: str | None
-    customer_name: str | None
-    is_completed: bool = False
-    is_overdue: bool = False
-    is_auto_generated: bool = False
-    created_at: datetime = field(default_factory=_utcnow)
-
-
-@dataclass
-class Abnormality:
-    """An abnormality item for the Today screen."""
-    
-    id: UUID
-    title: str
-    description: str | None
-    abnormality_type: AbnormalityType
-    entity_type: str
-    entity_id: UUID
-    detected_at: datetime
-    days_stale: int
-    severity: int = 5
-    owner_id: UUID | None = None
-    owner_name: str | None = None
-    suggested_action: str | None = None
-    is_auto_generated: bool = False
-
-
-@dataclass
-class MicroDrill:
-    """A micro-drill recall question."""
-    
-    id: UUID
-    question: str
-    answer: str
-    hint: str | None
-    category: str
-    difficulty: int  # 1-5
-    context_entity_type: str | None
-    context_entity_id: UUID | None
-
-
-@dataclass
-class LSWChecklistSummary:
-    """Summary of LSW checklist status."""
-    
-    daily_status: LSWChecklistStatus
-    daily_total: int
-    daily_completed: int
-    weekly_status: LSWChecklistStatus
-    weekly_total: int
-    weekly_completed: int
-    monthly_status: LSWChecklistStatus
-    monthly_total: int
-    monthly_completed: int
-    overdue_count: int
-    next_due_item: str | None
-
-
-@dataclass
-class QuickMetric:
-    """A quick metric for the Today screen."""
-    
-    id: str
-    name: str
-    value: float | int | str
-    unit: str | None
-    trend: str  # "up", "down", "stable"
-    trend_value: float | None
-    status: str  # "good", "warning", "critical"
-    target: float | None
-    link: str | None  # URL to drill down
-
-
-# ========== Shop Floor Dataclasses (Phase 3) ==========
-
-@dataclass
-class WorkOrderAtRisk:
-    """A work order at risk of missing its due date."""
-    
-    id: UUID
-    work_order_number: str
-    product_name: str
-    quantity: int
-    due_date: date
-    estimated_completion: date
-    days_at_risk: int  # Positive = will be late
-    work_center_id: UUID | None
-    work_center_name: str | None
-    reason: str  # Why it's at risk
-    severity: ShopFloorAlertSeverity
-    assigned_to_id: UUID | None
-    assigned_to_name: str | None
-
-
-@dataclass
-class CriticalAndon:
-    """A critical Andon event requiring attention."""
-    
-    id: UUID
-    andon_type: str  # "quality", "safety", "equipment", "material"
-    title: str
-    description: str | None
-    work_center_id: UUID
-    work_center_name: str
-    station_id: UUID | None
-    station_name: str | None
-    raised_at: datetime
-    minutes_open: int
-    acknowledged: bool
-    acknowledged_by_id: UUID | None
-    acknowledged_by_name: str | None
-    severity: ShopFloorAlertSeverity
-
-
-@dataclass
-class StationEfficiency:
-    """Station efficiency data."""
-    
-    station_id: UUID
-    station_name: str
-    work_center_id: UUID
-    work_center_name: str
-    current_efficiency: float  # Percentage
-    target_efficiency: float
-    variance: float  # current - target
-    trend: str  # "up", "down", "stable"
-    is_below_target: bool
-    operator_id: UUID | None
-    operator_name: str | None
-
-
-@dataclass
-class CellOEE:
-    """Cell OEE (Overall Equipment Effectiveness) data."""
-    
-    cell_id: UUID
-    cell_name: str
-    work_center_id: UUID
-    work_center_name: str
-    current_oee: float  # Percentage
-    target_oee: float
-    availability: float
-    performance: float
-    quality: float
-    is_below_threshold: bool
-    variance: float
-
-
-@dataclass
-class KanbanAlert:
-    """An overdue Kanban card."""
-    
-    id: UUID
-    material_code: str
-    material_name: str
-    bin_location: str
-    work_center_id: UUID
-    work_center_name: str
-    quantity_needed: float
-    unit: str
-    due_date: date
-    days_overdue: int
-    supplier_name: str | None
-    replenishment_status: str  # "pending", "ordered", "in_transit"
-
-
-@dataclass
-class ExpiringCertification:
-    """An expiring certification for a user."""
-    
-    id: UUID
-    user_id: UUID
-    user_name: str
-    certification_name: str
-    certification_type: str  # "process", "equipment", "safety", etc.
-    expiration_date: date
-    days_until_expiry: int
-    is_expired: bool
-    required_for_work_centers: list[str]
-    renewal_training_id: UUID | None
-
-
-@dataclass
-class WIPViolation:
-    """A WIP limit violation."""
-    
-    id: UUID
-    work_center_id: UUID
-    work_center_name: str
-    cell_id: UUID | None
-    cell_name: str | None
-    current_wip: int
-    wip_limit: int
-    violation_amount: int  # current - limit
-    started_at: datetime
-    duration_minutes: int
-
-
-@dataclass
-class CAPAVerification:
-    """A CAPA verification due."""
-    
-    id: UUID
-    capa_number: str
-    title: str
-    capa_type: str  # "corrective", "preventive"
-    verification_due_date: date
-    days_until_due: int
-    is_overdue: bool
-    owner_id: UUID
-    owner_name: str
-    original_nc_id: UUID | None
-    effectiveness_check: bool
-
-
-@dataclass
-class ScheduledTraining:
-    """A scheduled training session."""
-    
-    id: UUID
-    title: str
-    description: str | None
-    training_type: str  # "initial", "refresher", "certification"
-    scheduled_date: date
-    scheduled_time: str  # "HH:MM" format
-    duration_minutes: int
-    location: str | None
-    instructor_name: str | None
-    attendee_count: int
-    max_attendees: int | None
-    is_user_enrolled: bool
-
-
-@dataclass
-class ShopFloorSummary:
-    """Summary of shop floor status for Today screen."""
-    
-    # Work Orders
-    work_orders_at_risk: list[WorkOrderAtRisk]
-    work_orders_at_risk_count: int
-    
-    # Andon
-    critical_andons: list[CriticalAndon]
-    unacknowledged_andon_count: int
-    avg_andon_response_minutes: float
-    
-    # Efficiency
-    low_efficiency_stations: list[StationEfficiency]
-    low_oee_cells: list[CellOEE]
-    overall_oee: float
-    
-    # Kanban
-    overdue_kanbans: list[KanbanAlert]
-    pending_kanban_count: int
-    
-    # Certifications
-    expiring_certifications: list[ExpiringCertification]
-    expired_certification_count: int
-    expiring_soon_count: int  # Within 30 days
-    
-    # WIP
-    wip_violations: list[WIPViolation]
-    total_wip_violation_count: int
-    
-    # CAPA
-    capa_verifications_due: list[CAPAVerification]
-    overdue_capa_count: int
-    
-    # Training
-    scheduled_trainings: list[ScheduledTraining]
-    training_sessions_today: int
-
-
-@dataclass
-class TodayScreenData:
-    """Complete data for the Today screen."""
-    
-    # User info
-    user_id: UUID
-    user_name: str
-    current_date: date
-    greeting: str
-    
-    # Top 3 priorities (forced selection)
-    top_priorities: list[Priority]
-    unselected_priorities: list[Priority]  # Available for selection
-    
-    # Top risks by category
-    top_risks: dict[RiskCategory, list[Risk]]
-    total_risk_count: int
-    critical_risk_count: int
-    
-    # Commitments
-    todays_commitments: list[Commitment]
-    tomorrows_commitments: list[Commitment]
-    overdue_commitments: list[Commitment]
-    
-    # Abnormalities
-    abnormalities: list[Abnormality]
-    abnormality_counts: dict[AbnormalityType, int]
-    
-    # Micro-drill
-    todays_micro_drills: list[MicroDrill]
-    drills_completed_today: int
-    drill_streak: int
-    
-    # LSW Checklist
-    lsw_summary: LSWChecklistSummary
-    
-    # Quick metrics
-    quick_metrics: list[QuickMetric]
-    
-    # Shop Floor (Phase 3)
-    shop_floor: ShopFloorSummary | None = None
-    
-    # Timestamps
-    generated_at: datetime = field(default_factory=_utcnow)
-    cache_valid_until: datetime | None = None
+# Note: All enums and data classes (Priority, Risk, Commitment, etc.) are imported from 
+# sensei.services.ops.today_screen_models to avoid duplication.
+# Do not define local versions here.
 
 
 class AsyncTodayScreenService:
@@ -584,7 +118,7 @@ class AsyncTodayScreenService:
     async def _get_store(self, user_id: UUID, store_name: str) -> Dict[str, Any]:
         """Get a user-specific store from Redis (using Hashes for atomicity)."""
         key = f"today:{user_id}:{store_name}"
-        data = await self._redis.hgetall(key) if self._redis else {}
+        data = await self._redis.hgetall(key) if self._redis else {}  # type: ignore[misc]
         if not data:
             return {}
         if isinstance(self._redis, InMemoryRedis):
@@ -603,15 +137,15 @@ class AsyncTodayScreenService:
         # We delete and recreate to ensure it exactly matches the provided data
         # In a high-concurrency environment, Lua would be better.
         async with self._redis.pipeline(transaction=True) as pipe:
-            await pipe.delete(key)
-            await pipe.hset(key, mapping=serialized)
-            await pipe.expire(key, 86400)
-            await pipe.execute()
+            await pipe.delete(key)  # type: ignore[misc]
+            await pipe.hset(key, mapping=serialized)  # type: ignore[misc]
+            await pipe.expire(key, 86400)  # type: ignore[misc]
+            await pipe.execute()  # type: ignore[misc]
 
     async def _get_global_store(self, store_name: str) -> Dict[str, Any]:
         """Get a global store from Redis."""
         key = f"today:global:{store_name}"
-        data = await self._redis.hgetall(key) if self._redis else {}
+        data = await self._redis.hgetall(key) if self._redis else {}  # type: ignore[misc]
         if not data:
             return {}
         if isinstance(self._redis, InMemoryRedis):
@@ -623,8 +157,8 @@ class AsyncTodayScreenService:
         key = f"today:global:{store_name}"
         if self._redis:
             val = data if isinstance(self._redis, InMemoryRedis) else json.dumps(data, cls=UUIDEncoder)
-            await self._redis.hset(key, item_id, val)
-            await self._redis.expire(key, 86400)
+            await self._redis.hset(key, item_id, val)  # type: ignore[misc]
+            await self._redis.expire(key, 86400)  # type: ignore[misc]
 
     # ========== Priority Management ==========
     
@@ -765,7 +299,6 @@ class AsyncTodayScreenService:
             category=category,
             severity=min(10, max(1, severity)),
             probability=min(10, max(1, probability)),
-            risk_score=min(10, max(1, severity)) * min(10, max(1, probability)),
             entity_type=entity_type,
             entity_id=entity_id,
             owner_id=owner_id or user_id,
@@ -947,7 +480,7 @@ class AsyncTodayScreenService:
         entity_id: UUID,
         days_stale: int = 0,
         description: str | None = None,
-        severity: int = 5,
+        severity: PriorityLevel = PriorityLevel.MEDIUM,
         owner_id: UUID | None = None,
         owner_name: str | None = None,
         suggested_action: str | None = None,
@@ -1128,11 +661,11 @@ class AsyncTodayScreenService:
         for drill_data in default_drills:
             drill = MicroDrill(
                 id=uuid4(),
-                question=drill_data["question"],
-                answer=drill_data["answer"],
-                hint=drill_data["hint"],
-                category=drill_data["category"],
-                difficulty=drill_data["difficulty"],
+                question=str(drill_data["question"]),
+                answer=str(drill_data["answer"]),
+                hint=str(drill_data["hint"]) if drill_data.get("hint") else None,
+                category=str(drill_data["category"]),
+                difficulty=int(str(drill_data["difficulty"])),
                 context_entity_type=None,
                 context_entity_id=None,
             )
@@ -1296,75 +829,66 @@ class AsyncTodayScreenService:
     async def add_work_order_at_risk(
         self,
         work_order_number: str,
-        product_name: str,
-        quantity: int,
-        due_date: date,
-        estimated_completion: date,
-        reason: str,
-        work_center_id: UUID | None = None,
-        work_center_name: str | None = None,
-        assigned_to_id: UUID | None = None,
-        assigned_to_name: str | None = None,
+        job_name: str,
+        customer_name: str,
+        scheduled_ship_date: date,
+        current_operation: str,
+        work_center_id: UUID,
+        work_center_name: str,
+        reason_at_risk: str,
+        estimated_delay_hours: float | None = None,
+        priority: int = 3,
     ) -> WorkOrderAtRisk:
         """Add a work order at risk."""
-        days_at_risk = (estimated_completion - due_date).days
-        severity = (
-            ShopFloorAlertSeverity.CRITICAL if days_at_risk > 3
-            else ShopFloorAlertSeverity.WARNING if days_at_risk > 0
-            else ShopFloorAlertSeverity.INFO
-        )
+        today = date.today()
+        days_until_due = (scheduled_ship_date - today).days
         
         wo = WorkOrderAtRisk(
-            id=uuid4(),
+            work_order_id=uuid4(),
             work_order_number=work_order_number,
-            product_name=product_name,
-            quantity=quantity,
-            due_date=due_date,
-            estimated_completion=estimated_completion,
-            days_at_risk=days_at_risk,
+            job_name=job_name,
+            customer_name=customer_name,
+            scheduled_ship_date=scheduled_ship_date,
+            days_until_due=days_until_due,
+            current_operation=current_operation,
             work_center_id=work_center_id,
             work_center_name=work_center_name,
-            reason=reason,
-            severity=severity,
-            assigned_to_id=assigned_to_id,
-            assigned_to_name=assigned_to_name,
+            reason_at_risk=reason_at_risk,
+            estimated_delay_hours=estimated_delay_hours,
+            priority=priority,
         )
         
-        await self._save_global_item("work_orders_at_risk", str(wo.id), asdict(wo))
+        await self._save_global_item("work_orders_at_risk", str(wo.work_order_id), asdict(wo))
         return wo
     
     async def get_work_orders_at_risk(
         self,
         work_center_id: UUID | None = None,
-        severity: ShopFloorAlertSeverity | None = None,
     ) -> list[WorkOrderAtRisk]:
         """Get work orders at risk."""
+        today = date.today()
         data = await self._get_global_store("work_orders_at_risk")
         result = []
         for wo_dict in data.values():
-            if 'due_date' in wo_dict and wo_dict['due_date'] and isinstance(wo_dict['due_date'], str):
-                wo_dict['due_date'] = date.fromisoformat(wo_dict['due_date'])
-            if 'estimated_completion' in wo_dict and wo_dict['estimated_completion'] and isinstance(wo_dict['estimated_completion'], str):
-                wo_dict['estimated_completion'] = date.fromisoformat(wo_dict['estimated_completion'])
+            if 'scheduled_ship_date' in wo_dict and wo_dict['scheduled_ship_date'] and isinstance(wo_dict['scheduled_ship_date'], str):
+                wo_dict['scheduled_ship_date'] = date.fromisoformat(wo_dict['scheduled_ship_date'])
             
             wo = WorkOrderAtRisk(**wo_dict)
+            # Update days until due
+            wo.days_until_due = (wo.scheduled_ship_date - today).days
+            
             if work_center_id and wo.work_center_id != work_center_id:
-                continue
-            if severity and wo.severity != severity:
                 continue
             result.append(wo)
         
-        # Sort by severity (critical first) then days at risk
-        result.sort(key=lambda w: (
-            0 if w.severity == ShopFloorAlertSeverity.CRITICAL else 1,
-            -w.days_at_risk,
-        ))
+        # Sort by priority then days until due
+        result.sort(key=lambda w: (w.priority, w.days_until_due))
         return result
     
     async def resolve_work_order_at_risk(self, work_order_id: UUID) -> bool:
         """Remove a work order from at-risk list."""
         key = "today:global:work_orders_at_risk"
-        return await self._redis.hdel(key, str(work_order_id)) > 0
+        return await self._redis.hdel(key, str(work_order_id)) > 0  # type: ignore[misc]
     
     async def add_critical_andon(
         self,
@@ -1430,7 +954,7 @@ class AsyncTodayScreenService:
     async def resolve_andon(self, andon_id: UUID) -> bool:
         """Resolve an Andon event."""
         key = "today:global:critical_andons"
-        return await self._redis.hdel(key, str(andon_id)) > 0
+        return await self._redis.hdel(key, str(andon_id)) > 0  # type: ignore[misc]
     
     async def get_critical_andons(
         self,
@@ -1639,7 +1163,7 @@ class AsyncTodayScreenService:
     async def resolve_kanban_alert(self, kanban_id: UUID) -> bool:
         """Resolve a Kanban alert."""
         key = "today:global:kanban_alerts"
-        return await self._redis.hdel(key, str(kanban_id)) > 0
+        return await self._redis.hdel(key, str(kanban_id)) > 0  # type: ignore[misc]
     
     async def get_overdue_kanbans(
         self,
@@ -1734,7 +1258,7 @@ class AsyncTodayScreenService:
     async def renew_certification(self, certification_id: UUID) -> bool:
         """Mark certification as renewed (remove from expiring list)."""
         key = "today:global:expiring_certifications"
-        return await self._redis.hdel(key, str(certification_id)) > 0
+        return await self._redis.hdel(key, str(certification_id)) > 0  # type: ignore[misc]
     
     async def add_wip_violation(
         self,
@@ -1793,7 +1317,7 @@ class AsyncTodayScreenService:
     async def resolve_wip_violation(self, violation_id: UUID) -> bool:
         """Resolve a WIP violation."""
         key = "today:global:wip_violations"
-        return await self._redis.hdel(key, str(violation_id)) > 0
+        return await self._redis.hdel(key, str(violation_id)) > 0  # type: ignore[misc]
     
     async def add_capa_verification(
         self,
@@ -1864,7 +1388,7 @@ class AsyncTodayScreenService:
     async def resolve_capa_verification(self, capa_id: UUID) -> bool:
         """Resolve a CAPA verification."""
         key = "today:global:capa_verifications"
-        return await self._redis.hdel(key, str(capa_id)) > 0
+        return await self._redis.hdel(key, str(capa_id)) > 0  # type: ignore[misc]
 
     async def add_scheduled_training(
         self,
@@ -2092,6 +1616,43 @@ class AsyncTodayScreenService:
         # Get shop floor summary (Phase 3)
         shop_floor = await self.get_shop_floor_summary(user_id=user_id)
         
+        # Real-time awareness (The Pulse & Handovers)
+        active_pulses = []
+        active_handovers = []
+        
+        if db:
+            pulse_service = get_pulse_service()
+            db_pulses = await pulse_service.get_active_pulses(db)
+            active_pulses = [
+                GlobalPulseSummary(
+                    id=p.id,
+                    message=p.message,
+                    severity=p.severity.value,
+                    highlight_metric_name=p.highlight_metric_name,
+                    highlight_metric_value=p.highlight_metric_value,
+                )
+                for p in db_pulses
+            ]
+            
+            handover_service = get_handover_service()
+            # For now, list all unacknowledged handovers. In a real system, we'd filter by user's station.
+            db_handovers = await handover_service.list_handover_notes(db, include_acknowledged=False, limit=10)
+            active_handovers = [
+                HandoverNoteSummary(
+                    id=h.id,
+                    station_id=h.station_id,
+                    severity=h.severity.value,
+                    safety=h.safety,
+                    quality=h.quality,
+                    delivery=h.delivery,
+                    cost=h.cost,
+                    people=h.people,
+                    notes=h.notes,
+                    created_at=h.created_at,
+                )
+                for h in db_handovers
+            ]
+        
         return TodayScreenData(
             user_id=user_id,
             user_name=user_name,
@@ -2112,7 +1673,9 @@ class AsyncTodayScreenService:
             drill_streak=drill_progress["streak"],
             lsw_summary=lsw_summary,
             quick_metrics=quick_metrics,
-            shop_floor=shop_floor,
+            active_pulses=active_pulses,
+            active_handovers=active_handovers,
+            shop_floor_summary=shop_floor,
             cache_valid_until=utcnow_naive() + timedelta(minutes=5),
         )
     
@@ -2237,7 +1800,7 @@ class AsyncTodayScreenService:
 
     # ========== Sample Data ==========
     
-    def _register_sample_data(self) -> None:
+    async def _register_sample_data(self) -> None:
         """Register sample data for testing."""
         # Sample micro-drills
         sample_drills = [
@@ -2265,7 +1828,14 @@ class AsyncTodayScreenService:
         ]
         
         for drill in sample_drills:
-            self.add_micro_drill(**drill)
+            await self.add_micro_drill(
+                user_id=uuid4(),  # Generate a test user_id for sample data
+                question=str(drill["question"]),
+                answer=str(drill["answer"]),
+                category=str(drill["category"]),
+                difficulty=int(str(drill["difficulty"])),
+                hint=str(drill["hint"]) if drill.get("hint") else None,
+            )
 
 
 class TodayScreenService:
@@ -2283,7 +1853,7 @@ class TodayScreenService:
             self._commitments = self._redis._hashes.setdefault(f"today:{self._default_user_id}:commitments", {})
             self._abnormalities = self._redis._hashes.setdefault(f"today:{self._default_user_id}:abnormalities", {})
 
-    def _run(self, coro):
+    def _run(self, coro: Coroutine[Any, Any, T]) -> T | Coroutine[Any, Any, T]:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -2294,7 +1864,7 @@ class TodayScreenService:
         # Use the async service's method which includes seeding logic
         return await self._async.get_todays_drills(user_id, count=count)
 
-    def get_todays_drills(self, user_id: UUID, count: int = 3) -> list[MicroDrill]:
+    def get_todays_drills(self, user_id: UUID, count: int = 3) -> list[MicroDrill] | Coroutine[Any, Any, list[MicroDrill]]:
         return self._run(self._get_todays_drills_async(user_id, count=count))
 
     async def _get_today_screen_async(
@@ -2335,14 +1905,14 @@ class TodayScreenService:
         user_id: UUID,
         user_name: str,
         db: AsyncSession | None = None,
-    ) -> TodayScreenData:
+    ) -> TodayScreenData | Coroutine[Any, Any, TodayScreenData]:
         return self._run(self._get_today_screen_async(user_id, user_name, db=db))
 
     async def _complete_capa_verification_async(self, capa_id: UUID) -> bool:
         return await self._async.resolve_capa_verification(capa_id)
 
     def complete_capa_verification(self, capa_id: UUID) -> bool:
-        return self._run(self._complete_capa_verification_async(capa_id))
+        return self._run(self._complete_capa_verification_async(capa_id))  # type: ignore[return-value]
 
     def __getattr__(self, name: str):
         attr = getattr(self._async, name)

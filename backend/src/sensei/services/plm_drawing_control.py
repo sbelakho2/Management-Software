@@ -642,7 +642,7 @@ class PLMDrawingControlService:
     
     def _analyze_revision_impact(self, revision: DocumentRevision) -> list[RevisionImpact]:
         """Analyze the impact of a revision release."""
-        impacts = []
+        impacts: list[RevisionImpact] = []
         document = self._documents.get(revision.document_id)
         if not document:
             return impacts
@@ -979,7 +979,7 @@ class PLMDrawingControlService:
         sync_record = PLMSyncRecord(
             id=str(uuid4()),
             document_id=document_id,
-            plm_document_id=document.plm_document_id if document else "",
+            plm_document_id=document.plm_document_id if document and document.plm_document_id else "",
             sync_direction="outbound",
             sync_status="success",  # Would be actual result in real implementation
             synced_at=datetime.now(timezone.utc),
@@ -1089,12 +1089,12 @@ class PLMDrawingControlService:
         docs = list(self._documents.values())
         revisions = list(self._revisions.values())
         
-        by_type = {}
+        by_type: dict[str, int] = {}
         for doc in docs:
             doc_type = doc.document_type.value
             by_type[doc_type] = by_type.get(doc_type, 0) + 1
         
-        by_status = {}
+        by_status: dict[str, int] = {}
         for rev in revisions:
             status = rev.status.value
             by_status[status] = by_status.get(status, 0) + 1

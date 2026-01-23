@@ -1306,9 +1306,8 @@ class SmartSupplierMatchmaker:
     ) -> dict[str, Any]:
         """Compare specific suppliers."""
         suppliers = [
-            self.get_supplier(sid)
-            for sid in supplier_ids
-            if self.get_supplier(sid)
+            s for s in (self.get_supplier(sid) for sid in supplier_ids)
+            if s is not None
         ]
         
         if not suppliers:

@@ -275,6 +275,35 @@ class QuickMetricSchema(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GlobalPulseSummarySchema(BaseModel):
+    """Schema for global pulse summary."""
+
+    id: int
+    message: str
+    severity: str
+    highlight_metric_name: str | None = None
+    highlight_metric_value: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class HandoverNoteSummarySchema(BaseModel):
+    """Schema for handover note summary."""
+
+    id: int
+    station_id: int
+    severity: str
+    safety: str
+    quality: str
+    delivery: str
+    cost: str
+    people: str
+    notes: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class RisksByCategorySchema(BaseModel):
     """Schema for risks grouped by category."""
 
@@ -311,6 +340,9 @@ class TodayScreenDataSchema(BaseModel):
 
     lsw_summary: LSWChecklistSummarySchema
     quick_metrics: list[QuickMetricSchema]
+
+    active_pulses: list[GlobalPulseSummarySchema]
+    active_handovers: list[HandoverNoteSummarySchema]
 
     generated_at: datetime
     cache_valid_until: datetime | None
@@ -769,7 +801,7 @@ async def get_todays_drills(
 ) -> list[MicroDrillResponseSchema]:
     """Get micro-drill questions for today."""
     service = get_today_screen_service(redis_client_override=redis_client)
-    drills = await service.get_todays_drills(user_id, count=count)
+    drills = await service.get_todays_drills(user_id, count=count)  # type: ignore[misc]
     return [_drill_to_response(d) for d in drills]
 
 
@@ -913,7 +945,7 @@ async def get_today_screen(
     """Get complete Today screen data for a user."""
     service = get_today_screen_service(redis_client_override=redis_client)
     normalized_user_name = (user_name or "").strip() or "User"
-    screen = await service.get_today_screen(user_id, normalized_user_name, db=db)
+    screen = await service.get_today_screen(user_id, normalized_user_name, db=db)  # type: ignore[misc]
 
     return TodayScreenDataSchema(
         user_id=screen.user_id,
@@ -964,6 +996,31 @@ async def get_today_screen(
                 link=m.link,
             )
             for m in screen.quick_metrics
+        ],
+        active_pulses=[
+            GlobalPulseSummarySchema(
+                id=p.id,
+                message=p.message,
+                severity=p.severity,
+                highlight_metric_name=p.highlight_metric_name,
+                highlight_metric_value=p.highlight_metric_value,
+            )
+            for p in screen.active_pulses
+        ],
+        active_handovers=[
+            HandoverNoteSummarySchema(
+                id=h.id,
+                station_id=h.station_id,
+                severity=h.severity,
+                safety=h.safety,
+                quality=h.quality,
+                delivery=h.delivery,
+                cost=h.cost,
+                people=h.people,
+                notes=h.notes,
+                created_at=h.created_at,
+            )
+            for h in screen.active_handovers
         ],
         generated_at=screen.generated_at,
         cache_valid_until=screen.cache_valid_until,

@@ -130,7 +130,7 @@ async def get_server_stats(db: DBSession, current_user: CurrentUser) -> Any:
         
         # Get active database connections (simplified)
         active_connections = await db.scalar(
-            select(func.count(User.id)).where(User.is_active == True)
+            select(func.count(User.id)).where(User.is_active.is_(True))
         ) or 0
         
         return ServerStatsResponse(
@@ -219,7 +219,7 @@ async def get_active_users_by_team(db: DBSession, current_user: CurrentUser) -> 
     # Query active users grouped by role
     result = await db.execute(
         select(func.count(User.id))
-        .where(User.is_active == True)
+        .where(User.is_active.is_(True))
     )
     total_active = result.scalar() or 0
     

@@ -450,10 +450,10 @@ class KnowledgeBase:
         
         for practice in practices:
             source = KnowledgeSource(
-                id=practice["id"],
+                id=str(practice["id"]),
                 source_type=KnowledgeSourceType.BEST_PRACTICE,
-                title=practice["title"],
-                content_snippet=practice["content"],
+                title=str(practice["title"]),
+                content_snippet=str(practice["content"]),
                 relevance_score=0.9,
                 approved_date=datetime.now(timezone.utc),
             )

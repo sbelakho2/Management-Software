@@ -690,7 +690,7 @@ class NotificationTriggersService:
             List of generated notifications
         """
         ref_date = reference_date or datetime.now(timezone.utc).replace(tzinfo=None)
-        notifications = []
+        notifications: list[GeneratedNotification] = []
         
         expiring_trigger = self._triggers.get(TriggerType.CERTIFICATION_EXPIRING)
         

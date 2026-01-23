@@ -582,7 +582,7 @@ def get_accessible_insights(roles: list[str]) -> FrozenSet[InsightCategory]:
     Returns:
         FrozenSet of accessible InsightCategory values
     """
-    accessible = set()
+    accessible: set[InsightCategory] = set()
     
     for role in roles:
         role_lower = role.lower().strip()

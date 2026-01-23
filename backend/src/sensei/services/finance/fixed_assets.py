@@ -778,6 +778,9 @@ class FixedAssetsService:
             ),
         ]
 
+        if self._ledger is None:
+            raise ValueError("Ledger integration not configured")
+        
         je = self._ledger.create_journal_entry(
             actor_id=actor_id,
             actor_roles=actor_roles,
@@ -834,6 +837,9 @@ class FixedAssetsService:
             ),
         ]
 
+        if self._ledger is None:
+            raise ValueError("Ledger integration not configured")
+        
         je = self._ledger.create_journal_entry(
             actor_id=actor_id,
             actor_roles=actor_roles,
@@ -892,6 +898,9 @@ class FixedAssetsService:
             ),
         ]
 
+        if self._ledger is None:
+            raise ValueError("Ledger integration not configured")
+        
         je = self._ledger.create_journal_entry(
             actor_id=actor_id,
             actor_roles=actor_roles,
@@ -994,6 +1003,9 @@ class FixedAssetsService:
                     )
                 )
 
+        if self._ledger is None:
+            raise ValueError("Ledger integration not configured")
+        
         je = self._ledger.create_journal_entry(
             actor_id=actor_id,
             actor_roles=actor_roles,

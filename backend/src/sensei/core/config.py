@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     DATABASE_STATEMENT_CACHE_SIZE: int = 1000
     DATABASE_STATEMENT_TIMEOUT_MS: int = 10000
     
+    # starzERP Database (MySQL)
+    STARZ_ERP_DATABASE_URL: str = "mysql+aiomysql://root:@127.0.0.1:3308/HRapp"
+    
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_MAX_CONNECTIONS: int = 50

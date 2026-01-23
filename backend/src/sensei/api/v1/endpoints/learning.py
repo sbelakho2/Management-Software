@@ -423,9 +423,7 @@ async def create_module(
         created_by_id=current_user.id,
     )
 
-    maybe_awaitable = db.add(module)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(module)
     await db.flush()
     await db.refresh(module)
 
@@ -482,7 +480,7 @@ async def list_modules(
     if difficulty and isinstance(difficulty, DifficultyLevel):
         base_conditions.append(LearningModule.difficulty == difficulty.value)
     if published_only:
-        base_conditions.append(LearningModule.is_published == True)
+        base_conditions.append(LearningModule.is_published.is_(True))
     if search:
         search_filter = or_(
             LearningModule.title.ilike(f"%{search}%"),
@@ -490,7 +488,7 @@ async def list_modules(
         )
         base_conditions.append(search_filter)
 
-    where_clause = and_(*base_conditions) if base_conditions else True
+    where_clause = and_(*base_conditions) if base_conditions else LearningModule.id.isnot(None)
     count_stmt = select(func.count(LearningModule.id)).where(where_clause)
     count_result = await db.execute(count_stmt)
     total = count_result.scalar_one()
@@ -675,9 +673,7 @@ async def create_unit(
         created_by_id=current_user.id,
     )
 
-    maybe_awaitable = db.add(unit)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(unit)
     await db.flush()
     await db.refresh(unit)
 
@@ -740,7 +736,7 @@ async def list_units(
     if difficulty and isinstance(difficulty, DifficultyLevel):
         base_conditions.append(LearningUnit.difficulty == difficulty.value)
     if published_only:
-        base_conditions.append(LearningUnit.is_published == True)
+        base_conditions.append(LearningUnit.is_published.is_(True))
     if search:
         search_filter = or_(
             LearningUnit.title.ilike(f"%{search}%"),
@@ -749,7 +745,7 @@ async def list_units(
         )
         base_conditions.append(search_filter)
 
-    where_clause = and_(*base_conditions) if base_conditions else True
+    where_clause = and_(*base_conditions) if base_conditions else LearningUnit.id.isnot(None)
     count_stmt = select(func.count(LearningUnit.id)).where(where_clause)
     count_result = await db.execute(count_stmt)
     total = count_result.scalar_one()
@@ -902,7 +898,7 @@ async def get_my_progress(
     if status and isinstance(status, ProgressStatus):
         base_conditions.append(UserLearningProgress.status == status.value)
     if bookmarked_only:
-        base_conditions.append(UserLearningProgress.bookmarked == True)
+        base_conditions.append(UserLearningProgress.bookmarked.is_(True))
 
     count_stmt = select(func.count(UserLearningProgress.id)).where(
         and_(*base_conditions)
@@ -1008,9 +1004,7 @@ async def start_unit(
         last_accessed_at=datetime.now(timezone.utc),
     )
 
-    maybe_awaitable = db.add(progress)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(progress)
     await db.flush()
     await db.refresh(progress)
 
@@ -1141,9 +1135,7 @@ async def create_assessment(
         created_by_id=current_user.id,
     )
 
-    maybe_awaitable = db.add(assessment)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(assessment)
     await db.flush()
     await db.refresh(assessment)
 
@@ -1276,9 +1268,7 @@ async def create_path(
         created_by_id=current_user.id,
     )
 
-    maybe_awaitable = db.add(path)
-    if inspect.isawaitable(maybe_awaitable):
-        await maybe_awaitable
+    db.add(path)
     await db.flush()
     await db.refresh(path)
 
@@ -1332,11 +1322,11 @@ async def list_paths(
     if difficulty and isinstance(difficulty, DifficultyLevel):
         base_conditions.append(LearningPath.difficulty == difficulty.value)
     if certification_only:
-        base_conditions.append(LearningPath.is_certification_path == True)
+        base_conditions.append(LearningPath.is_certification_path.is_(True))
     if active_only:
-        base_conditions.append(LearningPath.is_active == True)
+        base_conditions.append(LearningPath.is_active.is_(True))
 
-    where_clause = and_(*base_conditions) if base_conditions else True
+    where_clause = and_(*base_conditions) if base_conditions else LearningPath.id.isnot(None)
     count_stmt = select(func.count(LearningPath.id)).where(where_clause)
     count_result = await db.execute(count_stmt)
     total = count_result.scalar_one()
@@ -1440,7 +1430,7 @@ async def socratic_coaching(
     current_user: CurrentUser,
 ) -> APIResponse[SocraticCoachingResponse]:
     # 1. Retrieve candidate units (Simple keyword match for 'sources').
-    stmt = select(LearningUnit).where(LearningUnit.is_published == True)  # noqa: E712
+    stmt = select(LearningUnit).where(LearningUnit.is_published.is_(True))  # noqa: E712
     if data.category:
         stmt = stmt.where(LearningUnit.category == data.category.value)
     

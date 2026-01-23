@@ -47,7 +47,7 @@ class Base(AsyncAttrs, DeclarativeBase):
     def __repr__(self) -> str:
         """Generate a string representation of the model."""
         class_name = self.__class__.__name__
-        attrs = []
+        attrs: list[str] = []
         for col in self.__table__.columns:
             value = getattr(self, col.name, None)
             if col.name == "id":

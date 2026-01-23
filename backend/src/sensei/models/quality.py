@@ -219,7 +219,7 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "non_conformances"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # NC identification
     nc_number: Mapped[str] = mapped_column(
@@ -429,7 +429,7 @@ class CAPAStateHistory(Base, TimestampMixin):
 
     __tablename__ = "capa_state_history"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     capa_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("capas.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -454,7 +454,7 @@ class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "capas"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # CAPA identification
     capa_number: Mapped[str] = mapped_column(
@@ -678,7 +678,7 @@ class CAPAAction(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "capa_actions"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # CAPA reference
     capa_id: Mapped[int] = mapped_column(
@@ -754,7 +754,7 @@ class InspectionPlan(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "inspection_plans"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Plan identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -862,7 +862,7 @@ class InspectionRecord(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "inspection_records"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Plan reference
     inspection_plan_id: Mapped[int] = mapped_column(

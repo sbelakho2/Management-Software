@@ -607,7 +607,7 @@ class AIQualificationAdvisoryService:
         category: str,
     ) -> list[IdentifiedRisk]:
         """Assess risks based on individual scores."""
-        risks = []
+        risks: list[IdentifiedRisk] = []
         
         if score_data.score is None:
             return risks

@@ -187,6 +187,9 @@ from sensei.models.production import (
     CellStatus,
     CellPerformance,
     ShiftNumber,
+    ShiftHandoverNote,
+    GlobalPulse,
+    HandoverSeverity,
 )
 from sensei.models.finance import (
     GLAccount,
@@ -474,6 +477,9 @@ __all__ = [
     "CellStatus",
     "CellPerformance",
     "ShiftNumber",
+    "ShiftHandoverNote",
+    "GlobalPulse",
+    "HandoverSeverity",
     # Maintenance
     "ConditionReading",
     "MaintenanceRecord",

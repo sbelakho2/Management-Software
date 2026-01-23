@@ -24,9 +24,10 @@ from sqlalchemy.orm import selectinload
 
 from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
+from typing import TypeAlias
 
 # Role-based access for quote approval (approvers must have elevated privileges)
-AllowQuoteApproval = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")
+AllowQuoteApproval: TypeAlias = deps.require_role("admin", "gm", "ceo", "finance", "sales_engineer")  # type: ignore[valid-type]
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (

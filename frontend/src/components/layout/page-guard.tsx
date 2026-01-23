@@ -111,5 +111,5 @@ export function useCanViewFinancials(): boolean {
  */
 export function useIsAdmin(): boolean {
   const roles = useUserRoles();
-  return roles.includes('admin');
+  return roles.includes('admin') || roles.includes('ceo');
 }

@@ -10,7 +10,7 @@ import operator
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Union
 from uuid import uuid4
 
 
@@ -28,7 +28,7 @@ class SafeExpressionEvaluator:
     """
     
     # Allowed operators
-    _operators = {
+    _operators: dict[type, Callable[..., Any]] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
         ast.Mult: operator.mul,
@@ -41,7 +41,7 @@ class SafeExpressionEvaluator:
     }
     
     # Allowed built-in functions (math operations only)
-    _functions = {
+    _functions: dict[str, Callable[..., Any]] = {
         "min": min,
         "max": max,
         "abs": abs,
@@ -74,7 +74,7 @@ class SafeExpressionEvaluator:
             raise ValueError(f"Invalid expression: {e}") from e
     
     @classmethod
-    def _eval_node(cls, node: ast.AST, variables: dict[str, float]) -> float:
+    def _eval_node(cls, node: ast.AST, variables: dict[str, float]) -> Any:
         """Recursively evaluate an AST node."""
         if isinstance(node, ast.Constant):
             # Numeric literals
@@ -105,12 +105,12 @@ class SafeExpressionEvaluator:
         
         elif isinstance(node, ast.UnaryOp):
             # Unary operations (-, +)
-            op_type = type(node.op)
-            if op_type not in cls._operators:
-                raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
+            unary_op_type = type(node.op)
+            if unary_op_type not in cls._operators:
+                raise ValueError(f"Unsupported unary operator: {unary_op_type.__name__}")
             
             operand = cls._eval_node(node.operand, variables)
-            return cls._operators[op_type](operand)
+            return cls._operators[unary_op_type](operand)
         
         elif isinstance(node, ast.Call):
             # Function calls (only allowed functions)
@@ -881,7 +881,7 @@ class KPIService:
         performance_kpi = self.get_latest_value("oee_performance", dimensions)
         quality_kpi = self.get_latest_value("oee_quality", dimensions)
         
-        if all([availability_kpi, performance_kpi, quality_kpi]):
+        if availability_kpi is not None and performance_kpi is not None and quality_kpi is not None:
             availability = availability_kpi.value / 100.0
             performance = performance_kpi.value / 100.0
             quality = quality_kpi.value / 100.0
@@ -1099,7 +1099,7 @@ class KPIService:
         if not dashboard:
             return {}
         
-        result = {
+        result: dict[str, Any] = {
             "dashboard": {
                 "id": dashboard.id,
                 "name": dashboard.name,
@@ -1121,7 +1121,7 @@ class KPIService:
             
             definition = self._definitions.get(kpi_id)
             
-            result["kpis"][kpi_id] = {
+            kpi_data: dict[str, Any] = {
                 "definition": {
                     "name": definition.name if definition else kpi_id,
                     "unit": definition.unit.value if definition else "unknown",
@@ -1135,6 +1135,7 @@ class KPIService:
                     "change_percentage": trend.change_percentage if trend else 0,
                 } if trend else None,
             }
+            result["kpis"][kpi_id] = kpi_data
         
         return result
     

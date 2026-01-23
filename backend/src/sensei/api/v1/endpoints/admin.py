@@ -81,15 +81,15 @@ async def get_admin_stats(db: DBSession, current_user: CurrentSuperuser) -> Any:
     total_gates = await db.scalar(select(func.count(AdminGate.id))) or 0
     active_gates = await db.scalar(select(func.count(AdminGate.id)).where(AdminGate.status == "active")) or 0
     total_approvals = await db.scalar(select(func.count(ApprovalWorkflow.id))) or 0
-    active_approvals = await db.scalar(select(func.count(ApprovalWorkflow.id)).where(ApprovalWorkflow.is_active == True)) or 0
+    active_approvals = await db.scalar(select(func.count(ApprovalWorkflow.id)).where(ApprovalWorkflow.is_active.is_(True))) or 0
     total_templates = await db.scalar(select(func.count(Template.id))) or 0
-    default_templates = await db.scalar(select(func.count(Template.id)).where(Template.is_default == True)) or 0
+    default_templates = await db.scalar(select(func.count(Template.id)).where(Template.is_default.is_(True))) or 0
     total_roles = await db.scalar(select(func.count(Role.id))) or 0
     total_users = await db.scalar(select(func.count(User.id))) or 0
     total_learning_cadences = await db.scalar(select(func.count(LearningCadence.id))) or 0
-    active_learning_cadences = await db.scalar(select(func.count(LearningCadence.id)).where(LearningCadence.is_active == True)) or 0
+    active_learning_cadences = await db.scalar(select(func.count(LearningCadence.id)).where(LearningCadence.is_active.is_(True))) or 0
     total_feature_flags = await db.scalar(select(func.count(FeatureFlag.id))) or 0
-    enabled_features = await db.scalar(select(func.count(FeatureFlag.id)).where(FeatureFlag.enabled == True)) or 0
+    enabled_features = await db.scalar(select(func.count(FeatureFlag.id)).where(FeatureFlag.enabled.is_(True))) or 0
     
     return AdminStatsResponse(
         total_gates=total_gates,

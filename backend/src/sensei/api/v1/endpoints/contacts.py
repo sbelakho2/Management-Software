@@ -419,11 +419,11 @@ async def list_contacts(
     if account_id:
         query = query.join(AccountContact).where(
             AccountContact.account_id == account_id,
-            AccountContact.is_active == True,
+            AccountContact.is_active.is_(True),
         )
         count_query = count_query.join(AccountContact).where(
             AccountContact.account_id == account_id,
-            AccountContact.is_active == True,
+            AccountContact.is_active.is_(True),
         )
     
     # Apply job_title filter
@@ -529,13 +529,13 @@ async def create_contact(
                 select(AccountContact)
                 .where(
                     AccountContact.account_id == contact_data.account_id,
-                    AccountContact.is_primary == True,
+                    AccountContact.is_primary.is_(True),
                 )
             )
             existing_primary = await db.execute(
                 select(AccountContact).where(
                     AccountContact.account_id == contact_data.account_id,
-                    AccountContact.is_primary == True,
+                    AccountContact.is_primary.is_(True),
                 )
             )
             for ac in existing_primary.scalars().all():
@@ -764,7 +764,7 @@ async def list_contact_accounts(
         .join(Account, AccountContact.account_id == Account.id)
         .where(
             AccountContact.contact_id == contact_id,
-            AccountContact.is_active == True,
+            AccountContact.is_active.is_(True),
             Account.deleted_at.is_(None),
         )
     )
@@ -837,7 +837,7 @@ async def add_contact_to_account(
         existing_primary = await db.execute(
             select(AccountContact).where(
                 AccountContact.account_id == request.account_id,
-                AccountContact.is_primary == True,
+                AccountContact.is_primary.is_(True),
             )
         )
         for ac in existing_primary.scalars().all():
@@ -953,7 +953,7 @@ async def update_contact_account_role(
             existing_primary = await db.execute(
                 select(AccountContact).where(
                     AccountContact.account_id == account_id,
-                    AccountContact.is_primary == True,
+                    AccountContact.is_primary.is_(True),
                     AccountContact.id != account_contact.id,
                 )
             )

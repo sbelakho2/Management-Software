@@ -15,7 +15,7 @@ class NL2SQLQueryRecord(Base, TimestampMixin):
     """Database model for a natural language to SQL query."""
     __tablename__ = "strategic_nl2sql_queries"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     natural_language: Mapped[str] = mapped_column(Text, nullable=False)
     generated_sql: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
@@ -27,7 +27,7 @@ class EmployeeRiskAssessmentRecord(Base, TimestampMixin):
     """Database model for employee risk assessment."""
     __tablename__ = "strategic_employee_risks"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     employee_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     risk_type: Mapped[EmployeeRiskType] = mapped_column(Enum(EmployeeRiskType), nullable=False)
     risk_score: Mapped[float] = mapped_column(Float, nullable=False)
@@ -39,7 +39,7 @@ class ScenarioResultRecord(Base, TimestampMixin):
     """Database model for production scenario modeling results."""
     __tablename__ = "strategic_scenario_results"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     scenario_name: Mapped[str] = mapped_column(String(255), nullable=False)
     parameters: Mapped[dict] = mapped_column(JSONB, nullable=False)
     kpi_impacts: Mapped[dict] = mapped_column(JSONB, nullable=False)

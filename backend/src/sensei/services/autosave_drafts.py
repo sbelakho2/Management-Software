@@ -16,7 +16,7 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 
@@ -785,11 +785,12 @@ class AutosaveDraftsService:
             "total_versions": sum(d.version_count for d in drafts),
         }
         
+        by_type = cast(dict[str, int], stats["by_type"])
         for draft in drafts:
             dt = draft.draft_type.value
-            if dt not in stats["by_type"]:
-                stats["by_type"][dt] = 0
-            stats["by_type"][dt] += 1
+            if dt not in by_type:
+                by_type[dt] = 0
+            by_type[dt] += 1
         
         return stats
     

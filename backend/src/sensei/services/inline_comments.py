@@ -1027,5 +1027,5 @@ class InlineCommentsService:
                 activities.append(resolution)
         
         # Sort by timestamp descending
-        activities.sort(key=lambda a: a["timestamp"], reverse=True)
+        activities.sort(key=lambda a: a["timestamp"], reverse=True)  # type: ignore[arg-type, return-value]
         return activities[:limit]

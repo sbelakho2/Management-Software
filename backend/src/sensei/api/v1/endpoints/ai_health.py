@@ -32,7 +32,7 @@ async def verify_ai_performance(
     Trigger a real-time performance verification of AI models.
     """
     # Only allow for admin or tech roles
-    if not any(role.name in ["ADMIN", "OPS", "EXEC"] for role in current_user.roles):
+    if not any(ur.role.name in ["ADMIN", "OPS", "EXEC"] for ur in current_user.roles):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to run AI verification",

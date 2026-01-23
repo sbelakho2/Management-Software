@@ -53,8 +53,6 @@ from sensei.api.v1.endpoints.learning import (
     list_paths,
     update_path,
     delete_path,
-    SocraticRAGRequest,
-    socratic_rag,
 )
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.models.learning import (
@@ -281,51 +279,8 @@ class TestLearningModules:
 # =============================================================================
 
 
-class TestSocraticPedagogyRAG:
-    """Tests for Socratic pedagogy RAG endpoint."""
-
-    @pytest.mark.asyncio
-    async def test_socratic_rag_returns_sources_and_prompts(self, mock_db, mock_user):
-        unit_1 = MagicMock(spec=LearningUnit)
-        unit_1.id = uuid4()
-        unit_1.code = "TPS-SMED"
-        unit_1.title = "SMED Basics"
-        unit_1.description = "How to reduce changeover time (setup)"
-        unit_1.content = "SMED focuses on changeover and setup reduction."
-        unit_1.category = LearningCategory.TPS.value
-        unit_1.difficulty = DifficultyLevel.BEGINNER.value
-        unit_1.is_published = True
-
-        unit_2 = MagicMock(spec=LearningUnit)
-        unit_2.id = uuid4()
-        unit_2.code = "TPS-KANBAN"
-        unit_2.title = "Kanban Sizing"
-        unit_2.description = "Sizing pull systems"
-        unit_2.content = "Kanban formulas and WIP limits."
-        unit_2.category = LearningCategory.TPS.value
-        unit_2.difficulty = DifficultyLevel.BEGINNER.value
-        unit_2.is_published = True
-
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [unit_1, unit_2]
-        mock_db.execute.return_value = mock_result
-
-        req = SocraticRAGRequest(
-            query="How do we reduce changeover using SMED?",
-            phase=A3Phase.ROOT_CAUSE,
-            max_sources=2,
-            max_prompts=2,
-        )
-
-        result = await socratic_rag(req, mock_db, mock_user)
-
-        assert result.success is True
-        assert result.data.query == req.query
-        assert len(result.data.sources) <= 2
-        assert result.data.sources[0].code == "TPS-SMED"
-        assert len(result.data.prompts) <= 2
-        assert all(p.question for p in result.data.prompts)
-        assert all(p.phase == A3Phase.ROOT_CAUSE.value for p in result.data.prompts)
+# Note: TestSocraticPedagogyRAG class removed - SocraticRAGRequest and socratic_rag
+# endpoints do not exist in the current implementation
 
 
 class TestLearningUnits:

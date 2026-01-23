@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -280,7 +280,7 @@ async def create_risk(
     stmt = select(Risk).where(
         and_(
             Risk.risk_number == data.risk_number,
-            Risk.is_deleted == False,
+            Risk.deleted_at.is_(None),
         )
     )
     result = await db.execute(stmt)
@@ -355,7 +355,7 @@ async def get_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -386,7 +386,7 @@ async def list_risks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[RiskResponse]:
-    base_conditions = [Risk.is_deleted == False]
+    base_conditions: list[Any] = [Risk.deleted_at.is_(None)]
 
     if category and isinstance(category, RiskCategory):
         base_conditions.append(Risk.category == category.value)
@@ -444,7 +444,7 @@ async def update_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -498,7 +498,7 @@ async def delete_risk(
     current_user: CurrentUser,
 ) -> APIResponse:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -530,7 +530,7 @@ async def analyze_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -565,7 +565,7 @@ async def start_mitigation(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -602,7 +602,7 @@ async def monitor_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -649,7 +649,7 @@ async def close_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -685,7 +685,7 @@ async def accept_risk(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -722,7 +722,7 @@ async def record_occurrence(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -762,7 +762,7 @@ async def record_review(
     next_review_date: Optional[datetime] = Query(default=None),
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -803,7 +803,7 @@ async def add_mitigation(
     current_user: CurrentUser,
 ) -> APIResponse[MitigationResponse]:
     stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -858,14 +858,14 @@ async def list_mitigations(
 ) -> PaginatedResponse[MitigationResponse]:
     # Check risk exists
     risk_stmt = select(Risk).where(
-        and_(Risk.id == risk_id, Risk.is_deleted == False)
+        and_(Risk.id == risk_id, Risk.deleted_at.is_(None))
     )
     risk_result = await db.execute(risk_stmt)
     risk = risk_result.scalar_one_or_none()
     if not risk:
         raise NotFoundError(f"Risk {risk_id} not found")
 
-    base_conditions = [RiskMitigation.risk_id == risk_id]
+    base_conditions: list[Any] = [RiskMitigation.risk_id == risk_id]
 
     if status and isinstance(status, MitigationStatus):
         base_conditions.append(RiskMitigation.status == status.value)
@@ -1065,7 +1065,7 @@ async def get_risk_by_number(
     current_user: CurrentUser,
 ) -> APIResponse[RiskResponse]:
     stmt = select(Risk).where(
-        and_(Risk.risk_number == risk_number, Risk.is_deleted == False)
+        and_(Risk.risk_number == risk_number, Risk.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     risk = result.scalar_one_or_none()
@@ -1091,8 +1091,8 @@ async def get_high_priority_risks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[RiskResponse]:
-    base_conditions = [
-        Risk.is_deleted == False,
+    base_conditions: list[Any] = [
+        Risk.deleted_at.is_(None),
         Risk.inherent_risk_score >= 12,
         Risk.status.notin_([
             RiskStatus.CLOSED.value,
@@ -1138,8 +1138,8 @@ async def get_open_risks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[RiskResponse]:
-    base_conditions = [
-        Risk.is_deleted == False,
+    base_conditions: list[Any] = [
+        Risk.deleted_at.is_(None),
         Risk.status.notin_([
             RiskStatus.CLOSED.value,
             RiskStatus.OCCURRED.value,
@@ -1185,8 +1185,8 @@ async def get_risks_needing_review(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[RiskResponse]:
     now = datetime.now(timezone.utc)
-    base_conditions = [
-        Risk.is_deleted == False,
+    base_conditions: list[Any] = [
+        Risk.deleted_at.is_(None),
         Risk.status.notin_([
             RiskStatus.CLOSED.value,
             RiskStatus.OCCURRED.value,

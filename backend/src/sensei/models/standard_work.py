@@ -67,7 +67,7 @@ class StandardWork(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "standard_works"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Document identification
     document_number: Mapped[str] = mapped_column(
@@ -270,7 +270,7 @@ class StandardWorkVersion(Base, TimestampMixin):
 
     __tablename__ = "standard_work_versions"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Reference to standard work
     standard_work_id: Mapped[int] = mapped_column(

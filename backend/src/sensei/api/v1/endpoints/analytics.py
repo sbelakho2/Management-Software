@@ -1,4 +1,4 @@
-from typing import Any, Annotated
+from typing import Any, Annotated, TypeAlias
 from fastapi import APIRouter, Depends
 from sensei.services.ai.enhanced_ml_pipeline import get_ml_pipeline_service, EnhancedMLPipelineService
 from sensei.services.ops.analytics_warehouse import AnalyticsWarehouseService, FactType
@@ -9,8 +9,8 @@ from sensei.core.pii import mask_analytics_data
 router = APIRouter()
 
 # Role requirements
-AllowAnalytics = deps.require_role("admin", "ceo", "gm", "exec", "ops", "finance", "quality")
-AllowAdminAnalytics = deps.require_role("admin", "ceo", "gm")
+AllowAnalytics: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec", "ops", "finance", "quality")  # type: ignore[valid-type]
+AllowAdminAnalytics: TypeAlias = deps.require_role("admin", "ceo", "gm")  # type: ignore[valid-type]
 
 # Simple singleton for AnalyticsWarehouseService as well
 _analytics_warehouse_service = AnalyticsWarehouseService()

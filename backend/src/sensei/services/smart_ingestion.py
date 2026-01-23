@@ -611,22 +611,22 @@ def _extract_pdf_text(content: bytes) -> tuple[str, list[OCRPage], str]:
         import pdfplumber
         
         pdf_file = BytesIO(content)
-        pages: list[OCRPage] = []
-        full_text_parts: list[str] = []
+        plumber_pages: list[OCRPage] = []
+        plumber_text_parts: list[str] = []
         
         with pdfplumber.open(pdf_file) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 page_text = page.extract_text() or ""
-                pages.append(OCRPage(
+                plumber_pages.append(OCRPage(
                     page_number=page_num + 1,
                     text=page_text,
                     confidence=0.92,
                     words=[],
                     tables=[],
                 ))
-                full_text_parts.append(page_text)
+                plumber_text_parts.append(page_text)
         
-        return "\n\n".join(full_text_parts), pages, "pdfplumber"
+        return "\n\n".join(plumber_text_parts), plumber_pages, "pdfplumber"
     
     except ImportError:
         logger.debug("pdfplumber not installed; falling back")

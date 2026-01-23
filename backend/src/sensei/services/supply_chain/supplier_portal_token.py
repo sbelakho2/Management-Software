@@ -1096,20 +1096,18 @@ class SupplierPortalTokenService:
     
     def _calculate_avg_response_time(self, submissions: list[PortalSubmission]) -> Optional[float]:
         """Calculate average response time for submissions."""
-        reviewed = [
-            s for s in submissions
-            if s.reviewed_at is not None
-        ]
+        total_hours = 0.0
+        reviewed_count = 0
         
-        if not reviewed:
+        for s in submissions:
+            if s.reviewed_at is not None:
+                total_hours += (s.reviewed_at - s.submitted_at).total_seconds() / 3600
+                reviewed_count += 1
+        
+        if reviewed_count == 0:
             return None
         
-        total_hours = sum(
-            (s.reviewed_at - s.submitted_at).total_seconds() / 3600
-            for s in reviewed
-        )
-        
-        return round(total_hours / len(reviewed), 2)
+        return round(total_hours / reviewed_count, 2)
 
 
 # Singleton instance

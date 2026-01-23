@@ -328,8 +328,8 @@ class SemanticChunker:
     def _split_by_headings(self, text: str) -> list[dict[str, Any]]:
         """Split text by markdown headings."""
         sections = []
-        current_section = {"content": "", "heading": None, "parent_heading": None, "section_path": []}
-        heading_stack = []
+        current_section: dict[str, Any] = {"content": "", "heading": None, "parent_heading": None, "section_path": []}
+        heading_stack: list[str] = []
         
         for line in text.split("\n"):
             heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
@@ -662,7 +662,7 @@ class KnowledgePackIngestionService:
         chunk_dicts = self.semantic_chunker.chunk_document(document.normalized_content)
         
         chunks = []
-        existing_texts = []
+        existing_texts: list[str] = []
         
         for chunk_dict in chunk_dicts:
             # Quality filtering

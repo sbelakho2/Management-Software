@@ -513,7 +513,7 @@ async def get_andon_analytics(
     avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else 0.0
 
     # Signals by category
-    signals_by_category = {}
+    signals_by_category: dict[str, int] = {}
     for e in events:
         cat = e.andon_type.value
         signals_by_category[cat] = signals_by_category.get(cat, 0) + 1
@@ -566,7 +566,7 @@ async def get_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
     return build_response(AndonEventResponse.from_model(event))
 
 
@@ -584,7 +584,7 @@ async def update_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -610,7 +610,7 @@ async def delete_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     event.deleted_at = _now_utc()
     event.deleted_by_id = current_user.id
@@ -632,7 +632,7 @@ async def restore_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     event.deleted_at = None
     event.deleted_by_id = None
@@ -662,7 +662,7 @@ async def acknowledge_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     if event.status != AndonStatus.OPEN:
         raise ConflictError(f"Cannot acknowledge event in status: {event.status.value}")
@@ -692,7 +692,7 @@ async def start_andon_progress(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     if event.status not in [AndonStatus.OPEN, AndonStatus.ACKNOWLEDGED]:
         raise ConflictError(
@@ -726,7 +726,7 @@ async def resolve_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     if event.status in [AndonStatus.RESOLVED, AndonStatus.CANCELLED]:
         raise ConflictError(
@@ -766,7 +766,7 @@ async def cancel_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     if event.status == AndonStatus.RESOLVED:
         raise ConflictError("Cannot cancel a resolved event")
@@ -796,7 +796,7 @@ async def escalate_andon_event(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     if event.status in [AndonStatus.RESOLVED, AndonStatus.CANCELLED]:
         raise ConflictError(
@@ -852,7 +852,7 @@ async def list_event_escalations(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", event_id)
+        raise NotFoundError("Andon event", str(event_id))
 
     result = await db.execute(
         select(AndonEscalation)
@@ -877,7 +877,7 @@ async def create_escalation(
         )
     ).scalar_one_or_none()
     if not event:
-        raise NotFoundError("Andon event", data.andon_event_id)
+        raise NotFoundError("Andon event", str(data.andon_event_id))
 
     # Check for existing escalation at this level
     existing = (
@@ -929,7 +929,7 @@ async def update_escalation(
         )
     ).scalar_one_or_none()
     if not escalation:
-        raise NotFoundError("Andon escalation", escalation_id)
+        raise NotFoundError("Andon escalation", str(escalation_id))
 
     update_data = data.model_dump(exclude_unset=True)
 
@@ -958,7 +958,7 @@ async def delete_escalation(
         )
     ).scalar_one_or_none()
     if not escalation:
-        raise NotFoundError("Andon escalation", escalation_id)
+        raise NotFoundError("Andon escalation", str(escalation_id))
 
     await db.delete(escalation)
     await db.commit()
@@ -1022,7 +1022,7 @@ async def get_recurrence_pattern(
         )
     ).scalar_one_or_none()
     if not pattern:
-        raise NotFoundError("Andon recurrence pattern", pattern_id)
+        raise NotFoundError("Andon recurrence pattern", str(pattern_id))
     return build_response(RecurrencePatternResponse.from_model(pattern))
 
 
@@ -1084,7 +1084,7 @@ async def delete_recurrence_pattern(
         )
     ).scalar_one_or_none()
     if not pattern:
-        raise NotFoundError("Andon recurrence pattern", pattern_id)
+        raise NotFoundError("Andon recurrence pattern", str(pattern_id))
 
     await db.delete(pattern)
     await db.commit()
@@ -1095,9 +1095,9 @@ async def delete_recurrence_pattern(
 @router.post("/recurrence-patterns/{pattern_id}/mark-escalated", response_model=APIResponse[RecurrencePatternResponse])
 async def mark_pattern_escalated(
     pattern_id: int,
+    db: DBSession,
+    current_user: CurrentUser,
     a3_id: Optional[UUID] = None,
-    db: DBSession = None,
-    current_user: CurrentUser = None,
 ) -> APIResponse[RecurrencePatternResponse]:
     """Mark a recurrence pattern as escalated to A3."""
     pattern = (
@@ -1106,7 +1106,7 @@ async def mark_pattern_escalated(
         )
     ).scalar_one_or_none()
     if not pattern:
-        raise NotFoundError("Andon recurrence pattern", pattern_id)
+        raise NotFoundError("Andon recurrence pattern", str(pattern_id))
 
     pattern.escalated_to_a3 = True
     pattern.a3_id = a3_id

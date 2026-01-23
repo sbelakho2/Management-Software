@@ -37,6 +37,7 @@ from sensei.core.security import hash_password
 from sensei.models.user import User, UserStatus
 from sensei.services.core.email_service import get_email_service
 from sqlalchemy import select
+from sensei.core.config import settings
 
 
 router = APIRouter()

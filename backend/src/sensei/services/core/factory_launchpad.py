@@ -294,7 +294,7 @@ DEFAULT_LEVEL_UP_CHECKLISTS: dict[tuple[MaturityLevel, MaturityLevel], list[dict
 
 
 # Dynamic field validation rules by maturity level
-FIELD_VALIDATION_RULES: dict[str, dict[str, int]] = {
+FIELD_VALIDATION_RULES: dict[str, MaturityLevel] = {
     # Field name -> minimum maturity level required
     "machine_id": MaturityLevel.L3_REHEARSAL,
     "station_id": MaturityLevel.L4_OPERATIONAL,
@@ -927,7 +927,7 @@ class UIVisibilityManager:
                     break
             
             is_enabled = feature in enabled_features
-            is_visible = is_enabled or (
+            is_visible = is_enabled or bool(
                 include_preview and preview_level and available_level and available_level <= preview_level
             )
             

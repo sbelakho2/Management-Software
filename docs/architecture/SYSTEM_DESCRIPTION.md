@@ -18,6 +18,7 @@ Sensei OS is a comprehensive Manufacturing Operating System designed to integrat
 
 ### 3. Production & Shop Floor (MES)
 - **Work Order Orchestration**: Real-time management of production orders across stations.
+- **Digital Shift Handover**: Structured SQDCP-based communication between shifts to ensure operational continuity.
 - **Standard Work**: Digital work instructions with version control and operator sign-off.
 - **Andon Board**: Instant visual signals for shop floor abnormalities.
 - **Maintenance (TPM)**: Condition-based maintenance driven by sensor data and ML.
@@ -34,6 +35,7 @@ Sensei OS is a comprehensive Manufacturing Operating System designed to integrat
 
 ### 6. Executive & Intelligence
 - **Cognitive Obeya**: Digital "war room" with prescriptive metrics and Heijunka (leveling) advice.
+- **The Sensei Pulse**: Site-wide, real-time announcement system for alignment on goals and critical status.
 - **North Star Dashboard**: High-level metrics for executive decision-making.
 - **NL2SQL Query Engine**: Natural language interface for querying enterprise data.
 

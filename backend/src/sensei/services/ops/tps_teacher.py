@@ -273,7 +273,7 @@ class AsyncPDCACoachingEngine:
             PDCAPhase.ACT: PhaseGateStatus.NOT_STARTED,
         }
         
-        artifacts = {phase.value: [] for phase in PDCAPhase}
+        artifacts: dict[str, list[Any]] = {phase.value: [] for phase in PDCAPhase}
         
         record = PDCACycleRecord(
             id=cycle_id,
@@ -899,7 +899,7 @@ class AsyncMudaDetectionEngine:
     def clear_detections(self) -> int:
         """Clear all detections."""
         count = len(self.detections)
-        self.detections = []
+        self.detections: list[Any] = []
         return count
 
 
@@ -1268,7 +1268,7 @@ class PDCACoachingEngine:
             PDCAPhase.ACT: PhaseGateStatus.NOT_STARTED,
         }
 
-        artifacts = {phase: [] for phase in PDCAPhase}
+        artifacts: dict[PDCAPhase, list[Any]] = {phase: [] for phase in PDCAPhase}
 
         cycle = PDCACycle(
             cycle_id=cycle_id,

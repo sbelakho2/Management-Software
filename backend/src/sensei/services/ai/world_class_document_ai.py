@@ -502,10 +502,14 @@ class LayoutAnalyzer:
             text = " ".join(w.get("text", "") for w in block.get("words", []))
             
             if block.get("bbox"):
+                block_bbox = block["bbox"]
                 bbox = BoundingBox.from_pixel_coords(
-                    *block["bbox"],
-                    page_width,
-                    page_height,
+                    x=block_bbox[0],
+                    y=block_bbox[1],
+                    w=block_bbox[2],
+                    h=block_bbox[3],
+                    page_width=page_width,
+                    page_height=page_height,
                 )
             else:
                 bbox = None
@@ -1330,8 +1334,8 @@ class WorldClassDocumentAI:
         
         # Process as engineering drawing if applicable
         title_block = None
-        gdt_callouts = []
-        dimensions = []
+        gdt_callouts: list[dict[str, Any]] = []
+        dimensions: list[dict[str, Any]] = []
         
         if category == DocumentCategory.DRAWING and self._enable_gdt:
             title_block, gdt_callouts, dimensions = await self._drawing_processor.process_drawing(

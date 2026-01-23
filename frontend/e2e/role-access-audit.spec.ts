@@ -28,15 +28,17 @@ type UserRole = typeof USER_ROLES[number];
 // Role-based page access configuration (mirrors page-access.ts)
 const EXECUTIVE_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec'];
 const FINANCE_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'finance', 'accountant'];
-const SALES_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'ops', 'sales', 'supervisor'];
-const OPS_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'operator', 'quality', 'supply_chain', 'maintenance', 'warehouse', 'engineering', 'sales_engineer'];
-const QUALITY_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'quality', 'supervisor', 'team_lead', 'auditor'];
-const MAINTENANCE_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'maintenance', 'supervisor', 'team_lead'];
-const SUPPLY_CHAIN_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain', 'warehouse', 'purchasing', 'logistics', 'supervisor'];
-const HR_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'hr', 'supervisor'];
-const IT_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'it'];
-const TRAINING_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'hr', 'team_lead'];
-const ANALYTICS_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'quality', 'sales_engineer'];
+const SALES_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'sales_engineer', 'estimator', 'sales'];
+const OPS_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'quality', 'sales_engineer', 'engineering'];
+const OPERATOR_ROLES: UserRole[] = ['admin', 'ceo', 'operator', 'team_lead'];
+const QUALITY_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'exec', 'ops', 'quality', 'supervisor', 'auditor', 'engineering', 'team_lead', 'operator'];
+const MAINTENANCE_ROLES: UserRole[] = ['admin', 'ceo', 'ops', 'maintenance', 'supervisor', 'operator', 'team_lead'];
+const SUPPLY_CHAIN_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'ops', 'supply_chain', 'warehouse', 'purchasing', 'logistics', 'supervisor'];
+const HR_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'hr', 'supervisor'];
+const IT_ROLES: UserRole[] = ['admin', 'ceo', 'it'];
+const TRAINING_ROLES: UserRole[] = ['admin', 'ceo', 'hr', 'supervisor', 'team_lead', 'operator'];
+const ANALYTICS_ROLES: UserRole[] = ['admin', 'ceo', 'gm', 'ops', 'supervisor', 'sales_engineer', 'engineering'];
+const PURCHASE_ROLES: UserRole[] = ['admin', 'ceo', 'finance', 'accountant', 'purchasing'];
 
 // Page access configuration
 const PAGE_ACCESS: Record<string, UserRole[]> = {
@@ -44,10 +46,10 @@ const PAGE_ACCESS: Record<string, UserRole[]> = {
   '/today': [],
   '/tasks': [],
   '/settings': [],
-  '/training': [],
-  '/quality': [],
-  '/andon': [],
-  '/maintenance': [],
+  '/training': TRAINING_ROLES,
+  '/quality': QUALITY_ROLES,
+  '/andon': [...OPS_ROLES, ...OPERATOR_ROLES],
+  '/maintenance': MAINTENANCE_ROLES,
   
   // Executive pages
   '/executive': EXECUTIVE_ROLES,
@@ -58,14 +60,16 @@ const PAGE_ACCESS: Record<string, UserRole[]> = {
   // Sales & CRM
   '/sales': SALES_ROLES,
   '/pipeline': SALES_ROLES,
+  '/rfqs': SALES_ROLES,
   '/quotes': SALES_ROLES,
   '/customers': SALES_ROLES,
   
   // Operations
   '/ops': OPS_ROLES,
-  '/production': OPS_ROLES,
+  '/production': [...OPS_ROLES, ...OPERATOR_ROLES],
   '/projects': ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'quality', 'engineering'],
-  '/products': OPS_ROLES,
+  '/project-management': ['admin', 'ceo', 'gm', 'exec', 'ops', 'supervisor', 'team_lead', 'quality', 'engineering'],
+  '/products': [...OPS_ROLES, ...OPERATOR_ROLES],
   '/obeya': OPS_ROLES,
   '/a3': OPS_ROLES,
   '/ctq': OPS_ROLES,
@@ -73,7 +77,9 @@ const PAGE_ACCESS: Record<string, UserRole[]> = {
   
   // Supply chain
   '/supply-chain': SUPPLY_CHAIN_ROLES,
-  '/warehouse': ['admin', 'ceo', 'gm', 'exec', 'ops', 'warehouse', 'supply_chain', 'supervisor', 'logistics'],
+  '/warehouse': SUPPLY_CHAIN_ROLES,
+  '/purchase': PURCHASE_ROLES,
+  '/mrp': ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain', 'purchasing', 'supervisor', 'engineering'],
   
   // HR
   '/hr': HR_ROLES,
@@ -82,7 +88,7 @@ const PAGE_ACCESS: Record<string, UserRole[]> = {
   '/it': IT_ROLES,
   
   // Auditor
-  '/auditor': ['admin', 'ceo', 'gm', 'auditor', 'quality', 'supervisor'],
+  '/auditor': QUALITY_ROLES,
   
   // Analytics
   '/analytics': ANALYTICS_ROLES,
@@ -91,11 +97,17 @@ const PAGE_ACCESS: Record<string, UserRole[]> = {
   '/training/matrix': TRAINING_ROLES,
   
   // Admin only
-  '/admin': ['admin'],
+  '/admin': ['admin', 'ceo'],
 };
 
 // Sidebar section configuration for verification
 const SIDEBAR_SECTIONS = {
+  'Administration': {
+    items: [
+      { label: 'Admin Panel', href: '/admin', roles: ['admin', 'ceo'] },
+      { label: 'Settings', href: '/settings' },
+    ]
+  },
   'Dashboards': {
     items: [
       { label: 'Today', href: '/today' },
@@ -104,15 +116,15 @@ const SIDEBAR_SECTIONS = {
       { label: 'Analytics', href: '/analytics', roles: ANALYTICS_ROLES },
       { label: 'HR', href: '/hr', roles: HR_ROLES },
       { label: 'IT', href: '/it', roles: IT_ROLES },
-      { label: 'Warehouse', href: '/warehouse', roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'warehouse', 'supply_chain', 'supervisor', 'logistics'] },
-      { label: 'Auditor', href: '/auditor', roles: ['admin', 'ceo', 'gm', 'auditor', 'quality', 'supervisor'] },
+      { label: 'Warehouse', href: '/warehouse', roles: SUPPLY_CHAIN_ROLES },
+      { label: 'Auditor', href: '/auditor', roles: QUALITY_ROLES },
     ]
   },
   'Sales & CRM': {
     roles: SALES_ROLES,
     items: [
       { label: 'Sales Overview', href: '/sales' },
-      { label: 'Pipeline', href: '/pipeline' },
+      { label: 'Pipeline', href: '/rfqs' },
       { label: 'Quotes', href: '/quotes' },
       { label: 'Customers', href: '/customers' },
     ]
@@ -123,6 +135,7 @@ const SIDEBAR_SECTIONS = {
       { label: 'Ops Overview', href: '/ops' },
       { label: 'Production', href: '/production' },
       { label: 'Projects', href: '/projects' },
+      { label: 'Project Management', href: '/project-management' },
       { label: 'Products', href: '/products' },
       { label: 'Obeya', href: '/obeya' },
       { label: 'A3 Reports', href: '/a3' },
@@ -136,6 +149,8 @@ const SIDEBAR_SECTIONS = {
       { label: 'Andon', href: '/andon' },
       { label: 'Maintenance', href: '/maintenance' },
       { label: 'Supply Chain', href: '/supply-chain', roles: SUPPLY_CHAIN_ROLES },
+      { label: 'Purchase', href: '/purchase', roles: PURCHASE_ROLES },
+      { label: 'MRP', href: '/mrp', roles: ['admin', 'ceo', 'gm', 'exec', 'ops', 'supply_chain', 'purchasing', 'supervisor', 'engineering'] },
       { label: 'Training', href: '/training' },
       { label: 'Training Matrix', href: '/training/matrix', roles: TRAINING_ROLES },
       { label: 'Finance', href: '/finance', roles: FINANCE_ROLES },
@@ -144,7 +159,9 @@ const SIDEBAR_SECTIONS = {
 };
 
 // Helper to check if a role can access a page
-function canAccess(role: UserRole, allowedRoles: UserRole[]): boolean {
+function canAccess(role: UserRole, allowedRoles: UserRole[], path: string): boolean {
+  if (role === 'admin' || role === 'ceo') return true;
+  if (role === 'viewer') return path === '/today' || path === '/tasks';
   if (allowedRoles.length === 0) return true;
   return allowedRoles.includes(role);
 }
@@ -239,7 +256,7 @@ test.describe('Role-Based Access Audit', () => {
         // Navigate to each accessible page and take screenshots
         let pageIndex = 3;
         for (const [path, allowedRoles] of Object.entries(PAGE_ACCESS)) {
-          const shouldHaveAccess = canAccess(role, allowedRoles as UserRole[]);
+          const shouldHaveAccess = canAccess(role, allowedRoles as UserRole[], path);
           
           await page.goto(path);
           await page.waitForLoadState('networkidle');
@@ -434,7 +451,7 @@ test('Generate Role Access Summary', async ({ page }) => {
     summary[role] = { accessiblePages: [], restrictedPages: [] };
     
     for (const [path, allowedRoles] of Object.entries(PAGE_ACCESS)) {
-      if (canAccess(role, allowedRoles as UserRole[])) {
+      if (canAccess(role, allowedRoles as UserRole[], item.href)) {
         summary[role].accessiblePages.push(path);
       } else {
         summary[role].restrictedPages.push(path);

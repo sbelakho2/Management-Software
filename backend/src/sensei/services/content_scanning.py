@@ -734,7 +734,7 @@ class ContentScanningService:
             if not sig.is_active:
                 continue
 
-            match = None
+            match: re.Match[str] | bool | None = None
             if sig.is_regex:
                 try:
                     pattern = re.compile(sig.pattern, re.IGNORECASE)
@@ -832,12 +832,12 @@ class ContentScanningService:
             try:
                 if policy.is_regex:
                     pattern = re.compile(policy.pattern, re.IGNORECASE)
-                    match = pattern.search(text)
+                    policy_match: re.Match[str] | bool | None = pattern.search(text)
                 else:
-                    match = policy.pattern.lower() in text.lower()
+                    policy_match = policy.pattern.lower() in text.lower()
 
-                if match:
-                    matched = match.group()[:50] if hasattr(match, "group") else policy.pattern
+                if policy_match:
+                    matched = policy_match.group()[:50] if isinstance(policy_match, re.Match) else policy.pattern
                     findings.append(
                         ScanFinding(
                             category=policy.category,

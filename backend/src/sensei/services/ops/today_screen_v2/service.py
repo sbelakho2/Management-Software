@@ -395,7 +395,7 @@ class AsyncTodayScreenService:
             drill_streak=drill_progress["streak"],
             lsw_summary=lsw_summary,
             quick_metrics=quick_metrics,
-            shop_floor=shop_floor,
+            shop_floor_summary=shop_floor,
             cache_valid_until=utcnow_naive() + timedelta(minutes=5),
         )
     

@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 
-from typing import Any, Annotated
+from typing import Any, Annotated, TypeAlias
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -30,7 +30,7 @@ from sensei.services.ops.ceo_control_plane import CEOControlPlaneService
 router = APIRouter()
 
 # Role requirements
-AllowExec = deps.require_role("admin", "ceo", "gm", "exec")
+AllowExec: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec")  # type: ignore[valid-type]
 
 
 class NL2SQLRequest(BaseModel):

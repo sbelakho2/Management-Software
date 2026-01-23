@@ -22,7 +22,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.core.database import async_session_maker
+from sensei.core.database import async_session_factory
 from sensei.models.knowledge_pack import (
     KnowledgeDocument,
     KnowledgeChunk,
@@ -102,7 +102,7 @@ async def _ingest_async(
             raise typer.Exit(1)
         
         # Save to database
-        async with async_session_maker() as session:
+        async with async_session_factory() as session:
             try:
                 session.add(document)
                 await session.commit()
@@ -156,8 +156,8 @@ async def _ingest_async(
                 service.close()
 
 
-@app.command()
-def list(
+@app.command(name="list")
+def list_documents(
     license_type: Optional[str] = typer.Option(None, help="Filter by license type"),
     tag: Optional[str] = typer.Option(None, help="Filter by tag"),
     limit: int = typer.Option(20, help="Number of documents to show"),
@@ -170,7 +170,7 @@ def list(
 
 async def _list_async(license_type: Optional[str], tag: Optional[str], limit: int):
     """Async implementation of list command."""
-    async with async_session_maker() as session:
+    async with async_session_factory() as session:
         query = select(KnowledgeDocument).order_by(KnowledgeDocument.created_at.desc())
         
         if license_type:
@@ -229,7 +229,7 @@ async def _process_async(document_id: str):
     """Async implementation of process command."""
     service = KnowledgePackIngestionService()
     
-    async with async_session_maker() as session:
+    async with async_session_factory() as session:
         try:
             # Fetch document
             doc_uuid = UUID(document_id)
@@ -283,7 +283,7 @@ def stats():
 
 async def _stats_async():
     """Async implementation of stats command."""
-    async with async_session_maker() as session:
+    async with async_session_factory() as session:
         # Count documents
         doc_count_result = await session.execute(
             select(func.count(KnowledgeDocument.id))
@@ -375,7 +375,7 @@ def embed(
         embedding_service = EmbeddingService(model_name=model)
         knowledge_embedding_service = KnowledgeEmbeddingService(embedding_service)
         
-        async with async_session_maker() as session:
+        async with async_session_factory() as session:
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -416,7 +416,7 @@ def search(
         embedding_service = EmbeddingService(model_name=model)
         search_service = SemanticSearchService(embedding_service)
         
-        async with async_session_maker() as session:
+        async with async_session_factory() as session:
             results = await search_service.search_with_context(
                 query=query,
                 session=session,

@@ -487,14 +487,14 @@ class RunbooksService:
 
         for runbook_data in defaults:
             runbook = Runbook(
-                title=runbook_data["title"],
-                description=runbook_data["description"],
-                category=runbook_data["category"],
-                owner_team=runbook_data["owner_team"],
-                related_services=runbook_data["related_services"],
-                applicable_severities=runbook_data["applicable_severities"],
-                steps=runbook_data["steps"],
-                tags=runbook_data["tags"],
+                title=str(runbook_data["title"]),
+                description=str(runbook_data["description"]),
+                category=runbook_data["category"],  # type: ignore[arg-type]
+                owner_team=str(runbook_data["owner_team"]),
+                related_services=runbook_data["related_services"],  # type: ignore[arg-type]
+                applicable_severities=runbook_data["applicable_severities"],  # type: ignore[arg-type]
+                steps=runbook_data["steps"],  # type: ignore[arg-type]
+                tags=runbook_data["tags"],  # type: ignore[arg-type]
                 status=RunbookStatus.APPROVED,
             )
             runbook.estimated_total_duration_minutes = sum(
@@ -1037,12 +1037,12 @@ class RunbooksService:
         runbooks = self.get_all_runbooks()
         executions = list(self._executions.values())
 
-        by_category = {}
+        by_category: dict[str, int] = {}
         for r in runbooks:
             cat = r.category.value
             by_category[cat] = by_category.get(cat, 0) + 1
 
-        by_status = {}
+        by_status: dict[str, int] = {}
         for r in runbooks:
             status = r.status.value
             by_status[status] = by_status.get(status, 0) + 1

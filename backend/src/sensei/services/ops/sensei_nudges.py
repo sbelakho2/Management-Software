@@ -492,7 +492,7 @@ class SenseiNudgesService:
         operator = condition.get("operator")
         threshold = condition.get("value")
 
-        value = form_data.get(field)
+        value = form_data.get(field or "")
 
         if operator == "missing":
             return value is None or value == "" or value == [], value
@@ -504,16 +504,16 @@ class SenseiNudgesService:
             return False, value
 
         if operator == "lt":
-            return float(value) < float(threshold), value
+            return float(value) < float(threshold or 0), value
 
         if operator == "lte":
-            return float(value) <= float(threshold), value
+            return float(value) <= float(threshold or 0), value
 
         if operator == "gt":
-            return float(value) > float(threshold), value
+            return float(value) > float(threshold or 0), value
 
         if operator == "gte":
-            return float(value) >= float(threshold), value
+            return float(value) >= float(threshold or 0), value
 
         if operator == "eq":
             return value == threshold, value

@@ -580,7 +580,7 @@ async def get_deletion_events(
     if include_soft_deletes:
         delete_actions.append(AuditAction.SOFT_DELETE.value)
 
-    conditions = [AuditLog.action.in_(delete_actions)]
+    conditions: list[Any] = [AuditLog.action.in_(delete_actions)]
 
     if entity_type:
         conditions.append(AuditLog.entity_type == entity_type)

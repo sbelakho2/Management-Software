@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 
@@ -970,13 +970,13 @@ class EHSSafetyService:
         self,
         employee_ids: Optional[list[str]] = None,
         cert_types: Optional[list[CertificationType]] = None,
-    ) -> dict[str, dict[str, CertificationStatus]]:
+    ) -> dict[str, dict[str, str]]:
         """
         Get training matrix showing certification status per employee.
         
         Returns: {employee_id: {cert_type: status}}
         """
-        matrix = {}
+        matrix: dict[str, dict[str, str]] = {}
         
         target_employees = employee_ids or list(set(c.employee_id for c in self._certifications.values()))
         target_certs = cert_types or list(CertificationType)
@@ -1012,7 +1012,7 @@ class EHSSafetyService:
         
         Returns: {"cleared": bool, "missing": [...], "warnings": [...]}
         """
-        result = {
+        result: dict[str, Any] = {
             "cleared": True,
             "missing": [],
             "warnings": [],
@@ -1226,8 +1226,8 @@ class EHSSafetyService:
         - Attendance/training logs
         - Incident reports
         """
-        documents = []
-        categories = []
+        documents: list[dict[str, Any]] = []
+        categories: list[str] = []
         
         if include_incidents:
             categories.append("incidents")
@@ -1330,11 +1330,11 @@ class EHSSafetyService:
         # Certification metrics
         certs = list(self._certifications.values())
         for cert in certs:
-            cert.status = self._calculate_cert_status(cert)
+            cert.status = self._calculate_cert_status(cert)  # type: ignore[assignment]
         
-        cert_status_counts = {}
-        for stat in CertificationStatus:
-            cert_status_counts[stat.value] = len([c for c in certs if c.status == stat])
+        cert_status_counts: dict[str, int] = {}
+        for cert_stat in CertificationStatus:
+            cert_status_counts[cert_stat.value] = len([c for c in certs if c.status == cert_stat])
         
         return {
             "total_incidents": len(incidents),

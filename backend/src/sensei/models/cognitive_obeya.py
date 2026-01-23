@@ -13,7 +13,7 @@ class MetricRecord(Base, TimestampMixin):
     """Database model for a metric measurement."""
     __tablename__ = "obeya_metrics"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     metric_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     category: Mapped[MetricCategory] = mapped_column(Enum(MetricCategory), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -27,7 +27,7 @@ class CausalLinkRecord(Base, TimestampMixin):
     """Database model for a causal relationship."""
     __tablename__ = "obeya_causal_links"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     metric_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     source_id: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -41,7 +41,7 @@ class TrendWarningRecord(Base, TimestampMixin):
     """Database model for a predictive trend warning."""
     __tablename__ = "obeya_trend_warnings"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     metric_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     metric_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[MetricStatus] = mapped_column(Enum(MetricStatus), nullable=False)
@@ -56,7 +56,7 @@ class SiloAlertRecord(Base, TimestampMixin):
     """Database model for a silo-busting alert."""
     __tablename__ = "obeya_silo_alerts"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     source_department: Mapped[DepartmentType] = mapped_column(Enum(DepartmentType), nullable=False)
     affected_department: Mapped[DepartmentType] = mapped_column(Enum(DepartmentType), nullable=False)
     source_event: Mapped[str] = mapped_column(Text, nullable=False)
@@ -70,7 +70,7 @@ class ResourceRebalanceRecord(Base, TimestampMixin):
     """Database model for a resource rebalancing suggestion."""
     __tablename__ = "obeya_rebalance_suggestions"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     source_work_center: Mapped[str] = mapped_column(String(100), nullable=False)
     target_work_center: Mapped[str] = mapped_column(String(100), nullable=False)
     operator_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
@@ -84,7 +84,7 @@ class HeijunkaSuggestionRecord(Base, TimestampMixin):
     """Database model for a Heijunka suggestion."""
     __tablename__ = "obeya_heijunka_suggestions"
     
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # type: ignore[assignment]
     period: Mapped[str] = mapped_column(String(50), nullable=False)
     current_mix: Mapped[dict] = mapped_column(JSONB, nullable=False)
     suggested_mix: Mapped[dict] = mapped_column(JSONB, nullable=False)

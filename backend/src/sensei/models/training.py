@@ -111,7 +111,7 @@ class Skill(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "skills"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -217,7 +217,7 @@ class SkillRequirement(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "skill_requirements"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Skill reference
     skill_id: Mapped[int] = mapped_column(
@@ -279,7 +279,7 @@ class Training(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "trainings"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -398,7 +398,7 @@ class TrainingParticipant(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "training_participants"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Training and user reference
     training_id: Mapped[int] = mapped_column(
@@ -469,7 +469,7 @@ class UserSkill(Base, TimestampMixin, AuditMixin):
 
     __tablename__ = "user_skills"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # User and skill reference
     user_id: Mapped[PyUUID] = mapped_column(

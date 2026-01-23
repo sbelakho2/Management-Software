@@ -884,7 +884,7 @@ class AsyncStandardWorkEvolutionEngine:
     
     def _parse_countermeasure(self, countermeasure: str) -> dict[str, Any]:
         """Parse countermeasure text to extract proposed changes."""
-        changes = {
+        changes: dict[str, Any] = {
             "type": "process_update",
             "description": countermeasure,
             "new_steps": [],
@@ -1219,7 +1219,7 @@ class AsyncJITLeanLearning:
         
         Detects conditions that warrant micro-lessons and delivers them.
         """
-        result = {
+        result: dict[str, Any] = {
             "trigger_detected": None,
             "lesson_delivered": None,
         }
@@ -1421,7 +1421,7 @@ class JITLeanLearning:
         data: dict[str, Any],
         operator_id: str,
     ) -> dict[str, Any]:
-        result = {
+        result: dict[str, Any] = {
             "trigger_detected": None,
             "lesson_delivered": None,
         }

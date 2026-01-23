@@ -113,9 +113,10 @@ class BaseRedisStore:
             await pipe.expire(key, 86400)
             await pipe.execute()
 
-    async def _get_global_store(self) -> Dict[str, Any]:
+    async def _get_global_store(self, store_name: str | None = None) -> Dict[str, Any]:
         """Get a global store from Redis."""
-        key = f"today:global:{self._store_name}"
+        name = store_name or self._store_name
+        key = f"today:global:{name}"
         data = await self._redis.hgetall(key) if self._redis else {}
         if not data:
             return {}
@@ -123,9 +124,9 @@ class BaseRedisStore:
             return dict(data)
         return {k: json.loads(v) for k, v in data.items()}
 
-    async def _save_global_item(self, item_id: str, data: Any) -> None:
+    async def _save_global_item(self, store_name: str, item_id: str, data: Any) -> None:
         """Save an item to a global store in Redis."""
-        key = f"today:global:{self._store_name}"
+        key = f"today:global:{store_name}"
         if self._redis:
             val = (
                 data if isinstance(self._redis, InMemoryRedis)
@@ -134,7 +135,7 @@ class BaseRedisStore:
             await self._redis.hset(key, item_id, val)
             await self._redis.expire(key, 86400)
 
-    async def _delete_global_item(self, item_id: str) -> bool:
+    async def _delete_global_item(self, store_name: str, item_id: str) -> bool:
         """Delete an item from a global store."""
-        key = f"today:global:{self._store_name}"
+        key = f"today:global:{store_name}"
         return await self._redis.hdel(key, item_id) > 0

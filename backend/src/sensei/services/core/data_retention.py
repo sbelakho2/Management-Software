@@ -273,12 +273,12 @@ class DataRetentionService:
         for policy_data in defaults:
             policy = RetentionPolicy(
                 id=uuid4(),
-                name=policy_data["name"],
-                description=policy_data["description"],
-                entity_type=policy_data["entity_type"],
-                retention_days=policy_data["retention_days"],
-                action=policy_data["action"],
-                exclude_statuses=policy_data.get("exclude_statuses"),
+                name=str(policy_data["name"]),
+                description=str(policy_data["description"]),
+                entity_type=policy_data["entity_type"],  # type: ignore[arg-type]
+                retention_days=int(str(policy_data["retention_days"])),
+                action=policy_data["action"],  # type: ignore[arg-type]
+                exclude_statuses=policy_data.get("exclude_statuses"),  # type: ignore[arg-type]
             )
             self._policies[policy.id] = policy
     

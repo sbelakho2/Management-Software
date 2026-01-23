@@ -12,7 +12,7 @@ Provides comprehensive API for managing tasks and action items:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -262,7 +262,7 @@ async def get_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -295,7 +295,7 @@ async def list_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TaskResponse]:
-    base_conditions = [Task.is_deleted == False]
+    base_conditions: list[Any] = [Task.deleted_at.is_(None)]
 
     if status and isinstance(status, TaskStatus):
         base_conditions.append(Task.status == status.value)
@@ -355,7 +355,7 @@ async def update_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -398,7 +398,7 @@ async def delete_task(
     current_user: CurrentUser,
 ) -> APIResponse:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -430,7 +430,7 @@ async def start_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -469,7 +469,7 @@ async def block_task(
     blocked_by_task_id: Optional[UUID] = Query(default=None),
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -506,7 +506,7 @@ async def unblock_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -543,7 +543,7 @@ async def submit_for_review(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -578,7 +578,7 @@ async def complete_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -615,7 +615,7 @@ async def cancel_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -650,7 +650,7 @@ async def reopen_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -693,7 +693,7 @@ async def update_checklist(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -726,7 +726,7 @@ async def toggle_checklist_item(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -778,7 +778,7 @@ async def log_time(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -818,7 +818,7 @@ async def add_comment(
     current_user: CurrentUser,
 ) -> APIResponse[CommentResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -858,14 +858,14 @@ async def list_comments(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[CommentResponse]:
     task_stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     task_result = await db.execute(task_stmt)
     task = task_result.scalar_one_or_none()
     if not task:
         raise NotFoundError(f"Task {task_id} not found")
 
-    base_conditions = [TaskComment.task_id == task_id]
+    base_conditions: list[Any] = [TaskComment.task_id == task_id]
 
     count_stmt = select(func.count(TaskComment.id)).where(and_(*base_conditions))
     count_result = await db.execute(count_stmt)
@@ -979,8 +979,8 @@ async def get_my_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TaskResponse]:
-    base_conditions = [
-        Task.is_deleted == False,
+    base_conditions: list[Any] = [
+        Task.deleted_at.is_(None),
         Task.assignee_id == current_user.id,
     ]
 
@@ -1027,8 +1027,8 @@ async def get_overdue_tasks(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TaskResponse]:
     now = datetime.now(timezone.utc)
-    base_conditions = [
-        Task.is_deleted == False,
+    base_conditions: list[Any] = [
+        Task.deleted_at.is_(None),
         Task.due_date < now,
         Task.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
     ]
@@ -1070,8 +1070,8 @@ async def get_tasks_created_by_me(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TaskResponse]:
-    base_conditions = [
-        Task.is_deleted == False,
+    base_conditions: list[Any] = [
+        Task.deleted_at.is_(None),
         Task.created_by_id == current_user.id,
     ]
 
@@ -1112,8 +1112,8 @@ async def get_blocked_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[TaskResponse]:
-    base_conditions = [
-        Task.is_deleted == False,
+    base_conditions: list[Any] = [
+        Task.deleted_at.is_(None),
         Task.status == TaskStatus.BLOCKED.value,
     ]
 
@@ -1154,7 +1154,7 @@ async def duplicate_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     original = result.scalar_one_or_none()
@@ -1203,7 +1203,7 @@ async def move_task(
     current_user: CurrentUser,
 ) -> APIResponse[TaskResponse]:
     stmt = select(Task).where(
-        and_(Task.id == task_id, Task.is_deleted == False)
+        and_(Task.id == task_id, Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
@@ -1237,7 +1237,7 @@ async def bulk_update_tasks(
     current_user: CurrentUser,
 ) -> APIResponse[list[TaskResponse]]:
     stmt = select(Task).where(
-        and_(Task.id.in_(data.ids), Task.is_deleted == False)
+        and_(Task.id.in_(data.ids), Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     tasks = result.scalars().all()
@@ -1273,7 +1273,7 @@ async def bulk_delete_tasks(
     current_user: CurrentUser,
 ) -> APIResponse[dict]:
     stmt = select(Task).where(
-        and_(Task.id.in_(data.ids), Task.is_deleted == False)
+        and_(Task.id.in_(data.ids), Task.deleted_at.is_(None))
     )
     result = await db.execute(stmt)
     tasks = result.scalars().all()

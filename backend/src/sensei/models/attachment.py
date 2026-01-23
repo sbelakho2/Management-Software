@@ -188,7 +188,7 @@ class Attachment(Base, TimestampMixin):
     @property
     def file_size_human(self) -> str:
         """Get human-readable file size."""
-        size = self.file_size
+        size: float = self.file_size
         for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024:
                 return f"{size:.1f} {unit}"
@@ -280,7 +280,7 @@ class AttachmentVersion(Base, TimestampMixin):
     @property
     def file_size_human(self) -> str:
         """Get human-readable file size."""
-        size = self.file_size
+        size: float = self.file_size
         for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024:
                 return f"{size:.1f} {unit}"

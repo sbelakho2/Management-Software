@@ -1591,15 +1591,15 @@ def get_source_statistics() -> dict[str, Any]:
     """Get statistics about the knowledge sources."""
     sources = COMPREHENSIVE_TPS_SOURCES
     
-    by_category = {}
+    by_category: dict[str, int] = {}
     for s in sources:
         by_category[s.category.value] = by_category.get(s.category.value, 0) + 1
     
-    by_license = {}
+    by_license: dict[str, int] = {}
     for s in sources:
         by_license[s.license_type.value] = by_license.get(s.license_type.value, 0) + 1
     
-    topic_counts = {}
+    topic_counts: dict[str, int] = {}
     for s in sources:
         for t in s.topics:
             topic_counts[t.value] = topic_counts.get(t.value, 0) + 1
