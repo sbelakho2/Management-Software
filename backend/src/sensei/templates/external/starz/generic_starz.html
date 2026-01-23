@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: 'DejaVu Sans', sans-serif; color: #333; line-height: 1.4; }
+        .header { margin-bottom: 30px; }
+        .row::after { content: ""; display: table; clear: both; }
+        .column { float: left; width: 50%; }
+        .logo { width: 150px; }
+        .doc-title { text-align: right; }
+        .content { margin-top: 20px; }
+        .footer { position: fixed; bottom: 0; left: 0; right: 0; border-top: 1px solid #eee; padding-top: 10px; font-size: 10px; text-align: center; color: #777; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #f8f9fa; font-weight: bold; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: left; font-size: 12px; }
+        .text-right { text-align: right; }
+        .font-bold { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="row">
+            <div class="column">
+                <div class="font-bold" style="font-size: 18px; color: #1a365d;">STARZ ELECTRONICS</div>
+                <div style="font-size: 10px;">03 Rue Hédi chaker, 7000 Bizerte</div>
+            </div>
+            <div class="doc-title column">
+                {% block doc_title %}{% endblock %}
+            </div>
+        </div>
+    </div>
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+    <div class="footer">
+        Sensei OS Compliance Layer - Generated on {{ now.strftime('%Y-%m-%d %H:%M:%S') }}
+    </div>
+</body>
+</html>
