@@ -29,6 +29,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from sensei.models.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
@@ -277,6 +278,9 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     # Tags
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
     
+    # AI/Semantic Search
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
+    
     # Relationships
     rfq: Mapped["RFQ | None"] = relationship("RFQ", back_populates="quotes")
     opportunity: Mapped["Opportunity | None"] = relationship(
@@ -320,6 +324,7 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             status,
             postgresql_where=(status.notin_(["accepted", "rejected", "expired", "cancelled"])),
         ),
+        Index("ix_quotes_embedding", "embedding", postgresql_using="ivfflat"),
     )
     
     def calculate_totals(self) -> None:

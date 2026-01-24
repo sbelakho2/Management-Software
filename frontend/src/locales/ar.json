@@ -322,6 +322,120 @@
       "_value": "الإجراءات",
       "analyze": "تحليل"
     },
+    "disciplines": {
+      "ee": {
+        "title": "مهندس إلكترونيات",
+        "form": {
+          "minFinePitch": "الحد الأدنى للمسافة الدقيقة (ملم)",
+          "requiresXray": "يتطلب فحصاً بالأشعة السينية",
+          "dfmFindings": "نتائج DFM / أعلام التعقيد",
+          "dfmPlaceholder": "أدرج متطلبات BGA أو QFN أو أي عمليات خاصة أخرى..."
+        }
+      },
+      "embedded": {
+        "title": "الأنظمة المدمجة/البرمجيات الثابتة",
+        "form": {
+          "programmingMinutes": "دقائق البرمجة لكل وحدة",
+          "fixtureNeeded": "الأداة المساعدة المطلوبة",
+          "ipConstraints": "قيود الملكية الفكرية/الأمن"
+        }
+      },
+      "me": {
+        "title": "الأجهزة/الميكانيك",
+        "form": {
+          "enclosureRisks": "مخاطر تناسب الهيكل",
+          "labelingMethod": "طريقة الوسم/الليزر"
+        }
+      },
+      "mfge": {
+        "title": "مهندس تصنيع",
+        "form": {
+          "lineAssignment": "تخصيص الخط",
+          "specialTraining": "احتياجات التدريب الخاصة للمشغل"
+        }
+      },
+      "qe": {
+        "title": "مهندس جودة",
+        "form": {
+          "inspectionLevel": "مستوى الفحص",
+          "complianceDocs": "مستندات الامتثال المطلوبة"
+        }
+      },
+      "purchasing": {
+        "title": "المشتريات",
+        "form": {
+          "topCostDrivers": "أهم محركات التكلفة",
+          "longLeadMitigation": "خطة التخفيف من فترات التوريد الطويلة"
+        }
+      }
+    },
+    "quotingHelper": {
+      "workbench": {
+        "title": "منصة التسعير",
+        "subtitle": "قمرة القيادة للمقدر",
+        "exportPackage": "تصدير حزمة طلب عرض السعر",
+        "generateQuote": "إنشاء عرض السعر",
+        "rfqPackage": "حزمة طلب عرض السعر",
+        "received": "تم الاستلام",
+        "deadline": "الموعد النهائي",
+        "attachedFiles": "الملفات المرفقة",
+        "activeRisks": "المخاطر النشطة (أندون)",
+        "risks": {
+          "missingCentroid": {
+            "title": "بيانات السنترويد مفقودة",
+            "desc": "المرحلة 2A محظورة (مراجعة مهندس الإلكترونيات). مطلوبة لتقدير وضع المكونات."
+          },
+          "longLead": {
+            "title": "مواد ذات فترة توريد طويلة",
+            "desc": "U45 (MCU) لديها فترة توريد 26 أسبوعاً. يوصى بالبحث عن بديل."
+          },
+          "bomObsolescence": {
+            "title": "تقادم قائمة المواد",
+            "desc": "بعض المكونات في قائمة المواد تم وضع علامة عليها كمنتهية الصلاحية."
+          }
+        },
+        "stageGateWorkflow": "سير عمل بوابات المراحل",
+        "parallelContribution": "مساهمة هندسية متوازية",
+        "gatesComplete": "{done} / {total} بوابات مكتملة",
+        "noPackets": "لم يتم إنشاء حزم عمل بعد",
+        "initialize": "تهيئة حزم التسعير",
+        "review": "مراجعة",
+        "openPacket": "فتح الحزمة",
+        "costBuild": "بناء التكلفة",
+        "quoteMemory": "ذاكرة عروض الأسعار",
+        "material": "المواد",
+        "labor": "العمالة",
+        "nreTooling": "التكاليف الهندسية غير المتكررة/الأدوات",
+        "estimatedTotal": "الإجمالي التقديري",
+        "marginAnalysis": "تحليل الهامش",
+        "healthy": "صحي",
+        "grossMargin": "الهامش الإجمالي",
+        "targetMargin": "الهامش المستهدف",
+        "variance": "التباين",
+        "aiMatch": "مطابقة تشابه الذكاء الاصطناعي: {percent}% مع {job}",
+        "historicalAssumptions": "الافتراضات التاريخية المستخرجة"
+      },
+      "packet": {
+        "backToWorkbench": "العودة إلى منصة العمل",
+        "sla": "اتفاقية مستوى الخدمة: {date}",
+        "noDeadline": "لا يوجد موعد نهائي",
+        "packetNotFound": "حزمة العمل غير موجودة أو لم يتم تهيئة المتجر. يرجى العودة إلى Workbench.",
+        "genericDiscipline": "نموذج تخصص عام لـ {discipline}",
+        "reviewPacket": "حزمة مراجعة {discipline}",
+        "structuredContribution": "مساهمة منظمة لتحليل طلب عرض السعر",
+        "technicalInputs": "المدخلات الفنية",
+        "internalNotes": "الملاحظات الداخلية والمنطق",
+        "notesPlaceholder": "سجل الافتراضات الداخلية أو خيارات العمليات المحددة هنا...",
+        "actions": "إجراءات الحزمة",
+        "saveProgress": "حفظ التقدم",
+        "signOff": "التوقيع (تم)",
+        "flagBlocker": "الإبلاغ عن عائق (أندون)",
+        "auditLog": "سجل التدقيق",
+        "created": "تم الإنشاء",
+        "owner": "المالك",
+        "assignedToYou": "مخصص لك"
+      }
+    },
     "activate": "تفعيل",
     "active": "نشط",
     "activeUsers": "المستخدمون النشطون",

@@ -80,13 +80,6 @@ class WorkPacket(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         nullable=True,
     )
     
-    # Assignment
-    owner_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    
     # Structured Outputs (Discipline specific)
     # Examples:
     # EE: needs_xray, fine_pitch_min_mm, dfm_findings[], test_recommendation
@@ -102,7 +95,7 @@ class WorkPacket(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     
     # Relationships
     rfq: Mapped["RFQ"] = relationship("RFQ")
-    owner: Mapped["User | None"] = relationship("User")
+    owner: Mapped["User | None"] = relationship("User", foreign_keys="[WorkPacket.owner_id]")
     
     __table_args__ = (
         Index("ix_work_packets_rfq_discipline", rfq_id, discipline, unique=True),

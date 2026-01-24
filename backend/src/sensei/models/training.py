@@ -672,7 +672,7 @@ class LessonCompletion(Base, TimestampMixin, AuditMixin):
     time_spent_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationships
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     lesson: Mapped["Lesson"] = relationship("Lesson", back_populates="completions")
 
     __table_args__ = (

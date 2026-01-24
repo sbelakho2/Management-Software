@@ -353,6 +353,120 @@
       "_value": "Actions",
       "analyze": "Analyser"
     },
+    "disciplines": {
+      "ee": {
+        "title": "Ingénieur en électronique",
+        "form": {
+          "minFinePitch": "Pas fin min (mm)",
+          "requiresXray": "Nécessite une inspection par rayons X",
+          "dfmFindings": "Résultats DFM / Drapeaux de complexité",
+          "dfmPlaceholder": "Listez les besoins BGA, QFN ou autres processus spéciaux..."
+        }
+      },
+      "embedded": {
+        "title": "Embarqué/Firmware",
+        "form": {
+          "programmingMinutes": "Minutes de programmation par unité",
+          "fixtureNeeded": "Gabarit nécessaire",
+          "ipConstraints": "Contraintes IP/Sécurité"
+        }
+      },
+      "me": {
+        "title": "Matériel/Mécanique",
+        "form": {
+          "enclosureRisks": "Risques d'ajustement du boîtier",
+          "labelingMethod": "Méthode d'étiquetage/laser"
+        }
+      },
+      "mfge": {
+        "title": "Ingénieur en fabrication",
+        "form": {
+          "lineAssignment": "Affectation de ligne",
+          "specialTraining": "Besoins spéciaux en formation d'opérateur"
+        }
+      },
+      "qe": {
+        "title": "Ingénieur qualité",
+        "form": {
+          "inspectionLevel": "Niveau d'inspection",
+          "complianceDocs": "Documents de conformité requis"
+        }
+      },
+      "purchasing": {
+        "title": "Achats",
+        "form": {
+          "topCostDrivers": "Principaux inducteurs de coûts",
+          "longLeadMitigation": "Plan d'atténuation des longs délais"
+        }
+      }
+    },
+    "quotingHelper": {
+      "workbench": {
+        "title": "Workbench de devis",
+        "subtitle": "Cockpit de l'estimateur",
+        "exportPackage": "Exporter le package RFQ",
+        "generateQuote": "Générer le devis",
+        "rfqPackage": "Package RFQ",
+        "received": "Reçu",
+        "deadline": "Date limite",
+        "attachedFiles": "Fichiers joints",
+        "activeRisks": "Risques actifs (Andon)",
+        "risks": {
+          "missingCentroid": {
+            "title": "Données de centroïde manquantes",
+            "desc": "Étape 2A bloquée (Révision EE). Requis pour l'estimation de placement."
+          },
+          "longLead": {
+            "title": "Matériel à long délai",
+            "desc": "U45 (MCU) a un délai de 26 semaines. Sourcing alternatif recommandé."
+          },
+          "bomObsolescence": {
+            "title": "Obsolescence de la nomenclature",
+            "desc": "Certains composants de la nomenclature sont marqués comme EOL ou NRND."
+          }
+        },
+        "stageGateWorkflow": "Workflow Stage-Gate",
+        "parallelContribution": "Contribution d'ingénierie parallèle",
+        "gatesComplete": "{done} / {total} Portes terminées",
+        "noPackets": "Aucun packet de travail généré",
+        "initialize": "Initialiser les packets de devis",
+        "review": "Révision",
+        "openPacket": "Ouvrir le packet",
+        "costBuild": "Construction des coûts",
+        "quoteMemory": "Mémoire de devis",
+        "material": "Matériel",
+        "labor": "Main-d'œuvre",
+        "nreTooling": "NRE/Outillage",
+        "estimatedTotal": "Total estimé",
+        "marginAnalysis": "Analyse de marge",
+        "healthy": "Sain",
+        "grossMargin": "Marge brute",
+        "targetMargin": "Marge cible",
+        "variance": "Variance",
+        "aiMatch": "Match de similarité IA: {percent}% avec {job}",
+        "historicalAssumptions": "Assomptions historiques extraites"
+      },
+      "packet": {
+        "backToWorkbench": "Retour au workbench",
+        "sla": "SLA: {date}",
+        "noDeadline": "AUCUNE ÉCHÉANCE",
+        "packetNotFound": "Packet non trouvé ou magasin non initialisé. Veuillez retourner au workbench.",
+        "genericDiscipline": "Formulaire de discipline générique pour {discipline}",
+        "reviewPacket": "Packet de révision {discipline}",
+        "structuredContribution": "Contribution structurée pour l'analyse RFQ",
+        "technicalInputs": "Entrées techniques",
+        "internalNotes": "Notes internes et raisonnement",
+        "notesPlaceholder": "Consignez les assomptions internes ou les choix de processus spécifiques ici...",
+        "actions": "Actions du packet",
+        "saveProgress": "Enregistrer la progression",
+        "signOff": "Valider (Terminé)",
+        "flagBlocker": "Signaler un blocage (Andon)",
+        "auditLog": "Journal d'audit",
+        "created": "Créé",
+        "owner": "Propriétaire",
+        "assignedToYou": "Assigné à vous"
+      }
+    },
     "activate": "Activer",
     "active": "Actif",
     "activeUsers": "Utilisateurs actifs",

@@ -379,7 +379,7 @@ class ProjectMember(Base, TimestampMixin):
     
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="members")
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
 
 
 # =============================================================================
@@ -763,7 +763,7 @@ class StoryHistory(Base, TimestampMixin):
     
     # Relationships
     user_story: Mapped["UserStory"] = relationship("UserStory", back_populates="history")
-    user: Mapped[Optional["User"]] = relationship("User")
+    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])
 
 
 # =============================================================================
@@ -1009,7 +1009,7 @@ class IssueComment(Base, TimestampMixin):
     
     # Relationships
     issue: Mapped["Issue"] = relationship("Issue", back_populates="comments")
-    author: Mapped[Optional["User"]] = relationship("User")
+    author: Mapped[Optional["User"]] = relationship("User", foreign_keys=[author_id])
 
 
 # =============================================================================
@@ -1198,7 +1198,7 @@ class ProjectActivity(Base, TimestampMixin):
     
     # Relationships
     project: Mapped["Project"] = relationship("Project")
-    user: Mapped[Optional["User"]] = relationship("User")
+    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])
     
     __table_args__ = (
         Index("ix_project_activities_project_created", project_id, "created_at"),
@@ -1253,7 +1253,7 @@ class BoardView(Base, TimestampMixin):
     
     # Relationships
     project: Mapped["Project"] = relationship("Project")
-    user: Mapped["User"] = relationship("User")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     
     __table_args__ = (
         Index("ix_board_views_project_user", project_id, user_id),

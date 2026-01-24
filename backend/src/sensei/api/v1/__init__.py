@@ -52,6 +52,7 @@ from sensei.api.v1.endpoints import (
     hr,
     gm_onboarding,
     rfq_time_tracking,
+    quoting_helper,
     quote_approval_time_tracking,
     rbac_security_audit,
     chaos_testing,
@@ -130,6 +131,7 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(hr.router, prefix="/hr", tags=["HR"])
 api_router.include_router(gm_onboarding.router, prefix="/gm-onboarding", tags=["GM Onboarding"])
 api_router.include_router(rfq_time_tracking.router, prefix="/rfq-time-tracking", tags=["RFQ Time Tracking"])
+api_router.include_router(quoting_helper.router, prefix="/quoting-helper", tags=["Quoting Helper"])
 api_router.include_router(quote_approval_time_tracking.router, prefix="/quote-approval", tags=["Quote Approval"])
 api_router.include_router(rbac_security_audit.router, prefix="/security-audit", tags=["Security Audit"])
 api_router.include_router(chaos_testing.router, prefix="/chaos-testing", tags=["Chaos Testing"])

@@ -40,6 +40,120 @@
     "actions": {
       "analyze": "Analyze"
     },
+    "disciplines": {
+      "ee": {
+        "title": "Electronics Engineer",
+        "form": {
+          "minFinePitch": "Min Fine Pitch (mm)",
+          "requiresXray": "Requires X-Ray Inspection",
+          "dfmFindings": "DFM Findings / Complexity Flags",
+          "dfmPlaceholder": "List BGA, QFN, or other special process requirements..."
+        }
+      },
+      "embedded": {
+        "title": "Embedded/Firmware",
+        "form": {
+          "programmingMinutes": "Programming Minutes Per Unit",
+          "fixtureNeeded": "Fixture Needed",
+          "ipConstraints": "IP/Security Constraints"
+        }
+      },
+      "me": {
+        "title": "Hardware/Mechanical",
+        "form": {
+          "enclosureRisks": "Enclosure Fit Risks",
+          "labelingMethod": "Labeling/Laser Method"
+        }
+      },
+      "mfge": {
+        "title": "Manufacturing Engineer",
+        "form": {
+          "lineAssignment": "Line Assignment",
+          "specialTraining": "Special Operator Training Needs"
+        }
+      },
+      "qe": {
+        "title": "Quality Engineer",
+        "form": {
+          "inspectionLevel": "Inspection Level",
+          "complianceDocs": "Compliance Documents Required"
+        }
+      },
+      "purchasing": {
+        "title": "Purchasing",
+        "form": {
+          "topCostDrivers": "Top Cost Drivers",
+          "longLeadMitigation": "Long Lead Mitigation Plan"
+        }
+      }
+    },
+    "quotingHelper": {
+      "workbench": {
+        "title": "Quoting Workbench",
+        "subtitle": "Estimator Cockpit",
+        "exportPackage": "Export RFQ Package",
+        "generateQuote": "Generate Quote",
+        "rfqPackage": "RFQ Package",
+        "received": "Received",
+        "deadline": "Deadline",
+        "attachedFiles": "Attached Files",
+        "activeRisks": "Active Risks (Andon)",
+        "risks": {
+          "missingCentroid": {
+            "title": "Missing Centroid Data",
+            "desc": "Blocked Stage 2A (EE Review). Required for placement estimation."
+          },
+          "longLead": {
+            "title": "Long Lead Material",
+            "desc": "U45 (MCU) has 26-week lead time. Sourcing alternate recommended."
+          },
+          "bomObsolescence": {
+            "title": "BOM Obsolescence",
+            "desc": "Some components in the BOM are marked as EOL or NRND."
+          }
+        },
+        "stageGateWorkflow": "Stage-Gate Workflow",
+        "parallelContribution": "Parallel Engineering Contribution",
+        "gatesComplete": "{done} / {total} Gates Complete",
+        "noPackets": "No work packets generated yet",
+        "initialize": "Initialize Quoting Packets",
+        "review": "Review",
+        "openPacket": "Open Packet",
+        "costBuild": "Cost Build",
+        "quoteMemory": "Quote Memory",
+        "material": "Material",
+        "labor": "Labor",
+        "nreTooling": "NRE/Tooling",
+        "estimatedTotal": "Estimated Total",
+        "marginAnalysis": "Margin Analysis",
+        "healthy": "Healthy",
+        "grossMargin": "Gross Margin",
+        "targetMargin": "Target Margin",
+        "variance": "Variance",
+        "aiMatch": "AI Similarity Match: {percent}% with {job}",
+        "historicalAssumptions": "Extracted Historical Assumptions"
+      },
+      "packet": {
+        "backToWorkbench": "Back to Workbench",
+        "sla": "SLA: {date}",
+        "noDeadline": "NO DEADLINE",
+        "packetNotFound": "Packet not found or store not initialized. Please go back to workbench.",
+        "genericDiscipline": "Generic discipline form for {discipline}",
+        "reviewPacket": "{discipline} Review Packet",
+        "structuredContribution": "Structured Contribution for RFQ Analysis",
+        "technicalInputs": "Technical Inputs",
+        "internalNotes": "Internal Notes & Rationale",
+        "notesPlaceholder": "Log internal assumptions or specific process choices here...",
+        "actions": "Packet Actions",
+        "saveProgress": "Save Progress",
+        "signOff": "Sign Off (Done)",
+        "flagBlocker": "Flag Blocker (Andon)",
+        "auditLog": "Audit Log",
+        "created": "Created",
+        "owner": "Owner",
+        "assignedToYou": "Assigned to You"
+      }
+    },
     "status": "Status",
     "date": "Date",
     "time": "Time",
@@ -2094,7 +2208,9 @@
         "statusState": "Status",
         "priorityLvl": "Priority",
         "estValue": "Est. Value",
-        "thresholdDate": "Due Date"
+        "thresholdDate": "Due Date",
+        "triageScore": "Triage Score",
+        "completeness": "Completeness"
       },
       "emptyState": {
         "title": "No RFQs found",

@@ -153,7 +153,6 @@ class ONNXTextEmbedder:
                     model_input=onnx_path.as_posix(),
                     model_output=quant_path.as_posix(),
                     weight_type=QuantType.QInt8,
-                    optimize_model=True,
                 )
 
         tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)

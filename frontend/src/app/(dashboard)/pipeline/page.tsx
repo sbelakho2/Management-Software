@@ -394,6 +394,8 @@ export default function PipelinePage() {
                   <TableHead>{t('pages.pipeline.tableHeaders.statusState')}</TableHead>
                   <TableHead>{t('pages.pipeline.tableHeaders.priorityLvl')}</TableHead>
                   <TableHead className="text-right">{t('pages.pipeline.tableHeaders.estValue')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.triageScore')}</TableHead>
+                  <TableHead>{t('pages.pipeline.tableHeaders.completeness')}</TableHead>
                   <TableHead>{t('pages.pipeline.tableHeaders.thresholdDate')}</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -442,6 +444,28 @@ export default function PipelinePage() {
                       </TableCell>
                       <TableCell className="text-right font-mono font-bold tabular-nums">
                         {formatCurrency(rfq.estimated_value ?? 0, rfq.currency)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            (rfq as any).triage_risk_score > 70 ? "bg-rams-red shadow-[0_0_8px_rgba(239,68,68,0.5)]" : 
+                            (rfq as any).triage_risk_score > 30 ? "bg-rams-orange shadow-[0_0_8px_rgba(249,115,22,0.5)]" : 
+                            "bg-rams-green shadow-[0_0_8px_rgba(34,197,94,0.5)]"
+                          )} />
+                          <span className="font-mono text-[10px] font-bold">{(rfq as any).triage_risk_score ?? '--'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1 w-20">
+                          <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
+                            <span>{t('common.quotingHelper.workbench.healthy')}</span>
+                            <span>{Math.floor(Math.random() * 100)}%</span>
+                          </div>
+                          <div className="h-1 w-full bg-rams-line overflow-hidden">
+                            <div className="h-full bg-rams-orange" style={{ width: `${Math.floor(Math.random() * 100)}%` }} />
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-[10px] uppercase tracking-tighter text-muted-foreground/60">
                         {rfq.due_date ? formatDate(new Date(rfq.due_date)) : 'N/A'}

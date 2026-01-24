@@ -462,6 +462,27 @@ export default function TodayPage() {
 
 					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
 						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
+							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-rams-orange">{t('common.quotingHelper.workbench.activeRisks')}</h2>
+							<AlertCircle className="h-4 w-4 text-rams-orange/40" />
+						</div>
+						<div className="p-4 space-y-3">
+							{[
+								{ id: 'a1', rfq: 'RFQ-2024-0089', riskKey: 'common.quotingHelper.workbench.risks.missingCentroid.title', disciplineKey: 'common.disciplines.ee.title' },
+								{ id: 'a2', rfq: 'RFQ-2024-0102', riskKey: 'common.quotingHelper.workbench.risks.bomObsolescence.title', disciplineKey: 'common.disciplines.purchasing.title' }
+							].map((andon) => (
+								<div key={andon.id} className="flex items-center justify-between border-b border-rams-line/30 pb-3 last:border-0 last:pb-0">
+									<div>
+										<p className="text-[10px] font-black uppercase text-foreground/80">{andon.rfq}</p>
+										<p className="text-[9px] font-mono text-muted-foreground uppercase">{t(andon.riskKey)}</p>
+									</div>
+									<Badge variant="outline" className="text-[8px] font-mono border-rams-orange/30 text-rams-orange">{t(andon.disciplineKey)}</Badge>
+								</div>
+							))}
+						</div>
+					</div>
+
+					<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden">
+						<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
 							<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">{t('pages.today.priorityRfqs')}</h2>
 							<Target className="h-4 w-4 text-muted-foreground/40" />
 						</div>

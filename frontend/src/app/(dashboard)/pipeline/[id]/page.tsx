@@ -271,6 +271,12 @@ export default function RFQDetailPage({ params }: { params: { id: string } }) {
               {t('common.edit')}
             </Link>
           </Button>
+          <Button className="bg-rams-orange hover:bg-rams-orange/90 text-white" asChild>
+            <Link href={`/quoting-helper/workbench/${rfq.id}`}>
+              <Send className="mr-2 h-4 w-4" />
+              {t('common.quotingHelper.workbench.title')}
+            </Link>
+          </Button>
           <Button asChild>
             <Link href={`/quotes/new?rfq=${rfq.id}`}>
               <Plus className="mr-2 h-4 w-4" />

@@ -26,6 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from sensei.models.base import AuditMixin, Base, SoftDeleteMixin, TimestampMixin
 
@@ -246,6 +247,9 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     triage_risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     clarification_draft_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     
+    # AI/Semantic Search
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
+    
     # Relationships
     account: Mapped["Account"] = relationship(
         "Account",
@@ -324,6 +328,7 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             status,
             postgresql_where=(status.notin_(["won", "lost", "no_bid", "cancelled", "expired"])),
         ),
+        Index("ix_rfqs_embedding", "embedding", postgresql_using="ivfflat"),
     )
     
     @property

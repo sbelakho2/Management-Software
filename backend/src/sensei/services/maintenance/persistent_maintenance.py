@@ -114,6 +114,16 @@ class PersistentMaintenanceService:
         down_assets = await self.db.scalar(select(func.count(Asset.id)).where(Asset.status == "down"))
         total_wo = await self.db.scalar(select(func.count(MaintenanceWorkOrder.id)))
         
+        # Calculate overdue PMs: active schedules with next_due in the past
+        now = datetime.now(timezone.utc)
+        overdue_pms = await self.db.scalar(
+            select(func.count(PMSchedule.id)).where(
+                PMSchedule.is_active.is_(True),
+                PMSchedule.next_due.is_not(None),
+                PMSchedule.next_due < now,
+            )
+        )
+        
         return {
             "total_assets": total_assets or 0,
             "assets_by_status": {
@@ -121,5 +131,17 @@ class PersistentMaintenanceService:
                 "operational": (total_assets or 0) - (down_assets or 0)
             },
             "total_work_orders": total_wo or 0,
-            "overdue_pms": 0 # TODO: Calculate
+            "overdue_pms": overdue_pms or 0
         }
+
+    async def list_overdue_pms(self) -> List[PMSchedule]:
+        """List all overdue preventive maintenance schedules."""
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(PMSchedule).where(
+                PMSchedule.is_active.is_(True),
+                PMSchedule.next_due.is_not(None),
+                PMSchedule.next_due < now,
+            ).order_by(PMSchedule.next_due)
+        )
+        return list(result.scalars().all())

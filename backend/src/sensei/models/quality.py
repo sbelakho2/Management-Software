@@ -447,7 +447,7 @@ class CAPAStateHistory(Base, TimestampMixin):
 
     # Relationships
     capa: Mapped["CAPA"] = relationship("CAPA", back_populates="state_history")
-    changed_by: Mapped["User"] = relationship("User")
+    changed_by: Mapped["User"] = relationship("User", foreign_keys=[changed_by_id])
 
 
 class CAPA(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):

@@ -15,6 +15,7 @@ interface PipelineStats {
 interface PipelineState {
   // State
   rfqs: RFQ[];
+  currentRfq: RFQ | null;
   stats: PipelineStats;
   isLoading: boolean;
   error: string | null;
@@ -23,6 +24,7 @@ interface PipelineState {
   // Actions
   fetchRFQs: () => Promise<void>;
   fetchRFQById: (id: string) => Promise<RFQ | null>;
+  fetchRfqDetails: (id: string) => Promise<void>;
   createRFQ: (rfq: Partial<RFQ>) => Promise<RFQ>;
   updateRFQ: (id: string, updates: Partial<RFQ>) => Promise<RFQ>;
   deleteRFQ: (id: string) => Promise<void>;
@@ -41,6 +43,7 @@ export const usePipelineStore = create<PipelineState>()(
       (set, get) => ({
         // Initial state
         rfqs: [],
+        currentRfq: null,
         stats: {
           totalRFQs: 0,
           activeRFQs: 0,
@@ -126,6 +129,17 @@ export const usePipelineStore = create<PipelineState>()(
             set({ error: error instanceof Error ? error.message : 'Failed to fetch RFQ' });
             return null;
           }
+        },
+
+        fetchRfqDetails: async (id: string) => {
+             const state = get();
+             set({ isLoading: true });
+             try {
+                const rfq = await state.fetchRFQById(id);
+                set({ currentRfq: rfq, isLoading: false });
+             } catch (e) {
+                set({ isLoading: false, error: 'Failed to fetch details' });
+             }
         },
 
         // Create RFQ

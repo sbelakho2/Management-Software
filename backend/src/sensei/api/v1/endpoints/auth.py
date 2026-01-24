@@ -66,6 +66,7 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    message: Optional[str] = None
 
 
 class TwoFactorRequiredResponse(BaseModel):
@@ -278,8 +279,16 @@ async def register(
     
     # If email verification is required, send verification email and return message
     if not skip_verification:
-        # TODO: Send verification email here
-        # await send_verification_email(user.email, user.id)
+        # Refresh user to get the generated ID
+        await db.refresh(user)
+        
+        # Generate verification token and send email
+        auth_service = get_auth_service(db)
+        verification_token = await auth_service.create_email_verification_token(user.id)
+        
+        email_service = get_email_service()
+        await email_service.send_email_verification(user.email, verification_token)
+        
         return TokenResponse(
             access_token="",
             refresh_token="",

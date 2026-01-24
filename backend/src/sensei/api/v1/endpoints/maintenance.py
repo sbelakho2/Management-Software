@@ -112,7 +112,9 @@ async def list_overdue_pms(
     current_user: Any = Depends(deps.get_token_data)
 ):
     """List overdue preventive maintenance tasks."""
-    return [] # TODO: Implement in persistent service
+    svc = PersistentMaintenanceService(db)
+    overdue_schedules = await svc.list_overdue_pms()
+    return [s.to_dict() for s in overdue_schedules]
 
 
 @router.get("/pm-schedules", response_model=list[dict[str, Any]])

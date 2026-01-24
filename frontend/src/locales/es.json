@@ -353,6 +353,120 @@
       "_value": "Acciones",
       "analyze": "Analizar"
     },
+    "disciplines": {
+      "ee": {
+        "title": "Ingeniero electrónico",
+        "form": {
+          "minFinePitch": "Paso fino mín. (mm)",
+          "requiresXray": "Requiere inspección por rayos X",
+          "dfmFindings": "Hallazgos DFM / Banderas de complejidad",
+          "dfmPlaceholder": "Listar requisitos de BGA, QFN u otros procesos especiales..."
+        }
+      },
+      "embedded": {
+        "title": "Embebido/Firmware",
+        "form": {
+          "programmingMinutes": "Minutos de programación por unidad",
+          "fixtureNeeded": "Accesorio necesario",
+          "ipConstraints": "Restricciones de IP/Seguridad"
+        }
+      },
+      "me": {
+        "title": "Hardware/Mecánico",
+        "form": {
+          "enclosureRisks": "Riesgos de ajuste del gabinete",
+          "labelingMethod": "Método de etiquetado/láser"
+        }
+      },
+      "mfge": {
+        "title": "Ingeniero de fabricación",
+        "form": {
+          "lineAssignment": "Asignación de línea",
+          "specialTraining": "Necesidades especiales de capacitación del operador"
+        }
+      },
+      "qe": {
+        "title": "Ingeniero de calidad",
+        "form": {
+          "inspectionLevel": "Nivel de inspección",
+          "complianceDocs": "Documentos de cumplimiento requeridos"
+        }
+      },
+      "purchasing": {
+        "title": "Compras",
+        "form": {
+          "topCostDrivers": "Principales impulsores de costos",
+          "longLeadMitigation": "Plan de mitigación de plazos largos"
+        }
+      }
+    },
+    "quotingHelper": {
+      "workbench": {
+        "title": "Workbench de cotización",
+        "subtitle": "Cabina del tasador",
+        "exportPackage": "Exportar paquete RFQ",
+        "generateQuote": "Generar cotización",
+        "rfqPackage": "Paquete RFQ",
+        "received": "Recibido",
+        "deadline": "Fecha límite",
+        "attachedFiles": "Archivos adjuntos",
+        "activeRisks": "Riesgos activos (Andon)",
+        "risks": {
+          "missingCentroid": {
+            "title": "Datos de centroide faltantes",
+            "desc": "Etapa 2A bloqueada (Revisión EE). Requerido para estimación de colocación."
+          },
+          "longLead": {
+            "title": "Material de plazo largo",
+            "desc": "U45 (MCU) tiene un plazo de 26 semanas. Se recomienda búsqueda de alternativa."
+          },
+          "bomObsolescence": {
+            "title": "Obsolescencia de BOM",
+            "desc": "Algunos componentes en el BOM están marcados como EOL o NRND."
+          }
+        },
+        "stageGateWorkflow": "Flujo de trabajo Stage-Gate",
+        "parallelContribution": "Contribución de ingeniería paralela",
+        "gatesComplete": "{done} / {total} Puertas completadas",
+        "noPackets": "Aún no se han generado paquetes de trabajo",
+        "initialize": "Inicializar paquetes de cotización",
+        "review": "Revisión",
+        "openPacket": "Abrir paquete",
+        "costBuild": "Desglose de costos",
+        "quoteMemory": "Memoria de cotizaciones",
+        "material": "Material",
+        "labor": "Mano de obra",
+        "nreTooling": "NRE/Utillaje",
+        "estimatedTotal": "Total estimado",
+        "marginAnalysis": "Análisis de margen",
+        "healthy": "Saludable",
+        "grossMargin": "Margen bruto",
+        "targetMargin": "Margen objetivo",
+        "variance": "Varianza",
+        "aiMatch": "Coincidencia de similitud de IA: {percent}% con {job}",
+        "historicalAssumptions": "Suposiciones históricas extraídas"
+      },
+      "packet": {
+        "backToWorkbench": "Volver al workbench",
+        "sla": "SLA: {date}",
+        "noDeadline": "SIN FECHA LÍMITE",
+        "packetNotFound": "Paquete no encontrado o tienda no inicializada. Por favor regrese al workbench.",
+        "genericDiscipline": "Formulario de disciplina genérico para {discipline}",
+        "reviewPacket": "Paquete de revisión de {discipline}",
+        "structuredContribution": "Contribución estructurada para el análisis de RFQ",
+        "technicalInputs": "Entradas técnicas",
+        "internalNotes": "Notas internas y fundamento",
+        "notesPlaceholder": "Registrar suposiciones internas o opciones de proceso específicas aquí...",
+        "actions": "Acciones del paquete",
+        "saveProgress": "Guardar progreso",
+        "signOff": "Firmar (Hecho)",
+        "flagBlocker": "Marcar bloqueador (Andon)",
+        "auditLog": "Log de auditoría",
+        "created": "Creado",
+        "owner": "Propietario",
+        "assignedToYou": "Asignado a usted"
+      }
+    },
     "activate": "Activate",
     "active": "Activo",
     "activeUsers": "Activo Users",

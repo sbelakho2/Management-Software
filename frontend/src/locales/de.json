@@ -353,6 +353,120 @@
       "_value": "Aktionen",
       "analyze": "Analysieren"
     },
+    "disciplines": {
+      "ee": {
+        "title": "Elektronikingenieur",
+        "form": {
+          "minFinePitch": "Min. Fine Pitch (mm)",
+          "requiresXray": "Röntgeninspektion erforderlich",
+          "dfmFindings": "DFM-Ergebnisse / Komplexitätsflags",
+          "dfmPlaceholder": "BGA-, QFN- oder andere spezielle Prozessanforderungen auflisten..."
+        }
+      },
+      "embedded": {
+        "title": "Embedded/Firmware",
+        "form": {
+          "programmingMinutes": "Programmier-Minuten pro Einheit",
+          "fixtureNeeded": "Vorrichtung benötigt",
+          "ipConstraints": "IP-/Sicherheitsbeschränkungen"
+        }
+      },
+      "me": {
+        "title": "Hardware/Mechanik",
+        "form": {
+          "enclosureRisks": "Risiken bei der Gehäusepassung",
+          "labelingMethod": "Beschriftungs-/Lasermethode"
+        }
+      },
+      "mfge": {
+        "title": "Fertigungsingenieur",
+        "form": {
+          "lineAssignment": "Linienzuweisung",
+          "specialTraining": "Spezieller Schulungsbedarf für Bediener"
+        }
+      },
+      "qe": {
+        "title": "Qualitätsingenieur",
+        "form": {
+          "inspectionLevel": "Inspektionsstufe",
+          "complianceDocs": "Erforderliche Compliance-Dokumente"
+        }
+      },
+      "purchasing": {
+        "title": "Einkauf",
+        "form": {
+          "topCostDrivers": "Hauptkostentreiber",
+          "longLeadMitigation": "Plan zur Minderung langer Lieferzeiten"
+        }
+      }
+    },
+    "quotingHelper": {
+      "workbench": {
+        "title": "Angebots-Workbench",
+        "subtitle": "Kalkulations-Cockpit",
+        "exportPackage": "RFQ-Paket exportieren",
+        "generateQuote": "Angebot erstellen",
+        "rfqPackage": "RFQ-Paket",
+        "received": "Erhalten",
+        "deadline": "Frist",
+        "attachedFiles": "Angehängte Dateien",
+        "activeRisks": "Aktive Risiken (Andon)",
+        "risks": {
+          "missingCentroid": {
+            "title": "Fehlende Zentroid-Daten",
+            "desc": "Stufe 2A blockiert (EE-Überprüfung). Für Bestückungsschätzung erforderlich."
+          },
+          "longLead": {
+            "title": "Material mit langer Lieferzeit",
+            "desc": "U45 (MCU) hat 26 Wochen Lieferzeit. Alternative Beschaffung empfohlen."
+          },
+          "bomObsolescence": {
+            "title": "BOM-Obsoleszenz",
+            "desc": "Einige Komponenten in der Stückliste sind als EOL oder NRND markiert."
+          }
+        },
+        "stageGateWorkflow": "Stage-Gate-Workflow",
+        "parallelContribution": "Paralleler Engineering-Beitrag",
+        "gatesComplete": "{done} / {total} Gates abgeschlossen",
+        "noPackets": "Noch keine Arbeitspakete generiert",
+        "initialize": "Angebotspakete initialisieren",
+        "review": "Überprüfung",
+        "openPacket": "Paket öffnen",
+        "costBuild": "Kostenaufstellung",
+        "quoteMemory": "Angebotsgedächtnis",
+        "material": "Material",
+        "labor": "Arbeit",
+        "nreTooling": "NRE/Werkzeugbau",
+        "estimatedTotal": "Geschätzte Gesamtkosten",
+        "marginAnalysis": "Margenanalyse",
+        "healthy": "Gesund",
+        "grossMargin": "Bruttomarge",
+        "targetMargin": "Zielmarge",
+        "variance": "Abweichung",
+        "aiMatch": "KI-Ähnlichkeitsabgleich: {percent}% mit {job}",
+        "historicalAssumptions": "Extrahierte historische Annahmen"
+      },
+      "packet": {
+        "backToWorkbench": "Zurück zur Workbench",
+        "sla": "SLA: {date}",
+        "noDeadline": "KEINE FRIST",
+        "packetNotFound": "Arbeitspaket nicht gefunden oder Speicher nicht initialisiert. Bitte kehren Sie zur Workbench zurück.",
+        "genericDiscipline": "Generisches Disziplin-Formular für {discipline}",
+        "reviewPacket": "{discipline} Überprüfungspaket",
+        "structuredContribution": "Strukturierter Beitrag zur RFQ-Analyse",
+        "technicalInputs": "Technische Eingaben",
+        "internalNotes": "Interne Notizen & Begründung",
+        "notesPlaceholder": "Interne Annahmen oder spezifische Prozessentscheidungen hier protokollieren...",
+        "actions": "Paket-Aktionen",
+        "saveProgress": "Fortschritt speichern",
+        "signOff": "Abzeichnen (Fertig)",
+        "flagBlocker": "Blocker melden (Andon)",
+        "auditLog": "Audit-Protokoll",
+        "created": "Erstellt",
+        "owner": "Besitzer",
+        "assignedToYou": "Ihnen zugewiesen"
+      }
+    },
     "activate": "Aktivieren",
     "active": "Aktiv",
     "activeUsers": "Aktive Benutzer",
