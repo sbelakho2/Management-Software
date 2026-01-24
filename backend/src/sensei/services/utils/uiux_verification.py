@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -50,7 +51,7 @@ def _utcnow() -> datetime:
 
 
 # Design tokens that must be used (no hardcoded values).
-DESIGN_TOKENS = {
+DESIGN_TOKENS: dict[str, dict[str, Any]] = {
     "colors": {
         "primary": "var(--color-primary)",
         "secondary": "var(--color-secondary)",
@@ -195,10 +196,12 @@ class UIUXVerificationService:
 
             # Check heading weight >= 500.
             if el_type.startswith("heading") and weight < 500:
-                expected = DESIGN_TOKENS["typography"].get(el_type.replace("_", "_"), {})
+                typography = DESIGN_TOKENS["typography"]
+                expected = typography.get(el_type.replace("_", "_"), {})
+                expected_dict = expected if isinstance(expected, dict) else {}
                 issues.append(TypographyIssue(
                     element=el_name,
-                    expected_weight=expected.get("weight", 500),
+                    expected_weight=int(expected_dict.get("weight", 500)),
                     actual_weight=weight,
                     expected_token=el_type,
                     actual_value=str(weight),

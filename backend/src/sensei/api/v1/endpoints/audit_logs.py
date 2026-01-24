@@ -24,6 +24,8 @@ from sensei.api.exceptions import NotFoundError, ForbiddenError
 from sensei.api.utils import (
     build_response,
     build_paginated_response,
+    APIResponse,
+    PaginatedResponse,
 )
 from sensei.models.audit_log import AuditLog, AuditAction
 
@@ -80,7 +82,7 @@ async def get_audit_log(
     log_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[dict[str, Any]]:
     """Get a specific audit log entry."""
     query = select(AuditLog).where(AuditLog.id == log_id)
     result = await db.execute(query)
@@ -108,7 +110,7 @@ async def list_audit_logs(
     search: str | None = Query(None, description="Search in description/user email"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     List audit log entries with filtering.
     
@@ -174,7 +176,7 @@ async def get_entity_audit_trail(
     action: AuditAction | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get the complete audit trail for a specific entity.
     
@@ -221,7 +223,7 @@ async def get_user_audit_trail(
     entity_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get audit trail for a specific user.
     
@@ -267,7 +269,7 @@ async def get_my_activity(
     entity_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get audit trail for the current user.
     
@@ -315,7 +317,7 @@ async def get_logs_by_action(
     end_date: datetime | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get audit logs filtered by action type.
     
@@ -365,7 +367,7 @@ async def get_status_changes(
     new_status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get audit logs for status changes.
     
@@ -411,7 +413,7 @@ async def get_audit_summary(
     db: DBSession,
     current_user: CurrentUser,
     days: int = Query(7, ge=1, le=365, description="Number of days to include"),
-) -> dict[str, Any]:
+) -> APIResponse[dict[str, Any]]:
     """
     Get summary statistics for audit logs.
     
@@ -496,7 +498,7 @@ async def get_recent_activity(
     db: DBSession,
     current_user: CurrentUser,
     limit: int = Query(50, ge=1, le=200),
-) -> dict[str, Any]:
+) -> APIResponse[dict[str, Any]]:
     """
     Get the most recent audit log entries.
     
@@ -522,7 +524,7 @@ async def get_security_events(
     current_user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get security-related audit events.
     
@@ -570,7 +572,7 @@ async def get_deletion_events(
     include_soft_deletes: bool = Query(True),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[dict[str, Any]]:
     """
     Get deletion events.
     

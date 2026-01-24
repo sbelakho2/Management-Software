@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
-from typing import Any, List, Dict
+from typing import Any, List, Dict, TypedDict
 from uuid import UUID, uuid4
 
 from sensei.services.ops.today_screen_v2.base import BaseRedisStore
@@ -15,7 +15,16 @@ from sensei.services.ops.today_screen_models import MicroDrill
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_DRILLS = [
+class DrillTemplate(TypedDict):
+    """Type definition for default drill templates."""
+    question: str
+    answer: str
+    hint: str
+    category: str
+    difficulty: int
+
+
+DEFAULT_DRILLS: List[DrillTemplate] = [
     {
         "question": "What is your #1 priority focus today and why?",
         "answer": "Review the top priorities section and articulate your main focus.",

@@ -61,7 +61,7 @@ async def trigger_sync(user: CurrentUser):
 async def get_recent_anomalies(
     machine_id: Optional[str] = None, 
     hours: int = 24, 
-    user: CurrentUser = None
+    user: CurrentUser | None = None
 ):
     """Get recent anomaly detections."""
     anomalies = await anyio.to_thread.run_sync(

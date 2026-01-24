@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from sensei.models.qualification import Qualification
     from sensei.models.quote import Quote
     from sensei.models.user import User
+    from sensei.models.quoting_helper import WorkPacket, PCBSpec, RFQPackageVersion
 
 
 class RFQStatus(str, Enum):
@@ -241,6 +242,10 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     # Tags
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
     
+    # Quoting Helper fields
+    triage_risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    clarification_draft_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
     # Relationships
     account: Mapped["Account"] = relationship(
         "Account",
@@ -286,6 +291,27 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     quotes: Mapped[list["Quote"]] = relationship(
         "Quote",
         back_populates="rfq",
+        lazy="dynamic",
+    )
+    
+    work_packets: Mapped[list["WorkPacket"]] = relationship(
+        "WorkPacket",
+        back_populates="rfq",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    
+    pcb_specs: Mapped[list["PCBSpec"]] = relationship(
+        "PCBSpec",
+        back_populates="rfq",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    
+    package_versions: Mapped[list["RFQPackageVersion"]] = relationship(
+        "RFQPackageVersion",
+        back_populates="rfq",
+        cascade="all, delete-orphan",
         lazy="dynamic",
     )
     
@@ -372,11 +398,20 @@ class RFQQuestion(Base, TimestampMixin):
         nullable=True,
     )
     answered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    answered_by_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     
     # Tracking
     asked_by_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    asked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     sent_at: Mapped[datetime | None] = mapped_column(

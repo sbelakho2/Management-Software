@@ -8,7 +8,7 @@ FastAPI dependencies for:
 - Request validation
 """
 
-from typing import Annotated, Optional, TYPE_CHECKING, TypeAlias
+from typing import Annotated, AsyncGenerator, Optional, TYPE_CHECKING, TypeAlias
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Get database session dependency.
     
@@ -394,8 +394,8 @@ class RateLimiter:
     
     def __init__(
         self,
-        requests: int = None,
-        window: int = None,
+        requests: int | None = None,
+        window: int | None = None,
         key_prefix: str = "api",
     ):
         """

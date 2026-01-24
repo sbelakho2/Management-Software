@@ -572,3 +572,114 @@ class UserSkill(Base, TimestampMixin, AuditMixin):
         if days is not None:
             return 0 < days <= 30
         return False
+
+
+class LessonDifficulty(enum.Enum):
+    """Difficulty level of a lesson."""
+
+    BEGINNER = "beginner"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+    EXPERT = "expert"
+
+
+class Lesson(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
+    """
+    Training lesson for the ML-based recommendation system.
+
+    Lessons are individual learning units that can be recommended
+    to users based on their role, skills, and learning history.
+    """
+
+    __tablename__ = "lessons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
+
+    # Identification
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Content metadata
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True, default=list)
+    target_roles: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True, default=list)
+    skills_taught: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True, default=list)
+
+    # Requirements and flags
+    is_mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    compliance_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Difficulty and duration
+    difficulty: Mapped[Optional[LessonDifficulty]] = mapped_column(
+        Enum(LessonDifficulty), nullable=True, default=LessonDifficulty.INTERMEDIATE
+    )
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+
+    # Rating (calculated from completions)
+    average_rating: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(3, 2), nullable=True
+    )  # 0.00 to 5.00
+    rating_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Content reference (URL or internal content ID)
+    content_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    content_id: Mapped[Optional[PyUUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # Related skill (optional)
+    skill_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("skills.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Relationships
+    skill: Mapped[Optional["Skill"]] = relationship("Skill")
+    completions: Mapped[list["LessonCompletion"]] = relationship(
+        "LessonCompletion", back_populates="lesson", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Lesson(id={self.id}, title='{self.title}')>"
+
+
+class LessonCompletion(Base, TimestampMixin, AuditMixin):
+    """
+    Record of a user completing a lesson.
+
+    Tracks completion status, ratings, and feedback for the
+    ML recommendation system's collaborative filtering.
+    """
+
+    __tablename__ = "lesson_completions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
+
+    # User and lesson references
+    user_id: Mapped[PyUUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    lesson_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Completion tracking
+    completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # User feedback
+    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5
+    feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Progress tracking
+    progress_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    time_spent_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    lesson: Mapped["Lesson"] = relationship("Lesson", back_populates="completions")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "lesson_id", name="uq_lesson_completion_user_lesson"),
+        CheckConstraint("rating IS NULL OR (rating >= 1 AND rating <= 5)", name="ck_lesson_completion_rating"),
+        CheckConstraint("progress_percent >= 0 AND progress_percent <= 100", name="ck_lesson_completion_progress"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LessonCompletion(user_id={self.user_id}, lesson_id={self.lesson_id}, completed={self.completed})>"

@@ -165,16 +165,25 @@ class ModelRegistry:
         metadata: ModelMetadata,
         model_artifacts_path: Path,
     ) -> str:
-        """Register a new model version.
+        """Register a new model version (sync wrapper).
 
         Returns: model_id
+
+        Note: If called from within an async context (running event loop),
+        use `await _register_model_async()` directly instead.
         """
         try:
             asyncio.get_running_loop()
-        except RuntimeError:
+            # If there's a running loop, we can't use anyio.run
+            # The caller should use the async method directly
+            raise RuntimeError(
+                "register_model() called from async context. "
+                "Use 'await _register_model_async()' instead."
+            )
+        except RuntimeError as e:
+            if "running event loop" in str(e) or "no running event loop" not in str(e):
+                raise
             return anyio.run(self._register_model_async, metadata, model_artifacts_path)
-
-        return self._register_model_async(metadata, model_artifacts_path)
     
     def get_model(self, model_id: str) -> Optional[ModelMetadata]:
         """Get model metadata by ID."""
@@ -419,7 +428,7 @@ class MLPipeline:
             )
             
             # Register
-            model_id = await self.registry.register_model(metadata, model_path)
+            model_id = await self.registry._register_model_async(metadata, model_path)
             
             logger.info(f"Training pipeline completed. Model ID: {model_id}")
             return model_id
@@ -484,11 +493,11 @@ class ABTestManager:
         
         self._save_tests()
     
-    def get_model_for_request(self, model_name: str, user_id: str) -> str:
+    def get_model_for_request(self, model_name: str, user_id: str) -> str | None:
         """
         Get model ID for a request (A/B test aware).
         
-        Returns: model_id to use for prediction
+        Returns: model_id to use for prediction, or None if no test active
         """
         # Find active test
         active_test = None

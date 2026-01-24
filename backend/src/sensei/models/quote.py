@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from sensei.models.opportunity import Opportunity
     from sensei.models.rfq import RFQ
     from sensei.models.user import User
+    from sensei.models.quoting_helper import QuoteActual
 
 
 class QuoteStatus(str, Enum):
@@ -304,6 +305,13 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         lazy="selectin",
     )
     
+    actuals: Mapped["QuoteActual | None"] = relationship(
+        "QuoteActual",
+        back_populates="quote",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    
     __table_args__ = (
         Index("ix_quotes_account_status", account_id, status),
         Index("ix_quotes_status_valid", status, valid_until),
@@ -397,10 +405,14 @@ class QuoteVersion(Base, TimestampMixin):
     
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     
+    # Version status
+    status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Version status
+    
     # Snapshot of quote data
     snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     
     # Change tracking
+    change_summary: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Brief summary of changes
     change_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     change_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     
@@ -444,7 +456,9 @@ class QuoteLineItem(Base, TimestampMixin):
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
     
     # Item Details
+    sku: Mapped[str | None] = mapped_column(String(100), nullable=True)  # SKU identifier
     part_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Product name
     description: Mapped[str] = mapped_column(Text, nullable=False)
     
     # Quantity

@@ -49,10 +49,10 @@ class ONNXEdgeInference:
     
     def __init__(self, config: Optional[ONNXEdgeConfig] = None):
         self._config = config or self.default_config()
-        self._session = None
+        self._session: Any = None  # Will be ort.InferenceSession if available
         self._is_loaded = False
         self._use_fallback = False
-        self._fallback_model = None
+        self._fallback_model: Any = None  # Will be EdgeCNN1D if fallback needed
         self._init_attempted = False
         
         # Try to load ONNX model
@@ -164,7 +164,7 @@ class ONNXEdgeInference:
         with torch.no_grad():
             torch.onnx.export(
                 model,
-                dummy_input,
+                (dummy_input,),
                 output_path.as_posix(),
                 input_names=["input"],
                 output_names=["probabilities"],

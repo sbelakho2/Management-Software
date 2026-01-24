@@ -522,10 +522,10 @@ class SenseiNudgesService:
             return value != threshold, value
 
         if operator == "in":
-            return value in threshold, value
+            return value in threshold if threshold is not None else False, value
 
         if operator == "contains":
-            return threshold in str(value), value
+            return threshold in str(value) if threshold is not None else False, value
 
         if operator == "past":
             if isinstance(value, datetime):
@@ -533,13 +533,13 @@ class SenseiNudgesService:
             return False, value
 
         if operator == "within_days":
-            if isinstance(value, datetime):
+            if isinstance(value, datetime) and threshold is not None:
                 days_diff = (value - datetime.now(timezone.utc)).days
                 return 0 <= days_diff <= threshold, days_diff
             return False, value
 
         if operator == "older_than_days":
-            if isinstance(value, datetime):
+            if isinstance(value, datetime) and threshold is not None:
                 days_diff = (datetime.now(timezone.utc) - value).days
                 return days_diff > threshold, days_diff
             return False, value

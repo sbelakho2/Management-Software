@@ -190,6 +190,17 @@ class DebateResult:
     rounds_needed: int
     positions: list[AgentPosition] = field(default_factory=list)
     coordinator_notes: str = ""
+    debate_log: list[str] = field(default_factory=list)
+    
+    @property
+    def rounds(self) -> int:
+        """Alias for rounds_needed."""
+        return self.rounds_needed
+    
+    @property
+    def consensus_score(self) -> float:
+        """Alias for agreement_score."""
+        return self.agreement_score
 
 
 @dataclass
@@ -277,6 +288,10 @@ class BaseAgent:
     def agent_type(self) -> AgentType:
         """Get agent type."""
         return self._agent_type
+    
+    async def analyze(self, rfq: "RFQSpec") -> list["AgentFinding"]:
+        """Analyze RFQ - to be implemented by subclasses."""
+        return []
     
     def _create_finding(
         self,
@@ -1228,8 +1243,8 @@ class AgentOrchestrator:
                         agent_type=agent_type.value,
                         analysis_category=finding.category.value,
                         confidence=finding.confidence,
-                        findings={"observation": finding.finding},
-                        recommendations=[finding.recommendation],
+                        findings={"observation": finding.description},
+                        recommendations=finding.recommendations,
                     )
                     db.add(record)
 
@@ -1514,11 +1529,11 @@ class MultiAgentRFQAnalyzer:
     ) -> None:
         """Configure commercial agent with historical data."""
         if price_history:
-            for part_type, history in price_history.items():
-                self.commercial_agent.register_price_history(part_type, history)
+            for part_type, price_data in price_history.items():
+                self.commercial_agent.register_price_history(part_type, price_data)
         if customer_history:
-            for customer_id, history in customer_history.items():
-                self.commercial_agent.register_customer_history(customer_id, history)
+            for customer_id, customer_data in customer_history.items():
+                self.commercial_agent.register_customer_history(customer_id, customer_data)
     
     def configure_risk_agent(
         self,

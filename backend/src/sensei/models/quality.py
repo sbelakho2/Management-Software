@@ -133,9 +133,12 @@ class CAPAStatus(enum.Enum):
     """Status of CAPA."""
 
     OPEN = "open"
+    IN_PROGRESS = "in_progress"  # Alias for active states
     INVESTIGATING = "investigating"
     IMPLEMENTING = "implementing"
+    VERIFICATION = "verification"  # Alias for verifying
     VERIFYING = "verifying"
+    EFFECTIVENESS_CHECK = "effectiveness_check"  # Effectiveness review stage
     EFFECTIVE = "effective"
     CLOSED = "closed"
     INEFFECTIVE = "ineffective"
@@ -155,7 +158,9 @@ class VerificationStatus(enum.Enum):
     """Status of verification check."""
 
     PENDING = "pending"
+    VERIFIED = "verified"  # Alias for passed
     PASSED = "passed"
+    REJECTED = "rejected"  # Alias for failed
     FAILED = "failed"
     PARTIAL = "partial"
     NOT_APPLICABLE = "not_applicable"

@@ -220,7 +220,7 @@ async def get_transition_requirements(
     entity_type: str,
     state: str,
     to_state: str = Query(..., description="Target state to get requirements for"),
-    current_user: CurrentUser = None,
+    current_user: CurrentUser | None = None,
 ):
     """
     Get requirements for a specific transition.

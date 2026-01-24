@@ -469,7 +469,9 @@ class ConditionsLibraryService:
             category = template.category
             condition_type = template.condition_type
         else:
-            condition_text = custom_text  # type: ignore
+            # custom_text is guaranteed non-None due to check above
+            assert custom_text is not None
+            condition_text = custom_text
         
         applied = AppliedCondition(
             id=uuid4(),

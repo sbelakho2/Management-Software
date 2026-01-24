@@ -472,7 +472,7 @@ class CertificationTrackingService:
             )
         return results
 
-    def list_evidence(
+    async def list_evidence(
         self,
         *,
         certification_id: UUID,
@@ -482,7 +482,7 @@ class CertificationTrackingService:
         db: AsyncSession | None = None,
     ) -> list[dict[str, Any]]:
         if db is not None:
-            return self._list_evidence_async(
+            return await self._list_evidence_async(
                 certification_id=certification_id,
                 actor_roles=actor_roles,
                 actor_employee_id=actor_employee_id,
@@ -518,8 +518,10 @@ class CertificationTrackingService:
             if not privileged:
                 masked_filename = self._pii.mask_value(filename, field_id=self._field_evidence_filename_id)
                 masked_notes = self._pii.mask_value(notes, field_id=self._field_evidence_notes_id) if notes else ""
-                filename = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
-                notes = masked_notes._get_value() if hasattr(masked_notes, "_get_value") else masked_notes
+                filename_result = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
+                filename = str(filename_result)
+                notes_result = masked_notes._get_value() if hasattr(masked_notes, "_get_value") else masked_notes
+                notes = str(notes_result) if notes_result else ""
                 storage_key = "***"
 
             results.append(
@@ -540,7 +542,7 @@ class CertificationTrackingService:
         return results
 
     async def get_pii_access_logs(self, db: AsyncSession) -> list[dict[str, Any]]:
-        logs = await self._pii.get_access_logs(db)
+        logs = await self._pii.get_access_logs(db=db)
         return [l.to_dict() for l in logs]
 
     def get_pii_access_logs_sync(self) -> list[dict[str, Any]]:

@@ -303,10 +303,11 @@ class ExceptionsAggregator:
         for source_name, source_fn in self._sources.items():
             try:
                 # If the source function is async, await it
-                if hasattr(source_fn, "__call__") and hasattr(source_fn, "__await__"):
-                     exceptions = await source_fn()
+                source_result = source_fn()
+                if hasattr(source_result, "__await__"):
+                    exceptions = await source_result
                 else:
-                     exceptions = source_fn()
+                    exceptions = source_result
                 all_exceptions.extend(exceptions)
             except Exception:
                 # Log error but continue with other sources

@@ -1330,7 +1330,7 @@ class EHSSafetyService:
         # Certification metrics
         certs = list(self._certifications.values())
         for cert in certs:
-            cert.status = self._calculate_cert_status(cert)  # type: ignore[assignment]
+            cert.status = self._calculate_cert_status(cert)
         
         cert_status_counts: dict[str, int] = {}
         for cert_stat in CertificationStatus:

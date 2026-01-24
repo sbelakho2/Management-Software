@@ -500,7 +500,7 @@ async def list_users(
     
     # Get total count
     total_result = await db.execute(count_query)
-    total = total_result.scalar()
+    total = total_result.scalar() or 0
     
     # Get paginated results
     query = query.offset(pagination.offset).limit(pagination.limit)

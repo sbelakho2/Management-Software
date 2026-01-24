@@ -21,6 +21,13 @@ from sensei.models.quote import (
     SupplierQuote,
     SupplierQuoteItem,
 )
+from sensei.models.quoting_helper import (
+    WorkPacket,
+    PCBSpec,
+    RFQPackageVersion,
+    RateCard,
+    QuoteActual,
+)
 from sensei.models.ctq import CTQ, CTQMeasurement
 from sensei.models.risk import Risk, RiskMitigation
 from sensei.models.obeya import ObeyaItem, ObeyaComment

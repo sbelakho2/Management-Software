@@ -1154,7 +1154,7 @@ class DocumentClassifier:
         if not scores or max(scores.values()) == 0:
             return DocumentCategory.GENERAL, 0.5
         
-        best_category = max(scores, key=scores.get)
+        best_category = max(scores, key=lambda c: scores[c])
         confidence = min(0.95, 0.5 + scores[best_category] * 0.1)
         
         return best_category, confidence
@@ -1334,8 +1334,8 @@ class WorldClassDocumentAI:
         
         # Process as engineering drawing if applicable
         title_block = None
-        gdt_callouts: list[dict[str, Any]] = []
-        dimensions: list[dict[str, Any]] = []
+        gdt_callouts: list[GDTCallout] = []
+        dimensions: list[DimensionCallout] = []
         
         if category == DocumentCategory.DRAWING and self._enable_gdt:
             title_block, gdt_callouts, dimensions = await self._drawing_processor.process_drawing(

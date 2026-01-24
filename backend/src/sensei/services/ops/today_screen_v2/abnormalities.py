@@ -28,7 +28,7 @@ class AbnormalityManager(BaseRedisStore):
         entity_id: UUID,
         days_stale: int = 0,
         description: str | None = None,
-        severity: int = 5,
+        severity: PriorityLevel = PriorityLevel.MEDIUM,
         owner_id: UUID | None = None,
         owner_name: str | None = None,
         suggested_action: str | None = None,

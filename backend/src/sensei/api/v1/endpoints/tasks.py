@@ -1279,7 +1279,6 @@ async def bulk_delete_tasks(
     tasks = result.scalars().all()
 
     for task in tasks:
-        task.is_deleted = True
         task.deleted_at = datetime.now(timezone.utc)
         task.deleted_by_id = current_user.id
 

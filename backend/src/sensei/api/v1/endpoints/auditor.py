@@ -212,7 +212,7 @@ async def get_audit_stats(db: DBSession, current_user: CurrentUser) -> Any:
 async def get_compliance_areas(db: DBSession, current_user: CurrentUser) -> Any:
     """Get compliance scores by area."""
     # Aggregate findings by area
-    areas = {}
+    areas: dict[str, dict[str, Any]] = {}
     for f in _findings.values():
         area = f["area"]
         if area not in areas:
@@ -232,7 +232,7 @@ async def get_compliance_areas(db: DBSession, current_user: CurrentUser) -> Any:
     ]
     
     for area_name, default_score in default_areas:
-        area_data = areas.get(area_name, {"findings": 0, "open": 0, "audits": set()})
+        area_data: dict[str, Any] = areas.get(area_name, {"findings": 0, "open": 0, "audits": set()})
         # Adjust score based on open findings
         score = default_score - (area_data["open"] * 2)
         result.append(ComplianceAreaResponse(

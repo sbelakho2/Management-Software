@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from io import BytesIO
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -743,7 +743,7 @@ class FieldExtractor:
         """Validate and parse extracted value."""
         errors: list[str] = []
         confidence = ExtractionConfidence.MEDIUM
-        parsed = value
+        parsed: Any = value
         
         # Type-specific validation
         if field_type == FieldType.CONTACT_EMAIL:
@@ -1629,7 +1629,7 @@ class SmartIngestionService:
                 result = await self.db.execute(
                     select(Account).where(Account.name.ilike(f"%{escaped_name}%")).limit(1)
                 )
-                account = result.scalar_one_or_none()
+                account = cast("Account | None", result.scalar_one_or_none())
                 if account:
                     account_id = account.id
                 else:
@@ -1734,7 +1734,7 @@ class SmartIngestionService:
                 result = await self.db.execute(
                     select(Account).where(Account.name.ilike(f"%{escaped_name}%")).limit(1)
                 )
-                account = result.scalar_one_or_none()
+                account = cast("Account | None", result.scalar_one_or_none())
                 if account:
                     account_id = account.id
                 else:

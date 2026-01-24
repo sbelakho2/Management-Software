@@ -93,3 +93,4 @@ class HeijunkaSuggestionRecord(Base, TimestampMixin):
     volume_variance_after: Mapped[float] = mapped_column(Float, nullable=False)
     suggested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")

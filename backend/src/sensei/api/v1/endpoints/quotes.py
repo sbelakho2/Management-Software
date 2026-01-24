@@ -14,7 +14,7 @@ import logging
 
 from datetime import datetime, date, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status, Header
@@ -630,7 +630,7 @@ async def list_quotes(
     
     # Get total count
     total_result = await db.execute(count_query)
-    total = total_result.scalar()
+    total = total_result.scalar() or 0
     
     # Apply sorting
     sort_orders = parse_sort_param(sort)
@@ -692,7 +692,7 @@ async def create_quote(
     
     # Set default validity
     if not quote.valid_from:
-        quote.valid_from = date.today()
+        setattr(quote, "valid_from", date.today())
     
     db.add(quote)
     await db.commit()
@@ -1342,11 +1342,14 @@ async def accept_quote(
         version_count=version_count,
     )
     
+    response_dict: dict[str, Any]
     if sales_order_info:
-        response_data = {**response_data.model_dump(), "sales_order": sales_order_info}
+        response_dict = {**response_data.model_dump(), "sales_order": sales_order_info}
+    else:
+        response_dict = response_data.model_dump()
     
     return build_response(
-        data=response_data,
+        data=response_dict,
         message="Quote accepted" + (" and Sales Order created" if sales_order_info else ""),
     )
 
@@ -1593,7 +1596,7 @@ async def get_quote_stats(
     items = items_result.scalars().all()
     
     # Calculate statistics
-    stats = {
+    stats: dict[str, Any] = {
         "quote_id": str(quote.id),
         "quote_number": quote.quote_number,
         "status": quote.status,

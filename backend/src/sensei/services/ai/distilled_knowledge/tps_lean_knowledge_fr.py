@@ -5,7 +5,19 @@ Auto-generated from book analysis.
 Contains 148 expert principles for FR language reasoning.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TypedDict, cast
+
+
+class PrincipleDict(TypedDict):
+    """Type definition for principle dictionaries."""
+    id: str
+    principle: str
+    domain: str
+    keywords: List[str]
+    waste_categories: List[str]
+    a3_phases: List[str]
+    countermeasures: List[str]
+    source_books: List[str]
 
 
 class TPSLeanKnowledgeFR:
@@ -18,7 +30,7 @@ class TPSLeanKnowledgeFR:
     
     LANGUAGE = "fr"
     
-    PRINCIPLES = [
+    PRINCIPLES: List[PrincipleDict] = [
         {
             "id": "dd38af03c9ee",
             "principle": "approcher de Meaulnes lorsqu",
@@ -1502,32 +1514,32 @@ class TPSLeanKnowledgeFR:
     ]
     
     @classmethod
-    def get_principles(cls) -> List[Dict[str, Any]]:
+    def get_principles(cls) -> List[PrincipleDict]:
         """Get all principles."""
         return cls.PRINCIPLES
     
     @classmethod
-    def get_by_domain(cls, domain: str) -> List[Dict[str, Any]]:
+    def get_by_domain(cls, domain: str) -> List[PrincipleDict]:
         """Get principles for a specific domain."""
         return [p for p in cls.PRINCIPLES if p["domain"] == domain]
     
     @classmethod
-    def get_by_keyword(cls, keyword: str) -> List[Dict[str, Any]]:
+    def get_by_keyword(cls, keyword: str) -> List[PrincipleDict]:
         """Get principles matching a keyword."""
         keyword_lower = keyword.lower()
         return [
             p for p in cls.PRINCIPLES
-            if any(keyword_lower in str(kw).lower() for kw in p["keywords"])  # type: ignore[union-attr]
+            if any(keyword_lower in kw.lower() for kw in p["keywords"])
             or keyword_lower in str(p["principle"]).lower()
         ]
     
     @classmethod
-    def get_by_waste_category(cls, waste: str) -> List[Dict[str, Any]]:
+    def get_by_waste_category(cls, waste: str) -> List[PrincipleDict]:
         """Get principles related to a waste category."""
         return [p for p in cls.PRINCIPLES if waste in p["waste_categories"]]
     
     @classmethod
-    def get_by_a3_phase(cls, phase: str) -> List[Dict[str, Any]]:
+    def get_by_a3_phase(cls, phase: str) -> List[PrincipleDict]:
         """Get principles relevant to an A3 phase."""
         return [p for p in cls.PRINCIPLES if phase in p["a3_phases"]]
     
@@ -1544,7 +1556,7 @@ class TPSLeanKnowledgeFR:
         for principle in cls.PRINCIPLES:
             # Calculate relevance score
             principle_words = set(principle["principle"].lower().split())
-            keyword_words = set(str(kw).lower() for kw in principle["keywords"])
+            keyword_words = set(kw.lower() for kw in principle["keywords"])
             
             # Word overlap with principle
             p_overlap = len(query_words & principle_words) / max(1, len(query_words))
@@ -1562,5 +1574,5 @@ class TPSLeanKnowledgeFR:
                 })
         
         # Sort by relevance and return top results
-        results.sort(key=lambda x: x["relevance_score"], reverse=True)  # type: ignore[arg-type, return-value]
+        results.sort(key=lambda x: cast(float, x["relevance_score"]), reverse=True)
         return results[:max_results]

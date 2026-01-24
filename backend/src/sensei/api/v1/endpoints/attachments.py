@@ -29,6 +29,8 @@ from sensei.api.utils import (
     build_updated_response,
     build_deleted_response,
     build_paginated_response,
+    APIResponse,
+    PaginatedResponse,
 )
 from sensei.core.storage import upload_file_stream, generate_presigned_url, delete_file
 from sensei.models.attachment import (
@@ -224,7 +226,7 @@ async def create_attachment(
     revision: str | None = Form(None),
     tags: str | None = Form(None),  # JSON string or comma-separated
     file: UploadFile = File(...),
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """
     Upload a new attachment.
     
@@ -306,7 +308,7 @@ async def create_attachment_metadata(
     data: AttachmentCreate,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """
     Create attachment metadata without file upload.
     
@@ -359,7 +361,7 @@ async def get_attachment(
     attachment_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get an attachment by ID."""
     query = select(Attachment).where(
         and_(
@@ -391,7 +393,7 @@ async def list_attachments(
     include_deleted: bool = Query(False, description="Include deleted attachments"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[AttachmentResponse]:
     """List attachments with filtering."""
     # Build query
     conditions: list[Any] = []
@@ -449,7 +451,7 @@ async def update_attachment(
     data: AttachmentUpdate,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Update attachment metadata."""
     query = select(Attachment).where(
         and_(
@@ -486,7 +488,7 @@ async def delete_attachment(
     db: DBSession,
     current_user: CurrentUser,
     hard_delete: bool = Query(False, description="Permanently delete"),
-) -> dict[str, Any]:
+) -> APIResponse[dict[str, Any]]:
     """
     Delete an attachment.
     
@@ -505,7 +507,6 @@ async def delete_attachment(
     if hard_delete:
         await db.delete(attachment)
     else:
-        attachment.is_deleted = True
         attachment.deleted_at = datetime.now(timezone.utc)
         attachment.deleted_by_id = current_user.id
 
@@ -519,7 +520,7 @@ async def restore_attachment(
     attachment_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Restore a soft-deleted attachment."""
     query = select(Attachment).where(
         and_(
@@ -560,7 +561,7 @@ async def create_version(
     change_notes: str | None = Form(None),
     revision: str | None = Form(None),
     file: UploadFile = File(...),
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """
     Upload a new version of an attachment.
     
@@ -647,7 +648,7 @@ async def list_versions(
     attachment_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get all versions of an attachment."""
     # Verify attachment exists
     attach_query = select(Attachment).where(Attachment.id == attachment_id)
@@ -678,7 +679,7 @@ async def get_version(
     version_number: int,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get a specific version of an attachment."""
     query = select(AttachmentVersion).where(
         and_(
@@ -704,7 +705,7 @@ async def restore_version(
     version_number: int,
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """
     Restore an attachment to a specific version.
     
@@ -782,7 +783,7 @@ async def get_entity_attachments(
     current_user: CurrentUser,
     category: AttachmentCategory | None = Query(None),
     include_deleted: bool = Query(False),
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get all attachments for a specific entity."""
     conditions = [
         Attachment.entity_type == entity_type,
@@ -816,7 +817,7 @@ async def get_my_uploads(
     category: AttachmentCategory | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[AttachmentResponse]:
     """Get attachments uploaded by the current user."""
     conditions = [
         Attachment.uploaded_by_id == current_user.id,
@@ -855,7 +856,7 @@ async def get_recent_attachments(
     db: DBSession,
     current_user: CurrentUser,
     limit: int = Query(10, ge=1, le=50),
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get recently uploaded attachments."""
     query = (
         select(Attachment)
@@ -876,7 +877,7 @@ async def get_recent_attachments(
 async def get_attachments_by_category(
     db: DBSession,
     current_user: CurrentUser,
-) -> dict[str, Any]:
+) -> APIResponse[AttachmentResponse]:
     """Get attachment counts grouped by category."""
     query = (
         select(Attachment.category, func.count(Attachment.id).label("count"))
@@ -900,7 +901,7 @@ async def get_confidential_attachments(
     current_user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-) -> dict[str, Any]:
+) -> PaginatedResponse[AttachmentResponse]:
     """Get all confidential attachments."""
     conditions = [
         Attachment.is_confidential.is_(True),  # noqa: E712

@@ -5,7 +5,7 @@ Combines all language-specific knowledge modules into a single
 reasoning interface for Sensei OS.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, cast
 import logging
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ class UnifiedDistilledReasoning:
                     "match_type": "semantic" if p_overlap > k_overlap else "keyword"
                 })
         
-        results.sort(key=lambda x: x["relevance_score"], reverse=True)
+        results.sort(key=lambda x: cast(float, x["relevance_score"]), reverse=True)
         return results[:max_results]
     
     def get_countermeasures(
@@ -198,7 +198,7 @@ class UnifiedDistilledReasoning:
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get statistics about loaded knowledge."""
-        stats = {
+        stats: Dict[str, Any] = {
             "languages_loaded": list(self._modules.keys()),
             "total_principles": 0,
             "by_language": {},

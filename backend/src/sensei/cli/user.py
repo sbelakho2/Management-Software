@@ -28,14 +28,14 @@ async def _create_admin_async(email, password, username, first_name, last_name):
         
     async with async_session_factory() as session:
         # Check if user already exists
-        res = await session.execute(select(User).where(User.email == email))
-        if res.scalar_one_or_none():
+        user_result = await session.execute(select(User).where(User.email == email))
+        if user_result.scalar_one_or_none():
             console.print(f"[red]Error:[/red] User with email {email} already exists.")
             return
 
         # Ensure admin role exists
-        res = await session.execute(select(Role).where(Role.name == RoleType.ADMIN.value))
-        admin_role = res.scalar_one_or_none()
+        role_result = await session.execute(select(Role).where(Role.name == RoleType.ADMIN.value))
+        admin_role: Role | None = role_result.scalar_one_or_none()
         if not admin_role:
             admin_role = Role(
                 name=RoleType.ADMIN.value,

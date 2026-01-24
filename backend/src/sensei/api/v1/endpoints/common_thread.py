@@ -61,11 +61,11 @@ class CommonThreadBindRequest(BaseModel):
 
 @router.get("/trace", response_model=APIResponse[CommonThreadTraceResponse])
 async def get_common_thread_trace(
+    db: DBSession,
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    db: DBSession = None,  # type: ignore[assignment]
-    current_user: CurrentUser = None,  # noqa: ARG001
+    current_user: CurrentUser | None = None,  # noqa: ARG001
 ) -> APIResponse[CommonThreadTraceResponse]:
     trace = await get_common_thread_service().get_trace(
         db,
@@ -103,8 +103,8 @@ async def get_common_thread_trace(
 @router.post("/bind", response_model=APIResponse[dict])
 async def bind_common_thread(
     req: CommonThreadBindRequest,
-    db: DBSession = None,  # type: ignore[assignment]
-    current_user: CurrentUser = None,
+    db: DBSession,
+    current_user: CurrentUser | None = None,
     x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[dict]:
     await get_common_thread_service().bind(

@@ -13,6 +13,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Optional
+from uuid import UUID
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 class MudaNudgingScheduleConfig:
     enabled: bool
     interval_seconds: int
-    recipient_ids: list[str]
+    recipient_ids: list[UUID]
 
 
 class MudaNudgingSchedulerService:
@@ -93,6 +94,7 @@ class MudaNudgingSchedulerService:
     def _run_once(self) -> None:
         """Run one evaluation tick (threadpool context)."""
         from sensei.core.websocket import get_websocket_manager
+        from sensei.db.session import async_session_maker
 
         async def _run() -> None:
             ws_manager = get_websocket_manager()
@@ -105,7 +107,7 @@ class MudaNudgingSchedulerService:
                             "type": "muda_nudge",
                             "payload": {
                                 "trigger": nudge.trigger.value,
-                                "recipient_id": nudge.recipient_id,
+                                "recipient_id": str(nudge.recipient_id),
                                 "lesson_id": nudge.lesson_id,
                                 "lesson_title": nudge.lesson_title,
                                 "lesson_summary": nudge.lesson_summary,
@@ -114,24 +116,26 @@ class MudaNudgingSchedulerService:
                                 "generated_at": nudge.generated_at.isoformat(),
                             },
                         },
-                        nudge.recipient_id,
+                        str(nudge.recipient_id),
                     )
                     logger.debug(
                         "Delivered muda nudge via WebSocket",
-                        extra={"recipient": nudge.recipient_id, "trigger": nudge.trigger.value},
+                        extra={"recipient": str(nudge.recipient_id), "trigger": nudge.trigger.value},
                     )
                 except Exception as e:
                     logger.warning(
                         "Failed to deliver nudge via WebSocket",
-                        extra={"error": str(e), "recipient": nudge.recipient_id},
+                        extra={"error": str(e), "recipient": str(nudge.recipient_id)},
                     )
             
-            result = await self.job_runner.run(
-                recipient_ids=self.config.recipient_ids,
-                include_knowledge=True,
-                deliver=True,  # Enable delivery
-                on_deliver=lambda nudge: asyncio.create_task(deliver_nudge(nudge)),
-            )
+            async with async_session_maker() as db:
+                result = await self.job_runner.run(
+                    db,
+                    recipient_ids=self.config.recipient_ids,
+                    include_knowledge=True,
+                    deliver=True,  # Enable delivery
+                    on_deliver=lambda nudge: asyncio.create_task(deliver_nudge(nudge)),
+                )
             logger.info(
                 "Muda nudging tick completed",
                 extra={

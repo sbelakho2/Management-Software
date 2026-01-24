@@ -279,11 +279,13 @@ class AsyncContinuousLearningManager:
 class ContinuousLearningManager(AsyncContinuousLearningManager):
     """In-memory continuous learning manager for sync use cases and tests."""
 
-    def record_feedback(
+    async def record_feedback(
         self,
+        db: AsyncSession,
         feedback: FeedbackRecord,
         image_key: str | None = None,
     ) -> None:
+        # Note: db is unused in this in-memory implementation, but required for interface compatibility
         self.feedback_queue.append(feedback)
 
         if len(self.feedback_queue) >= self.feedback_threshold:
@@ -331,11 +333,11 @@ class PatchCoreDetector:
         if not all_patches:
             return
         
-        all_patches = np.concatenate(all_patches, axis=0)
+        concatenated_patches = np.concatenate(all_patches, axis=0)
         
-        n_keep = max(1, int(len(all_patches) * self.coreset_ratio))
-        indices = np.random.choice(len(all_patches), n_keep, replace=False)
-        self.memory_bank = all_patches[indices]
+        n_keep = max(1, int(len(concatenated_patches) * self.coreset_ratio))
+        indices = np.random.choice(len(concatenated_patches), n_keep, replace=False)
+        self.memory_bank = concatenated_patches[indices]
         
         if normal_images:
             self.image_size = normal_images[0].shape[:2]
@@ -360,11 +362,11 @@ class PatchCoreDetector:
         
         patches = self._extract_patches(image)
         
-        distances = []
+        distance_list: list[Any] = []
         for p in patches:
             d = np.linalg.norm(self.memory_bank - p, axis=1)
-            distances.append(np.min(d))
-        distances = np.array(distances)
+            distance_list.append(np.min(d))
+        distances = np.array(distance_list)
         
         anomaly_score = np.max(distances)
         
@@ -390,7 +392,7 @@ class PatchCoreDetector:
             np.savez(
                 path,
                 memory_bank=self.memory_bank,
-                image_size=self.image_size,
+                image_size=np.array(self.image_size) if self.image_size else np.array([0, 0]),
             )
     
     def load_weights(self, path: Path) -> None:
@@ -427,7 +429,7 @@ class YOLODefectDetector:
         self.model_path = Path(model_path) if model_path else Path(f"models/yolov8{model_size}.onnx")
         self.model_size = model_size
         self.device = device
-        self._session = None
+        self._session: bool | None = None
     
     def load(self) -> None:
         """Load YOLO model."""

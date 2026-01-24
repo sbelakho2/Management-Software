@@ -198,9 +198,9 @@ def _calc_total(lines: List[Any]) -> Decimal:
 @router.get("/credit-check/{account_id}", response_model=APIResponse[CreditCheckResult])
 async def check_customer_credit(
     account_id: UUID,
+    db: DBSession,
+    current_user: CurrentUser,
     order_amount: Decimal = Query(..., gt=0),
-    db: DBSession = None,
-    current_user: CurrentUser = None,
 ):
     """Check if customer has sufficient credit for an order."""
     # Get account
@@ -637,19 +637,19 @@ async def create_invoice_from_sales_order(
     
     await db.commit()
     
-    result = await db.execute(
+    inv_result = await db.execute(
         select(CustomerInvoice)
         .where(CustomerInvoice.id == invoice.id)
         .options(selectinload(CustomerInvoice.lines), selectinload(CustomerInvoice.account))
     )
-    invoice = result.scalar_one()
+    loaded_invoice = inv_result.scalar_one()
     
-    total = _calc_total(invoice.lines)
+    total = _calc_total(loaded_invoice.lines)
     return build_created_response(InvoiceResponse(
-        id=invoice.id, invoice_number=invoice.invoice_number, status=invoice.status, currency=invoice.currency,
-        account_id=invoice.account_id, account_name=invoice.account.name if invoice.account else None,
-        total_amount=total, line_count=len(invoice.lines), issued_at=invoice.issued_at, due_date=invoice.due_date,
-        is_credit_memo=invoice.is_credit_memo, disputed=invoice.disputed, sales_order_id=invoice.sales_order_id,
+        id=loaded_invoice.id, invoice_number=loaded_invoice.invoice_number, status=loaded_invoice.status, currency=loaded_invoice.currency,
+        account_id=loaded_invoice.account_id, account_name=loaded_invoice.account.name if loaded_invoice.account else None,
+        total_amount=total, line_count=len(loaded_invoice.lines), issued_at=loaded_invoice.issued_at, due_date=loaded_invoice.due_date,
+        is_credit_memo=loaded_invoice.is_credit_memo, disputed=loaded_invoice.disputed, sales_order_id=loaded_invoice.sales_order_id,
     ))
 
 

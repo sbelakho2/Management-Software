@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 class TaskStatus(str, Enum):
     """Task workflow states."""
     
+    OPEN = "open"  # Alias for TODO
     TODO = "todo"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"

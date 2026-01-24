@@ -78,8 +78,10 @@ class Product(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     part_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    sku: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)  # SKU/Stock Keeping Unit
     revision: Mapped[str] = mapped_column(String(20), nullable=False, default="A")
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Product category
 
     # Classification
     product_family: Mapped[Optional[str]] = mapped_column(
@@ -104,6 +106,9 @@ class Product(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     standard_cost: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(12, 4), nullable=True
     )
+    unit_cost: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4), nullable=True
+    )  # Alternative unit cost field
     standard_labor_hours: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(8, 4), nullable=True
     )

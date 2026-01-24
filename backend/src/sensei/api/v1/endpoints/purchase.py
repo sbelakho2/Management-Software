@@ -402,20 +402,20 @@ async def convert_pr_to_po(
     await db.commit()
     
     # Load with lines and supplier
-    result = await db.execute(
+    po_result = await db.execute(
         select(PurchaseOrder)
         .where(PurchaseOrder.id == po.id)
         .options(selectinload(PurchaseOrder.lines), selectinload(PurchaseOrder.supplier))
     )
-    po = result.scalar_one()
+    loaded_po = po_result.scalar_one()
     
-    total = _calc_total(po.lines)
+    total = _calc_total(loaded_po.lines)
     return build_created_response(POResponse(
-        id=po.id, po_number=po.po_number, status=po.status, currency=po.currency,
-        supplier_id=po.supplier_id, supplier_name=po.supplier.name if po.supplier else None,
-        cost_center=po.cost_center, total_amount=total, line_count=len(po.lines),
-        source_pr_id=po.source_pr_id, created_at=po.created_at, approved_at=po.approved_at,
-        sent_at=po.sent_at,
+        id=loaded_po.id, po_number=loaded_po.po_number, status=loaded_po.status, currency=loaded_po.currency,
+        supplier_id=loaded_po.supplier_id, supplier_name=loaded_po.supplier.name if loaded_po.supplier else None,
+        cost_center=loaded_po.cost_center, total_amount=total, line_count=len(loaded_po.lines),
+        source_pr_id=loaded_po.source_pr_id, created_at=loaded_po.created_at, approved_at=loaded_po.approved_at,
+        sent_at=loaded_po.sent_at,
     ))
 
 
@@ -678,16 +678,16 @@ async def create_goods_receipt(
     await db.commit()
     await db.refresh(grn)
     
-    result = await db.execute(
+    grn_result = await db.execute(
         select(GoodsReceipt)
         .where(GoodsReceipt.id == grn.id)
         .options(selectinload(GoodsReceipt.lines), selectinload(GoodsReceipt.po))
     )
-    grn = result.scalar_one()
+    loaded_grn = grn_result.scalar_one()
     
     return build_created_response(GRNResponse(
-        id=grn.id, po_id=grn.po_id, po_number=grn.po.po_number if grn.po else None,
-        received_at=grn.received_at, reference=grn.reference, line_count=len(grn.lines),
+        id=loaded_grn.id, po_id=loaded_grn.po_id, po_number=loaded_grn.po.po_number if loaded_grn.po else None,
+        received_at=loaded_grn.received_at, reference=loaded_grn.reference, line_count=len(loaded_grn.lines),
     ))
 
 

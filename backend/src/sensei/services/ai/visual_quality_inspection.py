@@ -1222,17 +1222,17 @@ class AsyncContinuousLearningManager:
 
 
 class ContinuousLearningManager(AsyncContinuousLearningManager):
-    """In-memory continuous learning manager for sync use cases and tests."""
+    """Database-backed continuous learning manager."""
 
-    def record_feedback(
+    async def record_feedback(
         self,
+        db: AsyncSession,
         feedback: FeedbackRecord,
         image_key: str | None = None,
     ) -> None:
-        self.feedback_queue.append(feedback)
-
-        if len(self.feedback_queue) >= self.feedback_threshold:
-            self._retraining_scheduled = True
+        """Record operator feedback and persist to database."""
+        # Use parent implementation which handles database persistence
+        await super().record_feedback(db, feedback, image_key)
 
     async def get_training_dataset(self, db: AsyncSession) -> TrainingDataset | None:
         return await super().get_training_dataset(db)

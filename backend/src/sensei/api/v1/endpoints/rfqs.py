@@ -593,7 +593,7 @@ async def list_rfqs(
     
     # Get total count
     total_result = await db.execute(count_query)
-    total = total_result.scalar()
+    total = total_result.scalar() or 0
     
     # Apply sorting
     sort_orders = parse_sort_param(sort)
@@ -672,6 +672,8 @@ async def export_rfqs(
         ]
     )
     for r in rfqs:
+        received_date = getattr(r, "received_date", None)
+        due_date = getattr(r, "due_date", None)
         writer.writerow(
             [
                 str(r.id),
@@ -680,8 +682,8 @@ async def export_rfqs(
                 getattr(r, "status", ""),
                 getattr(r, "priority", ""),
                 str(getattr(r, "account_id", "")) if getattr(r, "account_id", None) else "",
-                r.received_date.isoformat() if getattr(r, "received_date", None) else "",
-                r.due_date.isoformat() if getattr(r, "due_date", None) else "",
+                received_date.isoformat() if received_date else "",
+                due_date.isoformat() if due_date else "",
             ]
         )
 

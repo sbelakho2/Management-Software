@@ -70,6 +70,8 @@ class ERPIntegrationService:
         
         # Debit A/R
         ar_acc = await db.scalar(select(GLAccount).where(GLAccount.account_code == ar_account_code))
+        if ar_acc is None:
+            raise ValueError(f"GL Account not found: {ar_account_code}")
         debit_line = JournalLine(
             entry_id=entry.id,
             account_id=ar_acc.id,
@@ -82,6 +84,8 @@ class ERPIntegrationService:
         
         # Credit Revenue
         rev_acc = await db.scalar(select(GLAccount).where(GLAccount.account_code == revenue_account_code))
+        if rev_acc is None:
+            raise ValueError(f"GL Account not found: {revenue_account_code}")
         credit_line = JournalLine(
             entry_id=entry.id,
             account_id=rev_acc.id,

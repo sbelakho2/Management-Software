@@ -15,6 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Callable
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.services.utils.job_idempotency import IdempotencyKey, JobIdempotencyService, JobType
 from sensei.services.ops.muda_contextual_nudging import MudaAwareContextualNudgingService, MudaNudge
@@ -41,13 +44,14 @@ class MudaNudgingJobRunner:
 
     async def run(
         self,
+        db: AsyncSession,
         *,
-        recipient_ids: list[str],
-        dimensions_by_recipient: dict[str, dict[str, str]] | None = None,
+        recipient_ids: list[UUID],
+        dimensions_by_recipient: dict[UUID, dict[str, str]] | None = None,
         overrides: dict[str, Any] | None = None,
         include_knowledge: bool = True,
         deliver: bool = False,
-        on_deliver: Callable[[MudaNudge], None] | None = None,
+        on_deliver: Callable[[MudaNudge], Any] | None = None,
         bucket_date: date | None = None,
     ) -> MudaNudgingRunResult:
         """Generate and optionally deliver nudges.
@@ -55,6 +59,7 @@ class MudaNudgingJobRunner:
         Idempotency is enforced per (recipient_id, trigger, bucket_date).
 
         Args:
+            db: Async database session.
             recipient_ids: Recipients to evaluate.
             dimensions_by_recipient: Optional KPI dimensions per recipient.
             overrides: Optional operational override signals.
@@ -86,7 +91,8 @@ class MudaNudgingJobRunner:
                 )
 
                 async def _job() -> MudaNudge:
-                    return self.nudging_service.generate_nudge_for_trigger(
+                    return await self.nudging_service.generate_nudge_for_trigger(
+                        db=db,
                         trigger=trigger,
                         recipient_id=recipient_id,
                         trigger_context=snapshot,

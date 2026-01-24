@@ -210,7 +210,7 @@ async def _get_next_project_ref(db: DBSession, project_id: UUID, entity_type: st
     if seq is None:
         # Fallback to MAX(ref) + 1 if sequence doesn't exist, then create it
         # This handles existing projects before sequences were added
-        model_map = {
+        model_map: dict[str, type[UserStory] | type[Epic] | type[Issue]] = {
             "user_story": UserStory,
             "epic": Epic,
             "issue": Issue

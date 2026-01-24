@@ -351,7 +351,7 @@ class AutonomousKnowledgeSynthesizer:
             if not correction_counts:
                 continue
             
-            best_correction = max(correction_counts, key=correction_counts.get)
+            best_correction = max(correction_counts, key=lambda c: correction_counts[c])
             frequency = correction_counts[best_correction]
             confidence = frequency / len(corrections)
             
@@ -1243,11 +1243,11 @@ class PrivacyPreservingAggregator:
     Ensures all learned patterns are anonymized before promotion.
     """
     
-    ANONYMIZATION_PATTERNS = [
-        (r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "[PERSON]"),  # Names
-        (r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE]"),  # Phone
-        (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]"),  # Email
-        (r"\$[\d,]+(?:\.\d{2})?", "[AMOUNT]"),  # Dollar amounts
+    ANONYMIZATION_PATTERNS: list[tuple[str, str, int]] = [
+        (r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "[PERSON]", 0),  # Names
+        (r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE]", 0),  # Phone
+        (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", 0),  # Email
+        (r"\$[\d,]+(?:\.\d{2})?", "[AMOUNT]", 0),  # Dollar amounts
         (r"\b(?:customer|client|vendor)\s+\w+\b", "[ENTITY]", re.IGNORECASE),  # Entity names
     ]
     
@@ -1258,10 +1258,7 @@ class PrivacyPreservingAggregator:
         """Anonymize sensitive information in text."""
         result = text
         
-        for pattern_info in self.ANONYMIZATION_PATTERNS:
-            pattern = pattern_info[0]
-            replacement = pattern_info[1]
-            flags = pattern_info[2] if len(pattern_info) > 2 else 0
+        for pattern, replacement, flags in self.ANONYMIZATION_PATTERNS:
             result = re.sub(pattern, replacement, result, flags=flags)
         
         return result
@@ -1295,9 +1292,7 @@ class PrivacyPreservingAggregator:
     
     def verify_anonymization(self, text: str) -> bool:
         """Verify that text contains no PII."""
-        for pattern_info in self.ANONYMIZATION_PATTERNS:
-            pattern = pattern_info[0]
-            flags = pattern_info[2] if len(pattern_info) > 2 else 0
+        for pattern, _, flags in self.ANONYMIZATION_PATTERNS:
             if re.search(pattern, text, flags=flags):
                 return False
         return True

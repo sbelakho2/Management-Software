@@ -612,7 +612,8 @@ class KnowledgePackIngestionService:
             # Calculate content hash
             content_hash = hashlib.sha256(normalized.encode()).hexdigest()
             
-            # Generate attribution
+            # Generate attribution (license_type guaranteed non-None after is_allowed_license check)
+            assert license_type is not None  # Verified by is_allowed_license above
             attribution = self.license_verifier.generate_attribution(
                 title, author, url, license_type
             )

@@ -363,6 +363,8 @@ class DatabaseBackupService:
             
             # Create test database if in test mode
             if test_mode:
+                # test_db_name is guaranteed to be a string when test_mode is True
+                assert test_db_name is not None
                 self._create_test_database(test_db_name)
             
             # Decompress backup if needed
@@ -417,6 +419,8 @@ class DatabaseBackupService:
             
             # Clean up test database if in test mode
             if test_mode:
+                # test_db_name is guaranteed to be a string when test_mode is True
+                assert test_db_name is not None
                 self._drop_test_database(test_db_name)
         
         except Exception as e:
@@ -472,7 +476,7 @@ class DatabaseBackupService:
         """Test restore operation in isolated test database"""
         return self.restore_backup(backup_id, test_mode=True)
     
-    def apply_retention_policy(self, retention_days: int = None):
+    def apply_retention_policy(self, retention_days: int | None = None):
         """Remove backups older than retention period"""
         if retention_days is None:
             retention_days = self.default_retention_days
@@ -551,7 +555,7 @@ class DatabaseBackupService:
         # Get most recent successful restore test
         successful_tests = [
             t for t in self.restore_tests
-            if t.status == RestoreStatus.SUCCESS
+            if t.status == RestoreStatus.SUCCESS and t.rto_seconds is not None
         ]
         
         if not successful_tests:
@@ -566,13 +570,16 @@ class DatabaseBackupService:
         
         last_test = max(successful_tests, key=lambda t: t.start_time)
         target_seconds = self.target_rto_minutes * 60
-        within_target = last_test.rto_seconds <= target_seconds
+        # rto_seconds is guaranteed non-None due to filter above
+        rto = last_test.rto_seconds
+        assert rto is not None
+        within_target = rto <= target_seconds
         
         status = "healthy" if within_target else "warning"
         
         return {
             "status": status,
-            "message": f"Last restore took {last_test.rto_seconds:.1f} seconds",
+            "message": f"Last restore took {rto:.1f} seconds",
             "last_test": last_test.start_time.isoformat(),
             "rto_seconds": last_test.rto_seconds,
             "target_rto_seconds": target_seconds,

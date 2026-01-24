@@ -34,7 +34,7 @@ class PersistentMRPService:
         result = await self.db.execute(select(MRPSuggestion).options(selectinload(MRPSuggestion.product)))
         return list(result.scalars().all())
 
-    async def run_mrp(self, planning_horizon_days: int = 30, user_id: UUID = None) -> MRPRun:
+    async def run_mrp(self, planning_horizon_days: int = 30, user_id: UUID | None = None) -> MRPRun:
         """
         Execute MRP calculation.
         This is a placeholder for the actual logic that calculates net requirements.

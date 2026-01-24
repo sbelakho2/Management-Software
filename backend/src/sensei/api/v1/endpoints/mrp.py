@@ -203,9 +203,9 @@ async def _generate_pr_number(db: AsyncSession) -> str:
 
 @router.get("/suggestions/pending", response_model=APIResponse[List[dict]])
 async def list_pending_suggestions(
+    db: DBSession,
+    current_user: CurrentUser,
     requirement_type: Optional[str] = Query(None, enum=["buy", "build"]),
-    db: DBSession = None,
-    current_user: CurrentUser = None,
 ):
     """List pending MRP suggestions that need action."""
     stmt = select(MRPSuggestion).options(
@@ -222,7 +222,7 @@ async def list_pending_suggestions(
     return build_response([{
         **s.to_dict(),
         "product_name": s.product.name if s.product else None,
-        "product_sku": s.product.sku if s.product else None,
+        "product_sku": s.product.part_number if s.product else None,
     } for s in suggestions])
 
 

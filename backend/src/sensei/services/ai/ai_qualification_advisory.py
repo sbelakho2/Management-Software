@@ -756,8 +756,8 @@ class AIQualificationAdvisoryService:
             return RiskSeverity.CRITICAL, Decimal("95")
         
         # Calculate weighted average
-        total_score = sum(r.risk_score for r in risks)
-        avg_score = total_score / len(risks) if risks else Decimal("0")
+        total_score = sum((r.risk_score for r in risks), Decimal("0"))
+        avg_score: Decimal = total_score / len(risks) if risks else Decimal("0")
         
         # Determine severity
         if avg_score >= Decimal("70"):

@@ -435,7 +435,8 @@ class MonteCarloSimulator:
         correlation: float,
     ) -> None:
         """Set correlation between two disruptions."""
-        key = tuple(sorted([scenario1_id, scenario2_id]))
+        sorted_ids = sorted([scenario1_id, scenario2_id])
+        key: tuple[str, str] = (sorted_ids[0], sorted_ids[1])
         self._disruption_correlations[key] = max(-1.0, min(1.0, correlation))
     
     def simulate_run(
@@ -509,7 +510,8 @@ class MonteCarloSimulator:
                 # Check correlations with already active disruptions
                 correlation_boost = 0.0
                 for active_scenario in active:
-                    key = tuple(sorted([scenario.scenario_id, active_scenario.scenario_id]))
+                    sorted_ids = sorted([scenario.scenario_id, active_scenario.scenario_id])
+                    key: tuple[str, str] = (sorted_ids[0], sorted_ids[1])
                     correlation = self._disruption_correlations.get(key, 0.0)
                     correlation_boost += correlation * 0.1
                 

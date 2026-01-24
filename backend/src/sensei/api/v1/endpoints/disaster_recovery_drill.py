@@ -456,7 +456,7 @@ async def create_rpo_target(request: RPOTargetCreate) -> RPOTargetResponse:
             target_name=request.target_name,
             recovery_target=_parse_recovery_target(request.recovery_target),
             max_data_loss_minutes=request.max_data_loss_minutes,
-            description=request.description,
+            description=request.description or "",
         )
         return RPOTargetResponse(**_serialize_rpo_target(target))
     except ValueError as e:
@@ -480,7 +480,7 @@ async def create_rto_target(request: RTOTargetCreate) -> RTOTargetResponse:
             target_name=request.target_name,
             recovery_target=_parse_recovery_target(request.recovery_target),
             max_recovery_minutes=request.max_recovery_minutes,
-            description=request.description,
+            description=request.description or "",
         )
         return RTOTargetResponse(**_serialize_rto_target(target))
     except ValueError as e:
@@ -620,14 +620,14 @@ async def start_drill(request: DrillStart) -> ExecutionResponse:
             created_at=request.backup_info.created_at,
             size_bytes=request.backup_info.size_bytes,
             backup_type=request.backup_info.backup_type,
-            tables_included=request.backup_info.tables_included,
+            tables_included=request.backup_info.tables_included or [],
         )
     
     try:
         execution = service.start_drill(
             configuration_id=request.configuration_id,
-            executed_by=request.executed_by,
-            notes=request.notes,
+            executed_by=request.executed_by or "",
+            notes=request.notes or "",
             backup_info=backup_info,
         )
         return ExecutionResponse(**_serialize_execution(execution))
@@ -690,7 +690,7 @@ async def execute_step(
             step_id=step_id,
             success=request.success,
             output=request.output,
-            error_message=request.error_message,
+            error_message=request.error_message or "",
         )
         return StepResponse(**_serialize_step(step))
     except ValueError as e:

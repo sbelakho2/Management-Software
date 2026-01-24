@@ -363,8 +363,8 @@ class CriticalPathCalculator:
             deps = self._dependency_graph[current]
             if deps:
                 # Find dependency with latest finish (on critical path)
-                max_finish = -1
-                next_item = None
+                max_finish: float = -1.0
+                next_item: str | None = None
                 for dep in deps:
                     if earliest_finish.get(dep, 0) > max_finish:
                         max_finish = earliest_finish[dep]

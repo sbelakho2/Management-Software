@@ -375,7 +375,7 @@ class SHAPExplainer:
                 category=category,
                 contribution=shap_value,
                 direction=direction,
-                baseline_value=self._baseline.get(feature_name, 0.0),
+                baseline_value=(self._baseline or {}).get(feature_name, 0.0),
                 actual_value=features[feature_name],
                 explanation=self._generate_explanation(
                     feature_name, features[feature_name], shap_value
@@ -419,14 +419,15 @@ class SHAPExplainer:
             subset = self._rng.sample(other_features, k) if k > 0 else []
             
             # Compute marginal contribution
+            baseline = self._baseline or {}
             with_feature_dict = {
                 f: features[f] if f in subset or f == feature_name
-                else self._baseline.get(f, 0.0)
+                else baseline.get(f, 0.0)
                 for f in all_features
             }
             without_feature_dict = {
                 f: features[f] if f in subset
-                else self._baseline.get(f, 0.0)
+                else baseline.get(f, 0.0)
                 for f in all_features
             }
             
@@ -699,7 +700,7 @@ class CounterfactualAnalyzer:
     "What if we lowered the price by 5%?"
     """
     
-    COMMON_SCENARIOS = [
+    COMMON_SCENARIOS: list[tuple[str, dict[str, float], str]] = [
         ("price_reduction_5", {"price_competitiveness": 0.05}, "Lower price by 5%"),
         ("price_reduction_10", {"price_competitiveness": 0.10}, "Lower price by 10%"),
         ("faster_delivery", {"days_to_deadline": -5}, "Reduce delivery time by 5 days"),

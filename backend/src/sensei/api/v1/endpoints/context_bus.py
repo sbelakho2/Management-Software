@@ -47,11 +47,11 @@ class ContextPackResponse(BaseModel):
 
 @router.get("/pack", response_model=APIResponse[ContextPackResponse])
 async def get_context_pack(
+    db: DBSession,
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    db: DBSession = None,  # type: ignore[assignment]
-    current_user: CurrentUser = None,  # noqa: ARG001
+    current_user: CurrentUser | None = None,  # noqa: ARG001
 ) -> APIResponse[ContextPackResponse]:
     pack = await get_context_service().get_context_pack(
         db,

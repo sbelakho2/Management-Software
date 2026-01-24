@@ -41,7 +41,7 @@ async def get_asset(
 ):
     """Get a specific asset."""
     svc = PersistentMaintenanceService(db)
-    asset = await svc.get_asset(asset_id)
+    asset = await svc.get_asset(UUID(asset_id))
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset.to_dict()

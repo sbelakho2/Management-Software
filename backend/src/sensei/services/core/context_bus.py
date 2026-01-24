@@ -197,7 +197,7 @@ class ContextService:
                 "labor_standard_seconds": standard_seconds,
                 "labor_actual_seconds": actual_seconds,
                 "labor_variance_seconds": variance_seconds,
-                "labor_efficiency_pct": efficiency_pct,
+                "labor_efficiency_pct": str(efficiency_pct) if efficiency_pct is not None else None,
                 "non_conformance_count": nc_count,
             }
             return ContextEntitySnapshot(entity_type="work_order", entity_id=str(wo.id), data=data)

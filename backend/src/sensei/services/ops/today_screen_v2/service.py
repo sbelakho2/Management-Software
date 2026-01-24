@@ -28,6 +28,7 @@ from sensei.services.ops.today_screen_v2.risks import RiskManager
 from sensei.services.ops.today_screen_v2.commitments import CommitmentManager
 from sensei.services.ops.today_screen_v2.abnormalities import AbnormalityManager
 from sensei.services.ops.today_screen_v2.drills import MicroDrillManager
+from sensei.services.ops.today_screen_models import RiskCategory, Commitment
 from sensei.services.ops.today_screen_v2.shop_floor import ShopFloorManager
 from sensei.services.ops.today_screen_models import (
     AbnormalityType,
@@ -81,8 +82,8 @@ class AsyncTodayScreenService:
     async def add_risk(self, user_id: UUID, **kwargs):
         return await self._risk_manager.add_risk(user_id, **kwargs)
     
-    async def get_risks_by_category(self, user_id: UUID, top_n: int = 3):
-        return await self._risk_manager.get_risks_by_category(user_id, top_n)
+    async def get_risks_by_category(self, user_id: UUID, category: RiskCategory | None = None, top_n: int | None = None):
+        return await self._risk_manager.get_risks_by_category(user_id, category, top_n)
     
     async def get_top_risks(self, user_id: UUID, n: int = 3):
         return await self._risk_manager.get_top_risks(user_id, n)
@@ -98,7 +99,7 @@ class AsyncTodayScreenService:
     async def add_commitment(self, user_id: UUID, **kwargs):
         return await self._commitment_manager.add_commitment(user_id, **kwargs)
     
-    async def complete_commitment(self, user_id: UUID, commitment_id: UUID) -> bool:
+    async def complete_commitment(self, user_id: UUID, commitment_id: UUID) -> Commitment | None:
         return await self._commitment_manager.complete_commitment(user_id, commitment_id)
     
     async def get_commitments(self, user_id: UUID, **kwargs):
@@ -276,7 +277,7 @@ class AsyncTodayScreenService:
 
     # ========== Internal Store Access (for compatibility) ==========
     
-    async def _get_store(self, user_id: UUID, store_name: str = None) -> Dict[str, Any]:
+    async def _get_store(self, user_id: UUID, store_name: str | None = None) -> Dict[str, Any]:
         """Get user-specific store data. For backward compatibility."""
         if store_name == "risks":
             return await self._risk_manager._get_store(user_id)

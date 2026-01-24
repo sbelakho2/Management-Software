@@ -293,12 +293,17 @@ def generate_matrix(
     """
     service = get_service()
     
+    # Convert str keys to UUID keys for user_stations
+    user_stations_uuid: dict[UUID, list[dict[str, Any]]] | None = None
+    if request.user_stations:
+        user_stations_uuid = {UUID(k): v for k, v in request.user_stations.items()}
+    
     result = service.generate_matrix(
         users=request.users,
         skills=request.skills,
         user_skills=request.user_skills,
         skill_requirements=request.skill_requirements,
-        user_stations=request.user_stations,
+        user_stations=user_stations_uuid,
         reference_date=request.reference_date or date.today(),
     )
     
@@ -384,7 +389,7 @@ def generate_mock_matrix(
 
 @router.post("/gaps/analyze", response_model=GapAnalysisResponse)
 def analyze_gaps(
-    request: GapAnalysisRequest = None,
+    request: GapAnalysisRequest | None = None,
 ) -> GapAnalysisResponse:
     """
     Analyze skill gaps for users based on station requirements.
@@ -399,12 +404,17 @@ def analyze_gaps(
     
     service = get_service()
     
+    # Convert str keys to UUID keys for user_stations
+    user_stations_uuid: dict[UUID, list[dict[str, Any]]] | None = None
+    if request.user_stations:
+        user_stations_uuid = {UUID(k): v for k, v in request.user_stations.items()}
+    
     result = service.analyze_gaps(
         users=request.users,
         skills=request.skills,
         user_skills=request.user_skills,
         skill_requirements=request.skill_requirements,
-        user_stations=request.user_stations,
+        user_stations=user_stations_uuid,
     )
     
     return _convert_gap_result(result, request.station_id, request.severity)
@@ -433,7 +443,7 @@ def get_gap_summary() -> dict[str, Any]:
 
 @router.post("/expirations/check", response_model=ExpirationAlertResponse)
 def check_expirations(
-    request: ExpirationCheckRequest = None,
+    request: ExpirationCheckRequest | None = None,
 ) -> ExpirationAlertResponse:
     """
     Check for expiring certifications.
@@ -504,7 +514,7 @@ def update_expiration_threshold(
 @router.post("/users/{user_id}/summary", response_model=UserSkillSummaryResponse)
 def get_user_skill_summary(
     user_id: UUID,
-    request: UserSkillSummaryRequest = None,
+    request: UserSkillSummaryRequest | None = None,
 ) -> UserSkillSummaryResponse:
     """
     Get a skill summary for a specific user.
@@ -533,7 +543,7 @@ def get_user_skill_summary(
 @router.post("/stations/{station_id}/readiness", response_model=StationReadinessResponse)
 def get_station_readiness(
     station_id: int,
-    request: StationReadinessRequest = None,
+    request: StationReadinessRequest | None = None,
 ) -> StationReadinessResponse:
     """
     Get readiness report for a station.

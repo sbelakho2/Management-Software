@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import random
 import uuid
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 
 from sensei.services.ai.visual_quality_v2.enums import DefectCategory, DefectSeverity
 from sensei.services.ai.visual_quality_v2.models import BoundingBox, DetectedDefect
+
+# Type alias for OpenCV color
+ColorType = Union[int, tuple[int, ...]]
 
 
 class SyntheticDefectGenerator:
@@ -59,8 +62,10 @@ class SyntheticDefectGenerator:
                     end_y = max(0, min(h - 1, end_y))
                     
                     color_delta = random.randint(-50, -20)
+                    color: ColorType
                     if len(img.shape) == 3:
-                        color = tuple(max(0, c + color_delta) for c in img[y, x])
+                        pixel = img[y, x]
+                        color = tuple(int(max(0, int(c) + color_delta)) for c in pixel)
                     else:
                         color = max(0, int(img[y, x]) + color_delta)
                     
@@ -69,36 +74,40 @@ class SyntheticDefectGenerator:
                 elif defect_type == DefectCategory.MATERIAL:
                     # Porosity/crack simulation
                     color_delta = random.randint(-70, -30)
+                    color_mat: ColorType
                     if len(img.shape) == 3:
-                        color = tuple(max(0, c + color_delta) for c in img[y, x])
+                        pixel_mat = img[y, x]
+                        color_mat = tuple(int(max(0, int(c) + color_delta)) for c in pixel_mat)
                     else:
-                        color = max(0, int(img[y, x]) + color_delta)
+                        color_mat = max(0, int(img[y, x]) + color_delta)
                     
-                    cv2.circle(img, (x, y), size // 2, color, -1)
+                    cv2.circle(img, (x, y), size // 2, color_mat, -1)
                     
                 elif defect_type == DefectCategory.CONTAMINATION:
                     # Foreign particle simulation
-                    color = (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
+                    color_cont: ColorType = (random.randint(50, 100), random.randint(50, 100), random.randint(50, 100))
                     if len(img.shape) == 2:
-                        color = random.randint(50, 100)
+                        color_cont = random.randint(50, 100)
                     
                     pts = np.array([
                         [x, y],
                         [x + size, y + size // 3],
                         [x + size // 2, y + size],
                     ], np.int32)
-                    cv2.fillPoly(img, [pts], color)
+                    cv2.fillPoly(img, [pts], color_cont)
                     
                 else:
                     # Generic defect - dark spot
                     color_delta = random.randint(-60, -20)
+                    color_gen: ColorType
                     if len(img.shape) == 3:
-                        color = tuple(max(0, c + color_delta) for c in img[y, x])
+                        pixel_gen = img[y, x]
+                        color_gen = tuple(int(max(0, int(c) + color_delta)) for c in pixel_gen)
                     else:
-                        color = max(0, int(img[y, x]) + color_delta)
+                        color_gen = max(0, int(img[y, x]) + color_delta)
                     
                     cv2.ellipse(img, (x, y), (size // 2, size // 3), 
-                               random.randint(0, 180), 0, 360, color, -1)
+                               random.randint(0, 180), 0, 360, color_gen, -1)
             
             # Create defect record
             defects.append(DetectedDefect(
@@ -192,3 +201,33 @@ class VisionEnrichmentSuite:
             parts.append(f"Location: ({defect.bbox.x}, {defect.bbox.y})")
         
         return ". ".join(parts) + "."
+
+    def enrich_inspection(
+        self,
+        result: Any,
+        standard_work_context: dict[str, Any] | None = None,
+    ) -> Any:
+        """Enrich inspection result with standard work context.
+        
+        Args:
+            result: The inspection result to enrich.
+            standard_work_context: Optional context from standard work documentation.
+        
+        Returns:
+            The enriched inspection result.
+        """
+        if not self.enabled:
+            return result
+        
+        result.metadata["enriched"] = True
+        result.metadata["enrichment_version"] = "1.0"
+        
+        if standard_work_context:
+            result.metadata["standard_work_context"] = standard_work_context
+        
+        if hasattr(result, "defects"):
+            for defect in result.defects:
+                if not defect.explanation:
+                    defect.explanation = self._generate_explanation(defect)
+        
+        return result

@@ -3,6 +3,7 @@ Service for ingesting data from starzERP (MySQL) into Sensei OS (PostgreSQL).
 """
 
 import logging
+from decimal import Decimal
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,12 +202,12 @@ class StarzErpIngestionService:
             
             if sensei_p:
                 sensei_p.name = sa.description or sa.code_reference
-                sensei_p.standard_cost = sa.prix
+                sensei_p.standard_cost = Decimal(str(sa.prix))
             else:
                 sensei_p = Product(
                     name=sa.description or sa.code_reference,
                     part_number=sa.code_reference,
-                    standard_cost=sa.prix,
+                    standard_cost=Decimal(str(sa.prix)),
                     unit_of_measure=UnitOfMeasure.PIECE, # Default
                     status=ProductStatus.ACTIVE
                 )
@@ -283,13 +284,13 @@ class StarzErpIngestionService:
                     if sensei_il:
                         sensei_il.product_id = sensei_p.id
                         sensei_il.location_id = sensei_location_id
-                        sensei_il.quantity_on_hand = sl.quantity
+                        sensei_il.quantity_on_hand = Decimal(str(sl.quantity))
                     else:
                         sensei_il = InventoryLevel(
                             product_id=sensei_p.id,
                             location_id=sensei_location_id,
                             lpn_id=sensei_lp.id,
-                            quantity_on_hand=sl.quantity
+                            quantity_on_hand=Decimal(str(sl.quantity))
                         )
                         sensei_db.add(sensei_il)
 

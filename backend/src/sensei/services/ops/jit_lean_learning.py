@@ -576,65 +576,76 @@ class AsyncMicroLessonEngine:
 
 
 class MicroLessonEngine(AsyncMicroLessonEngine):
-    """In-memory micro-lesson engine for sync use cases and tests."""
+    """Database-backed micro-lesson engine."""
 
     def __init__(self):
         super().__init__()
-        self.deliveries: dict[str, LessonDelivery] = {}
 
-    def get_lesson_for_trigger(
+    async def get_lesson_for_trigger(
         self,
+        db: AsyncSession,
         trigger: TriggerType,
-        recipient_id: str,
+        recipient_id: UUID,
         context: dict[str, Any] | None = None,
-    ) -> LessonDelivery | None:
+    ) -> LessonDeliveryRecord | None:
+        """Get a lesson for a trigger and deliver it via database."""
         lesson_id = self.get_lesson_id_for_trigger(trigger)
         if not lesson_id:
             return None
 
-        delivery = LessonDelivery(
-            delivery_id=str(uuid.uuid4()),
+        return await self.deliver_lesson(
+            db=db,
             lesson_id=lesson_id,
-            trigger_type=trigger,
-            trigger_context=context or {},
             recipient_id=recipient_id,
-            delivered_at=datetime.now(timezone.utc),
-            status=LessonStatus.DELIVERED,
+            trigger_type=trigger,
+            context=context,
         )
-        self.deliveries[delivery.delivery_id] = delivery
-        return delivery
 
-    def mark_viewed(self, delivery_id: str) -> bool:
-        delivery = self.deliveries.get(delivery_id)
+    async def mark_viewed(self, db: AsyncSession, delivery_id: UUID) -> bool:
+        """Mark a lesson delivery as viewed in the database."""
+        result = await db.execute(
+            select(LessonDeliveryRecord).where(LessonDeliveryRecord.id == delivery_id)
+        )
+        delivery = result.scalar_one_or_none()
         if not delivery:
             return False
-        delivery.status = LessonStatus.VIEWED
-        delivery.viewed_at = datetime.now(timezone.utc)
+        delivery.status = "viewed"
+        await db.commit()
         return True
 
-    def mark_completed(
+    async def mark_completed(
         self,
-        delivery_id: str,
+        db: AsyncSession,
+        delivery_id: UUID,
         rating: int | None = None,
         comment: str = "",
     ) -> bool:
-        delivery = self.deliveries.get(delivery_id)
+        """Mark a lesson delivery as completed with optional feedback in the database."""
+        result = await db.execute(
+            select(LessonDeliveryRecord).where(LessonDeliveryRecord.id == delivery_id)
+        )
+        delivery = result.scalar_one_or_none()
         if not delivery:
             return False
-        delivery.status = LessonStatus.COMPLETED
-        delivery.completed_at = datetime.now(timezone.utc)
-        if delivery.viewed_at is None:
-            delivery.viewed_at = datetime.now(timezone.utc)
+        delivery.status = "completed"
         if rating is not None:
-            delivery.feedback_rating = min(5, max(1, rating))
+            delivery.feedback_score = min(5, max(1, rating))
+        # Store comment in trigger_context if needed
         if comment:
-            delivery.feedback_comment = comment
+            ctx = delivery.trigger_context or {}
+            ctx["feedback_comment"] = comment
+            delivery.trigger_context = ctx
+        await db.commit()
         return True
 
-    def get_delivery_stats(self, recipient_id: str | None = None) -> dict[str, Any]:
-        deliveries = list(self.deliveries.values())
+    async def get_delivery_stats(self, db: AsyncSession, recipient_id: UUID | None = None) -> dict[str, Any]:
+        """Get lesson delivery statistics from the database."""
+        stmt = select(LessonDeliveryRecord)
         if recipient_id:
-            deliveries = [d for d in deliveries if d.recipient_id == recipient_id]
+            stmt = stmt.where(LessonDeliveryRecord.recipient_id == recipient_id)
+        
+        result = await db.execute(stmt)
+        deliveries = list(result.scalars().all())
 
         total = len(deliveries)
         if total == 0:
@@ -647,9 +658,9 @@ class MicroLessonEngine(AsyncMicroLessonEngine):
                 "average_rating": 0,
             }
 
-        viewed = len([d for d in deliveries if d.status in [LessonStatus.VIEWED, LessonStatus.COMPLETED]])
-        completed = len([d for d in deliveries if d.status == LessonStatus.COMPLETED])
-        ratings = [d.feedback_rating for d in deliveries if d.feedback_rating]
+        viewed = len([d for d in deliveries if d.status in ["viewed", "completed"]])
+        completed = len([d for d in deliveries if d.status == "completed"])
+        ratings = [d.feedback_score for d in deliveries if d.feedback_score]
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
 
         return {
@@ -1072,13 +1083,13 @@ class AsyncStandardWorkEvolutionEngine:
 
 
 class StandardWorkEvolutionEngine(AsyncStandardWorkEvolutionEngine):
-    """In-memory Standard Work Evolution Engine for sync use cases and tests."""
+    """Database-backed Standard Work Evolution Engine."""
 
     def __init__(self):
         super().__init__()
-        self.drafts: dict[str, StandardWorkDraft] = {}
 
     def register_standard(self, standard: StandardWork) -> str:
+        """Register a standard work document in memory cache."""
         self.standards[standard.standard_id] = standard
         return standard.standard_id
 
@@ -1093,6 +1104,7 @@ class StandardWorkEvolutionEngine(AsyncStandardWorkEvolutionEngine):
         safety_notes: list[str] | None = None,
         quality_checks: list[str] | None = None,
     ) -> StandardWork:
+        """Create a standard work document in memory."""
         standard_id = str(uuid.uuid4())
         standard = StandardWork(
             standard_id=standard_id,
@@ -1113,76 +1125,64 @@ class StandardWorkEvolutionEngine(AsyncStandardWorkEvolutionEngine):
         self.standards[standard_id] = standard
         return standard
 
-    def draft_update_from_a3(
+    async def draft_update_from_a3(
         self,
+        db: AsyncSession,
         a3_id: str,
         countermeasure: str,
         target_standard_id: str | None = None,
         process_name: str = "",
         work_center_id: str = "",
-    ) -> StandardWorkDraft:
+    ) -> StandardWorkEvolutionRecord:
+        """Create a draft standard work update from A3 countermeasure and persist to database."""
         proposed_changes = self._parse_countermeasure(countermeasure)
 
+        # Try to find target standard if not provided
         if not target_standard_id and work_center_id:
             for std in self.standards.values():
                 if std.work_center_id == work_center_id:
                     target_standard_id = std.standard_id
                     break
 
-        draft = StandardWorkDraft(
-            draft_id=str(uuid.uuid4()),
-            source_a3_id=a3_id,
-            source_countermeasure=countermeasure,
-            target_standard_id=target_standard_id,
-            proposed_changes=proposed_changes,
-            rationale=f"A3 {a3_id} countermeasure: {countermeasure}",
-            created_at=datetime.now(),
+        record = StandardWorkEvolutionRecord(
+            original_standard_id=target_standard_id or "unknown",
+            suggested_changes=proposed_changes,
+            reasoning=f"A3 {a3_id} countermeasure: {countermeasure}",
             status="pending",
         )
-        self.drafts[draft.draft_id] = draft
-        return draft
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        return record
 
-    def approve_draft(self, draft_id: str, reviewer: str) -> bool:
-        draft = self.drafts.get(draft_id)
-        if not draft:
+    async def approve_draft(
+        self,
+        db: AsyncSession,
+        draft_id: UUID,
+        reviewer: str,
+    ) -> bool:
+        """Approve a standard work draft and apply changes."""
+        result = await db.execute(
+            select(StandardWorkEvolutionRecord).where(StandardWorkEvolutionRecord.id == draft_id)
+        )
+        record = result.scalar_one_or_none()
+        if not record:
             return False
 
-        draft.status = "approved"
-        draft.reviewed_by = reviewer
-        draft.approved_at = datetime.now()
-
-        if draft.target_standard_id and draft.target_standard_id in self.standards:
-            self._apply_draft_to_standard(draft)
+        record.status = "approved"
+        
+        # Apply changes to in-memory standard (if exists)
+        if record.original_standard_id in self.standards:
+            self._apply_record_to_standard(record)
+            
+        await db.commit()
         return True
 
-    def _apply_draft_to_standard(self, draft: StandardWorkDraft) -> None:
-        standard = self.standards.get(draft.target_standard_id or "")
-        if not standard:
-            return
-
-        changes = draft.proposed_changes
-
-        if changes.get("new_steps"):
-            for step in changes["new_steps"]:
-                standard.steps.append({"step": len(standard.steps) + 1, "action": step})
-
-        if changes.get("new_key_points"):
-            standard.key_points.extend(changes["new_key_points"])
-
-        if changes.get("new_quality_checks"):
-            standard.quality_checks.extend(changes["new_quality_checks"])
-
-        try:
-            major, minor = standard.version.split(".")
-            standard.version = f"{major}.{int(minor) + 1}"
-        except (ValueError, AttributeError):
-            standard.version = "1.1"
-
-        standard.updated_at = datetime.now()
-        standard.source_a3_id = draft.source_a3_id
-
-    def get_pending_drafts(self) -> list[StandardWorkDraft]:
-        return [d for d in self.drafts.values() if d.status == "pending"]
+    async def get_pending_drafts(self, db: AsyncSession) -> list[StandardWorkEvolutionRecord]:
+        """Get pending standard work drafts from database."""
+        stmt = select(StandardWorkEvolutionRecord).where(StandardWorkEvolutionRecord.status == "pending")
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
 
 # =============================================================================
@@ -1404,7 +1404,7 @@ class AsyncJITLeanLearning:
 
 
 class JITLeanLearning:
-    """Sync JIT Lean Learning orchestrator for in-memory workflows."""
+    """Database-backed JIT Lean Learning orchestrator."""
 
     def __init__(
         self,
@@ -1416,10 +1416,11 @@ class JITLeanLearning:
         self.knowledge_engine = knowledge_engine or KnowledgeRetrievalEngine()
         self.evolution_engine = evolution_engine or StandardWorkEvolutionEngine()
 
-    def process_operational_data(
+    async def process_operational_data(
         self,
+        db: AsyncSession,
         data: dict[str, Any],
-        operator_id: str,
+        operator_id: UUID,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "trigger_detected": None,
@@ -1429,11 +1430,11 @@ class JITLeanLearning:
         trigger = self.lesson_engine.detect_trigger(data)
         if trigger:
             result["trigger_detected"] = trigger.value
-            delivery = self.lesson_engine.get_lesson_for_trigger(trigger, operator_id, data)
+            delivery = await self.lesson_engine.get_lesson_for_trigger(db, trigger, operator_id, data)
             if delivery:
                 lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id)
                 result["lesson_delivered"] = {
-                    "delivery_id": delivery.delivery_id,
+                    "delivery_id": str(delivery.id),
                     "lesson_id": delivery.lesson_id,
                     "title": lesson.title if lesson else "",
                     "summary": lesson.summary if lesson else "",
@@ -1508,14 +1509,16 @@ class JITLeanLearning:
             "recommended_documents": recommended_docs,
         }
 
-    def close_a3_with_standard_update(
+    async def close_a3_with_standard_update(
         self,
+        db: AsyncSession,
         a3_id: str,
         countermeasure: str,
         work_center_id: str = "",
         process_name: str = "",
     ) -> dict[str, Any]:
-        draft = self.evolution_engine.draft_update_from_a3(
+        draft = await self.evolution_engine.draft_update_from_a3(
+            db=db,
             a3_id=a3_id,
             countermeasure=countermeasure,
             work_center_id=work_center_id,
@@ -1524,9 +1527,9 @@ class JITLeanLearning:
 
         return {
             "a3_id": a3_id,
-            "draft_id": draft.draft_id,
-            "target_standard": draft.target_standard_id,
-            "proposed_changes": draft.proposed_changes,
+            "draft_id": str(draft.id),
+            "target_standard": draft.original_standard_id,
+            "proposed_changes": draft.suggested_changes,
             "status": draft.status,
         }
 
@@ -1556,9 +1559,9 @@ class JITLeanLearning:
             ],
         }
 
-    def get_learning_dashboard(self, operator_id: str | None = None) -> dict[str, Any]:
-        lesson_stats = self.lesson_engine.get_delivery_stats(operator_id)
-        pending_drafts = self.evolution_engine.get_pending_drafts()
+    async def get_learning_dashboard(self, db: AsyncSession, operator_id: UUID | None = None) -> dict[str, Any]:
+        lesson_stats = await self.lesson_engine.get_delivery_stats(db, operator_id)
+        pending_drafts = await self.evolution_engine.get_pending_drafts(db)
 
         return {
             "lessons": lesson_stats,

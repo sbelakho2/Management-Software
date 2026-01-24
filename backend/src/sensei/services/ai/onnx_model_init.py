@@ -207,7 +207,7 @@ class ONNXModelValidator:
                 if isinstance(dim, str) or dim is None or dim < 0:
                     shape[i] = 1 if i == 0 else 64  # batch=1, others=64
             
-            dtype = np.float32
+            dtype: Any = np.float32
             if inp.type == "tensor(int64)":
                 dtype = np.int64
             elif inp.type == "tensor(int32)":
@@ -434,7 +434,7 @@ async def initialize_models() -> ModelRegistryStatus:
     try:
         from sensei.services.ai.onnx_text_embeddings import get_onnx_embedder
         embedder = get_onnx_embedder()
-        logger.debug(f"Embeddings ready: {embedder.is_loaded()}")
+        logger.debug(f"Embeddings ready: {embedder.is_ready()}")
     except Exception as e:
         logger.warning(f"Could not initialize embeddings: {e}")
     

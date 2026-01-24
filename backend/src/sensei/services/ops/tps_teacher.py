@@ -489,7 +489,7 @@ class AsyncImprovementKataAssistant:
     }
     
     def __init__(self):
-        pass
+        self.sessions: dict[str, KataSession] = {}  # In-memory cache for compatibility
     
     async def start_session(
         self,
@@ -914,7 +914,7 @@ class AsyncJidokaMentor:
     Implements the autonomation principle.
     """
     
-    ANDON_ESCALATION_RULES = {
+    ANDON_ESCALATION_RULES: dict[AndonStatus, dict[str, Any]] = {
         AndonStatus.GREEN: {"action": JidokaAction.CONTINUE, "timeout_sec": None},
         AndonStatus.YELLOW: {"action": JidokaAction.ALERT, "timeout_sec": 300},
         AndonStatus.RED: {"action": JidokaAction.STOP, "timeout_sec": 0},
@@ -922,7 +922,17 @@ class AsyncJidokaMentor:
     }
     
     def __init__(self):
-        pass
+        self.andon_events: dict[str, AndonEvent] = {}  # In-memory cache for compatibility
+    
+    def _assess_quality_impact(self, status: AndonStatus) -> str:
+        """Assess quality impact based on Andon status."""
+        impact_map = {
+            AndonStatus.GREEN: "No impact",
+            AndonStatus.YELLOW: "Minor impact - monitoring required",
+            AndonStatus.RED: "Critical impact - immediate action required",
+            AndonStatus.BLUE: "Process assistance needed",
+        }
+        return impact_map.get(status, "Unknown impact")
     
     async def trigger_andon(
         self,
@@ -959,7 +969,7 @@ class AsyncJidokaMentor:
         event: TPSAndonEventRecord,
     ) -> JidokaResponse:
         """Generate automatic Jidoka response."""
-        rule = self.ANDON_ESCALATION_RULES.get(AndonStatus(event.status), {})
+        rule: dict[str, Any] = self.ANDON_ESCALATION_RULES.get(AndonStatus(event.status), {})
         action = rule.get("action", JidokaAction.ALERT)
         
         record = JidokaResponseRecord(
@@ -1057,6 +1067,7 @@ class AsyncJidokaMentor:
             response_times = [
                 (e.responded_at - e.detected_at).total_seconds()
                 for e in responded
+                if e.responded_at is not None  # type guard for mypy
             ]
             avg_response_time = sum(response_times) / len(response_times)
         
@@ -1064,6 +1075,7 @@ class AsyncJidokaMentor:
             resolution_times = [
                 (e.resolved_at - e.detected_at).total_seconds()
                 for e in resolved
+                if e.resolved_at is not None  # type guard for mypy
             ]
             avg_resolution_time = sum(resolution_times) / len(resolution_times)
         
@@ -1082,7 +1094,7 @@ class AsyncJidokaMentor:
     
     def get_quality_loop_summary(self) -> dict[str, Any]:
         """Get quality loop summary for continuous improvement."""
-        resolved = [e for e in self.andon_events if e.resolved_at]
+        resolved = [e for e in self.andon_events.values() if e.resolved_at]
         
         root_causes: dict[str, int] = {}
         countermeasures: dict[str, int] = {}
@@ -1109,11 +1121,12 @@ class MultiModalPDCACoach:
     
     def __init__(self):
         # Local import to avoid circular dependency
+        self.vlm: Any = None  # Will be VisionLLMEnricher if available
         try:
             from sensei.services.ai.world_class_document_ai import VisionLLMEnricher
             self.vlm = VisionLLMEnricher()
         except ImportError:
-            self.vlm = None
+            pass
         
     async def analyze_pdca_evidence(self, image: np.ndarray, phase: PDCAPhase) -> dict[str, Any]:
         """Analyze an image as evidence for a PDCA phase."""
@@ -1161,9 +1174,9 @@ class KataGamificationService:
             "next_belt_xp": 200 if xp < 200 else (500 if xp < 500 else (1000 if xp < 1000 else 2000))
         }
     
-    def get_user_status(self, user_id: str, db: AsyncSession | None = None) -> dict[str, Any]:
+    async def get_user_status(self, user_id: str, db: AsyncSession | None = None) -> dict[str, Any]:
         if db is not None:
-            return self._get_user_status_async(db, user_id)
+            return await self._get_user_status_async(db, user_id)
 
         stats = self._user_stats.get(user_id)
         if not stats:
@@ -1208,9 +1221,9 @@ class KataGamificationService:
             
         return await self._get_user_status_async(db, user_id)
 
-    def award_achievement(self, user_id: str, achievement: str, xp_reward: int, db: AsyncSession | None = None) -> dict[str, Any]:
+    async def award_achievement(self, user_id: str, achievement: str, xp_reward: int, db: AsyncSession | None = None) -> dict[str, Any]:
         if db is not None:
-            return self._award_achievement_async(db, user_id, achievement, xp_reward)
+            return await self._award_achievement_async(db, user_id, achievement, xp_reward)
 
         stats = self._user_stats.get(user_id)
         if not stats:
@@ -1231,7 +1244,7 @@ class KataGamificationService:
             elif xp >= 200:
                 stats["belt"] = "Yellow Belt"
 
-        return self.get_user_status(user_id)
+        return await self.get_user_status(user_id)
 
 
 # =============================================================================
@@ -1634,7 +1647,7 @@ class MudaDetectionEngine:
 class JidokaMentor:
     """In-memory Jidoka mentor with Andon quality loop."""
 
-    ANDON_ESCALATION_RULES = AsyncJidokaMentor.ANDON_ESCALATION_RULES
+    ANDON_ESCALATION_RULES: dict[AndonStatus, dict[str, Any]] = AsyncJidokaMentor.ANDON_ESCALATION_RULES
 
     def __init__(self):
         self.andon_events: list[AndonEvent] = []
@@ -1664,7 +1677,7 @@ class JidokaMentor:
         return event
 
     def _generate_jidoka_response(self, event: AndonEvent) -> JidokaResponse:
-        rule = self.ANDON_ESCALATION_RULES.get(event.status, {})
+        rule: dict[str, Any] = self.ANDON_ESCALATION_RULES.get(event.status, {})
         action = rule.get("action", JidokaAction.ALERT)
         response = JidokaResponse(
             response_id=f"jidoka_{event.event_id}",
@@ -1724,12 +1737,20 @@ class JidokaMentor:
         avg_resolution_time = 0.0
 
         if responded:
-            response_times = [(e.responded_at - e.detected_at).total_seconds() for e in responded]
-            avg_response_time = sum(response_times) / len(response_times)
+            response_times = [
+                (e.responded_at - e.detected_at).total_seconds()
+                for e in responded
+                if e.responded_at is not None
+            ]
+            avg_response_time = sum(response_times) / len(response_times) if response_times else 0.0
 
         if resolved:
-            resolution_times = [(e.resolved_at - e.detected_at).total_seconds() for e in resolved]
-            avg_resolution_time = sum(resolution_times) / len(resolution_times)
+            resolution_times = [
+                (e.resolved_at - e.detected_at).total_seconds()
+                for e in resolved
+                if e.resolved_at is not None
+            ]
+            avg_resolution_time = sum(resolution_times) / len(resolution_times) if resolution_times else 0.0
 
         return {
             "total_events": len(events),
@@ -1909,7 +1930,7 @@ class AsyncTPSTeacher:
         kata_session_id: str | None = None,
     ) -> dict[str, Any]:
         """Get daily teaching prompts."""
-        teaching = {}
+        teaching: dict[str, Any] = {}
         
         if pdca_cycle_id:
             teaching["pdca_prompts"] = await self.pdca_engine.get_coaching_prompts(db, pdca_cycle_id)

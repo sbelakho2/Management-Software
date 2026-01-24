@@ -883,17 +883,18 @@ class WhatIfSimulator:
         scenarios: list[tuple[str, ResourceForecast]],
     ) -> dict[str, Any]:
         """Compare multiple scenarios."""
-        results = {
+        scenario_results: dict[str, dict[str, Any]] = {}
+        results: dict[str, Any] = {
             "baseline": {
                 "average_utilization": baseline.average_predicted_utilization,
                 "peak_utilization": baseline.peak_utilization[1],
                 "status": baseline.get_capacity_status().value,
             },
-            "scenarios": {},
+            "scenarios": scenario_results,
         }
         
         for name, scenario in scenarios:
-            results["scenarios"][name] = {
+            scenario_results[name] = {
                 "average_utilization": scenario.average_predicted_utilization,
                 "peak_utilization": scenario.peak_utilization[1],
                 "status": scenario.get_capacity_status().value,
@@ -1072,9 +1073,10 @@ class PredictiveUtilityEngine:
     
     def get_utilization_summary(self) -> dict[str, Any]:
         """Get summary of all resource utilization."""
-        summary = {
+        resources: dict[str, dict[str, Any]] = {}
+        summary: dict[str, Any] = {
             "total_resources": len(self._resource_history),
-            "resources": {},
+            "resources": resources,
             "overall_status": {},
         }
         
@@ -1090,7 +1092,7 @@ class PredictiveUtilityEngine:
                 status = forecast.get_capacity_status()
                 status_counts[status.value] += 1
                 
-                summary["resources"][resource_id] = {
+                resources[resource_id] = {
                     "type": forecast.resource_type.value,
                     "average_utilization": forecast.average_predicted_utilization,
                     "peak_utilization": forecast.peak_utilization[1],

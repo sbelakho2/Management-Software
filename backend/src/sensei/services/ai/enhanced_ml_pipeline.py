@@ -903,7 +903,8 @@ class ModelRegistryService:
                 if v.version != version and v.stage == ModelStage.PRODUCTION:
                     v.stage = ModelStage.ARCHIVED
             
-            registry.production_version = version
+            # Convert version to int if needed
+            registry.production_version = int(version) if isinstance(version, int) else None
             model_version.deployed_at = _utcnow()
             model_version.status = ModelStatus.DEPLOYED
         
@@ -956,11 +957,13 @@ class ModelRegistryService:
         metrics_a = v_a.metrics.to_dict()
         metrics_b = v_b.metrics.to_dict()
         
-        comparison = {
+        metric_diffs: dict[str, dict[str, Any]] = {}
+        hyperparam_diffs: dict[str, dict[str, Any]] = {}
+        comparison: dict[str, Any] = {
             "version_a": version_a,
             "version_b": version_b,
-            "metric_diffs": {},
-            "hyperparam_diffs": {},
+            "metric_diffs": metric_diffs,
+            "hyperparam_diffs": hyperparam_diffs,
         }
         
         # Compare metrics
@@ -970,7 +973,7 @@ class ModelRegistryService:
             val_b = metrics_b.get(metric)
             if val_a is not None and val_b is not None:
                 diff = val_b - val_a
-                comparison["metric_diffs"][metric] = {
+                metric_diffs[metric] = {
                     "version_a": val_a,
                     "version_b": val_b,
                     "diff": diff,
@@ -983,7 +986,7 @@ class ModelRegistryService:
             val_a = v_a.hyperparameters.get(param)
             val_b = v_b.hyperparameters.get(param)
             if val_a != val_b:
-                comparison["hyperparam_diffs"][param] = {
+                hyperparam_diffs[param] = {
                     "version_a": val_a,
                     "version_b": val_b,
                 }
@@ -1420,13 +1423,15 @@ class ExperimentTracker:
             all_metrics.update(exp.metrics.keys())
         
         # Build comparison table
-        comparison = {
-            "experiments": [],
-            "metrics": {metric: [] for metric in all_metrics},
+        experiments_list: list[dict[str, Any]] = []
+        metrics_dict: dict[str, list[Any]] = {metric: [] for metric in all_metrics}
+        comparison: dict[str, Any] = {
+            "experiments": experiments_list,
+            "metrics": metrics_dict,
         }
         
         for exp in experiments:
-            comparison["experiments"].append({
+            experiments_list.append({
                 "id": exp.experiment_id,
                 "name": exp.name,
                 "algorithm": exp.algorithm,
@@ -1435,7 +1440,7 @@ class ExperimentTracker:
             
             metrics = exp.metrics
             for metric in all_metrics:
-                comparison["metrics"][metric].append(metrics.get(metric))
+                metrics_dict[metric].append(metrics.get(metric))
         
         return comparison
 

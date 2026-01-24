@@ -932,7 +932,7 @@ class FiveWhysAssistant:
         )
         
         return {
-            "primary_waste": max(waste_counts, key=waste_counts.get) if waste_counts else None,
+            "primary_waste": max(waste_counts, key=lambda k: waste_counts[k]) if waste_counts else None,
             "waste_distribution": dict(waste_counts),
             "muda_types": dict(muda_counts),
             "total_suggestions": len(suggestions),
@@ -995,6 +995,16 @@ class SenseiReasoningEngine:
     ) -> List[ChallengingPrompt]:
         """Get Socratic challenging prompts for A3 content."""
         return self.mentor.generate_prompts(content, phase, persona, max_prompts)
+    
+    def generate_socratic_prompts(
+        self,
+        content: str,
+        phase: A3Phase,
+        persona: Optional[MentorPersona] = None,
+        max_prompts: int = 3,
+    ) -> List[ChallengingPrompt]:
+        """Generate Socratic prompts for learning content. Alias for get_challenging_prompts."""
+        return self.get_challenging_prompts(content, phase, persona, max_prompts)
     
     def analyze_root_cause(
         self,

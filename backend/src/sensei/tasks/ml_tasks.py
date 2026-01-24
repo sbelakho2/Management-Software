@@ -41,14 +41,14 @@ def run_model_training(
     pipeline = MLPipeline()
     
     try:
-        model_id = pipeline.run_training(
+        model_id = asyncio.run(pipeline.run_training(
             model_name=model_name,
             model_class=model_class,
             train_data=train_data,
             eval_data=eval_data,
             hyperparameters=hyperparameters,
             version=version,
-        )
+        ))
         return model_id
     except Exception as e:
         logger.error(f"Async training failed for {model_name}: {e}")

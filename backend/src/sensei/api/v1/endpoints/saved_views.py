@@ -392,8 +392,8 @@ async def create_view(request: CreateViewRequest) -> SavedViewResponse:
     conditions = [_condition_from_request(c) for c in request.conditions]
     sort_fields = [_sort_field_from_request(s) for s in request.sort_fields]
     columns = [_column_from_request(col) for col in request.columns]
-    team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
-    team_ids = [tid for tid in team_ids if tid is not None]
+    parsed_team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
+    team_ids: list[UUID] = [tid for tid in parsed_team_ids if tid is not None]
     
     view = service.create_view(
         name=request.name,
@@ -616,10 +616,10 @@ async def update_view(view_id: str, request: UpdateViewRequest) -> SavedViewResp
     if request.columns is not None:
         columns = [_column_from_request(col) for col in request.columns]
     
-    team_ids = None
+    team_ids: list[UUID] | None = None
     if request.team_ids is not None:
-        team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
-        team_ids = [tid for tid in team_ids if tid is not None]
+        parsed_team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
+        team_ids = [tid for tid in parsed_team_ids if tid is not None]
     
     visibility = None
     if request.visibility:

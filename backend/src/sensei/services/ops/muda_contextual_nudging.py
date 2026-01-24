@@ -14,6 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.core.config import settings
 from sensei.services.ops.jit_lean_learning import (
@@ -128,10 +131,11 @@ class MudaAwareContextualNudgingService:
                 seen.add(trigger)
         return ordered
 
-    def generate_nudges(
+    async def generate_nudges(
         self,
+        db: AsyncSession,
         *,
-        recipient_id: str,
+        recipient_id: UUID,
         dimensions: dict[str, str] | None = None,
         overrides: dict[str, Any] | None = None,
         include_knowledge: bool = True,
@@ -144,7 +148,8 @@ class MudaAwareContextualNudgingService:
 
         for trigger in triggers:
             nudges.append(
-                self.generate_nudge_for_trigger(
+                await self.generate_nudge_for_trigger(
+                    db=db,
                     trigger=trigger,
                     recipient_id=recipient_id,
                     trigger_context=snapshot,
@@ -155,18 +160,20 @@ class MudaAwareContextualNudgingService:
 
         return nudges
 
-    def generate_nudge_for_trigger(
+    async def generate_nudge_for_trigger(
         self,
+        db: AsyncSession,
         *,
         trigger: TriggerType,
-        recipient_id: str,
+        recipient_id: UUID,
         trigger_context: dict[str, Any],
         include_knowledge: bool = True,
         generated_at: datetime | None = None,
     ) -> MudaNudge:
         """Generate a single nudge for a specific trigger."""
 
-        delivery = self.lesson_engine.get_lesson_for_trigger(
+        delivery = await self.lesson_engine.get_lesson_for_trigger(
+            db,
             trigger,
             recipient_id,
             context=trigger_context,
@@ -181,9 +188,9 @@ class MudaAwareContextualNudgingService:
         now = generated_at or datetime.now(timezone.utc)
         return MudaNudge(
             trigger=trigger,
-            recipient_id=recipient_id,
+            recipient_id=str(recipient_id),
             trigger_context=trigger_context,
-            delivery_id=delivery.delivery_id if delivery else None,
+            delivery_id=str(delivery.id) if delivery else None,
             lesson_id=delivery.lesson_id if delivery else None,
             lesson_title=lesson.title if lesson else None,
             lesson_summary=lesson.summary if lesson else None,

@@ -1027,7 +1027,9 @@ class MaintenanceService:
         if not failures:
             return None
         
-        tbf_values = [float(f.time_between_failures_hours) for f in failures]
+        tbf_values = [float(f.time_between_failures_hours) for f in failures if f.time_between_failures_hours is not None]
+        if not tbf_values:
+            return None
         mtbf = statistics.mean(tbf_values)
         
         return Decimal(str(round(mtbf, 2)))
@@ -1042,7 +1044,9 @@ class MaintenanceService:
         if not failures:
             return None
         
-        ttr_values = [float(f.time_to_repair_hours) for f in failures]
+        ttr_values = [float(f.time_to_repair_hours) for f in failures if f.time_to_repair_hours is not None]
+        if not ttr_values:
+            return None
         mttr = statistics.mean(ttr_values)
         
         return Decimal(str(round(mttr, 2)))
@@ -1163,9 +1167,12 @@ class MaintenanceService:
         reservations = []
         for part_info in schedule.spare_parts:
             part_id = part_info.get("part_id")
+            if part_id is None:
+                continue
+            part_id_str = str(part_id)
             quantity = Decimal(str(part_info.get("quantity", 0)))
             
-            part = self._spare_parts.get(part_id)
+            part = self._spare_parts.get(part_id_str)
             if part and part.quantity_on_hand >= quantity:
                 reservations.append({
                     "part_id": part_id,

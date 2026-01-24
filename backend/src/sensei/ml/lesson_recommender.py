@@ -21,7 +21,8 @@ import logging
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from sensei.models.training import Lesson, LessonCompletion, User
+    from sensei.models.training import Lesson, LessonCompletion
+    from sensei.models.user import User
 
 from sensei.core.config import settings
 
@@ -251,6 +252,9 @@ class LessonRecommender:
         
         Uses TF-IDF cosine similarity.
         """
+        if self.lesson_embeddings is None:
+            return 0.0
+        
         if lesson.id not in self.lesson_ids:
             return 0.0
         

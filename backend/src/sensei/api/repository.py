@@ -279,7 +279,8 @@ class BaseRepository(Generic[ModelT]):
         else:
             # Default sort by created_at desc if available
             if hasattr(self.model, "created_at"):
-                query = query.order_by(desc(self.model.created_at))
+                created_at_field = getattr(self.model, "created_at")
+                query = query.order_by(desc(created_at_field))
         
         # Apply pagination
         offset = (page - 1) * page_size
@@ -620,12 +621,12 @@ class BaseRepository(Generic[ModelT]):
         
         entity = await self.get_by_id(id, include_deleted=True)
         
-        if not entity or not entity.deleted_at:
+        if not entity or not getattr(entity, "deleted_at", None):
             return None
         
-        entity.deleted_at = None
+        setattr(entity, "deleted_at", None)
         if hasattr(entity, "deleted_by"):
-            entity.deleted_by = None
+            setattr(entity, "deleted_by", None)
         
         if commit:
             await self.db.commit()

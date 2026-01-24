@@ -44,6 +44,8 @@ class MaintenanceSyncSummary:
 class SchedulingMaintenanceSyncService:
     """Unifies TPM maintenance schedules with finite scheduling constraints."""
 
+    _asset_to_station: Callable[[str], str | None]
+
     def __init__(
         self,
         *,

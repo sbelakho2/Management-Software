@@ -388,7 +388,7 @@ class PredictiveMaintenanceEngine:
         self.threshold = threshold
         self.input_length = input_length
         self._use_onnx = use_onnx
-        self._onnx_model = None
+        self._onnx_model: Any = None  # Will be ONNXEdgeInference if available
         
         # Build default CNN config
         self.config = CNNModelConfig(

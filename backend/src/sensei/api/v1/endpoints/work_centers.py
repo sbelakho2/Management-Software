@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, ColumnElement
 from sqlalchemy.orm import selectinload
 
 from sensei.api.deps import (
@@ -672,7 +672,7 @@ async def get_work_center_stats(
     Get work center statistics.
     """
     # Base filter
-    base_filter = WorkCenter.deleted_at.is_(None)
+    base_filter: ColumnElement[bool] = WorkCenter.deleted_at.is_(None)
     if account_id:
         base_filter = and_(base_filter, WorkCenter.account_id == account_id)
     

@@ -8,6 +8,7 @@ routers, and lifecycle handlers.
 import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from uuid import UUID
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -84,11 +85,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize and start muda nudging scheduler (disabled by default)
     try:
-        recipient_ids = [
+        recipient_id_strs = [
             r.strip()
             for r in settings.MUDA_NUDGING_WORKER_RECIPIENT_IDS.split(",")
             if r.strip()
         ]
+        recipient_ids: list[UUID] = []
+        for rid in recipient_id_strs:
+            try:
+                recipient_ids.append(UUID(rid))
+            except ValueError:
+                logger.warning(f"Invalid UUID in MUDA_NUDGING_WORKER_RECIPIENT_IDS: {rid}")
         muda_cfg = MudaNudgingScheduleConfig(
             enabled=bool(settings.MUDA_NUDGING_WORKER_ENABLED),
             interval_seconds=int(settings.MUDA_NUDGING_WORKER_INTERVAL_SECONDS),

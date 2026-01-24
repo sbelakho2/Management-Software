@@ -263,6 +263,16 @@ class MLSafetyGates:
     
     def _check_roc_auc(self, eval_results: EvaluationResults) -> SafetyCheckResult:
         """Check minimum ROC AUC threshold."""
+        if eval_results.roc_auc is None:
+            return SafetyCheckResult(
+                check_name="Minimum ROC AUC",
+                status=SafetyCheckStatus.SKIPPED,
+                message="ROC AUC not available (binary classification required)",
+                actual_value=None,
+                threshold_value=self.config.MIN_ROC_AUC,
+                details={},
+            )
+        
         passed = eval_results.roc_auc >= self.config.MIN_ROC_AUC
         
         return SafetyCheckResult(
@@ -276,6 +286,16 @@ class MLSafetyGates:
     
     def _check_calibration(self, eval_results: EvaluationResults) -> SafetyCheckResult:
         """Check calibration error threshold."""
+        if eval_results.calibration_score is None:
+            return SafetyCheckResult(
+                check_name="Calibration Quality",
+                status=SafetyCheckStatus.SKIPPED,
+                message="Calibration score not available",
+                actual_value=None,
+                threshold_value=self.config.MAX_CALIBRATION_ERROR,
+                details={},
+            )
+        
         passed = eval_results.calibration_score <= self.config.MAX_CALIBRATION_ERROR
         
         status = SafetyCheckStatus.PASSED if passed else SafetyCheckStatus.WARNING
@@ -405,6 +425,16 @@ class MLSafetyGates:
     
     def _check_model_complexity(self, eval_results: EvaluationResults) -> SafetyCheckResult:
         """Check model complexity for explainability."""
+        if eval_results.feature_importance is None:
+            return SafetyCheckResult(
+                check_name="Model Complexity",
+                status=SafetyCheckStatus.SKIPPED,
+                message="Feature importance not available",
+                actual_value=None,
+                threshold_value=float(self.config.MAX_MODEL_FEATURES),
+                details={},
+            )
+        
         feature_count = len(eval_results.feature_importance)
         passed = feature_count <= self.config.MAX_MODEL_FEATURES
         
@@ -480,8 +510,8 @@ if __name__ == "__main__":
     }
     
     inference_metrics = {
-        'avg_latency_ms': 120,
-        'p95_latency_ms': 350,
+        'avg_latency_ms': 120.0,
+        'p95_latency_ms': 350.0,
     }
     
     # Run safety gates

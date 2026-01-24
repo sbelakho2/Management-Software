@@ -472,7 +472,9 @@ class SegmentViewsService:
             )
         )
         await self._session.flush()
-        return result.rowcount > 0
+        # Use type narrowing - delete returns CursorResult which has rowcount
+        row_count = getattr(result, 'rowcount', 0)
+        return row_count is not None and row_count > 0
 
     async def get_shares(self, segment_id: UUID) -> Sequence[SegmentShare]:
         """Get all shares for a segment.

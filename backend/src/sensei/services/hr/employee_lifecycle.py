@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Awaitable, Iterable, overload
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -390,6 +390,28 @@ class EmployeeLifecycleService:
         )
         return replace(profile, email=masked_email, phone=masked_phone)
 
+    @overload
+    def get_employee_profile(
+        self,
+        employee_id: UUID,
+        *,
+        actor_id: UUID,
+        actor_roles: Iterable[str],
+        db: AsyncSession,
+        purpose: str = "profile_view",
+    ) -> Awaitable[EmployeeProfile | None]: ...
+
+    @overload
+    def get_employee_profile(
+        self,
+        employee_id: UUID,
+        *,
+        actor_id: UUID,
+        actor_roles: Iterable[str],
+        db: None = None,
+        purpose: str = "profile_view",
+    ) -> EmployeeProfile | None: ...
+
     def get_employee_profile(
         self,
         employee_id: UUID,
@@ -398,7 +420,7 @@ class EmployeeLifecycleService:
         actor_roles: Iterable[str],
         db: AsyncSession | None = None,
         purpose: str = "profile_view",
-    ) -> EmployeeProfile | None:
+    ) -> EmployeeProfile | None | Awaitable[EmployeeProfile | None]:
         if db is not None:
             return self._get_employee_profile_async(
                 employee_id,
@@ -415,14 +437,14 @@ class EmployeeLifecycleService:
         if self.can_view_pii(actor_roles=actor_roles):
             return profile
 
-        masked_email = None
-        masked_phone = None
+        masked_email: str | None = None
+        masked_phone: str | None = None
         if profile.email:
             masked = self._pii.mask_value(profile.email, field_id=self._field_employee_email_id)
-            masked_email = masked._get_value() if hasattr(masked, "_get_value") else masked
+            masked_email = masked._get_value()
         if profile.phone:
             masked = self._pii.mask_value(profile.phone, field_id=self._field_employee_phone_id)
-            masked_phone = masked._get_value() if hasattr(masked, "_get_value") else masked
+            masked_phone = masked._get_value()
 
         return replace(profile, email=masked_email, phone=masked_phone)
 
@@ -637,9 +659,9 @@ class EmployeeLifecycleService:
         redacted: list[PersonnelDocument] = []
         for d in docs:
             masked_filename = self._pii.mask_value(d.filename, field_id=self._field_personnel_filename_id)
-            masked_notes = self._pii.mask_value(d.notes, field_id=self._field_personnel_notes_id) if d.notes else ""
-            filename_value = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
-            notes_value = masked_notes._get_value() if hasattr(masked_notes, "_get_value") else masked_notes
+            masked_notes = self._pii.mask_value(d.notes, field_id=self._field_personnel_notes_id) if d.notes else None
+            filename_value = masked_filename._get_value()
+            notes_value = masked_notes._get_value() if masked_notes else ""
             redacted.append(
                 replace(
                     d,
@@ -657,7 +679,6 @@ class EmployeeLifecycleService:
         limit: int = 100,
     ) -> list[Any]:
         subject_id = self._get_or_register_subject(employee_id)
-        logs = self._pii.get_access_logs(subject_id=subject_id)
-        if hasattr(logs, "_get_value"):
-            logs = logs._get_value()
+        logs_awaitable = self._pii.get_access_logs(subject_id=subject_id)
+        logs = logs_awaitable._get_value()
         return list(logs)[:limit]

@@ -203,7 +203,7 @@ class AsyncActionAuditService:
         if action_type:
             stmt = stmt.where(UIActionAuditRecord.action_type == action_type)
         
-        stmt = stmt.order_by(UIActionAuditRecord.timestamp.desc()).limit(limit)
+        stmt = stmt.order_by(UIActionAuditRecord.created_at.desc()).limit(limit)
         result = await db.execute(stmt)
         return list(result.scalars().all())
 

@@ -848,7 +848,7 @@ class HITLConsistencyMonitor:
         
         import random
         r = random.uniform(0, total_weight)
-        cumulative = 0
+        cumulative: float = 0.0
         
         for variant in available:
             cumulative += variant.weight

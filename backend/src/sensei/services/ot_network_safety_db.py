@@ -436,19 +436,22 @@ class OTNetworkSafetyService:
         )
         violations = result.scalars().all()
 
-        stats = {
+        by_severity: dict[str, int] = {}
+        by_zone_pair: dict[str, int] = {}
+        
+        stats: dict[str, int | dict[str, int]] = {
             "total": len(violations),
             "unacknowledged": sum(1 for v in violations if not v.acknowledged),
-            "by_severity": {},
-            "by_zone_pair": {},
+            "by_severity": by_severity,
+            "by_zone_pair": by_zone_pair,
         }
-
+        
         for v in violations:
             sev = v.severity
-            stats["by_severity"][sev] = stats["by_severity"].get(sev, 0) + 1
+            by_severity[sev] = by_severity.get(sev, 0) + 1
             
             pair_key = f"{v.source_zone_id}:{v.dest_zone_id}"
-            stats["by_zone_pair"][pair_key] = stats["by_zone_pair"].get(pair_key, 0) + 1
+            by_zone_pair[pair_key] = by_zone_pair.get(pair_key, 0) + 1
 
         return stats
 

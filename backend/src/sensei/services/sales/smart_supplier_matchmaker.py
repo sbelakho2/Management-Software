@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 import math
 import re
 import uuid
@@ -1334,7 +1334,7 @@ class SmartSupplierMatchmaker:
             })
         
         # Sort by overall score
-        comparisons.sort(key=lambda x: x["overall_score"], reverse=True)
+        comparisons.sort(key=lambda x: cast(float, x["overall_score"]), reverse=True)
         
         return {
             "rfq_id": requirement.rfq_id,

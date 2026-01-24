@@ -6,10 +6,13 @@ Provides REST API for managing KPIs, recording values, analyzing trends, and das
 
 from datetime import datetime, date
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.api.deps import get_db
 from sensei.services.ops.kpi_metrics import (
     KPIDefinition,
     KPIValue,
@@ -299,14 +302,18 @@ def _definition_to_response(d: KPIDefinition) -> KPIDefinitionResponse:
     response_model=list[MudaNudgeResponse],
     summary="Generate muda-aware micro-lesson nudges",
 )
-def generate_muda_nudges(request: MudaNudgesRequest) -> list[MudaNudgeResponse]:
+async def generate_muda_nudges(
+    request: MudaNudgesRequest,
+    db: AsyncSession = Depends(get_db),
+) -> list[MudaNudgeResponse]:
     """Generate contextual micro-lesson nudges from KPI variance.
 
     Uses latest KPI values from the in-memory KPI store and optional overrides.
     """
 
-    nudges = _muda_nudging_service.generate_nudges(
-        recipient_id=request.recipient_id,
+    nudges = await _muda_nudging_service.generate_nudges(
+        db,
+        recipient_id=UUID(request.recipient_id),
         dimensions=request.dimensions or None,
         overrides=request.overrides or None,
         include_knowledge=request.include_knowledge,

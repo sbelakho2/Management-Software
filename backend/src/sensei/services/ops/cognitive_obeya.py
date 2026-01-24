@@ -602,11 +602,11 @@ class AsyncPrescriptiveMetricAnalyzer:
         ]
 
 
-class PrescriptiveMetricAnalyzer(AsyncPrescriptiveMetricAnalyzer):
+class PrescriptiveMetricAnalyzer:
     """In-memory Prescriptive Metric Analyzer for sync use cases and tests."""
 
     def __init__(self):
-        super().__init__()
+        self.detection_rules: dict[str, Any] = {}
         self.metrics_history: dict[str, list[MetricValue]] = {}
         self.work_orders: dict[str, dict[str, Any]] = {}
         self.supplier_quotes: dict[str, dict[str, Any]] = {}
@@ -671,6 +671,108 @@ class PrescriptiveMetricAnalyzer(AsyncPrescriptiveMetricAnalyzer):
             "severity": severity,
             "category": category,
         }
+
+    def _evaluate_work_order_link(
+        self,
+        metric: MetricValue,
+        work_order: dict[str, Any],
+    ) -> CausalLink | None:
+        """Evaluate if a work order caused the metric issue."""
+        impact = 0.0
+        confidence = 0.0
+        
+        if metric.category == MetricCategory.QUALITY:
+            if work_order["quality_issues"] > 0:
+                impact = work_order["quality_issues"]
+                confidence = min(0.9, 0.3 + work_order["quality_issues"] * 0.1)
+        elif metric.category == MetricCategory.DELIVERY:
+            if work_order["delivery_delay"] > 0:
+                impact = work_order["delivery_delay"]
+                confidence = min(0.9, 0.3 + work_order["delivery_delay"] * 0.05)
+        elif metric.category == MetricCategory.COST:
+            if work_order["cost_overrun"] > 0:
+                impact = work_order["cost_overrun"]
+                confidence = min(0.9, 0.3 + work_order["cost_overrun"] / 1000)
+        elif metric.category == MetricCategory.SAFETY:
+            if work_order["safety_incidents"] > 0:
+                impact = work_order["safety_incidents"]
+                confidence = min(0.95, 0.5 + work_order["safety_incidents"] * 0.2)
+        
+        if confidence > 0.3:
+            return CausalLink(
+                link_id=str(uuid.uuid4()),
+                metric_id=metric.metric_id,
+                source_type="work_order",
+                source_id=work_order["id"],
+                source_description=work_order["description"],
+                confidence=confidence,
+                impact_value=impact,
+                detected_at=datetime.now(timezone.utc),
+                explanation=f"Work Order {work_order['id']} had issues affecting {metric.category.value}",
+            )
+        return None
+
+    def _evaluate_supplier_link(
+        self,
+        metric: MetricValue,
+        quote: dict[str, Any],
+    ) -> CausalLink | None:
+        """Evaluate if a supplier quote caused the metric issue."""
+        impact = 0.0
+        confidence = 0.0
+        
+        if metric.category == MetricCategory.QUALITY:
+            if quote["quality_rating"] < 0.8:
+                impact = 1.0 - quote["quality_rating"]
+                confidence = min(0.85, 0.3 + (1.0 - quote["quality_rating"]))
+        elif metric.category == MetricCategory.DELIVERY:
+            if quote["delivery_rating"] < 0.9:
+                impact = 1.0 - quote["delivery_rating"]
+                confidence = min(0.85, 0.2 + (1.0 - quote["delivery_rating"]))
+        elif metric.category == MetricCategory.COST:
+            if quote["cost_variance"] > 0.05:
+                impact = quote["cost_variance"]
+                confidence = min(0.8, 0.3 + quote["cost_variance"])
+        
+        if confidence > 0.3:
+            return CausalLink(
+                link_id=str(uuid.uuid4()),
+                metric_id=metric.metric_id,
+                source_type="supplier_quote",
+                source_id=quote["id"],
+                source_description=f"Supplier: {quote['supplier']}",
+                confidence=confidence,
+                impact_value=impact,
+                detected_at=datetime.now(timezone.utc),
+                explanation=f"Supplier {quote['supplier']} rating affected {metric.category.value}",
+            )
+        return None
+
+    def _evaluate_incident_link(
+        self,
+        metric: MetricValue,
+        incident: dict[str, Any],
+    ) -> CausalLink | None:
+        """Evaluate if an incident caused the metric issue."""
+        if metric.category != MetricCategory.SAFETY:
+            return None
+        
+        if incident["category"] != "safety":
+            return None
+        
+        confidence = min(0.95, 0.4 + incident["severity"] * 0.15)
+        
+        return CausalLink(
+            link_id=str(uuid.uuid4()),
+            metric_id=metric.metric_id,
+            source_type="incident",
+            source_id=incident["id"],
+            source_description=incident["description"],
+            confidence=confidence,
+            impact_value=float(incident["severity"]),
+            detected_at=datetime.now(timezone.utc),
+            explanation=f"Safety incident {incident['id']} directly impacted safety metrics",
+        )
 
     def find_causal_links(self, metric_id: str) -> list[CausalLink]:
         history = self.get_metric_history(metric_id)
@@ -862,6 +964,97 @@ class AsyncCrossFunctionalSynergyEngine:
             for r in result.scalars().all()
         ]
 
+    def analyze_resource_rebalancing(self, db: AsyncSession | None = None) -> list[ResourceRebalance]:
+        """
+        Analyze and suggest resource rebalancing.
+        
+        Suggests moving operators between Work Centers based on
+        real-time Skill Gap Index and current WIP volume.
+        """
+        suggestions: list[ResourceRebalance] = []
+        
+        # Find overloaded and underloaded work centers
+        overloaded = [
+            wc for wc in self.work_centers.values()
+            if wc.utilization > 0.9
+        ]
+        underloaded = [
+            wc for wc in self.work_centers.values()
+            if wc.utilization < 0.6
+        ]
+        
+        if not overloaded or not underloaded:
+            return suggestions
+        
+        for over_wc in overloaded:
+            for under_wc in underloaded:
+                # Find available operators in underloaded center
+                available_operators = [
+                    op for op in self.operators.values()
+                    if op.current_work_center == under_wc.work_center_id
+                    and op.available
+                ]
+                
+                if not available_operators:
+                    continue
+                
+                # Check skill match
+                required_skills = self._infer_required_skills(over_wc.name)
+                
+                matching_operators: list[tuple[SkillProfile, float]] = []
+                for op in available_operators:
+                    match_score = self._calculate_skill_match(list(op.skills.keys()), required_skills)
+                    if match_score >= 0.6:
+                        matching_operators.append((op, match_score))
+                
+                if matching_operators:
+                    matching_operators.sort(key=lambda x: x[1], reverse=True)
+                    top_matches = matching_operators[:2]
+                    
+                    avg_score = sum(m[1] for m in top_matches) / len(top_matches)
+                    expected_improvement = min(
+                        0.2,
+                        (over_wc.utilization - 0.8) * len(top_matches) * 0.1
+                    )
+                    
+                    suggestion = ResourceRebalance(
+                        suggestion_id=str(uuid.uuid4()),
+                        source_work_center=under_wc.work_center_id,
+                        target_work_center=over_wc.work_center_id,
+                        operator_ids=[m[0].operator_id for m in top_matches],
+                        skill_match_score=avg_score,
+                        reason=f"Rebalance from {under_wc.name} ({under_wc.utilization:.0%} util) "
+                               f"to {over_wc.name} ({over_wc.utilization:.0%} util)",
+                        expected_improvement=expected_improvement,
+                        suggested_at=datetime.now(timezone.utc),
+                    )
+                    suggestions.append(suggestion)
+        
+        self.rebalance_suggestions.extend(suggestions)
+        return suggestions
+
+    def _infer_required_skills(self, work_center_name: str) -> list[str]:
+        """Infer required skills from work center name."""
+        skill_map = {
+            "assembly": ["assembly", "hand_tools", "quality_inspection"],
+            "welding": ["welding", "metal_fabrication", "safety"],
+            "machining": ["cnc", "manual_machining", "measurement"],
+            "painting": ["painting", "surface_prep", "safety"],
+            "inspection": ["quality_inspection", "measurement", "documentation"],
+        }
+        name_lower = work_center_name.lower()
+        for key, skills in skill_map.items():
+            if key in name_lower:
+                return skills
+        return ["general_manufacturing"]
+
+    def _calculate_skill_match(self, operator_skills: list[str], required_skills: list[str]) -> float:
+        """Calculate skill match score."""
+        if not required_skills:
+            return 1.0
+        matches = sum(1 for skill in required_skills if skill in operator_skills)
+        return matches / len(required_skills)
+
 
 class CrossFunctionalSynergyEngine:
     """In-memory Cross-Functional Synergy Engine for sync use cases and tests."""
@@ -1017,7 +1210,7 @@ class CrossFunctionalSynergyEngine:
                 # Check skill match
                 required_skills = self._infer_required_skills(over_wc.name)
                 
-                matching_operators = []
+                matching_operators: list[tuple[SkillProfile, float]] = []
                 for op in available_operators:
                     match_score = self._calculate_skill_match(op.skills, required_skills)
                     if match_score >= 0.6:
@@ -1280,8 +1473,14 @@ class AsyncHeijunkaAdvisor:
         return suggestion
 
 
-class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
+class HeijunkaAdvisor:
     """In-memory Heijunka Advisor for sync use cases and tests."""
+
+    def __init__(self):
+        """Initialize advisor."""
+        self.demand_data: dict[str, list[int]] = {}
+        self.production_data: dict[str, list[int]] = {}
+        self.suggestions: list[HeijunkaSuggestion] = []
 
     def get_all_suggestions(self) -> list[HeijunkaSuggestion]:
         """Get all Heijunka suggestions from in-memory store."""
@@ -1308,6 +1507,19 @@ class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
 
     def record_production(self, product: str, quantities: list[int]) -> None:
         self.production_data[product] = quantities
+
+    def _smooth_production(self, values: list[int]) -> list[float]:
+        """Apply moving average smoothing."""
+        window = min(3, len(values))
+        smoothed = []
+        
+        for i in range(len(values)):
+            start = max(0, i - window // 2)
+            end = min(len(values), i + window // 2 + 1)
+            avg = statistics.mean(values[start:end])
+            smoothed.append(avg)
+        
+        return smoothed
 
     def analyze_volume_leveling(self) -> HeijunkaSuggestion | None:
         demand_data = self.demand_data
@@ -1362,6 +1574,51 @@ class HeijunkaAdvisor(AsyncHeijunkaAdvisor):
                      f"Suggested variance: {suggested_variance:.0f}",
         )
 
+        self.suggestions.append(suggestion)
+        return suggestion
+
+    def analyze_mix_leveling(self) -> HeijunkaSuggestion | None:
+        """
+        Analyze and suggest mix leveling.
+        
+        Suggests spreading product variety evenly across production periods.
+        """
+        if len(self.demand_data) < 2:
+            return None
+        
+        current_mix = {
+            product: sum(quantities)
+            for product, quantities in self.demand_data.items()
+        }
+        
+        total_qty = sum(current_mix.values())
+        products = list(current_mix.keys())
+        
+        suggested_mix = {product: qty for product, qty in current_mix.items()}
+        
+        current_ratios = [q / total_qty for q in current_mix.values()]
+        
+        mix_variance_before = statistics.variance(current_ratios) if len(current_ratios) > 1 else 0
+        mix_variance_after = 0
+        
+        mura_reduction = 100 * (1 - mix_variance_after / max(mix_variance_before, 0.01))
+        
+        if mix_variance_before < 0.01:
+            return None
+        
+        suggestion = HeijunkaSuggestion(
+            suggestion_id=str(uuid.uuid4()),
+            period="daily",
+            current_mix=current_mix,
+            suggested_mix=suggested_mix,
+            mura_reduction=mura_reduction,
+            volume_variance_before=mix_variance_before * 1000,
+            volume_variance_after=mix_variance_after,
+            suggested_at=datetime.now(timezone.utc),
+            reasoning=f"Mix leveling to reduce product variety unevenness. "
+                     f"Spread {len(products)} products more evenly across production.",
+        )
+        
         self.suggestions.append(suggestion)
         return suggestion
 

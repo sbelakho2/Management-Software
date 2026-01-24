@@ -650,14 +650,14 @@ class ActionParser:
         ]
         
         for pattern, normalized in date_patterns:
-            match = re.search(pattern, query_lower)
-            if match:
+            date_match: re.Match[str] | None = re.search(pattern, query_lower)
+            if date_match:
                 entities.append(Entity(
                     entity_type=EntityType.DATE,
-                    value=match.group(0),
+                    value=date_match.group(0),
                     normalized_value=normalized,
-                    start_pos=match.start(),
-                    end_pos=match.end(),
+                    start_pos=date_match.start(),
+                    end_pos=date_match.end(),
                     confidence=0.95,
                 ))
         

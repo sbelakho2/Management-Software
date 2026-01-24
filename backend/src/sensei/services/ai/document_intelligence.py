@@ -955,7 +955,7 @@ class OCREngine:
             # Placeholder: In production, could use simple edge detection
             # to identify text regions
             full_text = "[OCR not available - install pytesseract for text extraction]"
-            words: list[dict[str, Any]] = []
+            words: list[tuple[str, BoundingBox, float]] = []
             
             return full_text, words
             
@@ -1183,7 +1183,7 @@ class DocumentClassifier:
                 scores[doc_type] /= total
         
         # Get best match
-        best_type = max(scores, key=scores.get)
+        best_type = max(scores, key=lambda t: scores[t])
         best_score = scores[best_type]
         
         if best_score < 0.2:

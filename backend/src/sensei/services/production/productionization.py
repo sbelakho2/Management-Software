@@ -112,11 +112,14 @@ class PageRequest:
     sort_desc: bool = False
 
 
+PageT = TypeVar("PageT")
+
+
 @dataclass(frozen=True)
-class PageResponse(Generic[TypeVar("T")]):
+class PageResponse(Generic[PageT]):
     """Paginated response."""
 
-    items: list[Any]
+    items: list[PageT]
     total_count: int
     page: int
     page_size: int
@@ -496,7 +499,7 @@ class AsyncProductionizationService:
             items = self._apply_filters(items, filters)
 
         # Sort by account code by default
-        items.sort(key=lambda x: x["account_code"])
+        items.sort(key=lambda x: str(x.get("account_code", "")))
 
         return self._paginate(items, page or PageRequest())
 
@@ -1309,7 +1312,7 @@ class ProductionizationService:
         ]
         if filters:
             items = self._apply_filters(items, filters)
-        items.sort(key=lambda x: x["account_code"])
+        items.sort(key=lambda x: str(x.get("account_code", "")))
         return self._paginate(items, page or PageRequest())
 
     # ----------------------------------------------------------------
@@ -1383,7 +1386,7 @@ class ProductionizationService:
         ]
         if filters:
             items = self._apply_filters(items, filters)
-        items.sort(key=lambda x: x["supplier_code"])
+        items.sort(key=lambda x: str(x.get("supplier_code", "")))
         return self._paginate(items, page or PageRequest())
 
     # ----------------------------------------------------------------
@@ -1459,7 +1462,7 @@ class ProductionizationService:
         ]
         if filters:
             items = self._apply_filters(items, filters)
-        items.sort(key=lambda x: x["customer_code"])
+        items.sort(key=lambda x: str(x.get("customer_code", "")))
         return self._paginate(items, page or PageRequest())
 
     # ----------------------------------------------------------------

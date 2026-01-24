@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Header
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -503,8 +503,8 @@ async def list_work_orders(
         count_query = count_query.where(search_filter)
     
     # Get total count
-    result = await db.execute(count_query)
-    total = result.scalar() or 0
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
     
     # Sorting
     sort_column = getattr(WorkOrder, sort_by, WorkOrder.created_at)
@@ -518,8 +518,8 @@ async def list_work_orders(
     query = query.offset(offset).limit(page_size)
     
     # Execute query
-    result = await db.execute(query)
-    work_orders = result.scalars().all()
+    wo_result = await db.execute(query)
+    work_orders: list[WorkOrder] = list(wo_result.scalars().all())
     
     # Filter for late work orders after fetching if needed
     if is_late is not None:
@@ -647,7 +647,7 @@ async def get_work_order_stats(
     Get work order statistics.
     """
     # Base filters
-    base_filter = WorkOrder.deleted_at.is_(None)
+    base_filter: ColumnElement[bool] = WorkOrder.deleted_at.is_(None)
     if work_center_id:
         base_filter = and_(base_filter, WorkOrder.work_center_id == work_center_id)
     
@@ -1207,8 +1207,8 @@ async def list_operations(
             raise BadRequestError(f"Invalid status: {status}")
     
     # Get total count
-    result = await db.execute(count_query)
-    total = result.scalar() or 0
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
     
     # Sorting and pagination
     query = query.order_by(WorkOrderOperation.sequence.asc())
@@ -1216,8 +1216,8 @@ async def list_operations(
     query = query.offset(offset).limit(page_size)
     
     # Execute query
-    result = await db.execute(query)
-    operations = result.scalars().all()
+    ops_result = await db.execute(query)
+    operations: list[WorkOrderOperation] = list(ops_result.scalars().all())
     
     # Convert to response
     items = [operation_to_response(op) for op in operations]

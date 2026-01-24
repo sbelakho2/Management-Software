@@ -23,7 +23,7 @@ from sensei.core.config import settings
 
 # Type hints for models that may not exist yet
 if TYPE_CHECKING:
-    from sensei.models.production import Equipment, MaintenanceRecord, ConditionReading
+    from sensei.models.maintenance import Asset as Equipment, MaintenanceRecord, ConditionReading
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ class ConditionBasedMaintenancePredictor:
             }
         
         # ML predictions
-        if self.failure_classifier and self.scaler:
+        if self.failure_classifier and self.scaler and self.anomaly_detector:
             X = self.scaler.transform([features])
             
             # Failure probability

@@ -500,18 +500,18 @@ def register_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers with the FastAPI application."""
     
     # Custom exceptions
-    app.add_exception_handler(SenseiException, sensei_exception_handler)
+    app.add_exception_handler(SenseiException, sensei_exception_handler)  # type: ignore[arg-type]
     
     # HTTP exceptions
-    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
     
     # Validation exceptions
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(ValidationError, pydantic_validation_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(ValidationError, pydantic_validation_handler)  # type: ignore[arg-type]
     
     # Database exceptions
-    app.add_exception_handler(IntegrityError, integrity_error_handler)
-    app.add_exception_handler(SQLAlchemyError, sqlalchemy_error_handler)
+    app.add_exception_handler(IntegrityError, integrity_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(SQLAlchemyError, sqlalchemy_error_handler)  # type: ignore[arg-type]
     
     # Generic fallback
     app.add_exception_handler(Exception, generic_exception_handler)

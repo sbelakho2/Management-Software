@@ -809,8 +809,9 @@ class IncidentFlowService:
         ]
         if acknowledged_incidents:
             total_tta = sum(
-                (i.acknowledged_at - i.detected_at).total_seconds() / 60  # type: ignore[operator, misc]
+                (i.acknowledged_at - i.detected_at).total_seconds() / 60
                 for i in acknowledged_incidents
+                if i.acknowledged_at is not None  # type guard for mypy
             )
             metrics.mean_time_to_acknowledge_minutes = total_tta / len(acknowledged_incidents)
 
@@ -820,8 +821,9 @@ class IncidentFlowService:
         ]
         if resolved_incidents:
             total_ttr = sum(
-                (i.resolved_at - i.detected_at).total_seconds() / 3600  # type: ignore[operator, misc]
+                (i.resolved_at - i.detected_at).total_seconds() / 3600
                 for i in resolved_incidents
+                if i.resolved_at is not None  # type guard for mypy
             )
             metrics.mean_time_to_resolve_hours = total_ttr / len(resolved_incidents)
 
