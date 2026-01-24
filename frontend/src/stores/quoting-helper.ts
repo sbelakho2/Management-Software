@@ -31,6 +31,7 @@ interface QuotingHelperState {
   calculateCost: (quoteId: string) => Promise<any>;
   fetchClarifications: (rfqId: string) => Promise<void>;
   fetchQuoteMemory: (rfqId: string) => Promise<void>;
+  convertToNpi: (quoteId: string) => Promise<any>;
 }
 
 export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
@@ -43,8 +44,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
   fetchWorkPackets: async (rfqId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.get(`/quoting-helper/rfqs/${rfqId}/workpackets`);
-      set({ workPackets: response.data.data, isLoading: false });
+      const response = await apiClient.get<{ data: WorkPacket[] }>(`/quoting-helper/rfqs/${rfqId}/workpackets`);
+      set({ workPackets: response.data, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -53,8 +54,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
   generateWorkPackets: async (rfqId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.post(`/quoting-helper/rfqs/${rfqId}/workpackets/generate`);
-      set({ workPackets: response.data.data, isLoading: false });
+      const response = await apiClient.post<{ data: WorkPacket[] }>(`/quoting-helper/rfqs/${rfqId}/workpackets/generate`);
+      set({ workPackets: response.data, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -62,8 +63,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   updateWorkPacket: async (packetId: string, data: Partial<WorkPacket>) => {
     try {
-      const response = await apiClient.patch(`/quoting-helper/workpackets/${packetId}`, data);
-      const updatedPacket = response.data.data;
+      const response = await apiClient.patch<{ data: WorkPacket }>(`/quoting-helper/workpackets/${packetId}`, data);
+      const updatedPacket = response.data;
       set(state => ({
         workPackets: state.workPackets.map(p => p.id === packetId ? updatedPacket : p)
       }));
@@ -74,8 +75,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   calculateCost: async (quoteId: string) => {
     try {
-      const response = await apiClient.post(`/quoting-helper/quotes/${quoteId}/cost/build`);
-      return response.data.data;
+      const response = await apiClient.post<{ data: unknown }>(`/quoting-helper/quotes/${quoteId}/cost/build`);
+      return response.data;
     } catch (error: any) {
       set({ error: error.message });
       throw error;
@@ -84,8 +85,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   fetchClarifications: async (rfqId: string) => {
     try {
-      const response = await apiClient.get(`/quoting-helper/ai/clarifications/suggest/${rfqId}`);
-      set({ clarifications: response.data.data });
+      const response = await apiClient.get<{ data: unknown[] }>(`/quoting-helper/ai/clarifications/suggest/${rfqId}`);
+      set({ clarifications: response.data });
     } catch (error: any) {
       set({ error: error.message });
     }
@@ -93,10 +94,22 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   fetchQuoteMemory: async (rfqId: string) => {
     try {
-      const response = await apiClient.get(`/quoting-helper/ai/quote-memory/retrieve/${rfqId}`);
-      set({ quoteMemory: response.data.data });
+      const response = await apiClient.get<{ data: unknown[] }>(`/quoting-helper/ai/quote-memory/retrieve/${rfqId}`);
+      set({ quoteMemory: response.data });
     } catch (error: any) {
       set({ error: error.message });
+    }
+  },
+
+  convertToNpi: async (quoteId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await apiClient.post<{ data: { project_id: string; project_name: string } }>(`/quoting-helper/quotes/${quoteId}/convert-to-npi`);
+      set({ isLoading: false });
+      return response.data;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
     }
   },
 }));

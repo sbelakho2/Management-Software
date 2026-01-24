@@ -31,6 +31,7 @@ See [Authentication Guide](../guides/authentication.md) for details.
 - [Opportunities API](./opportunities.md) - Sales pipeline management
 - [RFQs API](./rfqs.md) - Request for Quote processing
 - [Quotes API](./quotes.md) - Quote creation and management
+- [Quoting Helper API](./quoting-helper.md) - Parallel engineering work packets and costing
 
 #### Products & Manufacturing
 - [Products API](./products.md) - Product catalog

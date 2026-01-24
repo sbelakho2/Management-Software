@@ -21,9 +21,15 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.models.strategic_v2 import KnowledgeSourceRecord, SemanticChunkRecord
+from sensei.models.strategic_v2 import (
+    KnowledgePackRecord,
+    KnowledgePackSourceRecord,
+    KnowledgeSourceRecord,
+    SemanticChunkRecord,
+)
 
 
 # ============================================================
@@ -420,6 +426,11 @@ class KnowledgeEnrichmentService:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_source_map(self, db: AsyncSession) -> dict[UUID, KnowledgeSourceRecord]:
+        result = await db.execute(select(KnowledgeSourceRecord))
+        sources = list(result.scalars().all())
+        return {src.id: src for src in sources}
+
     async def add_custom_source(
         self,
         db: AsyncSession,
@@ -440,6 +451,67 @@ class KnowledgeEnrichmentService:
         await db.commit()
         await db.refresh(source)
         return source
+
+    async def create_pack_db(
+        self,
+        db: AsyncSession,
+        actor_id: UUID | None,
+        name: str,
+        description: str,
+        source_ids: list[UUID],
+    ) -> KnowledgePackRecord:
+        if not source_ids:
+            raise ValueError("At least one source is required")
+
+        result = await db.execute(
+            select(KnowledgeSourceRecord.id).where(KnowledgeSourceRecord.id.in_(source_ids))
+        )
+        existing = {row[0] for row in result.all()}
+        missing = [sid for sid in source_ids if sid not in existing]
+        if missing:
+            raise ValueError(f"Unknown source IDs: {', '.join(str(sid) for sid in missing)}")
+
+        pack = KnowledgePackRecord(
+            name=name,
+            description=description,
+            is_active=True,
+            created_by_id=actor_id,
+        )
+        db.add(pack)
+        await db.flush()
+
+        for source_id in source_ids:
+            db.add(KnowledgePackSourceRecord(pack_id=pack.id, source_id=source_id))
+
+        await db.commit()
+        await db.refresh(pack)
+        return pack
+
+    async def list_packs_db(
+        self,
+        db: AsyncSession,
+        active_only: bool = True,
+    ) -> list[KnowledgePackRecord]:
+        stmt = select(KnowledgePackRecord).options(
+            selectinload(KnowledgePackRecord.sources).selectinload(KnowledgePackSourceRecord.source)
+        )
+        if active_only:
+            stmt = stmt.where(KnowledgePackRecord.is_active.is_(True))
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def deactivate_pack_db(
+        self,
+        db: AsyncSession,
+        pack_id: UUID,
+    ) -> KnowledgePackRecord:
+        pack = await db.get(KnowledgePackRecord, pack_id)
+        if not pack:
+            raise ValueError("Knowledge pack not found")
+        pack.is_active = False
+        await db.commit()
+        await db.refresh(pack)
+        return pack
 
     async def ingest_content(
         self,

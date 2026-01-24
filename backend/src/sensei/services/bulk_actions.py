@@ -22,6 +22,10 @@ from enum import Enum
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import build_entity_getter, build_entity_saver
+
 
 class BulkActionType(str, Enum):
     """Types of bulk actions."""
@@ -247,18 +251,19 @@ class BulkActionsService:
     progress tracking, and rollback support.
     """
     
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        entity_getter: Callable[[EntityType, UUID], dict[str, Any] | None] | None = None,
+        entity_saver: Callable[[EntityType, UUID, dict[str, Any]], None] | None = None,
+    ) -> None:
         """Initialize the service."""
         self._results: dict[UUID, BulkActionResult] = {}
         self._handlers: dict[tuple[EntityType, BulkActionType], EntityHandler] = {}
         self._validators: dict[tuple[EntityType, BulkActionType], Callable] = {}
         self._max_results: int = 1000
         self._result_ttl: timedelta = timedelta(days=7)
-        
-        # Mock entity storage for testing
-        self._mock_entities: dict[EntityType, dict[UUID, dict[str, Any]]] = {
-            et: {} for et in EntityType
-        }
+        self._entity_getter = entity_getter
+        self._entity_saver = entity_saver
         
         # Register default handlers
         self._register_default_handlers()
@@ -367,8 +372,10 @@ class BulkActionsService:
         entity_type: EntityType,
         entity_id: UUID,
     ) -> dict[str, Any] | None:
-        """Get a mock entity."""
-        return self._mock_entities[entity_type].get(entity_id)
+        """Get an entity snapshot."""
+        if not self._entity_getter:
+            raise ValueError("BulkActionsService requires an entity_getter in production")
+        return self._entity_getter(entity_type, entity_id)
     
     def _save_entity(
         self,
@@ -376,8 +383,10 @@ class BulkActionsService:
         entity_id: UUID,
         entity: dict[str, Any],
     ) -> None:
-        """Save a mock entity."""
-        self._mock_entities[entity_type][entity_id] = entity
+        """Persist an entity snapshot."""
+        if not self._entity_saver:
+            raise ValueError("BulkActionsService requires an entity_saver in production")
+        self._entity_saver(entity_type, entity_id, entity)
     
     def _handle_status_update(
         self,
@@ -962,33 +971,13 @@ class BulkActionsService:
             ),
         )
     
-    # ---------------------
-    # Mock Entity Management (for testing)
-    # ---------------------
-    
-    def create_mock_entity(
-        self,
-        entity_type: EntityType,
-        entity_id: UUID | None = None,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        if entity_id is None:
-            entity_id = uuid4()
-        
-        entity = {
-            "id": entity_id,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "status": "active",
-            "owner_id": None,
-            "due_date": None,
-            "priority": "normal",
-            "tags": [],
-            "is_archived": False,
-            "archived_at": None,
-            **fields,
-        }
-        
-        self._mock_entities[entity_type][entity_id] = entity
-        return entity_id
+    # Entity management is provided by storage integrations
+
+
+def get_bulk_actions_service(session: AsyncSession) -> BulkActionsService:
+    """Create a bulk actions service wired to the database."""
+    sync_session = session.sync_session
+    return BulkActionsService(
+        entity_getter=build_entity_getter(sync_session),
+        entity_saver=build_entity_saver(sync_session),
+    )

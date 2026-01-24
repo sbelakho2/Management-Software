@@ -19,6 +19,10 @@ from enum import Enum
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import build_entity_getter
+
 
 class DraftType(str, Enum):
     """Types of drafts."""
@@ -186,6 +190,7 @@ class AutosaveDraftsService:
         autosave_interval_seconds: int = 30,
         max_versions: int = 50,
         default_expiry_hours: int = 24 * 7,  # 1 week
+        entity_provider: callable | None = None,
     ) -> None:
         """Initialize the service."""
         self._drafts: dict[UUID, Draft] = {}
@@ -195,8 +200,8 @@ class AutosaveDraftsService:
         self.max_versions = max_versions
         self.default_expiry_hours = default_expiry_hours
         
-        # Mock entity storage for conflict detection
-        self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
+        # Entity provider for conflict detection
+        self._entity_provider = entity_provider
     
     # ---------------------
     # Draft Management
@@ -224,7 +229,7 @@ class AutosaveDraftsService:
         # Get base version if editing existing entity
         base_version = None
         if entity_id and entity_type:
-            entity = self._get_mock_entity(entity_type, entity_id)
+            entity = self._get_entity(entity_type, entity_id)
             if entity:
                 base_version = entity.get("version", 0)
         
@@ -549,7 +554,7 @@ class AutosaveDraftsService:
         if not draft.entity_id or not draft.entity_type:
             return
         
-        entity = self._get_mock_entity(draft.entity_type, draft.entity_id)
+        entity = self._get_entity(draft.entity_type, draft.entity_id)
         if not entity:
             return
         
@@ -568,7 +573,7 @@ class AutosaveDraftsService:
         if not draft.entity_id or not draft.entity_type:
             return None
         
-        entity = self._get_mock_entity(draft.entity_type, draft.entity_id)
+        entity = self._get_entity(draft.entity_type, draft.entity_id)
         if not entity:
             return None
         
@@ -621,7 +626,7 @@ class AutosaveDraftsService:
         if not draft.entity_id or not draft.entity_type:
             return None
         
-        entity = self._get_mock_entity(draft.entity_type, draft.entity_id)
+        entity = self._get_entity(draft.entity_type, draft.entity_id)
         if not entity:
             return None
         
@@ -795,53 +800,23 @@ class AutosaveDraftsService:
         return stats
     
     # ---------------------
-    # Mock Entity Management (for testing)
+    # Entity Provider (production)
     # ---------------------
-    
-    def _get_mock_entity(
+
+    def _get_entity(
         self,
         entity_type: str,
         entity_id: UUID,
     ) -> dict[str, Any] | None:
-        """Get a mock entity."""
-        if entity_type not in self._mock_entities:
-            return None
-        return self._mock_entities[entity_type].get(entity_id)
-    
-    def create_mock_entity(
-        self,
-        entity_type: str,
-        entity_id: UUID | None = None,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        if entity_id is None:
-            entity_id = uuid4()
-        
-        if entity_type not in self._mock_entities:
-            self._mock_entities[entity_type] = {}
-        
-        entity = {
-            "id": entity_id,
-            "version": 1,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            **fields,
-        }
-        
-        self._mock_entities[entity_type][entity_id] = entity
-        return entity_id
-    
-    def update_mock_entity(
-        self,
-        entity_type: str,
-        entity_id: UUID,
-        **fields: Any,
-    ) -> None:
-        """Update a mock entity and increment version."""
-        if entity_type in self._mock_entities:
-            entity = self._mock_entities[entity_type].get(entity_id)
-            if entity:
-                entity.update(fields)
-                entity["version"] = entity.get("version", 0) + 1
-                entity["updated_at"] = datetime.now(timezone.utc)
+        """Get the current entity snapshot for conflict detection."""
+        if not self._entity_provider:
+            raise ValueError("AutosaveDraftsService requires an entity_provider in production")
+        return self._entity_provider(entity_type, entity_id)
+
+
+def get_autosave_drafts_service(session: AsyncSession) -> AutosaveDraftsService:
+    """Create an autosave drafts service wired to the database."""
+    sync_session = session.sync_session
+    return AutosaveDraftsService(
+        entity_provider=build_entity_getter(sync_session),
+    )

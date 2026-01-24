@@ -20,6 +20,14 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import (
+    build_entity_getter,
+    build_entity_query,
+    build_entity_saver,
+)
+
 
 class CloneableEntityType(str, Enum):
     """Entity types that can be cloned."""
@@ -191,15 +199,18 @@ class TemplateCloningService:
     - Clone history tracking
     """
     
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        entity_provider: callable | None = None,
+        entity_saver: callable | None = None,
+        entity_query: callable | None = None,
+    ) -> None:
         """Initialize the service."""
         self._templates: dict[UUID, Template] = {}
         self._clone_history: dict[UUID, CloneHistory] = {}
-        
-        # Mock entity storage for testing
-        self._mock_entities: dict[CloneableEntityType, dict[UUID, dict[str, Any]]] = {
-            et: {} for et in CloneableEntityType
-        }
+        self._entity_provider = entity_provider
+        self._entity_saver = entity_saver
+        self._entity_query = entity_query
         
         # Default fields to reset on clone
         self._reset_fields: dict[CloneableEntityType, list[str]] = {
@@ -666,11 +677,9 @@ class TemplateCloningService:
         parent_id: UUID,
     ) -> list[dict[str, Any]]:
         """Get child entities for a parent."""
-        children = []
-        for entity in self._mock_entities[child_type].values():
-            if entity.get(parent_field) == parent_id:
-                children.append(entity)
-        return children
+        if not self._entity_query:
+            raise ValueError("TemplateCloningService requires an entity_query in production")
+        return self._entity_query(child_type, {parent_field: parent_id})
     
     # ---------------------
     # Create from Template
@@ -809,12 +818,14 @@ class TemplateCloningService:
         
         # Find all quotes that reference this as previous version
         def find_next_versions(parent_id: UUID) -> list[dict[str, Any]]:
-            nexts = []
-            for entity in self._mock_entities[CloneableEntityType.QUOTE].values():
-                if entity.get("previous_version_id") == parent_id:
-                    nexts.append(entity)
-                    nexts.extend(find_next_versions(entity["id"]))
-            return nexts
+            if not self._entity_query:
+                raise ValueError("TemplateCloningService requires an entity_query in production")
+            nexts = self._entity_query(CloneableEntityType.QUOTE, {"previous_version_id": parent_id})
+            expanded: list[dict[str, Any]] = []
+            for entity in nexts:
+                expanded.append(entity)
+                expanded.extend(find_next_versions(entity["id"]))
+            return expanded
         
         versions.extend(find_next_versions(root_id))
         
@@ -888,7 +899,7 @@ class TemplateCloningService:
         return chain
     
     # ---------------------
-    # Mock Entity Management (for testing)
+    # Entity Provider
     # ---------------------
     
     def _get_entity(
@@ -896,8 +907,10 @@ class TemplateCloningService:
         entity_type: CloneableEntityType,
         entity_id: UUID,
     ) -> dict[str, Any] | None:
-        """Get a mock entity."""
-        return self._mock_entities[entity_type].get(entity_id)
+        """Get an entity snapshot."""
+        if not self._entity_provider:
+            raise ValueError("TemplateCloningService requires an entity_provider in production")
+        return self._entity_provider(entity_type, entity_id)
     
     def _save_entity(
         self,
@@ -905,28 +918,17 @@ class TemplateCloningService:
         entity_id: UUID,
         entity: dict[str, Any],
     ) -> None:
-        """Save a mock entity."""
-        self._mock_entities[entity_type][entity_id] = entity
-    
-    def create_mock_entity(
-        self,
-        entity_type: CloneableEntityType,
-        entity_id: UUID | None = None,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        if entity_id is None:
-            entity_id = uuid4()
-        
-        entity = {
-            "id": entity_id,
-            "name": f"Test {entity_type.value}",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "status": "active",
-            "owner_id": None,
-            **fields,
-        }
-        
-        self._mock_entities[entity_type][entity_id] = entity
-        return entity_id
+        """Persist an entity snapshot."""
+        if not self._entity_saver:
+            raise ValueError("TemplateCloningService requires an entity_saver in production")
+        self._entity_saver(entity_type, entity_id, entity)
+
+
+def get_template_cloning_service(session: AsyncSession) -> TemplateCloningService:
+    """Create a template cloning service wired to the database."""
+    sync_session = session.sync_session
+    return TemplateCloningService(
+        entity_provider=build_entity_getter(sync_session),
+        entity_saver=build_entity_saver(sync_session),
+        entity_query=build_entity_query(sync_session),
+    )

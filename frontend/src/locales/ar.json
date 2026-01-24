@@ -373,6 +373,7 @@
       "workbench": {
         "title": "منصة التسعير",
         "subtitle": "قمرة القيادة للمقدر",
+        "convertToNpi": "تحويل إلى NPI",
         "exportPackage": "تصدير حزمة طلب عرض السعر",
         "generateQuote": "إنشاء عرض السعر",
         "rfqPackage": "حزمة طلب عرض السعر",
@@ -413,7 +414,9 @@
         "targetMargin": "الهامش المستهدف",
         "variance": "التباين",
         "aiMatch": "مطابقة تشابه الذكاء الاصطناعي: {percent}% مع {job}",
-        "historicalAssumptions": "الافتراضات التاريخية المستخرجة"
+        "historicalAssumptions": "الافتراضات التاريخية المستخرجة",
+        "quantityLadder": "سُلَّم الكميات",
+        "testLevels": "مستويات الاختبار (Jidoka)"
       },
       "packet": {
         "backToWorkbench": "العودة إلى منصة العمل",

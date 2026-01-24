@@ -20,6 +20,18 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import (
+    build_archived_lister,
+    build_archived_restorer,
+    build_entity_archiver,
+    build_entity_deleter,
+    build_entity_getter,
+    build_entity_lister,
+    build_entity_updater,
+)
+
 
 class EntityType(str, Enum):
     """Entity types that support retention rules."""
@@ -203,14 +215,28 @@ class RetentionReport:
 class DataRetentionService:
     """Service for managing data retention rules."""
     
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        entity_getter: callable | None = None,
+        entity_lister: callable | None = None,
+        entity_archiver: callable | None = None,
+        entity_deleter: callable | None = None,
+        entity_updater: callable | None = None,
+        archived_lister: callable | None = None,
+        archived_restorer: callable | None = None,
+    ) -> None:
         """Initialize the service."""
         self._policies: dict[UUID, RetentionPolicy] = {}
         self._legal_holds: dict[UUID, LegalHold] = {}
         self._records: dict[UUID, RetentionRecord] = {}
         self._jobs: dict[UUID, RetentionJob] = {}
-        self._entities: dict[str, dict[UUID, dict[str, Any]]] = {}
-        self._archived_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
+        self._entity_getter = entity_getter
+        self._entity_lister = entity_lister
+        self._entity_archiver = entity_archiver
+        self._entity_deleter = entity_deleter
+        self._entity_updater = entity_updater
+        self._archived_lister = archived_lister
+        self._archived_restorer = archived_restorer
         
         # Initialize default policies
         self._initialize_default_policies()
@@ -282,30 +308,15 @@ class DataRetentionService:
             )
             self._policies[policy.id] = policy
     
-    def create_mock_entity(
-        self,
-        entity_type: str,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        entity_id = uuid4()
-        if entity_type not in self._entities:
-            self._entities[entity_type] = {}
-        
-        # Add default dates if not provided
-        if "created_at" not in fields:
-            fields["created_at"] = datetime.now(timezone.utc)
-        
-        self._entities[entity_type][entity_id] = fields
-        return entity_id
-    
     def get_entity(
         self,
-        entity_type: str,
+        entity_type: EntityType,
         entity_id: UUID,
     ) -> dict[str, Any] | None:
         """Get an entity by type and ID."""
-        return self._entities.get(entity_type, {}).get(entity_id)
+        if not self._entity_getter:
+            raise ValueError("DataRetentionService requires an entity_getter in production")
+        return self._entity_getter(entity_type, entity_id)
     
     # Policy Management
     
@@ -562,9 +573,14 @@ class DataRetentionService:
     ) -> list[UUID]:
         """Get entities with a specific retention status."""
         result: list[UUID] = []
-        entities = self._entities.get(entity_type.value, {})
+        if not self._entity_lister:
+            raise ValueError("DataRetentionService requires an entity_lister in production")
+        entities = self._entity_lister(entity_type)
         
-        for entity_id, data in entities.items():
+        for data in entities:
+            entity_id = data.get("id")
+            if not entity_id:
+                continue
             created_at = data.get("created_at", datetime.now(timezone.utc))
             entity_status = data.get("status")
             
@@ -597,9 +613,14 @@ class DataRetentionService:
                 continue
             
             policy = policies[0]
-            entities = self._entities.get(et.value, {})
+            if not self._entity_lister:
+                raise ValueError("DataRetentionService requires an entity_lister in production")
+            entities = self._entity_lister(et)
             
-            for entity_id, data in entities.items():
+            for data in entities:
+                entity_id = data.get("id")
+                if not entity_id:
+                    continue
                 created_at = data.get("created_at", now)
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=timezone.utc)
@@ -628,23 +649,12 @@ class DataRetentionService:
         # Check for legal hold
         if self.is_under_hold(entity_type, entity_id):
             return False
-        
-        entities = self._entities.get(entity_type.value, {})
-        if entity_id not in entities:
+        if not self._entity_archiver:
+            raise ValueError("DataRetentionService requires an entity_archiver in production")
+        if not self._entity_archiver(entity_type, entity_id):
             return False
-        
-        entity_data = entities.pop(entity_id)
-        
-        # Move to archive
-        if entity_type.value not in self._archived_entities:
-            self._archived_entities[entity_type.value] = {}
-        
-        entity_data["archived_at"] = datetime.now(timezone.utc)
-        self._archived_entities[entity_type.value][entity_id] = entity_data
-        
-        # Create retention record
+
         self._create_record(entity_type, entity_id, RetentionStatus.ARCHIVED)
-        
         return True
     
     def delete_entity(
@@ -657,14 +667,13 @@ class DataRetentionService:
         # Check for legal hold
         if not force and self.is_under_hold(entity_type, entity_id):
             return False
-        
-        entities = self._entities.get(entity_type.value, {})
-        if entity_id in entities:
-            del entities[entity_id]
-            self._create_record(entity_type, entity_id, RetentionStatus.DELETED)
-            return True
-        
-        return False
+        if not self._entity_deleter:
+            raise ValueError("DataRetentionService requires an entity_deleter in production")
+        if not self._entity_deleter(entity_type, entity_id, force):
+            return False
+
+        self._create_record(entity_type, entity_id, RetentionStatus.DELETED)
+        return True
     
     def anonymize_entity(
         self,
@@ -675,13 +684,12 @@ class DataRetentionService:
         """Anonymize PII in an entity."""
         if self.is_under_hold(entity_type, entity_id):
             return False
-        
-        entities = self._entities.get(entity_type.value, {})
-        if entity_id not in entities:
+        if not self._entity_getter or not self._entity_updater:
+            raise ValueError("DataRetentionService requires entity_getter and entity_updater in production")
+        entity_data = self._entity_getter(entity_type, entity_id)
+        if not entity_data:
             return False
-        
-        entity_data = entities[entity_id]
-        
+
         # Default PII fields
         if fields_to_anonymize is None:
             fields_to_anonymize = [
@@ -689,12 +697,9 @@ class DataRetentionService:
                 "first_name", "last_name", "contact_name",
             ]
         
-        for field_name in fields_to_anonymize:
-            if field_name in entity_data:
-                entity_data[field_name] = "[ANONYMIZED]"
-        
-        entity_data["anonymized_at"] = datetime.now(timezone.utc)
-        return True
+        updates = {field_name: "[ANONYMIZED]" for field_name in fields_to_anonymize if field_name in entity_data}
+        updates["anonymized_at"] = datetime.now(timezone.utc)
+        return self._entity_updater(entity_type, entity_id, updates)
     
     def _create_record(
         self,
@@ -748,9 +753,14 @@ class DataRetentionService:
         )
         
         now = datetime.now(timezone.utc)
-        entities = self._entities.get(policy.entity_type.value, {})
+        if not self._entity_lister:
+            raise ValueError("DataRetentionService requires an entity_lister in production")
+        entities = self._entity_lister(policy.entity_type)
         
-        for entity_id, data in list(entities.items()):
+        for data in list(entities):
+            entity_id = data.get("id")
+            if not entity_id:
+                continue
             job.records_processed += 1
             
             created_at = data.get("created_at", now)
@@ -826,25 +836,18 @@ class DataRetentionService:
         entity_id: UUID,
     ) -> bool:
         """Restore an entity from archive."""
-        archived = self._archived_entities.get(entity_type.value, {})
-        if entity_id not in archived:
-            return False
-        
-        entity_data = archived.pop(entity_id)
-        entity_data["restored_at"] = datetime.now(timezone.utc)
-        
-        if entity_type.value not in self._entities:
-            self._entities[entity_type.value] = {}
-        
-        self._entities[entity_type.value][entity_id] = entity_data
-        return True
+        if not self._archived_restorer:
+            raise ValueError("DataRetentionService requires an archived_restorer in production")
+        return self._archived_restorer(entity_type, entity_id)
     
     def get_archived_entities(
         self,
         entity_type: EntityType,
     ) -> list[UUID]:
         """Get list of archived entity IDs."""
-        return list(self._archived_entities.get(entity_type.value, {}).keys())
+        if not self._archived_lister:
+            raise ValueError("DataRetentionService requires an archived_lister in production")
+        return [entity.get("id") for entity in self._archived_lister(entity_type) if entity.get("id")]
     
     # Reports and Analytics
     
@@ -858,7 +861,9 @@ class DataRetentionService:
         under_hold = 0
         
         for et in EntityType:
-            entities = self._entities.get(et.value, {})
+            if not self._entity_lister:
+                raise ValueError("DataRetentionService requires an entity_lister in production")
+            entities = self._entity_lister(et)
             type_stats: dict[str, int] = {
                 "total": len(entities),
                 "active": 0,
@@ -867,7 +872,10 @@ class DataRetentionService:
                 "held": 0,
             }
             
-            for entity_id, data in entities.items():
+            for data in entities:
+                entity_id = data.get("id")
+                if not entity_id:
+                    continue
                 total_records += 1
                 created_at = data.get("created_at", now)
                 status = self.calculate_retention_status(
@@ -891,8 +899,15 @@ class DataRetentionService:
             if type_stats["total"] > 0:
                 by_entity_type[et.value] = type_stats
         
-        # Estimate storage (mock calculation)
-        storage_mb = total_records * 0.01  # Assume 10KB per record
+        # Estimate storage using reported size metadata when available
+        storage_bytes = 0
+        if self._entity_lister:
+            for et in EntityType:
+                for data in self._entity_lister(et):
+                    size_bytes = data.get("size_bytes")
+                    if isinstance(size_bytes, (int, float)):
+                        storage_bytes += int(size_bytes)
+        storage_mb = storage_bytes / (1024 * 1024) if storage_bytes else 0.0
         
         return RetentionReport(
             generated_at=now,
@@ -912,8 +927,12 @@ class DataRetentionService:
         policies = self.get_policies(entity_type=entity_type, status=PolicyStatus.ACTIVE)
         policy = policies[0] if policies else None
         
-        entities = self._entities.get(entity_type.value, {})
-        archived = self._archived_entities.get(entity_type.value, {})
+        if not self._entity_lister:
+            raise ValueError("DataRetentionService requires an entity_lister in production")
+        if not self._archived_lister:
+            raise ValueError("DataRetentionService requires an archived_lister in production")
+        entities = self._entity_lister(entity_type)
+        archived = self._archived_lister(entity_type)
         
         expired_count = len(self.get_entities_by_status(entity_type, RetentionStatus.EXPIRED))
         approaching_count = len(self.get_entities_by_status(entity_type, RetentionStatus.APPROACHING_EXPIRY))
@@ -928,8 +947,8 @@ class DataRetentionService:
             "expired_count": expired_count,
             "approaching_expiry_count": approaching_count,
             "under_hold_count": len([
-                eid for eid in entities.keys()
-                if self.is_under_hold(entity_type, eid)
+                data.get("id") for data in entities
+                if data.get("id") and self.is_under_hold(entity_type, data.get("id"))
             ]),
         }
     
@@ -957,3 +976,17 @@ class DataRetentionService:
             }
             for r in sorted(records, key=lambda r: r.created_at, reverse=True)
         ]
+
+
+def get_data_retention_service(session: AsyncSession) -> DataRetentionService:
+    """Create a data retention service wired to the database."""
+    sync_session = session.sync_session
+    return DataRetentionService(
+        entity_getter=build_entity_getter(sync_session),
+        entity_lister=build_entity_lister(sync_session),
+        entity_archiver=build_entity_archiver(sync_session),
+        entity_deleter=build_entity_deleter(sync_session),
+        entity_updater=build_entity_updater(sync_session),
+        archived_lister=build_archived_lister(sync_session),
+        archived_restorer=build_archived_restorer(sync_session),
+    )

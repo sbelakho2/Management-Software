@@ -117,6 +117,53 @@ class SemanticChunkRecord(Base, TimestampMixin):
     embedding_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
 
 
+class KnowledgePackRecord(Base, TimestampMixin):
+    """Knowledge packs that group sources together."""
+    __tablename__ = "ai_knowledge_packs"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    metadata_fields: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+    sources: Mapped[list["KnowledgePackSourceRecord"]] = relationship(
+        "KnowledgePackSourceRecord",
+        back_populates="pack",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class KnowledgePackSourceRecord(Base):
+    """Join table linking knowledge packs to sources."""
+    __tablename__ = "ai_knowledge_pack_sources"
+
+    pack_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ai_knowledge_packs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ai_knowledge_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    pack: Mapped[KnowledgePackRecord] = relationship("KnowledgePackRecord", back_populates="sources")
+    source: Mapped[KnowledgeSourceRecord] = relationship("KnowledgeSourceRecord")
+
+    __table_args__ = (
+        Index("ix_ai_knowledge_pack_sources_unique", pack_id, source_id, unique=True),
+    )
+
+
 # =============================================================================
 # FACTORY LAUNCHPAD (PERSISTENCE)
 # =============================================================================

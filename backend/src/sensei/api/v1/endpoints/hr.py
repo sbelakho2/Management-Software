@@ -3,6 +3,7 @@ HR (Human Resources) API Endpoints.
 Aggregates employee data, certifications, and headcount.
 """
 
+from datetime import date, timedelta
 from typing import Any, List
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from sensei.api.deps import DBSession, CurrentUser
 from sensei.models.user import User, Role
 from sensei.models.hr import EmployeeProfile, HRJobOpening, HRLeaveRequest, HRJobApplication, HRAppraisal
 from sensei.models.learning import UserLearningProgress, LearningModule
+from sensei.models.training import UserSkill, CertificationStatus
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 
@@ -43,14 +45,46 @@ async def get_hr_stats(db: DBSession) -> Any:
     total_employees = await db.scalar(select(func.count(EmployeeProfile.id)))
     open_positions = await db.scalar(select(func.count(HRJobOpening.id)).where(HRJobOpening.status == "open"))
     pending_time_off = await db.scalar(select(func.count(HRLeaveRequest.id)).where(HRLeaveRequest.status == "pending"))
-    
+    today = date.today()
+    month_start = today.replace(day=1)
+    year_start = today.replace(month=1, day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    expiring_certifications = await db.scalar(
+        select(func.count(UserSkill.id)).where(
+            UserSkill.certification_status == CertificationStatus.CERTIFIED,
+            UserSkill.expiration_date.is_not(None),
+            UserSkill.expiration_date >= today,
+            UserSkill.expiration_date <= today + timedelta(days=30),
+        )
+    ) or 0
+
+    new_hires_this_month = await db.scalar(
+        select(func.count(EmployeeProfile.id)).where(
+            EmployeeProfile.hire_date.is_not(None),
+            EmployeeProfile.hire_date >= month_start,
+            EmployeeProfile.hire_date < next_month,
+        )
+    ) or 0
+
+    terminated_last_year = await db.scalar(
+        select(func.count(EmployeeProfile.id)).where(
+            EmployeeProfile.termination_date.is_not(None),
+            EmployeeProfile.termination_date >= (today - timedelta(days=365)),
+        )
+    ) or 0
+
+    turnover_rate = 0.0
+    if total_employees:
+        turnover_rate = (terminated_last_year / total_employees) * 100
+
     return HRStats(
         total_employees=total_employees or 0,
         open_positions=open_positions or 0,
         pending_time_off=pending_time_off or 0,
-        expiring_certifications=5, # Still some mocks until cert service updated
-        new_hires_this_month=3,
-        turnover_rate=4.2
+        expiring_certifications=expiring_certifications,
+        new_hires_this_month=new_hires_this_month,
+        turnover_rate=round(turnover_rate, 2),
     )
 
 @router.get("/headcount", response_model=List[DepartmentHeadcount])

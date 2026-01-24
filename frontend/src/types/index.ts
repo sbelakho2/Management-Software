@@ -116,6 +116,10 @@ export interface RFQ extends AuditableEntity {
   assigned_to?: UUID;
   assigned_user?: User;
   tags: string[];
+  revision: number;
+  quotes?: Quote[];
+  triage_risk_score?: number;
+  custom_fields?: Record<string, unknown>;
 }
 
 export type RFQStatus = 

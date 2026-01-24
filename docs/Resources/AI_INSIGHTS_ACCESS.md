@@ -139,11 +139,11 @@ AI insights are organized into 8 major categories with 57 individual insight typ
 - Sales Pipeline Health
 - Win/Loss Analysis
 - Customer Insights
-- Quote Optimization
+- Quote Optimization (AI recommendations for margin/pricing)
+- Quoting Memory (Semantic job similarity retrieval)
+- Smart RFQ Ingestion (Technical metadata extraction)
 - Market Trends
 - Customer Satisfaction
-- Churn Predictions
-- Revenue Attribution
 
 ### 8. Strategic & Executive
 - KPI Dashboard

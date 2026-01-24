@@ -11,6 +11,10 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import build_user_access_provider
+
 
 class ReviewFrequency(str, Enum):
     """Access review frequency options."""
@@ -153,13 +157,14 @@ class AccessViolation:
 class AccessReviewService:
     """Service for managing periodic access reviews."""
 
-    def __init__(self) -> None:
+    def __init__(self, user_access_provider: callable | None = None) -> None:
         """Initialize the access review service."""
         self._campaigns: dict[UUID, ReviewCampaign] = {}
         self._attestations: dict[UUID, Attestation] = {}
         self._user_access: dict[UUID, UserAccess] = {}
         self._reminders: list[ReviewReminder] = []
         self._violations: list[AccessViolation] = []
+        self._user_access_provider = user_access_provider
 
         # Configuration
         self._privileged_roles = ["GM", "Admin", "Finance_Manager", "Quality_Manager"]
@@ -274,8 +279,9 @@ class AccessReviewService:
                 campaign.attestation_count += 1
 
     def _get_users_with_roles(self, roles: list[str]) -> list[UserAccess]:
-        """Get users with specified roles (mock implementation)."""
-        # In production, this would query the user/role database
+        """Get users with specified roles."""
+        if self._user_access_provider:
+            return self._user_access_provider(roles)
         return list(self._user_access.values())
 
     def complete_campaign(self, campaign_id: UUID) -> ReviewCampaign | None:
@@ -823,3 +829,11 @@ class AccessReviewService:
                 campaigns.append(campaign)
 
         return campaigns
+
+
+def get_access_review_service(session: AsyncSession) -> AccessReviewService:
+    """Create an access review service wired to the database."""
+    sync_session = session.sync_session
+    return AccessReviewService(
+        user_access_provider=build_user_access_provider(sync_session),
+    )

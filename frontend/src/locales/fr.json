@@ -404,6 +404,7 @@
       "workbench": {
         "title": "Workbench de devis",
         "subtitle": "Cockpit de l'estimateur",
+        "convertToNpi": "Convertir en NPI",
         "exportPackage": "Exporter le package RFQ",
         "generateQuote": "Générer le devis",
         "rfqPackage": "Package RFQ",
@@ -444,7 +445,9 @@
         "targetMargin": "Marge cible",
         "variance": "Variance",
         "aiMatch": "Match de similarité IA: {percent}% avec {job}",
-        "historicalAssumptions": "Assomptions historiques extraites"
+        "historicalAssumptions": "Assomptions historiques extraites",
+        "quantityLadder": "Échelle de quantités",
+        "testLevels": "Niveaux de test (Jidoka)"
       },
       "packet": {
         "backToWorkbench": "Retour au workbench",
@@ -813,6 +816,7 @@
     "auditor": "Auditeur",
     "ctqTracking": "Suivi CTQ",
     "customers": "Clients",
+    "emailDrafting": "Rédaction d'e-mails",
     "dashboard": "Tableau de bord",
     "dashboards": "Tableaux de bord",
     "exceptions": "Exceptions",

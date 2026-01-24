@@ -20,6 +20,10 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import build_entity_getter
+
 
 class NudgeType(str, Enum):
     """Types of data hygiene nudges."""
@@ -193,12 +197,12 @@ class EntityHygieneScore:
 class DataHygieneNudgesService:
     """Service for managing data hygiene nudges."""
     
-    def __init__(self) -> None:
+    def __init__(self, entity_provider: callable | None = None) -> None:
         """Initialize the service."""
         self._nudges: dict[UUID, Nudge] = {}
+        self._entity_provider = entity_provider
         self._suppression_rules: dict[UUID, NudgeSuppressionRule] = {}
         self._field_rules: dict[EntityType, list[FieldRule]] = {}
-        self._entities: dict[str, dict[UUID, dict[str, Any]]] = {}
         
         # Initialize default field rules
         self._initialize_default_rules()
@@ -454,27 +458,7 @@ class DataHygieneNudgesService:
             ),
         ]
     
-    def create_mock_entity(
-        self,
-        entity_type: str,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        entity_id = uuid4()
-        if entity_type not in self._entities:
-            self._entities[entity_type] = {}
-        self._entities[entity_type][entity_id] = fields
-        return entity_id
-    
-    def update_mock_entity(
-        self,
-        entity_type: str,
-        entity_id: UUID,
-        **fields: Any,
-    ) -> None:
-        """Update a mock entity."""
-        if entity_type in self._entities and entity_id in self._entities[entity_type]:
-            self._entities[entity_type][entity_id].update(fields)
+    # Entity helpers are provided by storage integrations
     
     def get_entity_data(
         self,
@@ -482,7 +466,16 @@ class DataHygieneNudgesService:
         entity_id: UUID,
     ) -> dict[str, Any] | None:
         """Get entity data for hygiene checking."""
-        return self._entities.get(entity_type.value, {}).get(entity_id)
+        if not self._entity_provider:
+            raise ValueError("DataHygieneNudgesService requires an entity_provider in production")
+        return self._entity_provider(entity_type, entity_id)
+
+def get_data_hygiene_nudges_service(session: AsyncSession) -> DataHygieneNudgesService:
+    """Create a data hygiene nudges service wired to the database."""
+    sync_session = session.sync_session
+    return DataHygieneNudgesService(
+        entity_provider=build_entity_getter(sync_session),
+    )
     
     def add_field_rule(
         self,
@@ -997,3 +990,11 @@ class DataHygieneNudgesService:
             del self._nudges[nudge_id]
         
         return len(to_delete)
+
+
+def get_data_hygiene_nudges_service(session: AsyncSession) -> DataHygieneNudgesService:
+    """Create a data hygiene nudges service wired to the database."""
+    sync_session = session.sync_session
+    return DataHygieneNudgesService(
+        entity_provider=build_entity_getter(sync_session),
+    )

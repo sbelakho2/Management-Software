@@ -13,7 +13,9 @@ import {
   ShieldAlert,
   ChevronRight,
   Send,
-  Download
+  Download,
+  Loader2,
+  Box
 } from 'lucide-react';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,7 +24,10 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useI18n } from '@/contexts/i18n-context';
+import { useToast } from '@/hooks/use-toast';
 import { useQuotingHelperStore } from '@/stores/quoting-helper';
 import { usePipelineStore } from '@/stores/pipeline';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
@@ -36,15 +41,56 @@ function QuotingWorkbenchContent() {
   const { id: rfqId } = useParams();
   const router = useRouter();
   const { t } = useI18n();
+  const { toast } = useToast();
   const { 
     workPackets, 
     fetchWorkPackets, 
     generateWorkPackets, 
     isLoading,
     quoteMemory,
-    fetchQuoteMemory
+    fetchQuoteMemory,
+    convertToNpi
   } = useQuotingHelperStore();
   const { currentRfq, fetchRfqDetails } = usePipelineStore();
+
+  const [quantity, setQuantity] = React.useState(100);
+  const [testLevels, setTestLevels] = React.useState({
+    aoi: true,
+    xray: false,
+    ict: false,
+    fct: false
+  });
+
+  const [isNpiConverting, setIsNpiConverting] = React.useState(false);
+
+  const handleConvertToNpi = async () => {
+    if (!currentRfq?.quotes?.[0]?.id) {
+      toast({
+        title: "No Quote Found",
+        description: "A quote must be generated before converting to NPI.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsNpiConverting(true);
+    try {
+      const project = await convertToNpi(currentRfq.quotes[0].id);
+      toast({
+        title: "NPI Handoff Successful",
+        description: `Created project: ${project.project_name}`,
+      });
+      router.push(`/project-management/${project.project_id}`);
+    } catch (error: any) {
+      toast({
+        title: "Handoff Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsNpiConverting(false);
+    }
+  };
 
   React.useEffect(() => {
     if (rfqId) {
@@ -89,6 +135,19 @@ function QuotingWorkbenchContent() {
         </div>
 
         <div className="flex items-center gap-4">
+          <Button 
+            variant="outline" 
+            className="h-10 border-rams-line bg-rams-module hover:bg-rams-panel-hover text-[10px] uppercase font-black tracking-widest"
+            onClick={handleConvertToNpi}
+            disabled={isNpiConverting}
+          >
+            {isNpiConverting ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Box className="mr-2 h-3.5 w-3.5" />
+            )}
+            {t('common.quotingHelper.workbench.convertToNpi')}
+          </Button>
           <Button variant="outline" className="h-10 border-rams-line bg-rams-module hover:bg-rams-panel-hover text-[10px] uppercase font-black tracking-widest">
             <Download className="mr-2 h-3.5 w-3.5" /> {t('common.quotingHelper.workbench.exportPackage')}
           </Button>
@@ -157,15 +216,15 @@ function QuotingWorkbenchContent() {
                 <div className="p-3 bg-rams-red/5 border border-rams-red/20 flex gap-3">
                   <AlertCircle className="h-4 w-4 text-rams-red shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-[10px] font-black uppercase text-rams-red">{t('common.quotingHelper.workbench.risks.missingCentroid.title', 'Missing Centroid Data')}</p>
-                    <p className="text-[9px] text-muted-foreground mt-1 uppercase leading-relaxed">{t('common.quotingHelper.workbench.risks.missingCentroid.desc', 'Blocked Stage 2A (EE Review). Required for placement estimation.')}</p>
+                    <p className="text-[10px] font-black uppercase text-rams-red">{t('common.quotingHelper.workbench.risks.missingCentroid.title')}</p>
+                    <p className="text-[9px] text-muted-foreground mt-1 uppercase leading-relaxed">{t('common.quotingHelper.workbench.risks.missingCentroid.desc')}</p>
                   </div>
                 </div>
                 <div className="p-3 bg-rams-orange/5 border border-rams-orange/20 flex gap-3">
                   <AlertCircle className="h-4 w-4 text-rams-orange shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-[10px] font-black uppercase text-rams-orange">{t('common.quotingHelper.workbench.risks.longLead.title', 'Long Lead Material')}</p>
-                    <p className="text-[9px] text-muted-foreground mt-1 uppercase leading-relaxed">{t('common.quotingHelper.workbench.risks.longLead.desc', 'U45 (MCU) has 26-week lead time. Sourcing alternate recommended.')}</p>
+                    <p className="text-[10px] font-black uppercase text-rams-orange">{t('common.quotingHelper.workbench.risks.longLead.title')}</p>
+                    <p className="text-[9px] text-muted-foreground mt-1 uppercase leading-relaxed">{t('common.quotingHelper.workbench.risks.longLead.desc')}</p>
                   </div>
                 </div>
               </div>
@@ -260,50 +319,123 @@ function QuotingWorkbenchContent() {
             </TabsList>
             
             <TabsContent value="costing" className="mt-4">
-              <Card className="bg-rams-module border-rams-line shadow-none">
-                <CardContent className="p-6">
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-4 gap-4">
-                      {[
-                        { label: t('common.quotingHelper.workbench.material'), value: 12450.50, color: 'text-foreground' },
-                        { label: t('common.quotingHelper.workbench.labor'), value: 3200.00, color: 'text-foreground' },
-                        { label: t('common.quotingHelper.workbench.nreTooling'), value: 1500.00, color: 'text-foreground' },
-                        { label: t('common.quotingHelper.workbench.estimatedTotal'), value: 17150.50, color: 'text-rams-orange font-bold' },
-                      ].map(item => (
-                        <div key={item.label} className="p-4 bg-rams-panel border border-rams-line">
-                          <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest mb-1">{item.label}</p>
-                          <p className={cn("text-lg font-mono tracking-tighter", item.color)}>
-                            {formatCurrency(item.value, currentRfq?.currency || 'MAD')}
-                          </p>
+              <div className="grid grid-cols-12 gap-6">
+                <div className="col-span-12 lg:col-span-4 space-y-6">
+                  <Card className="bg-rams-module border-rams-line shadow-none">
+                    <CardHeader className="border-b border-rams-line/50 pb-4">
+                      <CardTitle className="text-[11px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                        <Activity className="h-3.5 w-3.5 text-rams-orange" />
+                        Interactive Quote Explorer
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6 space-y-8">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{t('common.quotingHelper.workbench.quantityLadder')}</Label>
+                          <span className="font-mono text-xs font-bold text-rams-orange tabular-nums">{quantity} units</span>
                         </div>
-                      ))}
-                    </div>
+                        <input 
+                          type="range" 
+                          min="10" 
+                          max="10000" 
+                          step="10"
+                          value={quantity}
+                          onChange={(e) => setQuantity(parseInt(e.target.value))}
+                          className="w-full h-1 bg-rams-line rounded-none appearance-none cursor-pointer accent-rams-orange"
+                        />
+                        <div className="flex justify-between text-[8px] font-mono text-muted-foreground/40">
+                          <span>10</span>
+                          <span>5000</span>
+                          <span>10000</span>
+                        </div>
+                      </div>
 
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{t('common.quotingHelper.workbench.marginAnalysis')}</p>
-                        <Badge className="bg-rams-green/10 text-rams-green border-rams-green/20 text-[9px] font-mono uppercase">{t('common.quotingHelper.workbench.healthy')}</Badge>
+                      <Separator className="bg-rams-line/30" />
+
+                      <div className="space-y-4">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{t('common.quotingHelper.workbench.testLevels')}</Label>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="flex items-center justify-between p-2 bg-rams-panel border border-rams-line">
+                            <span className="text-[10px] font-bold uppercase">{t('common.tests.aoi')}</span>
+                            <Switch 
+                              checked={testLevels.aoi} 
+                              onCheckedChange={(val) => setTestLevels({...testLevels, aoi: val})}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between p-2 bg-rams-panel border border-rams-line">
+                            <span className="text-[10px] font-bold uppercase">{t('common.tests.xray')}</span>
+                            <Switch 
+                              checked={testLevels.xray} 
+                              onCheckedChange={(val) => setTestLevels({...testLevels, xray: val})}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between p-2 bg-rams-panel border border-rams-line">
+                            <span className="text-[10px] font-bold uppercase">{t('common.tests.ict')}</span>
+                            <Switch 
+                              checked={testLevels.ict} 
+                              onCheckedChange={(val) => setTestLevels({...testLevels, ict: val})}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between p-2 bg-rams-panel border border-rams-line">
+                            <span className="text-[10px] font-bold uppercase">{t('common.tests.fct')}</span>
+                            <Switch 
+                              checked={testLevels.fct} 
+                              onCheckedChange={(val) => setTestLevels({...testLevels, fct: val})}
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div className="p-4 bg-rams-panel border border-rams-line flex items-center justify-between">
-                        <div className="space-y-1">
-                          <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.grossMargin')}</p>
-                          <p className="text-xl font-black italic">28.5%</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="col-span-12 lg:col-span-8">
+                  <Card className="bg-rams-module border-rams-line shadow-none h-full">
+                    <CardContent className="p-6">
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[
+                            { label: t('common.quotingHelper.workbench.material'), value: 12450.50 * (quantity / 100), color: 'text-foreground' },
+                            { label: t('common.quotingHelper.workbench.labor'), value: 3200.00 * (1 + (testLevels.ict ? 0.2 : 0) + (testLevels.fct ? 0.3 : 0)), color: 'text-foreground' },
+                            { label: t('common.quotingHelper.workbench.nreTooling'), value: 1500.00 + (testLevels.ict ? 2000 : 0), color: 'text-foreground' },
+                            { label: t('common.quotingHelper.workbench.estimatedTotal'), value: (12450.50 * (quantity / 100)) + (3200.00 * (1 + (testLevels.ict ? 0.2 : 0) + (testLevels.fct ? 0.3 : 0))) + 1500.00 + (testLevels.ict ? 2000 : 0), color: 'text-rams-orange font-bold' },
+                          ].map(item => (
+                            <div key={item.label} className="p-4 bg-rams-panel border border-rams-line">
+                              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest mb-1">{item.label}</p>
+                              <p className={cn("text-lg font-mono tracking-tighter", item.color)}>
+                                {formatCurrency(item.value, currentRfq?.currency || 'MAD')}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                        <div className="h-10 w-[1px] bg-rams-line" />
-                        <div className="space-y-1">
-                          <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.targetMargin')}</p>
-                          <p className="text-xl font-black italic text-muted-foreground/40">25.0%</p>
-                        </div>
-                        <div className="h-10 w-[1px] bg-rams-line" />
-                        <div className="space-y-1">
-                          <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.variance')}</p>
-                          <p className="text-xl font-black italic text-rams-green">+3.5%</p>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{t('common.quotingHelper.workbench.marginAnalysis')}</p>
+                            <Badge className="bg-rams-green/10 text-rams-green border-rams-green/20 text-[9px] font-mono uppercase">{t('common.quotingHelper.workbench.healthy')}</Badge>
+                          </div>
+                          <div className="p-4 bg-rams-panel border border-rams-line flex items-center justify-between">
+                            <div className="space-y-1">
+                              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.grossMargin')}</p>
+                              <p className="text-xl font-black italic">28.5%</p>
+                            </div>
+                            <div className="h-10 w-[1px] bg-rams-line" />
+                            <div className="space-y-1">
+                              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.targetMargin')}</p>
+                              <p className="text-xl font-black italic text-muted-foreground/40">25.0%</p>
+                            </div>
+                            <div className="h-10 w-[1px] bg-rams-line" />
+                            <div className="space-y-1">
+                              <p className="text-[9px] text-muted-foreground uppercase font-bold tracking-widest">{t('common.quotingHelper.workbench.variance')}</p>
+                              <p className="text-xl font-black italic text-rams-green">+3.5%</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </TabsContent>
             
             <TabsContent value="memory" className="mt-4">

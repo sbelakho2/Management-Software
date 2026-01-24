@@ -316,7 +316,24 @@ Access: **Sales → Quotes → New Quote**
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Price Lookup
+### 5.2 Industrial Quoting (Quoting Helper)
+
+For complex industrial jobs (PCBA, Wire Harness, Box Build), use the **Quoting Helper** workflow to leverage engineering expertise and AI.
+
+#### When to use Quoting Helper:
+- Multi-layer PCBAs requiring DFM review.
+- Custom mechanical enclosures.
+- New Product Introductions (NPI).
+- High-value/High-risk opportunities.
+
+#### How to use Quoting Helper:
+1. **Initialize**: From the RFQ screen, click **Quoting Workbench** → **Initialize Quoting Packets**.
+2. **Collaborate**: Monitor the **Stage-Gate Tracker** as EE, ME, and MfgE disciplines provide technical inputs.
+3. **AI Assistance**: Use **Quote Memory** to see how similar jobs were quoted in the past.
+4. **Interactive Explorer**: Use the sliders to see how price changes with different **Quantity Ladders** and **Test Levels**.
+5. **Finalize**: Once engineering sign-off is complete, the **Estimator** generates the final cost build.
+
+### 5.3 Price Lookup
 
 Check pricing and availability:
 

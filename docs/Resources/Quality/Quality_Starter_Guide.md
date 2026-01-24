@@ -945,6 +945,16 @@ Track returned products:
 5. Process credit/replacement
 6. Update customer
 
+### 13.2 Industrial Quoting Contributions
+Quality Engineers participate in the Stage-Gate quoting workflow to ensure compliance and inspection requirements are costed accurately.
+
+#### Quality Work Packet:
+1. Open the **Quality Review Packet** in the Quoting Workbench.
+2. Define the **Inspection Level** (e.g., AQL Level II, 100% Inspection).
+3. Identify **Compliance Documents** required (e.g., RoHS, REACH, First Article Inspection - FAI).
+4. Provide **Internal Notes** on quality risks or special equipment needs (e.g., CMM, X-Ray).
+5. Click **Sign Off** to unblock the quoting process.
+
 ---
 
 ## 14. Reporting & Analytics

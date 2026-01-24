@@ -11,10 +11,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import axios from 'axios';
-
-// API base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { apiClient } from '@/api/client';
 
 // ============================================================================
 // Types & Enums
@@ -105,6 +102,14 @@ export interface EmailContext {
   language: Language;
   includeSignature: boolean;
   maxParagraphs: number;
+  threadEntityType?: string;
+  threadEntityId?: string;
+}
+
+export interface ThreadContext {
+  entityType?: string;
+  entityId?: string;
+  reasoningId?: string;
 }
 
 export interface GenerationRequest {
@@ -117,6 +122,7 @@ export interface GenerationRequest {
   language?: string;
   requestedBy?: string;
   requestedAt: Date;
+  threadContext?: ThreadContext;
 }
 
 export interface GeneratedDraft {
@@ -143,6 +149,7 @@ export interface GeneratedDraft {
   tone?: string;
   language?: string;
   modelVersion?: string;
+  reasoningId?: string;
   generatedAt?: Date;
   createdAt: Date;
   reviewedAt?: Date;
@@ -439,146 +446,6 @@ export function createRecipient(email: string, name?: string): Recipient {
 }
 
 // ============================================================================
-// Mock Draft Generation
-// ============================================================================
-
-function mockGenerateDraft(request: GenerationRequest): GeneratedDraft {
-  const { context, senderName, senderTitle, senderEmail, companyName } = request;
-  const recipient = context.recipient;
-
-  // Generate subject
-  let subject = '';
-  if (context.referenceNumber) {
-    subject = `Re: ${context.referenceNumber}`;
-    if (context.purpose === 'missing_info_request') {
-      subject = `Additional Information Needed - ${context.referenceNumber}`;
-    } else if (context.purpose === 'quote_followup') {
-      subject = `Follow-up: Quote ${context.referenceNumber}`;
-    }
-  } else if (context.subjectHint) {
-    subject = context.subjectHint;
-  } else {
-    subject = getPurposeLabel(context.purpose);
-  }
-
-  // Generate salutation
-  const displayName = recipient.name?.split(' ')[0] || 'there';
-  let salutation = '';
-  if (context.tone === 'formal') {
-    salutation = `Dear ${recipient.title || ''} ${recipient.name || displayName},`.trim();
-  } else if (context.tone === 'friendly') {
-    salutation = `Hi ${displayName},`;
-  } else {
-    salutation = `Dear ${displayName},`;
-  }
-
-  // Generate opening
-  const openings: Record<EmailPurpose, string> = {
-    missing_info_request: `I hope this email finds you well. I'm reaching out regarding ${context.referenceNumber || 'your recent inquiry'} to request some additional information.`,
-    quote_followup: `I wanted to follow up on the quote we sent and see if you had any questions.`,
-    quote_submission: `Thank you for the opportunity to quote on your project. Please find our proposal attached.`,
-    supplier_inquiry: `We're exploring potential partnerships and would like to learn more about your capabilities.`,
-    meeting_request: `I'd like to schedule a meeting to discuss ${context.subjectHint || 'an important matter'}.`,
-    meeting_confirmation: `This email confirms our upcoming meeting.`,
-    meeting_reschedule: `I need to request a change to our scheduled meeting.`,
-    issue_notification: `I'm writing to inform you about an important matter that requires your attention.`,
-    status_update: `I wanted to provide you with an update on the current status.`,
-    thank_you: `I wanted to take a moment to thank you.`,
-    introduction: `I hope this email finds you well. I wanted to introduce myself.`,
-    escalation: `I'm reaching out regarding an urgent matter that requires immediate attention.`,
-    apology: `I'm writing to sincerely apologize for the inconvenience.`,
-    custom: `I hope this email finds you well.`,
-  };
-  const opening = openings[context.purpose] || openings.custom;
-
-  // Generate main content
-  const mainContent: string[] = [];
-  if (context.keyPoints.length > 0) {
-    mainContent.push('Here are the key details:');
-    context.keyPoints.forEach((point) => {
-      mainContent.push(`• ${point}`);
-    });
-  }
-  if (context.deadline) {
-    mainContent.push(
-      `We would appreciate a response by ${context.deadline.toLocaleDateString()} to ensure we can meet our timelines.`
-    );
-  }
-  if (context.attachments.length > 0) {
-    if (context.attachments.length === 1) {
-      mainContent.push(`I've attached ${context.attachments[0]} for your reference.`);
-    } else {
-      const attachmentList =
-        context.attachments.slice(0, -1).join(', ') +
-        ` and ${context.attachments[context.attachments.length - 1]}`;
-      mainContent.push(`I've attached ${attachmentList} for your reference.`);
-    }
-  }
-  mainContent.push('Please let me know if you have any questions.');
-
-  // Generate closing
-  const closings: Record<EmailTone, string> = {
-    formal: 'Yours sincerely,',
-    professional: 'Best regards,',
-    friendly: 'Thanks!',
-    urgent: 'Looking forward to your prompt response,',
-    apologetic: 'With sincere apologies,',
-    appreciative: 'With gratitude,',
-    concise: 'Regards,',
-  };
-  const closing = closings[context.tone] || closings.professional;
-
-  // Generate signature
-  const signatureParts = [senderName];
-  if (senderTitle) signatureParts.push(senderTitle);
-  if (companyName) signatureParts.push(companyName);
-  if (senderEmail) signatureParts.push(senderEmail);
-  const signature = context.includeSignature ? signatureParts.join('\n') : senderName;
-
-  // Assemble body
-  const bodyParts = [salutation, '', opening, '', ...mainContent, '', closing, '', signature];
-  const bodyPlain = bodyParts.join('\n');
-
-  // Generate HTML
-  const bodyHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333;}p{margin:0 0 16px 0;}</style></head>
-<body>
-<p>${salutation}</p>
-<p>${opening}</p>
-${mainContent.map((p) => `<p>${p}</p>`).join('')}
-<p>${closing}</p>
-<p>${signature.replace(/\n/g, '<br>')}</p>
-</body>
-</html>`;
-
-  return {
-    id: generateId(),
-    requestId: request.id,
-    subject,
-    bodyPlain,
-    bodyHtml,
-    salutation,
-    opening,
-    mainContent,
-    closing,
-    signature,
-    status: 'ready',
-    confidenceScore: 0.85,
-    alternatives: [
-      `Alternative Subject: ${subject} - Action Required`,
-      `Alternative Subject: Quick Question About ${context.referenceNumber || 'Your Request'}`,
-    ],
-    complianceIssues: [],
-    suggestions: ['Consider adding a specific deadline for response'],
-    tokensUsed: 250,
-    generationTimeMs: 450,
-    createdAt: new Date(),
-    editsMade: [],
-  };
-}
-
-// ============================================================================
 // Store Implementation
 // ============================================================================
 
@@ -593,7 +460,7 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
 
         try {
           // Call backend AI email drafting service
-          const response = await axios.post(`${API_BASE_URL}/api/v1/ai/email/generate`, {
+          const apiDraft = await apiClient.post<any>('/ai/email/generate', {
             recipient: {
               email: request.context.recipient.email,
               name: request.context.recipient.name,
@@ -611,13 +478,10 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
             sender_email: request.senderEmail,
             company_name: request.companyName,
             language: request.language,
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            thread_entity_type: request.threadContext?.entityType,
+            thread_entity_id: request.threadContext?.entityId,
+            thread_reasoning_id: request.threadContext?.reasoningId,
           });
-
-          const apiDraft = response.data;
           
           // Map API response to frontend draft format
           const draft: GeneratedDraft = {
@@ -639,6 +503,7 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
             language: request.language,
             generatedAt: new Date(),
             modelVersion: apiDraft.model_version || 'v1.0',
+            reasoningId: apiDraft.reasoning_id || request.threadContext?.reasoningId,
             confidenceScore: apiDraft.confidence_score || 0.85,
             alternatives: apiDraft.alternatives || [],
             complianceIssues: apiDraft.compliance_issues || [],
@@ -690,51 +555,6 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
 
           return draft;
         } catch (error) {
-          // If API fails, fall back to local generation for development
-          if (axios.isAxiosError(error) && (!error.response || error.response.status >= 500)) {
-            console.warn('Email API unavailable, using local generation');
-            const draft = mockGenerateDraft(request);
-            
-            const drafts = new Map(get().drafts);
-            drafts.set(draft.id, draft);
-
-            const history = [...get().history];
-            history.push({
-              draftId: draft.id,
-              action: 'generated',
-              actorId: request.requestedBy,
-              timestamp: new Date(),
-            });
-
-            const recentRecipients = [...get().recentRecipients];
-            const existingIdx = recentRecipients.findIndex(
-              (r) => r.recipient.email === request.context.recipient.email
-            );
-            if (existingIdx >= 0) {
-              recentRecipients[existingIdx] = {
-                recipient: request.context.recipient,
-                lastUsed: new Date(),
-                usageCount: recentRecipients[existingIdx].usageCount + 1,
-              };
-            } else {
-              recentRecipients.unshift({
-                recipient: request.context.recipient,
-                lastUsed: new Date(),
-                usageCount: 1,
-              });
-            }
-            
-            set({
-              drafts,
-              activeDraftId: draft.id,
-              history,
-              recentRecipients: recentRecipients.slice(0, 20),
-              isGenerating: false,
-            });
-            
-            return draft;
-          }
-          
           set({
             isGenerating: false,
             generationError: error instanceof Error ? error.message : 'Generation failed',

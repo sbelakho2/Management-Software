@@ -32,50 +32,7 @@ from sensei.core.time import utcnow_naive
 
 class AdvisoryType(str, Enum):
     """Type of advisory generated."""
-    
-    SCORING_SUGGESTION = "scoring_suggestion"
-    RISK_ASSESSMENT = "risk_assessment"
-    DECISION_SUPPORT = "decision_support"
-    GAP_ANALYSIS = "gap_analysis"
-    BENCHMARK_COMPARISON = "benchmark_comparison"
-    IMPROVEMENT_PLAN = "improvement_plan"
-
-
-class DecisionRecommendation(str, Enum):
-    """Decision recommendation."""
-    
-    GO = "go"
-    CONDITIONAL_GO = "conditional_go"
-    NO_GO = "no_go"
-    NEEDS_MORE_INFO = "needs_more_info"
-    ESCALATE = "escalate"
-
-
-class ConfidenceLevel(str, Enum):
-    """Confidence level of recommendation."""
-    
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    UNCERTAIN = "uncertain"
-
-
-class RiskCategory(str, Enum):
-    """Risk category."""
-    
-    TECHNICAL = "technical"
-    COMMERCIAL = "commercial"
-    CAPACITY = "capacity"
-    QUALITY = "quality"
-    DELIVERY = "delivery"
-    SUPPLY_CHAIN = "supply_chain"
-    FINANCIAL = "financial"
-    STRATEGIC = "strategic"
-
-
-class RiskSeverity(str, Enum):
-    """Risk severity level."""
-    
+# Benchmark data is expected to be provided via rfq_context.
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
@@ -292,54 +249,8 @@ class QualificationAdvisory:
 
 
 # ============================================================================
-# Historical Data for Scoring
+# Benchmark inputs are provided via rfq_context
 # ============================================================================
-
-# Mock historical benchmark data by criterion category
-CATEGORY_BENCHMARKS = {
-    "technical": {
-        "average_score": Decimal("7.5"),
-        "std_dev": Decimal("1.5"),
-        "min_acceptable": Decimal("5.0"),
-        "excellent_threshold": Decimal("8.5"),
-    },
-    "commercial": {
-        "average_score": Decimal("7.0"),
-        "std_dev": Decimal("2.0"),
-        "min_acceptable": Decimal("4.0"),
-        "excellent_threshold": Decimal("8.0"),
-    },
-    "capacity": {
-        "average_score": Decimal("6.5"),
-        "std_dev": Decimal("2.5"),
-        "min_acceptable": Decimal("4.0"),
-        "excellent_threshold": Decimal("8.0"),
-    },
-    "quality": {
-        "average_score": Decimal("8.0"),
-        "std_dev": Decimal("1.0"),
-        "min_acceptable": Decimal("6.0"),
-        "excellent_threshold": Decimal("9.0"),
-    },
-    "strategic": {
-        "average_score": Decimal("6.0"),
-        "std_dev": Decimal("2.5"),
-        "min_acceptable": Decimal("3.0"),
-        "excellent_threshold": Decimal("8.0"),
-    },
-    "risk": {
-        "average_score": Decimal("7.0"),
-        "std_dev": Decimal("2.0"),
-        "min_acceptable": Decimal("5.0"),
-        "excellent_threshold": Decimal("8.5"),
-    },
-    "supply_chain": {
-        "average_score": Decimal("6.5"),
-        "std_dev": Decimal("2.0"),
-        "min_acceptable": Decimal("4.0"),
-        "excellent_threshold": Decimal("8.0"),
-    },
-}
 
 # Risk factors by category
 RISK_FACTORS = {
@@ -445,7 +356,12 @@ class AIQualificationAdvisoryService:
     ) -> ScoringRecommendation:
         """Generate recommendation for a single criterion."""
         category = criterion.category.lower()
-        benchmarks = CATEGORY_BENCHMARKS.get(category, CATEGORY_BENCHMARKS["technical"])
+        benchmarks = self._resolve_benchmarks(
+            category,
+            rfq_context,
+            fallback_score=criterion.max_score * Decimal("0.7"),
+            max_score=criterion.max_score,
+        )
         
         # Determine base score from benchmarks
         base_score = benchmarks["average_score"]
@@ -508,7 +424,7 @@ class AIQualificationAdvisoryService:
             confidence=confidence,
             rationale=rationale,
             explanation=explanation,
-            similar_cases=25,  # Mock value
+            similar_cases=int(rfq_context.get("similar_cases", {}).get(category, 0)),
             suggested_notes=self._generate_suggested_notes(criterion, recommended_score),
         )
     
@@ -535,6 +451,43 @@ class AIQualificationAdvisoryService:
         if criterion.scoring_guide:
             # Find matching guide entry
             for threshold, description in sorted(
+
+    def _resolve_benchmarks(
+        self,
+        category: str,
+        rfq_context: dict[str, Any],
+        fallback_score: Decimal,
+        max_score: Decimal,
+    ) -> dict[str, Decimal]:
+        """Resolve benchmark data from provided context or historical scores."""
+        benchmarks = rfq_context.get("benchmarks", {}).get(category)
+        if benchmarks:
+            return {
+                "average_score": Decimal(str(benchmarks["average_score"])),
+                "std_dev": Decimal(str(benchmarks.get("std_dev", 0))),
+                "min_acceptable": Decimal(str(benchmarks.get("min_acceptable", 0))),
+                "excellent_threshold": Decimal(str(benchmarks.get("excellent_threshold", max_score))),
+            }
+
+        recent_scores = rfq_context.get("recent_scores", {}).get(category, [])
+        if recent_scores:
+            scores = [Decimal(str(s)) for s in recent_scores]
+            avg = sum(scores) / Decimal(len(scores))
+            variance = sum((s - avg) ** 2 for s in scores) / Decimal(len(scores))
+            std_dev = variance.sqrt() if variance > 0 else Decimal("0")
+            return {
+                "average_score": avg,
+                "std_dev": std_dev,
+                "min_acceptable": min(scores),
+                "excellent_threshold": max(scores),
+            }
+
+        return {
+            "average_score": fallback_score,
+            "std_dev": Decimal("0"),
+            "min_acceptable": min(fallback_score, max_score),
+            "excellent_threshold": max_score,
+        }
                 criterion.scoring_guide.items(),
                 key=lambda x: float(x[0]),
                 reverse=True,
@@ -559,6 +512,7 @@ class AIQualificationAdvisoryService:
     def assess_risks(
         self,
         qualification: QualificationData,
+        criteria: list[CriterionData],
         rfq_context: dict[str, Any],
     ) -> tuple[list[IdentifiedRisk], RiskSeverity, Decimal]:
         """
@@ -574,10 +528,14 @@ class AIQualificationAdvisoryService:
         risks = []
         
         # Analyze score-based risks
+        criteria_map = {c.id: c for c in criteria}
+
         for score_data in qualification.scores:
             if score_data.score is not None:
-                category = self._get_category_from_code(score_data.criterion_code)
-                score_risks = self._assess_score_risks(score_data, category)
+                criterion = criteria_map.get(score_data.criterion_id)
+                category = (criterion.category if criterion else self._get_category_from_code(score_data.criterion_code)).lower()
+                max_score = criterion.max_score if criterion else Decimal("10")
+                score_risks = self._assess_score_risks(score_data, category, max_score, rfq_context)
                 risks.extend(score_risks)
         
         # Analyze context-based risks
@@ -605,6 +563,8 @@ class AIQualificationAdvisoryService:
         self,
         score_data: ScoreData,
         category: str,
+        max_score: Decimal,
+        rfq_context: dict[str, Any],
     ) -> list[IdentifiedRisk]:
         """Assess risks based on individual scores."""
         risks: list[IdentifiedRisk] = []
@@ -612,7 +572,12 @@ class AIQualificationAdvisoryService:
         if score_data.score is None:
             return risks
         
-        benchmarks = CATEGORY_BENCHMARKS.get(category, CATEGORY_BENCHMARKS["technical"])
+        benchmarks = self._resolve_benchmarks(
+            category,
+            rfq_context,
+            fallback_score=score_data.score or Decimal("0"),
+            max_score=max_score,
+        )
         min_acceptable = benchmarks["min_acceptable"]
         
         # Check if score is below minimum
@@ -1153,6 +1118,7 @@ class AIQualificationAdvisoryService:
         self,
         qualification: QualificationData,
         criteria: list[CriterionData],
+        rfq_context: dict[str, Any],
     ) -> list[BenchmarkResult]:
         """
         Compare qualification scores to benchmarks.
@@ -1173,7 +1139,12 @@ class AIQualificationAdvisoryService:
                 continue
             
             category = criterion.category.lower()
-            benchmarks = CATEGORY_BENCHMARKS.get(category, CATEGORY_BENCHMARKS["technical"])
+            benchmarks = self._resolve_benchmarks(
+                category,
+                rfq_context,
+                fallback_score=criterion.max_score * Decimal("0.7"),
+                max_score=criterion.max_score,
+            )
             
             benchmark_score = benchmarks["average_score"]
             current = score_data.score or Decimal("0")
@@ -1202,7 +1173,7 @@ class AIQualificationAdvisoryService:
                 benchmark_score=benchmark_score,
                 percentile=percentile,
                 status=status,
-                similar_projects=50,  # Mock value
+                similar_projects=int(rfq_context.get("similar_projects", {}).get(category, 0)),
             ))
         
         return results
@@ -1237,7 +1208,7 @@ class AIQualificationAdvisoryService:
         
         # Assess risks
         risks, overall_risk_level, risk_score = self.assess_risks(
-            qualification, rfq_context
+            qualification, criteria, rfq_context
         )
         
         # Analyze gaps
@@ -1247,7 +1218,7 @@ class AIQualificationAdvisoryService:
         decision = self.generate_decision_support(qualification, risks, gaps)
         
         # Compare to benchmarks
-        benchmarks = self.compare_to_benchmarks(qualification, criteria)
+        benchmarks = self.compare_to_benchmarks(qualification, criteria, rfq_context)
         
         # Generate actions
         actions = self._generate_recommended_actions(risks, gaps)

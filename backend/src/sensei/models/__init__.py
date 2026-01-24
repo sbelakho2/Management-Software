@@ -94,6 +94,8 @@ from sensei.models.strategic_v2 import (
     UIActionAuditRecord,
     LessonDeliveryRecord,
     StandardWorkEvolutionRecord,
+    KnowledgePackRecord,
+    KnowledgePackSourceRecord,
 )
 
 # Phase 3: Production & TPS Execution Models
@@ -386,6 +388,8 @@ __all__ = [
     "LearningModule",
     "UserLearningProgress",
     "LearningAssessment",
+    "KnowledgePackRecord",
+    "KnowledgePackSourceRecord",
     # Attachment
     "Attachment",
     "AttachmentVersion",

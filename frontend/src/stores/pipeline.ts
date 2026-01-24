@@ -83,8 +83,7 @@ export const usePipelineStore = create<PipelineState>()(
             const wonRFQs = rfqs.filter(rfq => rfq.status === 'won').length;
             const totalSubmitted = rfqs.filter(rfq => rfq.status === 'submitted').length;
             
-            // Calculate avg response time (mock for now or from backend if available)
-            // Backend RFQ response has received_date
+            // Calculate avg response time based on received_date and updated_at
             const avgResponseTime = rfqs.reduce((sum, rfq) => {
               const received = new Date(rfq.received_date).getTime();
               const updated = new Date(rfq.updated_at).getTime();

@@ -13,7 +13,7 @@
 
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   useEmailDraftingStore,
   EmailTone,
@@ -37,6 +37,8 @@ import {
   createRecipient,
   validateRecipient,
 } from '@/stores/email-drafting-store';
+import { useAuthStore } from '@/stores';
+import { apiClient } from '@/api/client';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 // ============================================================================
@@ -635,19 +637,31 @@ interface EmailComposerProps {
   initialRecipient?: Recipient;
   initialPurpose?: EmailPurpose;
   referenceNumber?: string;
+  initialThreadEntityType?: string;
+  initialThreadEntityId?: string;
   onClose?: () => void;
   onSend?: (draft: GeneratedDraft) => void;
   className?: string;
+}
+
+interface CommonThreadTrace {
+  root_entity_type: string;
+  root_entity_id: string;
+  nodes: { entity_type: string; entity_id: string; reasoning_ids: string[] }[];
+  edges: { source_entity_type: string; source_entity_id: string; target_entity_type: string; target_entity_id: string; relationship_type: string }[];
 }
 
 export function EmailComposer({
   initialRecipient,
   initialPurpose,
   referenceNumber,
+  initialThreadEntityType,
+  initialThreadEntityId,
   onClose,
   onSend,
   className = '',
 }: EmailComposerProps) {
+  const { user } = useAuthStore();
   const {
     isGenerating,
     generationError,
@@ -665,9 +679,63 @@ export function EmailComposer({
   const [keyPoints, setKeyPoints] = useState<string[]>([]);
   const [subjectHint, setSubjectHint] = useState('');
   const [refNumber, setRefNumber] = useState(referenceNumber || '');
+  const [threadEntityType, setThreadEntityType] = useState(initialThreadEntityType || '');
+  const [threadEntityId, setThreadEntityId] = useState(initialThreadEntityId || '');
+  const [threadTrace, setThreadTrace] = useState<CommonThreadTrace | null>(null);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [isTraceLoading, setIsTraceLoading] = useState(false);
+  const [senderName, setSenderName] = useState('');
+  const [senderEmail, setSenderEmail] = useState('');
+  const [senderTitle, setSenderTitle] = useState('');
+  const [companyName, setCompanyName] = useState('');
 
   const [draft, setDraft] = useState<GeneratedDraft | null>(null);
   const [copied, setCopied] = useState(false);
+  const threadEntityOptions = useMemo(
+    () => [
+      { value: 'rfq', label: 'RFQ' },
+      { value: 'quote', label: 'Quote' },
+      { value: 'work_order', label: 'Work Order' },
+      { value: 'opportunity', label: 'Opportunity' },
+      { value: 'non_conformance', label: 'Non-Conformance' },
+      { value: 'shipment', label: 'Shipment' },
+      { value: 'invoice', label: 'Invoice' },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    const displayName = user.full_name || user.email;
+    setSenderName((current) => current || displayName);
+    setSenderEmail((current) => current || user.email || '');
+    setSenderTitle((current) => current || user.job_title || '');
+  }, [user]);
+
+  useEffect(() => {
+    const fetchTrace = async () => {
+      if (!threadEntityType || !threadEntityId) {
+        setThreadTrace(null);
+        setTraceError(null);
+        return;
+      }
+      setIsTraceLoading(true);
+      setTraceError(null);
+      try {
+        const trace = await apiClient.get<CommonThreadTrace>(
+          `/common-thread/trace?entity_type=${encodeURIComponent(threadEntityType)}&entity_id=${encodeURIComponent(threadEntityId)}`
+        );
+        setThreadTrace(trace);
+      } catch (error) {
+        setTraceError(error instanceof Error ? error.message : 'Failed to load thread trace');
+        setThreadTrace(null);
+      } finally {
+        setIsTraceLoading(false);
+      }
+    };
+
+    fetchTrace();
+  }, [threadEntityType, threadEntityId]);
 
   const handleGenerate = useCallback(async () => {
     if (!purpose || !recipientEmail) return;
@@ -688,11 +756,18 @@ export function EmailComposer({
         language: selectedLanguage,
         includeSignature: true,
         maxParagraphs: 4,
+        threadEntityType: threadEntityType || undefined,
+        threadEntityId: threadEntityId || undefined,
       },
-      senderName: 'Your Name',
-      senderEmail: 'your.email@company.com',
-      companyName: 'Your Company',
+      senderName: senderName || 'User',
+      senderEmail: senderEmail || 'user@example.com',
+      senderTitle: senderTitle || undefined,
+      companyName: companyName || 'Company',
       requestedAt: new Date(),
+      threadContext: {
+        entityType: threadEntityType || undefined,
+        entityId: threadEntityId || undefined,
+      },
     };
 
     const newDraft = await generateDraft(request);
@@ -775,6 +850,101 @@ export function EmailComposer({
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Purpose</label>
               <PurposeSelector value={purpose} onChange={setPurpose} />
+            </div>
+
+            {/* Sender */}
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <label className="mb-3 block text-sm font-semibold text-gray-700">Sender</label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                  <input
+                    type="text"
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    placeholder="Sender name"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
+                  <input
+                    type="email"
+                    value={senderEmail}
+                    onChange={(e) => setSenderEmail(e.target.value)}
+                    placeholder="sender@company.com"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Title</label>
+                  <input
+                    type="text"
+                    value={senderTitle}
+                    onChange={(e) => setSenderTitle(e.target.value)}
+                    placeholder="Job title"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Company</label>
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Company name"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Thread Context */}
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <label className="mb-3 block text-sm font-semibold text-gray-700">Thread Context</label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Entity Type</label>
+                  <select
+                    value={threadEntityType}
+                    onChange={(e) => setThreadEntityType(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="">Select type</option>
+                    {threadEntityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Entity ID</label>
+                  <input
+                    type="text"
+                    value={threadEntityId}
+                    onChange={(e) => setThreadEntityId(e.target.value)}
+                    placeholder="Paste entity ID"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                Attach drafts to the common thread so RFQs, quotes, and work orders stay linked.
+              </div>
+              {(threadEntityType && threadEntityId) && (
+                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                  {isTraceLoading && <div>Loading thread trace…</div>}
+                  {!isTraceLoading && traceError && <div className="text-red-600">{traceError}</div>}
+                  {!isTraceLoading && !traceError && threadTrace && (
+                    <div className="space-y-1">
+                      <div className="font-medium text-gray-700">Thread Trace</div>
+                      <div>Nodes: {threadTrace.nodes.length} • Edges: {threadTrace.edges.length}</div>
+                      {draft?.reasoningId && <div>Reasoning ID: {draft.reasoningId}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Reference Number */}

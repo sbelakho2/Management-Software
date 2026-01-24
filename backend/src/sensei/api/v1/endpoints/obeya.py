@@ -11,6 +11,7 @@ Provides comprehensive API for managing Obeya visual management boards:
 from __future__ import annotations
 
 import inspect
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -38,6 +39,8 @@ from sensei.models.obeya import (
     ObeyaStatus,
     ObeyaPriority,
 )
+from sensei.models.learning import UserLearningProgress, ProgressStatus
+from sensei.models.quote import Quote
 
 
 router = APIRouter()
@@ -827,15 +830,215 @@ async def get_sqdcp_metrics(
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[SQDCPMetricsResponse]:
-    # In a real system, these would come from various tables (safety incidents, quality yields, etc.)
-    # For now, return mock data matching the frontend expected structure.
+    def _parse_float(value: str | None) -> float | None:
+        if value is None:
+            return None
+        match = re.search(r"-?\d+(\.\d+)?", value.replace(",", ""))
+        return float(match.group(0)) if match else None
+
+    def _status_high_is_good(value: float, green: float, yellow: float) -> str:
+        if value >= green:
+            return "green"
+        if value >= yellow:
+            return "yellow"
+        return "red"
+
+    def _status_low_is_good(value: float, green: float, yellow: float) -> str:
+        if value <= green:
+            return "green"
+        if value <= yellow:
+            return "yellow"
+        return "red"
+
+    # Safety metrics
+    safety_incidents = await db.scalar(
+        select(func.count(ObeyaItem.id)).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.SAFETY.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    ) or 0
+
+    last_incident_at = await db.scalar(
+        select(func.max(ObeyaItem.created_at)).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.SAFETY.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    )
+
+    days_since_last_incident = 0
+    if last_incident_at:
+        days_since_last_incident = (datetime.now(timezone.utc) - last_incident_at).days
+
+    near_misses = await db.scalar(
+        select(func.count(ObeyaItem.id)).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.SAFETY.value,
+                ObeyaItem.priority == ObeyaPriority.LOW.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    ) or 0
+
+    progress_total = await db.scalar(select(func.count(UserLearningProgress.id))) or 0
+    progress_completed = await db.scalar(
+        select(func.count(UserLearningProgress.id)).where(
+            UserLearningProgress.status == ProgressStatus.COMPLETED.value
+        )
+    ) or 0
+    training_completion = (progress_completed / progress_total * 100) if progress_total else 0.0
+
+    # Quality metrics
+    quality_items = await db.execute(
+        select(ObeyaItem.title, ObeyaItem.kpi_actual, ObeyaItem.kpi_unit, ObeyaItem.status).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.QUALITY.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    )
+    quality_items = quality_items.all()
+    yield_values = []
+    defect_values = []
+    for title, actual, unit, status in quality_items:
+        parsed = _parse_float(actual)
+        if parsed is None:
+            continue
+        title_lower = (title or "").lower()
+        if "yield" in title_lower:
+            yield_values.append(parsed)
+        if "defect" in title_lower or "scrap" in title_lower:
+            defect_values.append(parsed)
+
+    first_pass_yield = sum(yield_values) / len(yield_values) if yield_values else 0.0
+    defect_rate = sum(defect_values) / len(defect_values) if defect_values else 0.0
+    ncr_open = sum(1 for _, _, _, status in quality_items if status != ObeyaStatus.COMPLETED.value)
+
+    # Delivery metrics
+    delivery_items = await db.execute(
+        select(ObeyaItem.title, ObeyaItem.kpi_actual, ObeyaItem.kpi_unit, ObeyaItem.status).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.DELIVERY.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    )
+    delivery_items = delivery_items.all()
+    on_time_values = []
+    schedule_values = []
+    for title, actual, unit, status in delivery_items:
+        parsed = _parse_float(actual)
+        if parsed is None:
+            continue
+        title_lower = (title or "").lower()
+        if "on time" in title_lower or "otd" in title_lower:
+            on_time_values.append(parsed)
+        if "schedule" in title_lower or "adherence" in title_lower:
+            schedule_values.append(parsed)
+
+    on_time_delivery = sum(on_time_values) / len(on_time_values) if on_time_values else 0.0
+    schedule_adherence = sum(schedule_values) / len(schedule_values) if schedule_values else 0.0
+    backlog_items = sum(1 for _, _, _, status in delivery_items if status != ObeyaStatus.COMPLETED.value)
+
+    lead_time_days = await db.scalar(select(func.avg(Quote.lead_time_days))) or 0.0
+
+    # Cost metrics
+    cost_items = await db.execute(
+        select(ObeyaItem.title, ObeyaItem.kpi_actual, ObeyaItem.kpi_unit).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.COST.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    )
+    cost_items = cost_items.all()
+    variance_values = []
+    savings_values = []
+    for title, actual, unit in cost_items:
+        parsed = _parse_float(actual)
+        if parsed is None:
+            continue
+        title_lower = (title or "").lower()
+        if "variance" in title_lower:
+            variance_values.append(parsed)
+        if "savings" in title_lower or "saving" in title_lower:
+            savings_values.append(parsed)
+
+    variance_percent = sum(variance_values) / len(variance_values) if variance_values else 0.0
+    cost_savings = sum(savings_values) if savings_values else 0.0
+
+    # People metrics
+    morale_items = await db.execute(
+        select(ObeyaItem.kpi_actual).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.MORALE.value,
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    )
+    morale_values = [
+        value for (value,) in morale_items.all()
+        if _parse_float(value) is not None
+    ]
+    morale_scores = [_parse_float(value) for value in morale_values if _parse_float(value) is not None]
+    morale_score = sum(morale_scores) / len(morale_scores) if morale_scores else 0.0
+
+    training_hours = (await db.scalar(select(func.sum(UserLearningProgress.time_spent_seconds))) or 0) / 3600
+    active_improvements = await db.scalar(
+        select(func.count(ObeyaItem.id)).where(
+            and_(
+                ObeyaItem.category == ObeyaCategory.ACTION.value,
+                ObeyaItem.status.in_([
+                    ObeyaStatus.NEW.value,
+                    ObeyaStatus.IN_PROGRESS.value,
+                    ObeyaStatus.BLOCKED.value,
+                    ObeyaStatus.WAITING.value,
+                ]),
+                ObeyaItem.deleted_at.is_(None),
+            )
+        )
+    ) or 0
+
     return build_response(
         data=SQDCPMetricsResponse(
-            safety=SQDCPSafetyMetric(status="green", days_since_last_incident=120),
-            quality=SQDCPQualityMetric(status="yellow", first_pass_yield=94.5, defect_rate=1.2, ncr_open=5),
-            delivery=SQDCPDeliveryMetric(status="green", on_time_delivery=98.0, lead_time_days=3.5),
-            cost=SQDCPCostMetric(status="green", variance_percent=-2.5, cost_savings=15000),
-            people=SQDCPPeopleMetric(status="green", morale_score=4.2, training_hours=450)
+            safety=SQDCPSafetyMetric(
+                incidents=safety_incidents,
+                days_since_last_incident=days_since_last_incident,
+                near_misses=near_misses,
+                training_completion=round(training_completion, 1),
+                status=_status_low_is_good(safety_incidents, green=0, yellow=2),
+            ),
+            quality=SQDCPQualityMetric(
+                first_pass_yield=round(first_pass_yield, 1),
+                defect_rate=round(defect_rate, 2),
+                customer_complaints=0,
+                ncr_open=ncr_open,
+                status=_status_high_is_good(first_pass_yield, green=95, yellow=90),
+            ),
+            delivery=SQDCPDeliveryMetric(
+                on_time_delivery=round(on_time_delivery, 1),
+                lead_time_days=round(float(lead_time_days), 1) if lead_time_days else 0.0,
+                schedule_adherence=round(schedule_adherence, 1),
+                backlog_items=backlog_items,
+                status=_status_high_is_good(on_time_delivery, green=95, yellow=90),
+            ),
+            cost=SQDCPCostMetric(
+                variance_percent=round(variance_percent, 2),
+                cost_savings=round(cost_savings, 2),
+                waste_reduction=0.0,
+                budget_utilization=0.0,
+                status=_status_low_is_good(abs(variance_percent), green=2.0, yellow=5.0),
+            ),
+            people=SQDCPPeopleMetric(
+                morale_score=round(morale_score, 1),
+                training_hours=round(training_hours, 1),
+                attendance_rate=0.0,
+                active_improvements=active_improvements,
+                status=_status_high_is_good(morale_score, green=4.0, yellow=3.0),
+            ),
         )
     )
 

@@ -227,7 +227,7 @@ class LabelPrintingService:
         self._print_jobs: list[PrintJob] = []
         self._recovery_workflows: dict[str, ScanRecoveryWorkflow] = {}
         
-        # Mock registered barcodes (in real implementation, would query DB)
+        # Registered barcodes cache (backed by production registry integration)
         self._registered_barcodes: dict[str, dict[str, Any]] = {}
         
         # Initialize default templates

@@ -599,6 +599,19 @@ CAPACITY IMPACT - Quote #2456 (ACME Corp)
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### 9.2 Industrial Quoting & NPI
+As GM, you oversee the transition from high-value Sales opportunities to Production through the **Quoting Helper** and **NPI Handoff** workflows.
+
+#### Quote Approvals
+- Review engineering inputs from all disciplines (EE, ME, Quality) in the **Quoting Workbench**.
+- Analyze **Margin Analysis** against floor policies.
+- Use **AI Quote Memory** to validate assumptions based on historical performance.
+
+#### NPI Handoff (Quote → Production)
+- Once a strategic quote is accepted, trigger the **NPI Handoff**.
+- Sensei OS automatically creates an **Obeya Project**, baselines the **Traveler**, and freezes the **BOM**.
+- This ensures a deterministic path to execution without data loss between Sales and the Shop Floor.
+
 ---
 
 ## 10. Inventory & Warehouse

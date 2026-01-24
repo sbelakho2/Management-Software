@@ -74,6 +74,9 @@ from sensei.api.v1.endpoints import (
     factory_launchpad,
     edge_ai,
     ai_health,
+    ai_email_drafting,
+    smart_ingestion,
+    knowledge_pack,
     sites,
     warehouse,
     it_monitoring,
@@ -153,6 +156,9 @@ api_router.include_router(websockets.router, tags=["WebSockets"])
 api_router.include_router(factory_launchpad.router, prefix="/launchpad", tags=["Factory Launchpad"])
 api_router.include_router(edge_ai.router, prefix="/edge-ai", tags=["Edge AI"])
 api_router.include_router(ai_health.router, prefix="/ai", tags=["AI Readiness"])
+api_router.include_router(ai_email_drafting.router, prefix="/ai", tags=["AI Email Drafting"])
+api_router.include_router(smart_ingestion.router, tags=["Smart Ingestion"])
+api_router.include_router(knowledge_pack.router, tags=["Knowledge Pack"])
 api_router.include_router(sites.router, tags=["Sites"])
 api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
 api_router.include_router(it_monitoring.router, prefix="/it", tags=["IT Monitoring"])

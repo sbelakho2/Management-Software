@@ -269,7 +269,7 @@ class ExceptionsAggregator:
         db_records = result.scalars().all()
         
         for rec in db_records:
-            # Handle potentially missing created_at from mock or newly created objects
+            # Handle potentially missing created_at from newly created objects
             created_at = rec.created_at or now
             if created_at.tzinfo is None:
                 created_at = created_at.replace(tzinfo=timezone.utc)

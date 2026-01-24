@@ -84,7 +84,7 @@ async def ingest_rfq(
         "rfq_id": rfq_id,
         "version_number": package_version.version_number,
         "extracted_metadata": package_version.extracted_metadata,
-        "triage_risk_score": 30, # Mocked
+        "triage_risk_score": package_version.extracted_metadata.get("complexity_score"),
     })
 
 
@@ -104,6 +104,24 @@ async def build_quote_cost(
         "quote_id": quote.id,
         "total_cost": quote.total_cost,
         "actual_margin": quote.actual_margin,
+    })
+
+
+@router.post(
+    "/quotes/{quote_id}/convert-to-npi",
+    response_model=APIResponse[Dict[str, Any]],
+)
+async def convert_to_npi(
+    quote_id: UUID,
+    service: QuotingHelperService = Depends(get_quoting_helper_service),
+    current_user: CurrentUser = Depends(deps.get_current_active_user),
+):
+    """Stage 6.10 - One-click 'Quote -> NPI Pack'."""
+    project = await service.convert_to_npi(quote_id, current_user.id)
+    return build_response({
+        "project_id": project.id,
+        "project_name": project.name,
+        "project_slug": project.slug,
     })
 
 

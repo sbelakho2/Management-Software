@@ -22,6 +22,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable
 from uuid import UUID, uuid4
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sensei.services.core.entity_providers import build_export_entity_provider
 
 
 class ExportableEntityType(str, Enum):
@@ -155,15 +158,15 @@ class CSVExportService:
     Supports configurable columns, filtering, and templates.
     """
     
-    def __init__(self) -> None:
-        """Initialize the service."""
+    def __init__(self, entity_provider: callable | None = None) -> None:
+        """Initialize the service.
+
+        Args:
+            entity_provider: Callable that returns entities for a given ExportConfig.
+        """
         self._results: dict[UUID, ExportResult] = {}
         self._templates: dict[UUID, ExportTemplate] = {}
-        
-        # Mock entity storage for testing
-        self._mock_entities: dict[ExportableEntityType, dict[UUID, dict[str, Any]]] = {
-            et: {} for et in ExportableEntityType
-        }
+        self._entity_provider = entity_provider
         
         # Default column configs per entity type
         self._default_columns: dict[ExportableEntityType, list[ColumnConfig]] = {
@@ -361,7 +364,10 @@ class CSVExportService:
         config: ExportConfig,
     ) -> list[dict[str, Any]]:
         """Get entities matching the config."""
-        entities = list(self._mock_entities[config.entity_type].values())
+        if not self._entity_provider:
+            raise ValueError("CSVExportService requires an entity_provider in production")
+
+        entities = self._entity_provider(config)
         
         # Apply filters
         for field_name, value in config.filters.items():
@@ -385,6 +391,14 @@ class CSVExportService:
             entities = entities[:config.limit]
         
         return entities
+
+
+def get_csv_export_service(session: AsyncSession) -> CSVExportService:
+    """Create a CSV export service wired to the database."""
+    sync_session = session.sync_session
+    return CSVExportService(
+        entity_provider=build_export_entity_provider(sync_session),
+    )
     
     def _matches_filter(
         self,
@@ -669,27 +683,4 @@ class CSVExportService:
         default = self._default_columns.get(entity_type, [])
         return [col.field_name for col in default]
     
-    # ---------------------
-    # Mock Entity Management (for testing)
-    # ---------------------
-    
-    def create_mock_entity(
-        self,
-        entity_type: ExportableEntityType,
-        entity_id: UUID | None = None,
-        **fields: Any,
-    ) -> UUID:
-        """Create a mock entity for testing."""
-        if entity_id is None:
-            entity_id = uuid4()
-        
-        entity = {
-            "id": entity_id,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "status": "active",
-            **fields,
-        }
-        
-        self._mock_entities[entity_type][entity_id] = entity
-        return entity_id
+    # Entity management is provided by storage integrations

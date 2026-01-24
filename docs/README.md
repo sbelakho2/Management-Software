@@ -64,11 +64,12 @@ Set up your development environment and start contributing.
 Complete API reference for integrations.
 
 - [API Overview](./api/README.md) - Authentication, patterns, SDKs
-- Accounts API - Customer/supplier management (coming soon)
-- RFQs API - Request for Quote (coming soon)
-- Quotes API - Quote management (coming soon)
-- Products API - Product catalog (coming soon)
-- Quality API - Quality inspections (coming soon)
+- [Quoting Helper API](./api/quoting-helper.md) - Parallel engineering and costing
+- Accounts API - Customer/supplier management
+- RFQs API - Request for Quote
+- Quotes API - Quote management
+- Products API - Product catalog
+- Quality API - Quality inspections
 
 ### 4. Deployment
 
@@ -109,9 +110,13 @@ Documentation organized by user role (in `/docs/Resources/`):
 - **[AI Insights Access Reference](./Resources/AI_INSIGHTS_ACCESS.md)** - Complete insight access documentation
 - **Admin** - System administration and insight configuration
 - **CEO** - Executive insights and full access guide
-- **General Manager** - Operational insights
+- **[General Manager](./Resources/General_Manager/GM_Starter_Guide.md)** - Operational insights and NPI handoff
+- **[Sales](./Resources/Sales/Sales_Starter_Guide.md)** - Pipeline management and Industrial Quoting
+- **[Estimator](./Resources/Estimator/Estimator_Starter_Guide.md)** - Costing workbench and AI assistance
+- **[Purchasing](./Resources/Purchasing/Purchasing_Starter_Guide.md)** - Sourcing risks and cost drivers
+- **[Engineering](./Resources/Engineering/Engineering_Starter_Guide.md)** - DFM reviews and NPI execution
 - **Finance** - Financial analytics and cost insights
-- **Quality** - Quality metrics and SPC analysis
+- **[Quality](./Resources/Quality/Quality_Starter_Guide.md)** - Quality metrics and SPC analysis
 - **Maintenance** - Predictive maintenance and equipment health
 - **Supervisor** - Shift management and team productivity
 - **Operator** - Shop floor insights
@@ -257,6 +262,6 @@ Code is proprietary to Starz Morocco. All rights reserved.
 
 ---
 
-**Last Updated**: January 8, 2026  
-**Version**: 1.0.0  
+**Last Updated**: January 24, 2026  
+**Version**: 3.0.0  
 **Maintained By**: Starz Morocco Development Team

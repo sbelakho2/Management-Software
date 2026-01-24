@@ -8,6 +8,7 @@ Complete guide to using Starz Morocco Manufacturing Management System.
 - [Dashboard Overview](#dashboard-overview)
 - [Managing Opportunities](#managing-opportunities)
 - [RFQ Process](#rfq-process)
+- [Quoting Helper (Industrial Workflow)](#quoting-helper-industrial-workflow)
 - [Creating Quotes](#creating-quotes)
 - [Quality Management](#quality-management)
 - [Obeya Room](#obeya-room)
@@ -170,6 +171,51 @@ System automatically checks:
 3. System generates email with missing items
 4. Email sent to customer contact
 5. Task created to follow up
+
+## 🛠️ Quoting Helper (Industrial Workflow)
+
+The Quoting Helper is an advanced, Stage-Gate workflow designed for high-complexity industrial quotes (PCBA, Wire Harness, Box Build). It enables parallel engineering contributions and AI-assisted risk analysis.
+
+### 1. Initializing Quoting Packets
+
+1. Open an existing **RFQ**.
+2. Click **Quoting Workbench**.
+3. Click **Initialize Quoting Packets** to generate parallel work packets for:
+   - **EE (Electronics)**: DFM, fine pitch, X-ray requirements.
+   - **Embedded/Firmware**: Programming time, fixture needs.
+   - **ME (Mechanical)**: Enclosure fit, laser labeling.
+   - **MfgE (Manufacturing)**: Line assignment, special training.
+   - **Quality**: Inspection levels, compliance docs.
+   - **Purchasing**: Cost drivers, long-lead materials.
+
+### 2. Quoting Workbench
+
+The Workbench is the "Estimator Cockpit" for managing the full quote lifecycle:
+- **Stage-Gate Tracker**: Monitor progress of all parallel engineering reviews.
+- **Active Risks (Andon)**: View automated alerts (e.g., Missing Centroid, BOM Obsolescence).
+- **Quote Memory**: AI-driven semantic search to pull assumptions from historically similar won/lost jobs.
+- **Interactive Explorer**: Real-time cost impact analysis for different quantity ladders and Jidoka test levels (AOI, X-Ray, ICT, FCT).
+
+### 3. Completing Work Packets
+
+Each engineering discipline receives a structured form to provide technical inputs:
+1. Navigate to **Open Packet**.
+2. Fill in **Technical Inputs** (e.g., Min Fine Pitch, Programming Minutes).
+3. Add **Internal Notes & Rationale**.
+4. Click **Sign Off (Done)** to complete the gate or **Flag Blocker** to trigger an Andon alert.
+
+### 4. Deterministic Costing
+
+Once all gates are complete:
+1. The **Estimator** reviews the consolidated inputs.
+2. The system rollups material costs and labor based on active **Rate Cards**.
+3. Margin analysis is performed against target floors.
+
+### 5. Quote to NPI Handoff
+
+When a customer accepts a quote:
+1. Click **Convert to NPI** in the Workbench.
+2. The system automatically creates an **Obeya Project**, freezes the **BOM**, and generates baseline **Process Routes** and **Inspection Plans**.
 
 ## 💰 Creating Quotes
 

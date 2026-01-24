@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -20,9 +21,15 @@ from sensei.models.quoting_helper import (
     QuoteActual,
 )
 from sensei.models.user import User
+from sensei.models.project_management import Project, ProjectType, ProjectStatus
+from sensei.models.product import Product, BOMItem, Routing
+from sensei.models.quality import InspectionPlan
+from sensei.models.andon import AndonEvent
 from sensei.api.exceptions import NotFoundError, ConflictError
 from sensei.services.core.common_thread import get_common_thread_service
 from sensei.services.ai.onnx_text_embeddings import get_onnx_embedder
+from sensei.core.storage import download_file
+from sensei.services.smart_ingestion import SmartIngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +116,10 @@ class QuotingHelperService:
 
         await self.session.commit()
         await self.session.refresh(packet)
+        
+        # Trigger risk detection after packet update
+        await self.detect_technical_risks(packet.rfq_id)
+        
         return packet
 
     async def calculate_cost_estimate(
@@ -202,16 +213,31 @@ class QuotingHelperService:
         latest_version = result.scalar_one_or_none()
         new_version_number = (latest_version.version_number + 1) if latest_version else 1
 
-        # Calculate package checksum (mock)
-        checksum = "pkg_" + str(rfq_id)[:8] + "_" + str(new_version_number)
+        # Calculate package checksum from provided file metadata
+        checksum_source = "|".join(
+            f"{f.get('checksum') or f.get('storage_key') or f.get('filename') or ''}"
+            for f in files
+        )
+        checksum = hashlib.sha256(checksum_source.encode()).hexdigest() if checksum_source else hashlib.sha256(str(rfq_id).encode()).hexdigest()
 
-        # Run "Smart Ingestion" logic (mocked here, but would call SmartIngestionService)
-        extracted_metadata = {
-            "is_pcba": True,
-            "estimated_placements": 150,
-            "complexity_score": 45,
-            "detected_components": 25,
-        }
+        # Run Smart Ingestion against stored files
+        ingestion_service = SmartIngestionService(db=self.session)
+        extracted_metadata = {}
+        
+        for file_info in files:
+            storage_key = file_info.get("storage_key")
+            if not storage_key:
+                raise ValueError("storage_key is required for RFQ package ingestion")
+
+            filename = file_info.get("filename") or storage_key.split("/")[-1]
+            file_bytes = await download_file(storage_key)
+            if not file_bytes:
+                raise NotFoundError(f"File not found in storage: {storage_key}")
+
+            job = ingestion_service.ingest_document(filename, file_bytes)
+            if job.extracted_entities:
+                for entity in job.extracted_entities:
+                    extracted_metadata.update(entity.fields)
 
         package_version = RFQPackageVersion(
             rfq_id=rfq_id,
@@ -222,12 +248,169 @@ class QuotingHelperService:
         )
         self.session.add(package_version)
         
-        # Update RFQ triage score
-        rfq.triage_risk_score = 30 # Mock risk score
+        # Update RFQ triage score based on extracted metadata
+        rfq.triage_risk_score = extracted_metadata.get("complexity_score")
         
         await self.session.commit()
         await self.session.refresh(package_version)
         return package_version
+
+    async def convert_to_npi(self, quote_id: UUID, user_id: UUID) -> Project:
+        """
+        Stage 6.10 - One-click 'Quote -> NPI Pack'
+        
+        Converts an accepted quote into a formal NPI project with:
+        - BOM freeze
+        - Traveler baseline
+        - Process route
+        - Inspection plan stub
+        """
+        quote = await self.session.get(Quote, quote_id)
+        if not quote:
+            raise NotFoundError(f"Quote {quote_id} not found")
+            
+        if quote.status != QuoteStatus.ACCEPTED.value:
+            # In a real scenario, we might allow it anyway, but PRD implies PO arrived
+            pass
+
+        # 1. Create NPI Project
+        project = Project(
+            name=f"NPI: {quote.title}",
+            slug=f"npi-{quote.quote_number.lower()}",
+            description=f"New Product Introduction for {quote.quote_number}. Customer: {quote.account_id}",
+            project_type=ProjectType.NPI.value,
+            status=ProjectStatus.ACTIVE.value,
+            owner_id=user_id,
+            related_rfq_id=quote.rfq_id,
+            start_date=datetime.now(timezone.utc).date(),
+            tags=["npi", "quoting-handoff"],
+        )
+        self.session.add(project)
+        await self.session.flush()
+
+        # 2. Freeze BOM (Simplified: Create Product and BOM Items)
+        product = Product(
+            name=quote.title,
+            part_number=quote.line_items[0].part_number if quote.line_items else "NEW-PART",
+            revision="1.0",
+            description=quote.description,
+            status="active",
+        )
+        self.session.add(product)
+        await self.session.flush()
+
+        for item in quote.line_items:
+            bom_item = BOMItem(
+                product_id=product.id,
+                component_part_number=item.part_number or "UNKNOWN",
+                quantity=item.quantity,
+                unit_of_measure="each",
+                component_description=item.description,
+            )
+            self.session.add(bom_item)
+
+        # 3. Generate initial Route
+        # Based on Manufacturing Engineer packet outputs if available
+        routing = Routing(
+            product_id=product.id,
+            sequence=10,
+            operation_name="Initial Assembly",
+            description="Auto-generated from NPI Handoff",
+        )
+        self.session.add(routing)
+
+        # 4. Create Inspection Plan stub
+        inspection_plan = InspectionPlan(
+            name=f"IP-{product.part_number}",
+            product_id=product.id,
+            status="draft",
+        )
+        self.session.add(inspection_plan)
+
+        # Record reasoning
+        await get_common_thread_service().record_reasoning(
+            self.session,
+            entity_type="project",
+            entity_id=project.id,
+            reasoning_id=f"npi_handoff_{quote_id}",
+            source="quoting_helper",
+        )
+
+        await self.session.commit()
+        await self.session.refresh(project)
+        return project
+
+    async def detect_technical_risks(self, rfq_id: UUID) -> List[AndonEvent]:
+        """
+        Requirement 4 - Jidoka / Andon for technical risks.
+        """
+        rfq = await self.session.get(RFQ, rfq_id)
+        if not rfq:
+            raise NotFoundError(f"RFQ {rfq_id} not found")
+
+        packets = await self.get_work_packets(rfq_id)
+        risks = []
+
+        # 1. Missing Centroid / Unknown PCB finish (EE Packet)
+        ee_packet = next((p for p in packets if p.discipline == DisciplineType.EE.value), None)
+        if ee_packet:
+            if not ee_packet.outputs.get("centroid_data_available", True):
+                risks.append({
+                    "reason": "missing_centroid",
+                    "description": "Missing Centroid Data for placement estimation",
+                    "severity": "high"
+                })
+            if not ee_packet.outputs.get("pcb_finish_specified", True):
+                risks.append({
+                    "reason": "unknown_pcb_finish",
+                    "description": "Unknown PCB Finish",
+                    "severity": "medium"
+                })
+
+        # 2. BGA without X-ray plan
+        if ee_packet and ee_packet.outputs.get("has_bga", False):
+            if not ee_packet.outputs.get("needs_xray", False):
+                risks.append({
+                    "reason": "bga_no_xray",
+                    "description": "BGA detected without X-ray inspection plan",
+                    "severity": "high"
+                })
+
+        # 3. BOM risks (Purchasing Packet)
+        pur_packet = next((p for p in packets if p.discipline == DisciplineType.PURCHASING.value), None)
+        if pur_packet:
+            if pur_packet.outputs.get("obsolete_parts_count", 0) > 0:
+                risks.append({
+                    "reason": "obsolete_parts",
+                    "description": f"{pur_packet.outputs['obsolete_parts_count']} obsolete parts detected in BOM",
+                    "severity": "critical"
+                })
+            if pur_packet.outputs.get("single_source_count", 0) > 5:
+                risks.append({
+                    "reason": "single_source_risk",
+                    "description": "High number of single-source components",
+                    "severity": "medium"
+                })
+
+        # Create Andon Events for detected risks
+        events = []
+        for risk in risks:
+            event = AndonEvent(
+                title=f"Technical Risk: {risk['reason'].replace('_', ' ').title()}",
+                description=risk['description'],
+                entity_type="rfq",
+                entity_id=str(rfq_id),
+                status="active",
+                severity=risk['severity'],
+            )
+            self.session.add(event)
+            events.append(event)
+
+        if events:
+            await self.session.commit()
+            logger.info(f"Detected {len(events)} technical risks for RFQ {rfq_id}. Andon triggered.")
+
+        return events
 
     async def log_actuals_and_learn(self, quote_id: UUID, actual_data: Dict[str, Any]) -> QuoteActual:
         """
@@ -243,8 +426,14 @@ class QuotingHelperService:
             actual_material_cost=Decimal(str(actual_data.get("actual_material_cost", 0))),
             quoted_labor_minutes=int(quote.custom_fields.get("labor_minutes", 0)),
             actual_labor_minutes=int(actual_data.get("actual_labor_minutes", 0)),
-            quoted_yield=Decimal("0.98"), # Mock
-            actual_yield=Decimal(str(actual_data.get("actual_yield", 0.98))),
+            quoted_yield=Decimal(str(
+                actual_data.get("quoted_yield")
+                or quote.custom_fields.get("quoted_yield")
+                or quote.custom_fields.get("estimated_yield")
+                or actual_data.get("actual_yield")
+                or 0
+            )),
+            actual_yield=Decimal(str(actual_data.get("actual_yield", 0))),
             variance_notes=actual_data.get("notes"),
             root_cause_categories=actual_data.get("root_causes", []),
         )

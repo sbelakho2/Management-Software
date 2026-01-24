@@ -404,6 +404,7 @@
       "workbench": {
         "title": "Workbench de cotización",
         "subtitle": "Cabina del tasador",
+        "convertToNpi": "Convertir a NPI",
         "exportPackage": "Exportar paquete RFQ",
         "generateQuote": "Generar cotización",
         "rfqPackage": "Paquete RFQ",
@@ -444,7 +445,9 @@
         "targetMargin": "Margen objetivo",
         "variance": "Varianza",
         "aiMatch": "Coincidencia de similitud de IA: {percent}% con {job}",
-        "historicalAssumptions": "Suposiciones históricas extraídas"
+        "historicalAssumptions": "Suposiciones históricas extraídas",
+        "quantityLadder": "Escalera de cantidades",
+        "testLevels": "Niveles de prueba (Jidoka)"
       },
       "packet": {
         "backToWorkbench": "Volver al workbench",
@@ -813,6 +816,7 @@
     "auditor": "Auditor",
     "ctqTracking": "Seguimiento CTQ",
     "customers": "Clientes",
+    "emailDrafting": "Redacción de correos",
     "dashboard": "Panel de control",
     "dashboards": "Paneles de control",
     "exceptions": "Excepciones",

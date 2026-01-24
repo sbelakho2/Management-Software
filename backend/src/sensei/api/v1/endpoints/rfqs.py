@@ -373,8 +373,6 @@ class QuestionResponse(BaseModel):
 
 
 async def get_rfq_question_and_quote_counts(db: DBSession, rfq_id: UUID) -> tuple[int, int]:
-    if "unittest.mock" in type(db).__module__:
-        return 0, 0
     question_result = await db.execute(
         select(func.count(RFQQuestion.id)).where(RFQQuestion.rfq_id == rfq_id)
     )

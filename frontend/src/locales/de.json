@@ -404,6 +404,7 @@
       "workbench": {
         "title": "Angebots-Workbench",
         "subtitle": "Kalkulations-Cockpit",
+        "convertToNpi": "In NPI überführen",
         "exportPackage": "RFQ-Paket exportieren",
         "generateQuote": "Angebot erstellen",
         "rfqPackage": "RFQ-Paket",
@@ -444,7 +445,9 @@
         "targetMargin": "Zielmarge",
         "variance": "Abweichung",
         "aiMatch": "KI-Ähnlichkeitsabgleich: {percent}% mit {job}",
-        "historicalAssumptions": "Extrahierte historische Annahmen"
+        "historicalAssumptions": "Extrahierte historische Annahmen",
+        "quantityLadder": "Mengenstaffel",
+        "testLevels": "Teststufen (Jidoka)"
       },
       "packet": {
         "backToWorkbench": "Zurück zur Workbench",

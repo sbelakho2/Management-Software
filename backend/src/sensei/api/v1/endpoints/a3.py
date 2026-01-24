@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
+from sensei.core.storage import generate_presigned_url
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (
     build_created_response,
@@ -613,11 +614,25 @@ async def export_a3(
     format: str = Query(default="pdf"),
 ) -> APIResponse[dict]:
     """Export A3 data."""
-    # In a real implementation, this would generate a PDF or Excel file.
-    # For now, return a mock URL.
+    if format.lower() != "pdf":
+        raise ConflictError("Only PDF export is supported at this time")
+
+    stmt = select(A3).where(and_(A3.id == a3_id, A3.deleted_at.is_(None)))
+    result = await db.execute(stmt)
+    a3 = result.scalar_one_or_none()
+    if not a3:
+        raise NotFoundError(f"A3 {a3_id} not found")
+
+    if not a3.pdf_storage_key:
+        raise ConflictError("A3 PDF export is not available yet")
+
+    url = generate_presigned_url(a3.pdf_storage_key)
+    if not url:
+        raise ConflictError("Failed to generate export URL")
+
     return build_response(
-        data={"url": f"/api/v1/a3s/{a3_id}/download?format={format}"},
-        message=f"A3 export started in {format} format",
+        data={"url": url},
+        message="A3 export ready",
     )
 
 

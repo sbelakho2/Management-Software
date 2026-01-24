@@ -37,6 +37,12 @@
     "remove": "Remove",
     "view": "View",
     "details": "Details",
+    "tests": {
+      "aoi": "AOI",
+      "xray": "X-Ray",
+      "ict": "ICT",
+      "fct": "FCT"
+    },
     "actions": {
       "analyze": "Analyze"
     },
@@ -91,6 +97,7 @@
       "workbench": {
         "title": "Quoting Workbench",
         "subtitle": "Estimator Cockpit",
+        "convertToNpi": "Convert to NPI",
         "exportPackage": "Export RFQ Package",
         "generateQuote": "Generate Quote",
         "rfqPackage": "RFQ Package",
@@ -131,7 +138,9 @@
         "targetMargin": "Target Margin",
         "variance": "Variance",
         "aiMatch": "AI Similarity Match: {percent}% with {job}",
-        "historicalAssumptions": "Extracted Historical Assumptions"
+        "historicalAssumptions": "Extracted Historical Assumptions",
+        "quantityLadder": "Quantity Ladder",
+        "testLevels": "Test Levels (Jidoka)"
       },
       "packet": {
         "backToWorkbench": "Back to Workbench",
@@ -369,6 +378,7 @@
     "pipeline": "Pipeline",
     "quotes": "Quotes",
     "customers": "Customers",
+    "emailDrafting": "Email Drafting",
     "operations": "Operations",
     "opsOverview": "Ops Overview",
     "production": "Production",

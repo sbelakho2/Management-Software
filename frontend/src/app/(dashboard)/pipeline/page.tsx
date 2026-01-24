@@ -63,7 +63,6 @@ export default function PipelinePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const isTestEnv = process.env.NODE_ENV === 'test';
 
   const { 
     rfqs, 
@@ -82,120 +81,12 @@ export default function PipelinePage() {
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
   useEffect(() => {
-    if (!isTestEnv) {
-      fetchRFQs();
-    }
-  }, [fetchRFQs, isTestEnv]);
-
-  const fallbackRfqs = useMemo((): RFQ[] => {
-    if (!isTestEnv) return [];
-    const now = new Date();
-    const iso = (offsetDays: number) => new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000).toISOString();
-    return [
-      {
-        id: 'rfq-1',
-        created_at: iso(-10),
-        updated_at: iso(-1),
-        created_by: 'user-1',
-        updated_by: 'user-1',
-        rfq_number: 'RFQ-2024-0101',
-        customer_id: 'cust-1',
-        customer: { id: 'cust-1', created_at: iso(-30), updated_at: iso(-2), name: 'Acme Corp', code: 'ACM', type: 'customer', status: 'active', tags: [] },
-        title: 'Aluminum Enclosures',
-        status: 'new',
-        priority: 'high',
-        due_date: iso(5),
-        received_date: iso(-12),
-        estimated_value: 125000,
-        currency: 'USD',
-        attachments: [],
-        line_items: [],
-        tags: [],
-      },
-      {
-        id: 'rfq-2',
-        created_at: iso(-14),
-        updated_at: iso(-2),
-        created_by: 'user-1',
-        updated_by: 'user-1',
-        rfq_number: 'RFQ-2024-0102',
-        customer_id: 'cust-2',
-        customer: { id: 'cust-2', created_at: iso(-40), updated_at: iso(-3), name: 'Globex Industries', code: 'GLOB', type: 'customer', status: 'active', tags: [] },
-        title: 'Precision Valve Assembly',
-        status: 'reviewing',
-        priority: 'urgent',
-        due_date: iso(-1),
-        received_date: iso(-20),
-        estimated_value: 98000,
-        currency: 'USD',
-        attachments: [],
-        line_items: [],
-        tags: [],
-      },
-      {
-        id: 'rfq-3',
-        created_at: iso(-20),
-        updated_at: iso(-4),
-        created_by: 'user-1',
-        updated_by: 'user-1',
-        rfq_number: 'RFQ-2024-0103',
-        customer_id: 'cust-3',
-        customer: { id: 'cust-3', created_at: iso(-50), updated_at: iso(-4), name: 'Initech', code: 'INIT', type: 'prospect', status: 'active', tags: [] },
-        title: 'Custom Bracket Set',
-        status: 'quoting',
-        priority: 'medium',
-        due_date: iso(10),
-        received_date: iso(-22),
-        estimated_value: 54000,
-        currency: 'USD',
-        attachments: [],
-        line_items: [],
-        tags: [],
-      },
-      {
-        id: 'rfq-4',
-        created_at: iso(-25),
-        updated_at: iso(-3),
-        created_by: 'user-1',
-        updated_by: 'user-1',
-        rfq_number: 'RFQ-2024-0104',
-        customer_id: 'cust-4',
-        customer: { id: 'cust-4', created_at: iso(-60), updated_at: iso(-5), name: 'Umbrella Manufacturing', code: 'UMBR', type: 'customer', status: 'active', tags: [] },
-        title: 'Industrial Frame Build',
-        status: 'submitted',
-        priority: 'low',
-        due_date: iso(15),
-        received_date: iso(-30),
-        estimated_value: 210000,
-        currency: 'USD',
-        attachments: [],
-        line_items: [],
-        tags: [],
-      },
-    ];
-  }, [isTestEnv]);
-
-  const fallbackStats = useMemo(() => {
-    if (!isTestEnv) return stats;
-    const totalValue = fallbackRfqs.reduce((sum, rfq) => sum + (rfq.estimated_value || 0), 0);
-    const activeRFQs = fallbackRfqs.filter(rfq => ['new', 'reviewing', 'quoting', 'submitted'].includes(rfq.status)).length;
-    const overdueCount = fallbackRfqs.filter(rfq => new Date(rfq.due_date) < new Date()).length;
-    return {
-      totalRFQs: fallbackRfqs.length,
-      activeRFQs,
-      totalValue,
-      avgResponseTime: 12,
-      conversionRate: 18,
-      overdueCount,
-    };
-  }, [isTestEnv, fallbackRfqs, stats]);
-
-  const sourceRfqs = isTestEnv && rfqs.length === 0 ? fallbackRfqs : rfqs;
-  const effectiveStats = isTestEnv && rfqs.length === 0 ? fallbackStats : stats;
+    fetchRFQs();
+  }, [fetchRFQs]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return sourceRfqs.filter((rfq) => {
+    return rfqs.filter((rfq) => {
       if (statusFilter !== 'all' && rfq.status !== statusFilter) return false;
       if (priorityFilter !== 'all' && rfq.priority !== priorityFilter) return false;
       if (!q) return true;
@@ -206,7 +97,7 @@ export default function PipelinePage() {
         rfq.title?.toLowerCase().includes(q)
       );
     });
-  }, [sourceRfqs, search, statusFilter, priorityFilter]);
+  }, [rfqs, search, statusFilter, priorityFilter]);
 
   const setAndPersistView = (nextView: 'list' | 'board') => {
     setView(nextView);
@@ -243,7 +134,7 @@ export default function PipelinePage() {
     }
   };
 
-  if (!isTestEnv && isLoading && rfqs.length === 0) {
+  if (isLoading && rfqs.length === 0) {
     return (
       <div className="space-y-8">
         <div className="flex items-center justify-between border-b border-rams-line pb-8">
@@ -290,22 +181,22 @@ export default function PipelinePage() {
       <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
         <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.activeIntelNodes')}</p>
-          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.activeRFQs}</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2">{effectiveStats.overdueCount} {t('pages.pipeline.stats.criticalThresholds')}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.activeRFQs}</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2">{stats.overdueCount} {t('pages.pipeline.stats.criticalThresholds')}</p>
         </div>
         <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.pipelineMagnitude')}</p>
-          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(effectiveStats.totalValue)}</div>
-          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">{t('pages.pipeline.stats.acrossRfqs', { count: effectiveStats.totalRFQs })}</p>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(stats.totalValue)}</div>
+          <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">{t('pages.pipeline.stats.acrossRfqs', { count: stats.totalRFQs })}</p>
         </div>
         <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.responseVelocity')}</p>
-          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.avgResponseTime}h</div>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.avgResponseTime}h</div>
           <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2">{t('pages.pipeline.stats.optimalRangeIdentified')}</p>
         </div>
         <div className="bg-rams-module p-6 border-b border-rams-line group">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.pipeline.stats.conversionRate')}</p>
-          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{effectiveStats.conversionRate}%</div>
+          <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.conversionRate}%</div>
           <p className="text-[9px] font-mono font-bold uppercase text-muted-foreground/40 mt-2">{t('pages.pipeline.stats.protocolAlphaVariance')}</p>
         </div>
       </div>
@@ -421,12 +312,17 @@ export default function PipelinePage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((rfq) => (
-                    <TableRow 
-                      key={rfq.id} 
-                      className="group transition-none cursor-pointer"
-                      onClick={() => router.push(`/pipeline/${rfq.id}`)}
-                    >
+                  filtered.map((rfq) => {
+                    const completenessScore = typeof rfq.custom_fields?.completeness_score === 'number'
+                      ? Math.round(rfq.custom_fields.completeness_score)
+                      : null;
+
+                    return (
+                      <TableRow 
+                        key={rfq.id} 
+                        className="group transition-none cursor-pointer"
+                        onClick={() => router.push(`/pipeline/${rfq.id}`)}
+                      >
                       <TableCell className="font-mono font-bold text-rams-orange tabular-nums">{rfq.rfq_number}</TableCell>
                       <TableCell>
                         <span className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">
@@ -457,15 +353,19 @@ export default function PipelinePage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-col gap-1 w-20">
-                          <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
-                            <span>{t('common.quotingHelper.workbench.healthy')}</span>
-                            <span>{Math.floor(Math.random() * 100)}%</span>
+                        {completenessScore === null ? (
+                          <span className="text-[9px] font-mono uppercase text-muted-foreground/50">N/A</span>
+                        ) : (
+                          <div className="flex flex-col gap-1 w-20">
+                            <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">
+                              <span>{t('common.quotingHelper.workbench.healthy')}</span>
+                              <span>{completenessScore}%</span>
+                            </div>
+                            <div className="h-1 w-full bg-rams-line overflow-hidden">
+                              <div className="h-full bg-rams-orange" style={{ width: `${completenessScore}%` }} />
+                            </div>
                           </div>
-                          <div className="h-1 w-full bg-rams-line overflow-hidden">
-                            <div className="h-full bg-rams-orange" style={{ width: `${Math.floor(Math.random() * 100)}%` }} />
-                          </div>
-                        </div>
+                        )}
                       </TableCell>
                       <TableCell className="font-mono text-[10px] uppercase tracking-tighter text-muted-foreground/60">
                         {rfq.due_date ? formatDate(new Date(rfq.due_date)) : 'N/A'}
@@ -491,8 +391,9 @@ export default function PipelinePage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
-                    </TableRow>
-                  ))
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

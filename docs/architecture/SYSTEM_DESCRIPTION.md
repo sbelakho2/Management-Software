@@ -7,9 +7,10 @@ Sensei OS is a comprehensive Manufacturing Operating System designed to integrat
 ## Core Modules
 
 ### 1. Sales & Commercial
-- **RFQ Management**: Streamlined processing of customer requests for quote.
-- **AI Drafting**: Automated generation of quote drafts using historical data and product specs.
-- **Pipeline Analytics**: Real-time visibility into the sales funnel and win-loss predictions.
+- **Quoting Helper (Stage-Gate Workflow)**: Accelerates RFQ → Quote from days to hours by splitting technical reviews across parallel engineering work packets (EE, ME, MfgE, Quality, Purchasing).
+- **AI Quote Memory**: Semantic search over historical quotes to pull past assumptions, yields, and supplier choices using ONNX-based local embeddings.
+- **Smart Ingestion**: Automated extraction of technical requirements (MPNs, quantities, PCB specs) from emails and PDF packages.
+- **Deterministic Costing**: Rule-based costing engine utilizing active Rate Cards for material rollups and labor estimation.
 
 ### 2. Engineering & NPI (New Product Introduction)
 - **Document Intelligence**: AI-powered extraction of metadata from engineering drawings and PDFs.

@@ -1,4 +1,5 @@
 import logging
+import math
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -45,7 +46,7 @@ class QuotingAssistService:
                 "risk_level": "high"
             })
 
-        # PCBA specific checks (mocked)
+        # PCBA specific checks
         if rfq.part_name and "PCBA" in rfq.part_name.upper():
             questions.append({
                 "question": "Is the PCB finish specified (ENIG, HASL)?",
@@ -87,16 +88,33 @@ class QuotingAssistService:
 
         # Perform vector similarity search
         # Using cosine distance (<=> operator in pgvector)
-        # Fallback for non-postgresql environments (sqlite during tests)
+        # Fallback for non-postgresql environments computes cosine similarity in Python
         if self.session.bind.dialect.name != "postgresql":
             stmt = (
                 select(RFQ)
                 .where(RFQ.id != rfq_id)
                 .where(RFQ.status.in_(["won", "lost"]))
-                .limit(5)
             )
             result = await self.session.execute(stmt)
-            similar_rfqs = [(r, 0.1) for r in result.scalars().all()] # Mock distance
+            candidates = [r for r in result.scalars().all() if r.embedding]
+
+            def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
+                if not vec_a or not vec_b:
+                    return 0.0
+                dot = sum(a * b for a, b in zip(vec_a, vec_b))
+                norm_a = math.sqrt(sum(a * a for a in vec_a))
+                norm_b = math.sqrt(sum(b * b for b in vec_b))
+                if norm_a == 0.0 or norm_b == 0.0:
+                    return 0.0
+                return dot / (norm_a * norm_b)
+
+            ranked = []
+            for candidate in candidates:
+                similarity = _cosine_similarity(rfq.embedding, candidate.embedding)
+                ranked.append((candidate, 1 - similarity))
+
+            ranked.sort(key=lambda item: item[1])
+            similar_rfqs = ranked[:5]
         else:
             stmt = (
                 select(
@@ -133,8 +151,41 @@ class QuotingAssistService:
         """
         Generate a draft quote narrative / assumptions.
         """
-        # Mock generative narrative
-        return "This quote is based on the provided BOM version 1.2 and assumes standard lead times for all materials. Turnkey assembly includes AOI and final functional test."
+        quote = await self.session.get(Quote, quote_id)
+        if not quote:
+            return ""
+
+        line_items = list(quote.line_items) if hasattr(quote, "line_items") and quote.line_items else []
+        total_items = len(line_items)
+        currency = quote.currency or ""
+        lead_time = None
+        if total_items > 0:
+            lead_times = [item.lead_time_days for item in line_items if item.lead_time_days]
+            lead_time = max(lead_times) if lead_times else None
+
+        assumptions = []
+        if quote.custom_fields and isinstance(quote.custom_fields, dict):
+            for key in ("assumptions", "notes", "constraints"):
+                value = quote.custom_fields.get(key)
+                if isinstance(value, str) and value.strip():
+                    assumptions.append(value.strip())
+
+        if quote.notes:
+            assumptions.append(quote.notes.strip())
+
+        summary = [f"Quote {quote.quote_number} for {quote.title or 'customer request'}.".strip()]
+        if total_items:
+            summary.append(f"Includes {total_items} line item(s).")
+        if quote.total:
+            summary.append(f"Total estimated value: {quote.total} {currency}.".strip())
+        if lead_time is not None:
+            summary.append(f"Estimated lead time: {lead_time} day(s).")
+
+        if assumptions:
+            summary.append("Assumptions:")
+            summary.extend(f"- {item}" for item in assumptions if item)
+
+        return " ".join(summary)
 
 def get_quoting_assist_service(session: AsyncSession) -> QuotingAssistService:
     return QuotingAssistService(session)
