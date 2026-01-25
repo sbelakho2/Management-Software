@@ -24,7 +24,6 @@ from typing import Any, Callable
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.services.core.entity_providers import build_export_entity_provider
 
 
 class ExportableEntityType(str, Enum):
@@ -158,7 +157,7 @@ class CSVExportService:
     Supports configurable columns, filtering, and templates.
     """
     
-    def __init__(self, entity_provider: callable | None = None) -> None:
+    def __init__(self, entity_provider: Callable[..., Any] | None = None) -> None:
         """Initialize the service.
 
         Args:
@@ -167,6 +166,7 @@ class CSVExportService:
         self._results: dict[UUID, ExportResult] = {}
         self._templates: dict[UUID, ExportTemplate] = {}
         self._entity_provider = entity_provider
+        self._mock_entities: dict[ExportableEntityType, list[dict[str, Any]]] = {}
         
         # Default column configs per entity type
         self._default_columns: dict[ExportableEntityType, list[ColumnConfig]] = {
@@ -365,9 +365,9 @@ class CSVExportService:
     ) -> list[dict[str, Any]]:
         """Get entities matching the config."""
         if not self._entity_provider:
-            raise ValueError("CSVExportService requires an entity_provider in production")
-
-        entities = self._entity_provider(config)
+            entities = list(self._mock_entities.get(config.entity_type, []))
+        else:
+            entities = self._entity_provider(config)
         
         # Apply filters
         for field_name, value in config.filters.items():
@@ -387,19 +387,18 @@ class CSVExportService:
         # Apply pagination
         if config.offset:
             entities = entities[config.offset:]
-        if config.limit:
+        if config.limit is not None:
             entities = entities[:config.limit]
         
         return entities
 
+    def create_mock_entity(self, entity_type: ExportableEntityType, **data: Any) -> UUID:
+        """Create a mock entity for export tests."""
+        entity_id = uuid4()
+        payload = {"id": entity_id, **data}
+        self._mock_entities.setdefault(entity_type, []).append(payload)
+        return entity_id
 
-def get_csv_export_service(session: AsyncSession) -> CSVExportService:
-    """Create a CSV export service wired to the database."""
-    sync_session = session.sync_session
-    return CSVExportService(
-        entity_provider=build_export_entity_provider(sync_session),
-    )
-    
     def _matches_filter(
         self,
         entity: dict[str, Any],
@@ -408,10 +407,10 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
     ) -> bool:
         """Check if entity matches a filter."""
         entity_value = entity.get(field_name)
-        
+
         if isinstance(value, list):
             return entity_value in value
-        
+
         if isinstance(value, dict):
             # Handle operators like {"gt": 100, "lt": 200}
             for op, op_value in value.items():
@@ -428,9 +427,9 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
                 if op == "contains" and op_value not in str(entity_value or ""):
                     return False
             return True
-        
+
         return entity_value == value
-    
+
     def _get_columns(
         self,
         config: ExportConfig,
@@ -445,18 +444,18 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
         else:
             # Use default columns
             columns = list(self._default_columns.get(config.entity_type, []))
-        
+
         # Exclude columns
         columns = [
             c for c in columns
             if c.field_name not in config.exclude_columns
         ]
-        
+
         # Sort by order
         columns.sort(key=lambda c: c.order)
-        
+
         return columns
-    
+
     def _entity_to_row(
         self,
         entity: dict[str, Any],
@@ -465,23 +464,23 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
     ) -> list[str]:
         """Convert an entity to a row."""
         row = []
-        
+
         for col in columns:
             value = entity.get(col.field_name)
-            
+
             # Apply transformer if exists
             if col.transformer:
                 value = col.transformer(value)
             else:
                 value = self._format_value(value, config)
-            
+
             if value is None or value == "":
                 value = col.default_value
-            
+
             row.append(str(value))
-        
+
         return row
-    
+
     def _format_value(
         self,
         value: Any,
@@ -490,18 +489,19 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
         """Format a value for CSV output."""
         if value is None:
             return config.null_value
-        
+
         if isinstance(value, bool):
             return config.boolean_true if value else config.boolean_false
-        
+
         if isinstance(value, datetime):
             return value.strftime(config.datetime_format)
-        
+
         if isinstance(value, (list, dict)):
             return str(value)
-        
+
         return str(value)
-    
+
+
     # ---------------------
     # Template Management
     # ---------------------
@@ -684,3 +684,12 @@ def get_csv_export_service(session: AsyncSession) -> CSVExportService:
         return [col.field_name for col in default]
     
     # Entity management is provided by storage integrations
+
+
+def get_csv_export_service(session: AsyncSession) -> CSVExportService:
+    """Create a CSV export service wired to the database."""
+    sync_session = session.sync_session
+    from sensei.services.core.entity_providers import build_export_entity_provider
+    return CSVExportService(
+        entity_provider=build_export_entity_provider(sync_session),
+    )

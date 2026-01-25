@@ -26,30 +26,32 @@ export function MobileBottomNav() {
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
-    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+    const roles = user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+    return roles;
   }, [user]);
 
   // Extract a few key items for the bottom nav
   const mobileNavItems = React.useMemo(() => {
     const items: NavItem[] = [];
-    
-    // Always include Today if accessible
-    const today = NAV_SECTIONS[0].items.find(i => i.href === '/today');
-    if (today && hasPageAccess(today.href, userRoles)) items.push(today);
-    
-    // Include Tasks if accessible
-    const tasks = NAV_SECTIONS[0].items.find(i => i.href === '/tasks');
-    if (tasks && hasPageAccess(tasks.href, userRoles)) items.push(tasks);
-    
-    // Include Ops Overview if accessible
-    const ops = NAV_SECTIONS[2].items.find(i => i.href === '/ops');
-    if (ops && hasPageAccess(ops.href, userRoles)) items.push(ops);
-    
-    // Include Sales Overview if accessible
-    const sales = NAV_SECTIONS[1].items.find(i => i.href === '/sales');
-    if (sales && hasPageAccess(sales.href, userRoles)) items.push(sales);
-    
-    return items.slice(0, 4);
+    const allItems = NAV_SECTIONS.flatMap((section) => section.items);
+
+    const addIfAccessible = (href: string) => {
+      const item = allItems.find((candidate) => candidate.href === href);
+      if (item && hasPageAccess(item.href, userRoles)) {
+        items.push(item);
+      }
+    };
+
+    // Keep these stable + role-aware (do not rely on NAV_SECTIONS ordering)
+    addIfAccessible('/today');
+    addIfAccessible('/projects');
+    addIfAccessible('/tasks');
+    addIfAccessible('/ops');
+    addIfAccessible('/sales');
+
+    // De-dupe + cap at 4 items (More button is the 5th)
+    const uniqueByHref = Array.from(new Map(items.map((item) => [item.href, item])).values());
+    return uniqueByHref.slice(0, 4);
   }, [userRoles]);
 
   // Don't show on auth pages

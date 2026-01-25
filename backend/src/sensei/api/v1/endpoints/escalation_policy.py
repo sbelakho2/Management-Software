@@ -13,9 +13,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.escalation_policy import (
     EscalationPolicyService,
     EscalationJobRunner,
@@ -32,6 +33,11 @@ from sensei.services.escalation_policy import (
 
 
 router = APIRouter(tags=["Escalation"])
+
+
+def _deny_production_mutations() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 # ==============================================================================
@@ -334,10 +340,10 @@ def get_thresholds() -> EscalationThresholdsResponse:
 @router.put("/thresholds/approval")
 def update_approval_threshold(request: UpdateThresholdRequest) -> dict[str, str]:
     """Update approval escalation threshold for a specific level."""
+    _deny_production_mutations()
     try:
         level = EscalationLevel(request.level)
     except ValueError:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail=f"Invalid level: {request.level}. Must be one of: l1, l2, l3, l4",
@@ -350,9 +356,9 @@ def update_approval_threshold(request: UpdateThresholdRequest) -> dict[str, str]
 @router.put("/thresholds/risk")
 def update_risk_threshold(request: UpdateRiskThresholdRequest) -> dict[str, str]:
     """Update risk severity escalation threshold."""
+    _deny_production_mutations()
     valid_severities = ["low", "medium", "high", "critical"]
     if request.severity not in valid_severities:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=400,
             detail=f"Invalid severity: {request.severity}. Must be one of: {valid_severities}",
@@ -363,7 +369,6 @@ def update_risk_threshold(request: UpdateRiskThresholdRequest) -> dict[str, str]
         try:
             escalation_level = EscalationLevel(request.escalation_level)
         except ValueError:
-            from fastapi import HTTPException
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid level: {request.escalation_level}. Must be one of: l1, l2, l3, l4",

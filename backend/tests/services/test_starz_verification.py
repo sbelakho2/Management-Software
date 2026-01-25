@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
@@ -68,7 +68,7 @@ async def test_starz_ingestion_data_mapping(starz_session, sensei_session):
         status="online", 
         warehouse_id=1,
         capabilities={"scanning": True, "printing": False},
-        last_seen_at=datetime.utcnow()
+        last_seen_at=datetime.now(timezone.utc)
     )
     starz_session.add(dev)
     
@@ -79,8 +79,8 @@ async def test_starz_ingestion_data_mapping(starz_session, sensei_session):
         station_type="packing", 
         scanner_model="Zebra-X1", 
         connection_type="wifi",
-        registered_at=datetime.utcnow(),
-        last_activity=datetime.utcnow()
+        registered_at=datetime.now(timezone.utc),
+        last_activity=datetime.now(timezone.utc)
     )
     starz_session.add(ws)
     

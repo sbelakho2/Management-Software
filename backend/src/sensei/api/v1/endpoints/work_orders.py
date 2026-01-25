@@ -37,7 +37,35 @@ from sensei.services.core.data_lineage import get_data_lineage_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+from sensei.api import deps
+
+AllowWorkOrdersModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "engineering",
+    "maintenance",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "engineering",
+                    "maintenance",
+                ]
+            )
+        )
+    ]
+)
 
 # Type aliases for dependency injection
 DBSession = Annotated[AsyncSession, Depends(get_db)]

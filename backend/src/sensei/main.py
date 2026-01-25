@@ -38,6 +38,7 @@ from sensei.services.ops.muda_nudging_worker import MudaNudgingJobRunner
 from sensei.services.ops.cognitive_obeya import get_cognitive_obeya
 from sensei.services.core.factory_launchpad import get_factory_launchpad
 from sensei.services.core.edge_ai import get_edge_orchestrator
+from sensei.services.core.rbac_bootstrap import ensure_core_users_have_roles
 
 logger = structlog.get_logger(__name__)
 
@@ -70,6 +71,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize and start backup scheduler
     try:
         from sensei.core.database import async_session_factory
+        # Ensure core RBAC roles/assignments exist (especially for built-in accounts).
+        try:
+            async with async_session_factory() as session:
+                await ensure_core_users_have_roles(session)
+                await session.commit()
+        except Exception as e:
+            logger.error("Failed to bootstrap core RBAC roles", error=str(e))
+
         backup_service = DatabaseBackupService(
             db_session_factory=async_session_factory,
             backup_storage_path=settings.BACKUP_STORAGE_PATH if hasattr(settings, 'BACKUP_STORAGE_PATH') else "/tmp/backups",

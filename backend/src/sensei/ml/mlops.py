@@ -174,16 +174,12 @@ class ModelRegistry:
         """
         try:
             asyncio.get_running_loop()
-            # If there's a running loop, we can't use anyio.run
-            # The caller should use the async method directly
-            raise RuntimeError(
-                "register_model() called from async context. "
-                "Use 'await _register_model_async()' instead."
-            )
-        except RuntimeError as e:
-            if "running event loop" in str(e) or "no running event loop" not in str(e):
-                raise
+        except RuntimeError:
             return anyio.run(self._register_model_async, metadata, model_artifacts_path)
+        raise RuntimeError(
+            "register_model() called from async context. "
+            "Use 'await _register_model_async()' instead."
+        )
     
     def get_model(self, model_id: str) -> Optional[ModelMetadata]:
         """Get model metadata by ID."""

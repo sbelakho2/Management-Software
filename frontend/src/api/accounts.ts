@@ -76,24 +76,21 @@ export const accountApi = {
    * Get an account by ID
    */
   async get(id: string): Promise<Customer> {
-    const response = await apiClient.get<{ data: Customer }>(`/accounts/${id}`);
-    return response.data;
+    return apiClient.get<Customer>(`/accounts/${id}`);
   },
 
   /**
    * Create a new account
    */
   async create(data: CreateAccountData): Promise<Customer> {
-    const response = await apiClient.post<{ data: Customer }>('/accounts', data);
-    return response.data;
+    return apiClient.post<Customer>('/accounts', data);
   },
 
   /**
    * Update an account
    */
   async update(id: string, data: UpdateAccountData): Promise<Customer> {
-    const response = await apiClient.patch<{ data: Customer }>(`/accounts/${id}`, data);
-    return response.data;
+    return apiClient.patch<Customer>(`/accounts/${id}`, data);
   },
 
   /**
@@ -107,16 +104,14 @@ export const accountApi = {
    * Restore a soft-deleted account
    */
   async restore(id: string): Promise<Customer> {
-    const response = await apiClient.post<{ data: Customer }>(`/accounts/${id}/restore`);
-    return response.data;
+    return apiClient.post<Customer>(`/accounts/${id}/restore`);
   },
 
   /**
    * Get account statistics
    */
   async getGlobalStats(): Promise<AccountStats> {
-    const response = await apiClient.get<{ data: AccountStats }>('/accounts/stats');
-    return response.data;
+    return apiClient.get<AccountStats>('/accounts/stats');
   },
 
   /**

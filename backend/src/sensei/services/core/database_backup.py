@@ -185,7 +185,8 @@ class DatabaseBackupService:
     def create_backup(
         self,
         strategy: BackupStrategy = BackupStrategy.FULL,
-        database_name: Optional[str] = None
+        database_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> BackupMetadata:
         """
         Create database backup using pg_dump
@@ -193,6 +194,7 @@ class DatabaseBackupService:
         Args:
             strategy: Backup strategy (full, incremental, differential)
             database_name: Database to backup (defaults to connection database)
+            metadata: Optional metadata dict to store with the backup (e.g., schedule info)
         
         Returns:
             BackupMetadata with backup information
@@ -207,7 +209,7 @@ class DatabaseBackupService:
         backup_file = self.backup_storage_path / f"{backup_id}.sql"
         compressed_file = self.backup_storage_path / f"{backup_id}.sql.gz"
         
-        metadata = BackupMetadata(
+        backup_metadata = BackupMetadata(
             backup_id=backup_id,
             strategy=strategy,
             timestamp=datetime.now(timezone.utc),
@@ -217,7 +219,8 @@ class DatabaseBackupService:
             checksum="",
             encryption_enabled=self.encryption_enabled,
             status=BackupStatus.IN_PROGRESS,
-            file_path=str(compressed_file if self.compression_enabled else backup_file)
+            file_path=str(compressed_file if self.compression_enabled else backup_file),
+            metadata=metadata or {}
         )
         
         try:
@@ -253,43 +256,43 @@ class DatabaseBackupService:
                 raise Exception(f"pg_dump failed: {result.stderr}")
             
             # Get uncompressed size
-            metadata.size_bytes = backup_file.stat().st_size
+            backup_metadata.size_bytes = backup_file.stat().st_size
             
             # Compress if enabled
             if self.compression_enabled:
                 self._compress_file(backup_file, compressed_file)
-                metadata.compressed_size_bytes = compressed_file.stat().st_size
+                backup_metadata.compressed_size_bytes = compressed_file.stat().st_size
                 
                 # Remove uncompressed file
                 backup_file.unlink()
             else:
-                metadata.compressed_size_bytes = metadata.size_bytes
+                backup_metadata.compressed_size_bytes = backup_metadata.size_bytes
             
             # Calculate checksum
             final_file = compressed_file if self.compression_enabled else backup_file
-            metadata.checksum = self._calculate_checksum(final_file)
+            backup_metadata.checksum = self._calculate_checksum(final_file)
             
             # Mark as completed
-            metadata.status = BackupStatus.COMPLETED
+            backup_metadata.status = BackupStatus.COMPLETED
             
             # Verify backup if enabled
             if self.verify_backups:
-                if self._verify_backup(metadata):
-                    metadata.status = BackupStatus.VERIFIED
+                if self._verify_backup(backup_metadata):
+                    backup_metadata.status = BackupStatus.VERIFIED
                 else:
-                    metadata.status = BackupStatus.CORRUPTED
-                    metadata.error_message = "Backup verification failed"
+                    backup_metadata.status = BackupStatus.CORRUPTED
+                    backup_metadata.error_message = "Backup verification failed"
             
             # Upload to S3 if configured
             if self.s3_client:
-                self._upload_to_s3(metadata)
+                self._upload_to_s3(backup_metadata)
         
         except Exception as e:
-            metadata.status = BackupStatus.FAILED
-            metadata.error_message = str(e)
+            backup_metadata.status = BackupStatus.FAILED
+            backup_metadata.error_message = str(e)
         
-        self.backups.append(metadata)
-        return metadata
+        self.backups.append(backup_metadata)
+        return backup_metadata
     
     def _verify_backup(self, metadata: BackupMetadata) -> bool:
         """Verify backup integrity by checking file exists and checksum matches"""

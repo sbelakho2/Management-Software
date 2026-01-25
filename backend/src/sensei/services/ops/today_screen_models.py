@@ -251,22 +251,21 @@ class QuickMetric:
 
 
 @dataclass
-@dataclass
 class WorkOrderAtRisk:
     """A work order that is at risk of being late."""
-    
-    work_order_id: UUID
+
+    id: UUID
     work_order_number: str
-    job_name: str
-    customer_name: str
-    scheduled_ship_date: date
-    days_until_due: int
-    current_operation: str
-    work_center_id: UUID
-    work_center_name: str
-    reason_at_risk: str
-    estimated_delay_hours: float | None = None
-    priority: int = 3
+    product_name: str
+    quantity: int
+    due_date: date
+    estimated_completion: date
+    days_at_risk: int
+    severity: ShopFloorAlertSeverity
+    reason: str
+    work_center_id: UUID | None = None
+    work_center_name: str | None = None
+    work_order_id: UUID | None = None
 
 
 @dataclass
@@ -504,3 +503,7 @@ class TodayScreenData:
     
     generated_at: datetime = field(default_factory=datetime.now)
     cache_valid_until: datetime | None = None
+
+    @property
+    def shop_floor(self) -> ShopFloorSummary | None:
+        return self.shop_floor_summary

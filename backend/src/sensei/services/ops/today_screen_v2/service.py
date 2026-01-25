@@ -22,6 +22,7 @@ from sensei.models.project_management import (
     UserStoryStatus,
 )
 from sensei.core.redis import redis_client
+from sensei.core.config import settings
 from sensei.services.ops.today_screen_v2.base import BaseRedisStore, InMemoryRedis, UUIDEncoder
 from sensei.services.ops.today_screen_v2.priorities import PriorityManager
 from sensei.services.ops.today_screen_v2.risks import RiskManager
@@ -662,7 +663,10 @@ def get_today_screen_service(redis_client_override: Any = None) -> TodayScreenSe
     """Get or create the Today screen service instance."""
     global _service
     if _service is None:
-        _service = TodayScreenService(redis_client=redis_client_override)
+        client = redis_client_override
+        if client is None and settings.is_production:
+            client = redis_client
+        _service = TodayScreenService(redis_client=client)
     return _service
 
 

@@ -6,8 +6,12 @@ async def test_dev_e2e_seed_lineage_roundtrip(async_session):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
 
-    from sensei.api.deps import get_current_user, get_db
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    from sensei.api.deps import get_current_user, get_db, get_token_data
     from sensei.api.v1.endpoints import context_bus, data_lineage, dev_e2e, quotes, rfqs
+    from sensei.core.security import TokenData
     from sensei.models.user import User, UserStatus
 
     app = FastAPI()
@@ -33,8 +37,21 @@ async def test_dev_e2e_seed_lineage_roundtrip(async_session):
     async def override_get_current_user():
         return user
 
+    async def override_get_token_data() -> TokenData:
+        now = datetime.now(timezone.utc)
+        return TokenData(
+            sub=str(user.id),
+            type="access",
+            exp=now + timedelta(hours=1),
+            iat=now,
+            jti=str(uuid4()),
+            roles=["admin"],
+            permissions=[],
+        )
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_token_data] = override_get_token_data
 
     # Register the minimal set of routers needed for the E2E integrity flow.
     app.include_router(dev_e2e.router, prefix="/api/v1/dev", tags=["Dev"])

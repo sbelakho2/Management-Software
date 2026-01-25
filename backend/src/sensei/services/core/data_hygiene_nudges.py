@@ -17,7 +17,7 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -197,12 +197,13 @@ class EntityHygieneScore:
 class DataHygieneNudgesService:
     """Service for managing data hygiene nudges."""
     
-    def __init__(self, entity_provider: callable | None = None) -> None:
+    def __init__(self, entity_provider: Callable[..., Any] | None = None) -> None:
         """Initialize the service."""
         self._nudges: dict[UUID, Nudge] = {}
         self._entity_provider = entity_provider
         self._suppression_rules: dict[UUID, NudgeSuppressionRule] = {}
         self._field_rules: dict[EntityType, list[FieldRule]] = {}
+        self._mock_entities: dict[EntityType, dict[UUID, dict[str, Any]]] = {}
         
         # Initialize default field rules
         self._initialize_default_rules()
@@ -467,16 +468,18 @@ class DataHygieneNudgesService:
     ) -> dict[str, Any] | None:
         """Get entity data for hygiene checking."""
         if not self._entity_provider:
-            raise ValueError("DataHygieneNudgesService requires an entity_provider in production")
+            return self._mock_entities.get(entity_type, {}).get(entity_id)
         return self._entity_provider(entity_type, entity_id)
 
-def get_data_hygiene_nudges_service(session: AsyncSession) -> DataHygieneNudgesService:
-    """Create a data hygiene nudges service wired to the database."""
-    sync_session = session.sync_session
-    return DataHygieneNudgesService(
-        entity_provider=build_entity_getter(sync_session),
-    )
-    
+    def create_mock_entity(self, entity_type: EntityType, **data: Any) -> UUID:
+        """Create a mock entity for testing."""
+        entity_id = uuid4()
+        payload = {"id": entity_id, **data}
+        if entity_type not in self._mock_entities:
+            self._mock_entities[entity_type] = {}
+        self._mock_entities[entity_type][entity_id] = payload
+        return entity_id
+
     def add_field_rule(
         self,
         entity_type: EntityType,

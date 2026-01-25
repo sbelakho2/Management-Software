@@ -49,8 +49,7 @@ class EmailTone(str, Enum):
 
 class EmailPurpose(str, Enum):
     """Purpose categories for email generation."""
-    
-    GENERAL = "general"
+
     MISSING_INFO_REQUEST = "missing_info_request"
     QUOTE_FOLLOWUP = "quote_followup"
     QUOTE_SUBMISSION = "quote_submission"
@@ -64,7 +63,7 @@ class EmailPurpose(str, Enum):
     INTRODUCTION = "introduction"
     ESCALATION = "escalation"
     APOLOGY = "apology"
-    CUSTOM = "custom"
+    CUSTOM = "custom"  # Default purpose for custom emails
 
 class DraftStatus(str, Enum):
     """Status of an email draft."""
@@ -142,7 +141,7 @@ class Recipient:
 class EmailContext:
     """Context for email generation."""
     
-    purpose: EmailPurpose = EmailPurpose.GENERAL
+    purpose: EmailPurpose = EmailPurpose.CUSTOM
     recipient: Recipient = field(default_factory=lambda: Recipient(email="", name=""))
     subject_hint: Optional[str] = None
     key_points: list[str] = field(default_factory=list)

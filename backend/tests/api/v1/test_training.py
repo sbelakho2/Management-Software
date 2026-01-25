@@ -325,7 +325,8 @@ class TestSkillCRUD:
         """Test skill deletion (soft delete)."""
         skill = MagicMock(spec=Skill)
         skill.id = 1
-        skill.is_deleted = False
+        skill.deleted_at = None
+        skill.deleted_by_id = None
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = skill
@@ -335,7 +336,8 @@ class TestSkillCRUD:
 
         assert result.success is True
         assert result.message == "Skill deleted successfully"
-        assert skill.is_deleted is True
+        assert skill.deleted_at is not None
+        assert skill.deleted_by_id == mock_user.id
 
 
 class TestSkillRequirements:
@@ -790,7 +792,8 @@ class TestTrainingCRUD:
         """Test deleting a training (soft delete)."""
         training = MagicMock(spec=Training)
         training.id = 1
-        training.is_deleted = False
+        training.deleted_at = None
+        training.deleted_by_id = None
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = training
@@ -800,7 +803,8 @@ class TestTrainingCRUD:
 
         assert result.success is True
         assert result.message == "Training deleted successfully"
-        assert training.is_deleted is True
+        assert training.deleted_at is not None
+        assert training.deleted_by_id == mock_user.id
 
 
 class TestTrainingParticipants:

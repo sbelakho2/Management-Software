@@ -339,17 +339,17 @@ describe('Email Drafting Store', () => {
   describe('validateRecipient', () => {
     it('should return error for missing email', () => {
       const errors = validateRecipient({});
-      expect(errors).toContain('Email is required');
+      expect(errors).toContain('emailDrafting.validation.emailRequired');
     });
 
     it('should return error for empty email', () => {
       const errors = validateRecipient({ email: '' });
-      expect(errors).toContain('Email is required');
+      expect(errors).toContain('emailDrafting.validation.emailRequired');
     });
 
     it('should return error for invalid email format', () => {
       const errors = validateRecipient({ email: 'notanemail' });
-      expect(errors).toContain('Invalid email format');
+      expect(errors).toContain('emailDrafting.validation.emailInvalid');
     });
 
     it('should return empty array for valid email', () => {

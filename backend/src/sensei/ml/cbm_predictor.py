@@ -390,10 +390,14 @@ class ConditionBasedMaintenancePredictor:
         # 3. Equipment characteristics (3 features)
         now = _utcnow()
         equipment_age_days = (now - equipment.installation_date).days if equipment.installation_date else 0
+        # Use actual Asset model fields: operating_hours and meter_reading (cycles when meter_unit='cycles')
+        operating_hours = float(getattr(equipment, 'operating_hours', 0) or 0)
+        meter_reading = float(getattr(equipment, 'meter_reading', 0) or 0)
+        # meter_reading represents cycles when meter_unit is 'cycles', otherwise use as generic counter
         features.extend([
             equipment_age_days,
-            equipment.total_operating_hours or 0,
-            equipment.total_cycles or 0,
+            operating_hours,
+            meter_reading,
         ])
         
         # 4. Maintenance history (3 features)
@@ -475,12 +479,19 @@ class ConditionBasedMaintenancePredictor:
             })
         
         # Check operating hours
-        if equipment.total_operating_hours:
-            if equipment.total_operating_hours >= equipment.recommended_maintenance_hours * 0.9:
+        # Use actual Asset model field: operating_hours
+        operating_hours = float(getattr(equipment, 'operating_hours', 0) or 0)
+        # Get recommended maintenance hours from PM schedules if available, or use default
+        recommended_hours = float(getattr(equipment, 'recommended_maintenance_hours', 0) or 0)
+        if recommended_hours == 0:
+            # Default maintenance interval if not specified: 1000 hours
+            recommended_hours = 1000.0
+        if operating_hours > 0:
+            if operating_hours >= recommended_hours * 0.9:
                 recommendations.append({
                     'priority': 'medium',
                     'action': 'schedule_preventive_maintenance',
-                    'reason': f'Approaching recommended maintenance interval ({equipment.total_operating_hours}h)',
+                    'reason': f'Approaching recommended maintenance interval ({operating_hours:.0f}h)',
                     'timeframe': 'within 1 week',
                 })
         

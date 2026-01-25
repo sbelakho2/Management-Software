@@ -51,7 +51,10 @@ export function Sidebar() {
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
-    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+
+    // Prefer explicit role list; fall back to primary role.
+    const roles = user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+    return roles;
   }, [user]);
 
   const filteredSections = React.useMemo(() => {
@@ -62,8 +65,8 @@ export function Sidebar() {
       }))
       .filter((section) => section.items.length > 0);
 
-    // CEO and Admin both have access to Administration section
-    const hasAdminAccess = userRoles.includes('admin' as UserRole) || userRoles.includes('ceo' as UserRole);
+    // Admin-only: do not surface admin control links to CEO.
+    const hasAdminAccess = userRoles.includes('admin' as UserRole) || userRoles.includes('superuser' as UserRole);
     if (hasAdminAccess && !sections.some((s) => s.title === 'Administration')) {
       sections.push({
         titleKey: 'navigation.administration',

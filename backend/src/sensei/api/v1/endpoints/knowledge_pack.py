@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api import deps
-from sensei.api.deps import CurrentUser
 from sensei.api.schemas import APIResponse
+from sensei.models.user import User
 from sensei.api.utils import build_response
 from sensei.services.ai.knowledge_enrichment import (
     ContentFormat,
@@ -21,6 +21,21 @@ from sensei.services.ai.knowledge_enrichment import (
 router = APIRouter()
 
 _service = KnowledgeEnrichmentService()
+
+
+_KNOWLEDGE_READER_ROLES = frozenset(
+    {
+        "admin",
+        "knowledge_curator",
+        "ml_engineer",
+        "gm",
+        "ops",
+        "auditor",
+        "ceo",
+    }
+)
+
+_KNOWLEDGE_CURATOR_ROLES = frozenset({"admin", "knowledge_curator", "ml_engineer"})
 
 
 class KnowledgeSourceResponse(BaseModel):
@@ -80,6 +95,16 @@ def _roles_for_user(user: Any) -> set[str]:
     return set()
 
 
+def _require_reader(roles: set[str]) -> None:
+    if not roles or not (roles & _KNOWLEDGE_READER_ROLES):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _require_curator(roles: set[str]) -> None:
+    if not roles or not (roles & _KNOWLEDGE_CURATOR_ROLES):
+        raise HTTPException(status_code=403, detail="Knowledge curator access required")
+
+
 def _to_source_response(source: Any) -> KnowledgeSourceResponse:
     return KnowledgeSourceResponse(
         id=source.id,
@@ -112,10 +137,11 @@ async def list_sources(
     source_type: SourceType | None = None,
     tag: str | None = None,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[list[KnowledgeSourceResponse]]:
-    """List in-memory knowledge sources."""
-    _ = current_user
+    """List knowledge sources stored in the database."""
+    roles = _roles_for_user(current_user)
+    _require_reader(roles)
     sources = await _service.get_sources(db)
     if source_type:
         sources = [s for s in sources if s.source_type == source_type.value]
@@ -133,12 +159,11 @@ async def register_custom_source(
     payload: RegisterSourceRequest,
     request: Request,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[KnowledgeSourceResponse]:
-    """Register a custom knowledge source (in-memory)."""
+    """Register a custom knowledge source stored in the database."""
     roles = _roles_for_user(current_user)
-    if "admin" not in roles and "knowledge_curator" not in roles and "ml_engineer" not in roles:
-        raise HTTPException(status_code=403, detail="Knowledge curator access required")
+    _require_curator(roles)
     try:
         source = await _service.add_custom_source(
             db,
@@ -164,7 +189,7 @@ async def register_custom_source(
 )
 async def initialize_default_sources(
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[dict[str, Any]]:
     """Seed default knowledge sources into the database."""
     roles = _roles_for_user(current_user)
@@ -180,10 +205,11 @@ async def initialize_default_sources(
 )
 async def list_sources_db(
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[list[KnowledgeSourceRecordResponse]]:
     """List knowledge sources stored in the database."""
-    _ = current_user
+    roles = _roles_for_user(current_user)
+    _require_reader(roles)
     sources = await _service.get_sources(db)
     return build_response(
         [
@@ -208,12 +234,11 @@ async def list_sources_db(
 async def ingest_content(
     payload: IngestContentRequest,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[dict[str, Any]]:
     """Ingest content into semantic chunks stored in the database."""
     roles = _roles_for_user(current_user)
-    if not roles:
-        raise HTTPException(status_code=403, detail="Access denied")
+    _require_curator(roles)
     try:
         chunks = await _service.ingest_content(
             db,
@@ -237,12 +262,11 @@ async def create_pack(
     payload: CreatePackRequest,
     request: Request,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[KnowledgePackResponse]:
-    """Create a knowledge pack from in-memory sources."""
+    """Create a knowledge pack from existing database sources."""
     roles = _roles_for_user(current_user)
-    if "admin" not in roles and "knowledge_curator" not in roles and "ml_engineer" not in roles:
-        raise HTTPException(status_code=403, detail="Knowledge curator access required")
+    _require_curator(roles)
     _ = request
     try:
         pack = await _service.create_pack_db(
@@ -265,12 +289,11 @@ async def create_pack(
 async def list_packs(
     active_only: bool = True,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[list[KnowledgePackResponse]]:
     """List knowledge packs."""
     roles = _roles_for_user(current_user)
-    if not roles:
-        raise HTTPException(status_code=403, detail="Access denied")
+    _require_reader(roles)
     packs = await _service.list_packs_db(db, active_only=active_only)
     return build_response([_to_pack_response(pack) for pack in packs])
 
@@ -283,7 +306,7 @@ async def deactivate_pack(
     pack_id: UUID,
     request: Request,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[KnowledgePackResponse]:
     """Deactivate a knowledge pack."""
     roles = _roles_for_user(current_user)

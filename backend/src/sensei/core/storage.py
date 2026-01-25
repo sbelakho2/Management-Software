@@ -43,9 +43,15 @@ async def check_storage_connection(client) -> bool:
     try:
         def _do_check():
             client.head_bucket(Bucket=settings.S3_BUCKET)
-        
-        await anyio.to_thread.run_sync(_do_check)
+
+        # Avoid blocking application startup indefinitely if storage is down.
+        timeout_seconds = 3 if settings.ENVIRONMENT == "development" else 10
+        with anyio.fail_after(timeout_seconds):
+            await anyio.to_thread.run_sync(_do_check)
         return True
+    except TimeoutError:
+        logger.error("Storage connection timeout", endpoint=settings.S3_ENDPOINT, bucket=settings.S3_BUCKET)
+        return False
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
         if error_code == "404":
@@ -53,10 +59,15 @@ async def check_storage_connection(client) -> bool:
             try:
                 def _do_create():
                     client.create_bucket(Bucket=settings.S3_BUCKET)
-                
-                await anyio.to_thread.run_sync(_do_create)
+
+                timeout_seconds = 3 if settings.ENVIRONMENT == "development" else 10
+                with anyio.fail_after(timeout_seconds):
+                    await anyio.to_thread.run_sync(_do_create)
                 logger.info("Created storage bucket", bucket=settings.S3_BUCKET)
                 return True
+            except TimeoutError:
+                logger.error("Storage bucket create timeout", endpoint=settings.S3_ENDPOINT, bucket=settings.S3_BUCKET)
+                return False
             except Exception as create_error:
                 logger.error("Failed to create bucket", error=str(create_error))
                 return False

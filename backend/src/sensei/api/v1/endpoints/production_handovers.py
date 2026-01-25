@@ -6,13 +6,46 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.api import deps
 from sensei.api.deps import get_db, get_current_user
 from sensei.api.exceptions import NotFoundError
 from sensei.models.production import HandoverSeverity
 from sensei.models.user import User
 from sensei.services.production.handover_service import get_handover_service
 
-router = APIRouter(prefix="/production/handovers", tags=["Production Handovers"])
+AllowProductionModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    prefix="/production/handovers",
+    tags=["Production Handovers"],
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ],
+)
 
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]

@@ -300,6 +300,7 @@ class AsyncPrescriptiveMetricAnalyzer:
             ]
 
         # Perform automated causal discovery by querying related models
+        from sqlalchemy.orm import selectinload
         from sensei.models.work_order import WorkOrder
         from sensei.models.rfq import RFQ
         from sensei.models.quality import NonConformance
@@ -307,38 +308,43 @@ class AsyncPrescriptiveMetricAnalyzer:
         discovered_links: list[CausalLink] = []
         lookback = datetime.now(timezone.utc) - timedelta(days=30)
         
-        # Discover links from Work Orders
+        # Discover links from Work Orders (eager-load non_conformances for quality metric)
         wo_result = await db.execute(
-            select(WorkOrder).where(
-                WorkOrder.updated_at > lookback
-            ).limit(50)
+            select(WorkOrder)
+            .options(selectinload(WorkOrder.non_conformances))
+            .where(WorkOrder.updated_at > lookback)
+            .limit(50)
         )
         for wo in wo_result.scalars().all():
+            # Use quantity_scrapped as a proxy for defects, and count non-conformances
+            quality_issues = int(wo.quantity_scrapped) + len(wo.non_conformances)
             wo_dict = {
                 "id": str(wo.id),
                 "description": wo.notes or f"Work Order {wo.work_order_number}",
-                "quality_issues": getattr(wo, 'defect_count', 0) or 0,
+                "quality_issues": quality_issues,
                 "delivery_delay": max(0, (wo.actual_end - wo.scheduled_end).days) if wo.actual_end and wo.scheduled_end else 0,
-                "cost_overrun": getattr(wo, 'cost_variance', 0.0) or 0.0,
-                "safety_incidents": getattr(wo, 'safety_incidents', 0) or 0,
+                "cost_overrun": 0.0,  # Cost tracking not implemented on WorkOrder model
+                "safety_incidents": 0,  # Safety tracking not implemented on WorkOrder model
             }
             link = self._evaluate_work_order_link(latest, wo_dict)
             if link:
                 discovered_links.append(link)
         
-        # Discover links from RFQs/Supplier Quotes
+        # Discover links from RFQs (using actual RFQ model fields)
         rfq_result = await db.execute(
             select(RFQ).where(
                 RFQ.updated_at > lookback
             ).limit(50)
         )
         for rfq in rfq_result.scalars().all():
+            # Use customer_notes for supplier description, and status-based heuristics for ratings
+            # Since RFQ doesn't have supplier ratings, we use defaults
             quote_dict = {
                 "id": str(rfq.id),
-                "supplier": getattr(rfq, 'customer_notes', None) or "Unknown",
-                "quality_rating": getattr(rfq, 'supplier_quality_rating', 1.0) or 1.0,
-                "delivery_rating": getattr(rfq, 'supplier_delivery_rating', 1.0) or 1.0,
-                "cost_variance": getattr(rfq, 'cost_variance', 0.0) or 0.0,
+                "supplier": rfq.customer_notes or rfq.title or "Unknown",
+                "quality_rating": 1.0,  # Supplier quality rating not tracked on RFQ model
+                "delivery_rating": 1.0,  # Supplier delivery rating not tracked on RFQ model
+                "cost_variance": 0.0,  # Cost variance not tracked on RFQ model
             }
             link = self._evaluate_supplier_link(latest, quote_dict)
             if link:
@@ -352,10 +358,13 @@ class AsyncPrescriptiveMetricAnalyzer:
             ).limit(50)
         )
         for nc in nc_result.scalars().all():
+            # Map severity enum to numeric score for analysis
+            severity_map = {"minor": 1, "major": 2, "critical": 3}
+            severity_score = severity_map.get(nc.severity.value if nc.severity else "minor", 1)
             incident_dict = {
                 "id": str(nc.id),
-                "description": nc.description or f"NCR {nc.id}",
-                "severity": getattr(nc, 'severity_score', 3) or 3,
+                "description": nc.description or f"NCR {nc.nc_number}",
+                "severity": severity_score,
                 "category": "quality" if latest.category == MetricCategory.QUALITY else "safety",
             }
             link = self._evaluate_incident_link(latest, incident_dict)

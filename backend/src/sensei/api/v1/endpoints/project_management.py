@@ -17,11 +17,12 @@ from datetime import datetime, date, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
@@ -59,7 +60,34 @@ from sensei.models.project_management import (
     UserStoryStatus,
 )
 
-router = APIRouter()
+
+AllowProjectManagement = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "quality",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "quality",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================

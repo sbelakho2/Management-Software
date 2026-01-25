@@ -1,4 +1,4 @@
-import { apiClient, PaginationParams, ApiResponse } from './client';
+import { apiClient, PaginationParams } from './client';
 
 export interface Product {
   id: number;
@@ -36,22 +36,24 @@ export interface ProductListParams extends PaginationParams {
   status?: string;
 }
 
+// Note: apiClient.unwrapResponse() extracts the 'data' field from { success, data, ... } responses
+// So these methods return the unwrapped data directly
 export const productApi = {
-  listProducts: (params?: ProductListParams) => 
-    apiClient.get<ApiResponse<Product[]>>('/products', { params }),
+  listProducts: (params?: ProductListParams): Promise<Product[]> => 
+    apiClient.get<Product[]>('/products', { params }),
   
-  getProduct: (id: number) => 
-    apiClient.get<ApiResponse<ProductDetail>>(`/products/${id}`),
+  getProduct: (id: number): Promise<ProductDetail> => 
+    apiClient.get<ProductDetail>(`/products/${id}`),
   
-  createProduct: (data: Partial<ProductDetail>) => 
-    apiClient.post<ApiResponse<ProductDetail>>('/products', data),
+  createProduct: (data: Partial<ProductDetail>): Promise<ProductDetail> => 
+    apiClient.post<ProductDetail>('/products', data),
   
-  updateProduct: (id: number, data: Partial<ProductDetail>) => 
-    apiClient.patch<ApiResponse<ProductDetail>>(`/products/${id}`, data),
+  updateProduct: (id: number, data: Partial<ProductDetail>): Promise<ProductDetail> => 
+    apiClient.patch<ProductDetail>(`/products/${id}`, data),
   
-  deleteProduct: (id: number) => 
-    apiClient.delete<ApiResponse<void>>(`/products/${id}`),
+  deleteProduct: (id: number): Promise<void> => 
+    apiClient.delete<void>(`/products/${id}`),
     
-  getProductStats: (id: number) =>
-    apiClient.get<ApiResponse<any>>(`/products/${id}/stats`),
+  getProductStats: (id: number): Promise<any> =>
+    apiClient.get<any>(`/products/${id}/stats`),
 };

@@ -23,6 +23,7 @@ T = TypeVar("T")
 from uuid import UUID, uuid4
 
 from sensei.core.redis import redis_client
+from sensei.core.config import settings
 
 
 from sensei.models.project_management import UserStory, ProjectMilestone, Project, ProjectStatus, UserStoryStatus
@@ -679,6 +680,8 @@ class AsyncTodayScreenService:
         count: int = 3,
     ) -> list[MicroDrill]:
         """Get today's micro-drill questions for a user."""
+        today_str = date.today().isoformat()
+
         drills_data = await self._get_store(user_id, "micro_drills")
         logging.info(f"[DRILL DEBUG] user_id={user_id}, drills_data={bool(drills_data)}, len={len(drills_data)}")
         
@@ -693,10 +696,26 @@ class AsyncTodayScreenService:
         
         # Get user progress
         progress = await self._get_store(user_id, "drill_progress")
-        completed_today = progress.get("completed_today", [])
+        if progress and progress.get("date") != today_str:
+            # Reset daily completion when the day rolls over.
+            progress["date"] = today_str
+            progress["completed_today"] = []
+            await self._save_store(user_id, "drill_progress", progress)
+
+        completed_today = (progress or {}).get("completed_today", [])
         
         # Filter out completed drills
         available = [d for d in drills if str(d.id) not in completed_today]
+
+        # If the user has exhausted all drills (or progress got stuck), allow repeats
+        # so the "Daily Drill" never dead-ends.
+        if not available and drills:
+            if not progress:
+                progress = {}
+            progress["date"] = today_str
+            progress["completed_today"] = []
+            await self._save_store(user_id, "drill_progress", progress)
+            available = drills
         
         return available[:count]
     
@@ -707,14 +726,21 @@ class AsyncTodayScreenService:
         correct: bool,
     ) -> dict[str, Any]:
         """Record drill completion."""
+        today_str = date.today().isoformat()
         progress = await self._get_store(user_id, "drill_progress")
         if not progress:
             progress = {
+                "date": today_str,
                 "completed_today": [],
                 "streak": 0,
                 "total_completed": 0,
                 "correct_count": 0,
             }
+
+        # Ensure daily completion list doesn't persist forever.
+        if progress.get("date") != today_str:
+            progress["date"] = today_str
+            progress["completed_today"] = []
         
         if str(drill_id) not in progress["completed_today"]:
             progress["completed_today"].append(str(drill_id))
@@ -735,6 +761,7 @@ class AsyncTodayScreenService:
     
     async def get_drill_progress(self, user_id: UUID) -> dict[str, Any]:
         """Get drill progress for a user."""
+        today_str = date.today().isoformat()
         progress = await self._get_store(user_id, "drill_progress")
         if not progress:
             return {
@@ -742,6 +769,17 @@ class AsyncTodayScreenService:
                 "streak": 0,
                 "total_completed": 0,
                 "accuracy": 0.0,
+            }
+
+        if progress.get("date") != today_str:
+            # Day rolled over; report today's completion as 0.
+            return {
+                "drills_completed_today": 0,
+                "streak": progress.get("streak", 0),
+                "total_completed": progress.get("total_completed", 0),
+                "accuracy": (progress.get("correct_count", 0) / progress.get("total_completed", 1) * 100)
+                if progress.get("total_completed", 0) > 0
+                else 0.0,
             }
         
         return {
@@ -829,60 +867,69 @@ class AsyncTodayScreenService:
     async def add_work_order_at_risk(
         self,
         work_order_number: str,
-        job_name: str,
-        customer_name: str,
-        scheduled_ship_date: date,
-        current_operation: str,
-        work_center_id: UUID,
-        work_center_name: str,
-        reason_at_risk: str,
-        estimated_delay_hours: float | None = None,
-        priority: int = 3,
+        product_name: str,
+        quantity: int,
+        due_date: date,
+        estimated_completion: date,
+        reason: str,
+        work_center_id: UUID | None = None,
+        work_center_name: str | None = None,
     ) -> WorkOrderAtRisk:
         """Add a work order at risk."""
-        today = date.today()
-        days_until_due = (scheduled_ship_date - today).days
-        
+        days_at_risk = max(0, (estimated_completion - due_date).days)
+        if days_at_risk >= 3:
+            severity = ShopFloorAlertSeverity.CRITICAL
+        elif days_at_risk >= 1:
+            severity = ShopFloorAlertSeverity.WARNING
+        else:
+            severity = ShopFloorAlertSeverity.INFO
+
+        wo_id = uuid4()
         wo = WorkOrderAtRisk(
-            work_order_id=uuid4(),
+            id=wo_id,
             work_order_number=work_order_number,
-            job_name=job_name,
-            customer_name=customer_name,
-            scheduled_ship_date=scheduled_ship_date,
-            days_until_due=days_until_due,
-            current_operation=current_operation,
+            product_name=product_name,
+            quantity=quantity,
+            due_date=due_date,
+            estimated_completion=estimated_completion,
+            days_at_risk=days_at_risk,
+            severity=severity,
+            reason=reason,
             work_center_id=work_center_id,
             work_center_name=work_center_name,
-            reason_at_risk=reason_at_risk,
-            estimated_delay_hours=estimated_delay_hours,
-            priority=priority,
+            work_order_id=wo_id,
         )
-        
-        await self._save_global_item("work_orders_at_risk", str(wo.work_order_id), asdict(wo))
+
+        await self._save_global_item("work_orders_at_risk", str(wo.id), asdict(wo))
         return wo
     
     async def get_work_orders_at_risk(
         self,
         work_center_id: UUID | None = None,
+        severity: ShopFloorAlertSeverity | None = None,
     ) -> list[WorkOrderAtRisk]:
         """Get work orders at risk."""
-        today = date.today()
         data = await self._get_global_store("work_orders_at_risk")
         result = []
         for wo_dict in data.values():
-            if 'scheduled_ship_date' in wo_dict and wo_dict['scheduled_ship_date'] and isinstance(wo_dict['scheduled_ship_date'], str):
-                wo_dict['scheduled_ship_date'] = date.fromisoformat(wo_dict['scheduled_ship_date'])
-            
+            if isinstance(wo_dict.get("due_date"), str):
+                wo_dict["due_date"] = date.fromisoformat(wo_dict["due_date"])
+            if isinstance(wo_dict.get("estimated_completion"), str):
+                wo_dict["estimated_completion"] = date.fromisoformat(wo_dict["estimated_completion"])
+
             wo = WorkOrderAtRisk(**wo_dict)
-            # Update days until due
-            wo.days_until_due = (wo.scheduled_ship_date - today).days
-            
             if work_center_id and wo.work_center_id != work_center_id:
                 continue
+            if severity and wo.severity != severity:
+                continue
             result.append(wo)
-        
-        # Sort by priority then days until due
-        result.sort(key=lambda w: (w.priority, w.days_until_due))
+
+        severity_rank = {
+            ShopFloorAlertSeverity.CRITICAL: 0,
+            ShopFloorAlertSeverity.WARNING: 1,
+            ShopFloorAlertSeverity.INFO: 2,
+        }
+        result.sort(key=lambda w: (severity_rank.get(w.severity, 3), -w.days_at_risk))
         return result
     
     async def resolve_work_order_at_risk(self, work_order_id: UUID) -> bool:
@@ -1653,6 +1700,7 @@ class AsyncTodayScreenService:
                 for h in db_handovers
             ]
         
+        generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         return TodayScreenData(
             user_id=user_id,
             user_name=user_name,
@@ -1676,7 +1724,8 @@ class AsyncTodayScreenService:
             active_pulses=active_pulses,
             active_handovers=active_handovers,
             shop_floor_summary=shop_floor,
-            cache_valid_until=utcnow_naive() + timedelta(minutes=5),
+            generated_at=generated_at,
+            cache_valid_until=generated_at + timedelta(minutes=5),
         )
     
     async def _clear_auto_generated_items(self, user_id: UUID) -> None:
@@ -1992,7 +2041,10 @@ def get_today_screen_service(redis_client_override: Any = None) -> TodayScreenSe
     """Get or create the Today screen service instance."""
     global _service
     if _service is None:
-        _service = TodayScreenService(redis_client=redis_client_override)
+        client = redis_client_override
+        if client is None and settings.is_production:
+            client = redis_client
+        _service = TodayScreenService(redis_client=client)
     return _service
 
 

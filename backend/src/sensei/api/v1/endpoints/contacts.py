@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import (
     CurrentUser,
     DBSession,
@@ -49,8 +50,33 @@ from sensei.models.account import (
     ContactRole,
 )
 
+AllowCRMModule = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "gm",
+    "exec",
+    "finance",
+    "accountant",
+)  # type: ignore[valid-type]
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "gm",
+                    "exec",
+                    "finance",
+                    "accountant",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================

@@ -1,11 +1,15 @@
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from sensei.api.deps import get_current_user, get_db
+from sensei.api.deps import get_current_user, get_db, get_token_data
 from sensei.api.exceptions import register_exception_handlers
 from sensei.api.v1.endpoints.project_management import router as pm_router
+from sensei.core.security import TokenData
 from sensei.models.user import User, UserStatus
 
 
@@ -57,8 +61,23 @@ async def app(async_session):
     async def _override_get_current_user():
         return app.state.current_user
 
+    async def _override_get_token_data() -> TokenData:
+        now = datetime.now(timezone.utc)
+        current = app.state.current_user
+        roles = ["admin"] if current == app.state.users["admin"] else ["ops"]
+        return TokenData(
+            sub=str(current.id),
+            type="access",
+            exp=now + timedelta(hours=1),
+            iat=now,
+            jti=str(uuid4()),
+            roles=roles,
+            permissions=[],
+        )
+
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_current_user] = _override_get_current_user
+    app.dependency_overrides[get_token_data] = _override_get_token_data
     return app
 
 

@@ -168,10 +168,7 @@ class ONNXEdgeInference:
                 output_path.as_posix(),
                 input_names=["input"],
                 output_names=["probabilities"],
-                dynamic_axes={
-                    "input": {0: "batch"},
-                    "probabilities": {0: "batch"},
-                },
+                dynamo=True,
                 opset_version=17,
             )
         

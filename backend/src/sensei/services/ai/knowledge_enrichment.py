@@ -522,6 +522,10 @@ class KnowledgeEnrichmentService:
         overlap: int = 200,
     ) -> list[SemanticChunkRecord]:
         """Chunk and ingest content into the database with paragraph-aware splitting."""
+        source = await db.get(KnowledgeSourceRecord, source_id)
+        if not source:
+            raise ValueError(f"Knowledge source {source_id} not found")
+
         # Use paragraph-aware chunking for better semantic coherence
         paragraphs = re.split(r'\n\s*\n', content)
         
@@ -557,23 +561,14 @@ class KnowledgeEnrichmentService:
         if current_chunk:
             chunks.append(current_chunk)
         
-        chunk_records = []
+        chunk_records: list[SemanticChunkRecord] = []
         for i, chunk_text in enumerate(chunks):
-            chunk_type = self._detect_chunk_type(chunk_text)
-            categories = self._detect_taxonomy_categories(chunk_text)
-            
             chunk = SemanticChunkRecord(
-                id=uuid4(),
                 source_id=source_id,
                 content=chunk_text,
                 chunk_index=i,
-                chunk_type=chunk_type.value,
-                taxonomy_categories=[cat.value for cat in categories],
-                token_count=len(chunk_text.split()), # Proxy
-                metadata_fields={
-                    "ingested_at": datetime.now(timezone.utc).isoformat(),
-                    "chunk_method": "paragraph_aware_v2"
-                }
+                token_count=len(chunk_text.split()),  # proxy
+                embedding_id=None,
             )
             db.add(chunk)
             chunk_records.append(chunk)

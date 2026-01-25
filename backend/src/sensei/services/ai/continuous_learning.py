@@ -45,6 +45,7 @@ from sensei.services.ai.enhanced_ml_pipeline import (
     ModelStage,
     ModelMetrics,
     FeatureStore,
+    FeatureGroup,
     ModelRegistryService,
     ExperimentTracker,
     ModelMonitor,
@@ -204,8 +205,12 @@ class FeedbackCollector:
     def __init__(
         self,
         buffer_size: int = 10000,
+        feature_store: FeatureStore | None = None,
+        feature_group_prefix: str = "model_feedback",
     ):
         self.buffer_size = buffer_size
+        self._feature_store = feature_store
+        self._feature_group_prefix = feature_group_prefix
         
         # Per-model feedback buffers
         self._feedback: Dict[str, deque] = defaultdict(
@@ -215,6 +220,21 @@ class FeedbackCollector:
         
         # Callbacks
         self._on_feedback_callbacks: List[Callable[[LearningFeedback], None]] = []
+
+    def _ensure_feature_group(self, model_name: str) -> str:
+        if not self._feature_store:
+            return ""
+        group_name = f"{self._feature_group_prefix}:{model_name}"
+        if group_name not in self._feature_store.groups:
+            self._feature_store.register_feature_group(
+                FeatureGroup(
+                    name=group_name,
+                    features=[],
+                    entity_key="feedback_id",
+                    description="Continuous learning feedback samples",
+                )
+            )
+        return group_name
     
     def record_feedback(
         self,
@@ -243,6 +263,24 @@ class FeedbackCollector:
         
         self._feedback[model_name].append(feedback)
         self._feedback_counts[model_name] += 1
+
+        if self._feature_store:
+            group_name = self._ensure_feature_group(model_name)
+            payload = {
+                **features,
+                "model_name": model_name,
+                "prediction": prediction,
+                "actual_outcome": actual_outcome,
+                "confidence": confidence,
+                "source": source.value,
+                "user_id": user_id,
+            }
+            self._feature_store.ingest_features(
+                group_name,
+                entity_id=feedback.feedback_id,
+                features=payload,
+                timestamp=feedback.timestamp,
+            )
         
         # Notify callbacks
         for callback in self._on_feedback_callbacks:
@@ -285,6 +323,38 @@ class FeedbackCollector:
     ) -> List[LearningFeedback]:
         """Get accumulated feedback for training."""
         feedback_list = list(self._feedback.get(model_name, []))
+
+        if not feedback_list and self._feature_store:
+            group_name = f"{self._feature_group_prefix}:{model_name}"
+            persisted: list[LearningFeedback] = []
+            for key, vectors in self._feature_store.feature_vectors.items():
+                if not key.startswith(f"{group_name}:"):
+                    continue
+                for vector in vectors:
+                    source_value = vector.features.get("source", FeedbackSource.PREDICTION_OUTCOME.value)
+                    if isinstance(source_value, FeedbackSource):
+                        source_value = source_value.value
+                    persisted.append(
+                        LearningFeedback(
+                            feedback_id=vector.entity_id,
+                            model_name=model_name,
+                            timestamp=vector.timestamp,
+                            source=FeedbackSource(str(source_value)),
+                            features={k: v for k, v in vector.features.items() if k not in {
+                                "model_name",
+                                "prediction",
+                                "actual_outcome",
+                                "confidence",
+                                "source",
+                                "user_id",
+                            }},
+                            prediction=vector.features.get("prediction"),
+                            actual_outcome=vector.features.get("actual_outcome"),
+                            confidence=float(vector.features.get("confidence", 1.0)),
+                            user_id=vector.features.get("user_id"),
+                        )
+                    )
+            feedback_list = persisted
         
         # Filter by confidence
         if min_confidence > 0:
@@ -903,8 +973,10 @@ class ContinuousLearningService:
         self.config = config or RetrainingConfig()
         
         # Components
+        self.feature_store = FeatureStore()
         self.feedback_collector = FeedbackCollector(
-            buffer_size=self.config.feedback_buffer_size
+            buffer_size=self.config.feedback_buffer_size,
+            feature_store=self.feature_store,
         )
         self.drift_detector = DriftDetector()
         self.retraining_manager = RetrainingManager(

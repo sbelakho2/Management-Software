@@ -216,7 +216,7 @@ class AuthService:
         if needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
         
-        # Get user roles and permissions
+        # Get user roles and permissions (RBAC)
         roles, permissions = await self._get_user_roles_permissions(user.id)
         
         # Create tokens
@@ -280,7 +280,7 @@ class AuthService:
         # Revoke old refresh token
         await self._revoke_token(token_data.jti)
         
-        # Get roles and permissions
+        # Get roles and permissions (RBAC)
         roles, permissions = await self._get_user_roles_permissions(user.id)
         
         # Create new tokens

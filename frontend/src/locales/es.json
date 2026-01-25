@@ -64,6 +64,9 @@
       "content": "Contenido",
       "reportTitle": "Título del informe",
       "reportType": "Tipo de informe",
+    "drafts": {
+      "snippet": "{snippet}…"
+    },
       "saveChanges": "Guardar cambios",
       "saving": "Guardando",
       "sections": {
@@ -146,6 +149,165 @@
       "horizonOverdue": "Horizonte vencido",
       "pendingApprovals": "Aprobaciones pendientes",
       "queueGates": "Compuertas en cola",
+    "emailDrafting": {
+      "title": "Redactor de correos con IA",
+      "aria": {
+        "selectPurpose": "Seleccionar propósito",
+        "toneGroup": "Seleccionar tono",
+        "selectLanguage": "Seleccionar idioma",
+        "recipientEmail": "Correo del destinatario",
+        "recipientName": "Nombre del destinatario",
+        "addKeyPoint": "Agregar punto clave",
+        "keyPointsList": "Lista de puntos clave",
+        "removeKeyPoint": "Quitar: {point}",
+        "copyToClipboard": "Copiar al portapapeles",
+        "editSubject": "Editar asunto",
+        "close": "Cerrar",
+        "draftsList": "Borradores de correo"
+      },
+      "placeholders": {
+        "selectPurpose": "Seleccionar propósito...",
+        "recipientEmail": "destinatario@ejemplo.com",
+        "recipientNameOptional": "Nombre (opcional)",
+        "keyPoint": "Agregar punto clave",
+        "senderName": "p. ej., Alex Morgan",
+        "senderEmail": "p. ej., alex@sensei.com",
+        "senderTitle": "p. ej., Ejecutivo de cuenta",
+        "companyName": "p. ej., Sensei Corp",
+        "threadEntityType": "Seleccionar entidad del hilo...",
+        "threadEntityId": "Ingresa el ID de la entidad...",
+        "referenceNumber": "p. ej., RFQ-2024-001",
+        "subjectHint": "p. ej., Actualización de precios del T2"
+      },
+      "purpose": {
+        "missingInfoRequest": "Solicitud de información faltante",
+        "quoteFollowup": "Seguimiento de cotización",
+        "quoteSubmission": "Envío de cotización",
+        "supplierInquiry": "Consulta a proveedor",
+        "meetingRequest": "Solicitud de reunión",
+        "meetingConfirmation": "Confirmación de reunión",
+        "meetingReschedule": "Reprogramación de reunión",
+        "issueNotification": "Notificación de incidencia",
+        "statusUpdate": "Actualización de estado",
+        "thankYou": "Agradecimiento",
+        "introduction": "Presentación",
+        "escalation": "Escalamiento",
+        "apology": "Disculpa",
+        "custom": "Correo personalizado"
+      },
+      "tone": {
+        "formal": "Formal",
+        "professional": "Profesional",
+        "friendly": "Amigable",
+        "urgent": "Urgente",
+        "apologetic": "Disculpado",
+        "appreciative": "Agradecido",
+        "concise": "Conciso"
+      },
+      "language": {
+        "english": "Inglés",
+        "french": "Francés",
+        "german": "Alemán",
+        "spanish": "Español",
+        "italian": "Italiano",
+        "portuguese": "Portugués",
+        "japanese": "Japonés",
+        "chinese": "Chino",
+        "korean": "Coreano",
+        "arabic": "Árabe"
+      },
+      "actions": {
+        "add": "Agregar",
+        "apply": "Aplicar",
+        "edit": "Editar",
+        "generating": "Generando...",
+        "generateDraft": "Generar borrador",
+        "regenerate": "Regenerar",
+        "send": "Enviar"
+      },
+      "preview": {
+        "title": "Vista previa del borrador",
+        "subjectLabel": "Asunto",
+        "confidence": "Confianza: {score}",
+        "generatedIn": "Generado en {time}"
+      },
+      "units": {
+        "milliseconds": "ms",
+        "seconds": "s"
+      },
+      "compliance": {
+        "none": "No se detectaron problemas de cumplimiento",
+        "title": "Problemas de cumplimiento ({count})"
+      },
+      "suggestions": {
+        "title": "Sugerencias ({count})"
+      },
+      "alternatives": {
+        "title": "Asuntos alternativos:"
+      },
+      "thread": {
+        "entityType": {
+          "rfq": "Solicitud de cotización (RFQ)",
+          "quote": "Cotización",
+          "workOrder": "Orden de trabajo",
+          "opportunity": "Oportunidad",
+          "nonConformance": "No conformidad",
+          "shipment": "Envío",
+          "invoice": "Factura"
+        },
+        "loadFailed": "No se pudo cargar el hilo",
+        "helper": "Conecta este borrador a un hilo para mantener el hilo de datos único.",
+        "loading": "Cargando el hilo...",
+        "traceTitle": "Rastreo del hilo",
+        "traceStats": "Rastro: {nodes} nodos / {edges} enlaces",
+        "reasoningId": "ID de razonamiento: {id}"
+      },
+      "defaults": {
+        "senderName": "Operador Sensei",
+        "senderEmail": "operador@sensei.com",
+        "companyName": "Sensei"
+      },
+      "sections": {
+        "recipient": "Destinatario",
+        "purpose": "Propósito",
+        "sender": "Remitente",
+        "threadContext": "Contexto del hilo",
+        "tone": "Tono",
+        "language": "Idioma",
+        "keyPoints": "Puntos clave"
+      },
+      "fields": {
+        "senderName": "Nombre del remitente",
+        "senderEmail": "Correo del remitente",
+        "senderTitle": "Cargo del remitente",
+        "companyName": "Nombre de la empresa",
+        "threadEntityType": "Tipo de entidad del hilo",
+        "threadEntityId": "ID de entidad del hilo",
+        "referenceNumberOptional": "Número de referencia (opcional)",
+        "subjectHintOptional": "Sugerencia de asunto (opcional)"
+      },
+      "status": {
+        "generating": "Generando...",
+        "ready": "Listo para revisión",
+        "reviewed": "Revisado",
+        "approved": "Aprobado",
+        "sent": "Enviado",
+        "discarded": "Descartado",
+        "failed": "Fallido"
+      },
+      "notifications": {
+        "copied": "¡Copiado al portapapeles!"
+      },
+      "empty": {
+        "title": "Sin borrador aún",
+        "description": "Genera un borrador para ver la vista previa y los controles de cumplimiento.",
+        "list": "Aún no hay borradores"
+      },
+      "validation": {
+        "emailRequired": "El correo es obligatorio",
+        "emailInvalid": "Formato de correo inválido"
+      }
+    },
       "thresholdExceptions": "Excepciones de umbral",
       "totalNodes": "Total de nodos"
     },

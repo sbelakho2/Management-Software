@@ -16,7 +16,7 @@ from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,7 +34,35 @@ from sensei.models.accounts_receivable import (
 from sensei.models.quote import Quote, QuoteLineItem, QuoteStatus
 from sensei.models.account import Account
 
-router = APIRouter()
+# Sales module is cross-functional (sales + quoting + AR visibility).
+# CEO/admin are handled centrally by RoleChecker.
+AllowSalesModule = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "gm",
+    "exec",
+    "finance",
+    "accountant",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "gm",
+                    "exec",
+                    "finance",
+                    "accountant",
+                ]
+            )
+        )
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -76,8 +104,7 @@ class SOResponse(BaseModel):
     approved_at: Optional[datetime]
     released_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvoiceLineCreate(BaseModel):
@@ -115,8 +142,7 @@ class InvoiceResponse(BaseModel):
     disputed: bool
     sales_order_id: Optional[UUID]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PaymentCreate(BaseModel):
@@ -140,8 +166,7 @@ class PaymentResponse(BaseModel):
     received_at: datetime
     reference: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CreditCheckResult(BaseModel):

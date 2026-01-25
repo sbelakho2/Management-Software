@@ -2,25 +2,32 @@
 IT Infrastructure Monitoring API Endpoints.
 
 Provides endpoints for system health, server metrics, service status, and IT alerts.
+
+This module intentionally avoids returning fabricated metrics. When a signal can't be
+derived (e.g., incident history, external service latency, logs), endpoints return
+"unknown" or empty data.
 """
 
 import os
 import psutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.api import deps
 from sensei.api.deps import DBSession, CurrentUser, CurrentSuperuser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
-from sensei.models.user import User
+from sensei.models.user import Role, User, UserRole
 
-router = APIRouter()
+AllowITModule = deps.require_role("it")  # type: ignore[valid-type]
+
+router = APIRouter(dependencies=[Depends(deps.RoleChecker(["it"]))])
 
 # =============================================================================
 # Schemas
@@ -67,15 +74,27 @@ class ActiveUsersResponse(BaseModel):
 # =============================================================================
 
 def get_uptime() -> str:
-    """Get system uptime as a percentage or duration."""
-    # In production, this would calculate actual uptime from monitoring data
-    return "99.98%"
+    """Get system uptime as a duration string."""
+    try:
+        uptime_seconds = max(0, int(datetime.now(timezone.utc).timestamp() - psutil.boot_time()))
+        days, rem = divmod(uptime_seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, _ = divmod(rem, 60)
+        if days:
+            return f"{days}d {hours}h {minutes}m"
+        if hours:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+    except Exception:
+        return "unknown"
 
 
 def get_last_incident() -> str:
-    """Get time since last incident."""
-    # In production, this would query incident tracking
-    return "12 days ago"
+    """Get time since last incident.
+
+    Incident tracking is not currently persisted in the database.
+    """
+    return "unknown"
 
 
 async def check_db_health(db: AsyncSession) -> str:
@@ -88,17 +107,24 @@ async def check_db_health(db: AsyncSession) -> str:
 
 
 def check_service_status(service_name: str) -> tuple[str, str]:
-    """Check status of a service. Returns (status, latency)."""
-    # In production, this would actually ping services
-    service_status_map = {
-        "API Gateway": ("healthy", "45ms"),
-        "Database Primary": ("healthy", "12ms"),
-        "Database Replica": ("healthy", "15ms"),
-        "Redis Cache": ("healthy", "2ms"),
-        "Message Queue": ("healthy", "23ms"),
-        "ML Service": ("healthy", "89ms"),
-    }
-    return service_status_map.get(service_name, ("unknown", "N/A"))
+    """Best-effort service status.
+
+    Avoids returning fabricated per-service latencies; values are only returned
+    when derived from a real check.
+    """
+    if service_name == "API Gateway":
+        return "healthy", "N/A"
+    return "unknown", "N/A"
+
+
+def _alert(alert_id: str, alert_type: str, message: str, resolved: bool) -> AlertResponse:
+    return AlertResponse(
+        id=alert_id,
+        type=alert_type,
+        message=message,
+        time=datetime.now(timezone.utc).isoformat(),
+        resolved=resolved,
+    )
 
 
 # =============================================================================
@@ -113,8 +139,8 @@ async def get_system_health(db: DBSession, current_user: CurrentUser) -> Any:
     return SystemHealthResponse(
         api_health="healthy",
         db_health=db_health,
-        cache_health="healthy",  # Would check Redis in production
-        queue_health="healthy",  # Would check message queue in production
+        cache_health="unknown",
+        queue_health="unknown",
         uptime=get_uptime(),
         last_incident=get_last_incident()
     )
@@ -123,30 +149,25 @@ async def get_system_health(db: DBSession, current_user: CurrentUser) -> Any:
 @router.get("/server-stats", response_model=ServerStatsResponse)
 async def get_server_stats(db: DBSession, current_user: CurrentUser) -> Any:
     """Get server resource statistics."""
+    active_connections = await db.scalar(select(func.count(User.id)).where(User.status == "active")) or 0
+
+    cpu_usage: float = 0.0
+    memory_usage: float = 0.0
+    disk_usage: float = 0.0
     try:
-        cpu_usage = psutil.cpu_percent(interval=0.1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        # Get active database connections (simplified)
-        active_connections = await db.scalar(
-            select(func.count(User.id)).where(User.status == "active")
-        ) or 0
-        
-        return ServerStatsResponse(
-            cpu_usage=round(cpu_usage, 1),
-            memory_usage=round(memory.percent, 1),
-            disk_usage=round(disk.percent, 1),
-            active_connections=min(active_connections, 500)  # Reasonable cap
-        )
+        cpu_usage = float(psutil.cpu_percent(interval=0.1))
+        memory_usage = float(psutil.virtual_memory().percent)
+        disk_usage = float(psutil.disk_usage('/').percent)
     except Exception:
-        # Fallback if psutil fails (e.g., in container without full access)
-        return ServerStatsResponse(
-            cpu_usage=42.0,
-            memory_usage=68.0,
-            disk_usage=54.0,
-            active_connections=234
-        )
+        # If host metrics aren't accessible (container restrictions), don't fabricate values.
+        pass
+
+    return ServerStatsResponse(
+        cpu_usage=round(cpu_usage, 1),
+        memory_usage=round(memory_usage, 1),
+        disk_usage=round(disk_usage, 1),
+        active_connections=int(active_connections),
+    )
 
 
 @router.get("/services", response_model=List[ServiceStatusResponse])
@@ -161,14 +182,15 @@ async def get_services_status(db: DBSession, current_user: CurrentUser) -> Any:
         "ML Service",
     ]
     
-    result = []
+    db_health = await check_db_health(db)
+
+    result: List[ServiceStatusResponse] = []
     for service in services:
-        status, latency = check_service_status(service)
-        result.append(ServiceStatusResponse(
-            name=service,
-            status=status,
-            latency=latency
-        ))
+        if service == "Database Primary":
+            status, latency = db_health, "N/A"
+        else:
+            status, latency = check_service_status(service)
+        result.append(ServiceStatusResponse(name=service, status=status, latency=latency))
     
     return result
 
@@ -181,31 +203,26 @@ async def get_recent_alerts(
     limit: int = Query(20, ge=1, le=100)
 ) -> Any:
     """Get recent IT alerts."""
-    # In production, this would query an alerts/incidents table
-    # For now, return dynamic alerts based on system state
-    alerts = [
-        AlertResponse(
-            id="alert-1",
-            type="info",
-            message="System backup completed successfully",
-            time="2 hours ago",
-            resolved=True
-        ),
-        AlertResponse(
-            id="alert-2",
-            type="info",
-            message="SSL certificate will expire in 30 days",
-            time="1 day ago",
-            resolved=False
-        ),
-        AlertResponse(
-            id="alert-3",
-            type="info",
-            message="Database maintenance window scheduled",
-            time="3 days ago",
-            resolved=True
-        ),
-    ]
+    alerts: List[AlertResponse] = []
+
+    db_health = await check_db_health(db)
+    if db_health != "healthy":
+        alerts.append(_alert("db-unhealthy", "critical", "Database health check failed", False))
+
+    try:
+        cpu = float(psutil.cpu_percent(interval=0.1))
+        mem = float(psutil.virtual_memory().percent)
+        disk = float(psutil.disk_usage('/').percent)
+
+        if cpu >= 90:
+            alerts.append(_alert("cpu-high", "warning", f"High CPU usage: {cpu:.1f}%", False))
+        if mem >= 90:
+            alerts.append(_alert("memory-high", "warning", f"High memory usage: {mem:.1f}%", False))
+        if disk >= 90:
+            alerts.append(_alert("disk-high", "warning", f"High disk usage: {disk:.1f}%", False))
+    except Exception:
+        # Host metrics unavailable; don't fabricate alerts.
+        pass
     
     if not include_resolved:
         alerts = [a for a in alerts if not a.resolved]
@@ -216,24 +233,27 @@ async def get_recent_alerts(
 @router.get("/active-users", response_model=List[ActiveUsersResponse])
 async def get_active_users_by_team(db: DBSession, current_user: CurrentUser) -> Any:
     """Get active user counts by team/role."""
-    # Query active users grouped by role
-    result = await db.execute(
-        select(func.count(User.id))
-        .where(User.status == "active")
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(Role.display_name, Role.name, func.count(User.id))
+        .select_from(User)
+        .join(UserRole, UserRole.user_id == User.id)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            and_(
+                User.status == "active",
+                UserRole.is_active.is_(True),
+                or_(UserRole.expires_at.is_(None), UserRole.expires_at > now),
+            )
+        )
+        .group_by(Role.display_name, Role.name)
+        .order_by(func.count(User.id).desc())
     )
-    total_active = result.scalar() or 0
-    
-    # In production, you'd group by actual roles/teams
-    # For now, provide estimated distribution
-    teams = [
-        ActiveUsersResponse(name="Operations Team", count=max(1, int(total_active * 0.4)), trend="up"),
-        ActiveUsersResponse(name="Sales Team", count=max(1, int(total_active * 0.25)), trend="stable"),
-        ActiveUsersResponse(name="Quality Team", count=max(1, int(total_active * 0.15)), trend="up"),
-        ActiveUsersResponse(name="Admin Users", count=max(1, int(total_active * 0.1)), trend="stable"),
-        ActiveUsersResponse(name="IT Team", count=max(1, int(total_active * 0.1)), trend="stable"),
+    rows = (await db.execute(stmt)).all()
+    return [
+        ActiveUsersResponse(name=(display_name or role_name), count=int(count), trend="unknown")
+        for display_name, role_name, count in rows
     ]
-    
-    return teams
 
 
 # =============================================================================
@@ -243,12 +263,10 @@ async def get_active_users_by_team(db: DBSession, current_user: CurrentUser) -> 
 @router.post("/clear-cache", response_model=dict)
 async def clear_cache(db: DBSession, current_user: CurrentSuperuser) -> Any:
     """Clear application cache. Requires superuser access."""
-    # In production, this would clear Redis cache
-    return {
-        "success": True,
-        "message": "Cache cleared successfully",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    raise HTTPException(
+        status_code=501,
+        detail="Cache backend not configured; cannot clear cache via API.",
+    )
 
 
 @router.post("/restart-service/{service_name}", response_model=dict)
@@ -266,12 +284,10 @@ async def restart_service(
             detail=f"Cannot restart service: {service_name}. Allowed: {allowed_services}"
         )
     
-    # In production, this would actually restart the service
-    return {
-        "success": True,
-        "message": f"Service {service_name} restart initiated",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    raise HTTPException(
+        status_code=501,
+        detail=f"Service restarts are not configured for this deployment: {service_name}",
+    )
 
 
 @router.get("/logs", response_model=dict)
@@ -279,17 +295,14 @@ async def get_recent_logs(
     db: DBSession,
     current_user: CurrentSuperuser,
     service: Optional[str] = None,
-    level: Optional[str] = Query(None, regex="^(debug|info|warning|error|critical)$"),
+    level: Optional[str] = Query(None, pattern="^(debug|info|warning|error|critical)$"),
     limit: int = Query(100, ge=1, le=1000)
 ) -> Any:
     """Get recent application logs. Requires superuser access."""
-    # In production, this would query a logging service like ELK
     return {
-        "logs": [
-            {"timestamp": datetime.utcnow().isoformat(), "level": "info", "message": "Application started"},
-            {"timestamp": datetime.utcnow().isoformat(), "level": "info", "message": "Database connection established"},
-        ],
-        "total": 2,
+        "logs": [],
+        "total": 0,
         "service": service,
-        "level": level
+        "level": level,
+        "message": "Log aggregation is not configured; no logs available via API.",
     }

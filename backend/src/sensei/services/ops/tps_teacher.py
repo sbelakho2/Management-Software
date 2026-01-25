@@ -1174,10 +1174,7 @@ class KataGamificationService:
             "next_belt_xp": 200 if xp < 200 else (500 if xp < 500 else (1000 if xp < 1000 else 2000))
         }
     
-    async def get_user_status(self, user_id: str, db: AsyncSession | None = None) -> dict[str, Any]:
-        if db is not None:
-            return await self._get_user_status_async(db, user_id)
-
+    def get_user_status(self, user_id: str) -> dict[str, Any]:
         stats = self._user_stats.get(user_id)
         if not stats:
             stats = {"xp": 0, "achievements": [], "belt": "White Belt"}
@@ -1192,6 +1189,9 @@ class KataGamificationService:
             "achievements": list(stats["achievements"]),
             "next_belt_xp": 200 if xp < 200 else (500 if xp < 500 else (1000 if xp < 1000 else 2000))
         }
+
+    async def get_user_status_async(self, db: AsyncSession, user_id: str) -> dict[str, Any]:
+        return await self._get_user_status_async(db, user_id)
         
     async def _award_achievement_async(self, db: AsyncSession, user_id: str, achievement: str, xp_reward: int) -> dict[str, Any]:
         """Award an achievement to a user and persist to database."""
@@ -1221,10 +1221,7 @@ class KataGamificationService:
             
         return await self._get_user_status_async(db, user_id)
 
-    async def award_achievement(self, user_id: str, achievement: str, xp_reward: int, db: AsyncSession | None = None) -> dict[str, Any]:
-        if db is not None:
-            return await self._award_achievement_async(db, user_id, achievement, xp_reward)
-
+    def award_achievement(self, user_id: str, achievement: str, xp_reward: int) -> dict[str, Any]:
         stats = self._user_stats.get(user_id)
         if not stats:
             stats = {"xp": 0, "achievements": [], "belt": "White Belt"}
@@ -1244,8 +1241,11 @@ class KataGamificationService:
             elif xp >= 200:
                 stats["belt"] = "Yellow Belt"
 
-        return await self.get_user_status(user_id)
+        return self.get_user_status(user_id)
 
+    async def award_achievement_async(self, db: AsyncSession, user_id: str, achievement: str, xp_reward: int) -> dict[str, Any]:
+        """Award an achievement and persist to database."""
+        return await self._award_achievement_async(db, user_id, achievement, xp_reward)
 
 # =============================================================================
 # SYNC IN-MEMORY IMPLEMENTATIONS (FOR TESTS)

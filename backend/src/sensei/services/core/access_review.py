@@ -8,12 +8,11 @@ Tracks review campaigns, user access attestations, and compliance reporting.
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.services.core.entity_providers import build_user_access_provider
 
 
 class ReviewFrequency(str, Enum):
@@ -157,7 +156,7 @@ class AccessViolation:
 class AccessReviewService:
     """Service for managing periodic access reviews."""
 
-    def __init__(self, user_access_provider: callable | None = None) -> None:
+    def __init__(self, user_access_provider: Callable[..., Any] | None = None) -> None:
         """Initialize the access review service."""
         self._campaigns: dict[UUID, ReviewCampaign] = {}
         self._attestations: dict[UUID, Attestation] = {}
@@ -834,6 +833,7 @@ class AccessReviewService:
 def get_access_review_service(session: AsyncSession) -> AccessReviewService:
     """Create an access review service wired to the database."""
     sync_session = session.sync_session
+    from sensei.services.core.entity_providers import build_user_access_provider
     return AccessReviewService(
         user_access_provider=build_user_access_provider(sync_session),
     )

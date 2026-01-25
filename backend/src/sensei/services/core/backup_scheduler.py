@@ -266,6 +266,11 @@ class BackupSchedulerService:
             logger.info(f"Starting scheduled backup: {schedule.name}")
             backup = self.backup_service.create_backup(
                 strategy=schedule.strategy,
+                metadata={
+                    "schedule_id": schedule.id,
+                    "schedule_name": schedule.name,
+                    "automated": True,
+                },
             )
             
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()

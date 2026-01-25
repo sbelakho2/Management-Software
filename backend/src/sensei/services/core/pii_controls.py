@@ -1174,8 +1174,8 @@ class PIIControlsService:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _wrap(self, value: T) -> AwaitableValue[T]:
-        return value  # type: ignore[return-value]
+    def _wrap(self, value: T) -> T:
+        return value
 
     def _wrap_coro(self, coro: Awaitable[T]) -> AwaitableValue[T]:
         return AwaitableValue.from_coroutine(coro)

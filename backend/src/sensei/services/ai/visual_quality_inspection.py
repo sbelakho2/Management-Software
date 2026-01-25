@@ -1224,14 +1224,19 @@ class AsyncContinuousLearningManager:
 class ContinuousLearningManager(AsyncContinuousLearningManager):
     """Database-backed continuous learning manager."""
 
-    async def record_feedback(
+    def record_feedback(self, feedback: FeedbackRecord) -> None:
+        """Record operator feedback in memory (sync)."""
+        self.feedback_queue.append(feedback)
+        if len(self.feedback_queue) >= self.feedback_threshold:
+            self._retraining_scheduled = True
+
+    async def record_feedback_async(
         self,
         db: AsyncSession,
         feedback: FeedbackRecord,
         image_key: str | None = None,
     ) -> None:
         """Record operator feedback and persist to database."""
-        # Use parent implementation which handles database persistence
         await super().record_feedback(db, feedback, image_key)
 
     async def get_training_dataset(self, db: AsyncSession) -> TrainingDataset | None:
@@ -1511,7 +1516,7 @@ class VisualQualityInspectionService:
             operator_id=operator_id,
             notes=notes,
         )
-        await self.learning_manager.record_feedback(db, feedback, image_key)
+        await self.learning_manager.record_feedback_async(db, feedback, image_key)
 
     def record_feedback(
         self,

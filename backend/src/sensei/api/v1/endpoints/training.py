@@ -17,11 +17,12 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Header
+from fastapi import APIRouter, Depends, Query, Header
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
@@ -49,7 +50,11 @@ from sensei.models.training import (
 from sensei.services.core.data_lineage import get_data_lineage_service
 from sensei.services.core.common_thread import get_common_thread_service
 
-router = APIRouter()
+AllowTrainingModule = deps.require_role("hr", "supervisor", "team_lead", "operator")  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[Depends(deps.RoleChecker(["hr", "supervisor", "team_lead", "operator"]))]
+)
 
 
 # =============================================================================
@@ -591,6 +596,7 @@ async def delete_skill(
 
     skill.deleted_at = _now_utc()
     skill.deleted_by_id = current_user.id
+    # Note: is_deleted is a read-only property derived from deleted_at
     await db.flush()
 
     return build_deleted_response("Skill")
@@ -1004,6 +1010,7 @@ async def delete_training(
 
     training.deleted_at = _now_utc()
     training.deleted_by_id = current_user.id
+    # Note: is_deleted is a read-only property derived from deleted_at
     await db.flush()
 
     return build_deleted_response("Training")

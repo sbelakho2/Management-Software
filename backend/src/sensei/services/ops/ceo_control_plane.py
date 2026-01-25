@@ -213,7 +213,8 @@ class CEOControlPlaneService:
         "production_efficiency": r"SELECT.*efficiency.*cell.*",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, db: "AsyncSession" | None = None) -> None:
+        self._db = db
         self._queries: list[NL2SQLQuery] = []
         self._employees: dict[UUID, dict] = {}
         self._risk_assessments: dict[UUID, EmployeeRiskAssessment] = {}
@@ -329,8 +330,7 @@ class CEOControlPlaneService:
         db.add(db_alert)
         await db.commit()
 
-        # Update in-memory cache for immediate UI responsiveness if needed
-        alert = VarianceAlert(
+        return VarianceAlert(
             quote_id=qid,
             actual_cogs=float(actual_cogs),
             estimated_cogs=float(estimated_cogs),
@@ -341,22 +341,6 @@ class CEOControlPlaneService:
             work_order_ids=db_alert.work_order_ids,
             correlation_id=db_alert.correlation_id,
         )
-        self._variance_alerts.append(alert)
-
-        # Surface as a metric
-        self._metrics.append(
-            SQDCPMetric(
-                metric_type=MetricType.COST,
-                name=f"COGS variance alert (Quote {qid})",
-                value=round(deviation_pct * 100.0, 2),
-                target=round(threshold_pct * 100.0, 2),
-                unit="%",
-                status="red" if abs(deviation_pct) >= threshold_pct else "yellow",
-                trend="up" if deviation_pct > 0 else "down",
-                period="event",
-            )
-        )
-        return alert
 
     async def _list_variance_alerts_async(self, db: AsyncSession, role: str) -> list["VarianceAlert"]:
         self._check_role(role)
@@ -384,6 +368,145 @@ class CEOControlPlaneService:
     def _check_role(self, role: str) -> None:
         if role.lower() not in self.ALLOWED_ROLES:
             raise PermissionError(f"Role '{role}' cannot access CEO control plane")
+
+    @staticmethod
+    def _extract_tables(sql: str) -> list[str]:
+        tables: list[str] = []
+        for match in re.finditer(r"\b(from|join)\s+([a-zA-Z0-9_\.]+)", sql, re.IGNORECASE):
+            tables.append(match.group(2))
+        return sorted({t.strip() for t in tables if t.strip()})
+
+    async def generate_sql_from_nl_async(
+        self,
+        db: "AsyncSession",
+        role: str,
+        *,
+        natural_language: str,
+        executed_by_id: str | None = None,
+    ) -> NL2SQLQuery:
+        query = self.generate_sql_from_nl(role, natural_language=natural_language)
+        from sensei.core.enums import QuerySecurityLevel
+        from sensei.models.strategic import NL2SQLQueryRecord
+
+        record = NL2SQLQueryRecord(
+            id=str(query.id),
+            natural_language=query.natural_language,
+            generated_sql=query.generated_sql,
+            explanation=query.plain_english_explanation,
+            tables_used=self._extract_tables(query.generated_sql),
+            security_level=QuerySecurityLevel.READ_ONLY,
+            executed_by_id=executed_by_id,
+        )
+        db.add(record)
+        await db.commit()
+        return query
+
+    async def assess_retention_risk_async(
+        self,
+        db: "AsyncSession",
+        role: str,
+        *,
+        employee_id: UUID,
+        tenure_months: int = 12,
+        overtime_hours_weekly: float = 0,
+        skip_rate: float = 0,
+        peer_comparison: float = 1.0,
+    ) -> EmployeeRiskAssessment:
+        assessment = self.assess_retention_risk(
+            role,
+            employee_id=employee_id,
+            tenure_months=tenure_months,
+            overtime_hours_weekly=overtime_hours_weekly,
+            skip_rate=skip_rate,
+            peer_comparison=peer_comparison,
+        )
+        from sensei.core.enums import EmployeeRiskType
+        from sensei.models.strategic import EmployeeRiskAssessmentRecord
+
+        evidence = {
+            "risk_factors": assessment.risk_factors,
+            "recommendations": assessment.recommendations,
+        }
+        db.add(
+            EmployeeRiskAssessmentRecord(
+                employee_id=str(employee_id),
+                risk_type=EmployeeRiskType.RETENTION,
+                risk_score=float(assessment.retention_score),
+                evidence={**evidence, "retention_score": float(assessment.retention_score)},
+                mitigation_plan="; ".join(assessment.recommendations) or None,
+                assessed_at=_utcnow(),
+            )
+        )
+        db.add(
+            EmployeeRiskAssessmentRecord(
+                employee_id=str(employee_id),
+                risk_type=EmployeeRiskType.BURNOUT,
+                risk_score=float(assessment.burnout_score),
+                evidence={**evidence, "burnout_score": float(assessment.burnout_score)},
+                mitigation_plan="; ".join(assessment.recommendations) or None,
+                assessed_at=_utcnow(),
+            )
+        )
+        await db.commit()
+        return assessment
+
+    async def run_scenario_async(
+        self,
+        db: "AsyncSession",
+        role: str,
+        *,
+        name: str,
+        changes: dict[str, Any],
+    ) -> ScenarioResult:
+        self._check_role(role)
+        result = self.scenario_modeler.run_scenario(name, changes)
+        from sensei.models.strategic import ScenarioResultRecord
+
+        db.add(
+            ScenarioResultRecord(
+                id=str(result.scenario_id),
+                scenario_name=result.name,
+                parameters=changes,
+                kpi_impacts=result.kpi_impacts,
+                confidence_score=result.confidence,
+                recommendation=result.recommendation,
+                generated_at=_utcnow(),
+            )
+        )
+        await db.commit()
+        return result
+
+    async def record_variance_alert_async(
+        self,
+        db: "AsyncSession",
+        role: str,
+        *,
+        quote_id: str,
+        actual_cogs: float,
+        estimated_cogs: float,
+        threshold_pct: float,
+        work_order_ids: list[str] | None = None,
+        correlation_id: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> "VarianceAlert":
+        return await self._record_variance_alert_async(
+            db,
+            role,
+            quote_id=quote_id,
+            actual_cogs=actual_cogs,
+            estimated_cogs=estimated_cogs,
+            threshold_pct=threshold_pct,
+            work_order_ids=work_order_ids,
+            correlation_id=correlation_id,
+            occurred_at=occurred_at,
+        )
+
+    async def list_variance_alerts_async(
+        self,
+        db: "AsyncSession",
+        role: str,
+    ) -> list["VarianceAlert"]:
+        return await self._list_variance_alerts_async(db, role)
 
     # ---- Sensei Query (NL2SQL) ----
 

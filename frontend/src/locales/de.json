@@ -64,6 +64,9 @@
       "content": "Inhalt",
       "reportTitle": "Berichtstitel",
       "reportType": "Berichttyp",
+    "drafts": {
+      "snippet": "{snippet}…"
+    },
       "saveChanges": "Änderungen speichern",
       "saving": "Wird gespeichert",
       "sections": {
@@ -146,6 +149,165 @@
       "horizonOverdue": "Überfälliger Horizont",
       "pendingApprovals": "Ausstehende Freigaben",
       "queueGates": "Warteschlangen-Gates",
+    "emailDrafting": {
+      "title": "KI-E-Mail-Assistent",
+      "aria": {
+        "selectPurpose": "Zweck auswählen",
+        "toneGroup": "Ton auswählen",
+        "selectLanguage": "Sprache auswählen",
+        "recipientEmail": "Empfänger-E-Mail",
+        "recipientName": "Empfängername",
+        "addKeyPoint": "Kernaussage hinzufügen",
+        "keyPointsList": "Liste der Kernaussagen",
+        "removeKeyPoint": "Entfernen: {point}",
+        "copyToClipboard": "In die Zwischenablage kopieren",
+        "editSubject": "Betreff bearbeiten",
+        "close": "Schließen",
+        "draftsList": "E-Mail-Entwürfe"
+      },
+      "placeholders": {
+        "selectPurpose": "Zweck auswählen...",
+        "recipientEmail": "recipient@example.com",
+        "recipientNameOptional": "Name (optional)",
+        "keyPoint": "Kernaussage hinzufügen",
+        "senderName": "z. B. Alex Morgan",
+        "senderEmail": "z. B. alex@sensei.com",
+        "senderTitle": "z. B. Account Manager",
+        "companyName": "z. B. Sensei GmbH",
+        "threadEntityType": "Thread-Entität auswählen...",
+        "threadEntityId": "Entitäts-ID eingeben...",
+        "referenceNumber": "z. B. RFQ-2024-001",
+        "subjectHint": "z. B. Preisupdate für Q2"
+      },
+      "purpose": {
+        "missingInfoRequest": "Anforderung fehlender Informationen",
+        "quoteFollowup": "Angebotsnachverfolgung",
+        "quoteSubmission": "Angebotseinreichung",
+        "supplierInquiry": "Lieferantenanfrage",
+        "meetingRequest": "Besprechungsanfrage",
+        "meetingConfirmation": "Besprechungsbestätigung",
+        "meetingReschedule": "Besprechung verschieben",
+        "issueNotification": "Fehlerbenachrichtigung",
+        "statusUpdate": "Statusaktualisierung",
+        "thankYou": "Danke",
+        "introduction": "Vorstellung",
+        "escalation": "Eskalation",
+        "apology": "Entschuldigung",
+        "custom": "Benutzerdefinierte E-Mail"
+      },
+      "tone": {
+        "formal": "Formell",
+        "professional": "Professionell",
+        "friendly": "Freundlich",
+        "urgent": "Dringend",
+        "apologetic": "Entschuldigend",
+        "appreciative": "Wertschätzend",
+        "concise": "Kompakt"
+      },
+      "language": {
+        "english": "Englisch",
+        "french": "Französisch",
+        "german": "Deutsch",
+        "spanish": "Spanisch",
+        "italian": "Italienisch",
+        "portuguese": "Portugiesisch",
+        "japanese": "Japanisch",
+        "chinese": "Chinesisch",
+        "korean": "Koreanisch",
+        "arabic": "Arabisch"
+      },
+      "actions": {
+        "add": "Hinzufügen",
+        "apply": "Anwenden",
+        "edit": "Bearbeiten",
+        "generating": "Wird erstellt...",
+        "generateDraft": "Entwurf erstellen",
+        "regenerate": "Neu erstellen",
+        "send": "Senden"
+      },
+      "preview": {
+        "title": "Entwurfsvorschau",
+        "subjectLabel": "Betreff",
+        "confidence": "Konfidenz: {score}",
+        "generatedIn": "Erstellt in {time}"
+      },
+      "units": {
+        "milliseconds": "ms",
+        "seconds": "s"
+      },
+      "compliance": {
+        "none": "Keine Compliance-Probleme erkannt",
+        "title": "Compliance-Probleme ({count})"
+      },
+      "suggestions": {
+        "title": "Vorschläge ({count})"
+      },
+      "alternatives": {
+        "title": "Alternative Betreffzeilen:"
+      },
+      "thread": {
+        "entityType": {
+          "rfq": "Anfrage (RFQ)",
+          "quote": "Angebot",
+          "workOrder": "Arbeitsauftrag",
+          "opportunity": "Verkaufschance",
+          "nonConformance": "Nichtkonformität",
+          "shipment": "Sendung",
+          "invoice": "Rechnung"
+        },
+        "loadFailed": "Thread-Verlauf konnte nicht geladen werden",
+        "helper": "Verbinden Sie diesen Entwurf mit einem Thread, damit der gemeinsame Daten-Thread erhalten bleibt.",
+        "loading": "Thread-Verlauf wird geladen...",
+        "traceTitle": "Thread-Verlauf",
+        "traceStats": "Verlauf: {nodes} Knoten / {edges} Kanten",
+        "reasoningId": "Begründungs-ID: {id}"
+      },
+      "defaults": {
+        "senderName": "Sensei Operator",
+        "senderEmail": "operator@sensei.com",
+        "companyName": "Sensei"
+      },
+      "sections": {
+        "recipient": "Empfänger",
+        "purpose": "Zweck",
+        "sender": "Absender",
+        "threadContext": "Thread-Kontext",
+        "tone": "Ton",
+        "language": "Sprache",
+        "keyPoints": "Kernaussagen"
+      },
+      "fields": {
+        "senderName": "Absendername",
+        "senderEmail": "Absender-E-Mail",
+        "senderTitle": "Absendertitel",
+        "companyName": "Firmenname",
+        "threadEntityType": "Thread-Entitätstyp",
+        "threadEntityId": "Thread-Entitäts-ID",
+        "referenceNumberOptional": "Referenznummer (optional)",
+        "subjectHintOptional": "Betreffhinweis (optional)"
+      },
+      "status": {
+        "generating": "Wird erstellt...",
+        "ready": "Bereit zur Prüfung",
+        "reviewed": "Geprüft",
+        "approved": "Genehmigt",
+        "sent": "Gesendet",
+        "discarded": "Verworfen",
+        "failed": "Fehlgeschlagen"
+      },
+      "notifications": {
+        "copied": "In die Zwischenablage kopiert!"
+      },
+      "empty": {
+        "title": "Noch kein Entwurf",
+        "description": "Erstellen Sie einen Entwurf, um Vorschau und Compliance-Prüfungen zu sehen.",
+        "list": "Noch keine Entwürfe"
+      },
+      "validation": {
+        "emailRequired": "E-Mail ist erforderlich",
+        "emailInvalid": "Ungültiges E-Mail-Format"
+      }
+    },
       "thresholdExceptions": "Schwellenausnahmen",
       "totalNodes": "Gesamtanzahl Knoten"
     },
@@ -816,6 +978,7 @@
     "auditor": "Prüfer",
     "ctqTracking": "CTQ-Tracking",
     "customers": "Kunden",
+    "emailDrafting": "E-Mail-Entwurf",
     "dashboard": "Dashboard",
     "dashboards": "Dashboards",
     "exceptions": "Ausnahmen",

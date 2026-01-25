@@ -29,6 +29,7 @@ from sensei.api.utils import (
     build_updated_response,
     build_deleted_response,
     build_paginated_response,
+    maybe_await,
     APIResponse,
     PaginatedResponse,
 )
@@ -293,7 +294,7 @@ async def create_attachment(
         tags=parsed_tags,
     )
 
-    db.add(attachment)
+    await maybe_await(db.add(attachment))
     await db.commit()
     await db.refresh(attachment)
 
@@ -314,7 +315,7 @@ async def create_attachment_metadata(
     
     Use this when the file is uploaded separately (e.g., directly to S3).
     """
-    # Generate a placeholder storage key
+    # Generate a storage key (the file may be uploaded separately).
     storage_key = generate_storage_key(
         data.entity_type,
         data.entity_id,
@@ -346,7 +347,7 @@ async def create_attachment_metadata(
         custom_metadata=data.custom_metadata,
     )
 
-    db.add(attachment)
+    await maybe_await(db.add(attachment))
     await db.commit()
     await db.refresh(attachment)
 
@@ -596,7 +597,7 @@ async def create_version(
         revision=attachment.revision,
         is_current=False,
     )
-    db.add(version)
+    await maybe_await(db.add(version))
 
     # Stream new file to storage
     new_filename = file.filename or attachment.original_filename
@@ -747,7 +748,7 @@ async def restore_version(
         change_reason=f"Before restoring to version {version_number}",
         is_current=False,
     )
-    db.add(current_version)
+    await maybe_await(db.add(current_version))
 
     # Restore attachment from version
     attachment.filename = version.filename

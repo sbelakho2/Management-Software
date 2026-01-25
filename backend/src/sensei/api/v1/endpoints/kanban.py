@@ -17,11 +17,12 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
@@ -44,7 +45,37 @@ from sensei.models.kanban import (
     KanbanMetrics,
 )
 
-router = APIRouter()
+AllowProductionModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================

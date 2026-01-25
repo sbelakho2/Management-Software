@@ -221,18 +221,37 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
         ]
         self.limiter = InMemoryRateLimiter()
-        
-        # Start cleanup task
-        asyncio.create_task(self._cleanup_loop())
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._shutdown = False
+    
+    def _ensure_cleanup_task(self):
+        """Ensure the cleanup task is running. Called lazily on first request."""
+        if self._cleanup_task is None or self._cleanup_task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                self._cleanup_task = loop.create_task(self._cleanup_loop())
+            except RuntimeError:
+                # No running event loop - will be started on first request
+                pass
     
     async def _cleanup_loop(self):
         """Periodically clean up old rate limit entries."""
-        while True:
+        while not self._shutdown:
             try:
                 await asyncio.sleep(60)  # Run every minute
                 await self.limiter.cleanup()
+            except asyncio.CancelledError:
+                # Graceful shutdown - exit the loop
+                logger.info("Rate limiter cleanup task cancelled")
+                break
             except Exception as e:
                 logger.error(f"Rate limiter cleanup error: {e}")
+    
+    def shutdown(self):
+        """Stop the cleanup task gracefully."""
+        self._shutdown = True
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
     
     def _get_client_key(self, request: Request) -> str:
         """
@@ -284,6 +303,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Process request with rate limiting."""
         if not self.enabled:
             return await call_next(request)
+        
+        # Ensure cleanup task is running (lazy initialization)
+        self._ensure_cleanup_task()
         
         # Skip excluded paths
         path = request.url.path

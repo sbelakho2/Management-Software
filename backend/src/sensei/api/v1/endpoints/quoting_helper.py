@@ -3,10 +3,9 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api import deps
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.models.user import User
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response, build_updated_response
 from sensei.api.v1.schemas.quoting_helper import (
@@ -20,7 +19,39 @@ from sensei.services.ai.quoting_assist import get_quoting_assist_service, Quotin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+AllowQuotingModule = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "purchasing",
+    "supply_chain",
+    "engineering",
+    "finance",
+    "accountant",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "purchasing",
+                    "supply_chain",
+                    "engineering",
+                    "finance",
+                    "accountant",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 @router.post(
@@ -30,9 +61,9 @@ router = APIRouter()
 )
 async def generate_work_packets(
     rfq_id: UUID,
-    db: AsyncSession = Depends(deps.get_db),
+    db=Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Generate default work packets for an RFQ."""
     packets = await service.generate_work_packets(rfq_id)
@@ -45,8 +76,8 @@ async def generate_work_packets(
 )
 async def get_work_packets(
     rfq_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Get all work packets for an RFQ."""
     packets = await service.get_work_packets(rfq_id)
@@ -60,8 +91,8 @@ async def get_work_packets(
 async def update_work_packet(
     packet_id: UUID,
     packet_in: WorkPacketUpdate,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Update a work packet."""
     packet = await service.update_work_packet(packet_id, packet_in.model_dump(exclude_unset=True))
@@ -75,8 +106,8 @@ async def update_work_packet(
 async def ingest_rfq(
     rfq_id: UUID,
     files: List[Dict[str, Any]],
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Stage 0 - Ingest RFQ package."""
     package_version = await service.ingest_rfq_package(rfq_id, files)
@@ -95,8 +126,8 @@ async def ingest_rfq(
 async def build_quote_cost(
     quote_id: UUID,
     rate_card_id: Optional[UUID] = None,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Stage 3 - Deterministic costing rollup."""
     quote = await service.calculate_cost_estimate(quote_id, rate_card_id)
@@ -113,8 +144,8 @@ async def build_quote_cost(
 )
 async def convert_to_npi(
     quote_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingHelperService = Depends(get_quoting_helper_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """Stage 6.10 - One-click 'Quote -> NPI Pack'."""
     project = await service.convert_to_npi(quote_id, current_user.id)
@@ -131,8 +162,8 @@ async def convert_to_npi(
 )
 async def suggest_clarifications(
     rfq_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingAssistService = Depends(get_quoting_assist_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """AI suggest minimal clarification questions."""
     suggestions = await service.suggest_clarifications(rfq_id)
@@ -145,8 +176,8 @@ async def suggest_clarifications(
 )
 async def retrieve_quote_memory(
     rfq_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
     service: QuotingAssistService = Depends(get_quoting_assist_service),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
 ):
     """AI retrieve similar historical jobs."""
     memory = await service.retrieve_quote_memory(rfq_id)

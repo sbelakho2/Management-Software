@@ -14,7 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
+from sensei.api import deps
 from sensei.api.deps import DBSession, CurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
@@ -24,7 +26,35 @@ from sensei.models.inventory import Warehouse, Location, InventoryLevel, StockMo
 from sensei.models.product import Product
 from sensei.services.external.starz_ingestion import StarzErpIngestionService
 
-router = APIRouter()
+AllowWarehouseModule = deps.require_role(
+    "warehouse",
+    "ops",
+    "quality",
+    "gm",
+    "supply_chain",
+    "purchasing",
+    "logistics",
+    "supervisor",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "warehouse",
+                    "ops",
+                    "quality",
+                    "gm",
+                    "supply_chain",
+                    "purchasing",
+                    "logistics",
+                    "supervisor",
+                ]
+            )
+        )
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -135,27 +165,43 @@ async def get_warehouse_stats(db: DBSession, current_user: CurrentUser) -> Any:
         select(func.count(InventoryLevel.id)).where(InventoryLevel.quantity_on_hand <= 0)
     ) or 0
     
-    # Pending receipts (inbound moves not yet done)
+    src_loc = aliased(Location)
+    dst_loc = aliased(Location)
+
+    # Pending receipts (inbound moves not yet done): supplier -> internal/inventory
     pending_receipts = await db.scalar(
-        select(func.count(StockMove.id)).where(
+        select(func.count(StockMove.id))
+        .join(src_loc, StockMove.source_location_id == src_loc.id)
+        .join(dst_loc, StockMove.destination_location_id == dst_loc.id)
+        .where(
             and_(
-                StockMove.status.in_(['draft', 'waiting', 'confirmed']),
-                # Source is external/supplier location
+                StockMove.status.in_(["draft", "waiting", "confirmed"]),
+                src_loc.location_type == "supplier",
+                dst_loc.location_type.in_(["internal", "inventory"]),
             )
         )
     ) or 0
-    
-    # Pending shipments (outbound moves not yet done)
+
+    # Pending shipments (outbound moves not yet done): internal/inventory -> customer
     pending_shipments = await db.scalar(
-        select(func.count(StockMove.id)).where(
-            StockMove.status.in_(['draft', 'waiting', 'confirmed'])
+        select(func.count(StockMove.id))
+        .join(src_loc, StockMove.source_location_id == src_loc.id)
+        .join(dst_loc, StockMove.destination_location_id == dst_loc.id)
+        .where(
+            and_(
+                StockMove.status.in_(["draft", "waiting", "confirmed"]),
+                src_loc.location_type.in_(["internal", "inventory"]),
+                dst_loc.location_type == "customer",
+            )
         )
     ) or 0
-    
-    # Simple inventory value calculation (would normally use valuation layers)
-    # For now, sum quantity * estimated unit cost
+
+    # Inventory value calculation based on product cost fields.
+    # If no costs are defined yet, we return 0.0 (no fabricated unit cost).
+    unit_cost_expr = func.coalesce(Product.unit_cost, Product.standard_cost, 0)
     inventory_value = await db.scalar(
-        select(func.sum(InventoryLevel.quantity_on_hand * 100))  # Placeholder unit cost
+        select(func.sum(InventoryLevel.quantity_on_hand * unit_cost_expr))
+        .join(Product, InventoryLevel.product_id == Product.id)
     ) or 0.0
     
     return WarehouseStatsResponse(

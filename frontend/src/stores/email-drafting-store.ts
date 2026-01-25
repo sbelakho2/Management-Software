@@ -324,6 +324,26 @@ export function getPurposeLabel(purpose: EmailPurpose): string {
   return labels[purpose] || purpose;
 }
 
+export function getPurposeLabelKey(purpose: EmailPurpose): string {
+  const keys: Record<EmailPurpose, string> = {
+    missing_info_request: 'emailDrafting.purpose.missingInfoRequest',
+    quote_followup: 'emailDrafting.purpose.quoteFollowup',
+    quote_submission: 'emailDrafting.purpose.quoteSubmission',
+    supplier_inquiry: 'emailDrafting.purpose.supplierInquiry',
+    meeting_request: 'emailDrafting.purpose.meetingRequest',
+    meeting_confirmation: 'emailDrafting.purpose.meetingConfirmation',
+    meeting_reschedule: 'emailDrafting.purpose.meetingReschedule',
+    issue_notification: 'emailDrafting.purpose.issueNotification',
+    status_update: 'emailDrafting.purpose.statusUpdate',
+    thank_you: 'emailDrafting.purpose.thankYou',
+    introduction: 'emailDrafting.purpose.introduction',
+    escalation: 'emailDrafting.purpose.escalation',
+    apology: 'emailDrafting.purpose.apology',
+    custom: 'emailDrafting.purpose.custom',
+  };
+  return keys[purpose] || 'emailDrafting.purpose.custom';
+}
+
 export function getToneLabel(tone: EmailTone): string {
   const labels: Record<EmailTone, string> = {
     formal: 'Formal',
@@ -335,6 +355,19 @@ export function getToneLabel(tone: EmailTone): string {
     concise: 'Concise',
   };
   return labels[tone] || tone;
+}
+
+export function getToneLabelKey(tone: EmailTone): string {
+  const keys: Record<EmailTone, string> = {
+    formal: 'emailDrafting.tone.formal',
+    professional: 'emailDrafting.tone.professional',
+    friendly: 'emailDrafting.tone.friendly',
+    urgent: 'emailDrafting.tone.urgent',
+    apologetic: 'emailDrafting.tone.apologetic',
+    appreciative: 'emailDrafting.tone.appreciative',
+    concise: 'emailDrafting.tone.concise',
+  };
+  return keys[tone] || 'emailDrafting.tone.professional';
 }
 
 export function getLanguageLabel(language: Language): string {
@@ -353,6 +386,22 @@ export function getLanguageLabel(language: Language): string {
   return labels[language] || language;
 }
 
+export function getLanguageLabelKey(language: Language): string {
+  const keys: Record<Language, string> = {
+    en: 'emailDrafting.language.english',
+    fr: 'emailDrafting.language.french',
+    de: 'emailDrafting.language.german',
+    es: 'emailDrafting.language.spanish',
+    it: 'emailDrafting.language.italian',
+    pt: 'emailDrafting.language.portuguese',
+    ja: 'emailDrafting.language.japanese',
+    zh: 'emailDrafting.language.chinese',
+    ko: 'emailDrafting.language.korean',
+    ar: 'emailDrafting.language.arabic',
+  };
+  return keys[language] || 'emailDrafting.language.english';
+}
+
 export function getStatusLabel(status: DraftStatus): string {
   const labels: Record<DraftStatus, string> = {
     generating: 'Generating...',
@@ -366,6 +415,19 @@ export function getStatusLabel(status: DraftStatus): string {
   return labels[status] || status;
 }
 
+export function getStatusLabelKey(status: DraftStatus): string {
+  const keys: Record<DraftStatus, string> = {
+    generating: 'emailDrafting.status.generating',
+    ready: 'emailDrafting.status.ready',
+    reviewed: 'emailDrafting.status.reviewed',
+    approved: 'emailDrafting.status.approved',
+    sent: 'emailDrafting.status.sent',
+    discarded: 'emailDrafting.status.discarded',
+    failed: 'emailDrafting.status.failed',
+  };
+  return keys[status] || 'emailDrafting.status.ready';
+}
+
 export function getStatusColor(status: DraftStatus): string {
   const colors: Record<DraftStatus, string> = {
     generating: '#f59e0b', // amber
@@ -377,6 +439,19 @@ export function getStatusColor(status: DraftStatus): string {
     failed: '#ef4444', // red
   };
   return colors[status] || '#6b7280';
+}
+
+export function getStatusColorClass(status: DraftStatus): string {
+  const classes: Record<DraftStatus, string> = {
+    generating: 'text-rams-orange',
+    ready: 'text-rams-steel',
+    reviewed: 'text-rams-steel',
+    approved: 'text-rams-green',
+    sent: 'text-rams-green',
+    discarded: 'text-rams-muted',
+    failed: 'text-rams-red',
+  };
+  return classes[status] || 'text-rams-muted';
 }
 
 export function getComplianceSeverityColor(severity: 'info' | 'warning' | 'error'): string {
@@ -407,9 +482,20 @@ export function getConfidenceColor(score: number): string {
   return '#ef4444'; // red
 }
 
-export function formatGenerationTime(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+export function getConfidenceColorClass(score: number): string {
+  if (score >= 0.8) return 'text-rams-green';
+  if (score >= 0.6) return 'text-rams-orange';
+  return 'text-rams-red';
+}
+
+export function formatGenerationTime(
+  ms: number,
+  units?: { milliseconds: string; seconds: string }
+): string {
+  const unitMs = units?.milliseconds ?? 'ms';
+  const unitS = units?.seconds ?? 's';
+  if (ms < 1000) return `${ms}${unitMs}`;
+  return `${(ms / 1000).toFixed(1)}${unitS}`;
 }
 
 export function createDefaultContext(recipient: Recipient): EmailContext {
@@ -428,9 +514,9 @@ export function createDefaultContext(recipient: Recipient): EmailContext {
 export function validateRecipient(recipient: Partial<Recipient>): string[] {
   const errors: string[] = [];
   if (!recipient.email) {
-    errors.push('Email is required');
+    errors.push('emailDrafting.validation.emailRequired');
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email)) {
-    errors.push('Invalid email format');
+    errors.push('emailDrafting.validation.emailInvalid');
   }
   return errors;
 }

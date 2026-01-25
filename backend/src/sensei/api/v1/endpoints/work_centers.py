@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import and_, func, or_, select, ColumnElement
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import (
     CurrentUser,
     DBSession,
@@ -58,7 +59,37 @@ from sensei.models.work_center import (
 )
 
 
-router = APIRouter()
+AllowProductionModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================

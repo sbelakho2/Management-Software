@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import (
     CurrentUser,
     DBSession,
@@ -57,8 +58,33 @@ from sensei.models.account import (
     Contact,
 )
 
+AllowCRMModule = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "gm",
+    "exec",
+    "finance",
+    "accountant",
+)  # type: ignore[valid-type]
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "gm",
+                    "exec",
+                    "finance",
+                    "accountant",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================
@@ -586,6 +612,89 @@ async def create_account(
     )
 
 
+@router.get("/stats", response_model=APIResponse)
+async def get_account_stats(
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Get account statistics and analytics.
+    """
+    # Total accounts
+    total_result = await db.execute(
+        select(func.count(Account.id)).where(Account.deleted_at.is_(None))
+    )
+    total_accounts = total_result.scalar() or 0
+    
+    # By type
+    type_result = await db.execute(
+        select(Account.account_type, func.count(Account.id))
+        .where(Account.deleted_at.is_(None))
+        .group_by(Account.account_type)
+    )
+    by_type = {row[0]: row[1] for row in type_result.all()}
+    
+    # By status
+    status_result = await db.execute(
+        select(Account.status, func.count(Account.id))
+        .where(Account.deleted_at.is_(None))
+        .group_by(Account.status)
+    )
+    by_status = {row[0]: row[1] for row in status_result.all()}
+    
+    # By tier
+    tier_result = await db.execute(
+        select(Account.tier, func.count(Account.id))
+        .where(Account.deleted_at.is_(None), Account.tier.isnot(None))
+        .group_by(Account.tier)
+    )
+    by_tier = {row[0]: row[1] for row in tier_result.all()}
+    
+    # By country (top 10)
+    country_result = await db.execute(
+        select(Account.country, func.count(Account.id))
+        .where(Account.deleted_at.is_(None))
+        .group_by(Account.country)
+        .order_by(func.count(Account.id).desc())
+        .limit(10)
+    )
+    by_country = {row[0]: row[1] for row in country_result.all()}
+    
+    # New this month
+    month_start = now_utc().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    new_result = await db.execute(
+        select(func.count(Account.id))
+        .where(
+            Account.deleted_at.is_(None),
+            Account.created_at >= month_start,
+        )
+    )
+    new_this_month = new_result.scalar() or 0
+    
+    # Active customers
+    active_result = await db.execute(
+        select(func.count(Account.id))
+        .where(
+            Account.deleted_at.is_(None),
+            Account.account_type == AccountType.CUSTOMER.value,
+            Account.status == AccountStatus.ACTIVE.value,
+        )
+    )
+    active_customers = active_result.scalar() or 0
+    
+    stats = AccountStatsResponse(
+        total_accounts=total_accounts,
+        by_type=by_type,
+        by_status=by_status,
+        by_tier=by_tier,
+        by_country=by_country,
+        new_this_month=new_this_month,
+        active_customers=active_customers,
+    )
+    
+    return build_response(data=stats)
+
+
 @router.get("/{account_id}", response_model=APIResponse)
 async def get_account(
     account_id: UUID,
@@ -804,89 +913,6 @@ async def bulk_delete_accounts(
         data={"deleted_count": deleted_count},
         message=f"Successfully deleted {deleted_count} account(s)",
     )
-
-
-@router.get("/stats", response_model=APIResponse)
-async def get_account_stats(
-    db: DBSession,
-    current_user: CurrentUser,
-):
-    """
-    Get account statistics and analytics.
-    """
-    # Total accounts
-    total_result = await db.execute(
-        select(func.count(Account.id)).where(Account.deleted_at.is_(None))
-    )
-    total_accounts = total_result.scalar() or 0
-    
-    # By type
-    type_result = await db.execute(
-        select(Account.account_type, func.count(Account.id))
-        .where(Account.deleted_at.is_(None))
-        .group_by(Account.account_type)
-    )
-    by_type = {row[0]: row[1] for row in type_result.all()}
-    
-    # By status
-    status_result = await db.execute(
-        select(Account.status, func.count(Account.id))
-        .where(Account.deleted_at.is_(None))
-        .group_by(Account.status)
-    )
-    by_status = {row[0]: row[1] for row in status_result.all()}
-    
-    # By tier
-    tier_result = await db.execute(
-        select(Account.tier, func.count(Account.id))
-        .where(Account.deleted_at.is_(None), Account.tier.isnot(None))
-        .group_by(Account.tier)
-    )
-    by_tier = {row[0]: row[1] for row in tier_result.all()}
-    
-    # By country (top 10)
-    country_result = await db.execute(
-        select(Account.country, func.count(Account.id))
-        .where(Account.deleted_at.is_(None))
-        .group_by(Account.country)
-        .order_by(func.count(Account.id).desc())
-        .limit(10)
-    )
-    by_country = {row[0]: row[1] for row in country_result.all()}
-    
-    # New this month
-    month_start = now_utc().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    new_result = await db.execute(
-        select(func.count(Account.id))
-        .where(
-            Account.deleted_at.is_(None),
-            Account.created_at >= month_start,
-        )
-    )
-    new_this_month = new_result.scalar() or 0
-    
-    # Active customers
-    active_result = await db.execute(
-        select(func.count(Account.id))
-        .where(
-            Account.deleted_at.is_(None),
-            Account.account_type == AccountType.CUSTOMER.value,
-            Account.status == AccountStatus.ACTIVE.value,
-        )
-    )
-    active_customers = active_result.scalar() or 0
-    
-    stats = AccountStatsResponse(
-        total_accounts=total_accounts,
-        by_type=by_type,
-        by_status=by_status,
-        by_tier=by_tier,
-        by_country=by_country,
-        new_this_month=new_this_month,
-        active_customers=active_customers,
-    )
-    
-    return build_response(data=stats)
 
 
 @router.get("/{account_id}/subsidiaries", response_model=PaginatedResponse)

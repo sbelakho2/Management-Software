@@ -31,30 +31,17 @@ export interface EmployeeRiskResponse {
   recommendations: string[];
 }
 
-interface ApiEnvelope<T> {
-  success: boolean;
-  message?: string | null;
-  data?: T | null;
-  errors?: string[] | null;
-}
-
 export const executiveApi = {
   async nl2sql(payload: NL2SQLRequest): Promise<NL2SQLResponse> {
-    const res = await apiClient.post<ApiEnvelope<NL2SQLResponse>>('/executive/nl2sql', payload);
-    if (!res.success || !res.data) {
-      throw new Error(res.message || 'NL2SQL request failed');
-    }
-    return res.data;
+    // apiClient already unwraps the { success, data } envelope
+    return apiClient.post<NL2SQLResponse>('/executive/nl2sql', payload);
   },
 
   async analyzeEmployeeRisk(payload: EmployeeRiskRequest): Promise<EmployeeRiskResponse> {
-    const res = await apiClient.post<ApiEnvelope<EmployeeRiskResponse>>(
+    // apiClient already unwraps the { success, data } envelope
+    return apiClient.post<EmployeeRiskResponse>(
       '/executive/employee-risk/analyze',
       payload
     );
-    if (!res.success || !res.data) {
-      throw new Error(res.message || 'Employee risk analysis failed');
-    }
-    return res.data;
   },
 };

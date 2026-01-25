@@ -5,7 +5,7 @@ All SQLAlchemy ORM models for the application.
 """
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin, SoftDeleteMixin, StatusMixin
-from sensei.models.user import User, Role, Permission, UserRole, RolePermission
+from sensei.models.user import User, Role, Permission, UserRole, RolePermission, RefreshToken
 from sensei.models.account import Account, Contact, AccountContact
 from sensei.models.opportunity import Opportunity, OpportunityNote
 from sensei.models.rfq import RFQ, RFQQuestion, RFQAttachment

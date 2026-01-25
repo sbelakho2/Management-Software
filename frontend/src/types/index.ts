@@ -32,6 +32,8 @@ export interface User extends BaseEntity {
   avatar_url?: string;
   role: UserRole;
   roles: UserRole[];
+  /** Backend superuser flag (treated as admin access in the UI). */
+  is_superuser?: boolean;
   department?: string;
   job_title?: string;
   phone?: string;

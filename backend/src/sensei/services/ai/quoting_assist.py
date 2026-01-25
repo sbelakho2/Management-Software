@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sensei.api.deps import DBSession
 
 from sensei.models.rfq import RFQ
 from sensei.models.quote import Quote
@@ -187,5 +188,5 @@ class QuotingAssistService:
 
         return " ".join(summary)
 
-def get_quoting_assist_service(session: AsyncSession) -> QuotingAssistService:
+def get_quoting_assist_service(session: DBSession) -> QuotingAssistService:
     return QuotingAssistService(session)

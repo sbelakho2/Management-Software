@@ -51,11 +51,18 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
 
   // Check role access
   const userRoles: UserRole[] = user.roles?.length > 0 ? user.roles : [user.role as UserRole];
+
+  // Admin (and backend superuser) always have full access
+  const isFullAccess =
+    userRoles.includes('admin') ||
+    userRoles.includes('superuser' as UserRole);
   
   // If requiredRoles is empty, all authenticated users have access
   // Otherwise check if user has any of the required roles
-  const hasAccess = requiredRoles.length === 0 || 
-    userRoles.some(role => requiredRoles.includes(role));
+  const hasAccess =
+    isFullAccess ||
+    requiredRoles.length === 0 ||
+    userRoles.some((role) => requiredRoles.includes(role));
 
   if (!hasAccess) {
     if (fallback) {
@@ -111,5 +118,5 @@ export function useCanViewFinancials(): boolean {
  */
 export function useIsAdmin(): boolean {
   const roles = useUserRoles();
-  return roles.includes('admin') || roles.includes('ceo');
+  return roles.includes('admin') || roles.includes('superuser' as UserRole);
 }

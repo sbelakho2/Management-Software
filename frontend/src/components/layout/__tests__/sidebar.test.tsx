@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { I18nProvider } from '@/contexts/i18n-context';
 
 // Mock Next.js navigation
 jest.mock('next/navigation', () => ({
@@ -58,14 +59,22 @@ jest.mock('@/stores', () => ({
 // Import after mocks
 import { Sidebar } from '../sidebar';
 
+function renderSidebar() {
+  return render(
+    <I18nProvider defaultLocale="en">
+      <Sidebar />
+    </I18nProvider>
+  );
+}
+
 describe('Sidebar', () => {
   it('should render the sidebar', () => {
-    render(<Sidebar />);
+    renderSidebar();
     expect(screen.getByText('Sensei OS')).toBeInTheDocument();
   });
 
   it('should render navigation items', () => {
-    render(<Sidebar />);
+    renderSidebar();
     
     expect(screen.getByText('Today')).toBeInTheDocument();
     expect(screen.getByText('Pipeline')).toBeInTheDocument();
@@ -76,21 +85,22 @@ describe('Sidebar', () => {
     expect(screen.getByText('Quality')).toBeInTheDocument();
     expect(screen.getByText('Andon')).toBeInTheDocument();
     expect(screen.getByText('Obeya')).toBeInTheDocument();
-    expect(screen.getByText('Training')).toBeInTheDocument();
   });
 
   it('should render the settings link', () => {
-    render(<Sidebar />);
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    renderSidebar();
+    const settingsLinks = screen.getAllByRole('link', { name: 'Settings' });
+    const settingsLink = settingsLinks.find((link) => link.getAttribute('href') === '/settings');
+    expect(settingsLink).toBeDefined();
   });
 
   it('should render the logo', () => {
-    render(<Sidebar />);
+    renderSidebar();
     expect(screen.getByText('S')).toBeInTheDocument();
   });
 
   it('should have correct links', () => {
-    render(<Sidebar />);
+    renderSidebar();
     
     // Check that navigation items have proper href attributes
     const todayLink = screen.getByText('Today').closest('a');

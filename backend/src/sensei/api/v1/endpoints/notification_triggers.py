@@ -9,9 +9,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.core.notification_triggers import (
     NotificationTriggersService,
     NotificationTriggersJobRunner,
@@ -26,7 +27,16 @@ from sensei.services.core.notification_triggers import (
     SnoozeStatus,
 )
 
-router = APIRouter(prefix="/notifications", tags=["Notifications"])
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(
+    prefix="/notifications",
+    tags=["Notifications"],
+    dependencies=[Depends(_deny_production)],
+)
 
 # --------------------------------------------------------------------------
 # Service Instance (in production, would be dependency injected)

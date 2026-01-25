@@ -15,10 +15,11 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from sensei.api.deps import CurrentSuperuser
+from sensei.core.config import settings
 from sensei.services.utils.chaos_testing import (
     CircuitState,
     ComponentType,
@@ -29,7 +30,12 @@ from sensei.services.utils.chaos_testing import (
 )
 
 
-router = APIRouter()
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_deny_production)])
 
 
 # ===== Request/Response Models =====

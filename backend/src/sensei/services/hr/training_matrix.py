@@ -436,7 +436,77 @@ class TrainingMatrixService:
             critical_gaps=total_critical,
             expiring_certifications=total_expiring,
         )
-    
+
+    def generate_mock_matrix(
+        self,
+        num_users: int = 10,
+        num_skills: int = 5,
+    ) -> TrainingMatrixResult:
+        """Generate a mock training matrix for testing."""
+        num_users = max(1, min(100, num_users))
+        num_skills = max(1, min(50, num_skills))
+
+        skill_columns = [
+            {
+                "skill_id": idx + 1,
+                "skill_code": f"SK-{idx + 1:03d}",
+                "skill_name": f"Skill {idx + 1}",
+                "skill_category": "General",
+                "is_safety_critical": idx % 3 == 0,
+                "is_quality_critical": idx % 4 == 0,
+                "proficiency_levels": ["Novice", "Qualified", "Expert"],
+            }
+            for idx in range(num_skills)
+        ]
+
+        rows: list[MatrixRow] = []
+        for u in range(num_users):
+            skills: list[SkillCellData] = []
+            for s in range(num_skills):
+                skills.append(
+                    SkillCellData(
+                        skill_id=skill_columns[s]["skill_id"],
+                        skill_name=skill_columns[s]["skill_name"],
+                        skill_code=skill_columns[s]["skill_code"],
+                        proficiency_level=2,
+                        proficiency_name="Qualified",
+                        certification_status=CertificationStatusValue.CERTIFIED.value,
+                        certified_date=date.today(),
+                        expiration_date=None,
+                        days_until_expiration=None,
+                        is_required=True,
+                        required_level=2,
+                        minimum_required_level=2,
+                        has_gap=False,
+                        gap_severity=None,
+                        expiration_urgency=None,
+                    )
+                )
+
+            rows.append(
+                MatrixRow(
+                    user_id=UUID(int=u + 1),
+                    user_name=f"User {u + 1}",
+                    user_email=f"user{u + 1}@example.com",
+                    department="Operations",
+                    role="Operator",
+                    assigned_stations=["Station A"],
+                    skills=skills,
+                    total_gaps=0,
+                    critical_gaps=0,
+                    expiring_soon=0,
+                )
+            )
+
+        return TrainingMatrixResult(
+            rows=rows,
+            skill_columns=skill_columns,
+            total_users=num_users,
+            total_skills=num_skills,
+            total_gaps=0,
+            critical_gaps=0,
+            expiring_certifications=0,
+        )
     def analyze_gaps(
         self,
         users: list[dict[str, Any]],

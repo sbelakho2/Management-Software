@@ -10,6 +10,7 @@ Common utilities for API endpoints including:
 """
 
 from datetime import datetime, timezone
+import inspect
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 from uuid import UUID
 
@@ -27,6 +28,13 @@ from sensei.core.config import settings
 
 T = TypeVar("T")
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+
+
+async def maybe_await(value: Any) -> Any:
+    """Await the value if it is awaitable, otherwise return it as-is."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 # =============================================================================

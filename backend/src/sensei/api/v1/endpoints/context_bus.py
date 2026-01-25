@@ -6,22 +6,17 @@ input substrate for higher-level AI reasoning (kept out of this endpoint).
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_current_user, get_db
+from sensei.api.deps import DBSession, OptionalCurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
-from sensei.models.user import User
 from sensei.services.core.context_bus import get_context_service
 
 router = APIRouter()
-
-DBSession = Annotated[AsyncSession, Depends(get_db)]
-CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 class ContextNodeResponse(BaseModel):
@@ -51,7 +46,7 @@ async def get_context_pack(
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    current_user: CurrentUser | None = None,  # noqa: ARG001
+    current_user: OptionalCurrentUser = None,  # noqa: ARG001
 ) -> APIResponse[ContextPackResponse]:
     pack = await get_context_service().get_context_pack(
         db,

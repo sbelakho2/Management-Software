@@ -407,6 +407,168 @@
     "menu": "Menu",
     "home": "Home"
   },
+  "emailDrafting": {
+    "title": "AI Email Composer",
+    "aria": {
+      "selectPurpose": "Select purpose",
+      "toneGroup": "Select tone",
+      "selectLanguage": "Select language",
+      "recipientEmail": "Recipient email",
+      "recipientName": "Recipient name",
+      "addKeyPoint": "Add key point",
+      "keyPointsList": "Key points list",
+      "removeKeyPoint": "Remove: {point}",
+      "copyToClipboard": "Copy to clipboard",
+      "editSubject": "Edit subject",
+      "close": "Close",
+      "draftsList": "Email drafts"
+    },
+    "placeholders": {
+      "selectPurpose": "Select purpose...",
+      "recipientEmail": "recipient@example.com",
+      "recipientNameOptional": "Name (optional)",
+      "keyPoint": "Add key point",
+      "senderName": "e.g., Alex Morgan",
+      "senderEmail": "e.g., alex@sensei.com",
+      "senderTitle": "e.g., Account Manager",
+      "companyName": "e.g., Sensei Corp",
+      "threadEntityType": "Select thread entity...",
+      "threadEntityId": "Enter entity ID...",
+      "referenceNumber": "e.g., RFQ-2024-001",
+      "subjectHint": "e.g., Pricing update for Q2"
+    },
+    "purpose": {
+      "missingInfoRequest": "Missing Information Request",
+      "quoteFollowup": "Quote Follow-up",
+      "quoteSubmission": "Quote Submission",
+      "supplierInquiry": "Supplier Inquiry",
+      "meetingRequest": "Meeting Request",
+      "meetingConfirmation": "Meeting Confirmation",
+      "meetingReschedule": "Meeting Reschedule",
+      "issueNotification": "Issue Notification",
+      "statusUpdate": "Status Update",
+      "thankYou": "Thank You",
+      "introduction": "Introduction",
+      "escalation": "Escalation",
+      "apology": "Apology",
+      "custom": "Custom Email"
+    },
+    "tone": {
+      "formal": "Formal",
+      "professional": "Professional",
+      "friendly": "Friendly",
+      "urgent": "Urgent",
+      "apologetic": "Apologetic",
+      "appreciative": "Appreciative",
+      "concise": "Concise"
+    },
+    "language": {
+      "english": "English",
+      "french": "French",
+      "german": "German",
+      "spanish": "Spanish",
+      "italian": "Italian",
+      "portuguese": "Portuguese",
+      "japanese": "Japanese",
+      "chinese": "Chinese",
+      "korean": "Korean",
+      "arabic": "Arabic"
+    },
+    "actions": {
+      "add": "Add",
+      "apply": "Apply",
+      "edit": "Edit",
+      "generating": "Generating...",
+      "generateDraft": "Generate Draft",
+      "regenerate": "Regenerate",
+      "send": "Send"
+    },
+    "preview": {
+      "title": "Draft Preview",
+      "subjectLabel": "Subject",
+      "confidence": "Confidence: {score}",
+      "generatedIn": "Generated in {time}"
+    },
+    "units": {
+      "milliseconds": "ms",
+      "seconds": "s"
+    },
+    "compliance": {
+      "none": "No compliance issues detected",
+      "title": "Compliance Issues ({count})"
+    },
+    "suggestions": {
+      "title": "Suggestions ({count})"
+    },
+    "alternatives": {
+      "title": "Alternative subjects:"
+    },
+    "thread": {
+      "entityType": {
+        "rfq": "RFQ",
+        "quote": "Quote",
+        "workOrder": "Work Order",
+        "opportunity": "Opportunity",
+        "nonConformance": "Non-Conformance",
+        "shipment": "Shipment",
+        "invoice": "Invoice"
+      },
+      "loadFailed": "Failed to load thread trace",
+      "helper": "Connect this draft to a thread to keep the single data thread intact.",
+      "loading": "Loading thread trace...",
+      "traceTitle": "Thread trace",
+      "traceStats": "Trace: {nodes} nodes / {edges} edges",
+      "reasoningId": "Reasoning ID: {id}"
+    },
+    "defaults": {
+      "senderName": "Sensei Operator",
+      "senderEmail": "operator@sensei.com",
+      "companyName": "Sensei"
+    },
+    "sections": {
+      "recipient": "Recipient",
+      "purpose": "Purpose",
+      "sender": "Sender",
+      "threadContext": "Thread context",
+      "tone": "Tone",
+      "language": "Language",
+      "keyPoints": "Key points"
+    },
+    "fields": {
+      "senderName": "Sender name",
+      "senderEmail": "Sender email",
+      "senderTitle": "Sender title",
+      "companyName": "Company name",
+      "threadEntityType": "Thread entity type",
+      "threadEntityId": "Thread entity ID",
+      "referenceNumberOptional": "Reference number (optional)",
+      "subjectHintOptional": "Subject hint (optional)"
+    },
+    "status": {
+      "generating": "Generating...",
+      "ready": "Ready for Review",
+      "reviewed": "Reviewed",
+      "approved": "Approved",
+      "sent": "Sent",
+      "discarded": "Discarded",
+      "failed": "Failed"
+    },
+    "notifications": {
+      "copied": "Copied to clipboard!"
+    },
+    "empty": {
+      "title": "No Draft Yet",
+      "description": "Generate a draft to see the preview and compliance checks.",
+      "list": "No drafts yet"
+    },
+    "drafts": {
+      "snippet": "{snippet}…"
+    },
+    "validation": {
+      "emailRequired": "Email is required",
+      "emailInvalid": "Invalid email format"
+    }
+  },
   "quickActions": {
     "createNewRFQ": "Create New RFQ",
     "createNewQuote": "Create New Quote",

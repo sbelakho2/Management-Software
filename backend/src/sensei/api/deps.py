@@ -8,7 +8,7 @@ FastAPI dependencies for:
 - Request validation
 """
 
-from typing import Annotated, AsyncGenerator, Optional, TYPE_CHECKING, TypeAlias
+from typing import Annotated, Any, AsyncGenerator, Optional, TYPE_CHECKING, TypeAlias
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -23,7 +23,10 @@ from sensei.core.redis import redis_client
 from sensei.core.security import TokenData, decode_token, get_rate_limit_key
 
 if TYPE_CHECKING:
-    from sensei.models.user import User# =============================================================================
+    from sensei.models.user import User
+
+
+# =============================================================================
 # Database Session Dependency
 # =============================================================================
 
@@ -166,6 +169,21 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    db: DBSession,
+    token_data: Annotated[Optional[TokenData], Depends(get_optional_token_data)],
+) -> Optional["User"]:
+    """
+    Get the current user if a valid token is provided; otherwise return None.
+
+    This is useful for endpoints that allow anonymous access but can
+    optionally enrich responses for authenticated users.
+    """
+    if token_data is None:
+        return None
+    return await get_current_user(db, token_data)
+
+
 async def get_current_active_user(
     user: "User" = Depends(get_current_user),
 ) -> "User":
@@ -178,7 +196,8 @@ async def get_current_active_user(
 
 
 async def get_current_superuser(
-    user: "User" = Depends(get_current_user),
+    user: Annotated["User", Depends(get_current_user)],
+    token_data: Annotated[TokenData, Depends(get_token_data)],
 ) -> "User":
     """
     Get current user and verify they are a superuser.
@@ -186,7 +205,10 @@ async def get_current_superuser(
     Raises:
         HTTPException: 403 if user is not a superuser
     """
-    if not user.is_superuser:
+    # Admin-control access is driven by RBAC roles, not the legacy `is_superuser` flag.
+    # This prevents accounts like CEO (which may be seeded with `is_superuser=True`) from
+    # automatically gaining admin-control privileges.
+    if "admin" not in token_data.roles and "superuser" not in token_data.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Superuser access required",
@@ -199,6 +221,7 @@ async def get_current_superuser(
 CurrentUser = Annotated["User", Depends(get_current_user)]
 CurrentActiveUser = Annotated["User", Depends(get_current_active_user)]
 CurrentSuperuser = Annotated["User", Depends(get_current_superuser)]
+OptionalCurrentUser = Annotated[Optional["User"], Depends(get_optional_current_user)]
 # =============================================================================
 
 
@@ -229,8 +252,8 @@ class PermissionChecker:
         token_data: Annotated[TokenData, Depends(get_token_data)],
     ) -> bool:
         """Check if user has required permission."""
-        # Admin and CEO have all permissions (full system access)
-        if "admin" in token_data.roles or "ceo" in token_data.roles:
+        # Admin has all permissions (full system access)
+        if "admin" in token_data.roles or "superuser" in token_data.roles:
             return True
         
         if self.required_permission not in token_data.permissions:
@@ -244,16 +267,12 @@ class PermissionChecker:
 
 class RoleChecker:
     """
-    Dependency class for checking user roles with hierarchy support.
+    Dependency class for checking user roles.
     
-    Role hierarchy levels (lower = more privileged):
-    - admin: 0 (full system access)
-    - ceo: 5 (executive full access)
-    - gm: 10
-    - exec: 15
-    - All others: 20+
-    
-    Users with admin or ceo roles automatically pass all role checks.
+        Notes:
+        - Admin/superuser always pass.
+        - CEO has broad access across modules, but must not access admin-only
+            control surfaces; those should use `require_role("admin")`.
     
     Usage:
         @router.get("/admin")
@@ -292,49 +311,52 @@ class RoleChecker:
         "viewer": 100,
     }
     
-    def __init__(self, required_roles: list[str]):
+    def __init__(self, required_roles: list[Any]):
         """
         Initialize role checker.
         
         Args:
             required_roles: List of allowed roles (any match grants access)
         """
-        self.required_roles = required_roles
+        def _normalize_role(r: Any) -> str:
+            # Accept raw strings or enums (e.g. RoleType.ADMIN) and normalize to string role codes.
+            value = getattr(r, "value", r)
+            return str(value).strip()
+
+        self.required_roles = [_normalize_role(r) for r in required_roles]
     
     async def __call__(
         self,
         token_data: Annotated[TokenData, Depends(get_token_data)],
     ) -> bool:
-        """Check if user has any of the required roles or higher privilege."""
+        """Check if user has any of the required roles."""
         user_roles = token_data.roles
         
-        # Admin and CEO always have access (hierarchy level 0 and 5)
-        if "admin" in user_roles or "ceo" in user_roles:
+        # Admin always has access (hierarchy level 0)
+        if "admin" in user_roles or "superuser" in user_roles:
             return True
         
+        required_set = {r for r in self.required_roles if r}
+
+        # Admin-only surfaces should remain admin-only.
+        if required_set == {"admin"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: requires one of ['admin']",
+            )
+
+        # CEO has broad access to non-admin surfaces.
+        if "ceo" in user_roles:
+            return True
+
         # Check direct role match
         if any(role in user_roles for role in self.required_roles):
-            return True
-        
-        # Check hierarchy: user with lower hierarchy level can access higher level resources
-        user_min_level = min(
-            (self.ROLE_HIERARCHY.get(r, 100) for r in user_roles),
-            default=100
-        )
-        required_min_level = min(
-            (self.ROLE_HIERARCHY.get(r, 100) for r in self.required_roles),
-            default=0
-        )
-        
-        if user_min_level <= required_min_level:
             return True
         
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access denied: requires one of {self.required_roles}",
         )
-        
-        return True
 
 
 def require_permission(permission: str):
@@ -358,7 +380,7 @@ def require_permission(permission: str):
 RoleDependency: TypeAlias = Annotated[bool, Depends(RoleChecker([]))]
 
 
-def require_role(*roles: str) -> type[bool]:
+def require_role(*roles: str) -> Any:
     """
     Decorator-style role requirement.
     
@@ -372,7 +394,7 @@ def require_role(*roles: str) -> type[bool]:
         ):
             ...
     """
-    return Annotated[bool, Depends(RoleChecker(list(roles)))]  # type: ignore[return-value]
+    return Annotated[bool, Depends(RoleChecker(list(roles)))]
 
 
 # =============================================================================

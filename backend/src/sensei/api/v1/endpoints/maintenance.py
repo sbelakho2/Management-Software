@@ -12,7 +12,23 @@ from sensei.services.maintenance.warranty_tracking import WarrantyTrackingServic
 from sensei.services.maintenance.maintenance_budget import MaintenanceBudgetService
 from sensei.services.maintenance.field_returns import FieldReturnService
 
-router = APIRouter()
+AllowMaintenanceModule = deps.require_role(
+    "maintenance",
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                ["maintenance", "ops", "supervisor", "team_lead", "operator"]
+            )
+        )
+    ]
+)
 
 @router.get("/stats", response_model=dict[str, Any])
 async def get_maintenance_stats(

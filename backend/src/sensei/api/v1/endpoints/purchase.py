@@ -16,7 +16,7 @@ from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -33,7 +33,37 @@ from sensei.models.accounts_payable import (
 )
 from sensei.models.account import Account
 
-router = APIRouter()
+# Purchasing/AP is cross-functional (purchasing + supply chain + logistics + finance oversight).
+# CEO/admin are handled centrally by RoleChecker.
+AllowPurchaseModule = deps.require_role(
+    "purchasing",
+    "supply_chain",
+    "logistics",
+    "warehouse",
+    "finance",
+    "accountant",
+    "ops",
+    "gm",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "purchasing",
+                    "supply_chain",
+                    "logistics",
+                    "warehouse",
+                    "finance",
+                    "accountant",
+                    "ops",
+                    "gm",
+                ]
+            )
+        )
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -72,8 +102,7 @@ class PRResponse(BaseModel):
     submitted_at: Optional[datetime]
     approved_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class POLineCreate(BaseModel):
@@ -109,8 +138,7 @@ class POResponse(BaseModel):
     approved_at: Optional[datetime]
     sent_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class GRNLineCreate(BaseModel):
@@ -135,8 +163,7 @@ class GRNResponse(BaseModel):
     reference: Optional[str]
     line_count: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SupplierInvoiceCreate(BaseModel):
@@ -247,7 +274,6 @@ async def create_purchase_requisition(
         status="draft",
         created_by_id=current_user.id,
         updated_by_id=current_user.id,
-        owner_id=current_user.id,
     )
     db.add(pr)
     await db.flush()
@@ -384,7 +410,6 @@ async def convert_pr_to_po(
         cost_center=pr.cost_center,
         created_by_id=current_user.id,
         updated_by_id=current_user.id,
-        owner_id=current_user.id,
     )
     db.add(po)
     await db.flush()
@@ -478,7 +503,6 @@ async def create_purchase_order(
         cost_center=payload.cost_center,
         created_by_id=current_user.id,
         updated_by_id=current_user.id,
-        owner_id=current_user.id,
     )
     db.add(po)
     await db.flush()

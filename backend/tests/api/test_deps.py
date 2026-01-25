@@ -285,8 +285,18 @@ class TestGetCurrentSuperuser:
         """Test with superuser."""
         user = MagicMock(spec=User)
         user.is_superuser = True
+
+        token_data = TokenData(
+            sub=str(uuid4()),
+            type="access",
+            exp=datetime.now(timezone.utc) + timedelta(hours=1),
+            iat=datetime.now(timezone.utc),
+            jti="test-jti",
+            roles=["superuser"],
+            permissions=[],
+        )
         
-        result = await get_current_superuser(user)
+        result = await get_current_superuser(user, token_data)
         
         assert result == user
     
@@ -295,9 +305,19 @@ class TestGetCurrentSuperuser:
         """Test with non-superuser."""
         user = MagicMock(spec=User)
         user.is_superuser = False
+
+        token_data = TokenData(
+            sub=str(uuid4()),
+            type="access",
+            exp=datetime.now(timezone.utc) + timedelta(hours=1),
+            iat=datetime.now(timezone.utc),
+            jti="test-jti",
+            roles=["user"],
+            permissions=[],
+        )
         
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_superuser(user)
+            await get_current_superuser(user, token_data)
         
         assert exc_info.value.status_code == 403
         assert "Superuser" in exc_info.value.detail
@@ -437,6 +457,28 @@ class TestRoleChecker:
         
         assert exc_info.value.status_code == 403
         assert "admin" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_role_checker_admin_only_enum_does_not_allow_ceo(self):
+        """Admin-only endpoints should stay admin-only even if an enum RoleType is passed."""
+        from sensei.models.user import RoleType
+
+        checker = RoleChecker([RoleType.ADMIN])
+
+        token_data = TokenData(
+            sub=str(uuid4()),
+            type="access",
+            exp=datetime.now(timezone.utc) + timedelta(hours=1),
+            iat=datetime.now(timezone.utc),
+            jti="test-jti",
+            roles=["ceo"],
+            permissions=[],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await checker(token_data)
+
+        assert exc_info.value.status_code == 403
 
 
 # =============================================================================

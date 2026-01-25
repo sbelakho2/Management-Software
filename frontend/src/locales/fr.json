@@ -64,6 +64,9 @@
       "content": "Contenu",
       "reportTitle": "Titre du rapport",
       "reportType": "Type de rapport",
+    "drafts": {
+      "snippet": "{snippet}…"
+    },
       "saveChanges": "Enregistrer les modifications",
       "saving": "Enregistrement...",
       "sections": {
@@ -3531,6 +3534,165 @@
       "syncGates": "Portes de synchronisation"
     }
   },
+    "emailDrafting": {
+      "title": "Assistant de rédaction d'e-mails IA",
+      "aria": {
+        "selectPurpose": "Sélectionner l'objet",
+        "toneGroup": "Sélectionner le ton",
+        "selectLanguage": "Sélectionner la langue",
+        "recipientEmail": "E-mail du destinataire",
+        "recipientName": "Nom du destinataire",
+        "addKeyPoint": "Ajouter un point clé",
+        "keyPointsList": "Liste des points clés",
+        "removeKeyPoint": "Supprimer : {point}",
+        "copyToClipboard": "Copier dans le presse-papiers",
+        "editSubject": "Modifier l'objet",
+        "close": "Fermer",
+        "draftsList": "Brouillons d'e-mails"
+      },
+      "placeholders": {
+        "selectPurpose": "Sélectionner l'objet...",
+        "recipientEmail": "destinataire@exemple.com",
+        "recipientNameOptional": "Nom (facultatif)",
+        "keyPoint": "Ajouter un point clé",
+        "senderName": "ex. Alex Morgan",
+        "senderEmail": "ex. alex@sensei.com",
+        "senderTitle": "ex. Responsable de compte",
+        "companyName": "ex. Sensei SAS",
+        "threadEntityType": "Sélectionner l'entité du fil...",
+        "threadEntityId": "Saisir l'ID de l'entité...",
+        "referenceNumber": "ex. RFQ-2024-001",
+        "subjectHint": "ex. Mise à jour tarifaire T2"
+      },
+      "purpose": {
+        "missingInfoRequest": "Demande d'informations manquantes",
+        "quoteFollowup": "Relance de devis",
+        "quoteSubmission": "Soumission de devis",
+        "supplierInquiry": "Demande fournisseur",
+        "meetingRequest": "Demande de réunion",
+        "meetingConfirmation": "Confirmation de réunion",
+        "meetingReschedule": "Replanification de réunion",
+        "issueNotification": "Notification d'incident",
+        "statusUpdate": "Mise à jour de statut",
+        "thankYou": "Remerciement",
+        "introduction": "Présentation",
+        "escalation": "Escalade",
+        "apology": "Excuses",
+        "custom": "E-mail personnalisé"
+      },
+      "tone": {
+        "formal": "Formel",
+        "professional": "Professionnel",
+        "friendly": "Amical",
+        "urgent": "Urgent",
+        "apologetic": "Contrit",
+        "appreciative": "Reconnaissant",
+        "concise": "Concis"
+      },
+      "language": {
+        "english": "Anglais",
+        "french": "Français",
+        "german": "Allemand",
+        "spanish": "Espagnol",
+        "italian": "Italien",
+        "portuguese": "Portugais",
+        "japanese": "Japonais",
+        "chinese": "Chinois",
+        "korean": "Coréen",
+        "arabic": "Arabe"
+      },
+      "actions": {
+        "add": "Ajouter",
+        "apply": "Appliquer",
+        "edit": "Modifier",
+        "generating": "Génération...",
+        "generateDraft": "Générer un brouillon",
+        "regenerate": "Régénérer",
+        "send": "Envoyer"
+      },
+      "preview": {
+        "title": "Aperçu du brouillon",
+        "subjectLabel": "Objet",
+        "confidence": "Confiance : {score}",
+        "generatedIn": "Généré en {time}"
+      },
+      "units": {
+        "milliseconds": "ms",
+        "seconds": "s"
+      },
+      "compliance": {
+        "none": "Aucun problème de conformité détecté",
+        "title": "Problèmes de conformité ({count})"
+      },
+      "suggestions": {
+        "title": "Suggestions ({count})"
+      },
+      "alternatives": {
+        "title": "Objets alternatifs :"
+      },
+      "thread": {
+        "entityType": {
+          "rfq": "Demande de devis (RFQ)",
+          "quote": "Devis",
+          "workOrder": "Ordre de fabrication",
+          "opportunity": "Opportunité",
+          "nonConformance": "Non-conformité",
+          "shipment": "Expédition",
+          "invoice": "Facture"
+        },
+        "loadFailed": "Échec du chargement du fil",
+        "helper": "Reliez ce brouillon à un fil pour conserver le fil de données unique.",
+        "loading": "Chargement du fil...",
+        "traceTitle": "Traçabilité du fil",
+        "traceStats": "Traçage : {nodes} nœuds / {edges} liens",
+        "reasoningId": "ID de raisonnement : {id}"
+      },
+      "defaults": {
+        "senderName": "Opérateur Sensei",
+        "senderEmail": "operateur@sensei.com",
+        "companyName": "Sensei"
+      },
+      "sections": {
+        "recipient": "Destinataire",
+        "purpose": "Objet",
+        "sender": "Expéditeur",
+        "threadContext": "Contexte du fil",
+        "tone": "Ton",
+        "language": "Langue",
+        "keyPoints": "Points clés"
+      },
+      "fields": {
+        "senderName": "Nom de l'expéditeur",
+        "senderEmail": "E-mail de l'expéditeur",
+        "senderTitle": "Titre de l'expéditeur",
+        "companyName": "Nom de l'entreprise",
+        "threadEntityType": "Type d'entité du fil",
+        "threadEntityId": "ID d'entité du fil",
+        "referenceNumberOptional": "Numéro de référence (facultatif)",
+        "subjectHintOptional": "Indice d'objet (facultatif)"
+      },
+      "status": {
+        "generating": "Génération...",
+        "ready": "Prêt pour révision",
+        "reviewed": "Révisé",
+        "approved": "Approuvé",
+        "sent": "Envoyé",
+        "discarded": "Écarté",
+        "failed": "Échec"
+      },
+      "notifications": {
+        "copied": "Copié dans le presse-papiers !"
+      },
+      "empty": {
+        "title": "Aucun brouillon",
+        "description": "Générez un brouillon pour voir l'aperçu et les contrôles de conformité.",
+        "list": "Aucun brouillon"
+      },
+      "validation": {
+        "emailRequired": "L'e-mail est requis",
+        "emailInvalid": "Format d'e-mail invalide"
+      }
+    },
   "quickActions": {
     "createNewCustomer": "Créer un nouveau client",
     "createNewQuote": "Créer un nouveau devis",

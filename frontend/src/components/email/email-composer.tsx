@@ -23,16 +23,14 @@ import {
   Recipient,
   GeneratedDraft,
   GenerationRequest,
-  getPurposeLabel,
-  getToneLabel,
-  getLanguageLabel,
-  getStatusLabel,
-  getStatusColor,
-  getConfidenceColor,
+  getPurposeLabelKey,
+  getToneLabelKey,
+  getLanguageLabelKey,
+  getStatusLabelKey,
+  getStatusColorClass,
+  getConfidenceColorClass,
   formatConfidenceScore,
   formatGenerationTime,
-  getComplianceSeverityColor,
-  getSuggestionPriorityColor,
   generateId,
   createRecipient,
   validateRecipient,
@@ -40,6 +38,7 @@ import {
 import { useAuthStore } from '@/stores';
 import { apiClient } from '@/api/client';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { useI18n } from '@/contexts/i18n-context';
 
 // ============================================================================
 // Icons
@@ -137,6 +136,7 @@ interface PurposeSelectorProps {
 
 export function PurposeSelector({ value, onChange, className = '' }: PurposeSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { t } = useI18n();
 
   const purposes: EmailPurpose[] = [
     'missing_info_request',
@@ -157,18 +157,18 @@ export function PurposeSelector({ value, onChange, className = '' }: PurposeSele
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2 text-left hover:border-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        aria-label="Select email purpose"
+        className="flex w-full items-center justify-between rounded-rams-sm border border-rams-line bg-rams-panel px-4 py-2 text-left hover:border-rams-border focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
+        aria-label={t('emailDrafting.aria.selectPurpose')}
         aria-expanded={isOpen}
       >
-        <span className={value ? 'text-gray-900' : 'text-gray-500'}>
-          {value ? getPurposeLabel(value) : 'Select purpose...'}
+        <span className={value ? 'text-rams-foreground' : 'text-rams-muted'}>
+          {value ? t(getPurposeLabelKey(value)) : t('emailDrafting.placeholders.selectPurpose')}
         </span>
         <ChevronDownIcon />
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-rams-sm border border-rams-line bg-rams-module py-1">
           {purposes.map((purpose) => (
             <button
               key={purpose}
@@ -177,11 +177,11 @@ export function PurposeSelector({ value, onChange, className = '' }: PurposeSele
                 onChange(purpose);
                 setIsOpen(false);
               }}
-              className={`block w-full px-4 py-2 text-left hover:bg-gray-100 ${
-                value === purpose ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+              className={`block w-full px-4 py-2 text-left hover:bg-rams-panel ${
+                value === purpose ? 'bg-rams-panel text-rams-steel' : 'text-rams-foreground'
               }`}
             >
-              {getPurposeLabel(purpose)}
+              {t(getPurposeLabelKey(purpose))}
             </button>
           ))}
         </div>
@@ -201,6 +201,7 @@ interface ToneSelectorProps {
 }
 
 export function ToneSelector({ value, onChange, className = '' }: ToneSelectorProps) {
+  const { t } = useI18n();
   const tones: EmailTone[] = [
     'formal',
     'professional',
@@ -212,7 +213,7 @@ export function ToneSelector({ value, onChange, className = '' }: ToneSelectorPr
   ];
 
   return (
-    <div className={`flex flex-wrap gap-2 ${className}`} role="radiogroup" aria-label="Email tone">
+    <div className={`flex flex-wrap gap-2 ${className}`} role="radiogroup" aria-label={t('emailDrafting.aria.toneGroup')}>
       {tones.map((tone) => (
         <button
           key={tone}
@@ -220,13 +221,13 @@ export function ToneSelector({ value, onChange, className = '' }: ToneSelectorPr
           role="radio"
           aria-checked={value === tone}
           onClick={() => onChange(tone)}
-          className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+          className={`rounded-rams-sm px-3 py-1 text-sm font-medium transition-colors ${
             value === tone
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-rams-steel text-rams-foreground'
+              : 'bg-rams-panel text-rams-foreground hover:bg-rams-module'
           }`}
         >
-          {getToneLabel(tone)}
+          {t(getToneLabelKey(tone))}
         </button>
       ))}
     </div>
@@ -244,18 +245,19 @@ interface LanguageSelectorProps {
 }
 
 export function LanguageSelector({ value, onChange, className = '' }: LanguageSelectorProps) {
+  const { t } = useI18n();
   const languages: Language[] = ['en', 'fr', 'de', 'es', 'it', 'pt'];
 
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as Language)}
-      className={`rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${className}`}
-      aria-label="Select language"
+      className={`rounded-rams-sm border border-rams-line bg-rams-panel px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20 ${className}`}
+      aria-label={t('emailDrafting.aria.selectLanguage')}
     >
       {languages.map((lang) => (
         <option key={lang} value={lang}>
-          {getLanguageLabel(lang)}
+          {t(getLanguageLabelKey(lang))}
         </option>
       ))}
     </select>
@@ -285,6 +287,7 @@ export function RecipientInput({
   onSelectRecent,
   className = '',
 }: RecipientInputProps) {
+  const { t } = useI18n();
   const [showRecents, setShowRecents] = useState(false);
   const errors = validateRecipient({ email: value });
 
@@ -298,32 +301,32 @@ export function RecipientInput({
             onChange={(e) => onEmailChange(e.target.value)}
             onFocus={() => setShowRecents(true)}
             onBlur={() => setTimeout(() => setShowRecents(false), 200)}
-            placeholder="recipient@example.com"
-            className={`w-full rounded-lg border px-4 py-2 focus:outline-none focus:ring-2 ${
+            placeholder={t('emailDrafting.placeholders.recipientEmail')}
+            className={`w-full rounded-rams-sm border px-4 py-2 focus:outline-none focus:ring-2 ${
               errors.length > 0 && value
-                ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
-                : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500/20'
+                ? 'border-rams-red focus:border-rams-red focus:ring-rams-red/20'
+                : 'border-rams-line focus:border-rams-steel focus:ring-rams-steel/20'
             }`}
-            aria-label="Recipient email"
+            aria-label={t('emailDrafting.aria.recipientEmail')}
             aria-invalid={errors.length > 0 && value.length > 0}
           />
 
           {showRecents && recentRecipients.length > 0 && (
-            <div className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-rams-sm border border-rams-line bg-rams-module py-1">
               {recentRecipients.slice(0, 5).map(({ recipient }) => (
                 <button
                   key={recipient.email}
                   type="button"
                   onClick={() => onSelectRecent(recipient)}
-                  className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-gray-100"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-rams-panel"
                 >
                   <UserIcon />
                   <div>
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="text-sm font-medium text-rams-foreground">
                       {recipient.name || recipient.email}
                     </div>
                     {recipient.name && (
-                      <div className="text-xs text-gray-500">{recipient.email}</div>
+                      <div className="text-xs text-rams-muted">{recipient.email}</div>
                     )}
                   </div>
                 </button>
@@ -335,13 +338,13 @@ export function RecipientInput({
           type="text"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
-          placeholder="Name (optional)"
-          className="w-40 rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          aria-label="Recipient name"
+          placeholder={t('emailDrafting.placeholders.recipientNameOptional')}
+          className="w-40 rounded-rams-sm border border-rams-line px-4 py-2 focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
+          aria-label={t('emailDrafting.aria.recipientName')}
         />
       </div>
       {errors.length > 0 && value && (
-        <p className="text-sm text-red-600">{errors[0]}</p>
+        <p className="text-sm text-rams-red">{t(errors[0])}</p>
       )}
     </div>
   );
@@ -358,6 +361,7 @@ interface KeyPointsEditorProps {
 }
 
 export function KeyPointsEditor({ points, onChange, className = '' }: KeyPointsEditorProps) {
+  const { t } = useI18n();
   const [newPoint, setNewPoint] = useState('');
 
   const addPoint = () => {
@@ -379,31 +383,31 @@ export function KeyPointsEditor({ points, onChange, className = '' }: KeyPointsE
           value={newPoint}
           onChange={(e) => setNewPoint(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPoint())}
-          placeholder="Add a key point..."
-          className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          aria-label="Add key point"
+          placeholder={t('emailDrafting.placeholders.keyPoint')}
+          className="flex-1 rounded-rams-sm border border-rams-line px-4 py-2 focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
+          aria-label={t('emailDrafting.aria.addKeyPoint')}
         />
         <button
           type="button"
           onClick={addPoint}
-          className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+          className="rounded-rams-sm bg-rams-panel px-4 py-2 text-sm font-medium text-rams-foreground hover:bg-rams-module"
         >
-          Add
+          {t('emailDrafting.actions.add')}
         </button>
       </div>
       {points.length > 0 && (
-        <ul className="space-y-1" aria-label="Key points list">
+        <ul className="list-disc space-y-1 pl-5" aria-label={t('emailDrafting.aria.keyPointsList')}>
           {points.map((point, index) => (
             <li
               key={index}
-              className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2"
+              className="relative list-item rounded-rams-sm bg-rams-panel px-3 py-2 text-sm text-rams-foreground"
             >
-              <span className="text-sm text-gray-700">• {point}</span>
+              <span className="pr-8">{point}</span>
               <button
                 type="button"
                 onClick={() => removePoint(index)}
-                className="text-gray-400 hover:text-red-500"
-                aria-label={`Remove: ${point}`}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-rams-muted hover:text-rams-red"
+                aria-label={t('emailDrafting.aria.removeKeyPoint', { point, نقطة: point })}
               >
                 <XIcon />
               </button>
@@ -427,29 +431,28 @@ interface DraftPreviewProps {
 }
 
 export function DraftPreview({ draft, onEdit, onCopy, className = '' }: DraftPreviewProps) {
+  const { t } = useI18n();
   return (
-    <div className={`rounded-lg border border-gray-200 bg-white ${className}`}>
+    <div className={`rounded-rams-sm border border-rams-line bg-rams-module ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-rams-line bg-rams-panel px-4 py-3">
         <div className="flex items-center gap-2">
           <MailIcon />
-          <span className="font-medium text-gray-900">Draft Preview</span>
+          <span className="font-medium text-rams-foreground">{t('emailDrafting.preview.title')}</span>
         </div>
         <div className="flex items-center gap-2">
           <div
-            className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
-            style={{
-              backgroundColor: `${getStatusColor(draft.status)}20`,
-              color: getStatusColor(draft.status),
-            }}
+            className={`flex items-center gap-1 rounded-rams-sm border border-rams-line bg-rams-panel px-2 py-1 text-xs font-medium ${getStatusColorClass(
+              draft.status
+            )}`}
           >
-            {getStatusLabel(draft.status)}
+            {t(getStatusLabelKey(draft.status))}
           </div>
           <button
             type="button"
             onClick={onCopy}
-            className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            aria-label="Copy to clipboard"
+            className="rounded-rams-sm p-1 text-rams-muted hover:bg-rams-panel hover:text-rams-foreground"
+            aria-label={t('emailDrafting.aria.copyToClipboard')}
           >
             <CopyIcon />
           </button>
@@ -457,17 +460,17 @@ export function DraftPreview({ draft, onEdit, onCopy, className = '' }: DraftPre
       </div>
 
       {/* Subject */}
-      <div className="border-b border-gray-100 px-4 py-2">
+      <div className="border-b border-rams-line px-4 py-2">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xs text-gray-500">Subject: </span>
-            <span className="font-medium text-gray-900">{draft.subject}</span>
+            <span className="text-xs text-rams-muted">{t('emailDrafting.preview.subjectLabel')}</span>
+            <span className="font-medium text-rams-foreground">{draft.subject}</span>
           </div>
           <button
             type="button"
             onClick={() => onEdit('subject')}
-            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Edit subject"
+            className="rounded-rams-sm p-1 text-rams-muted hover:bg-rams-panel hover:text-rams-foreground"
+            aria-label={t('emailDrafting.aria.editSubject')}
           >
             <EditIcon />
           </button>
@@ -476,29 +479,44 @@ export function DraftPreview({ draft, onEdit, onCopy, className = '' }: DraftPre
 
       {/* Body */}
       <div className="px-4 py-4">
-        <div className="whitespace-pre-wrap font-sans text-sm text-gray-700">
+        <div className="whitespace-pre-wrap font-sans text-sm text-rams-foreground">
           {draft.bodyPlain}
         </div>
       </div>
 
       {/* Footer stats */}
-      <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2 text-xs text-gray-500">
+      <div className="flex items-center justify-between border-t border-rams-line px-4 py-2 text-xs text-rams-muted">
         <div className="flex items-center gap-4">
           <span
-            className="flex items-center gap-1"
-            style={{ color: getConfidenceColor(draft.confidenceScore) }}
+            className={`flex items-center gap-1 ${getConfidenceColorClass(
+              draft.confidenceScore
+            )}`}
           >
-            Confidence: {formatConfidenceScore(draft.confidenceScore)}
+            {t('emailDrafting.preview.confidence', {
+              score: formatConfidenceScore(draft.confidenceScore),
+              درجة: formatConfidenceScore(draft.confidenceScore),
+            })}
           </span>
-          <span>Generated in {formatGenerationTime(draft.generationTimeMs)}</span>
+          <span>
+            {t('emailDrafting.preview.generatedIn', {
+              time: formatGenerationTime(draft.generationTimeMs, {
+                milliseconds: t('emailDrafting.units.milliseconds'),
+                seconds: t('emailDrafting.units.seconds'),
+              }),
+              زمن: formatGenerationTime(draft.generationTimeMs, {
+                milliseconds: t('emailDrafting.units.milliseconds'),
+                seconds: t('emailDrafting.units.seconds'),
+              }),
+            })}
+          </span>
         </div>
         <button
           type="button"
           onClick={() => onEdit('body')}
-          className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
+          className="flex items-center gap-1 text-rams-steel hover:opacity-90"
         >
           <EditIcon />
-          Edit
+          {t('emailDrafting.actions.edit')}
         </button>
       </div>
     </div>
@@ -515,28 +533,30 @@ interface CompliancePanelProps {
 }
 
 export function CompliancePanel({ issues, className = '' }: CompliancePanelProps) {
+  const { t } = useI18n();
   if (issues.length === 0) {
     return (
-      <div className={`rounded-lg border border-green-200 bg-green-50 p-4 ${className}`}>
-        <div className="flex items-center gap-2 text-green-700">
+      <div className={`rounded-rams-sm border border-rams-line bg-rams-panel p-4 ${className}`}>
+        <div className="flex items-center gap-2 text-rams-green">
           <CheckIcon />
-          <span className="font-medium">No compliance issues detected</span>
+          <span className="font-medium">{t('emailDrafting.compliance.none')}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`rounded-lg border border-amber-200 bg-amber-50 p-4 ${className}`}>
-      <div className="flex items-center gap-2 text-amber-700">
+    <div className={`rounded-rams-sm border border-rams-line bg-rams-panel p-4 ${className}`}>
+      <div className="flex items-center gap-2 text-rams-orange">
         <AlertIcon />
-        <span className="font-medium">Compliance Issues ({issues.length})</span>
+        <span className="font-medium">
+          {t('emailDrafting.compliance.title', { count: issues.length, عدد: issues.length })}
+        </span>
       </div>
-      <ul className="mt-2 space-y-1">
+      <ul className="mt-2 list-disc space-y-1 pl-5">
         {issues.map((issue, index) => (
-          <li key={index} className="flex items-start gap-2 text-sm text-amber-600">
-            <span className="mt-0.5">•</span>
-            <span>{issue}</span>
+          <li key={index} className="text-sm text-rams-orange">
+            {issue}
           </li>
         ))}
       </ul>
@@ -555,31 +575,31 @@ interface SuggestionsPanelProps {
 }
 
 export function SuggestionsPanel({ suggestions, onApply, className = '' }: SuggestionsPanelProps) {
+  const { t } = useI18n();
   if (suggestions.length === 0) return null;
 
   return (
-    <div className={`rounded-lg border border-blue-200 bg-blue-50 p-4 ${className}`}>
-      <div className="flex items-center gap-2 text-blue-700">
+    <div className={`rounded-rams-sm border border-rams-line bg-rams-panel p-4 ${className}`}>
+      <div className="flex items-center gap-2 text-rams-steel">
         <LightbulbIcon />
-        <span className="font-medium">Suggestions ({suggestions.length})</span>
+        <span className="font-medium">
+          {t('emailDrafting.suggestions.title', { count: suggestions.length, عدد: suggestions.length })}
+        </span>
       </div>
-      <ul className="mt-2 space-y-2">
+      <ul className="mt-2 list-disc space-y-2 pl-5">
         {suggestions.map((suggestion, index) => (
           <li
             key={index}
-            className="flex items-start justify-between gap-2 text-sm text-blue-600"
+            className="flex items-start justify-between gap-2 text-sm text-rams-steel"
           >
-            <div className="flex items-start gap-2">
-              <span className="mt-0.5">•</span>
-              <span>{suggestion}</span>
-            </div>
+            <span>{suggestion}</span>
             {onApply && (
               <button
                 type="button"
                 onClick={() => onApply(suggestion)}
-                className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline"
+                className="whitespace-nowrap text-xs font-medium text-rams-steel hover:underline"
               >
-                Apply
+                {t('emailDrafting.actions.apply')}
               </button>
             )}
           </li>
@@ -604,11 +624,14 @@ export function AlternativeSubjects({
   onSelect,
   className = '',
 }: AlternativeSubjectsProps) {
+  const { t } = useI18n();
   if (alternatives.length === 0) return null;
 
   return (
     <div className={`space-y-2 ${className}`}>
-      <span className="text-xs font-medium text-gray-500">Alternative subjects:</span>
+      <span className="text-xs font-medium text-rams-muted">
+        {t('emailDrafting.alternatives.title')}
+      </span>
       <div className="flex flex-wrap gap-2">
         {alternatives.map((alt, index) => (
           <button
@@ -616,12 +639,12 @@ export function AlternativeSubjects({
             type="button"
             onClick={() => {
               // Extract just the subject part
-              const subject = alt.replace(/^Alternative Subject:\s*/, '');
+              const subject = alt.replace(/^[^:]+:\s*/, '');
               onSelect(subject);
             }}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-sm text-gray-600 hover:border-blue-300 hover:bg-blue-50"
+            className="rounded-rams-sm border border-rams-line bg-rams-panel px-3 py-1 text-sm text-rams-foreground hover:border-rams-steel"
           >
-            {alt.replace(/^Alternative Subject:\s*/, '')}
+            {alt.replace(/^[^:]+:\s*/, '')}
           </button>
         ))}
       </div>
@@ -661,6 +684,7 @@ export function EmailComposer({
   onSend,
   className = '',
 }: EmailComposerProps) {
+  const { t } = useI18n();
   const { user } = useAuthStore();
   const {
     isGenerating,
@@ -693,15 +717,15 @@ export function EmailComposer({
   const [copied, setCopied] = useState(false);
   const threadEntityOptions = useMemo(
     () => [
-      { value: 'rfq', label: 'RFQ' },
-      { value: 'quote', label: 'Quote' },
-      { value: 'work_order', label: 'Work Order' },
-      { value: 'opportunity', label: 'Opportunity' },
-      { value: 'non_conformance', label: 'Non-Conformance' },
-      { value: 'shipment', label: 'Shipment' },
-      { value: 'invoice', label: 'Invoice' },
+      { value: 'rfq', label: t('emailDrafting.thread.entityType.rfq') },
+      { value: 'quote', label: t('emailDrafting.thread.entityType.quote') },
+      { value: 'work_order', label: t('emailDrafting.thread.entityType.workOrder') },
+      { value: 'opportunity', label: t('emailDrafting.thread.entityType.opportunity') },
+      { value: 'non_conformance', label: t('emailDrafting.thread.entityType.nonConformance') },
+      { value: 'shipment', label: t('emailDrafting.thread.entityType.shipment') },
+      { value: 'invoice', label: t('emailDrafting.thread.entityType.invoice') },
     ],
-    []
+    [t]
   );
 
   useEffect(() => {
@@ -727,7 +751,9 @@ export function EmailComposer({
         );
         setThreadTrace(trace);
       } catch (error) {
-        setTraceError(error instanceof Error ? error.message : 'Failed to load thread trace');
+        setTraceError(
+          error instanceof Error ? error.message : t('emailDrafting.thread.loadFailed')
+        );
         setThreadTrace(null);
       } finally {
         setIsTraceLoading(false);
@@ -738,10 +764,11 @@ export function EmailComposer({
   }, [threadEntityType, threadEntityId]);
 
   const handleGenerate = useCallback(async () => {
-    if (!purpose || !recipientEmail) return;
+    if (!purpose || !recipientEmail || !threadEntityType || !threadEntityId) return;
 
     const recipient = createRecipient(recipientEmail, recipientName);
     recipient.languagePreference = selectedLanguage;
+    const existingReasoningId = threadTrace?.nodes?.[0]?.reasoning_ids?.[0];
 
     const request: GenerationRequest = {
       id: generateId(),
@@ -759,14 +786,15 @@ export function EmailComposer({
         threadEntityType: threadEntityType || undefined,
         threadEntityId: threadEntityId || undefined,
       },
-      senderName: senderName || 'User',
-      senderEmail: senderEmail || 'user@example.com',
+      senderName: senderName || t('emailDrafting.defaults.senderName'),
+      senderEmail: senderEmail || t('emailDrafting.defaults.senderEmail'),
       senderTitle: senderTitle || undefined,
-      companyName: companyName || 'Company',
+      companyName: companyName || t('emailDrafting.defaults.companyName'),
       requestedAt: new Date(),
       threadContext: {
         entityType: threadEntityType || undefined,
         entityId: threadEntityId || undefined,
+        reasoningId: existingReasoningId,
       },
     };
 
@@ -781,6 +809,14 @@ export function EmailComposer({
     refNumber,
     selectedTone,
     selectedLanguage,
+    senderName,
+    senderEmail,
+    senderTitle,
+    companyName,
+    threadEntityType,
+    threadEntityId,
+    threadTrace,
+    t,
     generateDraft,
   ]);
 
@@ -805,37 +841,45 @@ export function EmailComposer({
   );
 
   const canGenerate = useMemo(() => {
-    return !!purpose && !!recipientEmail && validateRecipient({ email: recipientEmail }).length === 0;
-  }, [purpose, recipientEmail]);
+    return (
+      !!purpose &&
+      !!recipientEmail &&
+      !!threadEntityType &&
+      !!threadEntityId &&
+      validateRecipient({ email: recipientEmail }).length === 0
+    );
+  }, [purpose, recipientEmail, threadEntityType, threadEntityId]);
 
   return (
     <ErrorBoundary>
-      <div className={`flex h-full flex-col bg-gray-50 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
-        <div className="flex items-center gap-2">
-          <SparklesIcon />
-          <h2 className="text-lg font-semibold text-gray-900">AI Email Composer</h2>
+      <div className={`flex h-full flex-col bg-rams-chassis ${className}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-rams-line bg-rams-panel px-6 py-4">
+          <div className="flex items-center gap-2">
+            <SparklesIcon />
+            <h2 className="text-lg font-black uppercase text-rams-foreground">{t('emailDrafting.title')}</h2>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-rams-sm p-2 text-rams-muted hover:bg-rams-panel hover:text-rams-foreground"
+              aria-label={t('emailDrafting.aria.close')}
+            >
+              <XIcon />
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Close"
-          >
-            <XIcon />
-          </button>
-        )}
-      </div>
 
-      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden">
         {/* Left Panel - Configuration */}
-        <div className="w-1/2 overflow-y-auto border-r border-gray-200 bg-white p-6">
+        <div className="w-1/2 overflow-y-auto border-r border-rams-line bg-rams-module p-6">
           <div className="space-y-6">
             {/* Recipient */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Recipient</label>
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.recipient')}
+              </label>
               <RecipientInput
                 value={recipientEmail}
                 name={recipientName}
@@ -848,69 +892,85 @@ export function EmailComposer({
 
             {/* Purpose */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Purpose</label>
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.purpose')}
+              </label>
               <PurposeSelector value={purpose} onChange={setPurpose} />
             </div>
 
             {/* Sender */}
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <label className="mb-3 block text-sm font-semibold text-gray-700">Sender</label>
+            <div className="rounded-rams-sm border border-rams-line bg-rams-module p-4">
+              <label className="mb-3 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.sender')}
+              </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Name</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.senderName')}
+                  </label>
                   <input
                     type="text"
                     value={senderName}
                     onChange={(e) => setSenderName(e.target.value)}
-                    placeholder="Sender name"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder={t('emailDrafting.placeholders.senderName')}
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Email</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.senderEmail')}
+                  </label>
                   <input
                     type="email"
                     value={senderEmail}
                     onChange={(e) => setSenderEmail(e.target.value)}
-                    placeholder="sender@company.com"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder={t('emailDrafting.placeholders.senderEmail')}
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Title</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.senderTitle')}
+                  </label>
                   <input
                     type="text"
                     value={senderTitle}
                     onChange={(e) => setSenderTitle(e.target.value)}
-                    placeholder="Job title"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder={t('emailDrafting.placeholders.senderTitle')}
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Company</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.companyName')}
+                  </label>
                   <input
                     type="text"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="Company name"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder={t('emailDrafting.placeholders.companyName')}
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   />
                 </div>
               </div>
             </div>
 
             {/* Thread Context */}
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <label className="mb-3 block text-sm font-semibold text-gray-700">Thread Context</label>
+            <div className="rounded-rams-sm border border-rams-line bg-rams-module p-4">
+              <label className="mb-3 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.threadContext')}
+              </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Entity Type</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.threadEntityType')}
+                  </label>
                   <select
                     value={threadEntityType}
                     onChange={(e) => setThreadEntityType(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   >
-                    <option value="">Select type</option>
+                    <option value="">{t('emailDrafting.placeholders.threadEntityType')}</option>
                     {threadEntityOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -919,28 +979,44 @@ export function EmailComposer({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Entity ID</label>
+                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                    {t('emailDrafting.fields.threadEntityId')}
+                  </label>
                   <input
                     type="text"
                     value={threadEntityId}
                     onChange={(e) => setThreadEntityId(e.target.value)}
-                    placeholder="Paste entity ID"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder={t('emailDrafting.placeholders.threadEntityId')}
+                    className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
                   />
                 </div>
               </div>
-              <div className="mt-3 text-xs text-gray-500">
-                Attach drafts to the common thread so RFQs, quotes, and work orders stay linked.
+              <div className="mt-3 text-xs text-rams-muted">
+                {t('emailDrafting.thread.helper')}
               </div>
               {(threadEntityType && threadEntityId) && (
-                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-                  {isTraceLoading && <div>Loading thread trace…</div>}
-                  {!isTraceLoading && traceError && <div className="text-red-600">{traceError}</div>}
+                <div className="mt-3 rounded-rams-sm border border-rams-line bg-rams-panel p-3 text-xs text-rams-muted">
+                  {isTraceLoading && <div>{t('emailDrafting.thread.loading')}</div>}
+                  {!isTraceLoading && traceError && <div className="text-rams-red">{traceError}</div>}
                   {!isTraceLoading && !traceError && threadTrace && (
                     <div className="space-y-1">
-                      <div className="font-medium text-gray-700">Thread Trace</div>
-                      <div>Nodes: {threadTrace.nodes.length} • Edges: {threadTrace.edges.length}</div>
-                      {draft?.reasoningId && <div>Reasoning ID: {draft.reasoningId}</div>}
+                      <div className="font-medium text-rams-foreground">{t('emailDrafting.thread.traceTitle')}</div>
+                      <div>
+                        {t('emailDrafting.thread.traceStats', {
+                          nodes: threadTrace.nodes.length,
+                          edges: threadTrace.edges.length,
+                          عقد: threadTrace.nodes.length,
+                          روابط: threadTrace.edges.length,
+                        })}
+                      </div>
+                      {draft?.reasoningId && (
+                        <div>
+                          {t('emailDrafting.thread.reasoningId', {
+                            id: draft.reasoningId,
+                            معرف: draft.reasoningId,
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -949,47 +1025,53 @@ export function EmailComposer({
 
             {/* Reference Number */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Reference Number (optional)
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.fields.referenceNumberOptional')}
               </label>
               <input
                 type="text"
                 value={refNumber}
                 onChange={(e) => setRefNumber(e.target.value)}
-                placeholder="e.g., RFQ-2024-001"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder={t('emailDrafting.placeholders.referenceNumber')}
+                className="w-full rounded-rams-sm border border-rams-line px-4 py-2 focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
               />
             </div>
 
             {/* Subject Hint */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Subject Hint (optional)
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.fields.subjectHintOptional')}
               </label>
               <input
                 type="text"
                 value={subjectHint}
                 onChange={(e) => setSubjectHint(e.target.value)}
-                placeholder="e.g., Product Demo Discussion"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder={t('emailDrafting.placeholders.subjectHint')}
+                className="w-full rounded-rams-sm border border-rams-line px-4 py-2 focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
               />
             </div>
 
             {/* Tone */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Tone</label>
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.tone')}
+              </label>
               <ToneSelector value={selectedTone} onChange={setSelectedTone} />
             </div>
 
             {/* Language */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Language</label>
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.language')}
+              </label>
               <LanguageSelector value={selectedLanguage} onChange={setSelectedLanguage} />
             </div>
 
             {/* Key Points */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Key Points</label>
+              <label className="mb-2 block text-sm font-black uppercase text-rams-foreground">
+                {t('emailDrafting.sections.keyPoints')}
+              </label>
               <KeyPointsEditor points={keyPoints} onChange={setKeyPoints} />
             </div>
 
@@ -998,23 +1080,23 @@ export function EmailComposer({
               type="button"
               onClick={handleGenerate}
               disabled={!canGenerate || isGenerating}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+              className="flex w-full items-center justify-center gap-2 rounded-rams-sm bg-rams-steel px-4 py-3 font-medium text-rams-foreground transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-rams-panel disabled:text-rams-muted"
             >
               {isGenerating ? (
                 <>
                   <RefreshIcon />
-                  Generating...
+                  {t('emailDrafting.actions.generating')}
                 </>
               ) : (
                 <>
                   <SparklesIcon />
-                  Generate Draft
+                  {t('emailDrafting.actions.generateDraft')}
                 </>
               )}
             </button>
 
             {generationError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+              <div className="rounded-rams-sm border border-rams-line bg-rams-panel p-3 text-sm text-rams-red">
                 {generationError}
               </div>
             )}
@@ -1022,7 +1104,7 @@ export function EmailComposer({
         </div>
 
         {/* Right Panel - Preview */}
-        <div className="flex w-1/2 flex-col overflow-y-auto p-6">
+        <div className="flex w-1/2 flex-col overflow-y-auto bg-rams-module p-6">
           {draft ? (
             <div className="space-y-4">
               <DraftPreview
@@ -1037,8 +1119,8 @@ export function EmailComposer({
               />
 
               {copied && (
-                <div className="rounded-lg bg-green-100 p-2 text-center text-sm text-green-700">
-                  Copied to clipboard!
+                <div className="rounded-rams-sm border border-rams-line bg-rams-panel p-2 text-center text-sm text-rams-green">
+                  {t('emailDrafting.notifications.copied')}
                 </div>
               )}
 
@@ -1056,31 +1138,28 @@ export function EmailComposer({
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-rams-sm border border-rams-line bg-rams-panel px-4 py-2 font-medium text-rams-foreground hover:bg-rams-module"
                 >
                   <RefreshIcon />
-                  Regenerate
+                  {t('emailDrafting.actions.regenerate')}
                 </button>
                 <button
                   type="button"
                   onClick={() => onSend?.(draft)}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-rams-sm bg-rams-green px-4 py-2 font-medium text-rams-foreground hover:opacity-90"
                 >
                   <SendIcon />
-                  Send
+                  {t('emailDrafting.actions.send')}
                 </button>
               </div>
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <div className="mb-4 rounded-full bg-gray-100 p-4">
+              <div className="mb-4 rounded-rams-sm bg-rams-panel p-4">
                 <MailIcon />
               </div>
-              <h3 className="text-lg font-medium text-gray-900">No Draft Yet</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Configure your email settings and click &quot;Generate Draft&quot; to create an
-                AI-powered email.
-              </p>
+              <h3 className="text-lg font-medium text-rams-foreground">{t('emailDrafting.empty.title')}</h3>
+              <p className="mt-1 text-sm text-rams-muted">{t('emailDrafting.empty.description')}</p>
             </div>
           )}
         </div>
@@ -1101,34 +1180,36 @@ interface DraftListItemProps {
 }
 
 export function DraftListItem({ draft, isActive, onClick }: DraftListItemProps) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-lg border p-3 text-left transition-colors ${
+      className={`w-full rounded-rams-sm border p-3 text-left transition-colors ${
         isActive
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+          ? 'border-rams-steel bg-rams-panel'
+          : 'border-rams-line bg-rams-module hover:border-rams-border hover:bg-rams-panel'
       }`}
     >
       <div className="flex items-start justify-between">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium text-gray-900">{draft.subject}</div>
-          <div className="mt-1 truncate text-sm text-gray-500">
-            {draft.bodyPlain.substring(0, 100)}...
+          <div className="truncate font-medium text-rams-foreground">{draft.subject}</div>
+          <div className="mt-1 truncate text-sm text-rams-muted">
+            {t('emailDrafting.drafts.snippet', {
+              snippet: draft.bodyPlain.substring(0, 100),
+              مقتطف: draft.bodyPlain.substring(0, 100),
+            })}
           </div>
         </div>
         <div
-          className="ml-2 rounded-full px-2 py-0.5 text-xs font-medium"
-          style={{
-            backgroundColor: `${getStatusColor(draft.status)}20`,
-            color: getStatusColor(draft.status),
-          }}
+          className={`ml-2 rounded-rams-sm border border-rams-line bg-rams-panel px-2 py-0.5 text-xs font-medium ${getStatusColorClass(
+            draft.status
+          )}`}
         >
-          {getStatusLabel(draft.status)}
+          {t(getStatusLabelKey(draft.status))}
         </div>
       </div>
-      <div className="mt-2 text-xs text-gray-400">
+      <div className="mt-2 text-xs text-rams-muted">
         {draft.createdAt.toLocaleString()}
       </div>
     </button>
@@ -1140,21 +1221,26 @@ interface DraftsListProps {
 }
 
 export function DraftsList({ className = '' }: DraftsListProps) {
+  const { t } = useI18n();
   const { drafts, activeDraftId, setActiveDraft } = useEmailDraftingStore();
 
   const draftArray = useMemo(() => Array.from(drafts.values()), [drafts]);
 
   if (draftArray.length === 0) {
     return (
-      <div className={`rounded-lg border border-gray-200 bg-white p-6 text-center ${className}`}>
+      <div className={`rounded-rams-sm border border-rams-line bg-rams-module p-6 text-center ${className}`}>
         <MailIcon />
-        <p className="mt-2 text-sm text-gray-500">No drafts yet</p>
+        <p className="mt-2 text-sm text-rams-muted">{t('emailDrafting.empty.list')}</p>
       </div>
     );
   }
 
   return (
-    <div className={`space-y-2 ${className}`} role="list" aria-label="Email drafts">
+    <div
+      className={`space-y-2 ${className}`}
+      role="list"
+      aria-label={t('emailDrafting.aria.draftsList')}
+    >
       {draftArray.map((draft) => (
         <DraftListItem
           key={draft.id}

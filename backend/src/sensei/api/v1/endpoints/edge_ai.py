@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
-from sensei.api.deps import CurrentUser
+from sensei.api.deps import CurrentUser, OptionalCurrentUser
 from sensei.api.utils import APIResponse, build_response
+from sensei.core.config import settings
 from sensei.services.core.edge_ai import (
     EdgeOrchestrator,
     AnomalyType,
@@ -16,7 +17,12 @@ from sensei.services.core.edge_ai import (
     SensorReading,
 )
 
-router = APIRouter()
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_deny_production)])
 
 # Singleton orchestrator
 _orchestrator = EdgeOrchestrator(machine_id="system_core")
@@ -61,7 +67,7 @@ async def trigger_sync(user: CurrentUser):
 async def get_recent_anomalies(
     machine_id: Optional[str] = None, 
     hours: int = 24, 
-    user: CurrentUser | None = None
+    user: OptionalCurrentUser = None
 ):
     """Get recent anomaly detections."""
     anomalies = await anyio.to_thread.run_sync(

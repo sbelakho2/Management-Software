@@ -8,9 +8,10 @@ from datetime import datetime, date, time, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.production.lsw_scheduling import (
     LSWSchedulingService,
     LSWChecklistTemplate,
@@ -25,7 +26,16 @@ from sensei.services.production.lsw_scheduling import (
     get_default_template_ids,
 )
 
-router = APIRouter(prefix="/lsw", tags=["LSW Scheduling"])
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(
+    prefix="/lsw",
+    tags=["LSW Scheduling"],
+    dependencies=[Depends(_deny_production)],
+)
 
 # Global service instance
 _service = LSWSchedulingService()

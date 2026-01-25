@@ -17,7 +17,7 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,16 +201,17 @@ class TemplateCloningService:
     
     def __init__(
         self,
-        entity_provider: callable | None = None,
-        entity_saver: callable | None = None,
-        entity_query: callable | None = None,
+        entity_provider: Callable[..., Any] | None = None,
+        entity_saver: Callable[..., Any] | None = None,
+        entity_query: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the service."""
         self._templates: dict[UUID, Template] = {}
         self._clone_history: dict[UUID, CloneHistory] = {}
-        self._entity_provider = entity_provider
-        self._entity_saver = entity_saver
-        self._entity_query = entity_query
+        self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
+        self._entity_provider = entity_provider or self._get_entity_from_memory
+        self._entity_saver = entity_saver or self._save_entity_in_memory
+        self._entity_query = entity_query or self._query_entities_in_memory
         
         # Default fields to reset on clone
         self._reset_fields: dict[CloneableEntityType, list[str]] = {
@@ -452,9 +453,30 @@ class TemplateCloningService:
         for key, value in updates.items():
             if hasattr(template, key):
                 setattr(template, key, value)
-        
+
         template.updated_at = datetime.now(timezone.utc)
         return template
+
+    def create_mock_entity(self, entity_type: CloneableEntityType, **data: Any) -> UUID:
+        """Create a mock entity for tests."""
+        entity_id = uuid4()
+        payload = {"id": entity_id, **data}
+        self._mock_entities.setdefault(entity_type.value, {})[entity_id] = payload
+        return entity_id
+
+    def _get_entity_from_memory(self, entity_type: CloneableEntityType, entity_id: UUID) -> dict[str, Any] | None:
+        return self._mock_entities.get(entity_type.value, {}).get(entity_id)
+
+    def _save_entity_in_memory(self, entity_type: CloneableEntityType, entity_id: UUID, data: dict[str, Any]) -> None:
+        self._mock_entities.setdefault(entity_type.value, {})[entity_id] = dict(data)
+
+    def _query_entities_in_memory(self, entity_type: CloneableEntityType, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        entities = list(self._mock_entities.get(entity_type.value, {}).values())
+        results = []
+        for entity in entities:
+            if all(entity.get(k) == v for k, v in filters.items()):
+                results.append(entity)
+        return results
     
     def delete_template(self, template_id: UUID) -> bool:
         """Delete a template (soft delete for system templates)."""
@@ -908,8 +930,6 @@ class TemplateCloningService:
         entity_id: UUID,
     ) -> dict[str, Any] | None:
         """Get an entity snapshot."""
-        if not self._entity_provider:
-            raise ValueError("TemplateCloningService requires an entity_provider in production")
         return self._entity_provider(entity_type, entity_id)
     
     def _save_entity(
@@ -919,8 +939,6 @@ class TemplateCloningService:
         entity: dict[str, Any],
     ) -> None:
         """Persist an entity snapshot."""
-        if not self._entity_saver:
-            raise ValueError("TemplateCloningService requires an entity_saver in production")
         self._entity_saver(entity_type, entity_id, entity)
 
 

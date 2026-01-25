@@ -14,11 +14,12 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, ForbiddenError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
@@ -28,6 +29,7 @@ from sensei.api.utils import (
     build_created_response,
     build_updated_response,
     build_deleted_response,
+    maybe_await,
     now_utc,
     parse_sort_param,
 )
@@ -41,7 +43,39 @@ from sensei.models.opportunity import (
 )
 
 
-router = APIRouter()
+AllowPipelineModule = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "purchasing",
+    "supply_chain",
+    "engineering",
+    "finance",
+    "accountant",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "purchasing",
+                    "supply_chain",
+                    "engineering",
+                    "finance",
+                    "accountant",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================
@@ -508,7 +542,7 @@ async def create_opportunity(
     # Calculate weighted amount
     opp.calculate_weighted_amount()
     
-    db.add(opp)
+    await maybe_await(db.add(opp))
     await db.commit()
     await db.refresh(opp)
     
@@ -678,7 +712,7 @@ async def change_opportunity_stage(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        db.add(note)
+        await maybe_await(db.add(note))
     
     await db.commit()
     await db.refresh(opp)
@@ -715,6 +749,8 @@ async def close_opportunity_won(
     
     opp.stage = OpportunityStage.CLOSED_WON.value
     opp.is_won = True
+    opp.is_closed = True
+    opp.is_open = False
     opp.probability = 100
     opp.actual_close_date = datetime.combine(request.actual_close_date or date.today(), datetime.min.time())
     opp.calculate_weighted_amount()
@@ -728,7 +764,7 @@ async def close_opportunity_won(
             note_type=NoteType.STATUS_CHANGE.value,
             created_by_id=current_user.id,
         )
-        db.add(note)
+        await maybe_await(db.add(note))
     
     await db.commit()
     await db.refresh(opp)
@@ -765,6 +801,8 @@ async def close_opportunity_lost(
     
     opp.stage = OpportunityStage.CLOSED_LOST.value
     opp.is_won = False
+    opp.is_closed = True
+    opp.is_open = False
     opp.probability = 0
     opp.actual_close_date = datetime.combine(request.actual_close_date or date.today(), datetime.min.time())
     opp.close_reason = request.close_reason
@@ -785,7 +823,7 @@ async def close_opportunity_lost(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    db.add(note)
+    await maybe_await(db.add(note))
     
     await db.commit()
     await db.refresh(opp)
@@ -831,6 +869,8 @@ async def reopen_opportunity(
     
     opp.stage = new_stage.value
     opp.is_won = None
+    opp.is_closed = False
+    opp.is_open = True
     opp.actual_close_date = None
     opp.probability = STAGE_PROBABILITIES.get(new_stage.value, 50)
     opp.calculate_weighted_amount()
@@ -843,7 +883,7 @@ async def reopen_opportunity(
         note_type=NoteType.STATUS_CHANGE.value,
         created_by_id=current_user.id,
     )
-    db.add(note)
+    await maybe_await(db.add(note))
     
     await db.commit()
     await db.refresh(opp)
@@ -929,7 +969,7 @@ async def add_opportunity_note(
         created_by_id=current_user.id,
     )
     
-    db.add(note)
+    await maybe_await(db.add(note))
     await db.commit()
     await db.refresh(note)
     

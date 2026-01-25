@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import inspect
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.utils import (
@@ -30,6 +31,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    maybe_await,
 )
 from sensei.models.obeya import (
     ObeyaItem,
@@ -40,10 +42,41 @@ from sensei.models.obeya import (
     ObeyaPriority,
 )
 from sensei.models.learning import UserLearningProgress, ProgressStatus
+from sensei.models.maintenance import MaintenanceBudget
+from sensei.models.quality_qms import CustomerComplaint
 from sensei.models.quote import Quote
+from sensei.models.training import AttendanceStatus, Training, TrainingParticipant, TrainingStatus
 
 
-router = APIRouter()
+AllowOpsModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================
@@ -305,7 +338,7 @@ async def create_obeya_item(
         owner_id=data.assigned_to_id or current_user.id,
     )
 
-    db.add(item)
+    await maybe_await(db.add(item))
     await db.flush()
     await db.refresh(item)
 
@@ -917,6 +950,12 @@ async def get_sqdcp_metrics(
     defect_rate = sum(defect_values) / len(defect_values) if defect_values else 0.0
     ncr_open = sum(1 for _, _, _, status in quality_items if status != ObeyaStatus.COMPLETED.value)
 
+    customer_complaints = await db.scalar(
+        select(func.count(CustomerComplaint.id)).where(
+            CustomerComplaint.status.notin_(["closed", "cancelled"])  # type: ignore[arg-type]
+        )
+    ) or 0
+
     # Delivery metrics
     delivery_items = await db.execute(
         select(ObeyaItem.title, ObeyaItem.kpi_actual, ObeyaItem.kpi_unit, ObeyaItem.status).where(
@@ -957,6 +996,7 @@ async def get_sqdcp_metrics(
     cost_items = cost_items.all()
     variance_values = []
     savings_values = []
+    waste_values = []
     for title, actual, unit in cost_items:
         parsed = _parse_float(actual)
         if parsed is None:
@@ -966,9 +1006,30 @@ async def get_sqdcp_metrics(
             variance_values.append(parsed)
         if "savings" in title_lower or "saving" in title_lower:
             savings_values.append(parsed)
+        if "waste" in title_lower and ("reduc" in title_lower or "%" in (unit or "")):
+            waste_values.append(parsed)
 
     variance_percent = sum(variance_values) / len(variance_values) if variance_values else 0.0
     cost_savings = sum(savings_values) if savings_values else 0.0
+    waste_reduction = sum(waste_values) / len(waste_values) if waste_values else 0.0
+
+    # Maintenance budget utilization (current period). Returns percent 0-100.
+    now = datetime.now(timezone.utc)
+    budget_row = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(MaintenanceBudget.actual_amount), 0),
+                func.coalesce(func.sum(MaintenanceBudget.budget_amount), 0),
+            ).where(
+                and_(
+                    MaintenanceBudget.period_start <= now,
+                    MaintenanceBudget.period_end >= now,
+                )
+            )
+        )
+    ).one()
+    actual_sum, budget_sum = budget_row
+    budget_utilization = (float(actual_sum) / float(budget_sum) * 100.0) if float(budget_sum) > 0 else 0.0
 
     # People metrics
     morale_items = await db.execute(
@@ -985,6 +1046,42 @@ async def get_sqdcp_metrics(
     ]
     morale_scores = [_parse_float(value) for value in morale_values if _parse_float(value) is not None]
     morale_score = sum(morale_scores) / len(morale_scores) if morale_scores else 0.0
+
+    # Training attendance rate over the last 30 days for completed trainings.
+    start_date = date.today() - timedelta(days=30)
+    total_training_attendance = (
+        await db.scalar(
+            select(func.count(TrainingParticipant.id))
+            .select_from(TrainingParticipant)
+            .join(Training, Training.id == TrainingParticipant.training_id)
+            .where(
+                and_(
+                    Training.scheduled_date.is_not(None),
+                    Training.scheduled_date >= start_date,
+                    Training.status == TrainingStatus.COMPLETED,
+                    TrainingParticipant.attendance_status != AttendanceStatus.PENDING,
+                )
+            )
+        )
+        or 0
+    )
+    attended_training = (
+        await db.scalar(
+            select(func.count(TrainingParticipant.id))
+            .select_from(TrainingParticipant)
+            .join(Training, Training.id == TrainingParticipant.training_id)
+            .where(
+                and_(
+                    Training.scheduled_date.is_not(None),
+                    Training.scheduled_date >= start_date,
+                    Training.status == TrainingStatus.COMPLETED,
+                    TrainingParticipant.attendance_status.in_([AttendanceStatus.ATTENDED, AttendanceStatus.PARTIAL]),
+                )
+            )
+        )
+        or 0
+    )
+    attendance_rate = (attended_training / total_training_attendance * 100.0) if total_training_attendance else 0.0
 
     training_hours = (await db.scalar(select(func.sum(UserLearningProgress.time_spent_seconds))) or 0) / 3600
     active_improvements = await db.scalar(
@@ -1014,7 +1111,7 @@ async def get_sqdcp_metrics(
             quality=SQDCPQualityMetric(
                 first_pass_yield=round(first_pass_yield, 1),
                 defect_rate=round(defect_rate, 2),
-                customer_complaints=0,
+                customer_complaints=int(customer_complaints),
                 ncr_open=ncr_open,
                 status=_status_high_is_good(first_pass_yield, green=95, yellow=90),
             ),
@@ -1028,14 +1125,14 @@ async def get_sqdcp_metrics(
             cost=SQDCPCostMetric(
                 variance_percent=round(variance_percent, 2),
                 cost_savings=round(cost_savings, 2),
-                waste_reduction=0.0,
-                budget_utilization=0.0,
+                waste_reduction=round(waste_reduction, 2),
+                budget_utilization=round(budget_utilization, 2),
                 status=_status_low_is_good(abs(variance_percent), green=2.0, yellow=5.0),
             ),
             people=SQDCPPeopleMetric(
                 morale_score=round(morale_score, 1),
                 training_hours=round(training_hours, 1),
-                attendance_rate=0.0,
+                attendance_rate=round(attendance_rate, 1),
                 active_improvements=active_improvements,
                 status=_status_high_is_good(morale_score, green=4.0, yellow=3.0),
             ),
@@ -1079,7 +1176,7 @@ async def add_comment(
         attachments=data.attachments,
     )
 
-    db.add(comment)
+    await maybe_await(db.add(comment))
     await db.flush()
     await db.refresh(comment)
 

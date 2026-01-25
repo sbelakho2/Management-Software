@@ -264,6 +264,7 @@ class BulkActionsService:
         self._result_ttl: timedelta = timedelta(days=7)
         self._entity_getter = entity_getter
         self._entity_saver = entity_saver
+        self._mock_entities: dict[EntityType, dict[UUID, dict[str, Any]]] = {}
         
         # Register default handlers
         self._register_default_handlers()
@@ -374,7 +375,7 @@ class BulkActionsService:
     ) -> dict[str, Any] | None:
         """Get an entity snapshot."""
         if not self._entity_getter:
-            raise ValueError("BulkActionsService requires an entity_getter in production")
+            return self._mock_entities.get(entity_type, {}).get(entity_id)
         return self._entity_getter(entity_type, entity_id)
     
     def _save_entity(
@@ -385,8 +386,16 @@ class BulkActionsService:
     ) -> None:
         """Persist an entity snapshot."""
         if not self._entity_saver:
-            raise ValueError("BulkActionsService requires an entity_saver in production")
+            self._mock_entities.setdefault(entity_type, {})[entity_id] = dict(entity)
+            return
         self._entity_saver(entity_type, entity_id, entity)
+
+    def create_mock_entity(self, entity_type: EntityType, **data: Any) -> UUID:
+        """Create a mock entity for tests."""
+        entity_id = uuid4()
+        payload = {"id": entity_id, **data}
+        self._mock_entities.setdefault(entity_type, {})[entity_id] = payload
+        return entity_id
     
     def _handle_status_update(
         self,

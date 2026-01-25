@@ -44,7 +44,7 @@ class MudaNudgingJobRunner:
 
     async def run(
         self,
-        db: AsyncSession,
+        db: AsyncSession | None = None,
         *,
         recipient_ids: list[UUID],
         dimensions_by_recipient: dict[UUID, dict[str, str]] | None = None,

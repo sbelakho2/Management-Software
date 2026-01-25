@@ -472,7 +472,7 @@ class CertificationTrackingService:
             )
         return results
 
-    async def list_evidence(
+    def list_evidence(
         self,
         *,
         certification_id: UUID,
@@ -482,13 +482,7 @@ class CertificationTrackingService:
         db: AsyncSession | None = None,
     ) -> list[dict[str, Any]]:
         if db is not None:
-            return await self._list_evidence_async(
-                certification_id=certification_id,
-                actor_roles=actor_roles,
-                actor_employee_id=actor_employee_id,
-                actor_user_id=actor_user_id,
-                db=db,
-            )
+            raise ValueError("list_evidence requires async usage when db is provided")
         if certification_id not in self._certs:
             raise KeyError("Certification not found")
         cert = self._certs[certification_id]
@@ -540,6 +534,23 @@ class CertificationTrackingService:
                 }
             )
         return results
+
+    async def list_evidence_async(
+        self,
+        *,
+        certification_id: UUID,
+        actor_roles: Iterable[str],
+        actor_employee_id: UUID | None,
+        actor_user_id: UUID,
+        db: AsyncSession,
+    ) -> list[dict[str, Any]]:
+        return await self._list_evidence_async(
+            certification_id=certification_id,
+            actor_roles=actor_roles,
+            actor_employee_id=actor_employee_id,
+            actor_user_id=actor_user_id,
+            db=db,
+        )
 
     async def get_pii_access_logs(self, db: AsyncSession) -> list[dict[str, Any]]:
         logs = await self._pii.get_access_logs(db=db)

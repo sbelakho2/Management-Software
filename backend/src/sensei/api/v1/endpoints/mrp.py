@@ -31,7 +31,33 @@ from sensei.services.production.mps_service import MPSService
 from sensei.services.production.persistent_mrp import PersistentMRPService
 from pydantic import BaseModel, Field
 
-router = APIRouter()
+AllowMRPModule = deps.require_role(
+    "ops",
+    "supply_chain",
+    "purchasing",
+    "supervisor",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supply_chain",
+                    "purchasing",
+                    "supervisor",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -328,11 +354,15 @@ async def convert_suggestions_to_pr(
     pr = PurchaseRequisition(
         pr_number=pr_number,
         status="draft",
-        justification=payload.justification,
+        currency="USD",  # Default currency, could be configurable
         requested_by_id=current_user.id,
         created_by_id=current_user.id,
         updated_by_id=current_user.id,
-        owner_id=current_user.id,
+        metadata_json={
+            "justification": payload.justification,
+            "source": "mrp_conversion",
+            "suggestion_ids": [str(s) for s in payload.suggestion_ids],
+        },
     )
     db.add(pr)
     await db.flush()
@@ -343,12 +373,10 @@ async def convert_suggestions_to_pr(
         product = suggestion.product
         pr_line = PRLine(
             pr_id=pr.id,
-            product_name=product.name if product else f"Product-{suggestion.product_id}",
-            sku=product.sku if product else None,
+            sku=product.sku if product else f"PROD-{suggestion.product_id}",
+            description=f"{product.name if product else f'Product-{suggestion.product_id}'} - From MRP suggestion. Lead time: {suggestion.lead_time_days} days.",
             quantity=suggestion.quantity,
-            estimated_unit_price=product.unit_cost if product else Decimal("0"),
-            required_date=suggestion.needed_date,
-            notes=f"From MRP suggestion. Lead time: {suggestion.lead_time_days} days.",
+            unit_price=product.unit_cost if product else Decimal("0"),
         )
         db.add(pr_line)
         total_qty += suggestion.quantity

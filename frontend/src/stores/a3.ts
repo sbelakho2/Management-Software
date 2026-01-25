@@ -159,7 +159,7 @@ export const useA3Store = create<A3State>()(
 
           set({ isLoading: true, error: null });
           try {
-            const data = await apiClient.get<any>('/a3s');
+            const data = await apiClient.get<any>('/a3');
             const a3s: A3[] = data.items || [];
 
             // Calculate stats
@@ -203,7 +203,7 @@ export const useA3Store = create<A3State>()(
         fetchA3ById: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.get<A3>(`/a3s/${id}`);
+            const a3 = await apiClient.get<A3>(`/a3/${id}`);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -223,7 +223,7 @@ export const useA3Store = create<A3State>()(
         createA3: async (a3Data: Partial<A3>) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.post<A3>('/a3s', a3Data);
+            const a3 = await apiClient.post<A3>('/a3', a3Data);
 
             set(state => ({
               a3s: [a3, ...state.a3s],
@@ -247,7 +247,7 @@ export const useA3Store = create<A3State>()(
         updateA3: async (id: string, updates: Partial<A3>) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.patch<A3>(`/a3s/${id}`, updates);
+            const a3 = await apiClient.patch<A3>(`/a3/${id}`, updates);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -267,7 +267,7 @@ export const useA3Store = create<A3State>()(
         deleteA3: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            await apiClient.delete(`/a3s/${id}`);
+            await apiClient.delete(`/a3/${id}`);
 
             set(state => ({
               a3s: state.a3s.filter(a => a.id !== id),
@@ -289,7 +289,7 @@ export const useA3Store = create<A3State>()(
         updateSection: async (a3Id: string, sectionId: string, updates: Partial<A3Section>) => {
           set({ isLoading: true, error: null });
           try {
-            const section = await apiClient.patch<A3Section>(`/a3s/${a3Id}/sections/${sectionId}`, updates);
+            const section = await apiClient.patch<A3Section>(`/a3/${a3Id}/sections/${sectionId}`, updates);
 
             // Refresh A3 to get updated progress
             await get().fetchA3ById(a3Id);
@@ -312,7 +312,7 @@ export const useA3Store = create<A3State>()(
         submitForReview: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.post<A3>(`/a3s/${id}/submit`);
+            const a3 = await apiClient.post<A3>(`/a3/${id}/submit`);
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -330,7 +330,7 @@ export const useA3Store = create<A3State>()(
         approve: async (id: string, notes?: string) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.post<A3>(`/a3s/${id}/approve`, { notes });
+            const a3 = await apiClient.post<A3>(`/a3/${id}/approve`, { notes });
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -348,7 +348,7 @@ export const useA3Store = create<A3State>()(
         reject: async (id: string, notes: string) => {
           set({ isLoading: true, error: null });
           try {
-            const a3 = await apiClient.post<A3>(`/a3s/${id}/reject`, { notes });
+            const a3 = await apiClient.post<A3>(`/a3/${id}/reject`, { notes });
 
             set(state => ({
               a3s: state.a3s.map(a => a.id === id ? a3 : a),
@@ -366,7 +366,7 @@ export const useA3Store = create<A3State>()(
         exportPDF: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/a3s/${id}/export`, {
+            const response = await fetch(`${API_BASE_URL}/a3/${id}/export`, {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
               },

@@ -109,7 +109,7 @@ export const useCTQStore = create<CTQState>()(
 
           set({ isLoading: true, error: null });
           try {
-            const data = await apiClient.get<any>('/ctqs');
+            const data = await apiClient.get<any>('/ctq');
             const ctqs: CTQ[] = data.items || [];
 
             // Calculate stats
@@ -153,7 +153,7 @@ export const useCTQStore = create<CTQState>()(
         fetchCTQById: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            const ctq = await apiClient.get<CTQ>(`/ctqs/${id}`);
+            const ctq = await apiClient.get<CTQ>(`/ctq/${id}`);
             
             // Update store
             set(state => ({
@@ -174,7 +174,7 @@ export const useCTQStore = create<CTQState>()(
         createCTQ: async (ctqData: Partial<CTQ>) => {
           set({ isLoading: true, error: null });
           try {
-            const ctq = await apiClient.post<CTQ>('/ctqs', ctqData);
+            const ctq = await apiClient.post<CTQ>('/ctq', ctqData);
 
             set(state => ({
               ctqs: [ctq, ...state.ctqs],
@@ -201,7 +201,7 @@ export const useCTQStore = create<CTQState>()(
         updateCTQ: async (id: string, updates: Partial<CTQ>) => {
           set({ isLoading: true, error: null });
           try {
-            const ctq = await apiClient.patch<CTQ>(`/ctqs/${id}`, updates, {
+            const ctq = await apiClient.patch<CTQ>(`/ctq/${id}`, updates, {
               headers: {
                 'If-Match': get().ctqs.find(c => c.id === id)?.updated_at || '',
               },
@@ -226,7 +226,7 @@ export const useCTQStore = create<CTQState>()(
         deleteCTQ: async (id: string) => {
           set({ isLoading: true, error: null });
           try {
-            await apiClient.delete(`/ctqs/${id}`);
+            await apiClient.delete(`/ctq/${id}`);
 
             const deletedCTQ = get().ctqs.find(c => c.id === id);
 
@@ -253,7 +253,7 @@ export const useCTQStore = create<CTQState>()(
         addMeasurement: async (ctqId: string, measurementData: Partial<CTQMeasurement>) => {
           set({ isLoading: true, error: null });
           try {
-            const measurement = await apiClient.post<CTQMeasurement>(`/ctqs/${ctqId}/measurements`, measurementData);
+            const measurement = await apiClient.post<CTQMeasurement>(`/ctq/${ctqId}/measurements`, measurementData);
 
             // Fetch updated CTQ to get recalculated stats
             await get().fetchCTQById(ctqId);
@@ -272,7 +272,7 @@ export const useCTQStore = create<CTQState>()(
         exportCTQs: async (format: 'pdf' | 'excel') => {
           set({ isLoading: true, error: null });
           try {
-            const response = await fetch(`${API_BASE_URL}/ctqs/export?format=${format}`, {
+            const response = await fetch(`${API_BASE_URL}/ctq/export?format=${format}`, {
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
               },

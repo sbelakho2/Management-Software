@@ -55,10 +55,14 @@ class TestPDFDocumentType:
         assert PDFDocumentType.RFQ_SUMMARY == "rfq_summary"
         assert PDFDocumentType.A3_REPORT == "a3_report"
         assert PDFDocumentType.TRAINING_CERTIFICATE == "training_certificate"
+        assert PDFDocumentType.STARZ_PAYSLIP == "starz_payslip"
+        assert PDFDocumentType.STARZ_PURCHASE_ORDER == "starz_purchase_order"
+        assert PDFDocumentType.STARZ_QUOTATION == "starz_quotation"
+        assert PDFDocumentType.STARZ_WMS_LABEL == "starz_wms_label"
     
     def test_document_type_count(self):
         """Test total count of document types."""
-        assert len(PDFDocumentType) == 9
+        assert len(PDFDocumentType) == 13
 
 
 class TestPDFLanguage:

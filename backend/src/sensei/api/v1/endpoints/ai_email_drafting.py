@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import CurrentUser
 from sensei.api import deps
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
+from sensei.models.user import User, RoleType
 from sensei.services.ai.ai_email_drafting import (
     AIEmailDraftingService,
     EmailContext,
@@ -23,27 +23,27 @@ from sensei.services.ai.ai_email_drafting import (
 )
 from sensei.services.core.common_thread import get_common_thread_service
 
-router = APIRouter()
-
-_service = AIEmailDraftingService()
-
-_ALLOWED_EMAIL_ROLES = {
+AllowEmailDrafting: deps.RoleDependency = deps.require_role(
     "admin",
     "ceo",
-    "gm",
-    "exec",
     "sales",
     "sales_engineer",
     "estimator",
-    "ops",
-    "quality",
-    "engineering",
-    "purchasing",
-    "supply_chain",
-    "auditor",
-    "supervisor",
-    "team_lead",
-}
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(["admin", "ceo", "sales", "sales_engineer", "estimator", "gm", "exec"])
+        )
+    ]
+)
+
+_service = AIEmailDraftingService()
+
+_ALLOWED_EMAIL_ROLES = {role.value for role in RoleType}
 
 _ALLOWED_THREAD_ENTITY_TYPES = {
     "rfq",
@@ -68,7 +68,7 @@ class RecipientInput(BaseModel):
 
 class EmailGenerationRequest(BaseModel):
     recipient: RecipientInput
-    purpose: EmailPurpose = EmailPurpose.GENERAL
+    purpose: EmailPurpose = EmailPurpose.CUSTOM
     tone: EmailTone = EmailTone.PROFESSIONAL
     key_points: list[str] = Field(default_factory=list)
     reference_number: Optional[str] = None
@@ -124,7 +124,7 @@ def _get_user_roles(user: Any) -> set[str]:
 async def generate_email_draft(
     request: EmailGenerationRequest,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[EmailGenerationResponse]:
     """Generate an AI email draft."""
     roles = _get_user_roles(current_user)

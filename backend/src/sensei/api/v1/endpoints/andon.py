@@ -15,11 +15,12 @@ from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
@@ -41,7 +42,31 @@ from sensei.models.andon import (
     AndonRecurrencePattern,
 )
 
-router = APIRouter()
+AllowAndonModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "engineering",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "engineering",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================
@@ -535,8 +560,8 @@ async def get_andon_analytics(
             "downtime_hours": round(stats["downtime"] / 60, 1)
         })
 
-    # Uptime impact (placeholder logic)
-    # Assuming total available minutes in period = days * 24 * 60
+    # Approximate uptime impact derived from recorded downtime.
+    # Assumes total available minutes in period = days * 24 * 60.
     total_downtime = sum(e.downtime_minutes or 0 for e in events)
     total_available = days * 24 * 60
     uptime_impact = (total_downtime / total_available) * 100 if total_available > 0 else 0.0

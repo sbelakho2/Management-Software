@@ -12,9 +12,10 @@ Provides endpoints for:
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.core.disaster_recovery_drill import (
     BackupInfo,
     ComplianceLevel,
@@ -26,7 +27,12 @@ from sensei.services.core.disaster_recovery_drill import (
 )
 
 
-router = APIRouter()
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_deny_production)])
 
 
 # ===== Request/Response Models =====

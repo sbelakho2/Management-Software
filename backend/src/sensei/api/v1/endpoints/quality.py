@@ -22,7 +22,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from sensei.api.deps import CurrentUser, DBSession
-from sensei.api.exceptions import ConflictError, NotFoundError
+from sensei.api.exceptions import BadRequestError, ConflictError, NotFoundError
 from sensei.api.schemas import APIResponse, PaginatedResponse
 from sensei.api.utils import (
     build_created_response,
@@ -74,7 +74,39 @@ from sensei.services.quality.quality_certification_gate import get_quality_certi
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+from sensei.api import deps
+
+AllowQualityModule = deps.require_role(
+    "quality",
+    "auditor",
+    "ops",
+    "supervisor",
+    "engineering",
+    "team_lead",
+    "operator",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "quality",
+                    "auditor",
+                    "ops",
+                    "supervisor",
+                    "engineering",
+                    "team_lead",
+                    "operator",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 # =============================================================================
 # MSA / GRR Schemas
@@ -3167,11 +3199,10 @@ async def start_inspection(
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[InspectionRecordResponse]:
-    # Placeholder for start action
-    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
-    if not record:
-        raise NotFoundError("Inspection", str(record_id))
-    return build_response(data=inspection_record_to_response(record))
+    raise BadRequestError(
+        "Inspection records are created after an inspection is completed; start is not applicable. "
+        "Create a new inspection record via POST /quality/inspections."
+    )
 
 
 @router.post("/inspections/{record_id}/complete", response_model=APIResponse[InspectionRecordResponse])
@@ -3180,11 +3211,10 @@ async def complete_inspection(
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[InspectionRecordResponse]:
-    # Placeholder for complete action
-    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
-    if not record:
-        raise NotFoundError("Inspection", str(record_id))
-    return build_response(data=inspection_record_to_response(record))
+    raise BadRequestError(
+        "Inspection records are immutable once created; complete is not applicable. "
+        "Update the record via PATCH /quality/inspections/{record_id} if needed."
+    )
 
 
 @router.post("/inspections/{record_id}/cancel", response_model=APIResponse[InspectionRecordResponse])
@@ -3193,11 +3223,10 @@ async def cancel_inspection(
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[InspectionRecordResponse]:
-    # Placeholder for cancel action
-    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
-    if not record:
-        raise NotFoundError("Inspection", str(record_id))
-    return build_response(data=inspection_record_to_response(record))
+    raise BadRequestError(
+        "Inspection records are immutable once created; cancel is not applicable. "
+        "If you need cancellable inspections, add an inspection session/workflow resource."
+    )
 
 
 @router.post("/inspections/{record_id}/create-ncr", response_model=APIResponse[NonConformanceResponse])

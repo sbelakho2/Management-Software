@@ -40,8 +40,10 @@ const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render as baseRender, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { I18nProvider } from '@/contexts/i18n-context';
+import en from '@/locales/en.json';
 import {
   EmailComposer,
   PurposeSelector,
@@ -61,7 +63,25 @@ import {
   GeneratedDraft,
   Recipient,
   DraftStatus,
+  formatConfidenceScore,
+  formatGenerationTime,
 } from '@/stores/email-drafting-store';
+
+const getText = (key: string, params?: Record<string, string | number>): string => {
+  const parts = key.split('.');
+  let current: any = en;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') return key;
+    current = current[part];
+  }
+  if (typeof current !== 'string') return key;
+  if (!params) return current;
+  return Object.entries(params).reduce((text, [param, value]) => {
+    return text.replace(new RegExp(`\\{\\{?${param}\\}\\}?`, 'g'), String(value));
+  }, current);
+};
+
+const render = (ui: React.ReactElement) => baseRender(<I18nProvider>{ui}</I18nProvider>);
 
 // Reset store before each test
 beforeEach(() => {
@@ -75,12 +95,12 @@ beforeEach(() => {
 describe('PurposeSelector', () => {
   it('should render with placeholder', () => {
     render(<PurposeSelector value={null} onChange={jest.fn()} />);
-    expect(screen.getByText('Select purpose...')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.placeholders.selectPurpose'))).toBeInTheDocument();
   });
 
   it('should render with selected value', () => {
     render(<PurposeSelector value="quote_followup" onChange={jest.fn()} />);
-    expect(screen.getByText('Quote Follow-up')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.purpose.quoteFollowup'))).toBeInTheDocument();
   });
 
   it('should open dropdown on click', async () => {
@@ -91,9 +111,15 @@ describe('PurposeSelector', () => {
       await user.click(screen.getByRole('button'));
     });
 
-    expect(await screen.findByText('Missing Information Request')).toBeInTheDocument();
-    expect(await screen.findByText('Quote Follow-up')).toBeInTheDocument();
-    expect(await screen.findByText('Meeting Request')).toBeInTheDocument();
+    expect(
+      await screen.findByText(getText('emailDrafting.purpose.missingInfoRequest'))
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(getText('emailDrafting.purpose.quoteFollowup'))
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(getText('emailDrafting.purpose.meetingRequest'))
+    ).toBeInTheDocument();
   });
 
   it('should call onChange when option selected', async () => {
@@ -104,7 +130,9 @@ describe('PurposeSelector', () => {
     await act(async () => {
       await user.click(screen.getByRole('button'));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
@@ -119,12 +147,16 @@ describe('PurposeSelector', () => {
     await act(async () => {
       await user.click(screen.getByRole('button'));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
 
-    expect(screen.queryByText('Missing Information Request')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(getText('emailDrafting.purpose.missingInfoRequest'))
+    ).not.toBeInTheDocument();
   });
 
   it('should have aria-expanded attribute', () => {
@@ -142,9 +174,9 @@ describe('PurposeSelector', () => {
     });
 
     // Get all elements with that text and find the one in the dropdown
-    const selectedOptions = screen.getAllByText('Quote Follow-up');
+    const selectedOptions = screen.getAllByText(getText('emailDrafting.purpose.quoteFollowup'));
     const dropdownOption = selectedOptions.find((el) => el.tagName === 'BUTTON');
-    expect(dropdownOption).toHaveClass('bg-blue-50');
+    expect(dropdownOption).toHaveClass('bg-rams-panel', 'text-rams-steel');
   });
 });
 
@@ -156,17 +188,17 @@ describe('ToneSelector', () => {
   it('should render all tone options', () => {
     render(<ToneSelector value="professional" onChange={jest.fn()} />);
 
-    expect(screen.getByText('Formal')).toBeInTheDocument();
-    expect(screen.getByText('Professional')).toBeInTheDocument();
-    expect(screen.getByText('Friendly')).toBeInTheDocument();
-    expect(screen.getByText('Urgent')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.formal'))).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.professional'))).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.friendly'))).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.urgent'))).toBeInTheDocument();
   });
 
   it('should highlight selected tone', () => {
     render(<ToneSelector value="professional" onChange={jest.fn()} />);
 
-    const professionalButton = screen.getByText('Professional');
-    expect(professionalButton).toHaveClass('bg-blue-600', 'text-white');
+    const professionalButton = screen.getByText(getText('emailDrafting.tone.professional'));
+    expect(professionalButton).toHaveClass('bg-rams-steel', 'text-white');
   });
 
   it('should call onChange when tone clicked', async () => {
@@ -175,7 +207,7 @@ describe('ToneSelector', () => {
     render(<ToneSelector value="professional" onChange={onChange} />);
 
     await act(async () => {
-      await user.click(screen.getByText('Formal'));
+      await user.click(screen.getByText(getText('emailDrafting.tone.formal')));
     });
 
     expect(onChange).toHaveBeenCalledWith('formal');
@@ -191,10 +223,10 @@ describe('ToneSelector', () => {
   it('should set aria-checked correctly', () => {
     render(<ToneSelector value="friendly" onChange={jest.fn()} />);
 
-    const friendlyButton = screen.getByRole('radio', { name: 'Friendly' });
+    const friendlyButton = screen.getByRole('radio', { name: getText('emailDrafting.tone.friendly') });
     expect(friendlyButton).toHaveAttribute('aria-checked', 'true');
 
-    const formalButton = screen.getByRole('radio', { name: 'Formal' });
+    const formalButton = screen.getByRole('radio', { name: getText('emailDrafting.tone.formal') });
     expect(formalButton).toHaveAttribute('aria-checked', 'false');
   });
 });
@@ -212,10 +244,24 @@ describe('LanguageSelector', () => {
   it('should have all language options', () => {
     render(<LanguageSelector value="en" onChange={jest.fn()} />);
 
-    expect(screen.getByRole('option', { name: 'English' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'French' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'German' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Spanish' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.english') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.french') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.german') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.spanish') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.italian') })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: getText('emailDrafting.language.portuguese') })
+    ).toBeInTheDocument();
   });
 
   it('should show selected language', () => {
@@ -237,7 +283,9 @@ describe('LanguageSelector', () => {
 
   it('should have aria-label', () => {
     render(<LanguageSelector value="en" onChange={jest.fn()} />);
-    expect(screen.getByLabelText('Select language')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(getText('emailDrafting.aria.selectLanguage'))
+    ).toBeInTheDocument();
   });
 });
 
@@ -258,13 +306,15 @@ describe('RecipientInput', () => {
   it('should render email and name inputs', () => {
     render(<RecipientInput {...defaultProps} />);
 
-    expect(screen.getByLabelText('Recipient email')).toBeInTheDocument();
-    expect(screen.getByLabelText('Recipient name')).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.recipientEmail'))).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.recipientName'))).toBeInTheDocument();
   });
 
   it('should show email placeholder', () => {
     render(<RecipientInput {...defaultProps} />);
-    expect(screen.getByPlaceholderText('recipient@example.com')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(getText('emailDrafting.placeholders.recipientEmail'))
+    ).toBeInTheDocument();
   });
 
   it('should call onEmailChange when typing email', async () => {
@@ -273,7 +323,10 @@ describe('RecipientInput', () => {
     render(<RecipientInput {...defaultProps} onEmailChange={onEmailChange} />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'test@example.com'
+      );
     });
 
     expect(onEmailChange).toHaveBeenCalled();
@@ -285,7 +338,10 @@ describe('RecipientInput', () => {
     render(<RecipientInput {...defaultProps} onNameChange={onNameChange} />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient name'), 'John Doe');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientName')),
+        'John Doe'
+      );
     });
 
     expect(onNameChange).toHaveBeenCalled();
@@ -293,17 +349,17 @@ describe('RecipientInput', () => {
 
   it('should show validation error for invalid email', () => {
     render(<RecipientInput {...defaultProps} value="notanemail" />);
-    expect(screen.getByText('Invalid email format')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.validation.emailInvalid'))).toBeInTheDocument();
   });
 
   it('should not show error for valid email', () => {
     render(<RecipientInput {...defaultProps} value="valid@email.com" />);
-    expect(screen.queryByText('Invalid email format')).not.toBeInTheDocument();
+    expect(screen.queryByText(getText('emailDrafting.validation.emailInvalid'))).not.toBeInTheDocument();
   });
 
   it('should not show error when email is empty', () => {
     render(<RecipientInput {...defaultProps} value="" />);
-    expect(screen.queryByText('Email is required')).not.toBeInTheDocument();
+    expect(screen.queryByText(getText('emailDrafting.validation.emailRequired'))).not.toBeInTheDocument();
   });
 
   it('should show recent recipients on focus', async () => {
@@ -324,7 +380,7 @@ describe('RecipientInput', () => {
     render(<RecipientInput {...defaultProps} recentRecipients={recentRecipients} />);
 
     await act(async () => {
-      await user.click(screen.getByLabelText('Recipient email'));
+      await user.click(screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')));
     });
 
     expect(await screen.findByText('Recent User')).toBeInTheDocument();
@@ -352,7 +408,7 @@ describe('RecipientInput', () => {
     );
 
     await act(async () => {
-      await user.click(screen.getByLabelText('Recipient email'));
+      await user.click(screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')));
     });
     const recentRecipient = await screen.findByText('Recent');
     await act(async () => {
@@ -365,7 +421,7 @@ describe('RecipientInput', () => {
   it('should have aria-invalid for invalid email', () => {
     render(<RecipientInput {...defaultProps} value="invalid" />);
 
-    const emailInput = screen.getByLabelText('Recipient email');
+    const emailInput = screen.getByLabelText(getText('emailDrafting.aria.recipientEmail'));
     expect(emailInput).toHaveAttribute('aria-invalid', 'true');
   });
 });
@@ -378,8 +434,10 @@ describe('KeyPointsEditor', () => {
   it('should render input and add button', () => {
     render(<KeyPointsEditor points={[]} onChange={jest.fn()} />);
 
-    expect(screen.getByLabelText('Add key point')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint'))).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: getText('emailDrafting.actions.add') })
+    ).toBeInTheDocument();
   });
 
   it('should add point when clicking Add button', async () => {
@@ -388,10 +446,13 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Add key point'), 'New point');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint')),
+        'New point'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Add' }));
+      await user.click(screen.getByRole('button', { name: getText('emailDrafting.actions.add') }));
     });
 
     expect(onChange).toHaveBeenCalledWith(['New point']);
@@ -402,7 +463,7 @@ describe('KeyPointsEditor', () => {
     const onChange = jest.fn();
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
-    const input = screen.getByLabelText('Add key point');
+    const input = screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint'));
     await act(async () => {
       await user.type(input, 'Enter pressed{enter}');
     });
@@ -414,12 +475,12 @@ describe('KeyPointsEditor', () => {
     const user = userEvent.setup();
     render(<KeyPointsEditor points={[]} onChange={jest.fn()} />);
 
-    const input = screen.getByLabelText('Add key point');
+    const input = screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint'));
     await act(async () => {
       await user.type(input, 'Test point');
     });
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Add' }));
+      await user.click(screen.getByRole('button', { name: getText('emailDrafting.actions.add') }));
     });
 
     expect(input).toHaveValue('');
@@ -438,7 +499,9 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={['Point 1', 'Point 2']} onChange={onChange} />);
 
     await act(async () => {
-      await user.click(screen.getByLabelText('Remove: Point 1'));
+      await user.click(
+        screen.getByLabelText(getText('emailDrafting.aria.removeKeyPoint', { point: 'Point 1' }))
+      );
     });
 
     expect(onChange).toHaveBeenCalledWith(['Point 2']);
@@ -450,7 +513,7 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Add' }));
+      await user.click(screen.getByRole('button', { name: getText('emailDrafting.actions.add') }));
     });
 
     expect(onChange).not.toHaveBeenCalled();
@@ -462,10 +525,13 @@ describe('KeyPointsEditor', () => {
     render(<KeyPointsEditor points={[]} onChange={onChange} />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Add key point'), '  Trimmed  ');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint')),
+        '  Trimmed  '
+      );
     });
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Add' }));
+      await user.click(screen.getByRole('button', { name: getText('emailDrafting.actions.add') }));
     });
 
     expect(onChange).toHaveBeenCalledWith(['Trimmed']);
@@ -473,7 +539,9 @@ describe('KeyPointsEditor', () => {
 
   it('should have list role for points', () => {
     render(<KeyPointsEditor points={['Point 1']} onChange={jest.fn()} />);
-    expect(screen.getByRole('list', { name: 'Key points list' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('list', { name: getText('emailDrafting.aria.keyPointsList') })
+    ).toBeInTheDocument();
   });
 });
 
@@ -506,7 +574,7 @@ describe('DraftPreview', () => {
 
   it('should render draft preview header', () => {
     render(<DraftPreview draft={mockDraft} onEdit={jest.fn()} onCopy={jest.fn()} />);
-    expect(screen.getByText('Draft Preview')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.preview.title'))).toBeInTheDocument();
   });
 
   it('should display subject', () => {
@@ -521,17 +589,33 @@ describe('DraftPreview', () => {
 
   it('should display status badge', () => {
     render(<DraftPreview draft={mockDraft} onEdit={jest.fn()} onCopy={jest.fn()} />);
-    expect(screen.getByText('Ready for Review')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.status.ready'))).toBeInTheDocument();
   });
 
   it('should display confidence score', () => {
     render(<DraftPreview draft={mockDraft} onEdit={jest.fn()} onCopy={jest.fn()} />);
-    expect(screen.getByText('Confidence: 85%')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        getText('emailDrafting.preview.confidence', {
+          score: formatConfidenceScore(mockDraft.confidenceScore),
+        })
+      )
+    ).toBeInTheDocument();
   });
 
   it('should display generation time', () => {
     render(<DraftPreview draft={mockDraft} onEdit={jest.fn()} onCopy={jest.fn()} />);
-    expect(screen.getByText(/450ms/)).toBeInTheDocument();
+    const time = formatGenerationTime(mockDraft.generationTimeMs, {
+      milliseconds: getText('emailDrafting.units.milliseconds'),
+      seconds: getText('emailDrafting.units.seconds'),
+    });
+    expect(
+      screen.getByText(
+        getText('emailDrafting.preview.generatedIn', {
+          time,
+        })
+      )
+    ).toBeInTheDocument();
   });
 
   it('should call onCopy when copy button clicked', async () => {
@@ -539,7 +623,7 @@ describe('DraftPreview', () => {
     const onCopy = jest.fn();
     render(<DraftPreview draft={mockDraft} onEdit={jest.fn()} onCopy={onCopy} />);
 
-    await user.click(screen.getByLabelText('Copy to clipboard'));
+    await user.click(screen.getByLabelText(getText('emailDrafting.aria.copyToClipboard')));
 
     expect(onCopy).toHaveBeenCalled();
   });
@@ -549,7 +633,7 @@ describe('DraftPreview', () => {
     const onEdit = jest.fn();
     render(<DraftPreview draft={mockDraft} onEdit={onEdit} onCopy={jest.fn()} />);
 
-    await user.click(screen.getByLabelText('Edit subject'));
+    await user.click(screen.getByLabelText(getText('emailDrafting.aria.editSubject')));
 
     expect(onEdit).toHaveBeenCalledWith('subject');
   });
@@ -559,7 +643,7 @@ describe('DraftPreview', () => {
     const onEdit = jest.fn();
     render(<DraftPreview draft={mockDraft} onEdit={onEdit} onCopy={jest.fn()} />);
 
-    await user.click(screen.getByText('Edit'));
+    await user.click(screen.getByText(getText('emailDrafting.actions.edit')));
 
     expect(onEdit).toHaveBeenCalledWith('body');
   });
@@ -568,7 +652,7 @@ describe('DraftPreview', () => {
     const approvedDraft = { ...mockDraft, status: 'approved' as DraftStatus };
     render(<DraftPreview draft={approvedDraft} onEdit={jest.fn()} onCopy={jest.fn()} />);
 
-    expect(screen.getByText('Approved')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.status.approved'))).toBeInTheDocument();
   });
 });
 
@@ -579,12 +663,14 @@ describe('DraftPreview', () => {
 describe('CompliancePanel', () => {
   it('should show success message when no issues', () => {
     render(<CompliancePanel issues={[]} />);
-    expect(screen.getByText('No compliance issues detected')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.compliance.none'))).toBeInTheDocument();
   });
 
   it('should show issue count', () => {
     render(<CompliancePanel issues={['Issue 1', 'Issue 2']} />);
-    expect(screen.getByText('Compliance Issues (2)')).toBeInTheDocument();
+    expect(
+      screen.getByText(getText('emailDrafting.compliance.title', { count: 2 }))
+    ).toBeInTheDocument();
   });
 
   it('should list all issues', () => {
@@ -596,12 +682,18 @@ describe('CompliancePanel', () => {
 
   it('should have warning styling when issues present', () => {
     const { container } = render(<CompliancePanel issues={['Issue']} />);
-    expect(container.firstChild).toHaveClass('bg-amber-50');
+    expect(container.firstChild).toHaveClass('bg-rams-panel');
+    expect(
+      screen.getByText(getText('emailDrafting.compliance.title', { count: 1 })).parentElement
+    ).toHaveClass('text-rams-orange');
   });
 
   it('should have success styling when no issues', () => {
     const { container } = render(<CompliancePanel issues={[]} />);
-    expect(container.firstChild).toHaveClass('bg-green-50');
+    expect(container.firstChild).toHaveClass('bg-rams-panel');
+    expect(screen.getByText(getText('emailDrafting.compliance.none')).parentElement).toHaveClass(
+      'text-rams-green'
+    );
   });
 });
 
@@ -617,7 +709,9 @@ describe('SuggestionsPanel', () => {
 
   it('should show suggestion count', () => {
     render(<SuggestionsPanel suggestions={['Suggestion 1']} />);
-    expect(screen.getByText('Suggestions (1)')).toBeInTheDocument();
+    expect(
+      screen.getByText(getText('emailDrafting.suggestions.title', { count: 1 }))
+    ).toBeInTheDocument();
   });
 
   it('should list all suggestions', () => {
@@ -629,12 +723,12 @@ describe('SuggestionsPanel', () => {
 
   it('should show Apply button when onApply provided', () => {
     render(<SuggestionsPanel suggestions={['Suggestion']} onApply={jest.fn()} />);
-    expect(screen.getByText('Apply')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.actions.apply'))).toBeInTheDocument();
   });
 
   it('should not show Apply button when onApply not provided', () => {
     render(<SuggestionsPanel suggestions={['Suggestion']} />);
-    expect(screen.queryByText('Apply')).not.toBeInTheDocument();
+    expect(screen.queryByText(getText('emailDrafting.actions.apply'))).not.toBeInTheDocument();
   });
 
   it('should call onApply when Apply clicked', async () => {
@@ -642,7 +736,7 @@ describe('SuggestionsPanel', () => {
     const onApply = jest.fn();
     render(<SuggestionsPanel suggestions={['Apply this']} onApply={onApply} />);
 
-    await user.click(screen.getByText('Apply'));
+    await user.click(screen.getByText(getText('emailDrafting.actions.apply')));
 
     expect(onApply).toHaveBeenCalledWith('Apply this');
   });
@@ -697,7 +791,7 @@ describe('AlternativeSubjects', () => {
     render(
       <AlternativeSubjects alternatives={['Alternative Subject: Test']} onSelect={jest.fn()} />
     );
-    expect(screen.getByText('Alternative subjects:')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.alternatives.title'))).toBeInTheDocument();
   });
 });
 
@@ -740,19 +834,19 @@ describe('DraftListItem', () => {
 
   it('should render status badge', () => {
     render(<DraftListItem draft={mockDraft} isActive={false} onClick={jest.fn()} />);
-    expect(screen.getByText('Ready for Review')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.status.ready'))).toBeInTheDocument();
   });
 
   it('should have active styling when active', () => {
     render(<DraftListItem draft={mockDraft} isActive={true} onClick={jest.fn()} />);
     const button = screen.getByRole('button');
-    expect(button).toHaveClass('border-blue-500', 'bg-blue-50');
+    expect(button).toHaveClass('border-rams-steel', 'bg-rams-panel');
   });
 
   it('should not have active styling when inactive', () => {
     render(<DraftListItem draft={mockDraft} isActive={false} onClick={jest.fn()} />);
     const button = screen.getByRole('button');
-    expect(button).not.toHaveClass('border-blue-500');
+    expect(button).not.toHaveClass('border-rams-steel');
   });
 
   it('should call onClick when clicked', async () => {
@@ -773,7 +867,7 @@ describe('DraftListItem', () => {
 describe('DraftsList', () => {
   it('should show empty state when no drafts', () => {
     render(<DraftsList />);
-    expect(screen.getByText('No drafts yet')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.empty.list'))).toBeInTheDocument();
   });
 
   it('should render drafts when present', async () => {
@@ -805,7 +899,9 @@ describe('DraftsList', () => {
 
     render(<DraftsList />);
 
-    expect(screen.getByRole('list', { name: 'Email drafts' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('list', { name: getText('emailDrafting.aria.draftsList') })
+    ).toBeInTheDocument();
   });
 
   it('should highlight active draft', async () => {
@@ -838,9 +934,9 @@ describe('DraftsList', () => {
 
     render(<DraftsList />);
 
-    // The active draft should have blue border
+    // The active draft should have RAMS border
     const listItem = screen.getByRole('button');
-    expect(listItem).toHaveClass('border-blue-500');
+    expect(listItem).toHaveClass('border-rams-steel');
   });
 });
 
@@ -851,43 +947,43 @@ describe('DraftsList', () => {
 describe('EmailComposer', () => {
   it('should render header', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('AI Email Composer')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.title'))).toBeInTheDocument();
   });
 
   it('should render recipient input', () => {
     render(<EmailComposer />);
-    expect(screen.getByLabelText('Recipient email')).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.recipientEmail'))).toBeInTheDocument();
   });
 
   it('should render purpose selector', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('Select purpose...')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.placeholders.selectPurpose'))).toBeInTheDocument();
   });
 
   it('should render tone selector', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('Professional')).toBeInTheDocument();
-    expect(screen.getByText('Formal')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.professional'))).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.tone.formal'))).toBeInTheDocument();
   });
 
   it('should render language selector', () => {
     render(<EmailComposer />);
-    expect(screen.getByLabelText('Select language')).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.selectLanguage'))).toBeInTheDocument();
   });
 
   it('should render key points editor', () => {
     render(<EmailComposer />);
-    expect(screen.getByLabelText('Add key point')).toBeInTheDocument();
+    expect(screen.getByLabelText(getText('emailDrafting.aria.addKeyPoint'))).toBeInTheDocument();
   });
 
   it('should render generate button', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('Generate Draft')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.actions.generateDraft'))).toBeInTheDocument();
   });
 
   it('should disable generate button initially', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('Generate Draft')).toBeDisabled();
+    expect(screen.getByText(getText('emailDrafting.actions.generateDraft'))).toBeDisabled();
   });
 
   it('should enable generate button when form is valid', async () => {
@@ -895,22 +991,27 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'test@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'test@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
 
-    expect(screen.getByText('Generate Draft')).not.toBeDisabled();
+    expect(screen.getByText(getText('emailDrafting.actions.generateDraft'))).not.toBeDisabled();
   });
 
   it('should show empty state for preview initially', () => {
     render(<EmailComposer />);
-    expect(screen.getByText('No Draft Yet')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.empty.title'))).toBeInTheDocument();
   });
 
   it('should call onClose when close button clicked', async () => {
@@ -918,14 +1019,14 @@ describe('EmailComposer', () => {
     const onClose = jest.fn();
     render(<EmailComposer onClose={onClose} />);
 
-    await user.click(screen.getByLabelText('Close'));
+    await user.click(screen.getByLabelText(getText('emailDrafting.aria.close')));
 
     expect(onClose).toHaveBeenCalled();
   });
 
   it('should not show close button when onClose not provided', () => {
     render(<EmailComposer />);
-    expect(screen.queryByLabelText('Close')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(getText('emailDrafting.aria.close'))).not.toBeInTheDocument();
   });
 
   it('should use initial recipient when provided', () => {
@@ -939,19 +1040,23 @@ describe('EmailComposer', () => {
 
     render(<EmailComposer initialRecipient={recipient} />);
 
-    expect(screen.getByLabelText('Recipient email')).toHaveValue('initial@example.com');
-    expect(screen.getByLabelText('Recipient name')).toHaveValue('Initial User');
+    expect(screen.getByLabelText(getText('emailDrafting.aria.recipientEmail'))).toHaveValue(
+      'initial@example.com'
+    );
+    expect(screen.getByLabelText(getText('emailDrafting.aria.recipientName'))).toHaveValue(
+      'Initial User'
+    );
   });
 
   it('should use initial purpose when provided', () => {
     render(<EmailComposer initialPurpose="meeting_request" />);
-    expect(screen.getByText('Meeting Request')).toBeInTheDocument();
+    expect(screen.getByText(getText('emailDrafting.purpose.meetingRequest'))).toBeInTheDocument();
   });
 
   it('should use reference number when provided', () => {
     render(<EmailComposer referenceNumber="RFQ-2024-001" />);
 
-    const refInput = screen.getByPlaceholderText('e.g., RFQ-2024-001');
+    const refInput = screen.getByPlaceholderText(getText('emailDrafting.placeholders.referenceNumber'));
     expect(refInput).toHaveValue('RFQ-2024-001');
   });
 
@@ -960,22 +1065,27 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'john@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
-      await user.click(screen.getByText('Generate Draft'));
+      await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Draft Preview')).toBeInTheDocument();
+      expect(screen.getByText(getText('emailDrafting.preview.title'))).toBeInTheDocument();
     });
   });
 
@@ -984,22 +1094,27 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'john@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
-      await user.click(screen.getByText('Generate Draft'));
+      await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.queryByText('No Draft Yet')).not.toBeInTheDocument();
+      expect(screen.queryByText(getText('emailDrafting.empty.title'))).not.toBeInTheDocument();
     });
   });
 
@@ -1008,22 +1123,27 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'john@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
-      await user.click(screen.getByText('Generate Draft'));
+      await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Regenerate')).toBeInTheDocument();
+      expect(screen.getByText(getText('emailDrafting.actions.regenerate'))).toBeInTheDocument();
     });
   });
 
@@ -1032,22 +1152,27 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'john@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
-      await user.click(screen.getByText('Generate Draft'));
+      await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Send')).toBeInTheDocument();
+      expect(screen.getByText(getText('emailDrafting.actions.send'))).toBeInTheDocument();
     });
   });
 
@@ -1065,31 +1190,38 @@ describe('EmailComposer', () => {
     render(<EmailComposer />);
 
     await act(async () => {
-      await user.type(screen.getByLabelText('Recipient email'), 'john@example.com');
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.aria.recipientEmail')),
+        'john@example.com'
+      );
     });
     await act(async () => {
-      await user.click(screen.getByText('Select purpose...'));
+      await user.click(screen.getByText(getText('emailDrafting.placeholders.selectPurpose')));
     });
-    const quoteFollowupOption = await screen.findByText('Quote Follow-up');
+    const quoteFollowupOption = await screen.findByText(
+      getText('emailDrafting.purpose.quoteFollowup')
+    );
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
-      await user.click(screen.getByText('Generate Draft'));
+      await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Copy to clipboard')).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(getText('emailDrafting.aria.copyToClipboard'))
+      ).toBeInTheDocument();
     });
 
     await act(async () => {
-      await user.click(screen.getByLabelText('Copy to clipboard'));
+      await user.click(screen.getByLabelText(getText('emailDrafting.aria.copyToClipboard')));
       await flushPromises();
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Copied to clipboard!')).toBeInTheDocument();
+      expect(screen.getByText(getText('emailDrafting.notifications.copied'))).toBeInTheDocument();
     });
   });
 });

@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from sensei.api.schemas import APIResponse
-from sensei.api.deps import CurrentUser
 from sensei.api import deps
 from sensei.api.utils import build_response
+from sensei.core.config import settings
+from sensei.models.user import User
 from sensei.services.smart_ingestion import (
     EmailAttachment,
     EmailContent,
@@ -17,7 +18,12 @@ from sensei.services.smart_ingestion import (
     SmartIngestionService,
 )
 
-router = APIRouter()
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_deny_production)])
 
 _service = SmartIngestionService()
 
@@ -115,7 +121,7 @@ def _job_to_response(job: IngestionJob) -> IngestionJobResponse:
 )
 async def ingest_document(
     file: UploadFile = File(...),
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[IngestionJobResponse]:
     """Ingest a document for OCR and entity extraction."""
     _ = current_user
@@ -135,7 +141,7 @@ async def ingest_document(
 )
 async def ingest_email(
     payload: EmailIngestionRequest,
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[IngestionJobResponse]:
     """Ingest a parsed email and extract entities."""
     attachments = [
@@ -177,7 +183,7 @@ async def ingest_email(
 )
 async def get_job(
     job_id: str,
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[IngestionJobResponse]:
     """Get an ingestion job by ID."""
     job = _service.get_job(job_id)
@@ -191,7 +197,7 @@ async def get_job(
     response_model=APIResponse[list[IngestionJobResponse]],
 )
 async def get_jobs_requiring_review(
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[list[IngestionJobResponse]]:
     """List jobs requiring manual review."""
     jobs = [_job_to_response(job) for job in _service.get_jobs_requiring_review()]
@@ -203,7 +209,7 @@ async def get_jobs_requiring_review(
     response_model=APIResponse[IngestionStatsResponse],
 )
 async def get_ingestion_stats(
-    current_user: CurrentUser = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ) -> APIResponse[IngestionStatsResponse]:
     """Get ingestion pipeline statistics."""
     stats = _service.get_stats()

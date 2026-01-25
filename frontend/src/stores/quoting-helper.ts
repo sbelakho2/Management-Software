@@ -41,11 +41,12 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
   isLoading: false,
   error: null,
 
+  // Note: apiClient already unwraps { success, data } responses, so we get the data directly
   fetchWorkPackets: async (rfqId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.get<{ data: WorkPacket[] }>(`/quoting-helper/rfqs/${rfqId}/workpackets`);
-      set({ workPackets: response.data, isLoading: false });
+      const workPackets = await apiClient.get<WorkPacket[]>(`/quoting-helper/rfqs/${rfqId}/workpackets`);
+      set({ workPackets, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -54,8 +55,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
   generateWorkPackets: async (rfqId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.post<{ data: WorkPacket[] }>(`/quoting-helper/rfqs/${rfqId}/workpackets/generate`);
-      set({ workPackets: response.data, isLoading: false });
+      const workPackets = await apiClient.post<WorkPacket[]>(`/quoting-helper/rfqs/${rfqId}/workpackets/generate`);
+      set({ workPackets, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -63,8 +64,7 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   updateWorkPacket: async (packetId: string, data: Partial<WorkPacket>) => {
     try {
-      const response = await apiClient.patch<{ data: WorkPacket }>(`/quoting-helper/workpackets/${packetId}`, data);
-      const updatedPacket = response.data;
+      const updatedPacket = await apiClient.patch<WorkPacket>(`/quoting-helper/workpackets/${packetId}`, data);
       set(state => ({
         workPackets: state.workPackets.map(p => p.id === packetId ? updatedPacket : p)
       }));
@@ -75,8 +75,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   calculateCost: async (quoteId: string) => {
     try {
-      const response = await apiClient.post<{ data: unknown }>(`/quoting-helper/quotes/${quoteId}/cost/build`);
-      return response.data;
+      const result = await apiClient.post<unknown>(`/quoting-helper/quotes/${quoteId}/cost/build`);
+      return result;
     } catch (error: any) {
       set({ error: error.message });
       throw error;
@@ -85,8 +85,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   fetchClarifications: async (rfqId: string) => {
     try {
-      const response = await apiClient.get<{ data: unknown[] }>(`/quoting-helper/ai/clarifications/suggest/${rfqId}`);
-      set({ clarifications: response.data });
+      const clarifications = await apiClient.get<unknown[]>(`/quoting-helper/ai/clarifications/suggest/${rfqId}`);
+      set({ clarifications });
     } catch (error: any) {
       set({ error: error.message });
     }
@@ -94,8 +94,8 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
 
   fetchQuoteMemory: async (rfqId: string) => {
     try {
-      const response = await apiClient.get<{ data: unknown[] }>(`/quoting-helper/ai/quote-memory/retrieve/${rfqId}`);
-      set({ quoteMemory: response.data });
+      const quoteMemory = await apiClient.get<unknown[]>(`/quoting-helper/ai/quote-memory/retrieve/${rfqId}`);
+      set({ quoteMemory });
     } catch (error: any) {
       set({ error: error.message });
     }
@@ -104,9 +104,9 @@ export const useQuotingHelperStore = create<QuotingHelperState>((set, get) => ({
   convertToNpi: async (quoteId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.post<{ data: { project_id: string; project_name: string } }>(`/quoting-helper/quotes/${quoteId}/convert-to-npi`);
+      const result = await apiClient.post<{ project_id: string; project_name: string }>(`/quoting-helper/quotes/${quoteId}/convert-to-npi`);
       set({ isLoading: false });
-      return response.data;
+      return result;
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;

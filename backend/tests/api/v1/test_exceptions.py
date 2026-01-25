@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from sensei.api.v1.endpoints import exceptions as exceptions_api
 from sensei.api import deps
+from sensei.core.security import TokenData
 from sensei.services.exceptions_aggregator import (
     ExceptionCategory,
     ExceptionSeverity,
@@ -32,6 +33,20 @@ from sensei.services.exceptions_aggregator import (
 def app() -> FastAPI:
     """Create a test app."""
     app = FastAPI()
+
+    async def _override_get_token_data() -> TokenData:
+        now = datetime.now(timezone.utc)
+        return TokenData(
+            sub="test-user",
+            type="access",
+            exp=now + timedelta(hours=1),
+            iat=now,
+            jti="test-jti",
+            roles=["admin"],
+            permissions=[],
+        )
+
+    app.dependency_overrides[deps.get_token_data] = _override_get_token_data
     app.include_router(exceptions_api.router, prefix="/api/v1/exceptions")
     return app
 

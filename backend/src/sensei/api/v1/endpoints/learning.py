@@ -16,9 +16,11 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
+
+from sensei.core.config import settings
 
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
@@ -30,6 +32,7 @@ from sensei.api.utils import (
     build_paginated_response,
     build_response,
     build_updated_response,
+    maybe_await,
 )
 from sensei.models.learning import (
     LearningModule,
@@ -52,6 +55,11 @@ router = APIRouter()
 # =============================================================================
 # Socratic Seeded Coaching
 # =============================================================================
+
+
+def _deny_seeded_coaching_in_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 class SocraticCoachingRequest(BaseModel):
@@ -423,7 +431,7 @@ async def create_module(
         created_by_id=current_user.id,
     )
 
-    db.add(module)
+    await maybe_await(db.add(module))
     await db.flush()
     await db.refresh(module)
 
@@ -673,7 +681,7 @@ async def create_unit(
         created_by_id=current_user.id,
     )
 
-    db.add(unit)
+    await maybe_await(db.add(unit))
     await db.flush()
     await db.refresh(unit)
 
@@ -1004,7 +1012,7 @@ async def start_unit(
         last_accessed_at=datetime.now(timezone.utc),
     )
 
-    db.add(progress)
+    await maybe_await(db.add(progress))
     await db.flush()
     await db.refresh(progress)
 
@@ -1135,7 +1143,7 @@ async def create_assessment(
         created_by_id=current_user.id,
     )
 
-    db.add(assessment)
+    await maybe_await(db.add(assessment))
     await db.flush()
     await db.refresh(assessment)
 
@@ -1268,7 +1276,7 @@ async def create_path(
         created_by_id=current_user.id,
     )
 
-    db.add(path)
+    await maybe_await(db.add(path))
     await db.flush()
     await db.refresh(path)
 
@@ -1428,6 +1436,7 @@ async def socratic_coaching(
     data: SocraticCoachingRequest,
     db: DBSession,
     current_user: CurrentUser,
+    _: None = Depends(_deny_seeded_coaching_in_production),
 ) -> APIResponse[SocraticCoachingResponse]:
     # 1. Retrieve candidate units (Simple keyword match for 'sources').
     stmt = select(LearningUnit).where(LearningUnit.is_published.is_(True))  # noqa: E712

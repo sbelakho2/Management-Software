@@ -25,10 +25,82 @@ function isTwoFactorRequiredResponse(value: unknown): value is TwoFactorRequired
   );
 }
 
-function pickRole(user: any): UserRole {
-  if (user.role) return user.role as UserRole;
-  if (user.roles && user.roles.length > 0) return user.roles[0] as UserRole;
-  return 'viewer';
+const ROLE_PRIORITY: UserRole[] = [
+  'admin',
+  'ceo',
+  'gm',
+  'exec',
+  'finance',
+  'accountant',
+  'hr',
+  'ops',
+  'quality',
+  'auditor',
+  'it',
+  'sales',
+  'purchasing',
+  'sales_engineer',
+  'estimator',
+  'supply_chain',
+  'logistics',
+  'maintenance',
+  'warehouse',
+  'engineering',
+  'supervisor',
+  'team_lead',
+  'operator',
+  'viewer',
+];
+
+const USER_ROLE_SET = new Set<string>(ROLE_PRIORITY);
+
+function normalizeBackendRole(raw: unknown): UserRole | null {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+
+  // Common backend variants / display names
+  const normalized = cleaned.toLowerCase().replace(/\s+/g, '_');
+
+  // Some deployments may include non-RBAC markers like "superuser".
+  // We ignore those here and rely on explicit RBAC roles like "ceo"/"admin".
+  if (normalized === 'superuser') return null;
+
+  // Canonical aliases
+  if (normalized === 'general_manager') return 'gm';
+  if (normalized === 'executive') return 'exec';
+
+  return USER_ROLE_SET.has(normalized) ? (normalized as UserRole) : null;
+}
+
+function normalizeRoles(raw: unknown): UserRole[] {
+  const roles: UserRole[] = [];
+  const pushRole = (value: unknown) => {
+    const role = normalizeBackendRole(value);
+    if (role && !roles.includes(role)) {
+      roles.push(role);
+    }
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach(pushRole);
+    return roles;
+  }
+
+  // Defensive: occasionally roles can be a single string
+  pushRole(raw);
+  return roles;
+}
+
+function pickPrimaryRole(user: any, normalizedRoles: UserRole[]): UserRole {
+  // Prefer any explicit primary role when present (then fall back to roles list)
+  const explicit = normalizeBackendRole(user?.role);
+  const roles = explicit ? [explicit, ...normalizedRoles] : normalizedRoles;
+
+  for (const role of ROLE_PRIORITY) {
+    if (roles.includes(role)) return role;
+  }
+  return roles[0] ?? 'viewer';
 }
 
 export interface PasswordResetRequest {
@@ -99,10 +171,12 @@ export const authApi = {
    */
   async getCurrentUser(): Promise<User> {
     const user = await apiClient.get<any>('/users/me');
+    const roles = normalizeRoles(user?.roles);
+
     return {
       ...user,
-      role: pickRole(user),
-      roles: user.roles || [],
+      role: pickPrimaryRole(user, roles),
+      roles,
     };
   },
 
@@ -110,7 +184,9 @@ export const authApi = {
    * Update the current user's profile
    */
   async updateProfile(data: Partial<User>): Promise<User> {
-    return apiClient.patch<User>('/users/me', data);
+    // Backend response for /users/me patch omits role/roles; re-hydrate from token.
+    await apiClient.patch('/users/me', data);
+    return this.getCurrentUser();
   },
 
   /**
@@ -119,7 +195,8 @@ export const authApi = {
   async updatePreferences(preferences: Partial<UserPreferences>): Promise<User> {
     // Backend user profile update currently supports core profile fields.
     // Persisted preferences can be mapped onto supported fields as they evolve.
-    return apiClient.patch<User>('/users/me', preferences as unknown as Partial<User>);
+    await apiClient.patch('/users/me', preferences as unknown as Partial<User>);
+    return this.getCurrentUser();
   },
 
   /**
@@ -133,14 +210,14 @@ export const authApi = {
    * Request password reset email
    */
   async requestPasswordReset(data: PasswordResetRequest): Promise<void> {
-    return apiClient.post('/auth/forgot-password', data);
+    return apiClient.post('/auth/password-reset', data);
   },
 
   /**
    * Reset password with token
    */
   async resetPassword(data: PasswordResetConfirm): Promise<void> {
-    return apiClient.post('/auth/reset-password', data);
+    return apiClient.post('/auth/password-reset/confirm', data);
   },
 
   /**

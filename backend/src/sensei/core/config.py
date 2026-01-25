@@ -8,6 +8,8 @@ validation, and secure secret handling.
 from functools import lru_cache
 from typing import List, Literal
 
+import json
+
 from pydantic import Field, field_validator, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +22,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
+        enable_decoding=False,
     )
     
     # Application
@@ -118,6 +121,31 @@ class Settings(BaseSettings):
     
     # Email Settings
     SMTP_HOST: str = ""
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value):
+        if value is None:
+            return value
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("[") and raw.endswith("]"):
+                # Try JSON first (e.g. ["http://a", "http://b"]).
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        return [str(v).strip() for v in parsed if str(v).strip()]
+                except Exception:
+                    # Fall back to splitting a bracketed, non-JSON list.
+                    inner = raw[1:-1]
+                    return [p.strip().strip("\"'") for p in inner.split(",") if p.strip()]
+            # Comma-separated string.
+            return [p.strip().strip("\"'") for p in raw.split(",") if p.strip()]
+        return value
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""

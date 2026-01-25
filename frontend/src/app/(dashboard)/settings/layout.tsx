@@ -51,7 +51,7 @@ export default function SettingsLayout({ children }: SettingsLayoutProps) {
   const pathname = usePathname();
   const { user } = useAuthStore();
   const { t } = useI18n();
-  const isAdmin = user?.role === 'admin' || user?.role === 'ceo' || user?.roles?.includes('admin') || user?.roles?.includes('ceo');
+  const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
 
   // If we are on the main settings page, we might want a different layout or just show the cards.
   // But for sub-pages, we definitely want the sidebar.

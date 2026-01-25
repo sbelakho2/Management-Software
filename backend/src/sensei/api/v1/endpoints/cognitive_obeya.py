@@ -53,10 +53,10 @@ async def get_obeya_dashboard(
         select(func.count(WorkOrder.id)).where(
             WorkOrder.status == "completed",
             # On-time means actual_end <= scheduled_end, or scheduled_end is null (no deadline)
-            (WorkOrder.actual_end <= WorkOrder.scheduled_end) | (WorkOrder.scheduled_end == None)
+            (WorkOrder.actual_end <= WorkOrder.scheduled_end) | WorkOrder.scheduled_end.is_(None)
         )
     )
-    otd_rate = ((on_time_wo or 0) / total_wo * 100) if total_wo and total_wo > 0 else 95.0
+    otd_rate = ((on_time_wo or 0) / total_wo * 100) if total_wo and total_wo > 0 else 0.0
     await obeya.record_metric(
         db=db,
         category=MetricCategory.DELIVERY,

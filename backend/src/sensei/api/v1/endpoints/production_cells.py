@@ -15,6 +15,7 @@ from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import get_db, get_current_user
 from sensei.api.exceptions import NotFoundError, ConflictError, BadRequestError
 from sensei.models.production import (
@@ -26,7 +27,37 @@ from sensei.models.production import (
 )
 from sensei.models.user import User
 
-router = APIRouter()
+AllowProductionModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "operator",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "operator",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]

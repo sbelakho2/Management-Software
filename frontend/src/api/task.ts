@@ -252,63 +252,63 @@ export const kanbanApi = {
    * List kanban boards
    */
   async list(params?: KanbanBoardListParams): Promise<PaginatedResponse<KanbanBoard>> {
-    return apiClient.get('/kanban-boards', { params });
+    return apiClient.get('/kanban/boards', { params });
   },
 
   /**
    * Get a kanban board by ID
    */
   async get(id: string): Promise<KanbanBoard> {
-    return apiClient.get(`/kanban-boards/${id}`);
+    return apiClient.get(`/kanban/boards/${id}`);
   },
 
   /**
    * Create a new kanban board
    */
   async create(data: CreateKanbanBoardData): Promise<KanbanBoard> {
-    return apiClient.post('/kanban-boards', data);
+    return apiClient.post('/kanban/boards', data);
   },
 
   /**
    * Update a kanban board
    */
   async update(id: string, data: UpdateKanbanBoardData): Promise<KanbanBoard> {
-    return apiClient.patch(`/kanban-boards/${id}`, data);
+    return apiClient.put(`/kanban/boards/${id}`, data);
   },
 
   /**
    * Delete a kanban board
    */
   async delete(id: string): Promise<void> {
-    return apiClient.delete(`/kanban-boards/${id}`);
+    return apiClient.delete(`/kanban/boards/${id}`);
   },
 
   /**
    * Get tasks for a board
    */
   async getTasks(id: string, params?: TaskListParams): Promise<Record<TaskStatus, Task[]>> {
-    return apiClient.get(`/kanban-boards/${id}/tasks`, { params });
+    return apiClient.get(`/kanban/boards/${id}/tasks`, { params });
   },
 
   /**
    * Move a task on the board
    */
   async moveTask(boardId: string, taskId: string, status: TaskStatus, position?: number): Promise<Task> {
-    return apiClient.post(`/kanban-boards/${boardId}/tasks/${taskId}/move`, { status, position });
+    return apiClient.post(`/kanban/boards/${boardId}/tasks/${taskId}/move`, { status, position });
   },
 
   /**
    * Add member to board
    */
   async addMember(id: string, userId: string): Promise<KanbanBoard> {
-    return apiClient.post(`/kanban-boards/${id}/members`, { user_id: userId });
+    return apiClient.post(`/kanban/boards/${id}/members`, { user_id: userId });
   },
 
   /**
    * Remove member from board
    */
   async removeMember(id: string, userId: string): Promise<KanbanBoard> {
-    return apiClient.delete(`/kanban-boards/${id}/members/${userId}`);
+    return apiClient.delete(`/kanban/boards/${id}/members/${userId}`);
   },
 
   // Columns
@@ -317,21 +317,21 @@ export const kanbanApi = {
      * List columns for a board
      */
     async list(boardId: string): Promise<KanbanColumn[]> {
-      return apiClient.get(`/kanban-boards/${boardId}/columns`);
+      return apiClient.get(`/kanban/boards/${boardId}/columns`);
     },
 
     /**
      * Update a column
      */
     async update(boardId: string, columnId: string, data: UpdateKanbanColumnData): Promise<KanbanColumn> {
-      return apiClient.patch(`/kanban-boards/${boardId}/columns/${columnId}`, data);
+      return apiClient.put(`/kanban/boards/${boardId}/columns/${columnId}`, data);
     },
 
     /**
      * Reorder columns
      */
     async reorder(boardId: string, columnIds: string[]): Promise<KanbanColumn[]> {
-      return apiClient.post(`/kanban-boards/${boardId}/columns/reorder`, { ids: columnIds });
+      return apiClient.post(`/kanban/boards/${boardId}/columns/reorder`, { ids: columnIds });
     },
   },
 };

@@ -441,10 +441,10 @@ class EmployeeLifecycleService:
         masked_phone: str | None = None
         if profile.email:
             masked = self._pii.mask_value(profile.email, field_id=self._field_employee_email_id)
-            masked_email = masked._get_value()
+            masked_email = masked._get_value() if hasattr(masked, "_get_value") else masked
         if profile.phone:
             masked = self._pii.mask_value(profile.phone, field_id=self._field_employee_phone_id)
-            masked_phone = masked._get_value()
+            masked_phone = masked._get_value() if hasattr(masked, "_get_value") else masked
 
         return replace(profile, email=masked_email, phone=masked_phone)
 
@@ -660,8 +660,8 @@ class EmployeeLifecycleService:
         for d in docs:
             masked_filename = self._pii.mask_value(d.filename, field_id=self._field_personnel_filename_id)
             masked_notes = self._pii.mask_value(d.notes, field_id=self._field_personnel_notes_id) if d.notes else None
-            filename_value = masked_filename._get_value()
-            notes_value = masked_notes._get_value() if masked_notes else ""
+            filename_value = masked_filename._get_value() if hasattr(masked_filename, "_get_value") else masked_filename
+            notes_value = masked_notes._get_value() if (masked_notes and hasattr(masked_notes, "_get_value")) else (masked_notes or "")
             redacted.append(
                 replace(
                     d,
@@ -680,5 +680,5 @@ class EmployeeLifecycleService:
     ) -> list[Any]:
         subject_id = self._get_or_register_subject(employee_id)
         logs_awaitable = self._pii.get_access_logs(subject_id=subject_id)
-        logs = logs_awaitable._get_value()
+        logs = logs_awaitable._get_value() if hasattr(logs_awaitable, "_get_value") else logs_awaitable
         return list(logs)[:limit]

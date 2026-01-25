@@ -13,11 +13,12 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, and_
 from sqlalchemy.orm import selectinload
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.core.storage import generate_presigned_url
@@ -45,7 +46,33 @@ from sensei.services.ops.a3_reasoning_gates import (
     evaluate_a3_section_update,
 )
 
-router = APIRouter()
+AllowA3Module = deps.require_role(
+    "ops",
+    "quality",
+    "supervisor",
+    "team_lead",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "quality",
+                    "supervisor",
+                    "team_lead",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================

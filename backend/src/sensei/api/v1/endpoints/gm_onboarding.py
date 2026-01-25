@@ -8,9 +8,10 @@ including progress tracking, dashboard tour, and first actions.
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.ops.gm_onboarding import (
     GMOnboardingService,
     OnboardingProgress,
@@ -21,7 +22,12 @@ from sensei.services.ops.gm_onboarding import (
 )
 
 
-router = APIRouter(tags=["gm-onboarding"])
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+router = APIRouter(tags=["gm-onboarding"], dependencies=[Depends(_deny_production)])
 
 
 # =============================================================================

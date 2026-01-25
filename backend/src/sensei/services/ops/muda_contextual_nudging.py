@@ -133,9 +133,9 @@ class MudaAwareContextualNudgingService:
 
     async def generate_nudges(
         self,
-        db: AsyncSession,
+        db: AsyncSession | None,
         *,
-        recipient_id: UUID,
+        recipient_id: UUID | str,
         dimensions: dict[str, str] | None = None,
         overrides: dict[str, Any] | None = None,
         include_knowledge: bool = True,
@@ -162,23 +162,31 @@ class MudaAwareContextualNudgingService:
 
     async def generate_nudge_for_trigger(
         self,
-        db: AsyncSession,
+        db: AsyncSession | None = None,
         *,
         trigger: TriggerType,
-        recipient_id: UUID,
+        recipient_id: UUID | str,
         trigger_context: dict[str, Any],
         include_knowledge: bool = True,
         generated_at: datetime | None = None,
     ) -> MudaNudge:
         """Generate a single nudge for a specific trigger."""
 
-        delivery = await self.lesson_engine.get_lesson_for_trigger(
-            db,
-            trigger,
-            recipient_id,
-            context=trigger_context,
-        )
-        lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id) if delivery else None
+        if db is None or not isinstance(recipient_id, UUID):
+            delivery = self.lesson_engine.get_lesson_for_trigger(
+                trigger,
+                str(recipient_id),
+                trigger_context,
+            )
+            lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id) if delivery else None
+        else:
+            delivery = await self.lesson_engine.get_lesson_for_trigger_async(
+                db,
+                trigger,
+                recipient_id,
+                context=trigger_context,
+            )
+            lesson = self.lesson_engine.get_lesson_content(delivery.lesson_id) if delivery else None
 
         recommended_documents: list[dict[str, Any]] = []
         if include_knowledge:
@@ -190,7 +198,7 @@ class MudaAwareContextualNudgingService:
             trigger=trigger,
             recipient_id=str(recipient_id),
             trigger_context=trigger_context,
-            delivery_id=str(delivery.id) if delivery else None,
+            delivery_id=(str(delivery.id) if hasattr(delivery, "id") else delivery.delivery_id) if delivery else None,
             lesson_id=delivery.lesson_id if delivery else None,
             lesson_title=lesson.title if lesson else None,
             lesson_summary=lesson.summary if lesson else None,

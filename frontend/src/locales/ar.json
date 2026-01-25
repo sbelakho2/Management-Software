@@ -33,6 +33,9 @@
       "content": "المحتوى",
       "reportTitle": "عنوان التقرير",
       "reportType": "نوع التقرير",
+    "drafts": {
+      "snippet": "{مقتطف}…"
+    },
       "saveChanges": "حفظ التغييرات",
       "saving": "جارٍ الحفظ",
       "sections": {
@@ -785,6 +788,7 @@
     "auditor": "المراجعة",
     "ctqTracking": "تتبع نقاط الجودة الحرجة",
     "customers": "العملاء",
+    "emailDrafting": "صياغة البريد الإلكتروني",
     "dashboard": "لوحة القيادة",
     "dashboards": "لوحات القيادة",
     "exceptions": "الاستثناءات",
@@ -3513,6 +3517,165 @@
       "syncGates": "بوابات المزامنة"
     }
   },
+    "emailDrafting": {
+      "title": "مؤلف البريد الإلكتروني الذكي",
+      "aria": {
+        "selectPurpose": "اختيار الغرض",
+        "toneGroup": "اختيار النبرة",
+        "selectLanguage": "اختيار اللغة",
+        "recipientEmail": "بريد المستلم",
+        "recipientName": "اسم المستلم",
+        "addKeyPoint": "إضافة نقطة رئيسية",
+        "keyPointsList": "قائمة النقاط الرئيسية",
+        "removeKeyPoint": "إزالة: {نقطة}",
+        "copyToClipboard": "نسخ إلى الحافظة",
+        "editSubject": "تحرير الموضوع",
+        "close": "إغلاق",
+        "draftsList": "مسودات البريد"
+      },
+      "placeholders": {
+        "selectPurpose": "اختر الغرض...",
+        "recipientEmail": "مستلم@مثال.شبكة",
+        "recipientNameOptional": "الاسم (اختياري)",
+        "keyPoint": "أضف نقطة رئيسية",
+        "senderName": "مثال: أليكس مورغان",
+        "senderEmail": "مثال: مشغل@سينسي.شبكة",
+        "senderTitle": "مثال: مدير حساب",
+        "companyName": "مثال: سينسي",
+        "threadEntityType": "اختر كيان السلسلة...",
+        "threadEntityId": "أدخل معرّف الكيان...",
+        "referenceNumber": "مثال: ٢٠٢٤-٠٠١",
+        "subjectHint": "مثال: تحديث الأسعار للربع الثاني"
+      },
+      "purpose": {
+        "missingInfoRequest": "طلب معلومات ناقصة",
+        "quoteFollowup": "متابعة عرض سعر",
+        "quoteSubmission": "إرسال عرض سعر",
+        "supplierInquiry": "استفسار مورد",
+        "meetingRequest": "طلب اجتماع",
+        "meetingConfirmation": "تأكيد اجتماع",
+        "meetingReschedule": "إعادة جدولة اجتماع",
+        "issueNotification": "إشعار بمشكلة",
+        "statusUpdate": "تحديث الحالة",
+        "thankYou": "رسالة شكر",
+        "introduction": "تعارف",
+        "escalation": "تصعيد",
+        "apology": "اعتذار",
+        "custom": "بريد مخصص"
+      },
+      "tone": {
+        "formal": "رسمي",
+        "professional": "مهني",
+        "friendly": "ودّي",
+        "urgent": "عاجل",
+        "apologetic": "اعتذاري",
+        "appreciative": "تقديري",
+        "concise": "موجز"
+      },
+      "language": {
+        "english": "الإنجليزية",
+        "french": "الفرنسية",
+        "german": "الألمانية",
+        "spanish": "الإسبانية",
+        "italian": "الإيطالية",
+        "portuguese": "البرتغالية",
+        "japanese": "اليابانية",
+        "chinese": "الصينية",
+        "korean": "الكورية",
+        "arabic": "العربية"
+      },
+      "actions": {
+        "add": "إضافة",
+        "apply": "تطبيق",
+        "edit": "تحرير",
+        "generating": "جارٍ الإنشاء...",
+        "generateDraft": "إنشاء مسودة",
+        "regenerate": "إعادة الإنشاء",
+        "send": "إرسال"
+      },
+      "preview": {
+        "title": "معاينة المسودة",
+        "subjectLabel": "الموضوع",
+        "confidence": "الثقة: {درجة}",
+        "generatedIn": "تم الإنشاء خلال {زمن}"
+      },
+      "units": {
+        "milliseconds": "مللي ثانية",
+        "seconds": "ث"
+      },
+      "compliance": {
+        "none": "لا توجد مشكلات امتثال",
+        "title": "مشكلات الامتثال ({عدد})"
+      },
+      "suggestions": {
+        "title": "اقتراحات ({عدد})"
+      },
+      "alternatives": {
+        "title": "موضوعات بديلة:"
+      },
+      "thread": {
+        "entityType": {
+          "rfq": "طلب عرض سعر",
+          "quote": "عرض سعر",
+          "workOrder": "أمر عمل",
+          "opportunity": "فرصة",
+          "nonConformance": "عدم مطابقة",
+          "shipment": "شحنة",
+          "invoice": "فاتورة"
+        },
+        "loadFailed": "تعذر تحميل تتبع السلسلة",
+        "helper": "اربط هذه المسودة بسلسلة للحفاظ على مسار البيانات الموحد.",
+        "loading": "جارٍ تحميل تتبع السلسلة...",
+        "traceTitle": "تتبع السلسلة",
+        "traceStats": "التتبع: {عقد} عقد / {روابط} روابط",
+        "reasoningId": "معرّف الاستدلال: {معرف}"
+      },
+      "defaults": {
+        "senderName": "مشغل سينسي",
+        "senderEmail": "مشغل@سينسي.شبكة",
+        "companyName": "سينسي"
+      },
+      "sections": {
+        "recipient": "المستلم",
+        "purpose": "الغرض",
+        "sender": "المرسل",
+        "threadContext": "سياق السلسلة",
+        "tone": "النبرة",
+        "language": "اللغة",
+        "keyPoints": "النقاط الرئيسية"
+      },
+      "fields": {
+        "senderName": "اسم المرسل",
+        "senderEmail": "بريد المرسل",
+        "senderTitle": "مسمى المرسل الوظيفي",
+        "companyName": "اسم الشركة",
+        "threadEntityType": "نوع كيان السلسلة",
+        "threadEntityId": "معرّف كيان السلسلة",
+        "referenceNumberOptional": "رقم المرجع (اختياري)",
+        "subjectHintOptional": "تلميح الموضوع (اختياري)"
+      },
+      "status": {
+        "generating": "جارٍ الإنشاء...",
+        "ready": "جاهز للمراجعة",
+        "reviewed": "تمت المراجعة",
+        "approved": "تم الاعتماد",
+        "sent": "تم الإرسال",
+        "discarded": "تم الإلغاء",
+        "failed": "فشل"
+      },
+      "notifications": {
+        "copied": "تم النسخ إلى الحافظة!"
+      },
+      "empty": {
+        "title": "لا توجد مسودة بعد",
+        "description": "أنشئ مسودة لعرض المعاينة وفحوصات الامتثال.",
+        "list": "لا توجد مسودات بعد"
+      },
+      "validation": {
+        "emailRequired": "البريد الإلكتروني مطلوب",
+        "emailInvalid": "تنسيق البريد الإلكتروني غير صالح"
+      }
+    },
   "quickActions": {
     "createNewCustomer": "إنشاء عميل جديد",
     "createNewQuote": "إنشاء عرض أسعار جديد",

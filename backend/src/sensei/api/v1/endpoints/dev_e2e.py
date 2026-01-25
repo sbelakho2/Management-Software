@@ -24,7 +24,13 @@ from sensei.models.rfq import RFQ
 from sensei.models.user import User
 from sensei.services.core.data_lineage import DataLineageService
 
-router = APIRouter()
+
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+router = APIRouter(dependencies=[Depends(_deny_production)])
 
 
 class SeedLineageResponse(BaseModel):
@@ -48,9 +54,6 @@ async def seed_lineage(
     Purpose: enable true E2E tests that validate backend+DB persistence and
     cross-module graph retrieval.
     """
-
-    if settings.is_production:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     # Generate deterministic-ish identifiers for uniqueness in repeated runs.
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")

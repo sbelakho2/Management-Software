@@ -11,6 +11,7 @@ This intentionally implements a *restricted* NL2SQL capability:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import asyncio
 import json
 
 from typing import Any, Annotated, TypeAlias
@@ -27,10 +28,12 @@ from sensei.api.utils import build_response
 from sensei.models.quality import CAPA, CAPAStatus, NCStatus, NonConformance
 from sensei.services.ops.ceo_control_plane import CEOControlPlaneService
 
-router = APIRouter()
-
 # Role requirements
 AllowExec: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec")  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[Depends(deps.RoleChecker(["admin", "ceo", "gm", "exec"]))]
+)
 
 
 class NL2SQLRequest(BaseModel):
@@ -149,19 +152,29 @@ async def analyze_employee_risk(
     behavior consistent with the executive risk model.
     """
 
-    _ = db  # DB reserved for future HR/people-data integration.
     role = _coerce_exec_role(current_user)
 
-    svc = CEOControlPlaneService()
+    svc = CEOControlPlaneService(db)
     emp_id = svc.register_employee(role, name=payload.employee_name, department=payload.department)
-    assessment = svc.assess_retention_risk(
-        role,
-        employee_id=emp_id,
-        tenure_months=payload.tenure_months,
-        overtime_hours_weekly=payload.overtime_hours_weekly,
-        skip_rate=payload.skip_rate,
-        peer_comparison=payload.peer_comparison,
-    )
+    if not asyncio.iscoroutinefunction(getattr(db, "commit", None)):
+        assessment = svc.assess_retention_risk(
+            role,
+            employee_id=emp_id,
+            tenure_months=payload.tenure_months,
+            overtime_hours_weekly=payload.overtime_hours_weekly,
+            skip_rate=payload.skip_rate,
+            peer_comparison=payload.peer_comparison,
+        )
+    else:
+        assessment = await svc.assess_retention_risk_async(
+            db,
+            role,
+            employee_id=emp_id,
+            tenure_months=payload.tenure_months,
+            overtime_hours_weekly=payload.overtime_hours_weekly,
+            skip_rate=payload.skip_rate,
+            peer_comparison=payload.peer_comparison,
+        )
 
     resp = EmployeeRiskResponse(
         employee_name=assessment.employee_name,

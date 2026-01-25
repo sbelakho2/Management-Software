@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api.deps import get_db
+from sensei.core.config import settings
 from sensei.services.ops.kpi_metrics import (
     KPIDefinition,
     KPIValue,
@@ -36,7 +37,16 @@ from sensei.services.ops.kpi_app_services import (
     muda_nudging_service as _muda_nudging_service,
 )
 
-router = APIRouter(prefix="/kpi", tags=["KPI Metrics"])
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(
+    prefix="/kpi",
+    tags=["KPI Metrics"],
+    dependencies=[Depends(_deny_production)],
+)
 
 
 
@@ -311,9 +321,16 @@ async def generate_muda_nudges(
     Uses latest KPI values from the in-memory KPI store and optional overrides.
     """
 
+    try:
+        recipient_id: UUID | str = UUID(request.recipient_id)
+        db_session: AsyncSession | None = db
+    except ValueError:
+        recipient_id = request.recipient_id
+        db_session = None
+
     nudges = await _muda_nudging_service.generate_nudges(
-        db,
-        recipient_id=UUID(request.recipient_id),
+        db_session,
+        recipient_id=recipient_id,
         dimensions=request.dimensions or None,
         overrides=request.overrides or None,
         include_knowledge=request.include_knowledge,

@@ -10,19 +10,38 @@ Tests cover all endpoints in the training matrix API:
 - Reference data
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from sensei.api import deps
+from sensei.core.security import TokenData
 from sensei.main import app
 
 
 @pytest.fixture
 def client():
     """Create a test client."""
-    return TestClient(app)
+    async def _override_get_token_data() -> TokenData:
+        now = datetime.now(timezone.utc)
+        return TokenData(
+            sub="training-matrix-test-user",
+            type="access",
+            exp=now + timedelta(hours=1),
+            iat=now,
+            jti="training-matrix-test-jti",
+            roles=["admin"],
+            permissions=[],
+        )
+
+    app.dependency_overrides[deps.get_token_data] = _override_get_token_data
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(deps.get_token_data, None)
 
 
 @pytest.fixture

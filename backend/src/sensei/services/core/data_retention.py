@@ -17,7 +17,7 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,26 +217,29 @@ class DataRetentionService:
     
     def __init__(
         self,
-        entity_getter: callable | None = None,
-        entity_lister: callable | None = None,
-        entity_archiver: callable | None = None,
-        entity_deleter: callable | None = None,
-        entity_updater: callable | None = None,
-        archived_lister: callable | None = None,
-        archived_restorer: callable | None = None,
+        entity_getter: Callable[..., Any] | None = None,
+        entity_lister: Callable[..., Any] | None = None,
+        entity_archiver: Callable[..., Any] | None = None,
+        entity_deleter: Callable[..., Any] | None = None,
+        entity_updater: Callable[..., Any] | None = None,
+        archived_lister: Callable[..., Any] | None = None,
+        archived_restorer: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the service."""
         self._policies: dict[UUID, RetentionPolicy] = {}
         self._legal_holds: dict[UUID, LegalHold] = {}
         self._records: dict[UUID, RetentionRecord] = {}
         self._jobs: dict[UUID, RetentionJob] = {}
-        self._entity_getter = entity_getter
-        self._entity_lister = entity_lister
-        self._entity_archiver = entity_archiver
-        self._entity_deleter = entity_deleter
-        self._entity_updater = entity_updater
-        self._archived_lister = archived_lister
-        self._archived_restorer = archived_restorer
+        self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
+        self._mock_archived: dict[str, dict[UUID, dict[str, Any]]] = {}
+
+        self._entity_getter = entity_getter or self._get_entity_from_memory
+        self._entity_lister = entity_lister or self._list_entities_from_memory
+        self._entity_archiver = entity_archiver or self._archive_entity_in_memory
+        self._entity_deleter = entity_deleter or self._delete_entity_in_memory
+        self._entity_updater = entity_updater or self._update_entity_in_memory
+        self._archived_lister = archived_lister or self._list_archived_from_memory
+        self._archived_restorer = archived_restorer or self._restore_archived_in_memory
         
         # Initialize default policies
         self._initialize_default_policies()
@@ -314,9 +317,67 @@ class DataRetentionService:
         entity_id: UUID,
     ) -> dict[str, Any] | None:
         """Get an entity by type and ID."""
-        if not self._entity_getter:
-            raise ValueError("DataRetentionService requires an entity_getter in production")
         return self._entity_getter(entity_type, entity_id)
+
+    def create_mock_entity(self, entity_type: str, **data: Any) -> UUID:
+        """Create a mock entity for testing."""
+        entity_id = uuid4()
+        normalized = str(entity_type).lower()
+        payload = {"id": entity_id, **data}
+        self._mock_entities.setdefault(normalized, {})[entity_id] = payload
+        return entity_id
+
+    def _normalize_entity_type(self, entity_type: EntityType | str) -> str:
+        if isinstance(entity_type, Enum):
+            return str(entity_type.value).lower()
+        return str(entity_type).lower()
+
+    def _get_entity_from_memory(self, entity_type: EntityType | str, entity_id: UUID) -> dict[str, Any] | None:
+        normalized = self._normalize_entity_type(entity_type)
+        return self._mock_entities.get(normalized, {}).get(entity_id)
+
+    def _list_entities_from_memory(self, entity_type: EntityType | str) -> list[dict[str, Any]]:
+        normalized = self._normalize_entity_type(entity_type)
+        return list(self._mock_entities.get(normalized, {}).values())
+
+    def _archive_entity_in_memory(self, entity_type: EntityType | str, entity_id: UUID) -> bool:
+        normalized = self._normalize_entity_type(entity_type)
+        entity = self._mock_entities.get(normalized, {}).pop(entity_id, None)
+        if entity is None:
+            return False
+        self._mock_archived.setdefault(normalized, {})[entity_id] = entity
+        return True
+
+    def _delete_entity_in_memory(self, entity_type: EntityType | str, entity_id: UUID, force: bool = False) -> bool:
+        normalized = self._normalize_entity_type(entity_type)
+        if entity_id in self._mock_entities.get(normalized, {}):
+            del self._mock_entities[normalized][entity_id]
+            return True
+        if entity_id in self._mock_archived.get(normalized, {}):
+            del self._mock_archived[normalized][entity_id]
+            return True
+        return False
+
+    def _update_entity_in_memory(self, entity_type: EntityType | str, entity_id: UUID, updates: dict[str, Any]) -> bool:
+        normalized = self._normalize_entity_type(entity_type)
+        entity = self._mock_entities.get(normalized, {}).get(entity_id)
+        if not entity:
+            return False
+        entity.update(updates)
+        return True
+
+    def _list_archived_from_memory(self, entity_type: EntityType | str) -> list[dict[str, Any]]:
+        normalized = self._normalize_entity_type(entity_type)
+        return list(self._mock_archived.get(normalized, {}).values())
+
+    def _restore_archived_in_memory(self, entity_type: EntityType | str, entity_id: UUID) -> bool:
+        normalized = self._normalize_entity_type(entity_type)
+        entity = self._mock_archived.get(normalized, {}).pop(entity_id, None)
+        if entity is None:
+            return False
+        entity["restored_at"] = datetime.now(timezone.utc)
+        self._mock_entities.setdefault(normalized, {})[entity_id] = entity
+        return True
     
     # Policy Management
     

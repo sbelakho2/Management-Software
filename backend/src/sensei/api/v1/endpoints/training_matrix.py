@@ -13,8 +13,11 @@ from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
+
+from sensei.api import deps
+from sensei.core.config import settings
 
 from sensei.services.hr.training_matrix import (
     TrainingMatrixService,
@@ -31,7 +34,12 @@ from sensei.services.hr.training_matrix import (
 )
 
 
-router = APIRouter(tags=["Training Matrix"])
+AllowTrainingMatrix = deps.require_role("hr", "supervisor", "gm", "exec")  # type: ignore[valid-type]
+
+router = APIRouter(
+    tags=["Training Matrix"],
+    dependencies=[Depends(deps.RoleChecker(["hr", "supervisor", "gm", "exec"]))],
+)
 
 
 # ==============================================================================
@@ -198,6 +206,12 @@ class ThresholdsResponse(BaseModel):
     """Response schema for expiration thresholds."""
     
     thresholds: dict[str, int]
+    
+class GenerateMockMatrixParams(BaseModel):
+    """Params for generating a mock training matrix."""
+
+    num_users: int = Field(default=10, ge=1, le=100)
+    num_skills: int = Field(default=5, ge=1, le=50)
 
 
 class ThresholdUpdateRequest(BaseModel):
@@ -307,6 +321,21 @@ def generate_matrix(
         reference_date=request.reference_date or date.today(),
     )
     
+    return _convert_matrix_result(result)
+
+@router.post("/generate/mock", response_model=TrainingMatrixResponse)
+def generate_mock_matrix(
+    num_users: int = Query(10, ge=1, le=100),
+    num_skills: int = Query(5, ge=1, le=50),
+) -> TrainingMatrixResponse:
+    """Generate a mock training matrix for testing."""
+    if settings.is_production:
+        # Hide test helper endpoint in production.
+        raise HTTPException(status_code=404, detail="Not found")
+
+    service = TrainingMatrixService()
+    result = service.generate_mock_matrix(num_users=num_users, num_skills=num_skills)
+
     return _convert_matrix_result(result)
 
 

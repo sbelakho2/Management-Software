@@ -26,10 +26,11 @@ export const useProductStore = create<ProductState>((set, get) => ({
   fetchProducts: async (params) => {
     set({ loading: true, error: null });
     try {
-      const response = await productApi.listProducts(params);
+      // productApi returns unwrapped data directly (Product[])
+      const products = await productApi.listProducts(params);
       set({ 
-        products: response.data, 
-        totalProducts: response.meta?.total || response.data.length,
+        products: products, 
+        totalProducts: products.length,
         loading: false 
       });
     } catch (error: unknown) {
@@ -40,8 +41,9 @@ export const useProductStore = create<ProductState>((set, get) => ({
   fetchProduct: async (id) => {
     set({ loading: true, error: null });
     try {
-      const response = await productApi.getProduct(id);
-      set({ currentProduct: response.data, loading: false });
+      // productApi returns unwrapped data directly (ProductDetail)
+      const product = await productApi.getProduct(id);
+      set({ currentProduct: product, loading: false });
     } catch (error: unknown) {
       set({ error: getErrorMessage(error), loading: false });
     }

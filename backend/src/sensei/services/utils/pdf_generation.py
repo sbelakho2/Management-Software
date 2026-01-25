@@ -42,8 +42,6 @@ class PDFDocumentType(str, Enum):
     RFQ_SUMMARY = "rfq_summary"
     A3_REPORT = "a3_report"
     TRAINING_CERTIFICATE = "training_certificate"
-    
-    # starzERP legacy documents
     STARZ_PAYSLIP = "starz_payslip"
     STARZ_PURCHASE_ORDER = "starz_purchase_order"
     STARZ_QUOTATION = "starz_quotation"
@@ -721,25 +719,35 @@ class PDFGenerationService:
         self._templates[eight_d_template.id] = eight_d_template
         self._default_templates[PDFDocumentType.EIGHT_D_REPORT] = eight_d_template.id
 
-        # Starz legacy templates
-        for doc_type in [
-            PDFDocumentType.STARZ_PAYSLIP,
-            PDFDocumentType.STARZ_PURCHASE_ORDER,
-            PDFDocumentType.STARZ_QUOTATION,
-            PDFDocumentType.STARZ_WMS_LABEL,
-        ]:
-            template = PDFTemplate(
+        # STARZ legacy templates
+        for document_type, name in (
+            (PDFDocumentType.STARZ_PAYSLIP, "STARZ Payslip Template"),
+            (PDFDocumentType.STARZ_PURCHASE_ORDER, "STARZ Purchase Order Template"),
+            (PDFDocumentType.STARZ_QUOTATION, "STARZ Quotation Template"),
+            (PDFDocumentType.STARZ_WMS_LABEL, "STARZ WMS Label Template"),
+        ):
+            starz_template = PDFTemplate(
                 id=uuid4(),
-                name=f"Starz {doc_type.value} Template",
-                document_type=doc_type,
+                name=name,
+                document_type=document_type,
                 branding=BrandingConfig(template=PDFBrandTemplate.DEFAULT),
                 watermark=WatermarkConfig(watermark_type=WatermarkType.NONE),
-                default_options=PDFGenerationOptions(),
-                sections=[],
+                default_options=PDFGenerationOptions(
+                    language=PDFLanguage.ENGLISH,
+                ),
+                sections=[
+                    PDFSection(
+                        id="document",
+                        title=name,
+                        content={},
+                        order=1,
+                    )
+                ],
                 is_default=True,
             )
-            self._templates[template.id] = template
-            self._default_templates[doc_type] = template.id
+            self._templates[starz_template.id] = starz_template
+            self._default_templates[document_type] = starz_template.id
+
     
     # Template Management
     

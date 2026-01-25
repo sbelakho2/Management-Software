@@ -74,7 +74,7 @@ class TestRoleHierarchy:
 
 
 class TestRoleCheckerHierarchy:
-    """Test RoleChecker with hierarchy-based access."""
+    """Test RoleChecker access rules."""
 
     @pytest.fixture
     def mock_token_data(self):
@@ -125,13 +125,16 @@ class TestRoleCheckerHierarchy:
 
     @pytest.mark.asyncio
     async def test_higher_privilege_role_passes(self, mock_token_data):
-        """User with higher privilege than required should pass."""
-        checker = RoleChecker(["operator"])  # Level 98
-        token = mock_token_data(["supervisor"])  # Level 95 (more privileged)
+        """Non-matching roles should not inherit access via hierarchy."""
+        from fastapi import HTTPException
+
+        checker = RoleChecker(["operator"])
+        token = mock_token_data(["supervisor"])
         
         with patch("sensei.api.deps.get_token_data", return_value=token):
-            result = await checker(token)
-            assert result is True
+            with pytest.raises(HTTPException) as exc_info:
+                await checker(token)
+            assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_lower_privilege_role_fails(self, mock_token_data):
@@ -148,17 +151,20 @@ class TestRoleCheckerHierarchy:
 
     @pytest.mark.asyncio
     async def test_multi_role_user_uses_best_privilege(self, mock_token_data):
-        """User with multiple roles should use the most privileged one."""
-        checker = RoleChecker(["finance"])  # Level 20
-        token = mock_token_data(["operator", "gm"])  # Level 98 and 10
+        """User must have an explicitly allowed role (or admin/ceo)."""
+        from fastapi import HTTPException
+
+        checker = RoleChecker(["finance"])
+        token = mock_token_data(["operator", "gm"])
         
         with patch("sensei.api.deps.get_token_data", return_value=token):
-            result = await checker(token)
-            assert result is True  # GM level 10 is more privileged than finance level 20
+            with pytest.raises(HTTPException) as exc_info:
+                await checker(token)
+            assert exc_info.value.status_code == 403
 
 
 class TestPermissionCheckerCEOAccess:
-    """Test PermissionChecker gives CEO full access."""
+    """Test PermissionChecker behavior for privileged vs regular roles."""
 
     @pytest.fixture
     def mock_token_data(self):
@@ -189,13 +195,16 @@ class TestPermissionCheckerCEOAccess:
 
     @pytest.mark.asyncio
     async def test_ceo_has_all_permissions(self, mock_token_data):
-        """CEO should pass any permission check."""
+        """CEO does not implicitly get all granular permissions."""
+        from fastapi import HTTPException
+
         checker = PermissionChecker("admin.system:delete")
         token = mock_token_data(["ceo"], [])
         
         with patch("sensei.api.deps.get_token_data", return_value=token):
-            result = await checker(token)
-            assert result is True
+            with pytest.raises(HTTPException) as exc_info:
+                await checker(token)
+            assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_regular_user_needs_explicit_permission(self, mock_token_data):

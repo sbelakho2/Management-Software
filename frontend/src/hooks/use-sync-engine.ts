@@ -112,45 +112,10 @@ export function useSyncEngine(options: SyncEngineOptions = {}): UseSyncEngineRet
     clearAll,
   } = useSyncStore();
 
-  // Listen for online/offline events
-  React.useEffect(() => {
-    const handleOnline = () => {
-      setOnline(true);
-      if (autoSync) {
-        sync();
-      }
-    };
-
-    const handleOffline = () => {
-      setOnline(false);
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [autoSync]);
-
-  // Periodic sync
-  React.useEffect(() => {
-    if (syncInterval <= 0) return;
-
-    const intervalId = setInterval(() => {
-      if (isOnline && getPendingCount() > 0) {
-        sync();
-      }
-    }, syncInterval);
-
-    return () => clearInterval(intervalId);
-  }, [syncInterval, isOnline]);
-
   /**
    * Process a single pending operation
    */
-  const processOperation = async (operation: PendingOperation): Promise<SyncResult> => {
+  const processOperation = React.useCallback(async (operation: PendingOperation): Promise<SyncResult> => {
     updateOperationStatus(operation.id, 'syncing');
 
     try {
@@ -200,12 +165,12 @@ export function useSyncEngine(options: SyncEngineOptions = {}): UseSyncEngineRet
         error: errorMessage,
       };
     }
-  };
+  }, [updateOperationStatus, removeOptimisticEntity, incrementRetry]);
 
   /**
    * Sync all pending operations
    */
-  const sync = async (): Promise<SyncResult[]> => {
+  const sync = React.useCallback(async (): Promise<SyncResult[]> => {
     // Get fresh state from the store
     const currentState = useSyncStore.getState();
     
@@ -251,7 +216,42 @@ export function useSyncEngine(options: SyncEngineOptions = {}): UseSyncEngineRet
     }
 
     return results;
-  };
+  }, [processOperation, setSyncing, setSyncError, setLastSyncAt, clearCompletedOperations, onSyncComplete, onSyncError]);
+
+  // Listen for online/offline events
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setOnline(true);
+      if (autoSync) {
+        sync();
+      }
+    };
+
+    const handleOffline = () => {
+      setOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [autoSync, setOnline, sync]);
+
+  // Periodic sync
+  React.useEffect(() => {
+    if (syncInterval <= 0) return;
+
+    const intervalId = setInterval(() => {
+      if (isOnline && getPendingCount() > 0) {
+        sync();
+      }
+    }, syncInterval);
+
+    return () => clearInterval(intervalId);
+  }, [syncInterval, isOnline, getPendingCount, sync]);
 
   /**
    * Queue an operation and optionally execute immediately if online
@@ -356,17 +356,17 @@ export function useSyncEngine(options: SyncEngineOptions = {}): UseSyncEngineRet
   /**
    * Retry all failed operations
    */
-  const retryFailed = async (): Promise<void> => {
+  const retryFailed = React.useCallback(async (): Promise<void> => {
     retryFailedOperations();
     await sync();
-  };
+  }, [retryFailedOperations, sync]);
 
   /**
    * Clear all pending operations
    */
-  const clearQueue = (): void => {
+  const clearQueue = React.useCallback((): void => {
     clearAll();
-  };
+  }, [clearAll]);
 
   return {
     isOnline,

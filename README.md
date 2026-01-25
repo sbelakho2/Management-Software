@@ -41,15 +41,38 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 alembic upgrade head
-uvicorn sensei.main:app --reload
+
+# Option A: run directly
+python -m uvicorn sensei.main:app --reload --host 0.0.0.0 --port 8001
+
+# Option B: auto-restart loop (recommended for long-lived dev sessions)
+cd ..
+./scripts/dev_backend.sh
+
+# If you need to free the port first
+./scripts/restart_backend.sh
 ```
+
+Health endpoints:
+- http://localhost:8001/health
+- http://localhost:8001/api/v1/health/ready
+- http://localhost:8001/api/v1/health/live
 
 ### Frontend
 
 ```bash
 cd frontend
 npm install
+
+# Option A: run directly
 npm run dev
+
+# Option B: auto-restart loop (recommended for long-lived dev sessions)
+cd ..
+./scripts/dev_frontend.sh
+
+# If you need to free the port first
+./scripts/restart_frontend.sh
 ```
 
 Visit http://localhost:3000

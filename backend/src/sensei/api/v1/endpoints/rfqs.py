@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status, Header
+from fastapi import APIRouter, Depends, Query, status, Header
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
@@ -56,7 +56,40 @@ from fastapi.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 
-router = APIRouter()
+# Cross-functional quoting access (view/create/update RFQs)
+AllowQuotingModule: TypeAlias = deps.require_role(
+    "sales",
+    "sales_engineer",
+    "estimator",
+    "purchasing",
+    "supply_chain",
+    "engineering",
+    "finance",
+    "accountant",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "sales",
+                    "sales_engineer",
+                    "estimator",
+                    "purchasing",
+                    "supply_chain",
+                    "engineering",
+                    "finance",
+                    "accountant",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ]
+)
 
 
 # =============================================================================
@@ -692,6 +725,27 @@ async def export_rfqs(
     )
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@router.get("/completeness/field-definitions", response_model=APIResponse)
+async def get_completeness_field_definitions(
+    current_user: CurrentUser,
+):
+    """
+    Get the field definitions used for completeness scoring.
+    
+    Returns the list of fields, their weights, and categories.
+    """
+    from sensei.services.sales.rfq_completeness import RFQCompletenessService
+    
+    service = RFQCompletenessService()
+    definitions = service.get_field_definitions()
+    
+    return build_response(data={
+        "field_count": len(definitions),
+        "qualification_threshold": service.qualification_threshold,
+        "fields": definitions,
+    })
 
 
 @router.post("", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
@@ -1513,24 +1567,3 @@ async def generate_missing_info_tasks(
     )
     
     return build_response(data=response_data.model_dump())
-
-
-@router.get("/completeness/field-definitions", response_model=APIResponse)
-async def get_completeness_field_definitions(
-    current_user: CurrentUser,
-):
-    """
-    Get the field definitions used for completeness scoring.
-    
-    Returns the list of fields, their weights, and categories.
-    """
-    from sensei.services.sales.rfq_completeness import RFQCompletenessService
-    
-    service = RFQCompletenessService()
-    definitions = service.get_field_definitions()
-    
-    return build_response(data={
-        "field_count": len(definitions),
-        "qualification_threshold": service.qualification_threshold,
-        "fields": definitions,
-    })

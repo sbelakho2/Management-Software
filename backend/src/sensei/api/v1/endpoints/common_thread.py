@@ -9,22 +9,16 @@ Also supports explicit binding of entities across the RFQ->Quote->WO->NC->Shipme
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_current_user, get_db
+from sensei.api.deps import DBSession, OptionalCurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
-from sensei.models.user import User
 from sensei.services.core.common_thread import get_common_thread_service
 
 router = APIRouter()
-
-DBSession = Annotated[AsyncSession, Depends(get_db)]
-CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 class CommonThreadNodeResponse(BaseModel):
@@ -65,7 +59,7 @@ async def get_common_thread_trace(
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    current_user: CurrentUser | None = None,  # noqa: ARG001
+    current_user: OptionalCurrentUser = None,  # noqa: ARG001
 ) -> APIResponse[CommonThreadTraceResponse]:
     trace = await get_common_thread_service().get_trace(
         db,
@@ -104,7 +98,7 @@ async def get_common_thread_trace(
 async def bind_common_thread(
     req: CommonThreadBindRequest,
     db: DBSession,
-    current_user: CurrentUser | None = None,
+    current_user: OptionalCurrentUser = None,
     x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[dict]:
     await get_common_thread_service().bind(

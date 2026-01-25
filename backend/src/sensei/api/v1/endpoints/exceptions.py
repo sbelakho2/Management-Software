@@ -8,9 +8,10 @@ aggregating all red/warning items across the system.
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api import deps
 from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.utils import APIResponse, build_response
 from sensei.services.exceptions_aggregator import (
@@ -26,7 +27,36 @@ from sensei.services.exceptions_aggregator import (
 )
 
 
-router = APIRouter(tags=["exceptions"])
+AllowExceptionsModule = deps.require_role(
+    "ops",
+    "supervisor",
+    "team_lead",
+    "quality",
+    "sales_engineer",
+    "engineering",
+    "gm",
+    "exec",
+)  # type: ignore[valid-type]
+
+router = APIRouter(
+    tags=["exceptions"],
+    dependencies=[
+        Depends(
+            deps.RoleChecker(
+                [
+                    "ops",
+                    "supervisor",
+                    "team_lead",
+                    "quality",
+                    "sales_engineer",
+                    "engineering",
+                    "gm",
+                    "exec",
+                ]
+            )
+        )
+    ],
+)
 
 
 # =============================================================================

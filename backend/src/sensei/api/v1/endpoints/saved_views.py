@@ -8,9 +8,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.core.config import settings
 from sensei.services.saved_views import (
     SavedViewsService,
     SavedView,
@@ -25,7 +26,16 @@ from sensei.services.saved_views import (
     ViewVisibility,
 )
 
-router = APIRouter(prefix="/saved-views", tags=["Saved Views"])
+def _deny_production() -> None:
+    if settings.is_production:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(
+    prefix="/saved-views",
+    tags=["Saved Views"],
+    dependencies=[Depends(_deny_production)],
+)
 
 # --------------------------------------------------------------------------
 # Service Instance (in production, would be dependency injected)

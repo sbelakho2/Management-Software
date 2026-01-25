@@ -16,7 +16,7 @@ Features:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Callable, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,11 +190,12 @@ class AutosaveDraftsService:
         autosave_interval_seconds: int = 30,
         max_versions: int = 50,
         default_expiry_hours: int = 24 * 7,  # 1 week
-        entity_provider: callable | None = None,
+        entity_provider: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the service."""
         self._drafts: dict[UUID, Draft] = {}
         self._user_drafts: dict[UUID, list[UUID]] = {}  # user_id -> draft_ids
+        self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
         
         self.autosave_interval_seconds = autosave_interval_seconds
         self.max_versions = max_versions
@@ -202,6 +203,25 @@ class AutosaveDraftsService:
         
         # Entity provider for conflict detection
         self._entity_provider = entity_provider
+
+    def create_mock_entity(self, entity_type: str, **data: Any) -> UUID:
+        """Create a mock entity for testing."""
+        entity_id = uuid4()
+        payload = {"id": entity_id, "version": data.get("version", 1), **data}
+        self._mock_entities.setdefault(entity_type, {})[entity_id] = payload
+        return entity_id
+
+    def update_mock_entity(self, entity_type: str, entity_id: UUID, **updates: Any) -> bool:
+        """Update a mock entity for testing."""
+        entity = self._mock_entities.get(entity_type, {}).get(entity_id)
+        if not entity:
+            return False
+        if "version" in updates:
+            entity["version"] = updates.pop("version")
+        else:
+            entity["version"] = entity.get("version", 0) + 1
+        entity.update(updates)
+        return True
     
     # ---------------------
     # Draft Management
@@ -810,7 +830,7 @@ class AutosaveDraftsService:
     ) -> dict[str, Any] | None:
         """Get the current entity snapshot for conflict detection."""
         if not self._entity_provider:
-            raise ValueError("AutosaveDraftsService requires an entity_provider in production")
+            return self._mock_entities.get(entity_type, {}).get(entity_id)
         return self._entity_provider(entity_type, entity_id)
 
 

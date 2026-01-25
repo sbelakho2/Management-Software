@@ -4,19 +4,24 @@ from typing import Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from sensei.api import deps
 from sensei.api.schemas import APIResponse
 from sensei.core.database import get_db_session
-from sensei.models.finance import GLAccount, JournalEntry, AccountingPeriod, CurrencySetting, FXRate
+from sensei.models.finance import GLAccount, JournalEntry, JournalLine, AccountingPeriod, CurrencySetting, FXRate
+from sensei.models.user import User
 from sensei.services.finance.currency_settings import CurrencySettingsService
 from sensei.services.finance.cost_rollup_service import CostRollupService
 from sensei.services.finance.tax_service import TaxService
 from sensei.services.finance import get_accounting_service
 from pydantic import BaseModel
 
-router = APIRouter()
+AllowFinanceModule = deps.require_role("finance", "accountant", "gm", "exec")  # type: ignore[valid-type]
+
+router = APIRouter(
+    dependencies=[Depends(deps.RoleChecker(["finance", "accountant", "gm", "exec"]))]
+)
 
 class GLAccountSchema(BaseModel):
     account_code: str
@@ -389,36 +394,143 @@ async def get_finance_dashboard_stats(
     db: AsyncSession = Depends(get_db_session),
     current_user: Any = Depends(deps.get_current_active_user),
 ):
-    """Get finance dashboard statistics for the control plane view."""
-    # Get accounts and calculate totals
-    svc = get_accounting_service(db)
-    accounts = await svc.list_accounts()
-    
-    # Calculate basic stats from accounts
-    total_accounts = len(accounts)
-    active_accounts = sum(1 for a in accounts if getattr(a, 'is_active', True))
-    
-    # Get recent journal entries count
-    result = await db.execute(select(JournalEntry))
-    entries = result.scalars().all()
-    total_entries = len(entries)
-    
-    # Return dashboard stats
+    """Get finance dashboard statistics.
+
+    This endpoint must not return mocked values. When business source data isn't
+    available yet, it derives what it can from persisted GL/journal records and
+    returns zero/empty-derived metrics.
+    """
+
+    today = date.today()
+    month_start = today.replace(day=1)
+    prev_month_end = month_start.fromordinal(month_start.toordinal() - 1)
+    prev_month_start = prev_month_end.replace(day=1)
+    prev_period_end = min(prev_month_end, prev_month_start.fromordinal(prev_month_start.toordinal() + today.day - 1))
+
+    total_accounts = (
+        await db.execute(select(func.count(GLAccount.id)))
+    ).scalar_one() or 0
+    active_accounts = (
+        await db.execute(select(func.count(GLAccount.id)).where(GLAccount.is_active.is_(True)))
+    ).scalar_one() or 0
+    total_entries = (
+        await db.execute(select(func.count(JournalEntry.id)))
+    ).scalar_one() or 0
+
+    revenue_mtd = (
+        await db.execute(
+            select(func.coalesce(func.sum(JournalLine.credit - JournalLine.debit), 0))
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+            .join(GLAccount, JournalLine.account_id == GLAccount.id)
+            .where(
+                GLAccount.account_type == "revenue",
+                JournalEntry.status == "posted",
+                JournalEntry.entry_date >= month_start,
+                JournalEntry.entry_date <= today,
+            )
+        )
+    ).scalar_one()
+    revenue_mtd = Decimal(revenue_mtd or 0)
+
+    revenue_prev = (
+        await db.execute(
+            select(func.coalesce(func.sum(JournalLine.credit - JournalLine.debit), 0))
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+            .join(GLAccount, JournalLine.account_id == GLAccount.id)
+            .where(
+                GLAccount.account_type == "revenue",
+                JournalEntry.status == "posted",
+                JournalEntry.entry_date >= prev_month_start,
+                JournalEntry.entry_date <= prev_period_end,
+            )
+        )
+    ).scalar_one()
+    revenue_prev = Decimal(revenue_prev or 0)
+
+    opex_mtd = (
+        await db.execute(
+            select(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+            .join(GLAccount, JournalLine.account_id == GLAccount.id)
+            .where(
+                GLAccount.account_type == "expense",
+                JournalEntry.status == "posted",
+                JournalEntry.entry_date >= month_start,
+                JournalEntry.entry_date <= today,
+            )
+        )
+    ).scalar_one()
+    opex_mtd = Decimal(opex_mtd or 0)
+
+    opex_prev = (
+        await db.execute(
+            select(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+            .join(GLAccount, JournalLine.account_id == GLAccount.id)
+            .where(
+                GLAccount.account_type == "expense",
+                JournalEntry.status == "posted",
+                JournalEntry.entry_date >= prev_month_start,
+                JournalEntry.entry_date <= prev_period_end,
+            )
+        )
+    ).scalar_one()
+    opex_prev = Decimal(opex_prev or 0)
+
+    liquidity_reserve = (
+        await db.execute(
+            select(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+            .join(GLAccount, JournalLine.account_id == GLAccount.id)
+            .where(
+                GLAccount.account_type == "asset",
+                JournalEntry.status == "posted",
+                JournalEntry.entry_date <= today,
+            )
+        )
+    ).scalar_one()
+    liquidity_reserve = Decimal(liquidity_reserve or 0)
+
+    pending_approvals = (
+        await db.execute(select(func.count(JournalEntry.id)).where(JournalEntry.status == "draft"))
+    ).scalar_one() or 0
+
+    revenue_change = 0.0
+    if revenue_prev != 0:
+        revenue_change = float(((revenue_mtd - revenue_prev) / revenue_prev) * Decimal("100"))
+
+    gross_margin = 0.0
+    if revenue_mtd != 0:
+        gross_margin = float(((revenue_mtd - opex_mtd) / revenue_mtd) * Decimal("100"))
+
+    prev_margin = 0.0
+    if revenue_prev != 0:
+        prev_margin = float(((revenue_prev - opex_prev) / revenue_prev) * Decimal("100"))
+
+    margin_change = gross_margin - prev_margin
+
+    liquidity_status = "optimal" if liquidity_reserve > 0 else "low"
+
     return {
-        "revenue_mtd": 1240000.00,
-        "revenue_change": 8.2,
-        "gross_margin": 32.4,
-        "margin_change": -1.5,
-        "opex": 420000.00,
-        "budget_utilization": 92,
-        "liquidity_reserve": 2800000.00,
-        "liquidity_status": "optimal",
-        "total_accounts": total_accounts,
-        "active_accounts": active_accounts,
-        "total_journal_entries": total_entries,
-        "pending_approvals": 3,
-        "overdue_invoices": 5,
-        "overdue_amount": 45000.00,
+        "revenue_mtd": float(revenue_mtd),
+        "revenue_change": round(revenue_change, 2),
+        "gross_margin": round(gross_margin, 2),
+        "margin_change": round(margin_change, 2),
+        "opex": float(opex_mtd),
+        "budget_utilization": 0,
+        "liquidity_reserve": float(liquidity_reserve),
+        "liquidity_status": liquidity_status,
+        "total_accounts": int(total_accounts),
+        "active_accounts": int(active_accounts),
+        "total_journal_entries": int(total_entries),
+        "pending_approvals": int(pending_approvals),
+        "overdue_invoices": 0,
+        "overdue_amount": 0.0,
     }
 
 
@@ -427,14 +539,39 @@ async def get_revenue_by_product(
     db: AsyncSession = Depends(get_db_session),
     current_user: Any = Depends(deps.get_current_active_user),
 ):
-    """Get revenue breakdown by product line."""
-    # This would typically query actual sales data
-    return [
-        {"name": "Fabrication", "revenue": 450000, "percentage": 36},
-        {"name": "Assembly", "revenue": 320000, "percentage": 26},
-        {"name": "Services", "revenue": 280000, "percentage": 23},
-        {"name": "Parts", "revenue": 190000, "percentage": 15},
-    ]
+    """Get revenue breakdown.
+
+    Uses revenue GL accounts as a proxy when product-level sales data isn't available.
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    result = await db.execute(
+        select(
+            GLAccount.account_name,
+            func.coalesce(func.sum(JournalLine.credit - JournalLine.debit), 0).label("revenue"),
+        )
+        .select_from(JournalLine)
+        .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+        .join(GLAccount, JournalLine.account_id == GLAccount.id)
+        .where(
+            GLAccount.account_type == "revenue",
+            JournalEntry.status == "posted",
+            JournalEntry.entry_date >= month_start,
+            JournalEntry.entry_date <= today,
+        )
+        .group_by(GLAccount.account_name)
+        .order_by(func.sum(JournalLine.credit - JournalLine.debit).desc())
+    )
+
+    rows = [(name, Decimal(amount or 0)) for (name, amount) in result.all()]
+    total = sum((amt for _, amt in rows), Decimal("0"))
+
+    response: list[dict] = []
+    for name, amount in rows:
+        pct = float((amount / total) * Decimal("100")) if total != 0 else 0.0
+        response.append({"name": name, "revenue": float(amount), "percentage": round(pct, 2)})
+    return response
 
 
 @router.get("/expense-breakdown", response_model=list)
@@ -442,13 +579,46 @@ async def get_expense_breakdown(
     db: AsyncSession = Depends(get_db_session),
     current_user: Any = Depends(deps.get_current_active_user),
 ):
-    """Get expense breakdown by category."""
-    return [
-        {"category": "Materials", "amount": 180000, "percentage": 43, "status": "normal"},
-        {"category": "Labor", "amount": 120000, "percentage": 29, "status": "normal"},
-        {"category": "Overhead", "amount": 80000, "percentage": 19, "status": "warning"},
-        {"category": "Other", "amount": 40000, "percentage": 9, "status": "normal"},
-    ]
+    """Get expense breakdown.
+
+    Uses expense GL accounts as categories when a richer taxonomy isn't configured.
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    result = await db.execute(
+        select(
+            GLAccount.account_name,
+            func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0).label("amount"),
+        )
+        .select_from(JournalLine)
+        .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+        .join(GLAccount, JournalLine.account_id == GLAccount.id)
+        .where(
+            GLAccount.account_type == "expense",
+            JournalEntry.status == "posted",
+            JournalEntry.entry_date >= month_start,
+            JournalEntry.entry_date <= today,
+        )
+        .group_by(GLAccount.account_name)
+        .order_by(func.sum(JournalLine.debit - JournalLine.credit).desc())
+    )
+
+    rows = [(name, Decimal(amount or 0)) for (name, amount) in result.all()]
+    total = sum((amt for _, amt in rows), Decimal("0"))
+
+    response: list[dict] = []
+    for name, amount in rows:
+        pct = float((amount / total) * Decimal("100")) if total != 0 else 0.0
+        response.append(
+            {
+                "category": name,
+                "amount": float(amount),
+                "percentage": round(pct, 2),
+                "status": "normal",
+            }
+        )
+    return response
 
 
 @router.get("/pending-approvals", response_model=list)
@@ -456,9 +626,52 @@ async def get_pending_approvals(
     db: AsyncSession = Depends(get_db_session),
     current_user: Any = Depends(deps.get_current_active_user),
 ):
-    """Get list of pending financial approvals."""
-    return [
-        {"id": "1", "type": "Invoice", "description": "Q1 Equipment Purchase", "amount": 25000, "requestor": "John Smith", "submitted": "2025-01-10"},
-        {"id": "2", "type": "PO", "description": "Raw Materials Order", "amount": 18500, "requestor": "Jane Doe", "submitted": "2025-01-09"},
-        {"id": "3", "type": "Expense", "description": "Travel Reimbursement", "amount": 1200, "requestor": "Bob Wilson", "submitted": "2025-01-08"},
-    ]
+    """Get list of pending financial approvals.
+
+    Currently maps to draft Journal Entries.
+    """
+    result = await db.execute(
+        select(
+            JournalEntry.id,
+            JournalEntry.description,
+            JournalEntry.entry_date,
+            User.first_name,
+            User.last_name,
+            func.coalesce(func.sum(JournalLine.debit), 0).label("total_debit"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("total_credit"),
+        )
+        .select_from(JournalEntry)
+        .outerjoin(User, User.id == JournalEntry.created_by_id)
+        .outerjoin(JournalLine, JournalLine.entry_id == JournalEntry.id)
+        .where(JournalEntry.status == "draft")
+        .group_by(JournalEntry.id, User.first_name, User.last_name)
+        .order_by(JournalEntry.entry_date.desc())
+        .limit(50)
+    )
+
+    approvals: list[dict] = []
+    for (
+        entry_id,
+        description,
+        entry_date,
+        first_name,
+        last_name,
+        total_debit,
+        total_credit,
+    ) in result.all():
+        requestor = (f"{first_name} {last_name}".strip() if first_name and last_name else "Unknown")
+        debit_amt = Decimal(total_debit or 0)
+        credit_amt = Decimal(total_credit or 0)
+        amount = float(max(debit_amt, credit_amt))
+        approvals.append(
+            {
+                "id": str(entry_id),
+                "type": "Journal Entry",
+                "description": description,
+                "amount": amount,
+                "requestor": requestor,
+                "submitted": entry_date.isoformat(),
+            }
+        )
+
+    return approvals
