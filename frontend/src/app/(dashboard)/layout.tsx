@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MainLayout, CommandPalette } from '@/components/layout';
 import { Loader2 } from 'lucide-react';
+import type { UserRole } from '@/types';
+import { getUnauthorizedRedirectForRoles, hasPageAccess } from '@/lib/page-access';
 
 export default function DashboardLayout({
   children,
@@ -13,9 +15,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { isAuthenticated, isLoading, loadUser } = useAuthStore();
+  const { user } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = React.useState(false);
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
 
   React.useEffect(() => {
     setMounted(true);
@@ -38,6 +46,16 @@ export default function DashboardLayout({
       router.push(`/login${searchParams.toString() ? `?${searchParams.toString()}` : ''}`);
     }
   }, [isAuthenticated, isLoading, router, pathname]);
+
+  React.useEffect(() => {
+    // Enforce role-based access at the route level.
+    // This prevents direct navigation to restricted routes even if a link is hidden.
+    if (!mounted || isLoading || !isAuthenticated || !user || !pathname) return;
+
+    if (!hasPageAccess(pathname, userRoles)) {
+      router.replace(getUnauthorizedRedirectForRoles(pathname, userRoles));
+    }
+  }, [mounted, isLoading, isAuthenticated, user, pathname, userRoles, router]);
 
   if (!mounted || isLoading) {
     return (

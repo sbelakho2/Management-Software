@@ -15,6 +15,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import {
   SHOP_FLOOR_THEME,
   TOUCH_TARGET,
@@ -616,7 +617,7 @@ describe('AndonButton', () => {
 
 describe('AndonAlert', () => {
   it('returns null when not active', () => {
-    const { container } = render(
+    const { container } = renderWithI18n(
       <AndonAlert type="production" active={false} />
     );
     
@@ -624,7 +625,7 @@ describe('AndonAlert', () => {
   });
 
   it('renders production alert', () => {
-    render(<AndonAlert type="production" active />);
+    renderWithI18n(<AndonAlert type="production" active />);
     
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByText('Production Issue')).toBeInTheDocument();
@@ -632,25 +633,25 @@ describe('AndonAlert', () => {
   });
 
   it('renders quality alert', () => {
-    render(<AndonAlert type="quality" active />);
+    renderWithI18n(<AndonAlert type="quality" active />);
     
     expect(screen.getByText('Quality Alert')).toBeInTheDocument();
   });
 
   it('renders safety alert', () => {
-    render(<AndonAlert type="safety" active />);
+    renderWithI18n(<AndonAlert type="safety" active />);
     
     expect(screen.getByText('Safety Alert')).toBeInTheDocument();
   });
 
   it('renders maintenance alert', () => {
-    render(<AndonAlert type="maintenance" active />);
+    renderWithI18n(<AndonAlert type="maintenance" active />);
     
     expect(screen.getByText('Maintenance Required')).toBeInTheDocument();
   });
 
   it('displays message', () => {
-    render(
+    renderWithI18n(
       <AndonAlert type="quality" active message="Defect detected on line 3" />
     );
     
@@ -659,7 +660,7 @@ describe('AndonAlert', () => {
 
   it('calls onAcknowledge when button clicked', () => {
     const onAcknowledge = jest.fn();
-    render(
+    renderWithI18n(
       <AndonAlert type="production" active onAcknowledge={onAcknowledge} />
     );
     
@@ -668,7 +669,7 @@ describe('AndonAlert', () => {
   });
 
   it('does not show acknowledge button if no callback', () => {
-    render(<AndonAlert type="production" active />);
+    renderWithI18n(<AndonAlert type="production" active />);
     
     expect(screen.queryByText('Acknowledge')).not.toBeInTheDocument();
   });
@@ -917,7 +918,7 @@ describe('Factory Floor Integration', () => {
       );
     }
 
-    render(<AndonWorkflow />);
+    renderWithI18n(<AndonWorkflow />);
     
     // Initially no alert
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();

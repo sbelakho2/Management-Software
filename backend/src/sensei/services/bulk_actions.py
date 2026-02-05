@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 from sensei.services.core.entity_providers import build_entity_getter, build_entity_saver
 
 
@@ -257,6 +258,11 @@ class BulkActionsService:
         entity_saver: Callable[[EntityType, UUID, dict[str, Any]], None] | None = None,
     ) -> None:
         """Initialize the service."""
+        if settings.is_production and (entity_getter is None or entity_saver is None):
+            raise ValueError(
+                "BulkActionsService requires entity_getter and entity_saver in production. "
+                "Use get_bulk_actions_service(session) to construct it."
+            )
         self._results: dict[UUID, BulkActionResult] = {}
         self._handlers: dict[tuple[EntityType, BulkActionType], EntityHandler] = {}
         self._validators: dict[tuple[EntityType, BulkActionType], Callable] = {}
@@ -392,6 +398,8 @@ class BulkActionsService:
 
     def create_mock_entity(self, entity_type: EntityType, **data: Any) -> UUID:
         """Create a mock entity for tests."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity must not be used in production")
         entity_id = uuid4()
         payload = {"id": entity_id, **data}
         self._mock_entities.setdefault(entity_type, {})[entity_id] = payload

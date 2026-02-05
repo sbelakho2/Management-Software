@@ -13,7 +13,7 @@ from fastapi import APIRouter, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import DBSession, OptionalCurrentUser
+from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.common_thread import get_common_thread_service
@@ -56,10 +56,10 @@ class CommonThreadBindRequest(BaseModel):
 @router.get("/trace", response_model=APIResponse[CommonThreadTraceResponse])
 async def get_common_thread_trace(
     db: DBSession,
+    current_user: CurrentUser,  # noqa: ARG001
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    current_user: OptionalCurrentUser = None,  # noqa: ARG001
 ) -> APIResponse[CommonThreadTraceResponse]:
     trace = await get_common_thread_service().get_trace(
         db,
@@ -98,7 +98,7 @@ async def get_common_thread_trace(
 async def bind_common_thread(
     req: CommonThreadBindRequest,
     db: DBSession,
-    current_user: OptionalCurrentUser = None,
+    current_user: CurrentUser,
     x_reasoning_id: str | None = Header(default=None, alias="X-Reasoning-Id"),
 ) -> APIResponse[dict]:
     await get_common_thread_service().bind(
@@ -109,7 +109,7 @@ async def bind_common_thread(
         non_conformance_id=req.non_conformance_id,
         shipment_id=req.shipment_id,
         invoice_id=req.invoice_id,
-        created_by_id=getattr(current_user, "id", None),
+        created_by_id=current_user.id,
         reasoning_id=x_reasoning_id,
         source=req.source,
     )

@@ -23,6 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useAuthStore } from '@/stores';
 import { cn } from '@/lib/utils';
 import { SectionHeader } from '@/components/ui/content-card';
+import type { UserRole } from '@/types';
+import { hasPageAccess } from '@/lib/page-access';
 
 interface SettingsSection {
   id: string;
@@ -61,9 +63,16 @@ function SettingsNav({ className }: { className?: string }) {
   const router = useRouter();
   const { user } = useAuthStore();
   const { t } = useI18n();
-  const isAdmin = user?.role === 'admin';
-  
-  const filteredSections = sections.filter(s => !s.adminOnly || isAdmin);
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
+
+  const filteredSections = React.useMemo(
+    () => sections.filter((s) => hasPageAccess(s.href, userRoles)),
+    [userRoles]
+  );
   const personalSections = filteredSections.filter(s => s.category === 'personal');
   const orgSections = filteredSections.filter(s => s.category === 'organization');
   const systemSections = filteredSections.filter(s => s.category === 'system');
@@ -133,9 +142,16 @@ function SettingsCard({ section }: { section: SettingsSection }) {
 export default function SettingsPage() {
   const { t } = useI18n();
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'admin';
-  
-  const filteredSections = sections.filter(s => !s.adminOnly || isAdmin);
+
+  const userRoles = React.useMemo(() => {
+    if (!user) return [] as UserRole[];
+    return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
+  }, [user]);
+
+  const filteredSections = React.useMemo(
+    () => sections.filter((s) => hasPageAccess(s.href, userRoles)),
+    [userRoles]
+  );
   const personalSections = filteredSections.filter(s => s.category === 'personal');
   const orgSections = filteredSections.filter(s => s.category === 'organization');
   const systemSections = filteredSections.filter(s => s.category === 'system');

@@ -6,12 +6,14 @@ Tests the REST API for quote approval with < 60 second target.
 
 import time
 from uuid import uuid4
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
+from sensei.api import deps
 from sensei.services.sales.quote_approval_time_tracking import reset_quote_approval_service
 
 
@@ -27,6 +29,21 @@ def reset_service():
     reset_quote_approval_service()
     yield
     reset_quote_approval_service()
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    """Force authenticated access for quote approval endpoints."""
+
+    async def _mock_get_current_active_user():
+        user = MagicMock()
+        user.id = uuid4()
+        user.status = "active"
+        return user
+
+    app.dependency_overrides[deps.get_current_active_user] = _mock_get_current_active_user
+    yield
+    app.dependency_overrides.pop(deps.get_current_active_user, None)
 
 
 @pytest.fixture

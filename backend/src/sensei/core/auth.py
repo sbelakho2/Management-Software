@@ -606,12 +606,20 @@ class AuthService:
     async def _check_lockout(self, identifier: str) -> None:
         """Check if identifier is locked out."""
         key = get_lockout_key(identifier)
-        locked = await redis_client.get(key)
-        
-        if locked:
-            ttl = await redis_client.ttl(key)
-            locked_until = datetime.now(timezone.utc) + timedelta(seconds=ttl)
-            raise AccountLockedError(locked_until)
+        try:
+            locked = await redis_client.get(key)
+            if locked:
+                ttl = await redis_client.ttl(key)
+                locked_until = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+                raise AccountLockedError(locked_until)
+            return
+        except AccountLockedError:
+            raise
+        except Exception:
+            # Redis unavailable: fall back to DB lockout fields when possible
+            user = await self._get_user_by_email(identifier)
+            if user and user.locked_until and user.locked_until > datetime.now(timezone.utc):
+                raise AccountLockedError(user.locked_until)
     
     async def _record_failed_attempt(
         self,
@@ -621,38 +629,69 @@ class AuthService:
         """Record a failed login attempt."""
         # Increment rate limit counter
         key = get_rate_limit_key(email, "login")
-        count = await redis_client.incr(key)
-        
-        # Set expiry on first attempt
-        if count == 1:
-            await redis_client.expire(key, settings.LOCKOUT_DURATION_MINUTES * 60)
-        
-        # Lock account if too many attempts
-        if count >= settings.MAX_LOGIN_ATTEMPTS:
-            lockout_key = get_lockout_key(email)
-            await redis_client.setex(
-                lockout_key,
-                settings.LOCKOUT_DURATION_MINUTES * 60,
-                "1",
-            )
-            
-            # Update user record if we have user_id
-            if user_id:
-                await self.db.execute(
-                    update(User).where(User.id == user_id).values(
-                        failed_login_attempts=count,
-                        locked_until=datetime.now(timezone.utc) + timedelta(
-                            minutes=settings.LOCKOUT_DURATION_MINUTES
-                        ),
-                    )
+        try:
+            count = await redis_client.incr(key)
+
+            # Set expiry on first attempt
+            if count == 1:
+                await redis_client.expire(key, settings.LOCKOUT_DURATION_MINUTES * 60)
+
+            # Lock account if too many attempts
+            if count >= settings.MAX_LOGIN_ATTEMPTS:
+                lockout_key = get_lockout_key(email)
+                await redis_client.setex(
+                    lockout_key,
+                    settings.LOCKOUT_DURATION_MINUTES * 60,
+                    "1",
                 )
-                await self.db.commit()
-            
-            logger.warning(
-                "Account locked due to failed attempts",
-                email=email,
-                attempts=count,
+
+                # Update user record if we have user_id
+                if user_id:
+                    await self.db.execute(
+                        update(User).where(User.id == user_id).values(
+                            failed_login_attempts=count,
+                            locked_until=datetime.now(timezone.utc) + timedelta(
+                                minutes=settings.LOCKOUT_DURATION_MINUTES
+                            ),
+                        )
+                    )
+                    await self.db.commit()
+
+                logger.warning(
+                    "Account locked due to failed attempts",
+                    email=email,
+                    attempts=count,
+                )
+            return
+        except Exception:
+            # Redis unavailable: update DB counters as a fallback
+            user = None
+            if user_id:
+                user = await self._get_user_by_id(user_id)
+            if user is None:
+                user = await self._get_user_by_email(email)
+
+            if user is None:
+                return
+
+            attempts = (user.failed_login_attempts or 0) + 1
+            locked_until = None
+            if attempts >= settings.MAX_LOGIN_ATTEMPTS:
+                locked_until = datetime.now(timezone.utc) + timedelta(
+                    minutes=settings.LOCKOUT_DURATION_MINUTES
+                )
+                logger.warning(
+                    "Account locked due to failed attempts (DB fallback)",
+                    email=email,
+                    attempts=attempts,
+                )
+            await self.db.execute(
+                update(User).where(User.id == user.id).values(
+                    failed_login_attempts=attempts,
+                    locked_until=locked_until,
+                )
             )
+            await self.db.commit()
     
     async def _record_successful_login(self, user: User) -> None:
         """Record a successful login."""
@@ -665,33 +704,45 @@ class AuthService:
         
         # Clear any rate limiting
         key = get_rate_limit_key(user.email, "login")
-        await redis_client.delete(key)  # type: ignore[misc]
-        
-        lockout_key = get_lockout_key(user.email)
-        await redis_client.delete(lockout_key)  # type: ignore[misc]
+        try:
+            await redis_client.delete(key)  # type: ignore[misc]
+            lockout_key = get_lockout_key(user.email)
+            await redis_client.delete(lockout_key)  # type: ignore[misc]
+        except Exception:
+            logger.warning("Failed to clear Redis login counters; continuing")
     
     async def _store_refresh_token(self, user_id: UUID, jti: str) -> None:
         """Store refresh token JTI for the user."""
         key = f"user_tokens:{user_id}"
-        await redis_client.sadd(key, jti)  # type: ignore[misc]
-        
-        # Set expiry to refresh token lifetime
-        await redis_client.expire(key, settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)  # type: ignore[misc]
+        try:
+            await redis_client.sadd(key, jti)  # type: ignore[misc]
+            # Set expiry to refresh token lifetime
+            await redis_client.expire(key, settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)  # type: ignore[misc]
+        except Exception:
+            logger.warning("Failed to store refresh token in Redis")
     
     async def _is_token_revoked(self, jti: str) -> bool:
         """Check if token is revoked."""
         key = f"revoked_token:{jti}"
-        return await redis_client.exists(key) > 0
+        try:
+            return await redis_client.exists(key) > 0
+        except Exception:
+            # Fail open if Redis is unavailable
+            logger.warning("Failed to check token revocation in Redis")
+            return False
     
     async def _revoke_token(self, jti: str) -> None:
         """Revoke a token by JTI."""
         key = f"revoked_token:{jti}"
         # Store revoked token for longer than token lifetime
-        await redis_client.setex(
-            key,
-            settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 + 3600,
-            "1",
-        )
+        try:
+            await redis_client.setex(
+                key,
+                settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 + 3600,
+                "1",
+            )
+        except Exception:
+            logger.warning("Failed to revoke token in Redis")
 
 
 # =============================================================================

@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from sensei.api.deps import DBSession, OptionalCurrentUser
+from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.data_lineage import get_data_lineage_service
@@ -39,10 +39,10 @@ class LineageGraphResponse(BaseModel):
 @router.get("/graph", response_model=APIResponse[LineageGraphResponse])
 async def get_lineage_graph(
     db: DBSession,
+    current_user: CurrentUser,  # noqa: ARG001
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    current_user: OptionalCurrentUser = None,  # noqa: ARG001
 ) -> APIResponse[LineageGraphResponse]:
     graph = await get_data_lineage_service().get_graph(
         db,

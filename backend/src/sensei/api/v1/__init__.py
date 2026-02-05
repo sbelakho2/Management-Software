@@ -81,6 +81,7 @@ from sensei.api.v1.endpoints import (
     warehouse,
     it_monitoring,
     auditor,
+    chat,
 )
 
 api_router = APIRouter()
@@ -163,3 +164,4 @@ api_router.include_router(sites.router, tags=["Sites"])
 api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
 api_router.include_router(it_monitoring.router, prefix="/it", tags=["IT Monitoring"])
 api_router.include_router(auditor.router, prefix="/auditor", tags=["Auditor"])
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])

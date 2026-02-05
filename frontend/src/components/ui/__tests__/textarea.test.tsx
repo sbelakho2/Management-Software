@@ -35,7 +35,7 @@ describe('Textarea', () => {
 
   it('should show error state', () => {
     render(<Textarea error data-testid="textarea" />);
-    expect(screen.getByTestId('textarea')).toHaveClass('border-danger');
+    expect(screen.getByTestId('textarea')).toHaveClass('border-rams-red');
   });
 
   it('should handle different resize options', () => {

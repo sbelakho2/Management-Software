@@ -7,6 +7,7 @@
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderWithI18n } from '@/test-utils';
 
 import {
   PERMISSION,
@@ -368,38 +369,38 @@ describe('MaskedData', () => {
 
 describe('PrivacyIndicator', () => {
   it('should show idle status', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.IDLE} />);
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.IDLE} />);
     expect(screen.getByText('Idle')).toBeInTheDocument();
   });
 
   it('should show syncing status', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.SYNCING} />);
-    expect(screen.getByText('Syncing...')).toBeInTheDocument();
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.SYNCING} />);
+    expect(screen.getByText('Syncing')).toBeInTheDocument();
   });
 
   it('should show processing status', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.PROCESSING} />);
-    expect(screen.getByText('Processing...')).toBeInTheDocument();
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.PROCESSING} />);
+    expect(screen.getByText('Processing')).toBeInTheDocument();
   });
 
   it('should show complete status', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.COMPLETE} />);
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.COMPLETE} />);
     expect(screen.getByText('Complete')).toBeInTheDocument();
   });
 
   it('should show error status', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.ERROR} />);
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.ERROR} />);
     expect(screen.getByText('Error')).toBeInTheDocument();
   });
 
   it('should show custom label', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.SYNCING} label="Uploading..." />);
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.SYNCING} label="Uploading..." />);
     expect(screen.getByText('Uploading...')).toBeInTheDocument();
   });
 
   it('should hide label when showLabel=false', () => {
-    render(<PrivacyIndicator status={SYNC_STATUS.SYNCING} showLabel={false} />);
-    expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
+    renderWithI18n(<PrivacyIndicator status={SYNC_STATUS.SYNCING} showLabel={false} />);
+    expect(screen.queryByText('Syncing')).not.toBeInTheDocument();
   });
 });
 

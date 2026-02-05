@@ -2,32 +2,62 @@ import { act } from 'react-dom/test-utils';
 
 jest.mock('axios', () => {
   const isAxiosError = (error: any) => Boolean(error?.isAxiosError);
+
+  const post = jest.fn().mockImplementation((_url: string, payload: any) => {
+    const name = payload?.recipient?.name || 'there';
+    const keyPoints = payload?.key_points || [];
+    return Promise.resolve({
+      data: {
+        id: 'draft-1',
+        subject: payload?.reference_number ? `Update on ${payload.reference_number}` : 'Subject',
+        salutation: `Hello ${name}`,
+        body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
+        opening: 'Opening',
+        main_content: keyPoints.length ? keyPoints : ['Point 1'],
+        closing: 'Regards',
+        signature: 'Signature',
+        alternatives: [],
+        compliance_issues: [],
+        suggestions: [],
+        tokens_used: 0,
+        generation_time_ms: 1,
+        model_version: 'v1.0',
+        confidence_score: 0.9,
+      },
+    });
+  });
+
+  const create = jest.fn(() => {
+    const instance: any = jest.fn().mockResolvedValue({ data: {} });
+    instance.interceptors = {
+      request: { use: jest.fn() },
+      response: { use: jest.fn() },
+    };
+    instance.post = post;
+    instance.get = jest.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.startsWith('/common-thread/trace')) {
+        return Promise.resolve({
+          data: {
+            root_entity_type: 'rfq',
+            root_entity_id: 'RFQ-123',
+            nodes: [],
+            edges: [],
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    instance.put = jest.fn().mockResolvedValue({ data: {} });
+    instance.delete = jest.fn().mockResolvedValue({ data: {} });
+    return instance;
+  });
+
   return {
     __esModule: true,
     default: {
-      post: jest.fn().mockImplementation((_url: string, payload: any) => {
-        const name = payload?.recipient?.name || 'there';
-        const keyPoints = payload?.key_points || [];
-        return Promise.resolve({
-          data: {
-            id: 'draft-1',
-            subject: payload?.reference_number ? `Update on ${payload.reference_number}` : 'Subject',
-            salutation: `Hello ${name}`,
-            body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
-            opening: 'Opening',
-            main_content: keyPoints.length ? keyPoints : ['Point 1'],
-            closing: 'Regards',
-            signature: 'Signature',
-            alternatives: [],
-            compliance_issues: [],
-            suggestions: [],
-            tokens_used: 0,
-            generation_time_ms: 1,
-            model_version: 'v1.0',
-            confidence_score: 0.9,
-          },
-        });
-      }),
+      create,
+      post,
+      isCancel: jest.fn(() => false),
       isAxiosError,
     },
     isAxiosError,
@@ -198,7 +228,7 @@ describe('ToneSelector', () => {
     render(<ToneSelector value="professional" onChange={jest.fn()} />);
 
     const professionalButton = screen.getByText(getText('emailDrafting.tone.professional'));
-    expect(professionalButton).toHaveClass('bg-rams-steel', 'text-white');
+    expect(professionalButton).toHaveClass('bg-rams-steel', 'text-rams-foreground');
   });
 
   it('should call onChange when tone clicked', async () => {
@@ -489,8 +519,8 @@ describe('KeyPointsEditor', () => {
   it('should display existing points', () => {
     render(<KeyPointsEditor points={['Point 1', 'Point 2']} onChange={jest.fn()} />);
 
-    expect(screen.getByText('• Point 1')).toBeInTheDocument();
-    expect(screen.getByText('• Point 2')).toBeInTheDocument();
+    expect(screen.getByText('Point 1')).toBeInTheDocument();
+    expect(screen.getByText('Point 2')).toBeInTheDocument();
   });
 
   it('should remove point when clicking remove button', async () => {
@@ -1006,6 +1036,17 @@ describe('EmailComposer', () => {
       await user.click(quoteFollowupOption);
     });
 
+    await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
+    });
+
     expect(screen.getByText(getText('emailDrafting.actions.generateDraft'))).not.toBeDisabled();
   });
 
@@ -1079,6 +1120,17 @@ describe('EmailComposer', () => {
     await act(async () => {
       await user.click(quoteFollowupOption);
     });
+
+    await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
+    });
     await act(async () => {
       await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
@@ -1107,6 +1159,16 @@ describe('EmailComposer', () => {
     );
     await act(async () => {
       await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
     });
     await act(async () => {
       await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
@@ -1138,6 +1200,16 @@ describe('EmailComposer', () => {
       await user.click(quoteFollowupOption);
     });
     await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
+    });
+    await act(async () => {
       await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
       await flushPromises();
     });
@@ -1165,6 +1237,16 @@ describe('EmailComposer', () => {
     );
     await act(async () => {
       await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
     });
     await act(async () => {
       await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));
@@ -1203,6 +1285,16 @@ describe('EmailComposer', () => {
     );
     await act(async () => {
       await user.click(quoteFollowupOption);
+    });
+    await act(async () => {
+      await user.selectOptions(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityType')),
+        'rfq'
+      );
+      await user.type(
+        screen.getByLabelText(getText('emailDrafting.fields.threadEntityId')),
+        'RFQ-2024-001'
+      );
     });
     await act(async () => {
       await user.click(screen.getByText(getText('emailDrafting.actions.generateDraft')));

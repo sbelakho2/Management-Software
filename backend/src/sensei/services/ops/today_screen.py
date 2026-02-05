@@ -1891,7 +1891,8 @@ class TodayScreenService:
     """Async-friendly wrapper around AsyncTodayScreenService."""
 
     def __init__(self, redis_client: Any = None) -> None:
-        # Use the provided redis_client or fall back to InMemoryRedis for testing
+        # Use the provided redis_client or fall back to InMemoryRedis for testing.
+        # In production, get_today_screen_service() provides the real Redis client.
         self._redis = redis_client if redis_client is not None else InMemoryRedis()
         self._async = AsyncTodayScreenService(redis=self._redis)
         self._default_user_id = uuid4()

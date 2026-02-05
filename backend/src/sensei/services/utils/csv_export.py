@@ -24,6 +24,7 @@ from typing import Any, Callable
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 
 
 class ExportableEntityType(str, Enum):
@@ -163,6 +164,11 @@ class CSVExportService:
         Args:
             entity_provider: Callable that returns entities for a given ExportConfig.
         """
+        if settings.is_production and entity_provider is None:
+            raise ValueError(
+                "CSVExportService requires an entity_provider in production. "
+                "Use get_csv_export_service(session) to construct it."
+            )
         self._results: dict[UUID, ExportResult] = {}
         self._templates: dict[UUID, ExportTemplate] = {}
         self._entity_provider = entity_provider
@@ -394,6 +400,8 @@ class CSVExportService:
 
     def create_mock_entity(self, entity_type: ExportableEntityType, **data: Any) -> UUID:
         """Create a mock entity for export tests."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity must not be used in production")
         entity_id = uuid4()
         payload = {"id": entity_id, **data}
         self._mock_entities.setdefault(entity_type, []).append(payload)

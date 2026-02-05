@@ -8,9 +8,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from sensei.api import deps
 from sensei.services.stale_detection import (
     EntityType,
     StaleSeverity,
@@ -19,8 +20,7 @@ from sensei.services.stale_detection import (
     StaleDetectionJobRunner,
 )
 
-
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(deps.get_current_active_user)])
 
 
 # =============================================================================

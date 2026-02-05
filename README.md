@@ -93,6 +93,8 @@ docker-compose exec api alembic upgrade head
 - [Development Guide](docs/development/getting-started.md)
 - [Deployment](docs/deployment/DEPLOYMENT.md)
 - [Testing](docs/testing/e2e-testing.md)
+- [AI/ML Services Analysis](docs/AI_ML_ONNX_SERVICES_ANALYSIS.md)
+- [Chatbot Integration](docs/CHATBOT_INTEGRATION.md)
 
 ## Testing
 

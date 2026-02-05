@@ -1,6 +1,9 @@
 import React from 'react';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import RFQDetailPage from '../pipeline/[id]/page';
+
+const render = renderWithI18n;
 
 // Mock next/link
 jest.mock('next/link', () => {
@@ -35,7 +38,7 @@ describe('RFQDetailPage', () => {
   // REQUIREMENT: Completeness indicator
   describe('Completeness Indicator', () => {
     it('should display completeness score', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should show completeness percentage or score
       const completeness = screen.queryByText(/completeness|complete|%/i);
@@ -43,7 +46,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should show visual indicator (progress bar or badge)', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should have visual completeness indicator - badges shown
       const badges = screen.queryAllByTestId('badge');
@@ -51,7 +54,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should highlight incomplete sections', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Incomplete sections should be highlighted
       const warnings = screen.queryAllByText(/missing|incomplete|required/i);
@@ -59,7 +62,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should show completed sections with checkmark', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Completed sections should have indicator
       const checkmarks = screen.queryAllByText(/✓|complete|filled/i);
@@ -70,7 +73,7 @@ describe('RFQDetailPage', () => {
   // REQUIREMENT: Missing items display
   describe('Missing Items', () => {
     it('should list missing required fields', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should show list of missing items
       const missingSection = screen.queryByText(/missing|required information/i);
@@ -78,7 +81,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should display missing items count', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should show count of missing items
       const missingCount = screen.queryByText(/\d+\s*missing/i);
@@ -86,7 +89,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should provide action to request missing info', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should have button to request missing info
       const requestButton = screen.queryByRole('button', { name: /request.*info|ask.*info/i });
@@ -94,7 +97,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should show which fields are missing', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Should list specific fields
       const fieldNames = screen.queryAllByText(/specification|material|quantity|delivery/i);
@@ -102,7 +105,7 @@ describe('RFQDetailPage', () => {
     });
 
     it('should hide missing section when all complete', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // If complete, missing section should not dominate
       // This is implementation-specific
@@ -113,7 +116,7 @@ describe('RFQDetailPage', () => {
   // REQUIREMENT: Attachments section
   describe('Attachments', () => {
     it('should render attachments section', () => {
-      render(<RFQDetailPage params={mockParams} />);
+      renderWithI18n(<RFQDetailPage params={mockParams} />);
       
       // Attachments may be shown in multiple places
       const attachmentsElements = screen.queryAllByText(/attachment|file|document/i);

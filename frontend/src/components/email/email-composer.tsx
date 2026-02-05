@@ -13,7 +13,7 @@
 
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import {
   useEmailDraftingStore,
   EmailTone,
@@ -686,6 +686,8 @@ export function EmailComposer({
 }: EmailComposerProps) {
   const { t } = useI18n();
   const { user } = useAuthStore();
+  const threadEntityTypeInputId = useId();
+  const threadEntityIdInputId = useId();
   const {
     isGenerating,
     generationError,
@@ -962,10 +964,14 @@ export function EmailComposer({
               </label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                  <label
+                    htmlFor={threadEntityTypeInputId}
+                    className="mb-1 block text-xs font-medium text-rams-muted"
+                  >
                     {t('emailDrafting.fields.threadEntityType')}
                   </label>
                   <select
+                    id={threadEntityTypeInputId}
                     value={threadEntityType}
                     onChange={(e) => setThreadEntityType(e.target.value)}
                     className="w-full rounded-rams-sm border border-rams-line px-3 py-2 text-sm focus:border-rams-steel focus:outline-none focus:ring-2 focus:ring-rams-steel/20"
@@ -979,10 +985,14 @@ export function EmailComposer({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-rams-muted">
+                  <label
+                    htmlFor={threadEntityIdInputId}
+                    className="mb-1 block text-xs font-medium text-rams-muted"
+                  >
                     {t('emailDrafting.fields.threadEntityId')}
                   </label>
                   <input
+                    id={threadEntityIdInputId}
                     type="text"
                     value={threadEntityId}
                     onChange={(e) => setThreadEntityId(e.target.value)}

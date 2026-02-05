@@ -6,11 +6,13 @@ Tests the REST API for time-on-task tracking.
 
 import pytest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
+from sensei.api import deps
 from sensei.api.v1.endpoints import rfq_time_tracking
 from sensei.services.sales.rfq_time_tracking import (
     reset_rfq_time_tracking_service,
@@ -24,6 +26,14 @@ def app():
     """Create test FastAPI app."""
     app = FastAPI()
     app.include_router(rfq_time_tracking.router, prefix="/api/v1/rfq-time-tracking")
+
+    async def _mock_get_current_active_user():
+        user = MagicMock()
+        user.id = uuid4()
+        user.status = "active"
+        return user
+
+    app.dependency_overrides[deps.get_current_active_user] = _mock_get_current_active_user
     return app
 
 

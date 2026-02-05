@@ -16,6 +16,54 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 
+class InMemoryRedis:
+    """In-memory Redis-like client for testing and fallback."""
+    
+    def __init__(self) -> None:
+        self._hashes: dict[str, dict[str, Any]] = {}
+
+    async def hgetall(self, key: str) -> dict[str, Any]:
+        return dict(self._hashes.get(key, {}))
+
+    async def hset(
+        self, 
+        key: str, 
+        field: str | None = None, 
+        value: Any | None = None, 
+        mapping: dict[str, Any] | None = None
+    ) -> None:
+        bucket = self._hashes.setdefault(key, {})
+        if mapping:
+            bucket.update(mapping)
+        elif field is not None and value is not None:
+            bucket[field] = value
+
+    async def delete(self, key: str) -> None:
+        self._hashes.pop(key, None)
+
+    async def hdel(self, key: str, field: str) -> int:
+        bucket = self._hashes.get(key)
+        if not bucket or field not in bucket:
+            return 0
+        del bucket[field]
+        return 1
+
+    async def expire(self, key: str, _ttl: int) -> None:
+        return None
+
+    def pipeline(self, transaction: bool = True) -> "InMemoryRedis":
+        return self
+
+    async def execute(self) -> None:
+        return None
+
+    async def __aenter__(self) -> "InMemoryRedis":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        return None
+
+
 class UUIDEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles UUIDs, datetime, and Enum."""
     

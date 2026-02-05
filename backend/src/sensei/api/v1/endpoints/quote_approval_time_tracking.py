@@ -9,9 +9,11 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from sensei.api import deps
+from sensei.core.config import settings
 from sensei.services.sales.quote_approval_time_tracking import (
     QuoteApprovalTimeTrackingService,
     ApprovalDecision,
@@ -21,7 +23,12 @@ from sensei.services.sales.quote_approval_time_tracking import (
     get_quote_approval_service,
 )
 
-router = APIRouter()
+
+router = APIRouter(
+    dependencies=[
+        Depends(deps.get_current_active_user),
+    ]
+)
 
 
 # ===== Request/Response Schemas =====

@@ -2,16 +2,11 @@ from typing import Any
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from sensei.services.supply_chain.supply_chain_simulation import get_supply_chain_simulator, SupplyChainSimulator, DisruptionLibrary
 from sensei.api import deps
-from sensei.core.config import settings
 
-
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
 
 AllowSupplyChainModule = deps.require_role(
     "supply_chain",
@@ -26,7 +21,6 @@ AllowSupplyChainModule = deps.require_role(
 
 router = APIRouter(
     dependencies=[
-        Depends(_deny_production),
         Depends(
             deps.RoleChecker(
                 [

@@ -1,13 +1,13 @@
-"""
-Rate Limiting Middleware
+"""sensei.middleware.rate_limit
 
-Provides request rate limiting to protect against:
-- Denial of Service (DoS) attacks
-- Brute force attacks
-- API abuse
+Rate limiting middleware.
 
-Uses sliding window algorithm with Redis backend for distributed rate limiting.
-Falls back to in-memory storage if Redis is unavailable.
+Production behavior:
+- Uses Redis-backed storage for correctness in multi-instance deployments.
+- Does not silently fall back to in-memory when running in production.
+
+Non-production behavior:
+- Falls back to an in-memory limiter if Redis is unavailable.
 """
 
 import asyncio
@@ -21,6 +21,9 @@ from typing import Callable, Dict, Optional, Tuple
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
+from sensei.core.config import settings
+from sensei.core.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +193,75 @@ class InMemoryRateLimiter:
             }
 
 
+class RedisRateLimiter:
+    """Redis-backed sliding-window rate limiter.
+
+    Uses a sorted-set of request timestamps per client key.
+    """
+
+    def __init__(self, key_namespace: str = "rate_limit") -> None:
+        self._ns = key_namespace
+
+    def _zset_key(self, client_key: str) -> str:
+        return f"{self._ns}:events:{client_key}"
+
+    def _block_key(self, client_key: str) -> str:
+        return f"{self._ns}:blocked:{client_key}"
+
+    async def is_rate_limited(
+        self,
+        client_key: str,
+        config: RateLimitConfig,
+    ) -> Tuple[bool, Optional[int]]:
+        """Check if client is rate limited.
+
+        Returns:
+            Tuple of (is_limited, retry_after_seconds)
+        """
+        block_key = self._block_key(client_key)
+        try:
+            ttl_block = await redis_client.ttl(block_key)
+            if ttl_block and ttl_block > 0:
+                return True, int(ttl_block)
+
+            now_ms = int(time.time() * 1000)
+            one_minute_ms = 60_000
+            one_hour_ms = 3_600_000
+
+            zkey = self._zset_key(client_key)
+            member = f"{now_ms}-{time.monotonic_ns()}"
+
+            pipe = redis_client.pipeline(transaction=False)
+            pipe.zadd(zkey, {member: now_ms})
+            pipe.zremrangebyscore(zkey, 0, now_ms - one_hour_ms)
+            pipe.expire(zkey, 3700)
+            pipe.zcount(zkey, now_ms - one_minute_ms, now_ms)
+            pipe.zcard(zkey)
+            pipe.zrange(zkey, 0, 0, withscores=True)
+            _, _, _, minute_count, hour_count, oldest = await pipe.execute()
+
+            minute_limit = config.requests_per_minute + config.burst_size
+            if minute_count >= minute_limit:
+                await redis_client.setex(block_key, config.block_duration_seconds, "1")
+                return True, int(config.block_duration_seconds)
+
+            if hour_count >= config.requests_per_hour:
+                # Compute retry_after based on oldest event still in the 1h window
+                retry_after_seconds = 60
+                if oldest:
+                    # decode_responses=True => oldest is List[Tuple[member, score]]
+                    oldest_score_ms = int(oldest[0][1])
+                    retry_after_seconds = int((oldest_score_ms + one_hour_ms - now_ms) / 1000) + 1
+                    if retry_after_seconds < 1:
+                        retry_after_seconds = 1
+                return True, retry_after_seconds
+
+            return False, None
+        except Exception as exc:
+            # Let caller decide whether to fail-open or fail-closed.
+            raise RuntimeError("Redis rate limiting failed") from exc
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Rate limiting middleware for FastAPI.
@@ -220,40 +292,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/openapi.json",
         ]
-        self.limiter = InMemoryRateLimiter()
-        self._cleanup_task: Optional[asyncio.Task] = None
-        self._shutdown = False
+        self._redis_limiter = RedisRateLimiter()
+        self._memory_limiter = InMemoryRateLimiter()
+        self._redis_ok: bool | None = None
+        self._last_cleanup = time.time()
+
+    async def _ensure_redis_ok(self) -> bool:
+        """Check Redis health lazily and cache the result."""
+        if self._redis_ok is not None:
+            return self._redis_ok
+        try:
+            await asyncio.wait_for(redis_client.ping(), timeout=0.5)  # type: ignore[misc]
+            self._redis_ok = True
+        except Exception:
+            self._redis_ok = False
+        return self._redis_ok
     
-    def _ensure_cleanup_task(self):
-        """Ensure the cleanup task is running. Called lazily on first request."""
-        if self._cleanup_task is None or self._cleanup_task.done():
-            try:
-                loop = asyncio.get_running_loop()
-                self._cleanup_task = loop.create_task(self._cleanup_loop())
-            except RuntimeError:
-                # No running event loop - will be started on first request
-                pass
+    async def _maybe_cleanup_memory(self) -> None:
+        """Cleanup in-memory limiter periodically without background tasks."""
+        now = time.time()
+        if now - self._last_cleanup >= 60:
+            await self._memory_limiter.cleanup()
+            self._last_cleanup = now
     
-    async def _cleanup_loop(self):
-        """Periodically clean up old rate limit entries."""
-        while not self._shutdown:
-            try:
-                await asyncio.sleep(60)  # Run every minute
-                await self.limiter.cleanup()
-            except asyncio.CancelledError:
-                # Graceful shutdown - exit the loop
-                logger.info("Rate limiter cleanup task cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Rate limiter cleanup error: {e}")
-    
-    def shutdown(self):
-        """Stop the cleanup task gracefully."""
-        self._shutdown = True
-        if self._cleanup_task and not self._cleanup_task.done():
-            self._cleanup_task.cancel()
-    
-    def _get_client_key(self, request: Request) -> str:
+    def _get_client_key(self, request: Request, path_pattern: str) -> str:
         """
         Generate a unique key for the client.
         
@@ -273,27 +335,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         user_id = getattr(request.state, "user_id", None)
         
         # Create composite key
-        key_parts = [client_ip, str(user_id or "anon"), request.url.path]
+        key_parts = [client_ip, str(user_id or "anon"), path_pattern]
         key = ":".join(key_parts)
         
         return hashlib.sha256(key.encode()).hexdigest()[:32]
     
-    def _get_rate_limit_config(self, path: str) -> RateLimitConfig:
-        """Get rate limit config for the given path."""
-        # Check for exact match first
+    def _match_rate_limit_config(self, path: str) -> tuple[str, RateLimitConfig]:
+        """Return (matched_pattern, config) for the given path."""
         if path in self.rate_limits:
-            return self.rate_limits[path]
-        
-        # Check for prefix match
+            return path, self.rate_limits[path]
+
         for pattern, config in sorted(
-            self.rate_limits.items(), 
-            key=lambda x: -len(x[0])  # Longest prefix first
+            self.rate_limits.items(),
+            key=lambda x: -len(x[0]),  # Longest prefix first
         ):
             if path.startswith(pattern):
-                return config
-        
-        # Default config
-        return RateLimitConfig()
+                return pattern, config
+
+        return "*", RateLimitConfig()
     
     async def dispatch(
         self,
@@ -304,22 +363,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self.enabled:
             return await call_next(request)
         
-        # Ensure cleanup task is running (lazy initialization)
-        self._ensure_cleanup_task()
-        
         # Skip excluded paths
         path = request.url.path
         if any(path.startswith(exclude) for exclude in self.exclude_paths):
             return await call_next(request)
-        
-        # Get client key and config
-        client_key = self._get_client_key(request)
-        config = self._get_rate_limit_config(path)
-        
+
+        # Match config and compute client key based on matched pattern
+        matched_pattern, config = self._match_rate_limit_config(path)
+        client_key = self._get_client_key(request, matched_pattern)
+
+        # Prefer Redis in production; allow in-memory fallback only outside production.
+        use_redis = await self._ensure_redis_ok()
+        if settings.is_production and not use_redis:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "Rate limiter unavailable"},
+            )
+
+        if not use_redis:
+            await self._maybe_cleanup_memory()
+
         # Check rate limit
-        is_limited, retry_after = await self.limiter.is_rate_limited(
-            client_key, config
-        )
+        try:
+            limiter = self._redis_limiter if use_redis else self._memory_limiter
+            is_limited, retry_after = await limiter.is_rate_limited(client_key, config)
+        except RuntimeError:
+            if settings.is_production:
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={"detail": "Rate limiter unavailable"},
+                )
+            # Non-prod: fail open (no limit) if Redis limiter errors.
+            is_limited, retry_after = False, None
         
         if is_limited:
             logger.warning(

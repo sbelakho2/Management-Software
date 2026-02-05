@@ -1,6 +1,7 @@
 from typing import Any
 import inspect
 from sensei.services.core.pii_controls import PIIControlsService, PIICategory, MaskingType
+from sensei.models.user import RoleType
 
 _pii_service = PIIControlsService()
 
@@ -15,10 +16,20 @@ async def _maybe_await(value: Any) -> Any:
 
 async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
     """Mask PII in analytics data based on user roles with granular control."""
+    def _normalize_role(raw: str) -> str:
+        cleaned = raw.strip().lower().replace(" ", "_")
+        if cleaned == "general_manager":
+            return RoleType.GM.value
+        if cleaned == "executive":
+            return RoleType.EXEC.value
+        return cleaned
+
+    normalized_roles = {_normalize_role(r) for r in roles if isinstance(r, str)}
+
     # admin, ceo, gm usually see everything
-    is_top_exec = any(role in ["admin", "ceo", "gm"] for role in roles)
-    is_hr = "hr" in roles
-    is_finance = "finance" in roles
+    is_top_exec = any(role in {RoleType.ADMIN.value, RoleType.CEO.value, RoleType.GM.value} for role in normalized_roles)
+    is_hr = RoleType.HR.value in normalized_roles
+    is_finance = RoleType.FINANCE.value in normalized_roles
     
     service = get_pii_service()
     
@@ -44,7 +55,7 @@ async def mask_analytics_data(data: Any, roles: list[str]) -> Any:
             
             # Customer related PII
             elif k in ["customer_name", "contact_name"]:
-                if is_top_exec or any(r in ["sales", "exec"] for r in roles):
+                if is_top_exec or any(r in {RoleType.SALES.value, RoleType.EXEC.value} for r in normalized_roles):
                     new_data[k] = v
                 else:
                     new_data[k] = await _maybe_await(service.mask_value(str(v), masking_type=MaskingType.PARTIAL))

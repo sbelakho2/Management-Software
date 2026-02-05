@@ -64,6 +64,12 @@ from sensei.models.quote import (
 )
 
 
+def _scalar_result(value):
+    result = MagicMock()
+    result.scalar = MagicMock(return_value=value)
+    return result
+
+
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -553,7 +559,7 @@ class TestGetQuote:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         
         response = await get_quote(
             quote_id=sample_quote.id,
@@ -595,7 +601,7 @@ class TestUpdateQuote:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         update_data = QuoteUpdate(
@@ -942,7 +948,7 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         response = await submit_quote_for_approval(
@@ -984,7 +990,7 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         request = ApprovalRequest(action="approve")
@@ -1011,7 +1017,7 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         request = ApprovalRequest(action="reject", reason="Margin too low")
@@ -1068,7 +1074,7 @@ class TestQuoteWorkflow:
         items_result = MagicMock()
         items_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         
-        db.execute = AsyncMock(side_effect=[result, items_result])
+        db.execute = AsyncMock(side_effect=[result, items_result, _scalar_result(0), _scalar_result(0)])
         db.add = MagicMock()
         db.refresh = AsyncMock()
         
@@ -1119,7 +1125,7 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         response = await mark_quote_viewed(
@@ -1141,13 +1147,14 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         response = await accept_quote(
             quote_id=sample_quote.id,
             db=db,
             current_user=mock_user,
+            convert_to_order=False,
         )
         
         assert response.success is True
@@ -1172,6 +1179,7 @@ class TestQuoteWorkflow:
                 quote_id=sample_quote.id,
                 db=db,
                 current_user=mock_user,
+                convert_to_order=False,
             )
     
     @pytest.mark.asyncio
@@ -1183,7 +1191,7 @@ class TestQuoteWorkflow:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         response = await reject_quote(
@@ -1262,7 +1270,7 @@ class TestVersionControl:
         items_result = MagicMock()
         items_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         
-        db.execute = AsyncMock(side_effect=[result, items_result])
+        db.execute = AsyncMock(side_effect=[result, items_result, _scalar_result(0), _scalar_result(0)])
         db.add = MagicMock()
         db.refresh = AsyncMock()
         
@@ -1560,13 +1568,14 @@ class TestEdgeCases:
         
         result = MagicMock()
         result.scalar_one_or_none = MagicMock(return_value=sample_quote)
-        db.execute.return_value = result
+        db.execute = AsyncMock(side_effect=[result, _scalar_result(0), _scalar_result(0)])
         db.refresh = AsyncMock()
         
         response = await accept_quote(
             quote_id=sample_quote.id,
             db=db,
             current_user=mock_user,
+            convert_to_order=False,
         )
         
         assert response.success is True

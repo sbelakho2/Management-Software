@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from sensei.api.deps import DBSession, OptionalCurrentUser
+from sensei.api.deps import CurrentUser, DBSession
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.context_bus import get_context_service
@@ -43,10 +43,10 @@ class ContextPackResponse(BaseModel):
 @router.get("/pack", response_model=APIResponse[ContextPackResponse])
 async def get_context_pack(
     db: DBSession,
+    current_user: CurrentUser,  # noqa: ARG001
     entity_type: str = Query(..., min_length=1, max_length=80),
     entity_id: str = Query(..., min_length=1, max_length=120),
     max_depth: int = Query(3, ge=0, le=10),
-    current_user: OptionalCurrentUser = None,  # noqa: ARG001
 ) -> APIResponse[ContextPackResponse]:
     pack = await get_context_service().get_context_pack(
         db,

@@ -8,7 +8,7 @@ Sensei OS is a comprehensive Manufacturing Operating System designed to integrat
 
 ### 1. Sales & Commercial
 - **Quoting Helper (Stage-Gate Workflow)**: Accelerates RFQ → Quote from days to hours by splitting technical reviews across parallel engineering work packets (EE, ME, MfgE, Quality, Purchasing).
-- **AI Quote Memory**: Semantic search over historical quotes to pull past assumptions, yields, and supplier choices using ONNX-based local embeddings.
+- **AI Quote Memory**: Domain-adapted embeddings for manufacturing quote analysis using ONNX-optimized local models.
 - **Smart Ingestion**: Automated extraction of technical requirements (MPNs, quantities, PCB specs) from emails and PDF packages.
 - **Deterministic Costing**: Rule-based costing engine utilizing active Rate Cards for material rollups and labor estimation.
 

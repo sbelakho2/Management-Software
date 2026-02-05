@@ -35,11 +35,6 @@ from sensei.services.escalation_policy import (
 router = APIRouter(tags=["Escalation"])
 
 
-def _deny_production_mutations() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 # ==============================================================================
 # Pydantic Schemas
 # ==============================================================================
@@ -340,7 +335,6 @@ def get_thresholds() -> EscalationThresholdsResponse:
 @router.put("/thresholds/approval")
 def update_approval_threshold(request: UpdateThresholdRequest) -> dict[str, str]:
     """Update approval escalation threshold for a specific level."""
-    _deny_production_mutations()
     try:
         level = EscalationLevel(request.level)
     except ValueError:
@@ -356,7 +350,6 @@ def update_approval_threshold(request: UpdateThresholdRequest) -> dict[str, str]
 @router.put("/thresholds/risk")
 def update_risk_threshold(request: UpdateRiskThresholdRequest) -> dict[str, str]:
     """Update risk severity escalation threshold."""
-    _deny_production_mutations()
     valid_severities = ["low", "medium", "high", "critical"]
     if request.severity not in valid_severities:
         raise HTTPException(

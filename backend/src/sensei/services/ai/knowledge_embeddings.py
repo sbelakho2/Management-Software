@@ -1,11 +1,14 @@
 """
 Knowledge Embeddings Service
 
-Generates vector embeddings for knowledge chunks using open-source models
-and provides semantic search capabilities via pgvector.
+Generates vector embeddings for knowledge chunks using optimized ONNX models
+or fallback sentence-transformers, with automatic hardware detection.
+Provides semantic search capabilities via pgvector.
 """
 
 import logging
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
@@ -21,32 +24,96 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def detect_device() -> str:
+    """
+    Detect best available device for inference.
+    
+    Returns:
+        'cuda', 'cpu', or specific device string
+    """
+    device_config = settings.ML_DEVICE.lower()
+    
+    if device_config == "auto":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info("CUDA GPU detected and available")
+                return "cuda"
+        except ImportError:
+            pass
+        
+        logger.info("Using CPU for inference")
+        return "cpu"
+    
+    return device_config
+
+
 class EmbeddingService:
     """
-    Generate embeddings using either local CPU-optimized models or external APIs.
+    Generate embeddings using ONNX-optimized models (preferred) or sentence-transformers.
     
-    Providers:
-    - 'local': Uses sentence-transformers (running on CPU).
-    - 'openai': Uses OpenAI's text-embedding-3-small or similar.
+    Modes:
+    - 'onnx': Uses optimized ONNX Runtime with INT8 quantization (fast, CPU-optimized)
+    - 'pytorch': Uses sentence-transformers (fallback)
     """
     
     def __init__(
         self, 
-        provider: str = "local",
-        model_name: Optional[str] = None
+        use_onnx: bool = True,
+        model_name: Optional[str] = None,
+        device: Optional[str] = None,
     ):
         """
         Initialize embedding service.
         
         Args:
-            provider: Always 'local' (on-device)
+            use_onnx: Use ONNX models if available (default: True)
             model_name: Specific model name (optional)
+            device: Device to use ('auto', 'cuda', 'cpu')
         """
-        self.provider = "local"
-        self.model_name = model_name or "all-MiniLM-L6-v2"
+        self.use_onnx = use_onnx and settings.ML_USE_ONNX
+        self.model_name = model_name or settings.ML_EMBEDDING_MODEL
+        self.device = device or detect_device()
         self._model: Any = None
-        self.embedding_dim = self._get_model_dimension(self.model_name)
-        logger.info(f"Initialized EmbeddingService with local model: {self.model_name} (CPU)")
+        self._onnx_embedder: Any = None
+        self.embedding_dim = settings.ML_EMBEDDING_DIM
+        
+        # Try ONNX first if enabled
+        if self.use_onnx:
+            try:
+                self._init_onnx()
+                logger.info(f"Initialized with ONNX embeddings (optimized for CPU)")
+                return
+            except Exception as e:
+                logger.warning(f"ONNX initialization failed, falling back to PyTorch: {e}")
+                self.use_onnx = False
+        
+        # Fallback to PyTorch
+        logger.info(f"Initialized with PyTorch model: {self.model_name} on {self.device}")
+    
+    def _init_onnx(self):
+        """Initialize ONNX embedder."""
+        from sensei.services.ai.onnx_text_embeddings import ONNXTextEmbedder, EmbeddingConfig
+        
+        onnx_path = Path(settings.ML_ONNX_MODEL_PATH)
+        
+        if not onnx_path.exists():
+            raise FileNotFoundError(f"ONNX model not found at {onnx_path}")
+        
+        config = EmbeddingConfig(
+            model_id=self.model_name,
+            cache_dir=onnx_path.parent,
+            quantize_int8=True,
+            max_length=256,
+        )
+        
+        self._onnx_embedder = ONNXTextEmbedder(config)
+        
+        if not self._onnx_embedder.is_ready():
+            raise RuntimeError("ONNX embedder dependencies not available")
+        
+        # Force load
+        self._onnx_embedder._ensure_loaded()
     
     @staticmethod
     def _get_model_dimension(model_name: str) -> int:
@@ -63,26 +130,49 @@ class EmbeddingService:
     
     @property
     def model(self) -> Any:
-        """Lazy load local model."""
+        """Lazy load PyTorch model."""
         if self._model is None:
-            # Use CPU-optimized settings
-            import os
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
             from sentence_transformers import SentenceTransformer
-            logger.info(f"Loading sentence-transformers model to CPU: {self.model_name}")
-            self._model = SentenceTransformer(self.model_name, device="cpu")
+            logger.info(f"Loading sentence-transformers model: {self.model_name} on {self.device}")
+            self._model = SentenceTransformer(self.model_name, device=self.device)
         return self._model
     
     def encode(self, text: str | list[str]) -> np.ndarray:
         """
         Generate embedding(s) for text.
+        
+        Args:
+            text: Single text or list of texts
+            
+        Returns:
+            Numpy array of embeddings
         """
+        if self.use_onnx and self._onnx_embedder:
+            if isinstance(text, str):
+                return np.array(self._onnx_embedder.embed_text(text))
+            else:
+                return np.array(self._onnx_embedder.embed_texts(text))
+        
+        # PyTorch fallback
         return self.model.encode(text, convert_to_numpy=True)
     
     def encode_batch(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
         """
         Generate embeddings for batch of texts.
+        
+        Args:
+            texts: List of texts to embed
+            batch_size: Batch size for processing
+            
+        Returns:
+            Numpy array of embeddings
         """
+        if self.use_onnx and self._onnx_embedder:
+            # ONNX embedder handles batching internally
+            return np.array(self._onnx_embedder.embed_texts(texts))
+        
+        # PyTorch fallback
         return self.model.encode(
             texts,
             batch_size=batch_size,

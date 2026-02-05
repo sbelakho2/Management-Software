@@ -23,9 +23,13 @@ import hashlib
 import json
 import logging
 import os
-import pickle
 import statistics
 import uuid
+
+# SECURITY: Use joblib instead of pickle for model serialization.
+# pickle.load() on untrusted data is an RCE vulnerability.
+# joblib is safer and optimized for numpy arrays/sklearn models.
+import joblib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -838,11 +842,12 @@ class ModelRegistryService:
         
         model_path = artifact_path / "model.pkl"
         
-        # Serialize model to disk
+        # Serialize model to disk using joblib (safer than raw pickle)
+        # SECURITY NOTE: Never load .pkl files from untrusted sources.
+        # Consider migrating to ONNX for production inference.
         model_size = 0
         try:
-            with open(model_path, "wb") as f:
-                pickle.dump(model_object, f)
+            joblib.dump(model_object, model_path, compress=3)
             model_size = model_path.stat().st_size
             logger.debug(f"Saved model to {model_path} ({model_size} bytes)")
         except Exception as e:

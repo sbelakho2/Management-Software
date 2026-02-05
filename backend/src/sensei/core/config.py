@@ -5,6 +5,7 @@ Centralized configuration management with environment variable loading,
 validation, and secure secret handling.
 """
 
+import logging
 from functools import lru_cache
 from typing import List, Literal
 
@@ -12,6 +13,8 @@ import json
 
 from pydantic import Field, field_validator, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -47,7 +50,12 @@ class Settings(BaseSettings):
     DATABASE_STATEMENT_TIMEOUT_MS: int = 10000
     
     # starzERP Database (MySQL)
-    STARZ_ERP_DATABASE_URL: str = "mysql+aiomysql://root:@127.0.0.1:3308/HRapp"
+    # SECURITY: This URL MUST be provided via environment variable in production.
+    # The default value is intentionally invalid to prevent accidental use.
+    STARZ_ERP_DATABASE_URL: str = Field(
+        default="",
+        description="MySQL connection string for starzERP (required if ERP integration enabled)"
+    )
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -78,7 +86,8 @@ class Settings(BaseSettings):
     SKIP_EMAIL_VERIFICATION: bool = False  # Set to True only in development/testing
     
     # Rate Limiting
-    RATE_LIMIT_ENABLED: bool = True  # Set to False to disable rate limiting
+    # Enabled automatically in production; opt-in elsewhere.
+    RATE_LIMIT_ENABLED: bool = False
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     
@@ -162,6 +171,49 @@ class Settings(BaseSettings):
     DEFAULT_LOCALE: str = "en"
     SUPPORTED_LOCALES: List[str] = ["en", "fr"]
     DEFAULT_TIMEZONE: str = "Africa/Casablanca"
+    
+    # ML/AI Model Configuration
+    ML_MODEL_PATH: str = "backend/models"
+    ML_USE_ONNX: bool = True  # Use ONNX runtime for embeddings (faster, CPU-optimized)
+    ML_ONNX_MODEL_PATH: str = "backend/models/sensei-mfg-onnx"  # Path to quantized ONNX models
+    ML_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback model
+    ML_EMBEDDING_DIM: int = 384
+    ML_DEVICE: str = "auto"  # auto, cpu, cuda - auto detects available hardware
+    
+    # Local LLM Configuration (On-Device Only)
+    LOCAL_LLM_MODEL_PATH: str = "backend/models/llm/tinyllama-1.1b-chat.gguf"
+    LOCAL_LLM_CONTEXT_LENGTH: int = 4096
+    LOCAL_LLM_MAX_TOKENS: int = 512
+    LOCAL_LLM_TEMPERATURE: float = 0.7
+    LOCAL_LLM_N_GPU_LAYERS: int = 0  # 0 = CPU only
+    LOCAL_LLM_N_THREADS: int = 4
+    
+    # VPS-Optimized Chatbot Configuration
+    # These settings are tuned for CPU-only VPS deployment
+    CHATBOT_ENABLED: bool = True
+    CHATBOT_MODEL_PATH: str = "backend/models/llm/qwen2.5-3b-instruct-q4_k_m.gguf"
+    CHATBOT_MODEL_URL: str = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+    CHATBOT_CONTEXT_LENGTH: int = 2048  # Reduced for VPS memory efficiency
+    CHATBOT_MAX_TOKENS: int = 256  # Shorter responses for faster inference
+    CHATBOT_TEMPERATURE: float = 0.7
+    CHATBOT_N_GPU_LAYERS: int = 0  # CPU only for VPS
+    CHATBOT_N_THREADS: int = 2  # Conservative for shared VPS
+    CHATBOT_BATCH_SIZE: int = 256  # Smaller batch for memory efficiency
+    CHATBOT_MAX_SESSIONS: int = 100  # Limit concurrent sessions
+    CHATBOT_SESSION_TIMEOUT_HOURS: int = 24
+    CHATBOT_RATE_LIMIT_PER_MINUTE: int = 20
+    CHATBOT_INFERENCE_TIMEOUT_SECONDS: int = 30
+    
+    @field_validator("ML_MODEL_PATH", "ML_ONNX_MODEL_PATH")
+    @classmethod
+    def ensure_model_paths_exist(cls, v: str) -> str:
+        """Create model directories if they don't exist."""
+        from pathlib import Path
+        path = Path(v)
+        if not path.exists():
+            logger.info(f"Creating model directory: {v}")
+            path.mkdir(parents=True, exist_ok=True)
+        return v
     
     @field_validator("SECRET_KEY")
     @classmethod

@@ -270,7 +270,7 @@ This allows executives to understand exactly what each role sees, without creati
 
 **Key Components**:
 - **Knowledge Ingestion**: Document indexing CLI
-- **Semantic Search**: Vector-based retrieval
+- **Text Embeddings**: ONNX-optimized vector generation
 - **Training Matrix**: Skill gap analysis
 - **AI Recommendations**: Personalized learning paths
 

@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 from sensei.services.core.entity_providers import (
     build_entity_getter,
     build_entity_query,
@@ -206,6 +207,12 @@ class TemplateCloningService:
         entity_query: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the service."""
+        if settings.is_production and any(dep is None for dep in (entity_provider, entity_saver, entity_query)):
+            raise ValueError(
+                "TemplateCloningService must be constructed with database providers in production "
+                "(use get_template_cloning_service(session))."
+            )
+
         self._templates: dict[UUID, Template] = {}
         self._clone_history: dict[UUID, CloneHistory] = {}
         self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
@@ -459,6 +466,8 @@ class TemplateCloningService:
 
     def create_mock_entity(self, entity_type: CloneableEntityType, **data: Any) -> UUID:
         """Create a mock entity for tests."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity is not allowed in production")
         entity_id = uuid4()
         payload = {"id": entity_id, **data}
         self._mock_entities.setdefault(entity_type.value, {})[entity_id] = payload

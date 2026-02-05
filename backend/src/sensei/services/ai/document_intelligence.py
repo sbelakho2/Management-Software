@@ -1,5 +1,23 @@
 """
-World-Class Document Intelligence Service.
+Document Intelligence Service.
+
+.. deprecated:: 2024.1
+    This module is DEPRECATED in favor of :mod:`sensei.services.ai.world_class_document_ai`.
+    The world_class_document_ai module provides enhanced functionality including:
+    - GDTSymbol and ToleranceType enums for engineering drawings
+    - VisionLLMProvider for flexible VLM integration
+    - Enhanced table extraction with to_dataframe() support
+    - Better structured data models
+    
+    Migration Guide:
+    - DocumentType → DocumentCategory (world_class_document_ai)
+    - LayoutModel → LayoutAnalyzer (world_class_document_ai)
+    - TableStructureModel → TableStructureRecognizer (world_class_document_ai)
+    - DocumentIntelligenceService → WorldClassDocumentAI (world_class_document_ai)
+    - TableCell.content → TableCell.text
+    - ExtractedTable.num_rows/num_cols → ExtractedTable.rows/cols
+    - BoundingBox.from_pixels() → BoundingBox.from_pixel_coords()
+    - BoundingBox.overlap_ratio() → BoundingBox.iou()
 
 Implements advanced document understanding with:
 - LayoutLM-style document understanding (visual + textual + positional)
@@ -26,6 +44,7 @@ import math
 import os
 import re
 import uuid
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -33,6 +52,15 @@ from pathlib import Path
 from typing import Any, Callable, BinaryIO
 
 logger = logging.getLogger(__name__)
+
+# Issue deprecation warning on import
+warnings.warn(
+    "sensei.services.ai.document_intelligence is deprecated. "
+    "Please migrate to sensei.services.ai.world_class_document_ai instead. "
+    "See module docstring for migration guide.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 # =============================================================================

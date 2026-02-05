@@ -83,18 +83,34 @@ export function CommandPalette() {
     });
 
     // Add common commands
-    allCommands.push(
-      { 
-        id: 'theme-toggle', 
-        label: theme === 'dark' ? t('settings.appearance.lightMode') : t('settings.appearance.darkMode'), 
-        icon: theme === 'dark' ? Sun : Moon, 
-        action: () => setTheme(theme === 'dark' ? 'light' : 'dark'), 
-        keywords: ['theme', 'dark', 'light', 'mode'], 
-        group: t('settings.preferences')
-      },
-      { id: 'account-profile', label: t('userMenu.profile'), icon: User, action: () => router.push('/settings/profile'), keywords: ['profile', 'account'], group: t('settings.account') },
-      { id: 'account-logout', label: t('auth.logout'), icon: LogOut, action: async () => { await logout(); router.push('/login'); }, keywords: ['logout', 'sign out'], group: t('settings.account') }
-    );
+    allCommands.push({ 
+      id: 'theme-toggle', 
+      label: theme === 'dark' ? t('settings.appearance.lightMode') : t('settings.appearance.darkMode'), 
+      icon: theme === 'dark' ? Sun : Moon, 
+      action: () => setTheme(theme === 'dark' ? 'light' : 'dark'), 
+      keywords: ['theme', 'dark', 'light', 'mode'], 
+      group: t('settings.preferences')
+    });
+
+    if (hasPageAccess('/settings/profile', userRoles)) {
+      allCommands.push({
+        id: 'account-profile',
+        label: t('userMenu.profile'),
+        icon: User,
+        action: () => router.push('/settings/profile'),
+        keywords: ['profile', 'account'],
+        group: t('settings.account'),
+      });
+    }
+
+    allCommands.push({
+      id: 'account-logout',
+      label: t('auth.logout'),
+      icon: LogOut,
+      action: async () => { await logout(); router.push('/login'); },
+      keywords: ['logout', 'sign out'],
+      group: t('settings.account'),
+    });
 
     return allCommands;
   }, [router, theme, setTheme, logout, userRoles, t]);

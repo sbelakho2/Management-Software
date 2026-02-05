@@ -18,7 +18,13 @@ from fastapi.responses import JSONResponse
 
 from sensei.core.config import settings
 from sensei.core.database import engine, check_database_connection
-from sensei.core.redis import redis_client, check_redis_connection
+from sensei.core.redis import (
+    redis_client,
+    check_redis_connection,
+    acquire_leader_lock,
+    release_leader_lock,
+    get_instance_id,
+)
 from sensei.core.storage import storage_client, check_storage_connection
 from sensei.api.v1 import api_router
 from sensei.api.exceptions import register_exception_handlers
@@ -69,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("All service dependencies connected")
     
     # Initialize and start backup scheduler
+    # IMPORTANT: Use leader election to prevent duplicate schedulers in horizontal scaling
     try:
         from sensei.core.database import async_session_factory
         # Ensure core RBAC roles/assignments exist (especially for built-in accounts).
@@ -79,20 +86,38 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.error("Failed to bootstrap core RBAC roles", error=str(e))
 
-        backup_service = DatabaseBackupService(
-            db_session_factory=async_session_factory,
-            backup_storage_path=settings.BACKUP_STORAGE_PATH if hasattr(settings, 'BACKUP_STORAGE_PATH') else "/tmp/backups",
-            database_url=str(settings.DATABASE_URL),
-            s3_client=storage_client,
+        # Only start backup scheduler if we're the leader
+        is_backup_leader = await acquire_leader_lock(
+            "backup_scheduler_leader",
+            ttl_seconds=120,  # Lock expires after 2 minutes if we crash
         )
-        backup_scheduler = BackupSchedulerService(backup_service=backup_service)
-        backup_scheduler.start()
-        app.state.backup_scheduler = backup_scheduler
-        logger.info("Backup scheduler started successfully")
+        
+        if is_backup_leader:
+            backup_service = DatabaseBackupService(
+                db_session_factory=async_session_factory,
+                backup_storage_path=settings.BACKUP_STORAGE_PATH if hasattr(settings, 'BACKUP_STORAGE_PATH') else "/tmp/backups",
+                database_url=str(settings.DATABASE_URL),
+                s3_client=storage_client,
+            )
+            backup_scheduler = BackupSchedulerService(backup_service=backup_service)
+            backup_scheduler.start()
+            app.state.backup_scheduler = backup_scheduler
+            app.state.is_backup_leader = True
+            logger.info(
+                "Backup scheduler started (leader elected)",
+                instance_id=get_instance_id(),
+            )
+        else:
+            app.state.is_backup_leader = False
+            logger.info(
+                "Backup scheduler not started (another instance is leader)",
+                instance_id=get_instance_id(),
+            )
     except Exception as e:
         logger.error("Failed to start backup scheduler", error=str(e))
 
     # Initialize and start muda nudging scheduler (disabled by default)
+    # IMPORTANT: Use leader election to prevent duplicate schedulers
     try:
         recipient_id_strs = [
             r.strip()
@@ -110,14 +135,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             interval_seconds=int(settings.MUDA_NUDGING_WORKER_INTERVAL_SECONDS),
             recipient_ids=recipient_ids,
         )
-        muda_runner = MudaNudgingJobRunner(nudging_service=muda_nudging_service)
-        muda_scheduler = MudaNudgingSchedulerService(
-            job_runner=muda_runner,
-            loop=asyncio.get_running_loop(),
-            config=muda_cfg,
-        )
-        muda_scheduler.start()
-        app.state.muda_nudging_scheduler = muda_scheduler
+        
+        # Only start muda scheduler if enabled AND we're the leader
+        is_muda_leader = False
+        if muda_cfg.enabled:
+            is_muda_leader = await acquire_leader_lock(
+                "muda_nudging_scheduler_leader",
+                ttl_seconds=120,
+            )
+        
+        if is_muda_leader:
+            muda_runner = MudaNudgingJobRunner(nudging_service=muda_nudging_service)
+            muda_scheduler = MudaNudgingSchedulerService(
+                job_runner=muda_runner,
+                loop=asyncio.get_running_loop(),
+                config=muda_cfg,
+            )
+            muda_scheduler.start()
+            app.state.muda_nudging_scheduler = muda_scheduler
+            app.state.is_muda_leader = True
+            logger.info(
+                "Muda nudging scheduler started (leader elected)",
+                instance_id=get_instance_id(),
+            )
+        else:
+            app.state.is_muda_leader = False
+            if muda_cfg.enabled:
+                logger.info(
+                    "Muda nudging scheduler not started (another instance is leader)",
+                    instance_id=get_instance_id(),
+                )
     except Exception as e:
         logger.error("Failed to start muda nudging scheduler", error=str(e))
     
@@ -135,20 +182,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown
     logger.info("Shutting down Sensei OS")
     
-    # Stop backup scheduler
+    # Stop backup scheduler and release leader lock
     if hasattr(app.state, "backup_scheduler"):
         try:
             app.state.backup_scheduler.stop()
             logger.info("Backup scheduler stopped")
         except Exception as e:
             logger.error("Error stopping backup scheduler", error=str(e))
+    
+    if getattr(app.state, "is_backup_leader", False):
+        try:
+            await release_leader_lock("backup_scheduler_leader")
+            logger.info("Released backup scheduler leader lock")
+        except Exception as e:
+            logger.error("Error releasing backup scheduler leader lock", error=str(e))
 
-    # Stop muda nudging scheduler
+    # Stop muda nudging scheduler and release leader lock
     if hasattr(app.state, "muda_nudging_scheduler"):
         try:
             app.state.muda_nudging_scheduler.stop()
         except Exception as e:
             logger.error("Error stopping muda nudging scheduler", error=str(e))
+    
+    if getattr(app.state, "is_muda_leader", False):
+        try:
+            await release_leader_lock("muda_nudging_scheduler_leader")
+            logger.info("Released muda nudging scheduler leader lock")
+        except Exception as e:
+            logger.error("Error releasing muda nudging leader lock", error=str(e))
     
     await engine.dispose()
     aclose = getattr(redis_client, "aclose", None)

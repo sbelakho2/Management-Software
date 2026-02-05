@@ -332,6 +332,23 @@ from sensei.models.segment import (
     SegmentModule,
     SegmentVisibility,
 )
+from sensei.models.service_persistence import (
+    SavedViewDB,
+    DraftDB,
+    DraftVersionDB,
+    SupportTicketDB,
+    TicketCommentDB,
+    UserFeedbackDB,
+    RoutingRuleDB,
+    A3LiteRecordDB,
+    EscalationPolicyDB,
+    EscalationThresholdDB,
+    MentionDB,
+    AssignmentDB,
+    TaskFromCommentDB,
+    IngestionJobDB,
+    IngestionDocumentDB,
+)
 
 __all__ = [
     # Base
@@ -524,4 +541,20 @@ __all__ = [
     "SegmentUsage",
     "SegmentModule",
     "SegmentVisibility",
+    # Service Persistence
+    "SavedViewDB",
+    "DraftDB",
+    "DraftVersionDB",
+    "SupportTicketDB",
+    "TicketCommentDB",
+    "UserFeedbackDB",
+    "RoutingRuleDB",
+    "A3LiteRecordDB",
+    "EscalationPolicyDB",
+    "EscalationThresholdDB",
+    "MentionDB",
+    "AssignmentDB",
+    "TaskFromCommentDB",
+    "IngestionJobDB",
+    "IngestionDocumentDB",
 ]

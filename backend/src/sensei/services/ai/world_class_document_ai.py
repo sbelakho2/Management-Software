@@ -49,6 +49,16 @@ class DocumentCategory(str, Enum):
     WORK_INSTRUCTION = "work_instruction"
     EMAIL = "email"
     GENERAL = "general"
+    # Aliases for backward compatibility
+    QUOTE = "quote"
+    PACKING_LIST = "packing_list"
+    ENGINEERING_DRAWING = "drawing"  # Alias
+    CERTIFICATE = "certificate"
+    UNKNOWN = "unknown"
+
+
+# Alias for backward compatibility
+DocumentType = DocumentCategory
 
 
 class ElementType(str, Enum):
@@ -84,6 +94,27 @@ class ProcessingStrategy(str, Enum):
     TABLE_TRANSFORMER = "table_transformer"  # Specialized table extraction
     CAD_PARSER = "cad_parser"  # Engineering drawing analysis
     AUTO = "auto"  # Automatic strategy selection
+    # Aliases for backward compatibility with document_intelligence.py
+    FAST = "fast"
+    ACCURATE = "accurate"
+    HIGH_RES = "high_res"
+
+
+class ExtractionConfidence(str, Enum):
+    """Confidence level of extraction."""
+    HIGH = "high"  # >90% confidence
+    MEDIUM = "medium"  # 70-90%
+    LOW = "low"  # 50-70%
+    UNCERTAIN = "uncertain"  # <50%
+
+
+class EnrichmentType(str, Enum):
+    """Types of VLM enrichments."""
+    IMAGE_DESCRIPTION = "image_description"
+    GENERATIVE_OCR = "generative_ocr"
+    TABLE_TO_HTML = "table_to_html"
+    DIAGRAM_INTERPRETATION = "diagram_interpretation"
+    HANDWRITING_OCR = "handwriting_ocr"
 
 
 class VisionLLMProvider(str, Enum):
@@ -1569,3 +1600,55 @@ class WorldClassDocumentAI:
             })
         
         return chunks
+
+
+# =============================================================================
+# Backward Compatibility Aliases
+# =============================================================================
+
+# Class name aliases for document_intelligence.py compatibility
+LayoutModel = LayoutAnalyzer
+TableStructureModel = TableStructureRecognizer
+DocumentIntelligenceService = WorldClassDocumentAI
+
+
+@dataclass
+class ProcessingConfig:
+    """Configuration for document processing (backward compatibility)."""
+    strategy: ProcessingStrategy = ProcessingStrategy.AUTO
+    ocr_language: str = "eng"
+    ocr_dpi: int = 300
+    enable_handwriting: bool = False
+    detect_tables: bool = True
+    detect_figures: bool = True
+    detect_key_values: bool = True
+    enable_vlm_enrichment: bool = False
+    vlm_provider: str = "gpt4_vision"
+    vlm_model: str = ""
+    max_pages: int | None = None
+    enrichment_types: list[EnrichmentType] = field(default_factory=lambda: [
+        EnrichmentType.IMAGE_DESCRIPTION,
+        EnrichmentType.TABLE_TO_HTML,
+        EnrichmentType.GENERATIVE_OCR,
+    ])
+
+
+class OCREngine:
+    """OCR engine for text extraction (backward compatibility)."""
+    
+    def __init__(self, language: str = "eng"):
+        self.language = language
+    
+    def extract_text(self, image_data: bytes) -> tuple[str, list[tuple[str, tuple[int, int, int, int], float]]]:
+        """Extract text from image.
+        
+        Returns:
+            Tuple of (full_text, list of (word, bbox, confidence))
+        """
+        # Simulated OCR - in production use Tesseract/PaddleOCR
+        sample_text = "Sample document text for OCR extraction."
+        words = [
+            (word, (i * 50, 10, i * 50 + 40, 25), 0.95)
+            for i, word in enumerate(sample_text.split())
+        ]
+        return sample_text, words

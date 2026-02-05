@@ -29,33 +29,51 @@ import {
 
 jest.mock('axios', () => {
   const isAxiosError = (error: any) => Boolean(error?.isAxiosError);
+
+  const post = jest.fn().mockImplementation((_url: string, payload: any) => {
+    const ref = payload?.reference_number;
+    const name = payload?.recipient?.name || 'there';
+    const keyPoints = payload?.key_points || [];
+    return Promise.resolve({
+      data: {
+        id: 'draft-1',
+        subject: ref ? `Update on ${ref}` : 'Subject',
+        salutation: `Hello ${name}`,
+        body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
+        opening: 'Opening',
+        main_content: keyPoints.length ? keyPoints : ['Point 1'],
+        closing: 'Regards',
+        signature: 'Signature',
+        alternatives: [],
+        compliance_issues: [],
+        suggestions: [],
+        tokens_used: 0,
+        generation_time_ms: 1,
+        model_version: 'v1.0',
+        confidence_score: 0.9,
+      },
+    });
+  });
+
+  const create = jest.fn(() => {
+    const instance: any = jest.fn().mockResolvedValue({ data: {} });
+    instance.interceptors = {
+      request: { use: jest.fn() },
+      response: { use: jest.fn() },
+    };
+    instance.post = post;
+    instance.get = jest.fn().mockResolvedValue({ data: {} });
+    instance.put = jest.fn().mockResolvedValue({ data: {} });
+    instance.delete = jest.fn().mockResolvedValue({ data: {} });
+    return instance;
+  });
+
   return {
     __esModule: true,
     default: {
-      post: jest.fn().mockImplementation((_url: string, payload: any) => {
-        const ref = payload?.reference_number;
-        const name = payload?.recipient?.name || 'there';
-        const keyPoints = payload?.key_points || [];
-        return Promise.resolve({
-          data: {
-            id: 'draft-1',
-            subject: ref ? `Update on ${ref}` : 'Subject',
-            salutation: `Hello ${name}`,
-            body: keyPoints.length ? keyPoints.join(' ') : 'Body content',
-            opening: 'Opening',
-            main_content: keyPoints.length ? keyPoints : ['Point 1'],
-            closing: 'Regards',
-            signature: 'Signature',
-            alternatives: [],
-            compliance_issues: [],
-            suggestions: [],
-            tokens_used: 0,
-            generation_time_ms: 1,
-            model_version: 'v1.0',
-            confidence_score: 0.9,
-          },
-        });
-      }),
+      create,
+      post,
+      isCancel: jest.fn(() => false),
       isAxiosError,
     },
     isAxiosError,

@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 from sensei.services.core.entity_providers import build_entity_getter
 
 
@@ -191,8 +192,18 @@ class AutosaveDraftsService:
         max_versions: int = 50,
         default_expiry_hours: int = 24 * 7,  # 1 week
         entity_provider: Callable[..., Any] | None = None,
+        session: AsyncSession | None = None,
     ) -> None:
-        """Initialize the service."""
+        """Initialize the service.
+        
+        Args:
+            autosave_interval_seconds: Interval for autosave (default 30s)
+            max_versions: Maximum versions to keep per draft (default 50)
+            default_expiry_hours: Default draft expiry time (default 1 week)
+            entity_provider: Callable to get entities for conflict detection
+            session: Optional database session for persistence
+        """
+        self._session = session
         self._drafts: dict[UUID, Draft] = {}
         self._user_drafts: dict[UUID, list[UUID]] = {}  # user_id -> draft_ids
         self._mock_entities: dict[str, dict[UUID, dict[str, Any]]] = {}
@@ -206,6 +217,8 @@ class AutosaveDraftsService:
 
     def create_mock_entity(self, entity_type: str, **data: Any) -> UUID:
         """Create a mock entity for testing."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity must not be used in production")
         entity_id = uuid4()
         payload = {"id": entity_id, "version": data.get("version", 1), **data}
         self._mock_entities.setdefault(entity_type, {})[entity_id] = payload
@@ -839,4 +852,5 @@ def get_autosave_drafts_service(session: AsyncSession) -> AutosaveDraftsService:
     sync_session = session.sync_session
     return AutosaveDraftsService(
         entity_provider=build_entity_getter(sync_session),
+        session=session,
     )

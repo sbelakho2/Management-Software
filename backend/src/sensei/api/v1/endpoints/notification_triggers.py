@@ -27,19 +27,13 @@ from sensei.services.core.notification_triggers import (
     SnoozeStatus,
 )
 
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 router = APIRouter(
     prefix="/notifications",
     tags=["Notifications"],
-    dependencies=[Depends(_deny_production)],
 )
 
 # --------------------------------------------------------------------------
-# Service Instance (in production, would be dependency injected)
+# Service Instance
 # --------------------------------------------------------------------------
 
 _service = NotificationTriggersService()

@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 from sensei.services.core.entity_providers import build_entity_getter
 
 
@@ -199,6 +200,11 @@ class DataHygieneNudgesService:
     
     def __init__(self, entity_provider: Callable[..., Any] | None = None) -> None:
         """Initialize the service."""
+        if settings.is_production and entity_provider is None:
+            raise ValueError(
+                "DataHygieneNudgesService requires an entity_provider in production. "
+                "Use get_data_hygiene_nudges_service(session) to construct it."
+            )
         self._nudges: dict[UUID, Nudge] = {}
         self._entity_provider = entity_provider
         self._suppression_rules: dict[UUID, NudgeSuppressionRule] = {}
@@ -473,6 +479,8 @@ class DataHygieneNudgesService:
 
     def create_mock_entity(self, entity_type: EntityType, **data: Any) -> UUID:
         """Create a mock entity for testing."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity must not be used in production")
         entity_id = uuid4()
         payload = {"id": entity_id, **data}
         if entity_type not in self._mock_entities:

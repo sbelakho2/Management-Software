@@ -3,6 +3,17 @@ Sensei OS Database Module
 
 PostgreSQL database connection with async SQLAlchemy, connection pooling,
 and health checking.
+
+IMPORTANT: Session Configuration Notes
+--------------------------------------
+The session factory is configured with `autoflush=True` to ensure that
+modifications are visible within the same transaction when queried.
+
+If you experience unexpected behavior:
+1. After modifying an object, call `await session.flush()` before querying
+   if autoflush is disabled for a specific operation.
+2. Use `session.expire_all()` to clear the identity map if you need fresh data.
+3. For bulk operations, consider using `session.execute()` directly.
 """
 
 from typing import AsyncGenerator
@@ -46,11 +57,16 @@ def create_engine() -> AsyncEngine:
 
 engine = create_engine()
 
+# Session factory configuration:
+# - expire_on_commit=False: Keep loaded objects accessible after commit
+# - autoflush=True: Automatically flush pending changes before queries
+#   This ensures that modifications within a transaction are visible
+#   when querying. Prevents subtle bugs where updates aren't seen.
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False,
-    autoflush=False,
+    autoflush=True,  # Changed from False to prevent stale data bugs
 )
 
 

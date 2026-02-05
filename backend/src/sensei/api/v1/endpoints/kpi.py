@@ -37,15 +37,9 @@ from sensei.services.ops.kpi_app_services import (
     muda_nudging_service as _muda_nudging_service,
 )
 
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 router = APIRouter(
     prefix="/kpi",
     tags=["KPI Metrics"],
-    dependencies=[Depends(_deny_production)],
 )
 
 

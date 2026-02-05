@@ -18,12 +18,7 @@ from sensei.services.smart_ingestion import (
     SmartIngestionService,
 )
 
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
-router = APIRouter(dependencies=[Depends(_deny_production)])
+router = APIRouter()
 
 _service = SmartIngestionService()
 

@@ -16,7 +16,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from enum import Enum
 import logging
 import io
@@ -61,6 +61,7 @@ class ModelMetadata:
     dependencies: Dict[str, str]
     tags: List[str]
     description: str
+    artifact_checksums: Dict[str, str] = field(default_factory=dict)
 
 
 class ModelRegistry:
@@ -88,6 +89,15 @@ class ModelRegistry:
                 self.registry = json.load(f)
         else:
             self.registry = {}
+
+    def _hash_file(self, path: Path) -> str:
+        """Compute SHA-256 checksum for artifact integrity tracking."""
+        import hashlib
+        sha256 = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
     
     def _save_registry(self) -> None:
         """Save registry to disk."""
@@ -122,6 +132,9 @@ class ModelRegistry:
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file_path, destination)
 
+                    checksum = self._hash_file(destination)
+                    metadata.artifact_checksums[str(relative_path)] = checksum
+
                     if self.use_remote_storage:
                         key = f"ml/models/{model_id}/artifacts/{relative_path}"
                         with open(file_path, "rb") as f:
@@ -130,6 +143,9 @@ class ModelRegistry:
             destination = artifacts_dir / model_artifacts_path.name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(model_artifacts_path, destination)
+
+            checksum = self._hash_file(destination)
+            metadata.artifact_checksums[model_artifacts_path.name] = checksum
 
             if self.use_remote_storage:
                 key = f"ml/models/{model_id}/model.pkl"
@@ -389,11 +405,25 @@ class MLPipeline:
             
             # Train
             logger.info("Training model...")
-            metrics = model.train(train_data)
+            if isinstance(train_data, dict):
+                try:
+                    metrics = model.train(**train_data)
+                except TypeError:
+                    metrics = model.train(train_data)
+            else:
+                metrics = model.train(train_data)
             
             # Evaluate
             logger.info("Evaluating model...")
-            eval_metrics = model.evaluate(eval_data)
+            if eval_data is None:
+                eval_metrics = {}
+            elif isinstance(eval_data, dict):
+                try:
+                    eval_metrics = model.evaluate(**eval_data)
+                except TypeError:
+                    eval_metrics = model.evaluate(eval_data)
+            else:
+                eval_metrics = model.evaluate(eval_data)
             metrics.update(eval_metrics)
             
             # Save model
@@ -403,6 +433,17 @@ class MLPipeline:
             
             # Create metadata
             training_duration = (_utcnow() - start_time).total_seconds()
+            if isinstance(train_data, dict):
+                # Prefer primary list length if present
+                if "equipment_list" in train_data and hasattr(train_data["equipment_list"], "__len__"):
+                    training_samples_count = len(train_data["equipment_list"])
+                else:
+                    training_samples_count = max(
+                        (len(v) for v in train_data.values() if hasattr(v, "__len__")),
+                        default=0,
+                    )
+            else:
+                training_samples_count = len(train_data) if hasattr(train_data, "__len__") else 0
             metadata = ModelMetadata(
                 model_id="",  # Will be assigned by registry
                 model_name=model_name,
@@ -411,7 +452,7 @@ class MLPipeline:
                 created_at=start_time,
                 trained_by="automated_pipeline",
                 training_duration_seconds=training_duration,
-                training_samples=len(train_data),
+                training_samples=training_samples_count,
                 metrics=metrics,
                 hyperparameters=hyperparameters,
                 features=getattr(model, 'feature_names', []),

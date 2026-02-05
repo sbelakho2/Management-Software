@@ -10,6 +10,8 @@ This module provides async tasks for:
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional
+from types import SimpleNamespace
+from datetime import datetime
 from sensei.core.celery_app import celery_app
 from sensei.ml.mlops import MLPipeline
 
@@ -36,6 +38,28 @@ def run_model_training(
     module = importlib.import_module(module_path)
     model_class = getattr(module, class_name)
     
+    def _inflate_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            # Convert ISO date strings where possible
+            converted = {}
+            for k, v in value.items():
+                if isinstance(v, str) and k in {"timestamp", "date", "installation_date"}:
+                    try:
+                        converted[k] = datetime.fromisoformat(v)
+                    except Exception:
+                        converted[k] = v
+                else:
+                    converted[k] = v
+            return SimpleNamespace(**converted)
+        if isinstance(value, list):
+            return [_inflate_value(v) for v in value]
+        return value
+
+    if isinstance(train_data, dict):
+        train_data = {k: _inflate_value(v) for k, v in train_data.items()}
+    if isinstance(eval_data, dict):
+        eval_data = {k: _inflate_value(v) for k, v in eval_data.items()}
+
     # Initialize pipeline
     # Note: MLPipeline might need its own initialization logic if it depends on DB/Registry
     pipeline = MLPipeline()

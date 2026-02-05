@@ -5,11 +5,16 @@ Provides functionality for saving, managing, and sharing filter configurations
 for entity lists (e.g., "Quotes due this week", "Red items", "Stale opps").
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class SavedViewEntityType(str, Enum):
@@ -522,8 +527,14 @@ class ViewFilterResult:
 class SavedViewsService:
     """Service for managing saved views/filters."""
     
-    def __init__(self) -> None:
-        """Initialize the service."""
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        """Initialize the service.
+        
+        Args:
+            session: Optional database session for persistence. If not provided,
+                     views will be stored in memory only (useful for testing).
+        """
+        self._session = session
         self._views: dict[str, SavedView] = {}
         self._system_views: list[SavedView] = []
         self._register_system_views()
@@ -741,6 +752,70 @@ class SavedViewsService:
         self._views[view_id] = view
         return view
     
+    async def create_view_async(
+        self,
+        name: str,
+        entity_type: SavedViewEntityType,
+        owner_id: UUID,
+        conditions: list[FilterCondition] | None = None,
+        condition_logic: FilterLogic = FilterLogic.AND,
+        sort_fields: list[SortField] | None = None,
+        columns: list[ColumnConfig] | None = None,
+        visibility: ViewVisibility = ViewVisibility.PRIVATE,
+        description: str = "",
+        page_size: int = 25,
+        icon: str | None = None,
+        color: str | None = None,
+        team_ids: list[UUID] | None = None,
+    ) -> SavedView:
+        """Create a new saved view with database persistence."""
+        view = self.create_view(
+            name=name,
+            entity_type=entity_type,
+            owner_id=owner_id,
+            conditions=conditions,
+            condition_logic=condition_logic,
+            sort_fields=sort_fields,
+            columns=columns,
+            visibility=visibility,
+            description=description,
+            page_size=page_size,
+            icon=icon,
+            color=color,
+            team_ids=team_ids,
+        )
+        
+        # Persist to database if session available
+        if self._session:
+            from sensei.repositories.saved_views_repo import SavedViewsRepository
+            repo = SavedViewsRepository(self._session)
+            await repo.create(
+                view_id=UUID(view.id),
+                name=view.name,
+                entity_type=view.entity_type.value,
+                owner_id=view.owner_id,
+                visibility=view.visibility.value,
+                description=view.description,
+                conditions=[self._condition_to_dict(c) for c in view.conditions],
+                sort_fields=[{"field": s.field, "direction": s.direction.value} for s in view.sort_fields],
+                columns=[{"field": c.field, "label": c.label, "width": c.width, "visible": c.visible, "order": c.order} for c in view.columns],
+                icon=view.icon,
+                color=view.color,
+            )
+        
+        return view
+    
+    def _condition_to_dict(self, condition: FilterCondition) -> dict[str, Any]:
+        """Convert a FilterCondition to a dictionary for JSON storage."""
+        return {
+            "field": condition.field,
+            "operator": condition.operator.value,
+            "value": condition.value,
+            "second_value": condition.second_value,
+            "date_preset": condition.date_preset.value if condition.date_preset else None,
+            "case_sensitive": condition.case_sensitive,
+        }
+    
     def get_view(self, view_id: str) -> SavedView | None:
         """Get a view by ID."""
         # Check user views first
@@ -806,12 +881,59 @@ class SavedViewsService:
         view.updated_at = datetime.now()
         return view
     
+    async def update_view_async(
+        self,
+        view_id: str,
+        **kwargs: Any,
+    ) -> SavedView | None:
+        """Update an existing view with database persistence."""
+        view = self.update_view(view_id, **kwargs)
+        
+        if view and self._session:
+            from sensei.repositories.saved_views_repo import SavedViewsRepository
+            repo = SavedViewsRepository(self._session)
+            
+            # Build update fields
+            update_data: dict[str, Any] = {}
+            if "name" in kwargs and kwargs["name"] is not None:
+                update_data["name"] = kwargs["name"]
+            if "description" in kwargs and kwargs["description"] is not None:
+                update_data["description"] = kwargs["description"]
+            if "conditions" in kwargs and kwargs["conditions"] is not None:
+                update_data["conditions"] = [self._condition_to_dict(c) for c in kwargs["conditions"]]
+            if "sort_fields" in kwargs and kwargs["sort_fields"] is not None:
+                update_data["sort_fields"] = [{"field": s.field, "direction": s.direction.value} for s in kwargs["sort_fields"]]
+            if "columns" in kwargs and kwargs["columns"] is not None:
+                update_data["columns"] = [{"field": c.field, "label": c.label, "width": c.width, "visible": c.visible, "order": c.order} for c in kwargs["columns"]]
+            if "icon" in kwargs:
+                update_data["icon"] = kwargs["icon"]
+            if "color" in kwargs:
+                update_data["color"] = kwargs["color"]
+            if "pinned" in kwargs and kwargs["pinned"] is not None:
+                update_data["is_pinned"] = kwargs["pinned"]
+            
+            if update_data:
+                await repo.update(UUID(view_id), **update_data)
+        
+        return view
+    
     def delete_view(self, view_id: str) -> bool:
         """Delete a view."""
         if view_id in self._views:
             del self._views[view_id]
             return True
         return False
+    
+    async def delete_view_async(self, view_id: str) -> bool:
+        """Delete a view with database persistence."""
+        result = self.delete_view(view_id)
+        
+        if result and self._session:
+            from sensei.repositories.saved_views_repo import SavedViewsRepository
+            repo = SavedViewsRepository(self._session)
+            await repo.delete(UUID(view_id))
+        
+        return result
     
     def list_views(
         self,

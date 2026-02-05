@@ -197,15 +197,19 @@ tmp.txt
 *.temp
 .output.txt
 repo_analysis_report*.md
+AI_ML_ONNX_ANALYSIS_REPORT.md
+PREPROCESSING_ANALYSIS.md
+TRAINING_STATUS.md
 
 # Log files (root level)
 backend.log
 backend_v2.log
+backend_errors.log
 frontend.log
 frontend_v2.log
 tmp-*.log
-frontend.log
-frontend_v2.log
+preprocess.log
+ingestion.log
 
 # Root level node_modules (monorepo root)
 /node_modules/
@@ -235,26 +239,45 @@ frontend/.swc/
 frontend/tsconfig.tsbuildinfo
 
 # ============================================
+# ML Models, Datasets & Training Artifacts
+# ============================================
+# Model files and checkpoints
+backend/models/
+backend/checkpoints/
+checkpoints/
+*.ckpt
+*.safetensors
+
+# Datasets and cache
+backend/datasets_cache/
+datasets_cache/
+*.arrow
+*.parquet
+
+# Hugging Face cache
+.cache/huggingface/
+huggingface/
+
+# Training outputs
+training_outputs/
+model_outputs/
+runs/
+wandb/
+mlruns/
+tensorboard_logs/
+
+# ============================================
 # Book Downloads & Knowledge Distillation
 # ============================================
 # Downloaded books - ALL subdirectories (txt, cleaned, filtered_out, pdf, epub, etc.)
-downloaded_books/txt/
-downloaded_books/cleaned/
-downloaded_books/filtered_out/
-downloaded_books/pdf/
-downloaded_books/epub/
-downloaded_books/raw/
-downloaded_books/*.txt
-downloaded_books/*.pdf
-downloaded_books/*.epub
-!downloaded_books/.gitkeep
-!downloaded_books/README.md
-!downloaded_books/*.py
+downloaded_books/
+cleaned_books/
+preprocessed_corpus/
+seeded_knowledge/
 
 # Alternative book directories
 books/
 raw_books/
-cleaned_books/
 
 # Book download scripts and temp files
 download_progress.json

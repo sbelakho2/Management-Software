@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from sensei.api.deps import CurrentUser, OptionalCurrentUser
+from sensei.api.deps import CurrentUser
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.state_machine import (
@@ -219,8 +219,8 @@ async def check_transition(
 async def get_transition_requirements(
     entity_type: str,
     state: str,
+    current_user: CurrentUser,  # noqa: ARG001
     to_state: str = Query(..., description="Target state to get requirements for"),
-    current_user: OptionalCurrentUser = None,
 ):
     """
     Get requirements for a specific transition.

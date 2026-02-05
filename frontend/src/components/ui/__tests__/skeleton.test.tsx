@@ -71,14 +71,14 @@ describe('SkeletonText', () => {
 describe('SkeletonCard', () => {
   it('renders with card styling', () => {
     const { container } = render(<SkeletonCard />);
-    expect(container.firstChild).toHaveClass('rounded-lg');
+    expect(container.firstChild).toHaveClass('rounded-rams-sm');
     expect(container.firstChild).toHaveClass('border');
-    expect(container.firstChild).toHaveClass('bg-card');
+    expect(container.firstChild).toHaveClass('bg-rams-module');
   });
 
   it('renders with avatar placeholder', () => {
     const { container } = render(<SkeletonCard />);
-    const avatar = container.querySelector('.rounded-full');
+    const avatar = container.querySelector('.skeleton.h-10.w-10');
     expect(avatar).toBeInTheDocument();
   });
 
@@ -122,7 +122,7 @@ describe('SkeletonList', () => {
 
   it('renders avatar placeholders', () => {
     const { container } = render(<SkeletonList />);
-    const avatars = container.querySelectorAll('.rounded-full');
+    const avatars = container.querySelectorAll('.skeleton.h-8.w-8');
     expect(avatars.length).toBeGreaterThanOrEqual(5);
   });
 });

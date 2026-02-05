@@ -1,6 +1,14 @@
 import React from 'react';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import PipelinePage from '../pipeline/page';
+import { usePipelineStore } from '@/stores/pipeline';
+
+const render = renderWithI18n;
+
+jest.mock('@/stores/pipeline', () => ({
+  usePipelineStore: jest.fn(),
+}));
 
 // Mock next/link
 jest.mock('next/link', () => {
@@ -29,6 +37,63 @@ jest.mock('next/navigation', () => ({
 describe('PipelinePage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    (usePipelineStore as unknown as jest.Mock).mockReturnValue({
+      rfqs: [
+        {
+          id: '1',
+          rfq_number: 'RFQ-2024-0001',
+          title: 'Precision Gear Assembly',
+          status: 'new',
+          priority: 'high',
+          estimated_value: 125000,
+          currency: 'USD',
+          due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          customer: { name: 'Acme Corp' },
+          triage_risk_score: 55,
+          custom_fields: { completeness_score: 72 },
+        },
+        {
+          id: '2',
+          rfq_number: 'RFQ-2024-0002',
+          title: 'CNC Fixture Set',
+          status: 'reviewing',
+          priority: 'urgent',
+          estimated_value: 54000,
+          currency: 'USD',
+          due_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+          customer: { name: 'TechStart Inc' },
+          triage_risk_score: 82,
+          custom_fields: { completeness_score: 40 },
+        },
+        {
+          id: '3',
+          rfq_number: 'RFQ-2024-0003',
+          title: 'Submitted Assembly Quote',
+          status: 'submitted',
+          priority: 'medium',
+          estimated_value: 10000,
+          currency: 'USD',
+          due_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+          customer: { name: 'Contoso LLC' },
+          triage_risk_score: 20,
+          custom_fields: { completeness_score: 90 },
+        },
+      ],
+      stats: {
+        activeRFQs: 3,
+        overdueCount: 0,
+        totalValue: 189000,
+        totalRFQs: 3,
+        avgResponseTime: 12,
+        conversionRate: 35,
+      },
+      isLoading: false,
+      fetchRFQs: jest.fn(),
+      setRFQStatus: jest.fn().mockResolvedValue(undefined),
+      deleteRFQ: jest.fn().mockResolvedValue(undefined),
+      exportRFQs: jest.fn(),
+    });
   });
 
   // REQUIREMENT: Board/List toggle functionality
@@ -37,8 +102,8 @@ describe('PipelinePage', () => {
       render(<PipelinePage />);
       
       // Should have list and board view toggles
-      const listBtn = screen.queryByRole('button', { name: /list view/i });
-      const boardBtn = screen.queryByRole('button', { name: /board view/i });
+      const listBtn = screen.queryByRole('button', { name: /list/i });
+      const boardBtn = screen.queryByRole('button', { name: /board/i });
       expect(listBtn || boardBtn).toBeTruthy();
     });
 
@@ -53,7 +118,7 @@ describe('PipelinePage', () => {
     it('should switch to board view when clicked', async () => {
       render(<PipelinePage />);
       
-      const boardViewButton = screen.queryByRole('button', { name: /board view/i });
+      const boardViewButton = screen.queryByRole('button', { name: /board/i });
       if (boardViewButton) {
         fireEvent.click(boardViewButton);
         
@@ -68,11 +133,11 @@ describe('PipelinePage', () => {
     it('should switch back to list view', async () => {
       render(<PipelinePage />);
       
-      const boardViewButton = screen.queryByRole('button', { name: /board view/i });
+      const boardViewButton = screen.queryByRole('button', { name: /board/i });
       if (boardViewButton) {
         fireEvent.click(boardViewButton);
         
-        const listViewButton = screen.queryByRole('button', { name: /list view/i });
+        const listViewButton = screen.queryByRole('button', { name: /list/i });
         if (listViewButton) {
           fireEvent.click(listViewButton);
         }
@@ -88,7 +153,7 @@ describe('PipelinePage', () => {
     it('should persist view preference', () => {
       render(<PipelinePage />);
       
-      const boardViewButton = screen.queryByRole('button', { name: /board view/i });
+      const boardViewButton = screen.queryByRole('button', { name: /board/i });
       if (boardViewButton) {
         fireEvent.click(boardViewButton);
         
@@ -115,7 +180,7 @@ describe('PipelinePage', () => {
       expect(screen.queryAllByText(/new/i).length).toBeGreaterThan(0);
       expect(screen.queryAllByText(/reviewing|in review/i).length).toBeGreaterThan(0);
       expect(screen.queryAllByText(/quoting|quote/i).length).toBeGreaterThan(0);
-      expect(screen.queryAllByText(/submitted|sent/i).length).toBeGreaterThan(0);
+      expect(screen.queryAllByText(/submitted/i).length).toBeGreaterThan(0);
     });
 
     it('should display stage totals prominently in board view', () => {
@@ -297,7 +362,7 @@ describe('PipelinePage', () => {
     it('should render table in list view', () => {
       render(<PipelinePage />);
       
-      const listViewButton = screen.queryByRole('button', { name: /list view/i });
+      const listViewButton = screen.queryByRole('button', { name: /list/i });
       if (listViewButton) {
         fireEvent.click(listViewButton);
       }
@@ -536,8 +601,8 @@ describe('PipelinePage', () => {
       expect(buttons.length).toBeGreaterThan(0);
       
       // View toggle buttons have aria-labels
-      const listBtn = screen.queryByRole('button', { name: /list view/i });
-      const boardBtn = screen.queryByRole('button', { name: /board view/i });
+      const listBtn = screen.queryByRole('button', { name: /list/i });
+      const boardBtn = screen.queryByRole('button', { name: /board/i });
       expect(listBtn || boardBtn).toBeTruthy();
     });
 

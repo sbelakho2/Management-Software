@@ -10,7 +10,6 @@ Suggests preventive maintenance actions based on:
 """
 
 import numpy as np
-import pandas as pd
 from typing import List, Dict, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime, timedelta, timezone
 from sklearn.ensemble import RandomForestClassifier, IsolationForest
@@ -21,12 +20,18 @@ from pathlib import Path
 
 from sensei.core.config import settings
 
+# Optional imports
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+
 # Type hints for models that may not exist yet
 if TYPE_CHECKING:
     from sensei.models.maintenance import Asset as Equipment, MaintenanceRecord, ConditionReading
 
 logger = logging.getLogger(__name__)
-
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -52,11 +57,16 @@ class ConditionBasedMaintenancePredictor:
     }
 
     def __init__(self, model_path: Optional[Path] = None):
-        default_path = getattr(settings, 'ML_MODEL_PATH', '/tmp/ml_models')
-        self.model_path = model_path or Path(default_path) / "cbm_predictor"
+        # Use persistent path from settings, not /tmp
+        default_path = Path(settings.ML_MODEL_PATH) / "cbm_predictor"
+        self.model_path = model_path or default_path
+        self.model_path.mkdir(parents=True, exist_ok=True)
         self.failure_classifier: Optional[RandomForestClassifier] = None
         self.anomaly_detector: Optional[IsolationForest] = None
         self.scaler: Optional[StandardScaler] = None
+        
+        # Try to load existing models
+        self._try_load_models()
         
     def train(
         self,
@@ -125,6 +135,37 @@ class ConditionBasedMaintenancePredictor:
         
         logger.info(f"CBM model trained. F1: {metrics['f1_mean']:.3f} ± {metrics['f1_std']:.3f}")
         return metrics
+    
+    def _try_load_models(self) -> bool:
+        """
+        Try to load existing models from disk.
+        
+        Returns:
+            True if models were loaded successfully, False otherwise
+        """
+        try:
+            if not self.model_path.exists():
+                logger.debug(f"Model path does not exist: {self.model_path}")
+                return False
+            
+            classifier_path = self.model_path / "failure_classifier.pkl"
+            detector_path = self.model_path / "anomaly_detector.pkl"
+            scaler_path = self.model_path / "scaler.pkl"
+            
+            if not all(p.exists() for p in [classifier_path, detector_path, scaler_path]):
+                logger.debug("Some model files are missing")
+                return False
+            
+            self.failure_classifier = joblib.load(classifier_path)
+            self.anomaly_detector = joblib.load(detector_path)
+            self.scaler = joblib.load(scaler_path)
+            
+            logger.info(f"Successfully loaded CBM models from {self.model_path}")
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Failed to load existing models: {e}")
+            return False
 
     def train_async(
         self,
@@ -136,18 +177,49 @@ class ConditionBasedMaintenancePredictor:
         Offload training to Celery.
         """
         from sensei.tasks.ml_tasks import run_model_training
+        from datetime import date
         
         # We need to serialize data or pass references if Celery can access DB
         # For now, we'll pass the data directly (assuming it's not too large for Redis)
         # In production, we'd pass query parameters or IDs.
         
+        def _to_dict(obj: Any, fields: list[str]) -> dict:
+            data = {}
+            for field in fields:
+                value = getattr(obj, field, None)
+                # Serialize datetime/date
+                if isinstance(value, (datetime, date)):
+                    data[field] = value.isoformat()
+                else:
+                    data[field] = value
+            return data
+
+        serialized_equipment = [
+            _to_dict(e, ["id", "installation_date", "operating_hours", "meter_reading"]) for e in equipment_list
+        ]
+        serialized_records = [
+            _to_dict(r, ["equipment_id", "date", "maintenance_type"]) for r in maintenance_records
+        ]
+        serialized_readings = [
+            _to_dict(r, [
+                "equipment_id",
+                "timestamp",
+                "temperature",
+                "vibration",
+                "pressure",
+                "current",
+                "noise",
+                "operating_hours",
+            ]) for r in condition_readings
+        ]
+
         task = run_model_training.delay(
             model_name="cbm_predictor",
             model_class_path="sensei.ml.cbm_predictor.ConditionBasedMaintenancePredictor",
             train_data={
-                "equipment": equipment_list,
-                "records": maintenance_records,
-                "readings": condition_readings
+                "equipment_list": serialized_equipment,
+                "maintenance_records": serialized_records,
+                "condition_readings": serialized_readings,
             },
             eval_data=None,
             hyperparameters={

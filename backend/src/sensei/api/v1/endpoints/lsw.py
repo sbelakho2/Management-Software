@@ -26,15 +26,9 @@ from sensei.services.production.lsw_scheduling import (
     get_default_template_ids,
 )
 
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 router = APIRouter(
     prefix="/lsw",
     tags=["LSW Scheduling"],
-    dependencies=[Depends(_deny_production)],
 )
 
 # Global service instance

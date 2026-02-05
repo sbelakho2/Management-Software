@@ -22,12 +22,7 @@ from sensei.services.ops.gm_onboarding import (
 )
 
 
-def _deny_production() -> None:
-    if settings.is_production:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-
-router = APIRouter(tags=["gm-onboarding"], dependencies=[Depends(_deny_production)])
+router = APIRouter(tags=["gm-onboarding"])
 
 
 # =============================================================================

@@ -10,10 +10,16 @@ Comprehensive evaluation of ML models:
 """
 
 import numpy as np
-import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-import matplotlib.pyplot as plt
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    pd = None
+try:
+    import matplotlib.pyplot as plt  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    plt = None
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -301,7 +307,7 @@ class ModelEvaluator:
     def compare_models(
         self,
         results_list: List[Tuple[str, EvaluationResults]],
-    ) -> pd.DataFrame:
+    ) -> "pd.DataFrame":
         """
         Compare multiple models.
         
@@ -324,6 +330,8 @@ class ModelEvaluator:
                 'calibration_error': results.calibration_score,
             })
         
+        if pd is None:
+            raise RuntimeError("pandas is not installed. Install pandas to use this method.")
         df = pd.DataFrame(comparison_data)
         return df.sort_values('f1_score', ascending=False)
     

@@ -30,6 +30,7 @@ async def websocket_endpoint(
 
     user_id = str(user.id)
     await manager.connect(websocket, user_id)
+    heartbeat_task = manager.start_heartbeat(websocket, user_id)
     
     try:
         while True:
@@ -43,3 +44,5 @@ async def websocket_endpoint(
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {e}")
         await manager.disconnect(websocket, user_id)
+    finally:
+        manager.stop_heartbeat(heartbeat_task)

@@ -126,7 +126,6 @@ export const authApi = {
       email: credentials.email.trim().toLowerCase(),
       password: credentials.password.trim(),
     };
-    console.log('[AUTH DEBUG] Login request payload:', JSON.stringify(payload, null, 2));
     const response = await apiClient.post<BackendLoginResponse>('/auth/login', payload);
 
     if (isTwoFactorRequiredResponse(response)) {

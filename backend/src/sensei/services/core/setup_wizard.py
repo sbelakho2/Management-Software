@@ -77,8 +77,19 @@ class LSWFrequency(str, Enum):
     MONTHLY = "monthly"
 
 
-class RoleType(str, Enum):
-    """Role types for the organization."""
+# Import the canonical RoleType from models to ensure consistency.
+# NOTE: setup_wizard uses descriptive wizard-specific role names that map
+# to the canonical RoleType values from the user model.
+from sensei.models.user import RoleType as CanonicalRoleType
+
+
+class WizardRoleType(str, Enum):
+    """
+    Wizard-specific role types for the setup wizard.
+    
+    These map to the canonical RoleType values in sensei.models.user.
+    Use ROLE_TYPE_MAPPING to convert to canonical values.
+    """
     
     GENERAL_MANAGER = "general_manager"
     SALES_MANAGER = "sales_manager"
@@ -87,6 +98,27 @@ class RoleType(str, Enum):
     FINANCE = "finance"
     QUALITY = "quality"
     OPERATIONS = "operations"
+
+
+# Mapping from wizard role types to canonical role types
+ROLE_TYPE_MAPPING: dict[WizardRoleType, CanonicalRoleType] = {
+    WizardRoleType.GENERAL_MANAGER: CanonicalRoleType.GM,
+    WizardRoleType.SALES_MANAGER: CanonicalRoleType.SALES,
+    WizardRoleType.SALES_REP: CanonicalRoleType.SALES,
+    WizardRoleType.ENGINEER: CanonicalRoleType.ENGINEERING,
+    WizardRoleType.FINANCE: CanonicalRoleType.FINANCE,
+    WizardRoleType.QUALITY: CanonicalRoleType.QUALITY,
+    WizardRoleType.OPERATIONS: CanonicalRoleType.OPS,
+}
+
+
+def get_canonical_role(wizard_role: WizardRoleType) -> CanonicalRoleType:
+    """Convert a wizard role type to its canonical equivalent."""
+    return ROLE_TYPE_MAPPING.get(wizard_role, CanonicalRoleType.VIEWER)
+
+
+# Alias for backward compatibility within this module
+RoleType = WizardRoleType
 
 
 # =============================================================================

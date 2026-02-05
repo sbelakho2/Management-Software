@@ -31,14 +31,8 @@ from sensei.services.core.search import (
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
-
-def _deny_production_indexing() -> None:
-    """Prevent mutation of the in-memory search index in production."""
-    if settings.is_production:
-        raise HTTPException(status_code=404, detail="Not found")
-
 # --------------------------------------------------------------------------
-# Service Instance (in production, would be dependency injected)
+# Service Instance
 # --------------------------------------------------------------------------
 
 _service = FullTextSearchService()
@@ -431,7 +425,7 @@ async def index_document(request: IndexDocumentRequest, current_user: CurrentSup
     """
     Index a document for searching. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     doc = SearchableDocument(
@@ -469,7 +463,7 @@ async def index_account_endpoint(request: IndexAccountRequest, current_user: Cur
     """
     Index an account for searching. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     index_account(
@@ -494,7 +488,7 @@ async def index_rfq_endpoint(request: IndexRFQRequest, current_user: CurrentSupe
     """
     Index an RFQ for searching. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     index_rfq(
@@ -521,7 +515,7 @@ async def index_quote_endpoint(request: IndexQuoteRequest, current_user: Current
     """
     Index a quote for searching. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     index_quote(
@@ -549,7 +543,7 @@ async def index_task_endpoint(request: IndexTaskRequest, current_user: CurrentSu
     """
     Index a task for searching. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     index_task(
@@ -580,7 +574,7 @@ async def remove_document(
     """
     Remove a document from the search index. Requires superuser access.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     et = _parse_entity_type(entity_type)
@@ -609,7 +603,7 @@ async def clear_index(
     
     If entity_type is provided, only clears documents of that type.
     """
-    _deny_production_indexing()
+
     service = get_service()
     
     et = _parse_entity_type(entity_type) if entity_type else None

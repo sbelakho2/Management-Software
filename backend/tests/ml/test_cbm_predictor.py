@@ -206,11 +206,27 @@ class TestCBMPredictorInit:
     """Test ConditionBasedMaintenancePredictor initialization."""
     
     def test_init_with_default_path(self):
-        """Test initialization with default model path."""
+        """Test initialization with default model path.
+        
+        If pre-trained models exist, they should be loaded automatically.
+        If not, models should be None (ready for training).
+        """
         predictor = ConditionBasedMaintenancePredictor()
-        assert predictor.failure_classifier is None
-        assert predictor.anomaly_detector is None
-        assert predictor.scaler is None
+        # Models either load from disk or are None
+        # If training has been done, models will be loaded
+        if predictor.model_path.exists():
+            # With pre-trained models, they should all be loaded together
+            has_all = predictor.failure_classifier is not None and \
+                      predictor.anomaly_detector is not None and \
+                      predictor.scaler is not None
+            has_none = predictor.failure_classifier is None and \
+                       predictor.anomaly_detector is None and \
+                       predictor.scaler is None
+            assert has_all or has_none, "Models should be all loaded or all None"
+        else:
+            assert predictor.failure_classifier is None
+            assert predictor.anomaly_detector is None
+            assert predictor.scaler is None
     
     def test_init_with_custom_path(self, temp_model_path):
         """Test initialization with custom model path."""

@@ -4,11 +4,16 @@ Routes user issues and feedback into A3-lite or Task creation.
 Manages support tickets, feedback collection, and issue routing.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TicketPriority(Enum):
@@ -218,8 +223,14 @@ class SupportInboxService:
     Provides ticket management, feedback collection, and routing.
     """
 
-    def __init__(self) -> None:
-        """Initialize the support inbox service."""
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        """Initialize the support inbox service.
+        
+        Args:
+            session: Optional database session for persistence. If not provided,
+                     tickets will be stored in memory only (useful for testing).
+        """
+        self._session = session
         self._tickets: dict[UUID, SupportTicket] = {}
         self._feedback: dict[UUID, UserFeedback] = {}
         self._routing_rules: dict[UUID, RoutingRule] = {}

@@ -1,22 +1,70 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 
-function normalizeApiRoot(rawUrl: string): string {
-  const trimmed = rawUrl.replace(/\/+$/, '');
+/**
+ * Safely normalize an API root URL.
+ * 
+ * Handles various input formats:
+ * - "http://localhost:8000" -> "http://localhost:8000"
+ * - "http://localhost:8000/" -> "http://localhost:8000"
+ * - "http://localhost:8000/api/v1" -> "http://localhost:8000"
+ * - "http://localhost:8000/api/v1/" -> "http://localhost:8000"
+ * - "http://localhost:8000/api" -> "http://localhost:8000"
+ * - "" or undefined -> falls back to default
+ */
+function normalizeApiRoot(rawUrl: string | undefined): string {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return '';
+  }
+  
+  // Remove trailing slashes
+  let trimmed = rawUrl.replace(/\/+$/, '');
+  
+  // Remove /api/v1 suffix if present
   if (trimmed.endsWith('/api/v1')) {
-    return trimmed.slice(0, -'/api/v1'.length);
+    trimmed = trimmed.slice(0, -'/api/v1'.length);
   }
-  if (trimmed.endsWith('/api')) {
-    return trimmed.slice(0, -'/api'.length);
+  // Remove /api suffix if present (but not if it's part of a longer path)
+  else if (trimmed.endsWith('/api')) {
+    trimmed = trimmed.slice(0, -'/api'.length);
   }
-  return trimmed;
+  
+  // Final cleanup of trailing slashes
+  return trimmed.replace(/\/+$/, '');
 }
 
-const DEFAULT_PUBLIC_API_URL = 'http://localhost:8000';
-const API_ROOT = normalizeApiRoot(
-  typeof window === 'undefined'
-    ? (process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || DEFAULT_PUBLIC_API_URL)
-    : (process.env.NEXT_PUBLIC_API_URL || DEFAULT_PUBLIC_API_URL)
-);
+/**
+ * Determine the API root URL with proper fallback chain.
+ * 
+ * Priority:
+ * 1. Server-side: API_INTERNAL_URL (for SSR/internal communication)
+ * 2. Client-side: NEXT_PUBLIC_API_URL (from environment)
+ * 3. Fallback: http://localhost:8000
+ * 
+ * SECURITY: In production, ensure NEXT_PUBLIC_API_URL uses HTTPS to avoid
+ * mixed content warnings when the frontend is served over HTTPS.
+ */
+function getApiRoot(): string {
+  const DEFAULT_PUBLIC_API_URL = 'http://localhost:8000';
+  
+  const isServer = typeof window === 'undefined';
+  
+  let rawUrl: string | undefined;
+  
+  if (isServer) {
+    // Server-side rendering: prefer internal URL for service-to-service calls
+    rawUrl = process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL;
+  } else {
+    // Client-side: use public URL only
+    rawUrl = process.env.NEXT_PUBLIC_API_URL;
+  }
+  
+  const normalized = normalizeApiRoot(rawUrl);
+  
+  // Return normalized URL or default
+  return normalized || DEFAULT_PUBLIC_API_URL;
+}
+
+const API_ROOT = getApiRoot();
 
 export interface ApiError {
   message: string;

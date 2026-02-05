@@ -16,8 +16,8 @@ describe('Card', () => {
   it('applies base card styles', () => {
     render(<Card data-testid="card">Content</Card>);
     const card = screen.getByTestId('card');
-    expect(card).toHaveClass('rounded-[2rem]');
-    expect(card).toHaveClass('border');
+    expect(card).toHaveClass('rounded-rams-sm');
+    expect(card).toHaveClass('border-rams-line');
   });
 });
 
@@ -30,7 +30,7 @@ describe('CardHeader', () => {
   it('applies spacing styles', () => {
     render(<CardHeader data-testid="header">Header</CardHeader>);
     const header = screen.getByTestId('header');
-    expect(header).toHaveClass('p-6');
+    expect(header).toHaveClass('p-5');
   });
 });
 
@@ -43,8 +43,8 @@ describe('CardTitle', () => {
   it('applies heading styles', () => {
     render(<CardTitle data-testid="title">Title</CardTitle>);
     const title = screen.getByTestId('title');
-    expect(title).toHaveClass('font-semibold');
-    expect(title).toHaveClass('leading-none');
+    expect(title).toHaveClass('font-black');
+    expect(title).toHaveClass('uppercase');
   });
 });
 
@@ -56,7 +56,7 @@ describe('CardDescription', () => {
 
   it('applies muted text styles', () => {
     render(<CardDescription data-testid="desc">Desc</CardDescription>);
-    expect(screen.getByTestId('desc')).toHaveClass('text-muted-foreground');
+    expect(screen.getByTestId('desc')).toHaveClass('text-muted-foreground/60');
   });
 });
 
@@ -68,7 +68,7 @@ describe('CardContent', () => {
 
   it('applies padding styles', () => {
     render(<CardContent data-testid="content">Content</CardContent>);
-    expect(screen.getByTestId('content')).toHaveClass('p-6');
+    expect(screen.getByTestId('content')).toHaveClass('p-5');
   });
 });
 

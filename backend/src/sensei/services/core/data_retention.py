@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.core.config import settings
 from sensei.services.core.entity_providers import (
     build_archived_lister,
     build_archived_restorer,
@@ -226,6 +227,23 @@ class DataRetentionService:
         archived_restorer: Callable[..., Any] | None = None,
     ) -> None:
         """Initialize the service."""
+        if settings.is_production and any(
+            dep is None
+            for dep in (
+                entity_getter,
+                entity_lister,
+                entity_archiver,
+                entity_deleter,
+                entity_updater,
+                archived_lister,
+                archived_restorer,
+            )
+        ):
+            raise ValueError(
+                "DataRetentionService must be constructed with database providers in production "
+                "(use get_data_retention_service(session))."
+            )
+
         self._policies: dict[UUID, RetentionPolicy] = {}
         self._legal_holds: dict[UUID, LegalHold] = {}
         self._records: dict[UUID, RetentionRecord] = {}
@@ -321,6 +339,8 @@ class DataRetentionService:
 
     def create_mock_entity(self, entity_type: str, **data: Any) -> UUID:
         """Create a mock entity for testing."""
+        if settings.is_production:
+            raise ValueError("create_mock_entity is not allowed in production")
         entity_id = uuid4()
         normalized = str(entity_type).lower()
         payload = {"id": entity_id, **data}

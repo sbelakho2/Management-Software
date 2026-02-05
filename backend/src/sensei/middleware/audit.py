@@ -12,12 +12,14 @@ from typing import Callable
 from uuid import UUID
 
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy import select
 from starlette.requests import Request
 from starlette.responses import Response
 
 from sensei.core.database import async_session_factory
 from sensei.core.security import decode_token
 from sensei.models.audit_log import AuditLog
+from sensei.models.user import User
 
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -84,14 +86,25 @@ class AuditMiddleware(BaseHTTPMiddleware):
             except Exception:
                 pass
 
+        # Prefer request.state.user if available
+        state_user = getattr(request.state, "user", None)
+        if state_user is not None:
+            user_email = getattr(state_user, "email", None)
+
         async def _write_audit() -> None:
             async with async_session_factory() as session:
+                resolved_email = user_email
+                if resolved_email is None and user_id is not None:
+                    result = await session.execute(
+                        select(User.email).where(User.id == user_id)
+                    )
+                    resolved_email = result.scalar_one_or_none()
                 log = AuditLog.create_log(
                     entity_type=entity_type,
                     entity_id=entity_id or path,
                     action=request.method.lower(),
                     user_id=user_id,
-                    user_email=user_email,
+                    user_email=resolved_email,
                     ip_address=ip_address,
                     user_agent=user_agent,
                     request_id=correlation_id,

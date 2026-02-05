@@ -10,13 +10,18 @@ Implements escalation policies for:
 Designed to be called periodically and integrated with notifications.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 import logging
-from typing import Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -262,8 +267,14 @@ class EscalationPolicyService:
         "l3": 3.0,  # 3x SLA
     }
     
-    def __init__(self) -> None:
-        """Initialize the escalation policy service."""
+    def __init__(self, session: AsyncSession | None = None) -> None:
+        """Initialize the escalation policy service.
+        
+        Args:
+            session: Optional database session for persistence. If not provided,
+                     policies will be stored in memory only (useful for testing).
+        """
+        self._session = session
         self._custom_thresholds: dict[str, dict[str, Any]] = {}
         self._policies: dict[str, EscalationPolicy] = {}
         self._initialize_default_policies()

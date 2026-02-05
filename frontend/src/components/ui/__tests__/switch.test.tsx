@@ -91,8 +91,8 @@ describe('Switch', () => {
     render(<Switch aria-label="Test switch" />);
     const switchEl = screen.getByRole('switch');
     
-    expect(switchEl).toHaveClass('h-6');
-    expect(switchEl).toHaveClass('w-11');
+    expect(switchEl).toHaveClass('h-5');
+    expect(switchEl).toHaveClass('w-10');
   });
 
   it('should forward ref correctly', () => {

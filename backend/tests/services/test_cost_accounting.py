@@ -241,7 +241,7 @@ def test_cogs_and_margin_reporting():
     svc.record_labor_booking(actor_id="u1", actor_roles=OPS, correlation_id="c4", work_order_id="WO-1", hours=Decimal("0.5"), hourly_rate=Decimal("10"))
     svc.record_overhead(actor_id="u1", actor_roles=OPS, correlation_id="c5", work_order_id="WO-1", amount=Decimal("2"))
 
-    svc.receive_completion(actor_id="fin1", actor_roles=FINANCE, correlation_id="c6", work_order_id="WO-1", quantity_completed=Decimal("1"))
+    svc.receive_completion(actor_id="fin1", actor_roles=FINANCE, correlation_id="c6", work_order_id="WO-1", quantity_completed=Decimal("1"), received_at=datetime(2026, 1, 10, 12, 0, 0))
 
     # Ship at revenue 50
     svc.ship(
@@ -253,6 +253,7 @@ def test_cogs_and_margin_reporting():
         quantity_shipped=Decimal("1"),
         revenue_total=Decimal("50"),
         currency="EUR",
+        shipped_at=datetime(2026, 1, 15, 12, 0, 0),
         reference="INV-1",
     )
 

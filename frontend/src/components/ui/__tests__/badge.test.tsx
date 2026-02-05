@@ -10,36 +10,36 @@ describe('Badge', () => {
 
   it('renders different variants', () => {
     const { rerender } = render(<Badge variant="default">Default</Badge>);
-    expect(screen.getByText('Default')).toHaveClass('bg-primary');
+    expect(screen.getByText('Default')).toHaveClass('bg-rams-orange');
 
     rerender(<Badge variant="secondary">Secondary</Badge>);
-    expect(screen.getByText('Secondary')).toHaveClass('bg-secondary/80');
+    expect(screen.getByText('Secondary')).toHaveClass('bg-rams-panel');
 
     rerender(<Badge variant="destructive">Destructive</Badge>);
-    expect(screen.getByText('Destructive')).toHaveClass('bg-destructive');
+    expect(screen.getByText('Destructive')).toHaveClass('bg-rams-red');
 
     rerender(<Badge variant="outline">Outline</Badge>);
-    expect(screen.getByText('Outline')).toHaveClass('border-primary/20');
+    expect(screen.getByText('Outline')).toHaveClass('border-rams-line');
 
     rerender(<Badge variant="success">Success</Badge>);
-    expect(screen.getByText('Success')).toHaveClass('text-success');
+    expect(screen.getByText('Success')).toHaveClass('text-rams-green');
 
     rerender(<Badge variant="warning">Warning</Badge>);
-    expect(screen.getByText('Warning')).toHaveClass('text-warning');
+    expect(screen.getByText('Warning')).toHaveClass('text-rams-orange');
 
     rerender(<Badge variant="danger">Danger</Badge>);
-    expect(screen.getByText('Danger')).toHaveClass('text-danger');
+    expect(screen.getByText('Danger')).toHaveClass('text-rams-red');
   });
 
   it('renders different sizes', () => {
     const { rerender } = render(<Badge size="default">Default Size</Badge>);
-    expect(screen.getByText('Default Size')).toHaveClass('px-3');
+    expect(screen.getByText('Default Size')).toHaveClass('px-1.5');
 
     rerender(<Badge size="sm">Small</Badge>);
-    expect(screen.getByText('Small')).toHaveClass('px-2');
+    expect(screen.getByText('Small')).toHaveClass('px-1');
 
     rerender(<Badge size="lg">Large</Badge>);
-    expect(screen.getByText('Large')).toHaveClass('px-4');
+    expect(screen.getByText('Large')).toHaveClass('px-2.5');
   });
 
   it('applies custom className', () => {
@@ -56,6 +56,6 @@ describe('Badge', () => {
   it('exports badgeVariants for external use', () => {
     expect(typeof badgeVariants).toBe('function');
     const classes = badgeVariants({ variant: 'default' });
-    expect(classes).toContain('bg-primary');
+    expect(classes).toContain('bg-rams-orange');
   });
 });

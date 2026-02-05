@@ -374,8 +374,6 @@ class SendQuoteRequest(BaseModel):
 
 
 async def get_quote_line_item_and_version_counts(db: DBSession, quote_id: UUID) -> tuple[int, int]:
-    if getattr(db, "_is_mock_object", False):
-        return 0, 0
     line_item_result = await db.execute(
         select(func.count(QuoteLineItem.id)).where(QuoteLineItem.quote_id == quote_id)
     )

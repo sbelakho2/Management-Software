@@ -9,17 +9,17 @@ describe('Label', () => {
 
   it('should apply default variant styles', () => {
     render(<Label data-testid="label">Test Label</Label>);
-    expect(screen.getByTestId('label')).toHaveClass('text-foreground');
+    expect(screen.getByTestId('label')).toHaveClass('text-foreground/70');
   });
 
   it('should apply muted variant styles', () => {
     render(<Label variant="muted" data-testid="label">Test Label</Label>);
-    expect(screen.getByTestId('label')).toHaveClass('text-muted-foreground');
+    expect(screen.getByTestId('label')).toHaveClass('text-muted-foreground/50');
   });
 
   it('should apply error variant styles', () => {
     render(<Label variant="error" data-testid="label">Test Label</Label>);
-    expect(screen.getByTestId('label')).toHaveClass('text-danger');
+    expect(screen.getByTestId('label')).toHaveClass('text-rams-red');
   });
 
   it('should show required indicator when required is true', () => {
@@ -41,8 +41,8 @@ describe('Label', () => {
     render(<Label data-testid="label">Test Label</Label>);
     const label = screen.getByTestId('label');
     
-    expect(label).toHaveClass('text-sm');
-    expect(label).toHaveClass('font-medium');
+    expect(label).toHaveClass('text-[10px]');
+    expect(label).toHaveClass('font-black');
     expect(label).toHaveClass('leading-none');
   });
 

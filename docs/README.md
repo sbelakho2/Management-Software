@@ -91,7 +91,15 @@ Comprehensive testing documentation.
 - Component Testing - Frontend tests (coming soon)
 - Integration Testing - API tests (coming soon)
 
-### 6. Guides
+### 6. AI/ML Services
+
+AI and Machine Learning documentation.
+
+- **[AI/ML Services Analysis](./AI_ML_ONNX_SERVICES_ANALYSIS.md)** - Complete inventory and architecture
+- **[Chatbot Integration](./CHATBOT_INTEGRATION.md)** - On-device chatbot implementation
+- [Teaching Document](./TEACHING_DOCUMENT.md) - AI coaching and pedagogy
+
+### 7. Guides
 
 User and administrator guides.
 
@@ -103,7 +111,7 @@ User and administrator guides.
 - [Security Operations](./maintenance/SECURITY.md) - Secrets, SSO, 2FA
 - Monitoring Guide - Prometheus setup (coming soon)
 
-### 7. Role-Based Resources
+### 8. Role-Based Resources
 
 Documentation organized by user role (in `/docs/Resources/`):
 

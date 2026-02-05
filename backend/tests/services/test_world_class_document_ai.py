@@ -68,7 +68,9 @@ class TestEnums:
         expected = [
             "rfq", "purchase_order", "invoice", "drawing",
             "specification", "quality_report", "work_instruction",
-            "email", "general"
+            "email", "general",
+            # Backward compatibility values from document_intelligence
+            "quote", "packing_list", "certificate", "unknown"
         ]
         actual = [c.value for c in DocumentCategory]
         assert set(expected) == set(actual)
@@ -89,7 +91,9 @@ class TestEnums:
         """Verify ProcessingStrategy has expected values."""
         expected = [
             "layout_lm", "vision_llm", "donut", "hybrid_ocr",
-            "table_transformer", "cad_parser", "auto"
+            "table_transformer", "cad_parser", "auto",
+            # Backward compatibility values from document_intelligence
+            "fast", "accurate", "high_res"
         ]
         actual = [p.value for p in ProcessingStrategy]
         assert set(expected) == set(actual)

@@ -216,7 +216,8 @@ class MissingEvidenceDetector:
             results['suggestions'].append('Add before/after metrics to validate effectiveness')
         
         # 5. Check for attachments (images, charts)
-        if not report.attachments or len(report.attachments) == 0:
+        attachments = getattr(report, "attachments", None)
+        if not attachments or len(attachments) == 0:
             results['warnings'].append('No attachments found. Consider adding photos, charts, or diagrams')
         
         # 6. Use ML classifier for overall assessment

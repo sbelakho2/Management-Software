@@ -7,6 +7,7 @@ import { render, screen, within, waitFor, fireEvent, act } from '@testing-librar
 
 import React from 'react';
 import userEvent from '@testing-library/user-event';
+import { renderWithI18n } from '@/test-utils';
 
 import {
   // Constants
@@ -920,7 +921,7 @@ describe('NotificationCenter', () => {
   }
 
   it('should not render when closed', () => {
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -932,7 +933,7 @@ describe('NotificationCenter', () => {
   it('should render when open', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -949,7 +950,7 @@ describe('NotificationCenter', () => {
   it('should show empty state when no notifications', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -965,7 +966,7 @@ describe('NotificationCenter', () => {
   it('should display notifications', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -985,7 +986,7 @@ describe('NotificationCenter', () => {
   it('should show unread count', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -1007,21 +1008,7 @@ describe('NotificationCenter', () => {
   it('should have close button', async () => {
     const user = userEvent.setup();
 
-    render(
-      <NotificationProvider>
-        <NotificationCenterTest />
-      </NotificationProvider>
-    );
-
-    await user.click(screen.getByText('Open'));
-
-    expect(screen.getByLabelText('Close notification center')).toBeInTheDocument();
-  });
-
-  it('should close on close button click', async () => {
-    const user = userEvent.setup();
-
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -1030,10 +1017,28 @@ describe('NotificationCenter', () => {
     await act(async () => {
       await user.click(screen.getByText('Open'));
     });
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /close/i })).toBeInTheDocument();
+  });
+
+  it('should close on close button click', async () => {
+    const user = userEvent.setup();
+
+    renderWithI18n(
+      <NotificationProvider>
+        <NotificationCenterTest />
+      </NotificationProvider>
+    );
 
     await act(async () => {
-      await user.click(screen.getByLabelText('Close notification center'));
+      await user.click(screen.getByText('Open'));
+    });
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(within(dialog).getByRole('button', { name: /close/i }));
     });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -1041,7 +1046,7 @@ describe('NotificationCenter', () => {
   it('should have mark all read button when unread exist', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>
@@ -1054,13 +1059,14 @@ describe('NotificationCenter', () => {
       await user.click(screen.getByText('Open'));
     });
 
-    expect(screen.getByText('Mark all read')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /mark all as read/i })).toBeInTheDocument();
   });
 
   it('should have clear all button when notifications exist', async () => {
     const user = userEvent.setup();
 
-    render(
+    renderWithI18n(
       <NotificationProvider>
         <NotificationCenterTest />
       </NotificationProvider>

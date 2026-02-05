@@ -11,33 +11,33 @@ describe('Button', () => {
 
   it('renders different variants', () => {
     const { rerender } = render(<Button variant="default">Default</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-primary');
+    expect(screen.getByRole('button')).toHaveClass('bg-rams-orange');
 
     rerender(<Button variant="destructive">Destructive</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-destructive');
+    expect(screen.getByRole('button')).toHaveClass('bg-rams-red');
 
     rerender(<Button variant="outline">Outline</Button>);
-    expect(screen.getByRole('button')).toHaveClass('border-2');
+    expect(screen.getByRole('button')).toHaveClass('border-rams-line');
 
     rerender(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByRole('button')).toHaveClass('bg-secondary/80');
+    expect(screen.getByRole('button')).toHaveClass('bg-rams-module');
 
     rerender(<Button variant="ghost">Ghost</Button>);
-    expect(screen.getByRole('button')).toHaveClass('hover:bg-primary/10');
+    expect(screen.getByRole('button')).toHaveClass('hover:bg-rams-panel');
 
     rerender(<Button variant="link">Link</Button>);
-    expect(screen.getByRole('button')).toHaveClass('text-primary');
+    expect(screen.getByRole('button')).toHaveClass('text-rams-orange');
   });
 
   it('renders different sizes', () => {
     const { rerender } = render(<Button size="default">Default</Button>);
-    expect(screen.getByRole('button')).toHaveClass('h-11');
+    expect(screen.getByRole('button')).toHaveClass('h-10');
 
     rerender(<Button size="sm">Small</Button>);
-    expect(screen.getByRole('button')).toHaveClass('h-9');
+    expect(screen.getByRole('button')).toHaveClass('h-8');
 
     rerender(<Button size="lg">Large</Button>);
-    expect(screen.getByRole('button')).toHaveClass('h-13');
+    expect(screen.getByRole('button')).toHaveClass('h-12');
   });
 
   it('handles click events', async () => {
