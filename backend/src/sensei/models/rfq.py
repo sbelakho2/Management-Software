@@ -110,7 +110,7 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     # Related Entities
     account_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("accounts.id", ondelete="CASCADE"),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

@@ -48,6 +48,7 @@ class LessonRecommender:
         self.scaler: Optional[StandardScaler] = None
         self.lesson_embeddings: Optional[np.ndarray] = None
         self.lesson_ids: List[str] = []
+        self._lesson_id_to_idx: Dict[str, int] = {}  # O(1) lookup index
         
     def train(
         self,
@@ -87,6 +88,7 @@ class LessonRecommender:
         )
         self.lesson_embeddings = self.tfidf_vectorizer.fit_transform(lesson_texts).toarray()
         self.lesson_ids = [lesson.id for lesson in lessons]
+        self._lesson_id_to_idx = {lid: idx for idx, lid in enumerate(self.lesson_ids)}
         
         # Build user-lesson interaction matrix for collaborative filtering
         user_lesson_matrix = self._build_interaction_matrix(completions, users, lessons)
@@ -117,6 +119,7 @@ class LessonRecommender:
         self.tfidf_vectorizer = joblib.load(self.model_path / "tfidf_vectorizer.pkl")
         self.lesson_embeddings = joblib.load(self.model_path / "lesson_embeddings.pkl")
         self.lesson_ids = joblib.load(self.model_path / "lesson_ids.pkl")
+        self._lesson_id_to_idx = {lid: idx for idx, lid in enumerate(self.lesson_ids)}
         
         logger.info("Lesson recommender loaded successfully")
     
@@ -255,17 +258,17 @@ class LessonRecommender:
         if self.lesson_embeddings is None:
             return 0.0
         
-        if lesson.id not in self.lesson_ids:
+        lesson_idx = self._lesson_id_to_idx.get(lesson.id)
+        if lesson_idx is None:
             return 0.0
         
-        lesson_idx = self.lesson_ids.index(lesson.id)
         lesson_vec = self.lesson_embeddings[lesson_idx]
         
         # Get completed lesson vectors
         completed_indices = [
-            self.lesson_ids.index(c.lesson_id)
+            self._lesson_id_to_idx[c.lesson_id]
             for c in user_completions
-            if c.lesson_id in self.lesson_ids
+            if c.lesson_id in self._lesson_id_to_idx
         ]
         
         if not completed_indices:
@@ -287,21 +290,26 @@ class LessonRecommender:
         user_ids = [u.id for u in users]
         lesson_ids = [l.id for l in lessons]
         
+        # Build O(1) lookup maps
+        user_id_to_idx = {uid: idx for idx, uid in enumerate(user_ids)}
+        lesson_id_to_idx = {lid: idx for idx, lid in enumerate(lesson_ids)}
+        
         matrix = np.zeros((len(user_ids), len(lesson_ids)))
         
         for completion in completions:
-            if completion.user_id in user_ids and completion.lesson_id in lesson_ids:
-                user_idx = user_ids.index(completion.user_id)
-                lesson_idx = lesson_ids.index(completion.lesson_id)
-                
-                # Score based on completion and rating
-                score = 1.0
-                if completion.completed:
-                    score += 0.5
-                if completion.rating:
-                    score += (completion.rating - 3) * 0.2  # Normalize rating
-                
-                matrix[user_idx, lesson_idx] = score
+            user_idx = user_id_to_idx.get(completion.user_id)
+            lesson_idx = lesson_id_to_idx.get(completion.lesson_id)
+            if user_idx is None or lesson_idx is None:
+                continue
+            
+            # Score based on completion and rating
+            score = 1.0
+            if completion.completed:
+                score += 0.5
+            if completion.rating:
+                score += (completion.rating - 3) * 0.2  # Normalize rating
+            
+            matrix[user_idx, lesson_idx] = score
         
         return matrix
     

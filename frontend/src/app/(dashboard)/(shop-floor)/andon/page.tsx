@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn, formatDate } from '@/lib/utils';
 import { useAndonStore, formatElapsedTime } from '@/stores/andon-store';
+import { useAuthStore } from '@/stores';
 import type { AndonEvent, AndonStatus, Severity, WorkCenter } from '@/types';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
@@ -54,6 +55,8 @@ export default function AndonBoardPage() {
     escalateEvent
   } = useAndonStore();
 
+  const { user } = useAuthStore();
+
   const [soundEnabled, setSoundEnabled] = React.useState(true);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [lastRefresh, setLastRefresh] = React.useState(new Date());
@@ -62,7 +65,7 @@ export default function AndonBoardPage() {
   const runningMachines = Array.from(workCenters.values()).filter(w => w.status === 'running').length;
   
   const handleAcknowledge = (alertId: string) => {
-    acknowledgeEvent(alertId, 'Current User'); // In real app, get from auth store
+    acknowledgeEvent(alertId, user?.full_name || user?.email || 'Unknown');
   };
 
   const handleEscalate = (alertId: string) => {

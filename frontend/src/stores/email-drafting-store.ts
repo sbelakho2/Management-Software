@@ -603,6 +603,15 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
           const drafts = new Map(get().drafts);
           drafts.set(draft.id, draft);
 
+          // Evict oldest drafts when exceeding limit (#68)
+          const MAX_DRAFTS = 50;
+          if (drafts.size > MAX_DRAFTS) {
+            const keys = Array.from(drafts.keys());
+            for (let i = 0; i < keys.length - MAX_DRAFTS; i++) {
+              drafts.delete(keys[i]);
+            }
+          }
+
           // Record history
           const history = [...get().history];
           history.push({
@@ -611,6 +620,12 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
             actorId: request.requestedBy,
             timestamp: new Date(),
           });
+
+          // Evict oldest history entries when exceeding limit (#68)
+          const MAX_HISTORY = 200;
+          const trimmedHistory = history.length > MAX_HISTORY
+            ? history.slice(history.length - MAX_HISTORY)
+            : history;
 
           // Add recipient to recents
           const recentRecipients = [...get().recentRecipients];
@@ -633,7 +648,7 @@ export const useEmailDraftingStore = create<EmailDraftingState>()(
 
           set({
             drafts,
-            history,
+            history: trimmedHistory,
             recentRecipients: recentRecipients.slice(0, 20),
             activeDraftId: draft.id,
             isGenerating: false,

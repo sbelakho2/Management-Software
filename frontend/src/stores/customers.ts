@@ -2,6 +2,14 @@ import { create } from 'zustand';
 import { accountApi, AccountListParams } from '@/api/accounts';
 import { Customer } from '@/types';
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return 'An unexpected error occurred';
+}
+
 interface CustomersState {
   customers: Customer[];
   totalCustomers: number;
@@ -9,8 +17,10 @@ interface CustomersState {
   error: string | null;
 
   fetchCustomers: (params?: AccountListParams) => Promise<void>;
-  createCustomer: (data: any) => Promise<Customer>;
-  updateCustomer: (id: string, data: any) => Promise<Customer>;
+  createCustomer: (data: Partial<Customer>) => Promise<Customer>;
+  updateCustomer: (id: string, data: Partial<Customer>) => Promise<Customer>;
+  deleteCustomer: (id: string) => Promise<void>;
+  clearError: () => void;
 }
 
 export const useCustomersStore = create<CustomersState>((set) => ({
@@ -30,8 +40,8 @@ export const useCustomersStore = create<CustomersState>((set) => ({
         totalCustomers: total,
         loading: false 
       });
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
     }
   },
 
@@ -45,8 +55,8 @@ export const useCustomersStore = create<CustomersState>((set) => ({
         loading: false 
       }));
       return customer;
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
       throw error;
     }
   },
@@ -60,9 +70,26 @@ export const useCustomersStore = create<CustomersState>((set) => ({
         loading: false 
       }));
       return customer;
-    } catch (error: any) {
-      set({ error: error.message, loading: false });
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
       throw error;
     }
   },
+
+  deleteCustomer: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await accountApi.delete(id);
+      set((state) => ({
+        customers: state.customers.filter((c) => c.id !== id),
+        totalCustomers: state.totalCustomers - 1,
+        loading: false,
+      }));
+    } catch (error: unknown) {
+      set({ error: getErrorMessage(error), loading: false });
+      throw error;
+    }
+  },
+
+  clearError: () => set({ error: null }),
 }));

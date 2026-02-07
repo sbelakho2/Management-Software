@@ -22,6 +22,7 @@ import hashlib
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,6 +31,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Shared thread pool for ONNX cross-encoder inference (avoids blocking the event loop)
+_xenc_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="onnx-xenc")
 
 
 def _utcnow() -> datetime:
@@ -57,19 +61,39 @@ class RerankCacheEntry:
 
 
 class CrossEncoderCache:
-    """Thread-safe cache for cross-encoder scores."""
+    """Redis-backed cache for cross-encoder scores with in-memory LRU fallback.
+
+    Uses Redis as the primary store for cross-instance consistency. Falls back
+    to an in-memory dict (bounded to prevent OOM) if Redis is unavailable.
+    """
+    
+    _REDIS_PREFIX = "sensei:xenc:"
+    _MAX_MEMORY_ENTRIES = 10000  # Cap in-memory fallback to prevent OOM
     
     def __init__(self, ttl_seconds: int = 3600):
         self.ttl_seconds = ttl_seconds
         self._cache: Dict[str, RerankCacheEntry] = {}
+        self._redis_available: Optional[bool] = None
     
     def _make_key(self, query: str, context: str) -> str:
         """Create cache key from query and context."""
         combined = f"{query}|||{context}"
         return hashlib.sha256(combined.encode()).hexdigest()[:32]
     
+    async def _check_redis(self) -> bool:
+        """Lazily check if Redis is available."""
+        if self._redis_available is not None:
+            return self._redis_available
+        try:
+            from sensei.core.redis import redis_client
+            await redis_client.ping()
+            self._redis_available = True
+        except Exception:
+            self._redis_available = False
+        return self._redis_available
+
     def get(self, query: str, context: str) -> Optional[float]:
-        """Get cached score if available and not expired."""
+        """Get cached score from in-memory fallback (sync path)."""
         key = self._make_key(query, context)
         entry = self._cache.get(key)
         
@@ -81,11 +105,31 @@ class CrossEncoderCache:
             del self._cache[key]
         
         return None
+
+    async def aget(self, query: str, context: str) -> Optional[float]:
+        """Get cached score from Redis (async path), fallback to in-memory."""
+        key = self._make_key(query, context)
+        if await self._check_redis():
+            try:
+                from sensei.core.redis import redis_client
+                val = await redis_client.get(f"{self._REDIS_PREFIX}{key}")
+                if val is not None:
+                    return float(val)
+            except Exception:
+                pass
+        return self.get(query, context)
     
     def set(self, query: str, context: str, score: float) -> None:
-        """Cache a re-ranking score."""
+        """Cache a re-ranking score in memory."""
         key = self._make_key(query, context)
         now = _utcnow()
+        
+        # Enforce memory cap
+        if len(self._cache) >= self._MAX_MEMORY_ENTRIES:
+            # Remove oldest 20% of entries
+            to_remove = sorted(self._cache.items(), key=lambda x: x[1].created_at)[:self._MAX_MEMORY_ENTRIES // 5]
+            for k, _ in to_remove:
+                del self._cache[k]
         
         entry = RerankCacheEntry(
             score=score,
@@ -93,6 +137,17 @@ class CrossEncoderCache:
             expires_at=now + timedelta(seconds=self.ttl_seconds),
         )
         self._cache[key] = entry
+
+    async def aset(self, query: str, context: str, score: float) -> None:
+        """Cache a re-ranking score in Redis + memory."""
+        key = self._make_key(query, context)
+        self.set(query, context, score)
+        if await self._check_redis():
+            try:
+                from sensei.core.redis import redis_client
+                await redis_client.setex(f"{self._REDIS_PREFIX}{key}", self.ttl_seconds, str(score))
+            except Exception:
+                pass
     
     def clear_expired(self) -> int:
         """Clear expired entries. Returns count removed."""
@@ -330,9 +385,16 @@ class ONNXCrossEncoder:
             # Load tokenizer
             tokenizer = AutoTokenizer.from_pretrained(self._config.model_id)
             
-            # Load the session
+            # Load the session with graph optimizations
+            sess_options = ort.SessionOptions()
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            sess_options.intra_op_num_threads = 2  # Limit threads for VPS
+            sess_options.inter_op_num_threads = 1
+            sess_options.enable_mem_pattern = True
+            sess_options.enable_cpu_mem_arena = True
             sess = ort.InferenceSession(
                 target_path.as_posix(),
+                sess_options=sess_options,
                 providers=["CPUExecutionProvider"],
             )
             
@@ -574,6 +636,29 @@ class ONNXCrossEncoder:
         size = self._cache.size()
         self._cache.clear()
         return size
+
+    async def ascore_pair(self, query: str, context: str) -> float:
+        """Async version of score_pair that offloads to thread pool.
+
+        Use this from async endpoints to avoid blocking the event loop
+        during ONNX inference.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(_xenc_executor, self.score_pair, query, context)
+
+    async def arerank(
+        self,
+        query: str,
+        documents: List[Tuple[str, Any]],
+        top_k: int = 10,
+    ) -> List[Tuple[str, Any, float]]:
+        """Async version of rerank that offloads to thread pool."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _xenc_executor, self.rerank, query, documents, top_k
+        )
 
 
 # Singleton instance

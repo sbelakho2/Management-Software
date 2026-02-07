@@ -82,6 +82,19 @@ export default function FinancePage() {
               size="default" 
               className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]"
               disabled={loading}
+              onClick={() => {
+                // Export finance dashboard stats as JSON download
+                const data = JSON.stringify(stats, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `finance-intel-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+              }}
             >
               {loading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
               {t('pages.finance.exportIntel') || 'Export Intel'}

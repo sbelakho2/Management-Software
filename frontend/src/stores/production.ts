@@ -74,8 +74,9 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
     try {
       const stats = await productionApi.getStats();
       set({ stats });
-    } catch {
-      // Stats fetch is non-critical, silently fail
+    } catch (error: unknown) {
+      // Stats fetch is non-critical, log but don't block UI
+      console.warn('Failed to fetch production stats:', getErrorMessage(error));
     }
   },
 

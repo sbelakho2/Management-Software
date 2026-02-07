@@ -34,6 +34,7 @@ from sensei.core.security import (
     get_token_jti,
     hash_password,
     needs_rehash,
+    validate_password_strength,
     verify_backup_code,
     verify_password,
     verify_totp,
@@ -415,6 +416,13 @@ class AuthService:
         if not user:
             raise PasswordResetError("User not found")
         
+        # Validate password strength (#154)
+        strength = await validate_password_strength(new_password)
+        if not strength.is_strong:
+            raise PasswordResetError(
+                f"Password is not strong enough: {'; '.join(strength.issues)}"
+            )
+        
         # Update password
         user.password_hash = hash_password(new_password)
         user.password_changed_at = datetime.now(timezone.utc)
@@ -465,6 +473,13 @@ class AuthService:
         
         if not verify_password(current_password, user.password_hash):
             raise InvalidCredentialsError("Current password is incorrect")
+        
+        # Validate password strength (#154)
+        strength = await validate_password_strength(new_password)
+        if not strength.is_strong:
+            raise InvalidCredentialsError(
+                f"New password is not strong enough: {'; '.join(strength.issues)}"
+            )
         
         # Update password
         user.password_hash = hash_password(new_password)

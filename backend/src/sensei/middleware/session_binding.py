@@ -76,23 +76,9 @@ class SessionBindingMiddleware(BaseHTTPMiddleware):
         ]
     
     def _get_client_ip(self, request: Request) -> str:
-        """Extract real client IP, handling proxies."""
-        # Check X-Forwarded-For header (set by reverse proxies)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # Take the first IP (original client)
-            return forwarded_for.split(",")[0].strip()
-        
-        # Check X-Real-IP header
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-        
-        # Fall back to direct client
-        if request.client:
-            return request.client.host
-        
-        return "unknown"
+        """Extract real client IP, handling proxies (#247)."""
+        from sensei.api.utils import get_client_ip
+        return get_client_ip(request)
     
     def _normalize_ip_for_binding(self, ip_str: str) -> str:
         """
@@ -252,22 +238,64 @@ class SessionBindingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
+def compute_session_fingerprint(
+    request: Request,
+    salt: str | None = None,
+    strict_ip: bool = False,
+) -> str:
+    """
+    Compute a session fingerprint hash for a request without
+    instantiating the full middleware (#263).
+
+    Args:
+        request: The HTTP request
+        salt: HMAC salt (defaults to settings.SESSION_FINGERPRINT_SALT)
+        strict_ip: If True, use exact IP; otherwise normalize to subnet
+
+    Returns:
+        32-char hex fingerprint string
+    """
+    from sensei.api.utils import get_client_ip
+
+    _salt = salt or settings.SESSION_FINGERPRINT_SALT
+    user_agent = request.headers.get("User-Agent", "unknown")
+    client_ip = get_client_ip(request)
+
+    # Normalize IP to subnet (same logic as middleware)
+    if not strict_ip:
+        try:
+            ip = ip_address(client_ip)
+            if isinstance(ip, IPv4Address):
+                octets = client_ip.split(".")
+                if len(octets) == 4:
+                    client_ip = f"{octets[0]}.{octets[1]}.{octets[2]}.0"
+            elif isinstance(ip, IPv6Address):
+                groups = client_ip.split(":")
+                if len(groups) >= 3:
+                    client_ip = ":".join(groups[:3]) + "::0"
+        except ValueError:
+            pass
+
+    data = f"{user_agent}|{client_ip}"
+    fingerprint = hmac.new(
+        _salt.encode("utf-8"),
+        data.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return fingerprint[:32]
+
 
 def get_fingerprint_for_token(request: Request) -> str:
     """
     Get fingerprint to include in JWT token during authentication.
-    
-    Call this during login to get the fingerprint that should be
-    stored in the user's JWT token.
-    
+
+    Uses the standalone compute_session_fingerprint() instead of
+    instantiating the full middleware (#263).
+
     Args:
         request: The login request
-        
+
     Returns:
         Fingerprint string to store in token
     """
-    middleware = SessionBindingMiddleware(
-        app=None,  # Not used for fingerprint computation
-        salt=settings.SESSION_FINGERPRINT_SALT,
-    )
-    return middleware.compute_fingerprint(request)
+    return compute_session_fingerprint(request)

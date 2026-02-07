@@ -6,13 +6,15 @@ or fallback sentence-transformers, with automatic hardware detection.
 Provides semantic search capabilities via pgvector.
 """
 
+import asyncio
+import functools
 import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.knowledge_pack import KnowledgeChunk, KnowledgeDocument
@@ -201,8 +203,12 @@ class KnowledgeEmbeddingService:
             chunk: KnowledgeChunk to embed
             session: Database session
         """
-        # Generate embedding from chunk text
-        embedding = self.embedding_service.encode(chunk.chunk_text)
+        # Generate embedding from chunk text (CPU-bound; offload to thread pool #81)
+        loop = asyncio.get_running_loop()
+        embedding = await loop.run_in_executor(
+            None,
+            functools.partial(self.embedding_service.encode, chunk.chunk_text),
+        )
         
         # Store embedding
         chunk.embedding = embedding.tolist()
@@ -243,9 +249,13 @@ class KnowledgeEmbeddingService:
         # Extract texts
         texts = [chunk.chunk_text for chunk in chunks]
         
-        # Generate embeddings in batch
+        # Generate embeddings in batch (CPU-bound; offload to thread pool #81)
         logger.info(f"Generating embeddings for {len(chunks)} chunks from document {document_id}")
-        embeddings = self.embedding_service.encode_batch(texts, batch_size=batch_size)
+        loop = asyncio.get_running_loop()
+        embeddings = await loop.run_in_executor(
+            None,
+            functools.partial(self.embedding_service.encode_batch, texts, batch_size=batch_size),
+        )
         
         # Store embeddings
         for chunk, embedding in zip(chunks, embeddings):
@@ -260,44 +270,72 @@ class KnowledgeEmbeddingService:
         self,
         session: AsyncSession,
         batch_size: int = 32,
+        db_batch_size: int = 500,
     ) -> int:
         """
         Generate embeddings for all chunks without embeddings.
-        
+
+        Processes in paginated database batches of *db_batch_size* to
+        avoid loading all unembedded chunks into memory at once (#105).
+
         Args:
             session: Database session
-            batch_size: Batch size for encoding
-            
+            batch_size: Encoder batch size (passed to ONNX)
+            db_batch_size: Number of chunks to fetch from DB per page
+
         Returns:
             Total number of chunks embedded
         """
-        # Get all chunks without embeddings
-        stmt = select(KnowledgeChunk).where(
-            KnowledgeChunk.embedding.is_(None),
-        ).order_by(KnowledgeChunk.document_id, KnowledgeChunk.chunk_index)
-        
-        result = await session.execute(stmt)
-        chunks = result.scalars().all()
-        
-        if not chunks:
+        total_embedded = 0
+        loop = asyncio.get_running_loop()
+
+        while True:
+            # Fetch one page of unembedded chunks
+            stmt = (
+                select(KnowledgeChunk)
+                .where(KnowledgeChunk.embedding.is_(None))
+                .order_by(KnowledgeChunk.document_id, KnowledgeChunk.chunk_index)
+                .limit(db_batch_size)
+            )
+            result = await session.execute(stmt)
+            chunks = result.scalars().all()
+
+            if not chunks:
+                break
+
+            texts = [chunk.chunk_text for chunk in chunks]
+
+            logger.info(
+                f"Embedding batch of {len(chunks)} chunks "
+                f"(total so far: {total_embedded})"
+            )
+
+            # CPU-bound; offload to thread pool (#81)
+            embeddings = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    self.embedding_service.encode_batch,
+                    texts,
+                    batch_size=batch_size,
+                ),
+            )
+
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding.tolist()
+
+            await session.commit()
+            total_embedded += len(chunks)
+
+            # If we got fewer than the page size we're done
+            if len(chunks) < db_batch_size:
+                break
+
+        if total_embedded:
+            logger.info(f"Successfully embedded {total_embedded} total chunks")
+        else:
             logger.info("No chunks to embed")
-            return 0
-        
-        # Extract texts
-        texts = [chunk.chunk_text for chunk in chunks]
-        
-        # Generate embeddings in batch
-        logger.info(f"Generating embeddings for {len(chunks)} chunks")
-        embeddings = self.embedding_service.encode_batch(texts, batch_size=batch_size)
-        
-        # Store embeddings
-        for chunk, embedding in zip(chunks, embeddings):
-            chunk.embedding = embedding.tolist()
-        
-        await session.commit()
-        
-        logger.info(f"Successfully embedded {len(chunks)} total chunks")
-        return len(chunks)
+
+        return total_embedded
 
 
 class SemanticSearchService:
@@ -333,15 +371,20 @@ class SemanticSearchService:
         Returns:
             List of (chunk, similarity_score) tuples, ordered by relevance
         """
-        # Generate query embedding
-        query_embedding = self.embedding_service.encode(query)
+        # Generate query embedding (CPU-bound; offload to thread pool #81)
+        loop = asyncio.get_running_loop()
+        query_embedding = await loop.run_in_executor(
+            None,
+            functools.partial(self.embedding_service.encode, query),
+        )
         
         # Build search query with cosine similarity
         # pgvector's <=> operator computes cosine distance (1 - cosine similarity)
         # So we compute similarity as: 1 - (embedding <=> query)
+        similarity_expr = (1 - KnowledgeChunk.embedding.cosine_distance(query_embedding.tolist()))
         stmt = select(
             KnowledgeChunk,
-            (1 - KnowledgeChunk.embedding.cosine_distance(query_embedding.tolist())).label("similarity")
+            similarity_expr.label("similarity")
         ).where(
             KnowledgeChunk.embedding.isnot(None),
         )
@@ -350,9 +393,9 @@ class SemanticSearchService:
         if filter_tags:
             stmt = stmt.where(KnowledgeChunk.tags.overlap(filter_tags))
         
-        # Order by similarity and limit
+        # Order by similarity (reference the label to avoid recomputing) and limit
         stmt = stmt.order_by(
-            (1 - KnowledgeChunk.embedding.cosine_distance(query_embedding.tolist())).desc()
+            text("similarity DESC")
         ).limit(limit)
         
         result = await session.execute(stmt)
@@ -402,23 +445,29 @@ class SemanticSearchService:
             filter_tags=filter_tags,
         )
         
+        # Batch-load all missing documents in ONE query (#101 — fix N+1)
+        missing_doc_ids = {
+            chunk.document_id
+            for chunk, _ in results
+            if not chunk.document and chunk.document_id is not None
+        }
+        doc_map: dict[int, Any] = {}
+        if missing_doc_ids:
+            doc_stmt = select(KnowledgeDocument).where(
+                KnowledgeDocument.id.in_(missing_doc_ids)
+            )
+            doc_result = await session.execute(doc_stmt)
+            doc_map = {d.id: d for d in doc_result.scalars().all()}
+
         # Enrich with document metadata
         enriched_results = []
         for chunk, similarity in results:
-            # Load document if not already loaded
-            if not chunk.document:
-                stmt = select(KnowledgeDocument).where(
-                    KnowledgeDocument.id == chunk.document_id
-                )
-                result = await session.execute(stmt)
-                document = result.scalar_one_or_none()
-            else:
-                document = chunk.document
-            
+            document = chunk.document or doc_map.get(chunk.document_id)
+
             if not document:
                 logger.warning(f"Document {chunk.document_id} not found for chunk {chunk.id}")
                 continue
-            
+
             enriched_results.append({
                 "chunk_text": chunk.chunk_text,
                 "heading": chunk.heading,
@@ -432,7 +481,7 @@ class SemanticSearchService:
                 "tags": chunk.tags,
                 "quality_score": chunk.quality_score,
             })
-        
+
         return enriched_results
     
     async def get_related_chunks(

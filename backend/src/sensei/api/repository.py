@@ -184,6 +184,7 @@ class BaseRepository(Generic[ModelT]):
         *,
         include_deleted: bool = False,
         load_relations: Optional[List[str]] = None,
+        max_rows: int = 10_000,
     ) -> List[ModelT]:
         """
         Get all entities.
@@ -191,9 +192,10 @@ class BaseRepository(Generic[ModelT]):
         Args:
             include_deleted: Include soft-deleted entities
             load_relations: List of relationship names to eager load
+            max_rows: Safety limit to prevent loading unbounded rows (#106)
             
         Returns:
-            List of all entities
+            List of all entities (capped at max_rows)
         """
         query = select(self.model)
         
@@ -204,6 +206,9 @@ class BaseRepository(Generic[ModelT]):
             for relation in load_relations:
                 if hasattr(self.model, relation):
                     query = query.options(selectinload(getattr(self.model, relation)))
+        
+        # Safety limit to prevent unbounded result sets (#106)
+        query = query.limit(max_rows)
         
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -225,7 +230,7 @@ class BaseRepository(Generic[ModelT]):
         
         Args:
             page: Page number (1-indexed)
-            page_size: Number of items per page
+            page_size: Number of items per page (max 200)
             include_deleted: Include soft-deleted entities
             filters: List of filter operators
             sort: List of sort orders
@@ -236,14 +241,20 @@ class BaseRepository(Generic[ModelT]):
         Returns:
             Tuple of (entities, total_count)
         """
-        # Base query
-        query = select(self.model)
-        count_query = select(func.count(self.model.id))
+        # Cap page_size to prevent excessive result sets (#243)
+        _MAX_PAGE_SIZE = 200
+        if page_size > _MAX_PAGE_SIZE:
+            page_size = _MAX_PAGE_SIZE
+        if page < 1:
+            page = 1
+        # Base query with window-function total count (#122)
+        # Single query instead of separate count + data queries
+        count_over = func.count(self.model.id).over().label("_total_count")
+        query = select(self.model, count_over)
         
         # Exclude deleted
         if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
             query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
-            count_query = count_query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
         
         # Apply filters
         if filters:
@@ -251,7 +262,6 @@ class BaseRepository(Generic[ModelT]):
                 condition = self._build_filter_condition(f)
                 if condition is not None:
                     query = query.where(condition)
-                    count_query = count_query.where(condition)
         
         # Apply search
         if search and search_fields:
@@ -264,11 +274,6 @@ class BaseRepository(Generic[ModelT]):
             
             if search_conditions:
                 query = query.where(or_(*search_conditions))
-                count_query = count_query.where(or_(*search_conditions))
-        
-        # Get total count
-        count_result = await self.db.execute(count_query)
-        total = count_result.scalar() or 0
         
         # Apply sorting
         if sort:
@@ -293,7 +298,14 @@ class BaseRepository(Generic[ModelT]):
                     query = query.options(selectinload(getattr(self.model, relation)))
         
         result = await self.db.execute(query)
-        entities = list(result.scalars().all())
+        rows = result.all()
+        
+        if rows:
+            entities = [row[0] for row in rows]
+            total = rows[0][1]  # _total_count is the same for all rows
+        else:
+            entities = []
+            total = 0
         
         return entities, total
     
@@ -378,6 +390,7 @@ class BaseRepository(Generic[ModelT]):
         *,
         created_by: Optional[UUID] = None,
         commit: bool = True,
+        max_items: int = 500,
     ) -> List[ModelT]:
         """
         Create multiple entities.
@@ -386,24 +399,39 @@ class BaseRepository(Generic[ModelT]):
             items: List of entity data dictionaries
             created_by: User ID who created the entities
             commit: Whether to commit the transaction
+            max_items: Maximum allowed items per batch (#162)
             
         Returns:
             List of created entities
+            
+        Raises:
+            ValueError: If items list exceeds max_items
         """
+        if len(items) > max_items:
+            raise ValueError(
+                f"Batch size {len(items)} exceeds maximum of {max_items} items. "
+                "Split into smaller batches."
+            )
         entities = []
         
-        for data in items:
-            if created_by and hasattr(self.model, "created_by"):
-                data["created_by"] = created_by
-            
-            entity = self.model(**data)
-            self.db.add(entity)
-            entities.append(entity)
+        # Use savepoint so partial adds roll back atomically on error (#185)
+        async with self.db.begin_nested():
+            for data in items:
+                if created_by and hasattr(self.model, "created_by"):
+                    data["created_by"] = created_by
+                
+                entity = self.model(**data)
+                self.db.add(entity)
+                entities.append(entity)
         
         if commit:
             await self.db.commit()
-            for entity in entities:
-                await self.db.refresh(entity)
+            # Bulk-refresh: re-query by PKs instead of N individual refreshes (#102)
+            if entities:
+                pks = [entity.id for entity in entities]
+                stmt = select(self.model).where(self.model.id.in_(pks))
+                result = await self.db.execute(stmt)
+                entities = list(result.scalars().all())
         else:
             await self.db.flush()
         
@@ -560,6 +588,8 @@ class BaseRepository(Generic[ModelT]):
                 identifier=str(id),
             )
     
+    _MAX_DELETE_IDS = 100  # Match BulkDeleteRequest.ids max_length (#246)
+
     async def delete_many(
         self,
         ids: List[UUID],
@@ -571,39 +601,64 @@ class BaseRepository(Generic[ModelT]):
         """
         Delete multiple entities by IDs.
         
+        Uses a single bulk UPDATE for soft-deletes instead of fetching
+        and mutating one-by-one (#103).
+        
         Args:
-            ids: List of entity UUIDs
+            ids: List of entity UUIDs (max 100; #246)
             deleted_by: User ID who deleted the entities
             hard_delete: Force hard delete instead of soft delete
             commit: Whether to commit the transaction
             
         Returns:
             Number of entities deleted
+            
+        Raises:
+            ValueError: If more than 100 IDs are provided
         """
         if not ids:
             return 0
+        if len(ids) > self._MAX_DELETE_IDS:
+            raise ValueError(
+                f"Cannot delete more than {self._MAX_DELETE_IDS} entities at once; got {len(ids)}"
+            )
         
-        entities = await self.get_by_ids(ids)
+        use_soft = self.soft_delete and hasattr(self.model, "deleted_at") and not hard_delete
         
-        for entity in entities:
-            if self.soft_delete and hasattr(entity, "deleted_at") and not hard_delete:
-                entity.deleted_at = datetime.now(timezone.utc)
-                if deleted_by and hasattr(entity, "deleted_by"):
-                    entity.deleted_by = deleted_by
-            else:
+        if use_soft:
+            # Bulk UPDATE — single statement instead of N fetches + N updates (#103)
+            from sqlalchemy import update
+            
+            values: Dict[str, Any] = {"deleted_at": datetime.now(timezone.utc)}
+            if deleted_by and hasattr(self.model, "deleted_by"):
+                values["deleted_by"] = deleted_by
+            
+            stmt = (
+                update(self.model)
+                .where(self.model.id.in_(ids))
+                .where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+            )
+            result = await self.db.execute(stmt.values(**values))
+            count = result.rowcount  # type: ignore[union-attr]
+        else:
+            # Hard delete still needs to load entities for cascade
+            entities = await self.get_by_ids(ids)
+            for entity in entities:
                 await self.db.delete(entity)
+            count = len(entities)
         
         if commit:
             await self.db.commit()
         else:
             await self.db.flush()
         
-        return len(entities)
+        return count
     
     async def restore(
         self,
         id: UUID,
         *,
+        restored_by: Optional[UUID] = None,
         commit: bool = True,
     ) -> Optional[ModelT]:
         """
@@ -611,6 +666,7 @@ class BaseRepository(Generic[ModelT]):
         
         Args:
             id: Entity UUID
+            restored_by: User ID performing the restore (required for audit trail, #149)
             commit: Whether to commit the transaction
             
         Returns:
@@ -627,6 +683,11 @@ class BaseRepository(Generic[ModelT]):
         setattr(entity, "deleted_at", None)
         if hasattr(entity, "deleted_by"):
             setattr(entity, "deleted_by", None)
+        # Record who restored and when for audit purposes (#149)
+        if restored_by and hasattr(entity, "updated_by"):
+            setattr(entity, "updated_by", restored_by)
+        if hasattr(entity, "updated_at"):
+            setattr(entity, "updated_at", datetime.now(timezone.utc))
         
         if commit:
             await self.db.commit()
@@ -643,7 +704,9 @@ class BaseRepository(Generic[ModelT]):
     def _build_filter_condition(self, filter_op: FilterOperator):
         """Build SQLAlchemy filter condition from FilterOperator."""
         if not hasattr(self.model, filter_op.field):
-            return None
+            raise ValueError(
+                f"Invalid filter field '{filter_op.field}' for {self.model.__name__}"
+            )
         
         field = getattr(self.model, filter_op.field)
         value = filter_op.value

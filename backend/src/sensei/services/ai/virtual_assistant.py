@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 import re
 import json
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, deque
 import hashlib
 
 
@@ -334,10 +334,10 @@ class CriticalPathCalculator:
         
         # Forward pass
         visited = set(start_nodes)
-        queue = list(start_nodes)
+        queue = deque(start_nodes)
         
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             
             for item_id, deps in self._dependency_graph.items():
                 if current in deps and item_id not in visited:
@@ -380,17 +380,64 @@ class CriticalPathCalculator:
         return critical_path
     
     def get_slack_times(self) -> dict[str, float]:
-        """Calculate slack times for all items."""
-        critical_path = self.calculate_critical_path()
-        slack_times: dict[str, float] = {}
-        
+        """Calculate slack times for all items using forward/backward pass."""
+        # Forward pass – earliest start / earliest finish
+        earliest_start: dict[str, float] = {}
+        earliest_finish: dict[str, float] = {}
+        topo_order: list[str] = []
+        visited: set[str] = set()
+
+        def _forward(node: str) -> float:
+            if node in earliest_finish:
+                return earliest_finish[node]
+            if node in visited:
+                return 0.0  # cycle guard
+            visited.add(node)
+            es = 0.0
+            for pred in self._dependencies.get(node, []):
+                pred_ef = _forward(pred)
+                if pred_ef > es:
+                    es = pred_ef
+            earliest_start[node] = es
+            ef = es + self._durations.get(node, 0.0)
+            earliest_finish[node] = ef
+            topo_order.append(node)
+            return ef
+
         for item_id in self._durations:
-            if item_id in critical_path:
-                slack_times[item_id] = 0.0
+            _forward(item_id)
+
+        if not earliest_finish:
+            return {}
+
+        project_end = max(earliest_finish.values())
+
+        # Backward pass – latest start / latest finish
+        latest_finish: dict[str, float] = {}
+        latest_start: dict[str, float] = {}
+
+        # Build successors map
+        successors: dict[str, list[str]] = {k: [] for k in self._durations}
+        for item_id, deps in self._dependencies.items():
+            for dep in deps:
+                if dep in successors:
+                    successors[dep].append(item_id)
+
+        for item_id in reversed(topo_order):
+            if not successors.get(item_id):
+                latest_finish[item_id] = project_end
             else:
-                # Simplified slack calculation
-                slack_times[item_id] = 4.0  # Default non-critical slack
-        
+                latest_finish[item_id] = min(
+                    latest_start.get(s, project_end) for s in successors[item_id]
+                )
+            latest_start[item_id] = latest_finish[item_id] - self._durations.get(item_id, 0.0)
+
+        # Slack = LS - ES
+        slack_times: dict[str, float] = {}
+        for item_id in self._durations:
+            slack = latest_start.get(item_id, 0.0) - earliest_start.get(item_id, 0.0)
+            slack_times[item_id] = max(0.0, round(slack, 4))
+
         return slack_times
 
 
@@ -655,7 +702,15 @@ class SLAWatchdog:
             try:
                 self.notification_callback(notification)
                 return True
-            except Exception:
+            except Exception as exc:
+                import structlog
+                structlog.get_logger(__name__).warning(
+                    "notification_callback_failed",
+                    notification_type=notification.notification_type,
+                    entity_id=notification.entity_id,
+                    error=str(exc),
+                    exc_info=True,
+                )
                 return False
         
         return True
@@ -681,10 +736,19 @@ class SLAWatchdog:
         recipient_ids: dict[str, list[str]]
     ) -> None:
         """Start the watchdog background loop."""
+        import structlog
+        _logger = structlog.get_logger(__name__)
         self._is_running = True
         
         while self._is_running:
-            await self.run_check_cycle(recipient_ids)
+            try:
+                await self.run_check_cycle(recipient_ids)
+            except Exception as exc:
+                _logger.error(
+                    "sla_watchdog_cycle_failed",
+                    error=str(exc),
+                    exc_info=True,
+                )
             await asyncio.sleep(self.check_interval)
     
     def stop(self) -> None:
@@ -781,18 +845,26 @@ class CalendarEntityExtractor:
             
             for category, patterns in self.PATTERNS.items():
                 for pattern in patterns:
-                    matches = re.finditer(pattern, text_lower, re.IGNORECASE)
+                    matches = re.finditer(pattern, text_lower)  # text already lowercased (#239)
                     for match in matches:
                         value = match.group(1).strip() if match.lastindex else match.group(0)
                         
                         # Try to link to known entity
                         linked_id = self._known_entities.get(category, {}).get(value.lower())
                         
+                        # Compute confidence based on match quality
+                        match_len = len(value)
+                        base_confidence = min(0.6 + match_len * 0.02, 0.80)
+                        if linked_id:
+                            base_confidence = min(base_confidence + 0.15, 0.98)
+                        if match.lastindex and match.lastindex >= 1:
+                            base_confidence = min(base_confidence + 0.05, 0.98)  # capture-group boost
+
                         entity = ExtractedEntity(
                             entity_type=category,
                             value=value,
                             normalized_value=value.upper() if category in [EntityCategory.RFQ, EntityCategory.ORDER] else value.title(),
-                            confidence=0.85 if linked_id else 0.65,
+                            confidence=round(base_confidence, 2),
                             linked_record_id=linked_id,
                             linked_record_type=category.value if linked_id else None,
                             context=f"from {source_name}",

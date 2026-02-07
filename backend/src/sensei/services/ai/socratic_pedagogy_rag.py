@@ -40,14 +40,21 @@ def score_learning_unit(query: str, unit: object) -> float:
     unit_tokens = _tokenize(" ".join(fields))
     overlap = len(q_tokens & unit_tokens)
     score = overlap / max(1, len(q_tokens))
-    return max(0.0, min(0.999, score))
+    return max(0.0, min(1.0, score))
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors.
+
+    Returns a value in [-1, 1].  Returns 0.0 when either vector has
+    zero magnitude (avoids division-by-zero).
+    """
+    dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
-    if norm_a == 0:
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
-    return sum(x * y for x, y in zip(a, b)) / norm_a
+    return dot / (norm_a * norm_b)
 
 
 def rank_learning_units(

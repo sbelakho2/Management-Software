@@ -19,6 +19,28 @@ from sensei.api.schemas import ErrorResponse, ValidationErrorDetail, ValidationE
 
 logger = structlog.get_logger(__name__)
 
+# Pre-compiled regex for SQL sanitization (#147)
+import re
+_SQL_STATEMENT_RE = re.compile(
+    r'\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|FROM|WHERE|VALUES|SET)\b.*',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _sanitize_sql_error(error_str: str) -> str:
+    """
+    Remove raw SQL statements from error messages to prevent
+    leaking schema details and query structure in logs (#147).
+    
+    Keeps the constraint/error type but strips the SQL body.
+    """
+    # Strip SQL statements, keeping only the constraint message
+    sanitized = _SQL_STATEMENT_RE.sub('[SQL REDACTED]', error_str)
+    # Cap length to prevent very large error strings in logs
+    if len(sanitized) > 500:
+        sanitized = sanitized[:500] + '...[truncated]'
+    return sanitized
+
 
 # =============================================================================
 # Custom Exceptions
@@ -414,9 +436,13 @@ async def integrity_error_handler(
     exc: IntegrityError,
 ) -> JSONResponse:
     """Handle database integrity errors."""
+    # Sanitize SQL from logged error to prevent leaking schema details (#147)
+    raw_error = str(exc.orig)
+    # Only log the constraint type, not the full SQL statement
+    sanitized_error = _sanitize_sql_error(raw_error)
     logger.warning(
         "Database integrity error",
-        error=str(exc.orig),
+        error=sanitized_error,
         path=str(request.url.path),
         method=request.method,
     )
@@ -451,12 +477,13 @@ async def sqlalchemy_error_handler(
     exc: SQLAlchemyError,
 ) -> JSONResponse:
     """Handle SQLAlchemy errors."""
+    # Sanitize SQL from logged error to prevent leaking schema/query details (#147)
+    sanitized_error = _sanitize_sql_error(str(exc))
     logger.error(
         "Database error",
-        error=str(exc),
+        error=sanitized_error,
         path=str(request.url.path),
         method=request.method,
-        exc_info=True,
     )
     
     return JSONResponse(

@@ -499,18 +499,19 @@ export default function TodayPage() {
 							<AlertCircle className="h-4 w-4 text-rams-orange/40" />
 						</div>
 						<div className="p-4 space-y-3">
-							{[
-								{ id: 'a1', rfq: 'RFQ-2024-0089', riskKey: 'common.quotingHelper.workbench.risks.missingCentroid.title', disciplineKey: 'common.disciplines.ee.title' },
-								{ id: 'a2', rfq: 'RFQ-2024-0102', riskKey: 'common.quotingHelper.workbench.risks.bomObsolescence.title', disciplineKey: 'common.disciplines.purchasing.title' }
-							].map((andon) => (
-								<div key={andon.id} className="flex items-center justify-between border-b border-rams-line/30 pb-3 last:border-0 last:pb-0">
-									<div>
-										<p className="text-[10px] font-black uppercase text-foreground/80">{andon.rfq}</p>
-										<p className="text-[9px] font-mono text-muted-foreground uppercase">{t(andon.riskKey)}</p>
+							{(todayData?.active_risks ?? []).length > 0 ? (
+								(todayData.active_risks as Array<{ id?: string; rfq?: string; risk_title?: string; discipline?: string }>).slice(0, 5).map((risk, idx) => (
+									<div key={risk.id ?? `risk-${idx}`} className="flex items-center justify-between border-b border-rams-line/30 pb-3 last:border-0 last:pb-0">
+										<div>
+											<p className="text-[10px] font-black uppercase text-foreground/80">{risk.rfq ?? t('common.unknown')}</p>
+											<p className="text-[9px] font-mono text-muted-foreground uppercase">{risk.risk_title ?? ''}</p>
+										</div>
+										<Badge variant="outline" className="text-[8px] font-mono border-rams-orange/30 text-rams-orange">{risk.discipline ?? ''}</Badge>
 									</div>
-									<Badge variant="outline" className="text-[8px] font-mono border-rams-orange/30 text-rams-orange">{t(andon.disciplineKey)}</Badge>
-								</div>
-							))}
+								))
+							) : (
+								<p className="text-[10px] font-mono font-bold text-muted-foreground/40 text-center py-4 uppercase">{t('pages.today.allClearStatus')}</p>
+							)}
 						</div>
 					</div>
 

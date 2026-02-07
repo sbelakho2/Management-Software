@@ -225,20 +225,38 @@ class QuotingHelperService:
         ingestion_service = SmartIngestionService(db=self.session)
         extracted_metadata = {}
         
+        ingestion_errors: list[dict[str, str]] = []
         for file_info in files:
             storage_key = file_info.get("storage_key")
             if not storage_key:
-                raise ValueError("storage_key is required for RFQ package ingestion")
+                ingestion_errors.append({"file": str(file_info), "error": "missing storage_key"})
+                continue
 
             filename = file_info.get("filename") or storage_key.split("/")[-1]
-            file_bytes = await download_file(storage_key)
-            if not file_bytes:
-                raise NotFoundError(f"File not found in storage: {storage_key}")
+            try:
+                file_bytes = await download_file(storage_key)
+                if not file_bytes:
+                    ingestion_errors.append({"file": filename, "error": "file not found in storage"})
+                    continue
 
-            job = ingestion_service.ingest_document(filename, file_bytes)
-            if job.extracted_entities:
-                for entity in job.extracted_entities:
-                    extracted_metadata.update(entity.fields)
+                job = ingestion_service.ingest_document(filename, file_bytes)
+                if job.extracted_entities:
+                    for entity in job.extracted_entities:
+                        extracted_metadata.update(entity.fields)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to ingest file %s for RFQ %s: %s",
+                    filename, rfq_id, exc,
+                )
+                ingestion_errors.append({"file": filename, "error": str(exc)})
+                continue
+
+        if ingestion_errors:
+            extracted_metadata["_ingestion_errors"] = ingestion_errors
+            logger.warning(
+                "RFQ %s package ingestion completed with %d error(s)",
+                rfq_id, len(ingestion_errors),
+            )
 
         package_version = RFQPackageVersion(
             rfq_id=rfq_id,

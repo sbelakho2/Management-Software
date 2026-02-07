@@ -95,7 +95,11 @@ function TrainingStats() {
   const { skills, trainings, records } = useTrainingStore();
   
   const expiringCount = records.filter(r => {
-    return false; // Implement actual logic in store or helper 
+    if (!r.expiresDate) return false;
+    const expiry = new Date(r.expiresDate);
+    const now = new Date();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    return expiry.getTime() > now.getTime() && expiry.getTime() - now.getTime() <= thirtyDaysMs;
   }).length;
 
   return (

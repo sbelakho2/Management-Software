@@ -351,7 +351,27 @@ export const useHRStore = create<HRState>()(
           }
         },
       }),
-      { name: 'hr-storage' }
+      {
+        name: 'hr-storage',
+        version: 1,
+        // Only persist lightweight data; exclude large arrays and ephemeral state (#69)
+        partialize: (state) => ({
+          // Intentionally exclude: employees, jobOpenings, applications, leaveRequests,
+          // headcount, expiringCerts — these are re-fetched from API on mount.
+          // Only persist stats for a quick initial render before API responds.
+          stats: state.stats,
+        }),
+        // Merge persisted snapshot with fresh initial state so that transient
+        // fields (loading, error, empty arrays) are never stale (#69)
+        merge: (persistedState, currentState) => ({
+          ...currentState,
+          ...(persistedState && typeof persistedState === 'object' ? persistedState : {}),
+          // Always reset ephemeral state regardless of persisted values
+          loading: false,
+          isLoading: false,
+          error: null,
+        }),
+      }
     )
   )
 );

@@ -16,7 +16,7 @@ SLOs Tracked:
 
 import time
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -103,9 +103,10 @@ class MetricsRegistry:
         key = self._labels_to_key(labels)
         with self._lock:
             self._histograms[name][key].append(value)
-            # Keep only last hour of data to prevent memory growth
-            if len(self._histograms[name][key]) > 100000:
-                self._histograms[name][key] = self._histograms[name][key][-50000:]
+            # Keep only last 10k observations per label combo to prevent memory growth
+            # At ~8 bytes per float, 10k entries ≈ 80KB per (metric, label) pair
+            if len(self._histograms[name][key]) > 10000:
+                self._histograms[name][key] = self._histograms[name][key][-5000:]
     
     def get_prometheus_output(self) -> str:
         """Generate Prometheus-compatible text output."""
@@ -256,20 +257,26 @@ class SLOTracker:
         
         self._window_duration = timedelta(hours=24)  # 24-hour rolling window
         self._lock = Lock()
-        self._requests: List[Tuple[datetime, float, bool]] = []  # (time, latency_ms, is_error)
+        # Use deque with maxlen for automatic O(1) bounded append.
+        # Under extreme load this caps memory at ~50 bytes * 100k ≈ 5MB.
+        self._max_request_entries = 100000
+        self._requests: deque[Tuple[datetime, float, bool]] = deque(
+            maxlen=self._max_request_entries
+        )
     
     def record_request(self, latency_ms: float, is_error: bool):
         """Record a request for SLO tracking."""
         now = datetime.now(timezone.utc)
-        
         with self._lock:
+            # deque(maxlen=N) automatically evicts the oldest entry when full
             self._requests.append((now, latency_ms, is_error))
-            self._cleanup_old_requests(now)
     
     def _cleanup_old_requests(self, now: datetime):
         """Remove requests outside the rolling window."""
         cutoff = now - self._window_duration
-        self._requests = [r for r in self._requests if r[0] > cutoff]
+        # popleft is O(1) per entry on deque vs O(n) list rebuild
+        while self._requests and self._requests[0][0] <= cutoff:
+            self._requests.popleft()
     
     def get_slo_status(self) -> Dict[str, SLOStatus]:
         """Get current SLO compliance status."""

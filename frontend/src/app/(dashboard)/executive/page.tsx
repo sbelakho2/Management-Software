@@ -141,7 +141,7 @@ export default function ExecutivePage() {
               </div>
               <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
                 <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.operationalUptime') || 'Operational Uptime'}</p>
-                <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">99.9%</div>
+                <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{t('pages.executive.kpi.uptimeValue') || 'N/A'}</div>
                 <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{t('pages.executive.kpi.optimalState') || 'OPTIMAL_STATE'}</p>
               </div>
             </div>
@@ -180,10 +180,10 @@ export default function ExecutivePage() {
                 </CardHeader>
                 <CardContent className="p-12 flex items-center justify-center bg-rams-module relative overflow-hidden">
                   <div className="relative z-10 text-center space-y-4">
-                    <div className="p-4 rounded-none bg-rams-panel border border-rams-line inline-block animate-pulse">
+                    <div className="p-4 rounded-none bg-rams-panel border border-rams-line inline-block">
                       <Users className="h-8 w-8 text-rams-orange/40" />
                     </div>
-                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-muted-foreground/40">{t('pages.executive.aggregatingMetrics') || 'Aggregating Global Metrics...'}</p>
+                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-muted-foreground/40">{t('pages.executive.metricsComingSoon') || 'Global Metrics — Coming Soon'}</p>
                   </div>
                   <div className="absolute inset-0 perforated-bg opacity-5" />
                 </CardContent>

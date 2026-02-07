@@ -14,6 +14,7 @@ from typing import Any, Optional, Callable
 import math
 import re
 import hashlib
+import uuid
 from collections import defaultdict
 
 
@@ -309,8 +310,8 @@ class SentimentAnalyzer:
         sentiment_score = self._calculate_sentiment_score(text_lower)
         sentiment_level = self._score_to_sentiment_level(sentiment_score)
         
-        # Calculate urgency score
-        urgency_score = self._calculate_urgency_score(text_lower)
+        # Calculate urgency score — pass original text for CAPS detection
+        urgency_score = self._calculate_urgency_score(text_lower, original_text=text)
         urgency_level = self._score_to_urgency_level(urgency_score)
         
         # Detect frustration patterns
@@ -345,38 +346,70 @@ class SentimentAnalyzer:
         
         return result
     
+    _NEGATION_RE = re.compile(
+        r"\b(?:not|no|never|don't|doesn't|didn't|won't|wouldn't|can't|cannot|isn't|aren't|wasn't|weren't|hardly|barely|scarcely)\b"
+    )
+
+    def _is_negated(self, text: str, keyword: str) -> bool:
+        """Check if a keyword is preceded by a negation word within a 4-word window."""
+        match = re.search(rf'\b{re.escape(keyword)}\b', text)
+        if not match:
+            return False
+        # Grab up to 40 chars before the keyword as context window
+        prefix = text[max(0, match.start() - 40):match.start()]
+        return bool(self._NEGATION_RE.search(prefix))
+
     def _calculate_sentiment_score(self, text: str) -> float:
         """Calculate sentiment score from -1 to 1."""
-        positive_count = sum(1 for kw in self.POSITIVE_KEYWORDS if kw in text)
-        negative_count = sum(1 for kw in self.NEGATIVE_KEYWORDS if kw in text)
-        
+        positive_count = 0
+        negative_count = 0
+
+        for kw in self.POSITIVE_KEYWORDS:
+            if re.search(rf'\b{re.escape(kw)}\b', text):
+                if self._is_negated(text, kw):
+                    negative_count += 1  # Negated positive → negative
+                else:
+                    positive_count += 1
+
+        for kw in self.NEGATIVE_KEYWORDS:
+            if re.search(rf'\b{re.escape(kw)}\b', text):
+                if self._is_negated(text, kw):
+                    positive_count += 1  # Negated negative → positive
+                else:
+                    negative_count += 1
+
         # Count frustration patterns (weighted higher)
         frustration_count = len(self._detect_frustration_patterns(text))
         negative_count += frustration_count * 2
-        
+
         total = positive_count + negative_count
         if total == 0:
             return 0.0
-        
+
         score = (positive_count - negative_count) / total
         return max(-1.0, min(1.0, score))
     
-    def _calculate_urgency_score(self, text: str) -> float:
-        """Calculate urgency score from 0 to 1."""
+    def _calculate_urgency_score(self, text: str, *, original_text: str = "") -> float:
+        """Calculate urgency score from 0 to 1.
+
+        Args:
+            text: Lowercased text for keyword matching.
+            original_text: Original (un-lowered) text for ALL-CAPS detection.
+        """
         max_urgency = 0.0
         
         for keyword, weight in self.URGENCY_KEYWORDS:
             if keyword in text:
                 max_urgency = max(max_urgency, weight)
         
-        # Check for exclamation marks (adds urgency)
-        exclamation_count = text.count("!")
+        # Check for exclamation marks (adds urgency) — use original text
+        source = original_text or text
+        exclamation_count = source.count("!")
         if exclamation_count > 0:
             max_urgency = max(max_urgency, min(0.5 + exclamation_count * 0.1, 0.8))
         
-        # Check for ALL CAPS words
-        original = text
-        caps_words = len(re.findall(r"\b[A-Z]{3,}\b", original))
+        # Check for ALL CAPS words — must use original (un-lowered) text
+        caps_words = len(re.findall(r"\b[A-Z]{3,}\b", source))
         if caps_words > 0:
             max_urgency = max(max_urgency, min(0.4 + caps_words * 0.1, 0.7))
         
@@ -704,9 +737,7 @@ class SequenceAnalyzer:
     
     def _generate_id(self) -> str:
         """Generate unique anomaly ID."""
-        return hashlib.md5(
-            f"{datetime.now(timezone.utc)}:{id(self)}".encode()
-        ).hexdigest()[:12]
+        return uuid.uuid4().hex[:12]
 
 
 # =============================================================================
@@ -1022,9 +1053,7 @@ class AnomalyDetectionEngine:
     
     def _generate_id(self) -> str:
         """Generate unique ID."""
-        return hashlib.md5(
-            f"{datetime.now(timezone.utc)}:{id(self)}".encode()
-        ).hexdigest()[:12]
+        return uuid.uuid4().hex[:12]
 
 
 # =============================================================================

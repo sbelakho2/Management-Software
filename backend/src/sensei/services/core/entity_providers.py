@@ -96,8 +96,21 @@ def _resolve_model(entity_type: str | Enum) -> type | None:
     return MODEL_MAP.get(_normalize_entity_type(entity_type))
 
 
+# Fields that must NEVER appear in serialized output.
+_SENSITIVE_FIELDS = frozenset({
+    "password_hash", "hashed_password", "password",
+    "totp_secret", "totp_seed", "mfa_secret",
+    "api_key", "api_secret", "secret_key",
+    "refresh_token", "access_token",
+})
+
+
 def _model_to_dict(instance: Any) -> dict[str, Any]:
-    return {column.key: getattr(instance, column.key) for column in instance.__table__.columns}
+    return {
+        column.key: getattr(instance, column.key)
+        for column in instance.__table__.columns
+        if column.key not in _SENSITIVE_FIELDS
+    }
 
 
 def _apply_filters(query, model: type, filters: dict[str, Any]) -> Any:

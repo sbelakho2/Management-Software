@@ -420,7 +420,8 @@ class AndonA3EscalationService:
             try:
                 return datetime.fromisoformat(dt.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                    logger.warning("Invalid event datetime: %s", dt)
+                logger.warning("Invalid event datetime: %s", dt)
+                return datetime.min
         if isinstance(dt, datetime):
             return dt
         return datetime.min

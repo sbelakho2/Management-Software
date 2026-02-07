@@ -16,6 +16,7 @@ from uuid import UUID
 
 from fastapi import Query, UploadFile
 from pydantic import BaseModel
+from starlette.requests import Request
 
 from sensei.api.schemas import (
     APIResponse,
@@ -35,6 +36,31 @@ async def maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def get_client_ip(request: Request) -> str:
+    """
+    Extract the real client IP address from a request, handling
+    reverse-proxy headers in priority order (#247).
+
+    Checks X-Forwarded-For first (first entry = original client),
+    then X-Real-IP, then falls back to request.client.host.
+
+    This is the single canonical implementation — all middleware and
+    dependencies should import this instead of rolling their own.
+    """
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    if request.client:
+        return request.client.host
+
+    return "unknown"
 
 
 # =============================================================================
@@ -165,7 +191,11 @@ def _parse_filter_value(value: str) -> Any:
 
 
 def _parse_single_value(value: str) -> Any:
-    """Parse a single value to appropriate type."""
+    """Parse a single value to appropriate type.
+    
+    Conservative coercion: only converts when format is unambiguous.
+    Callers that need explicit types should use schema validation instead.
+    """
     # Boolean
     if value.lower() == "true":
         return True
@@ -176,30 +206,30 @@ def _parse_single_value(value: str) -> Any:
     if value.lower() in ("null", "none"):
         return None
     
-    # Integer
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    
-    # Float
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    
-    # UUID
+    # UUID — only if it matches the canonical 8-4-4-4-12 hex format
     try:
         return UUID(value)
     except ValueError:
         pass
     
-    # ISO datetime
-    if "T" in value or value.count("-") >= 2:
+    # ISO datetime — only if value contains 'T' (strict ISO 8601)
+    if "T" in value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             pass
+    
+    # Integer — only if the ENTIRE string is digits (with optional leading minus)
+    # This avoids coercing part numbers like "00123" or zip codes.
+    stripped = value.lstrip("-")
+    if stripped.isdigit() and not value.startswith("0") or value in ("0", "-0"):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    
+    # Skip float coercion — too many false positives (version strings, IPs, etc.)
+    # Callers should use typed schema validation for numeric fields.
     
     # String (default)
     return value
@@ -283,6 +313,15 @@ def build_deleted_response(
 # =============================================================================
 
 
+# Fields that must NEVER appear in API responses, regardless of caller exclude/include.
+_SENSITIVE_FIELDS = frozenset({
+    "password_hash", "hashed_password", "password",
+    "totp_secret", "totp_seed", "mfa_secret",
+    "api_key", "api_secret", "secret_key",
+    "refresh_token", "access_token",
+})
+
+
 def model_to_dict(
     model: Any,
     exclude: Optional[List[str]] = None,
@@ -299,13 +338,13 @@ def model_to_dict(
     Returns:
         Dictionary representation
     """
-    exclude = exclude or []
+    exclude_set = _SENSITIVE_FIELDS | set(exclude or [])
     result = {}
     
     for column in model.__table__.columns:
         key = column.name
         
-        if key in exclude:
+        if key in exclude_set:
             continue
         
         if include and key not in include:

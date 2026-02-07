@@ -447,11 +447,14 @@ class SocraticMentor:
     def __init__(
         self,
         default_persona: MentorPersona = MentorPersona.THE_SENSEI,
+        seed: Optional[int] = None,
     ):
         self.default_persona = default_persona
         self._prompt_counter = 0
         self._session_prompts: List[ChallengingPrompt] = []
         self._expert_traces: List[Dict[str, Any]] = []
+        # Seed a dedicated RNG for reproducible prompt selection (#212/#462)
+        self._rng = random.Random(seed)
 
     def add_expert_trace(self, trace: Dict[str, Any]) -> None:
         """Add an expert reasoning trace from seeded book knowledge."""
@@ -487,8 +490,8 @@ class SocraticMentor:
         for prompt_type in focus_types[:max_prompts]:
             # Inject expert knowledge if available
             relevant_expert_prompt = None
-            if self._expert_traces and random.random() > 0.5:
-                trace = random.choice(self._expert_traces)
+            if self._expert_traces and self._rng.random() > 0.5:
+                trace = self._rng.choice(self._expert_traces)
                 principle = trace.get("findings", {}).get("distilled_principle", "")
                 source = trace.get("findings", {}).get("source_book", "expert knowledge")
                 relevant_expert_prompt = f"Based on '{source}', we should consider: {principle}. How does this apply to your current thinking?"
@@ -501,16 +504,16 @@ class SocraticMentor:
                     prompt_type, ["Tell me more about this."]
                 )
             
-            template = random.choice(templates)
+            template = self._rng.choice(templates)
             
             # Fill in placeholders
             question = relevant_expert_prompt or template
             if "{term}" in question and key_terms:
-                question = question.replace("{term}", random.choice(key_terms))
+                question = question.replace("{term}", self._rng.choice(key_terms))
             if "{aspect}" in question:
                 question = question.replace("{aspect}", self._identify_aspect(content))
             if "{concept}" in question and key_terms:
-                question = question.replace("{concept}", random.choice(key_terms))
+                question = question.replace("{concept}", self._rng.choice(key_terms))
             if "{alternative}" in question:
                 question = question.replace("{alternative}", "a different approach")
             
@@ -731,10 +734,21 @@ class FiveWhysAssistant:
         },
     ]
     
+    _MAX_SUGGESTION_CACHE = 256  # Maximum cached suggestion entries (#121)
+
     def __init__(self):
         self._historical_causes: List[Tuple[str, LeanWasteCategory]] = []
         self._suggestion_cache: Dict[str, List[RootCauseSuggestion]] = {}
         self._expert_traces: List[Dict[str, Any]] = []
+
+    def _evict_cache_if_needed(self) -> None:
+        """Evict oldest entries when cache exceeds max size (#121)."""
+        if len(self._suggestion_cache) > self._MAX_SUGGESTION_CACHE:
+            # Remove oldest 25% of entries
+            evict_count = len(self._suggestion_cache) // 4
+            keys_to_remove = list(self._suggestion_cache.keys())[:evict_count]
+            for key in keys_to_remove:
+                del self._suggestion_cache[key]
 
     def add_expert_trace(self, trace: Dict[str, Any]) -> None:
         """Add an expert reasoning trace from seeded book knowledge."""
@@ -803,8 +817,14 @@ class FiveWhysAssistant:
             findings = trace.get("findings", {})
             distilled_principle = findings.get("distilled_principle", "")
             
-            # Simple keyword match for expert traces
-            if any(kw in all_text for kw in distilled_principle.lower().split() if len(kw) > 4):
+            # Require meaningful keyword overlap with word-boundary matching (#193)
+            principle_keywords = [kw for kw in distilled_principle.lower().split() if len(kw) > 4]
+            if principle_keywords:
+                matched = sum(
+                    1 for kw in principle_keywords
+                    if re.search(rf'\b{re.escape(kw)}\b', all_text)
+                )
+                if matched / len(principle_keywords) >= 0.4:
                 suggestion = RootCauseSuggestion(
                     why_number=next_why,
                     suggested_cause=f"Expert Principle: {distilled_principle}",
@@ -837,9 +857,19 @@ class FiveWhysAssistant:
         text: str,
         keywords: List[str],
     ) -> float:
-        """Calculate pattern match score."""
-        matches = sum(1 for kw in keywords if kw in text)
-        return matches / len(keywords) if keywords else 0.0
+        """Calculate pattern match score using word-boundary matching.
+
+        Uses ``re`` word boundaries so that e.g. 'wait' does not match
+        'waiting' or 'await'. (#215)
+        """
+        if not keywords:
+            return 0.0
+        matches = sum(
+            1
+            for kw in keywords
+            if re.search(rf"\b{re.escape(kw)}\b", text)
+        )
+        return matches / len(keywords)
     
     def _classify_waste(self, text: str) -> LeanWasteCategory:
         """Classify the waste category from text."""

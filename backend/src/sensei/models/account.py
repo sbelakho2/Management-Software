@@ -191,7 +191,8 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     contacts: Mapped[list["AccountContact"]] = relationship(
         "AccountContact",
         back_populates="account",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="dynamic",
     )
     
@@ -199,7 +200,8 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         "Opportunity",
         back_populates="account",
         foreign_keys="Opportunity.account_id",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="dynamic",
     )
     
@@ -207,7 +209,8 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         "RFQ",
         back_populates="account",
         foreign_keys="RFQ.account_id",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="dynamic",
     )
     
@@ -395,12 +398,12 @@ class AccountContact(Base, TimestampMixin):
     
     account_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("accounts.id", ondelete="CASCADE"),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
         nullable=False,
     )
     contact_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("contacts.id", ondelete="CASCADE"),
+        ForeignKey("contacts.id", ondelete="RESTRICT"),
         nullable=False,
     )
     

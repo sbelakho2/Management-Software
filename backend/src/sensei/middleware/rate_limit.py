@@ -114,13 +114,23 @@ class InMemoryRateLimiter:
     
     Note: This is a fallback for single-instance deployments.
     For distributed systems, use Redis-backed rate limiting.
+    
+    Uses sharded locks (16 buckets by default) so that concurrent
+    requests from different clients don't serialize through a single
+    global lock (#123).
     """
+    
+    _NUM_SHARDS = 16
     
     def __init__(self):
         # {client_key: [(timestamp, count), ...]}
         self._windows: Dict[str, list] = defaultdict(list)
         self._blocked: Dict[str, float] = {}  # client_key -> unblock_time
-        self._lock = asyncio.Lock()
+        self._locks = [asyncio.Lock() for _ in range(self._NUM_SHARDS)]
+    
+    def _shard_lock(self, client_key: str) -> asyncio.Lock:
+        """Return the lock shard for a given client key."""
+        return self._locks[hash(client_key) % self._NUM_SHARDS]
         
     async def is_rate_limited(
         self,
@@ -133,7 +143,7 @@ class InMemoryRateLimiter:
         Returns:
             Tuple of (is_limited, retry_after_seconds)
         """
-        async with self._lock:
+        async with self._shard_lock(client_key):
             now = time.time()
             
             # Check if client is blocked
@@ -174,23 +184,28 @@ class InMemoryRateLimiter:
     
     async def cleanup(self):
         """Clean up old entries to prevent memory growth."""
-        async with self._lock:
-            now = time.time()
-            
-            # Clean up windows older than 1 hour
-            for key in list(self._windows.keys()):
-                self._windows[key] = [
-                    (ts, c) for ts, c in self._windows[key] 
-                    if now - ts < 3600
-                ]
-                if not self._windows[key]:
-                    del self._windows[key]
-            
-            # Clean up expired blocks
-            self._blocked = {
-                k: v for k, v in self._blocked.items() 
-                if v > now
-            }
+        now = time.time()
+        
+        # Iterate keys grouped by shard to minimise lock contention
+        keys_by_shard: Dict[int, list] = defaultdict(list)
+        for key in list(self._windows.keys()):
+            keys_by_shard[hash(key) % self._NUM_SHARDS].append(key)
+        
+        for shard_idx, keys in keys_by_shard.items():
+            async with self._locks[shard_idx]:
+                for key in keys:
+                    self._windows[key] = [
+                        (ts, c) for ts, c in self._windows[key]
+                        if now - ts < 3600
+                    ]
+                    if not self._windows[key]:
+                        del self._windows[key]
+        
+        # Clean up expired blocks (lightweight, no lock needed for atomic dict swap)
+        self._blocked = {
+            k: v for k, v in self._blocked.items()
+            if v > now
+        }
 
 
 class RedisRateLimiter:
@@ -295,17 +310,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._redis_limiter = RedisRateLimiter()
         self._memory_limiter = InMemoryRateLimiter()
         self._redis_ok: bool | None = None
+        self._redis_checked_at: float = 0.0
+        self._REDIS_RECHECK_INTERVAL: float = 30.0  # seconds
         self._last_cleanup = time.time()
 
     async def _ensure_redis_ok(self) -> bool:
-        """Check Redis health lazily and cache the result."""
-        if self._redis_ok is not None:
+        """Check Redis health with a 30-second TTL cache (#124).
+
+        Previously the result was cached forever — if Redis went down after
+        startup it was never detected, and if it was down at startup it was
+        never re-tried.
+        """
+        now = time.time()
+        if self._redis_ok is not None and (now - self._redis_checked_at) < self._REDIS_RECHECK_INTERVAL:
             return self._redis_ok
         try:
             await asyncio.wait_for(redis_client.ping(), timeout=0.5)  # type: ignore[misc]
             self._redis_ok = True
         except Exception:
             self._redis_ok = False
+        self._redis_checked_at = now
         return self._redis_ok
     
     async def _maybe_cleanup_memory(self) -> None:
@@ -324,12 +348,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         - User ID (if authenticated)
         - Path pattern
         """
-        # Get client IP (handle proxies)
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            client_ip = forwarded.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else "unknown"
+        # Get client IP (use canonical utility #247)
+        from sensei.api.utils import get_client_ip
+        client_ip = get_client_ip(request)
         
         # Get user ID if authenticated
         user_id = getattr(request.state, "user_id", None)

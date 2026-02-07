@@ -16,12 +16,22 @@ Notes:
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
+import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Shared thread pool for ONNX inference (avoids blocking the event loop)
+_onnx_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="onnx-embed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,8 +166,16 @@ class ONNXTextEmbedder:
                 )
 
         tokenizer = AutoTokenizer.from_pretrained(self._config.model_id, local_files_only=False)
+        # Enable ONNX graph optimizations for better throughput
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.intra_op_num_threads = 2  # Limit threads for VPS
+        sess_options.inter_op_num_threads = 1
+        sess_options.enable_mem_pattern = True
+        sess_options.enable_cpu_mem_arena = True
         sess = ort.InferenceSession(
             target_path.as_posix(),
+            sess_options=sess_options,
             providers=["CPUExecutionProvider"],
         )
 

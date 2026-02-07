@@ -265,7 +265,7 @@ export const useQuoteStore = create<QuoteState>()(
       {
         name: 'quote-storage',
         partialize: (state) => ({
-          quotes: state.quotes,
+          // Only persist lightweight metadata — never persist full quotes (unbounded array → localStorage overflow)
           lastFetchedAt: state.lastFetchedAt,
         }),
       }

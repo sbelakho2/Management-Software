@@ -8,6 +8,7 @@ Core security utilities including:
 - Secure random token generation
 """
 
+import asyncio
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
@@ -71,6 +72,27 @@ class TOTPSetupResult(BaseModel):
 # =============================================================================
 
 
+def _prepare_password_for_bcrypt(password: str) -> bytes:
+    """
+    Prepare a password for bcrypt, handling the 72-byte limit.
+    
+    Args:
+        password: Plain text password
+        
+    Returns:
+        Bytes suitable for bcrypt (max 72 bytes)
+    """
+    password_bytes = password.encode("utf-8")
+    
+    if len(password_bytes) > 72:
+        import hashlib
+        password_bytes = base64.b64encode(
+            hashlib.sha256(password_bytes).digest()
+        )
+    
+    return password_bytes
+
+
 def hash_password(password: str) -> str:
     """
     Hash a password using bcrypt.
@@ -93,41 +115,11 @@ def hash_password(password: str) -> str:
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
     
-    # Encode password
-    password_bytes = password.encode("utf-8")
-    
-    # If password is longer than 72 bytes, pre-hash with SHA-256
-    # This is a common technique to handle bcrypt's 72-byte limit
-    if len(password_bytes) > 72:
-        import hashlib
-        password_bytes = base64.b64encode(
-            hashlib.sha256(password_bytes).digest()
-        )
+    password_bytes = _prepare_password_for_bcrypt(password)
     
     salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode("utf-8")
-
-
-def _prepare_password_for_bcrypt(password: str) -> bytes:
-    """
-    Prepare a password for bcrypt, handling the 72-byte limit.
-    
-    Args:
-        password: Plain text password
-        
-    Returns:
-        Bytes suitable for bcrypt (max 72 bytes)
-    """
-    password_bytes = password.encode("utf-8")
-    
-    if len(password_bytes) > 72:
-        import hashlib
-        password_bytes = base64.b64encode(
-            hashlib.sha256(password_bytes).digest()
-        )
-    
-    return password_bytes
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -151,6 +143,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except Exception:
         # Handle malformed hashes gracefully
         return False
+
+
+async def async_hash_password(password: str) -> str:
+    """Async wrapper for hash_password.
+
+    Offloads the CPU-intensive bcrypt operation to a thread so the
+    async event loop is not blocked (~100-300ms per call at 12 rounds).
+    """
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def async_verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Async wrapper for verify_password.
+
+    Offloads the CPU-intensive bcrypt comparison to a thread.
+    """
+    return await asyncio.to_thread(verify_password, plain_password, hashed_password)
 
 
 def needs_rehash(hashed_password: str) -> bool:

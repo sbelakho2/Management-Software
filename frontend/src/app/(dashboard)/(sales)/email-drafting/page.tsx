@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { EmailComposer } from '@/components/email/email-composer';
 import { PageGuard } from '@/components/layout/page-guard';
@@ -8,6 +8,14 @@ import { SALES_ROLES } from '@/lib/page-access';
 import type { Recipient } from '@/stores/email-drafting-store';
 
 export default function EmailDraftingPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center"><p className="text-muted-foreground">Loading…</p></div>}>
+      <EmailDraftingContent />
+    </Suspense>
+  );
+}
+
+function EmailDraftingContent() {
   const params = useSearchParams();
   const entityType = params.get('entityType') || undefined;
   const entityId = params.get('entityId') || undefined;
@@ -38,3 +46,4 @@ export default function EmailDraftingPage() {
     </PageGuard>
   );
 }
+

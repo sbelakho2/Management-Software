@@ -9,15 +9,19 @@ This module is intentionally deterministic and testable (no LLM calls).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
+from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.quality import NonConformance, NCStatus, NCType, NCSource, RootCauseCategory
 from sensei.models.work_order import WorkOrder
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -132,9 +136,8 @@ class JidokaErrorProofingService:
         suggestions: list[JidokaSuggestion] = []
         total = len(ncs)
 
-        def conf(items: Iterable[NonConformance]) -> float:
-            count = len(list(items))
-            return round(count / total, 2) if total else 0.0
+        def conf(items: list[NonConformance]) -> float:
+            return round(len(items) / total, 2) if total else 0.0
 
         if buckets["measurement"]:
             ids = [nc.id for nc in buckets["measurement"]]
@@ -225,7 +228,11 @@ class JidokaErrorProofingService:
         result = await db.execute(stmt)
         wo = result.scalar_one_or_none()
         if not wo:
-            raise ValueError(f"Work order {work_order_id} not found")
+            logger.warning("Work order %d not found for Jidoka analysis", work_order_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Work order {work_order_id} not found",
+            )
         return wo
 
     async def _load_recent_open_non_conformances(

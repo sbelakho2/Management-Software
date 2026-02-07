@@ -64,7 +64,7 @@ function MaintenanceStats({ t }: { t: (key: string) => string | undefined }) {
       </div>
       <div className="bg-rams-module p-6 border-b border-rams-line">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-4">{t('pages.maintenance.stats.efficiencyPulse') || 'Efficiency Pulse'}</p>
-        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">88.5%</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{stats?.efficiency_pulse ?? 'N/A'}%</p>
       </div>
     </div>
   );

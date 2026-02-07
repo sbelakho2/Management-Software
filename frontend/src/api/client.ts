@@ -293,6 +293,10 @@ class ApiClient {
   private pendingRequests: Map<string, AbortController> = new Map();
   private refreshPromise: Promise<void> | null = null;
   private circuitBreaker: CircuitBreaker;
+  // Deduplication: coalesce identical in-flight GET requests
+  private inflightGets: Map<string, Promise<unknown>> = new Map();
+  // Limit pending request map size to prevent memory leaks
+  private static readonly MAX_PENDING_REQUESTS = 200;
 
   constructor() {
     console.log('[API CLIENT] Initializing with API_ROOT:', API_ROOT);
@@ -437,6 +441,17 @@ class ApiClient {
   createCancellableRequest(key: string): AbortController {
     // Cancel any existing request with this key
     this.cancelRequest(key);
+    // Guard against unbounded map growth (e.g. component re-render storms)
+    if (this.pendingRequests.size >= ApiClient.MAX_PENDING_REQUESTS) {
+      // Evict oldest entries
+      const keys = Array.from(this.pendingRequests.keys());
+      for (let i = 0; i < keys.length / 2; i++) {
+        const oldKey = keys[i];
+        const oldController = this.pendingRequests.get(oldKey);
+        if (oldController) oldController.abort();
+        this.pendingRequests.delete(oldKey);
+      }
+    }
     const controller = new AbortController();
     this.pendingRequests.set(key, controller);
     return controller;
@@ -531,8 +546,22 @@ class ApiClient {
 
   // HTTP methods with AbortSignal support
   async get<T>(url: string, config?: ApiRequestConfig): Promise<T> {
-    const response = await this.client.get<T | { success: boolean; data: T }>(url, config);
-    return this.unwrapResponse<T>(response.data);
+    // Deduplicate identical in-flight GET requests to avoid redundant network calls.
+    // This is critical for React Strict Mode and concurrent renders that may fire
+    // the same query multiple times simultaneously.
+    const cacheKey = `${url}|${JSON.stringify(config?.params ?? '')}`;
+    const inflight = this.inflightGets.get(cacheKey);
+    if (inflight) {
+      return inflight as Promise<T>;
+    }
+    const promise = this.client
+      .get<T | { success: boolean; data: T }>(url, config)
+      .then((response) => this.unwrapResponse<T>(response.data))
+      .finally(() => {
+        this.inflightGets.delete(cacheKey);
+      });
+    this.inflightGets.set(cacheKey, promise);
+    return promise;
   }
 
   async post<T>(url: string, data?: unknown, config?: ApiRequestConfig): Promise<T> {

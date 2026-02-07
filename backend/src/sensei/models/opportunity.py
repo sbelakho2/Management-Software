@@ -128,7 +128,7 @@ class Opportunity(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     lead_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     
     # Financials
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
     currency: Mapped[str] = mapped_column(String(3), default="MAD", nullable=False)
     probability: Mapped[int] = mapped_column(
         Integer,

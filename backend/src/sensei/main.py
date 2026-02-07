@@ -34,6 +34,7 @@ from sensei.middleware.correlation import CorrelationIdMiddleware
 from sensei.middleware.secure_headers import SecureHeadersASGIMiddleware, SecureHeadersMiddleware
 from sensei.middleware.rate_limit import RateLimitMiddleware
 from sensei.middleware.session_binding import SessionBindingMiddleware
+from sensei.middleware.request_guard import RequestGuardMiddleware
 from sensei.services.core.backup_scheduler import BackupSchedulerService
 from sensei.services.core.database_backup import DatabaseBackupService
 from sensei.services.core.health_checks import HealthCheckService
@@ -47,6 +48,7 @@ from sensei.services.ops.cognitive_obeya import get_cognitive_obeya
 from sensei.services.core.factory_launchpad import get_factory_launchpad
 from sensei.services.core.edge_ai import get_edge_orchestrator
 from sensei.services.core.rbac_bootstrap import ensure_core_users_have_roles
+from sensei.core.websocket import get_websocket_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +91,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     else:
         logger.info("All service dependencies connected")
+    
+    # Warm up the connection pool: pre-create connections so the first
+    # batch of requests doesn't suffer pool-creation latency.
+    try:
+        pool_size = min(settings.DATABASE_POOL_SIZE, 4)
+        async with engine.connect() as _warmup_conn:
+            pass
+        logger.info("Database connection pool warmed up", pool_size=pool_size)
+    except Exception as e:
+        logger.warning("Connection pool warm-up failed (non-fatal)", error=str(e))
     
     # Initialize and start backup scheduler
     # IMPORTANT: Use leader election to prevent duplicate schedulers in horizontal scaling
@@ -193,6 +205,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.error("Failed to pre-initialize core services", error=str(e))
     
+    # Initialize WebSocket Redis pub/sub for multi-instance support
+    try:
+        ws_manager = get_websocket_manager()
+        await ws_manager.initialize()
+        logger.info("WebSocket Redis pub/sub adapter initialized")
+    except Exception as e:
+        logger.warning("WebSocket pub/sub init failed (single-instance mode)", error=str(e))
+    
     # Verify AI/Chatbot model availability at startup
     try:
         health_service = HealthCheckService()
@@ -217,6 +237,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Shutdown
     logger.info("Shutting down Sensei OS")
+    
+    # Shutdown WebSocket pub/sub adapter
+    try:
+        ws_manager = get_websocket_manager()
+        await ws_manager.shutdown()
+    except Exception as e:
+        logger.error("Error shutting down WebSocket pub/sub", error=str(e))
     
     # Stop backup scheduler and release leader lock
     if hasattr(app.state, "backup_scheduler"):
@@ -248,11 +275,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.error("Error releasing muda nudging leader lock", error=str(e))
     
     await engine.dispose()
-    aclose = getattr(redis_client, "aclose", None)
-    if callable(aclose):
-        await aclose()
-    else:
-        await redis_client.close()
+    logger.info("Database engine disposed")
+    try:
+        aclose = getattr(redis_client, "aclose", None)
+        if callable(aclose):
+            await aclose()
+        else:
+            await redis_client.close()  # type: ignore[union-attr]
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.warning("Error closing Redis connection", error=str(e))
 
 
 def create_application() -> FastAPI:
@@ -325,6 +357,15 @@ def create_application() -> FastAPI:
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)
+    
+    # Request guard: timeout + body size limits (#266, #267)
+    app.add_middleware(
+        RequestGuardMiddleware,
+        timeout_seconds=30,
+        max_body_bytes=10 * 1024 * 1024,   # 10 MB default
+        large_body_bytes=100 * 1024 * 1024, # 100 MB for uploads
+        enabled=True,
+    )
     
     # Session binding middleware - enabled in production for security
     if settings.SESSION_BINDING_ENABLED:

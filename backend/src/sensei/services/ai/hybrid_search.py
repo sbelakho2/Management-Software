@@ -358,14 +358,20 @@ class InMemoryKeywordSearcher:
         filters: dict[str, Any] | None = None,
     ) -> list[tuple[Chunk, float]]:
         q_tokens = self._tokenize(query)
+        if not q_tokens:
+            return []
         results: list[tuple[Chunk, float]] = []
         for chunk in self._chunks.values():
             if filters and chunk.metadata:
                 if any(getattr(chunk.metadata, k, None) != v for k, v in filters.items()):
                     continue
             c_tokens = self._tokenize(chunk.content)
-            score = sum(c_tokens.count(t) for t in q_tokens)
-            results.append((chunk, float(score)))
+            if not c_tokens:
+                continue
+            raw_score = sum(c_tokens.count(t) for t in q_tokens)
+            # Normalize by document length to avoid bias toward longer documents
+            score = raw_score / math.sqrt(len(c_tokens)) if raw_score > 0 else 0.0
+            results.append((chunk, score))
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 

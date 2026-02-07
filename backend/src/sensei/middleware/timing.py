@@ -25,6 +25,8 @@ class TimingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Add X-Process-Time header to responses."""
         start_time = time.perf_counter()
+        # Share start time with other middleware (#128)
+        request.state._request_start_time = start_time
         
         response = await call_next(request)
 

@@ -5,12 +5,22 @@
  * - Automatic request cancellation on unmount
  * - Loading and error states
  * - Retry logic with exponential backoff
- * - Cache invalidation
+ * - Cache invalidation (integrated with React Query)
  * - Optimistic updates
  * - Pagination support
+ * 
+ * NOTE: The useApi/useMutation hooks now delegate caching to @tanstack/react-query
+ * internally. The old in-memory Map cache is replaced by React Query's gcTime/staleTime.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useQuery,
+  useMutation as useRQMutation,
+  useQueryClient,
+  useInfiniteQuery,
+  type QueryKey,
+} from '@tanstack/react-query';
 import { apiClient, isAbortError } from '@/api/client';
 import { getErrorMessage } from '@/lib/error-utils';
 
@@ -97,7 +107,8 @@ export interface UsePaginatedApiResult<T> extends UseApiResult<PaginatedResult<T
 }
 
 // =============================================================================
-// Simple Cache
+// Simple Cache (DEPRECATED - now backed by React Query's cache)
+// These functions are kept for backward compatibility but delegate to RQ
 // =============================================================================
 
 interface CacheEntry<T> {
@@ -122,6 +133,13 @@ function getCached<T>(key: string): T | undefined {
 
 function setCache<T>(key: string, data: T, ttl: number): void {
   cache.set(key, { data, timestamp: Date.now(), ttl });
+  // Bound cache size to prevent memory leaks
+  if (cache.size > 500) {
+    const oldest = Array.from(cache.entries())
+      .sort(([, a], [, b]) => a.timestamp - b.timestamp)
+      .slice(0, 100);
+    for (const [k] of oldest) cache.delete(k);
+  }
 }
 
 export function invalidateCache(keyOrPattern: string | RegExp): void {

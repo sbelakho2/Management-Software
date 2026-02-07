@@ -44,7 +44,8 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
             client_ip=request.client.host if request.client else None,
         )
         
-        start_time = time.perf_counter()
+        # Reuse timing from TimingMiddleware if available (#128)
+        start_time = getattr(request.state, "_request_start_time", None) or time.perf_counter()
         
         try:
             response = await call_next(request)

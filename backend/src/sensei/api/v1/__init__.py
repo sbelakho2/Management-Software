@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter
 
+__all__ = ["api_router"]
+
 from sensei.api.v1.endpoints import (
     health,
     auth,

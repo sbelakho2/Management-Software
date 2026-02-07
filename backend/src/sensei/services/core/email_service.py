@@ -218,7 +218,9 @@ This is an automated message from Sensei OS.
         retry_delay: float = 1.0,
     ) -> bool:
         """
-        Send an email message.
+        Send an email message (inline, blocks until complete).
+        
+        For fire-and-forget delivery, use ``send_email_bg()`` instead.
         
         Args:
             message: Email message to send
@@ -251,6 +253,15 @@ This is an automated message from Sensei OS.
         
         if message.cc:
             msg["Cc"] = ", ".join(message.cc)
+        
+        # CAN-SPAM / GDPR compliance (#199)
+        # Gmail/Yahoo require List-Unsubscribe for bulk senders (Feb 2024 guidelines)
+        import uuid as _uuid
+        msg["Message-ID"] = f"<{_uuid.uuid4()}@{self.smtp_from_email.split('@')[-1] if self.smtp_from_email else 'sensei.local'}>"
+        if hasattr(settings, 'FRONTEND_URL') and settings.FRONTEND_URL:
+            unsubscribe_url = f"{settings.FRONTEND_URL}/settings/notifications"
+            msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+            msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         
         # Attach text and HTML parts
         if message.body_text:
@@ -302,7 +313,11 @@ This is an automated message from Sensei OS.
                     error=str(e),
                 )
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    # Exponential backoff with jitter to avoid retry stampede (#198)
+                    import random
+                    backoff = retry_delay * (2 ** attempt)
+                    jitter = random.uniform(0, backoff * 0.5)
+                    await asyncio.sleep(backoff + jitter)
         
         logger.error(
             "Failed to send email after all retries",
@@ -338,6 +353,27 @@ This is an automated message from Sensei OS.
         )
         
         return await self.send_email(message)
+    
+    def send_email_bg(self, message: EmailMessage) -> None:
+        """
+        Enqueue email for background delivery via Celery (#466).
+
+        This is fire-and-forget: the email is serialized onto the
+        broker and a Celery worker picks it up asynchronously.
+        Use this instead of ``send_email()`` when you don't need to
+        block on delivery success.
+        """
+        from sensei.tasks.email_tasks import send_email_task
+
+        send_email_task.delay(
+            to=message.to,
+            subject=message.subject,
+            body_html=message.body_html,
+            body_text=message.body_text,
+            reply_to=message.reply_to,
+            cc=message.cc,
+            bcc=message.bcc,
+        )
     
     async def send_email_verification(
         self,
@@ -384,11 +420,14 @@ This is an automated message from Sensei OS.
         template = self._templates[EmailType.WELCOME]
         login_link = f"{settings.FRONTEND_URL}/login"
         
+        # Sanitize name to prevent format string injection (#148)
+        safe_name = str(name).replace("{", "{{").replace("}", "}}")
+        
         message = EmailMessage(
             to=[email],
             subject=template["subject"],
-            body_html=template["html"].format(name=name, login_link=login_link),
-            body_text=template["text"].format(name=name, login_link=login_link),
+            body_html=template["html"].format(name=safe_name, login_link=login_link),
+            body_text=template["text"].format(name=safe_name, login_link=login_link),
         )
         
         return await self.send_email(message)

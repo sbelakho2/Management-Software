@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.core.config import settings
 from sensei.core.database import async_session_factory
+from sensei.core.database import get_readonly_db_session
 from sensei.core.redis import redis_client
 from sensei.core.security import TokenData, decode_token, get_rate_limit_key
 
@@ -35,17 +36,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Get database session dependency.
     
-    Yields an async database session and ensures proper cleanup.
+    Yields an async database session with proper transaction management.
+    Commits on success, rolls back on exception, always closes.
     """
     async with async_session_factory() as session:
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()
 
 
 # Type alias for database dependency
 DBSession = Annotated[AsyncSession, Depends(get_db)]
+
+# Type alias for read-only database dependency (analytics, lists, reports)
+# Uses a session with SET TRANSACTION READ ONLY for better PG optimization
+ReadOnlyDBSession = Annotated[AsyncSession, Depends(get_readonly_db_session)]
 
 
 # =============================================================================
@@ -82,20 +92,31 @@ async def get_token_data(
     try:
         token_data = decode_token(credentials.credentials, "access")
         
-        # Check if token is revoked
-        revoked_key = f"revoked_token:{token_data.jti}"
-        if await redis_client.exists(revoked_key):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
+        # Check if token is revoked (fail-open if Redis unavailable - #183)
+        try:
+            revoked_key = f"revoked_token:{token_data.jti}"
+            if await redis_client.exists(revoked_key):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # Redis unavailable — allow token through rather than blocking all auth.
+            # Token was still cryptographically validated by decode_token above.
+            import structlog
+            structlog.get_logger(__name__).warning(
+                "redis_unavailable_for_revocation_check",
+                jti=token_data.jti,
             )
         
         return token_data
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -114,9 +135,18 @@ async def get_optional_token_data(
     try:
         token_data = decode_token(credentials.credentials, "access")
         
-        revoked_key = f"revoked_token:{token_data.jti}"
-        if await redis_client.exists(revoked_key):
-            return None
+        # Check if token is revoked (fail-open if Redis unavailable - #183)
+        try:
+            revoked_key = f"revoked_token:{token_data.jti}"
+            if await redis_client.exists(revoked_key):
+                return None
+        except Exception:
+            # Redis unavailable — allow token through rather than blocking all auth.
+            import structlog
+            structlog.get_logger(__name__).warning(
+                "redis_unavailable_for_revocation_check",
+                jti=token_data.jti,
+            )
         
         return token_data
     except JWTError:
@@ -162,7 +192,7 @@ async def get_current_user(
     if user.status != UserStatus.ACTIVE.value:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"User account is {user.status}",
+            detail="Account is not active",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -442,20 +472,35 @@ class RateLimiter:
         if token_data:
             identifier = token_data.sub
         else:
-            identifier = request.client.host if request.client else "unknown"
+            from sensei.api.utils import get_client_ip
+            identifier = get_client_ip(request)
         
         key = get_rate_limit_key(identifier, self.key_prefix)
         
-        # Increment counter
-        count = await redis_client.incr(key)
+        # Increment counter (fail-open if Redis unavailable - #183)
+        try:
+            count = await redis_client.incr(key)
+        except Exception:
+            import structlog
+            structlog.get_logger(__name__).warning(
+                "redis_unavailable_for_rate_limit",
+                key_prefix=self.key_prefix,
+            )
+            return True  # Allow request through if Redis is down
         
         # Set expiry on first request
         if count == 1:
-            await redis_client.expire(key, self.window)
+            try:
+                await redis_client.expire(key, self.window)
+            except Exception:
+                pass  # Best-effort; key will eventually expire or be overwritten
         
         # Check limit
         if count > self.requests:
-            ttl = await redis_client.ttl(key)
+            try:
+                ttl = await redis_client.ttl(key)
+            except Exception:
+                ttl = self.window
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded. Try again in {ttl} seconds.",
@@ -488,15 +533,22 @@ class PaginationParams:
         Initialize pagination parameters.
         
         Args:
-            page: Page number (1-indexed)
-            page_size: Number of items per page (max 100)
+            page: Page number (1-indexed, must be ≥ 1)
+            page_size: Number of items per page (1–200)
+            
+        Raises:
+            HTTPException 400: If page < 1 or page_size not in [1, 200]
         """
         if page < 1:
-            page = 1
-        if page_size < 1:
-            page_size = 20
-        if page_size > 100:
-            page_size = 100
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"page must be >= 1, got {page}",
+            )
+        if page_size < 1 or page_size > 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"page_size must be between 1 and 200, got {page_size}",
+            )
         
         self.page = page
         self.page_size = page_size

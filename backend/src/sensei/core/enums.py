@@ -9,22 +9,35 @@ from enum import Enum
 
 
 class Severity(str, Enum):
-    """Unified severity levels for alerts, exceptions, and andons."""
-    
+    """Unified severity levels for alerts, exceptions, and andons.
+
+    Legacy mapping (do NOT add aliases – they break iteration/lookup):
+    - MAJOR maps to HIGH
+    - MINOR maps to LOW
+    - RED   maps to CRITICAL
+    - YELLOW maps to HIGH
+    - BLUE  maps to LOW
+    Use the canonical members below. For backwards-compat conversions
+    use ``Severity.from_legacy()``.
+    """
+
     CRITICAL = "critical"  # Immediate action required
     HIGH = "high"          # Urgent action required
     MEDIUM = "medium"      # Standard attention
     LOW = "low"            # Minor issue
     INFO = "info"          # Informational only
-    
-    # Compatibility aliases (mapping to semantic levels)
-    MAJOR = "high"
-    MINOR = "low"
-    
-    # Color-coded aliases for Andon compatibility
-    RED = "critical"
-    YELLOW = "high"
-    BLUE = "low"
+
+    @classmethod
+    def from_legacy(cls, name: str) -> "Severity":
+        """Convert legacy severity names to canonical Severity members."""
+        _map: dict[str, "Severity"] = {
+            "major": cls.HIGH,
+            "minor": cls.LOW,
+            "red": cls.CRITICAL,
+            "yellow": cls.HIGH,
+            "blue": cls.LOW,
+        }
+        return _map.get(name.lower(), cls(name.lower()))
 
 
 class WorkflowStatus(str, Enum):
@@ -47,14 +60,18 @@ class MetricStatus(str, Enum):
     GREEN = "green"
     YELLOW = "yellow"
     RED = "red"
-    
-    # Granular KPI statuses
-    ON_TARGET = "green"
-    WITHIN_TOLERANCE = "yellow"
-    OFF_TARGET = "red"
     CRITICAL = "critical"
-    
     NO_DATA = "no_data"
+
+    @classmethod
+    def from_legacy(cls, name: str) -> "MetricStatus":
+        """Convert legacy metric status names to canonical members."""
+        _map: dict[str, "MetricStatus"] = {
+            "on_target": cls.GREEN,
+            "within_tolerance": cls.YELLOW,
+            "off_target": cls.RED,
+        }
+        return _map.get(name.lower(), cls(name.lower()))
 
 
 class ComparisonOperator(str, Enum):

@@ -17,6 +17,7 @@ Features:
 - S3-compatible storage integration
 """
 
+import asyncio
 import gzip
 import hashlib
 import json
@@ -294,6 +295,20 @@ class DatabaseBackupService:
         self.backups.append(backup_metadata)
         return backup_metadata
     
+    async def async_create_backup(
+        self,
+        strategy: BackupStrategy = BackupStrategy.FULL,
+        database_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> BackupMetadata:
+        """
+        Async wrapper for create_backup — runs pg_dump in a thread
+        to avoid blocking the event loop (#84).
+        """
+        return await asyncio.to_thread(
+            self.create_backup, strategy, database_name, metadata
+        )
+    
     def _verify_backup(self, metadata: BackupMetadata) -> bool:
         """Verify backup integrity by checking file exists and checksum matches"""
         backup_path = Path(metadata.file_path)
@@ -378,9 +393,15 @@ class DatabaseBackupService:
                 restore_file = backup_path.with_suffix('')
                 self._decompress_file(backup_path, restore_file)
             
-            # Execute psql to restore
-            env = os.environ.copy()
-            env['PGPASSWORD'] = db_config["password"]
+            # Execute psql to restore with a sanitized, minimal environment
+            env = {
+                'PGPASSWORD': db_config["password"],
+                'PATH': os.environ.get('PATH', '/usr/bin:/bin:/usr/local/bin'),
+            }
+            # Only include necessary SSL/security env vars if they exist
+            for var in ['PGSSLMODE', 'PGSSLROOTCERT', 'PGSSLCERT', 'PGSSLKEY']:
+                if var in os.environ:
+                    env[var] = os.environ[var]
             
             restore_command = [
                 "psql",
@@ -437,22 +458,52 @@ class DatabaseBackupService:
         self.restore_tests.append(restore_test)
         return restore_test
     
+    async def async_test_restore(
+        self,
+        backup_id: str,
+        test_mode: bool = True,
+    ) -> "RestoreTest":
+        """
+        Async wrapper for test_restore — runs psql in a thread
+        to avoid blocking the event loop (#84).
+        """
+        return await asyncio.to_thread(self.test_restore, backup_id, test_mode)
+    
+    @staticmethod
+    def _validate_db_identifier(name: str) -> str:
+        """Validate and sanitize a database identifier to prevent SQL injection.
+
+        Only allows alphanumeric characters and underscores.  Raises ValueError
+        for anything that could be used for injection.
+        """
+        import re as _re
+        if not _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', name):
+            raise ValueError(
+                f"Invalid database identifier: {name!r}. "
+                "Only alphanumeric characters and underscores are allowed."
+            )
+        return name
+
     def _create_test_database(self, db_name: str):
         """Create temporary test database"""
+        safe_name = self._validate_db_identifier(db_name)
         session = self.db_session_factory()
         try:
             # Use autocommit mode for CREATE DATABASE
             session.connection().connection.set_isolation_level(0)
-            session.execute(text(f"CREATE DATABASE {db_name}"))
+            # safe_name is validated to contain only [a-zA-Z0-9_]
+            session.execute(text(f'CREATE DATABASE "{safe_name}"'))
         finally:
             session.close()
     
     def _drop_test_database(self, db_name: str):
         """Drop temporary test database"""
+        safe_name = self._validate_db_identifier(db_name)
         session = self.db_session_factory()
         try:
             session.connection().connection.set_isolation_level(0)
-            session.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
+            # safe_name is validated to contain only [a-zA-Z0-9_]
+            session.execute(text(f'DROP DATABASE IF EXISTS "{safe_name}"'))
         finally:
             session.close()
     

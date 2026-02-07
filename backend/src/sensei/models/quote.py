@@ -133,7 +133,7 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
     account_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("accounts.id", ondelete="CASCADE"),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -557,7 +557,7 @@ class SupplierQuote(Base, TimestampMixin, AuditMixin):
     # Supplier
     supplier_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("accounts.id", ondelete="CASCADE"),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

@@ -7,6 +7,7 @@ S3-compatible object storage for file attachments and exports.
 from io import BytesIO
 from typing import Optional, BinaryIO
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import hashlib
 
 import boto3
@@ -35,7 +36,18 @@ def create_storage_client():
     )
 
 
-storage_client = create_storage_client()
+@lru_cache(maxsize=1)
+def get_storage_client():
+    """Lazy singleton for S3 client — created on first call, not at import time."""
+    return create_storage_client()
+
+
+# Backward-compat alias — existing callers use `storage_client` directly.
+# This is now a module-level property via __getattr__ to avoid import-time side effects.
+def __getattr__(name: str):
+    if name == "storage_client":
+        return get_storage_client()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 async def check_storage_connection(client) -> bool:
@@ -140,7 +152,19 @@ async def upload_file(
             Metadata=upload_metadata,
         )
     
-    await anyio.to_thread.run_sync(_do_upload)
+    try:
+        await anyio.to_thread.run_sync(_do_upload)
+    except ClientError as exc:
+        logger.error(
+            "S3 upload failed",
+            key=key,
+            error=str(exc),
+            error_code=exc.response.get("Error", {}).get("Code"),
+        )
+        raise
+    except Exception as exc:
+        logger.error("Unexpected error during S3 upload", key=key, error=str(exc))
+        raise
     
     logger.info(
         "File uploaded",

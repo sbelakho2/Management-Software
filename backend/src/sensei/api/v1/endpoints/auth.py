@@ -33,7 +33,7 @@ from sensei.core.auth import (
     get_auth_service,
 )
 from sensei.core.security import TokenData, TokenPair
-from sensei.core.security import hash_password
+from sensei.core.security import hash_password, validate_password_strength
 from sensei.models.user import User, UserStatus
 from sensei.services.core.email_service import get_email_service
 from sqlalchemy import select
@@ -254,6 +254,19 @@ async def register(
 
     first_name, last_name = _split_full_name(request.full_name)
     username = await _generate_unique_username(db, email)
+
+    # Validate password strength before hashing (#154)
+    strength = await validate_password_strength(request.password)
+    if not strength.is_strong:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Password is not strong enough",
+                "issues": strength.issues,
+                "suggestions": strength.suggestions,
+                "score": strength.score,
+            },
+        )
 
     # SECURITY: In production, users should verify their email before accessing the system.
     # Set email_verified=False and require verification flow.

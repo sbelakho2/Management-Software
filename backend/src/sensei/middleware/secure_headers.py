@@ -219,9 +219,14 @@ class SecureHeadersMiddleware:
         self._cache_control: CacheControlConfig | None = None
 
         self._overrides: dict[UUID, HeaderOverride] = {}
-        self._violations: list[CSPViolationReport] = []
+        # Bounded deque prevents OOM from attacker-crafted CSP triggers (#114)
+        from collections import deque
+        self._violations: deque[CSPViolationReport] = deque(maxlen=1000)
 
+        # Header stats are informational; reset counter to prevent
+        # meaninglessly-large numbers after months of uptime (#115).
         self._header_stats: dict[str, int] = {}
+        self._header_stats_reset_at: float = 0.0
         self._is_enabled: bool = True
 
         # Initialize defaults

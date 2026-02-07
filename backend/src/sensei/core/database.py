@@ -36,7 +36,15 @@ class Base(DeclarativeBase):
 
 
 def create_engine() -> AsyncEngine:
-    """Create and configure the async database engine."""
+    """Create and configure the async database engine.
+
+    Pool tuning notes for high concurrency:
+    - pool_use_lifo=True: reuses hot connections, lets idle ones expire
+    - pool_pre_ping=True: avoids stale-connection errors from PG restarts
+    - pool_reset_on_return="rollback": ensures clean state without DISCARD ALL
+    - prepared_statement_cache_size: asyncpg caches parsed SQL on the connection
+    - jit=off server setting: JIT compilation adds latency for short OLTP queries
+    """
     return create_async_engine(
         settings.DATABASE_URL,
         pool_size=settings.DATABASE_POOL_SIZE,
@@ -45,10 +53,14 @@ def create_engine() -> AsyncEngine:
         pool_recycle=settings.DATABASE_POOL_RECYCLE,
         pool_use_lifo=True,
         pool_pre_ping=True,
+        pool_reset_on_return="rollback",
         connect_args={
             "statement_cache_size": settings.DATABASE_STATEMENT_CACHE_SIZE,
+            "prepared_statement_cache_size": 256,
             "server_settings": {
                 "statement_timeout": str(settings.DATABASE_STATEMENT_TIMEOUT_MS),
+                "idle_in_transaction_session_timeout": "30000",
+                "jit": "off",
             },
         },
         echo=settings.DEBUG,
@@ -66,12 +78,25 @@ async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False,
-    autoflush=True,  # Changed from False to prevent stale data bugs
+    autoflush=True,
+)
+
+# Read-only session factory for query-heavy endpoints (analytics, lists, reports).
+# Uses execution_options to set the connection as read-only at the PG level.
+async_readonly_session_factory = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,  # No writes expected
 )
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency to get an async database session."""
+    """Dependency to get an async database session with auto-commit.
+
+    This session auto-commits on success and auto-rollbacks on exception.
+    It is the canonical session for write operations.
+    """
     async with async_session_factory() as session:
         try:
             yield session
@@ -79,6 +104,22 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+        finally:
+            await session.close()
+
+
+async def get_readonly_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Dependency for read-only database sessions.
+
+    Provides a session that does NOT auto-commit. Use for list/search/analytics
+    endpoints where no writes are expected. This reduces lock contention and
+    allows PostgreSQL to optimize read paths.
+    """
+    async with async_readonly_session_factory() as session:
+        try:
+            # Set transaction as read-only at the database level
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+            yield session
         finally:
             await session.close()
 

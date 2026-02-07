@@ -11,12 +11,24 @@ from sensei.core.config import settings
 
 
 def create_redis_client() -> redis.Redis:
-    """Create and configure the Redis client."""
+    """Create and configure the Redis client.
+
+    Connection pool tuning for high concurrency:
+    - socket_keepalive=True: detects dead connections early
+    - health_check_interval=30: periodic PING on idle connections
+    - retry_on_timeout=True: auto-retries transient timeouts
+    - socket_connect_timeout/socket_timeout: fail fast vs hang forever
+    """
     return redis.from_url(
         settings.REDIS_URL,
         encoding="utf-8",
         decode_responses=True,
         max_connections=settings.REDIS_MAX_CONNECTIONS,
+        socket_keepalive=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        health_check_interval=30,
+        retry_on_timeout=True,
     )
 
 
@@ -50,6 +62,32 @@ async def cache_delete(key: str) -> int:
 async def cache_exists(key: str) -> bool:
     """Check if a key exists in the cache."""
     return await redis_client.exists(key) > 0
+
+
+async def cache_get_many(keys: list[str]) -> list[Optional[str]]:
+    """Get multiple values in a single Redis MGET round-trip."""
+    if not keys:
+        return []
+    return await redis_client.mget(keys)
+
+
+async def cache_set_many(mapping: dict[str, str], ttl_seconds: int = 3600) -> None:
+    """Set multiple values with TTL using a pipeline (single round-trip)."""
+    if not mapping:
+        return
+    async with redis_client.pipeline(transaction=False) as pipe:
+        for key, value in mapping.items():
+            pipe.setex(key, ttl_seconds, value)
+        await pipe.execute()
+
+
+async def cache_delete_pattern(pattern: str, batch_size: int = 100) -> int:
+    """Delete keys matching a pattern using SCAN (non-blocking)."""
+    deleted = 0
+    async for key in redis_client.scan_iter(match=pattern, count=batch_size):
+        await redis_client.delete(key)
+        deleted += 1
+    return deleted
 
 
 # =============================================================================

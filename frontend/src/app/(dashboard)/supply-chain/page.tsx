@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { useSupplyChainStore } from '@/stores';
+import type { DisruptionScenario } from '@/api/supply-chain';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import { PageGuard } from '@/components/layout/page-guard';
 import { SUPPLY_CHAIN_ROLES } from '@/lib/page-access';
@@ -35,7 +36,7 @@ function SupplyChainStats() {
     <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
       <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0 group">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">{t('pages.supplyChain.stats.globalRiskIndex')}</p>
-        <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{(riskAnalysis?.global_risk_index * 100).toFixed(1)}%</div>
+        <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{((riskAnalysis?.global_risk_index ?? 0) * 100).toFixed(1)}%</div>
         <p className="text-[9px] font-mono font-bold text-rams-red uppercase tracking-widest mt-2">{t('pages.supplyChain.stats.thresholdExceeded')}</p>
       </div>
       <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0 group">
@@ -45,7 +46,7 @@ function SupplyChainStats() {
       </div>
       <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0 group">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.supplyChain.stats.mitigationReadiness')}</p>
-        <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{(riskAnalysis?.mitigation_readiness * 100).toFixed(1)}%</div>
+        <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{((riskAnalysis?.mitigation_readiness ?? 0) * 100).toFixed(1)}%</div>
         <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{t('pages.supplyChain.stats.optimalReserve')}</p>
       </div>
       <div className="bg-rams-module p-6 border-b border-rams-line group">
@@ -131,18 +132,175 @@ function ScenariosTab() {
 
 function OverviewTab() {
   const { t } = useI18n();
+  const { stats, riskAnalysis, scenarios, loading } = useSupplyChainStore();
+
+  const criticalScenarios = scenarios.filter(s => s.severity === 'critical');
+  const highScenarios = scenarios.filter(s => s.severity === 'high');
+
   return (
-    <div className="text-center py-12 text-muted-foreground">
-      <p className="text-[10px] font-mono uppercase tracking-widest">{t('pages.supplyChain.overview.title')}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">{t('pages.supplyChain.overview.title')}</p>
+        {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      </div>
+
+      {/* Key Metrics Grid */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-rams-line">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{t('pages.supplyChain.overview.networkNodes') || 'Network Nodes'}</span>
+            </div>
+            <p className="text-2xl font-mono font-bold tabular-nums">{stats?.supply_chain_nodes ?? 0}</p>
+            <p className="text-[9px] text-muted-foreground">{t('pages.supplyChain.overview.activeSuppliers') || 'Active suppliers in monitored network'}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-rams-line">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <BarChart className="h-4 w-4 text-muted-foreground" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{t('pages.supplyChain.overview.confidence') || 'Confidence Level'}</span>
+            </div>
+            <p className="text-2xl font-mono font-bold tabular-nums">{((stats?.confidence_level ?? 0) * 100).toFixed(0)}%</p>
+            <p className="text-[9px] text-muted-foreground">{t('pages.supplyChain.overview.simulationAccuracy') || 'Simulation accuracy metric'}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-rams-line">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-rams-red" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{t('pages.supplyChain.overview.criticalRisks') || 'Critical Risks'}</span>
+            </div>
+            <p className="text-2xl font-mono font-bold tabular-nums text-rams-red">{criticalScenarios.length}</p>
+            <p className="text-[9px] text-muted-foreground">{highScenarios.length} {t('pages.supplyChain.overview.highSeverity') || 'high severity scenarios'}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Risk Breakdown */}
+      {riskAnalysis && (
+        <Card className="border-rams-line">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-mono uppercase tracking-widest">{t('pages.supplyChain.overview.riskBreakdown') || 'Risk Analysis Breakdown'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{t('pages.supplyChain.stats.globalRiskIndex')}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-rams-red rounded-full" style={{ width: `${((riskAnalysis.global_risk_index ?? 0) * 100)}%` }} />
+                  </div>
+                  <span className="text-xs font-mono font-bold tabular-nums">{((riskAnalysis.global_risk_index ?? 0) * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{t('pages.supplyChain.stats.mitigationReadiness')}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-rams-green rounded-full" style={{ width: `${((riskAnalysis.mitigation_readiness ?? 0) * 100)}%` }} />
+                  </div>
+                  <span className="text-xs font-mono font-bold tabular-nums">{((riskAnalysis.mitigation_readiness ?? 0) * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Top Disruption Scenarios */}
+      {criticalScenarios.length > 0 && (
+        <Card className="border-rams-line border-l-2 border-l-rams-red">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-mono uppercase tracking-widest text-rams-red">{t('pages.supplyChain.overview.criticalAlerts') || 'Critical Disruption Alerts'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {criticalScenarios.slice(0, 5).map(s => (
+                <div key={s.scenario_id} className="flex items-center justify-between py-2 border-b border-rams-line last:border-0">
+                  <div className="flex items-center gap-3">
+                    <AlertTriangle className="h-3.5 w-3.5 text-rams-red" />
+                    <span className="text-sm font-medium">{s.name}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>{t('pages.supplyChain.scenarios.probability')} {(s.probability * 100).toFixed(0)}%</span>
+                    <Badge variant="danger" className="text-[9px]">{s.severity}</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
 function DisruptionsTab() {
   const { t } = useI18n();
+  const { scenarios, loading } = useSupplyChainStore();
+
+  // Group by disruption_type
+  const grouped = scenarios.reduce<Record<string, DisruptionScenario[]>>((acc, s) => {
+    const key = s.disruption_type || 'other';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(s);
+    return acc;
+  }, {});
+
+  const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
   return (
-    <div className="text-center py-12 text-muted-foreground">
-      <p className="text-[10px] font-mono uppercase tracking-widest">{t('pages.supplyChain.disruptions.title')}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">{t('pages.supplyChain.disruptions.title')}</p>
+        {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      </div>
+
+      {scenarios.length === 0 && !loading ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Shield className="h-8 w-8 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">{t('pages.supplyChain.disruptions.noDisruptions') || 'No disruption scenarios detected'}</p>
+        </div>
+      ) : (
+        Object.entries(grouped).map(([type, items]) => (
+          <Card key={type} className="border-rams-line">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-mono uppercase tracking-widest">{type.replace(/_/g, ' ')}</CardTitle>
+                <Badge variant="secondary" className="text-[9px]">{items.length} {t('pages.supplyChain.disruptions.scenarios') || 'scenarios'}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {items
+                  .sort((a, b) => (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99))
+                  .map(scenario => (
+                    <div key={scenario.scenario_id} className="flex items-center justify-between py-2 border-b border-rams-line last:border-0">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <Activity className={cn('h-3.5 w-3.5 shrink-0', scenario.severity === 'critical' ? 'text-rams-red' : scenario.severity === 'high' ? 'text-rams-orange' : 'text-muted-foreground')} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{scenario.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{scenario.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-4">
+                        <div className="text-right">
+                          <p className="text-[9px] text-muted-foreground">{t('pages.supplyChain.scenarios.delayImpact')}</p>
+                          <p className="text-xs font-mono font-bold tabular-nums">{(scenario.delay_percentage * 100).toFixed(0)}%</p>
+                        </div>
+                        <Badge variant={scenario.severity === 'critical' ? 'danger' : scenario.severity === 'high' ? 'warning' : 'secondary'} className="text-[9px]">
+                          {scenario.severity}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))
+      )}
     </div>
   );
 }
@@ -176,7 +334,7 @@ function SupplyChainPageContent() {
             <RefreshCw className="mr-2 h-3.5 w-3.5" />
             {t('pages.supplyChain.syncPulse')}
           </Button>
-          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => {}}>
+          <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]" onClick={() => setActiveTab('scenarios')}>
             <Plus className="mr-2 h-3.5 w-3.5" />
             {t('pages.supplyChain.initializeSimulation')}
           </Button>

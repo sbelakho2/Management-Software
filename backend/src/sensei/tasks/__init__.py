@@ -17,6 +17,7 @@ from sensei.tasks.pdf_tasks import (
     generate_quote_pdf,
     get_pdf_generation_progress,
 )
+from sensei.tasks.email_tasks import send_email_task
 
 __all__ = [
     # ML Tasks
@@ -28,4 +29,6 @@ __all__ = [
     "generate_a3_pdf",
     "generate_quote_pdf",
     "get_pdf_generation_progress",
+    # Email Tasks
+    "send_email_task",
 ]

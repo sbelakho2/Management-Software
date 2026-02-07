@@ -7,6 +7,7 @@ Writes audit log entries for mutating HTTP requests.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Callable
 from uuid import UUID
@@ -20,6 +21,8 @@ from sensei.core.database import async_session_factory
 from sensei.core.security import decode_token
 from sensei.models.audit_log import AuditLog
 from sensei.models.user import User
+
+_logger = logging.getLogger(__name__)
 
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -60,6 +63,11 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if request.method not in _MUTATING_METHODS:
             return response
 
+        # Only audit successful mutations (2xx/3xx) — failed requests
+        # (4xx/5xx) didn't change state and just waste a DB session (#127).
+        if response.status_code >= 400:
+            return response
+
         path = request.url.path
         if path.startswith(_SKIP_PREFIXES):
             return response
@@ -92,30 +100,33 @@ class AuditMiddleware(BaseHTTPMiddleware):
             user_email = getattr(state_user, "email", None)
 
         async def _write_audit() -> None:
-            async with async_session_factory() as session:
-                resolved_email = user_email
-                if resolved_email is None and user_id is not None:
-                    result = await session.execute(
-                        select(User.email).where(User.id == user_id)
+            try:
+                async with async_session_factory() as session:
+                    resolved_email = user_email
+                    if resolved_email is None and user_id is not None:
+                        result = await session.execute(
+                            select(User.email).where(User.id == user_id)
+                        )
+                        resolved_email = result.scalar_one_or_none()
+                    log = AuditLog.create_log(
+                        entity_type=entity_type,
+                        entity_id=entity_id or path,
+                        action=request.method.lower(),
+                        user_id=user_id,
+                        user_email=resolved_email,
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                        request_id=correlation_id,
+                        description=f"{request.method} {path} -> {response.status_code}",
+                        metadata={
+                            "status_code": response.status_code,
+                            "path": path,
+                        },
                     )
-                    resolved_email = result.scalar_one_or_none()
-                log = AuditLog.create_log(
-                    entity_type=entity_type,
-                    entity_id=entity_id or path,
-                    action=request.method.lower(),
-                    user_id=user_id,
-                    user_email=resolved_email,
-                    ip_address=ip_address,
-                    user_agent=user_agent,
-                    request_id=correlation_id,
-                    description=f"{request.method} {path} -> {response.status_code}",
-                    metadata={
-                        "status_code": response.status_code,
-                        "path": path,
-                    },
-                )
-                session.add(log)
-                await session.commit()
+                    session.add(log)
+                    await session.commit()
+            except Exception:
+                _logger.exception("Failed to write audit log for %s %s", request.method, path)
 
         asyncio.create_task(_write_audit())
         return response

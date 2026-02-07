@@ -32,7 +32,7 @@ class EmployeeProfile(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     
     department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

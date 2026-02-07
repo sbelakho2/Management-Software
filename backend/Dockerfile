@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies
 COPY pyproject.toml README.md ./
 COPY src/ /app/src/
-RUN pip install --no-cache-dir build && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir build && \
     pip install --no-cache-dir ".[dev]"
 
 # Production image
@@ -29,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     shared-mime-info \
     curl \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -53,8 +55,14 @@ USER sensei
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application (multi-worker for concurrency)
-CMD ["/bin/sh", "-c", "gunicorn sensei.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers ${WEB_CONCURRENCY:-4} --timeout ${WORKER_TIMEOUT:-120} --keep-alive ${KEEP_ALIVE:-5} --log-level info --access-logfile - --error-logfile -"]
+# Use tini as init process for proper signal handling (SIGTERM → graceful shutdown)
+ENTRYPOINT ["tini", "--"]
+
+# Run the application with Gunicorn (multi-worker for concurrency)
+# --graceful-timeout: time to finish in-flight requests on SIGTERM
+# --max-requests/--max-requests-jitter: recycle workers to prevent memory leaks
+# --backlog: connection queue size for burst traffic
+CMD ["/bin/sh", "-c", "gunicorn sensei.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers ${WEB_CONCURRENCY:-4} --timeout ${WORKER_TIMEOUT:-120} --graceful-timeout ${GRACEFUL_TIMEOUT:-30} --keep-alive ${KEEP_ALIVE:-5} --max-requests ${MAX_REQUESTS:-10000} --max-requests-jitter ${MAX_REQUESTS_JITTER:-1000} --backlog ${BACKLOG:-2048} --log-level info --access-logfile - --error-logfile -"]

@@ -35,8 +35,6 @@ interface PipelineState {
   clearError: () => void;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-
 export const usePipelineStore = create<PipelineState>()(
   devtools(
     persist(
@@ -175,12 +173,13 @@ export const usePipelineStore = create<PipelineState>()(
             }));
 
             return updatedRFQ;
-          } catch (error: any) {
+          } catch (error: unknown) {
             console.error('Error updating RFQ:', error);
-            if (error.code === '409' || error.message?.includes('409')) {
+            const err = error as { code?: string; message?: string };
+            if (err.code === '409' || err.message?.includes('409')) {
                set({ error: 'RFQ was modified by another user. Please refresh and try again.' });
             } else {
-               set({ error: error.message || 'Failed to update RFQ' });
+               set({ error: err.message || 'Failed to update RFQ' });
             }
             throw error;
           }
@@ -230,18 +229,11 @@ export const usePipelineStore = create<PipelineState>()(
         exportRFQs: async (ids?: string[]) => {
           try {
             const queryParams = ids && ids.length > 0 ? `?ids=${ids.join(',')}` : '';
-            const response = await fetch(`${API_BASE_URL}/rfqs/export${queryParams}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-              },
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to export RFQs: ${response.statusText}`);
-            }
+            const blob = await apiClient.get<Blob>(`/rfqs/export${queryParams}`, {
+              responseType: 'blob',
+            } as any);
 
             // Download the file
-            const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -274,8 +266,7 @@ export const usePipelineStore = create<PipelineState>()(
       {
         name: 'pipeline-storage',
         partialize: (state) => ({
-          // Only persist RFQs and lastFetchedAt
-          rfqs: state.rfqs,
+          // Only persist lightweight metadata — never persist rfqs (unbounded array → localStorage overflow)
           lastFetchedAt: state.lastFetchedAt,
         }),
       }

@@ -140,20 +140,20 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         Enum(HoldReason), nullable=True
     )
     hold_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    held_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    held_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     held_by_id: Mapped[Optional[PyUUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 
     # Scheduling
     scheduled_start: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True, index=True
+        DateTime(timezone=True), nullable=True, index=True
     )
     scheduled_end: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True, index=True
+        DateTime(timezone=True), nullable=True, index=True
     )
-    actual_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    actual_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    actual_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    actual_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Current location
     work_center_id: Mapped[Optional[int]] = mapped_column(
@@ -330,8 +330,8 @@ class WorkOrderOperation(Base, TimestampMixin, AuditMixin):
     )
 
     # Timing
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     actual_time_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     actual_setup_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 

@@ -137,15 +137,26 @@ class LicenseVerifier:
 
 
 class ContentFetcher:
-    """Fetch content from various sources."""
+    """Fetch content from various sources (async-first, with sync fallback)."""
     
     def __init__(self, timeout: int = 30):
         self.timeout = timeout
-        self.client = httpx.Client(timeout=timeout, follow_redirects=True)
+        self._async_client: httpx.AsyncClient | None = None
+        self._sync_client: httpx.Client | None = None
     
-    def fetch_url(self, url: str) -> tuple[bytes, str]:
+    def _get_sync_client(self) -> httpx.Client:
+        if self._sync_client is None:
+            self._sync_client = httpx.Client(timeout=self.timeout, follow_redirects=True)
+        return self._sync_client
+    
+    def _get_async_client(self) -> httpx.AsyncClient:
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(timeout=self.timeout, follow_redirects=True)
+        return self._async_client
+    
+    async def fetch_url_async(self, url: str) -> tuple[bytes, str]:
         """
-        Fetch content from URL.
+        Fetch content from URL asynchronously (non-blocking).
         
         Args:
             url: URL to fetch
@@ -156,15 +167,34 @@ class ContentFetcher:
         Raises:
             httpx.HTTPError: If fetch fails
         """
-        response = self.client.get(url)
+        client = self._get_async_client()
+        response = await client.get(url)
         response.raise_for_status()
         
         content_type = response.headers.get("content-type", "").lower()
         return response.content, content_type
     
-    def close(self):
-        """Close HTTP client."""
-        self.client.close()
+    def fetch_url(self, url: str) -> tuple[bytes, str]:
+        """
+        Fetch content from URL synchronously (legacy fallback).
+        
+        Prefer fetch_url_async() to avoid blocking the event loop.
+        """
+        client = self._get_sync_client()
+        response = client.get(url)
+        response.raise_for_status()
+        
+        content_type = response.headers.get("content-type", "").lower()
+        return response.content, content_type
+    
+    async def close(self):
+        """Close HTTP clients."""
+        if self._async_client:
+            await self._async_client.aclose()
+            self._async_client = None
+        if self._sync_client:
+            self._sync_client.close()
+            self._sync_client = None
 
 
 class ContentNormalizer:
@@ -363,17 +393,30 @@ class SemanticChunker:
         return sections
     
     def _split_long_text(self, text: str) -> list[str]:
-        """Split long text into smaller chunks with overlap."""
-        chunks = []
-        words = text.split()
-        
+        """Split long text into smaller chunks with overlap.
+
+        Both the threshold check and this splitter operate in **characters**
+        (not words) so the units are consistent.  Splits are snapped to the
+        nearest word boundary to avoid cutting words in half.
+        """
+        chunks: list[str] = []
+        text_len = len(text)
+
         i = 0
-        while i < len(words):
-            chunk_words = words[i:i + self.max_chunk_size]
-            chunks.append(" ".join(chunk_words))
-            i += self.max_chunk_size - self.overlap
-        
-        return chunks
+        while i < text_len:
+            end = min(i + self.max_chunk_size, text_len)
+            # Snap to nearest word boundary (look for last space before end)
+            if end < text_len:
+                space_idx = text.rfind(" ", i, end)
+                if space_idx > i:
+                    end = space_idx
+            chunk = text[i:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            # Advance with overlap (also in characters)
+            i = end - self.overlap if end < text_len else text_len
+
+        return chunks or [text]
 
 
 class QualityFilter:
@@ -442,24 +485,36 @@ class QualityFilter:
         return min(score, 1.0)
     
     @staticmethod
-    def detect_duplicate(chunk_text: str, existing_chunks: list[str]) -> bool:
+    def detect_duplicate(
+        chunk_text: str,
+        existing_chunks: list[str],  # kept for backward compat
+        *,
+        _seen_hashes: set[str] | None = None,
+    ) -> bool:
         """
         Detect if chunk is duplicate of existing content.
-        
+
+        When *_seen_hashes* is supplied the lookup is O(1) instead of
+        O(n) re-hashing every existing chunk each time (#90).
+
         Args:
             chunk_text: New chunk text
-            existing_chunks: List of existing chunk texts
-            
+            existing_chunks: (legacy) list of existing texts — ignored when
+                _seen_hashes is provided.
+            _seen_hashes: Pre-built set of MD5 hex digests for O(1) lookup.
+
         Returns:
             True if duplicate detected
         """
         chunk_hash = hashlib.md5(chunk_text.encode()).hexdigest()
-        
+
+        if _seen_hashes is not None:
+            return chunk_hash in _seen_hashes
+
+        # Legacy fallback — kept for callers that don't pass the set
         for existing in existing_chunks:
-            existing_hash = hashlib.md5(existing.encode()).hexdigest()
-            if chunk_hash == existing_hash:
+            if hashlib.md5(existing.encode()).hexdigest() == chunk_hash:
                 return True
-        
         return False
 
 
@@ -664,7 +719,8 @@ class KnowledgePackIngestionService:
         
         chunks = []
         existing_texts: list[str] = []
-        
+        _seen_hashes: set[str] = set()  # O(1) dedup lookups (#90)
+
         for chunk_dict in chunk_dicts:
             # Quality filtering
             is_boilerplate = self.quality_filter.is_boilerplate(chunk_dict["chunk_text"])
@@ -672,6 +728,11 @@ class KnowledgePackIngestionService:
             is_duplicate = self.quality_filter.detect_duplicate(
                 chunk_dict["chunk_text"],
                 existing_texts,
+                _seen_hashes=_seen_hashes,
+            )
+            # Track hash for future lookups
+            _seen_hashes.add(
+                hashlib.md5(chunk_dict["chunk_text"].encode()).hexdigest()
             )
             
             # Skip low-quality chunks

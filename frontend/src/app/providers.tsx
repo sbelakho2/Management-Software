@@ -28,13 +28,21 @@ export function Providers({ children }: ProvidersProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // 1 minute
-            gcTime: 5 * 60 * 1000, // 5 minutes
-            retry: 1,
+            staleTime: 60 * 1000, // 1 minute — data is fresh
+            gcTime: 10 * 60 * 1000, // 10 minutes — keep cache longer to reduce refetches
+            retry: 2,
+            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 15000),
             refetchOnWindowFocus: false,
+            refetchOnReconnect: 'always',
+            // Structural sharing prevents unnecessary re-renders when data is deeply equal
+            structuralSharing: true,
+            // Throw to nearest ErrorBoundary on query failure (caught by our ErrorBoundary)
+            throwOnError: false,
+            networkMode: 'online',
           },
           mutations: {
             retry: 0,
+            networkMode: 'online',
           },
         },
       })

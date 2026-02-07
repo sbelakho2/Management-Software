@@ -79,7 +79,7 @@ class ShiftHandoverNote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     acknowledged_by_id: Mapped[Optional["PyUUID"]] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
-    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     station: Mapped["Station"] = relationship("Station", backref="handover_notes")
@@ -108,7 +108,7 @@ class GlobalPulse(Base, TimestampMixin, AuditMixin):
         Enum(HandoverSeverity), nullable=False, default=HandoverSeverity.INFO
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Specific metrics to highlight in the pulse
     highlight_metric_name: Mapped[Optional[str]] = mapped_column(String(100))

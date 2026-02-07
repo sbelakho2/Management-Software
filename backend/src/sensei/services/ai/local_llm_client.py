@@ -77,6 +77,19 @@ class BaseLLMClient(ABC):
         """Stream completion tokens."""
         pass
 
+    async def generate_async(
+        self,
+        prompt: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        stop: Optional[List[str]] = None,
+    ) -> str:
+        """Async wrapper — runs sync generate() in a thread to avoid blocking the event loop (#83)."""
+        import asyncio
+        return await asyncio.to_thread(
+            self.generate, prompt, max_tokens, temperature, stop
+        )
+
 
 class LlamaCppClient(BaseLLMClient):
     """LLM client using llama.cpp for fast quantized inference."""
@@ -432,6 +445,11 @@ class LocalLLMService:
                 self.client = LlamaCppClient(self.config)
             elif self.config.backend == LLMBackend.TRANSFORMERS:
                 self.client = TransformersClient(self.config)
+            elif self.config.backend == LLMBackend.ONNX:
+                raise NotImplementedError(
+                    "ONNX backend is not yet implemented. "
+                    "Use 'llama_cpp' or 'transformers' backend instead."
+                )
             else:
                 raise ValueError(f"Unsupported backend: {self.config.backend}")
         except Exception as e:
@@ -467,15 +485,28 @@ class LocalLLMService:
 
 
 
-# Singleton instance
+# Thread-safe singleton (#226)
+import threading
+
 _llm_service: Optional[LocalLLMService] = None
+_llm_service_lock = threading.Lock()
 
 
 def get_local_llm_service(**kwargs) -> LocalLLMService:
-    """Get singleton LLM service instance."""
+    """Get singleton LLM service instance (thread-safe)."""
     global _llm_service
-    
+
     if _llm_service is None:
-        _llm_service = LocalLLMService(**kwargs)
-    
+        with _llm_service_lock:
+            # Double-check locking
+            if _llm_service is None:
+                _llm_service = LocalLLMService(**kwargs)
+
     return _llm_service
+
+
+def reset_local_llm_service() -> None:
+    """Reset the singleton for testing or reconfiguration (#226)."""
+    global _llm_service
+    with _llm_service_lock:
+        _llm_service = None

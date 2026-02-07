@@ -52,6 +52,20 @@ from sensei.api.deps import (
     require_role,
 )
 
+from sensei.api.utils import (
+    build_response,
+    build_paginated_response,
+    build_created_response,
+    build_updated_response,
+    build_deleted_response,
+    get_client_ip,
+    model_to_dict,
+    models_to_dicts,
+    parse_sort_param,
+    parse_filter_param,
+    validate_uuid,
+)
+
 __all__ = [
     # Schemas
     "APIResponse",
@@ -91,4 +105,16 @@ __all__ = [
     "RoleChecker",
     "require_permission",
     "require_role",
+    # Utils
+    "build_response",
+    "build_paginated_response",
+    "build_created_response",
+    "build_updated_response",
+    "build_deleted_response",
+    "get_client_ip",
+    "model_to_dict",
+    "models_to_dicts",
+    "parse_sort_param",
+    "parse_filter_param",
+    "validate_uuid",
 ]
