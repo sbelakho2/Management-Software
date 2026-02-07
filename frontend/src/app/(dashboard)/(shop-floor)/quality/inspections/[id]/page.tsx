@@ -74,7 +74,7 @@ export default function InspectionDetailsPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{inspection.inspection_number}</h1>
-              <Badge variant={statusConfig[inspection.status as keyof typeof statusConfig]?.variant || 'secondary'} size="sm" className="h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
+              <Badge variant={statusConfig[inspection.status as keyof typeof statusConfig]?.variant} size="sm" className="h-4 px-1 rounded-none font-black text-[8px] uppercase tracking-widest">
                 {statusConfig[inspection.status as keyof typeof statusConfig]?.label.toUpperCase() || inspection.status.toUpperCase()}
               </Badge>
             </div>
@@ -87,10 +87,10 @@ export default function InspectionDetailsPage() {
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none">
-            {t('quality.inspection.detail.printEvidence') || 'PRINT_EVIDENCE'}
+            {t('modules.quality.inspection.detail.printEvidence')}
           </Button>
           <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
-            {t('quality.inspection.detail.commitSync') || 'COMMIT_SYNCHRONIZATION'}
+            {t('modules.quality.inspection.detail.commitSync')}
           </Button>
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function InspectionDetailsPage() {
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
                 <ClipboardCheck className="h-4 w-4 text-rams-orange" />
-                {t('quality.inspection.detail.inspectionIntelligence') || 'Inspection Intelligence'}
+                {t('modules.quality.inspection.detail.inspectionIntelligence')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-8 space-y-8">
@@ -109,11 +109,11 @@ export default function InspectionDetailsPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center border-b border-rams-line pb-3 text-[10px] font-black uppercase tracking-widest">
                     <span className="text-muted-foreground/40">Product Node</span>
-                    <span className="text-foreground/80">{inspection.product?.name || 'UNKNOWN'}</span>
+                    <span className="text-foreground/80">{inspection.product?.name}</span>
                   </div>
                   <div className="flex justify-between items-center border-b border-rams-line pb-3 text-[10px] font-black uppercase tracking-widest">
                     <span className="text-muted-foreground/40">Work Order Context</span>
-                    <span className="text-foreground/80 font-mono">{inspection.work_order?.work_order_number || 'NONE'}</span>
+                    <span className="text-foreground/80 font-mono">{inspection.work_order?.work_order_number}</span>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -132,7 +132,7 @@ export default function InspectionDetailsPage() {
 
           <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-rams-line bg-rams-panel/20 p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.inspection.detail.checklist') || 'Inspection Checklist'}</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.quality.inspection.detail.checklist')}</CardTitle>
               <Badge variant="outline" className="rounded-none border-rams-orange/20 bg-rams-orange/5 text-rams-orange text-[8px] font-black uppercase h-4 px-1">3/5_COMPLETED</Badge>
             </CardHeader>
             <CardContent className="p-0">
@@ -172,29 +172,29 @@ export default function InspectionDetailsPage() {
         <div className="space-y-8">
           <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.inspection.detail.assignmentTelemetry') || 'Assignment Telemetry'}</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.quality.inspection.detail.assignmentTelemetry')}</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
                 <div className="flex items-center gap-3">
                   <Calendar className="h-3.5 w-3.5 opacity-40" />
-                  <span>{t('quality.inspection.detail.scheduledSync') || 'Scheduled Sync'}</span>
+                  <span>{t('modules.quality.inspection.detail.scheduledSync')}</span>
                 </div>
                 <span className="font-mono font-bold text-foreground/80">{inspection.inspection_date ? formatDate(inspection.inspection_date).toUpperCase() : '—'}</span>
               </div>
               <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-t border-rams-line pt-4">
                 <div className="flex items-center gap-3">
                   <User className="h-3.5 w-3.5 opacity-40" />
-                  <span>{t('quality.inspection.detail.leadInspector') || 'Lead Inspector'}</span>
+                  <span>{t('modules.quality.inspection.detail.leadInspector')}</span>
                 </div>
-                <span className="font-bold text-foreground/80">{inspection.inspector?.full_name.toUpperCase() || t('common.unassigned') || 'UNASSIGNED'}</span>
+                <span className="font-bold text-foreground/80">{inspection.inspector?.full_name.toUpperCase() || t('common.unassigned')}</span>
               </div>
             </CardContent>
           </Card>
 
           <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden relative">
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.inspection.detail.resultsAnalytics') || 'Results Analytics'}</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.quality.inspection.detail.resultsAnalytics')}</CardTitle>
             </CardHeader>
             <CardContent className="p-8 text-center space-y-6 relative z-10">
               <div className="inline-flex p-4 bg-rams-panel border border-rams-line text-rams-orange">

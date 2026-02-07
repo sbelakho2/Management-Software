@@ -828,6 +828,160 @@ export interface Site extends AuditableEntity {
   metadata_json?: Record<string, unknown>;
 }
 
+// ============================================================================
+// Finance - Banking & Payments
+// ============================================================================
+
+export interface Currency extends AuditableEntity {
+  code: string;
+  name: string;
+  symbol?: string;
+  decimal_places: number;
+  is_active: boolean;
+  legacy_id?: string;
+}
+
+export interface PaymentTerm extends AuditableEntity {
+  code: string;
+  name: string;
+  days_due: number;
+  discount_percent: number;
+  discount_days: number;
+  description?: string;
+  is_active: boolean;
+  legacy_id?: string;
+}
+
+export interface BankAccount extends AuditableEntity {
+  account_name: string;
+  account_number: string;
+  bank_name: string;
+  bank_code?: string;
+  iban?: string;
+  currency: string;
+  account_type: BankAccountType;
+  site_id?: UUID;
+  site?: Site;
+  gl_account_id?: UUID;
+  current_balance: number;
+  is_active: boolean;
+  legacy_id?: string;
+}
+
+export type BankAccountType = 'checking' | 'savings' | 'cash';
+
+export interface BankTransaction extends AuditableEntity {
+  bank_account_id: UUID;
+  bank_account?: BankAccount;
+  transaction_date: string;
+  value_date?: string;
+  transaction_type: BankTransactionType;
+  reference?: string;
+  description: string;
+  amount: number;
+  currency: string;
+  running_balance?: number;
+  status: BankTransactionStatus;
+  reconciled_at?: string;
+  reconciled_by_id?: UUID;
+  source_type?: string;
+  source_id?: UUID;
+  legacy_id?: string;
+}
+
+export type BankTransactionType = 'deposit' | 'withdrawal' | 'transfer' | 'fee' | 'interest';
+export type BankTransactionStatus = 'pending' | 'posted' | 'reconciled' | 'voided';
+
+// ============================================================================
+// Shipping & Fulfillment
+// ============================================================================
+
+export interface Shipment extends AuditableEntity {
+  shipment_number: string;
+  sales_order_id?: UUID;
+  account_id: UUID;
+  account?: Customer;
+  ship_from_warehouse_id?: UUID;
+  ship_date?: string;
+  expected_delivery?: string;
+  actual_delivery?: string;
+  carrier?: string;
+  tracking_number?: string;
+  service_level?: ShippingServiceLevel;
+  ship_to_name: string;
+  ship_to_address: string;
+  ship_to_city?: string;
+  ship_to_state?: string;
+  ship_to_postal?: string;
+  ship_to_country: string;
+  weight?: number;
+  weight_uom?: string;
+  status: ShipmentStatus;
+  notes?: string;
+  legacy_id?: string;
+  lines: ShipmentLine[];
+}
+
+export type ShipmentStatus = 'pending' | 'picked' | 'packed' | 'shipped' | 'delivered' | 'canceled';
+export type ShippingServiceLevel = 'ground' | 'express' | 'overnight';
+
+export interface ShipmentLine extends BaseEntity {
+  shipment_id: UUID;
+  sales_order_line_id?: UUID;
+  sku: string;
+  description?: string;
+  quantity_shipped: number;
+  uom: string;
+  lot_number?: string;
+  serial_number?: string;
+  legacy_id?: string;
+}
+
+// ============================================================================
+// WMS - Pick Lists
+// ============================================================================
+
+export interface PickList extends AuditableEntity {
+  pick_number: string;
+  warehouse_id: UUID;
+  source_type: PickListSourceType;
+  source_id: UUID;
+  assigned_to_id?: UUID;
+  assigned_to?: User;
+  device_id?: UUID;
+  priority: number;
+  pick_strategy: PickStrategy;
+  status: PickListStatus;
+  started_at?: string;
+  completed_at?: string;
+  notes?: string;
+  legacy_id?: string;
+  lines: PickListLine[];
+}
+
+export type PickListSourceType = 'sales_order' | 'transfer_order' | 'work_order';
+export type PickStrategy = 'FIFO' | 'FEFO' | 'LIFO';
+export type PickListStatus = 'pending' | 'in_progress' | 'completed' | 'canceled';
+
+export interface PickListLine extends BaseEntity {
+  pick_list_id: UUID;
+  sku: string;
+  description?: string;
+  source_location_id: UUID;
+  target_location_id?: UUID;
+  quantity_requested: number;
+  quantity_picked: number;
+  uom: string;
+  lot_number?: string;
+  serial_number?: string;
+  lpn_id?: UUID;
+  status: PickLineStatus;
+  picked_at?: string;
+  legacy_id?: string;
+}
+
+export type PickLineStatus = 'pending' | 'picked' | 'short' | 'skipped';
+
 export interface MPSPlan extends AuditableEntity {
   name: string;
   status: string;
@@ -1372,3 +1526,73 @@ export interface QueryParams extends ListFilters, SortOptions {
   page?: number;
   limit?: number;
 }
+
+// HR Types
+// ============================================================================
+
+export interface EmployeeProfile extends AuditableEntity, SoftDeletableEntity {
+  user_id?: UUID;
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  job_title?: string;
+  site_id?: string;
+  manager_id?: UUID;
+  manager?: EmployeeProfile;
+  cost_center_code?: string;
+  jurisdiction: 'TN' | 'MA' | 'EG' | string;
+  status: 'active' | 'onboarding' | 'offboarding' | 'terminated';
+  hire_date?: string;
+  termination_date?: string;
+  user?: any; // Avoiding circular dependency with User for now ideally User type
+}
+
+export interface HRChecklist extends AuditableEntity {
+  employee_id: UUID;
+  checklist_type: 'onboarding' | 'offboarding';
+  status: 'not_started' | 'in_progress' | 'completed';
+  items_json: any[];
+}
+
+export interface HRJobOpening extends AuditableEntity, SoftDeletableEntity {
+  title: string;
+  description: string;
+  department?: string;
+  requirements?: string;
+  status: 'open' | 'filled' | 'cancelled';
+  posted_at: string;
+  hiring_manager_id: UUID;
+  location?: string;
+  employment_type?: 'full_time' | 'part_time' | 'contract' | 'intern';
+  salary_range_min?: number;
+  salary_range_max?: number;
+  applications_count?: number;
+}
+
+export interface HRJobApplication extends AuditableEntity {
+  job_opening_id: UUID;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  resume_url?: string;
+  cover_letter?: string;
+  status: 'received' | 'screening' | 'interview' | 'offer' | 'hired' | 'rejected';
+  notes?: string;
+  rating?: number;
+}
+
+export interface HRLeaveRequest extends AuditableEntity {
+  employee_id: UUID;
+  employee?: EmployeeProfile;
+  leave_type: 'pto' | 'sick' | 'personal' | 'bereavement' | 'other';
+  start_date: string;
+  end_date: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approved_by_id?: UUID;
+  reason?: string;
+  days_count?: number;
+}
+

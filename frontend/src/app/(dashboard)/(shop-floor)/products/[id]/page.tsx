@@ -244,9 +244,9 @@ export default function ProductDetailPage() {
   if (!product) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-lg font-medium">{t('products.detail.notFound') || 'Product not found'}</h2>
+        <h2 className="text-lg font-medium">{t('modules.products.detail.notFound')}</h2>
         <Button className="mt-4" onClick={() => router.push('/products')}>
-          {t('products.detail.backToProducts') || 'Back to Products'}
+          {t('modules.products.detail.backToProducts')}
         </Button>
       </div>
     );
@@ -285,11 +285,11 @@ export default function ProductDetailPage() {
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => setIsEditing(true)}>
             <Edit className="mr-2 h-3.5 w-3.5" />
-            {t('products.detail.refineMasterData') || 'REFINE_MASTER_DATA'}
+            {t('modules.products.detail.refineMasterData')}
           </Button>
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => setShowAdjustDialog(true)}>
             <Boxes className="mr-2 h-3.5 w-3.5" />
-            {t('products.detail.adjustInventory') || 'ADJUST_INVENTORY'}
+            {t('modules.products.detail.adjustInventory')}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -299,22 +299,22 @@ export default function ProductDetailPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem>
-                <Copy className="mr-2 h-3.5 w-3.5" /> {t('products.detail.cloneNode') || 'CLONE_NODE'}
+                <Copy className="mr-2 h-3.5 w-3.5" /> {t('modules.products.detail.cloneNode')}
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <BarChart3 className="mr-2 h-3.5 w-3.5" /> {t('products.detail.analyzeIntel') || 'ANALYZE_INTEL'}
+                <BarChart3 className="mr-2 h-3.5 w-3.5" /> {t('modules.products.detail.analyzeIntel')}
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <History className="mr-2 h-3.5 w-3.5" /> {t('products.detail.viewLogs') || 'VIEW_LOGS'}
+                <History className="mr-2 h-3.5 w-3.5" /> {t('modules.products.detail.viewLogs')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {product.status === 'active' ? (
                 <DropdownMenuItem className="text-rams-red">
-                  <Archive className="mr-2 h-3.5 w-3.5" /> {t('products.detail.deauthorize') || 'DE-AUTHORIZE'}
+                  <Archive className="mr-2 h-3.5 w-3.5" /> {t('modules.products.detail.deauthorize')}
                 </DropdownMenuItem>
               ) : (
                 <DropdownMenuItem className="text-rams-green">
-                  <Package className="mr-2 h-3.5 w-3.5" /> {t('products.detail.authorize') || 'AUTHORIZE'}
+                  <Package className="mr-2 h-3.5 w-3.5" /> {t('modules.products.detail.authorize')}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -325,11 +325,11 @@ export default function ProductDetailPage() {
       {/* Stats row */}
       <div className="grid gap-px border border-rams-line bg-rams-line sm:grid-cols-5">
         <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.marketValuation') || 'Market Valuation'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('modules.products.detail.stats.marketValuation')}</p>
           <p className="text-2xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatCurrency(product.listPrice)}</p>
         </div>
         <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.fiscalMargin') || 'Fiscal Margin'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('modules.products.detail.stats.fiscalMargin')}</p>
           <p className={cn(
             'text-2xl font-mono font-bold tracking-tight tabular-nums',
             margin >= 40 ? 'text-rams-green' : margin >= 25 ? 'text-rams-orange' : 'text-rams-red'
@@ -338,17 +338,17 @@ export default function ProductDetailPage() {
           </p>
         </div>
         <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.nodeMagnitude') || 'Node Magnitude'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('modules.products.detail.stats.nodeMagnitude')}</p>
           <p className={cn('text-2xl font-mono font-bold tracking-tight tabular-nums', isLowStock && 'text-rams-red')}>
             {formatNumber(product.inventoryQty)}
           </p>
         </div>
         <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.totalCycles') || 'Total Cycles'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('modules.products.detail.stats.totalCycles')}</p>
           <p className="text-2xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{formatNumber(product.stats.totalSold)}</p>
         </div>
         <div className="bg-rams-module p-6 text-center space-y-2 group hover:bg-rams-panel transition-none cursor-help">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('products.detail.stats.winProbability') || 'Win Probability'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t('modules.products.detail.stats.winProbability')}</p>
           <p className="text-2xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{winRate.toFixed(0)}%</p>
         </div>
       </div>
@@ -359,7 +359,7 @@ export default function ProductDetailPage() {
           {/* Description */}
           <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('products.detail.contextualIntelligence') || 'Contextual Intelligence'}</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.products.detail.contextualIntelligence')}</CardTitle>
             </CardHeader>
             <CardContent className="p-6">
               <p className="text-xs font-medium text-muted-foreground uppercase leading-relaxed">{product.description}</p>
@@ -372,7 +372,7 @@ export default function ProductDetailPage() {
               <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Settings className="h-4 w-4 text-rams-orange" />
-                  {t('products.detail.nodeSpecifications') || 'Node Specifications'}
+                  {t('modules.products.detail.nodeSpecifications')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -394,13 +394,13 @@ export default function ProductDetailPage() {
               <div>
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Layers className="h-4 w-4 text-rams-orange" />
-                  {t('products.detail.billOfMaterials') || 'Bill of Materials (BOM)'}
+                  {t('modules.products.detail.billOfMaterials')}
                 </CardTitle>
-                <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('products.detail.bomDescription') || 'Component architecture required for manufacture'}</CardDescription>
+                <CardDescription className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-1">{t('modules.products.detail.bomDescription')}</CardDescription>
               </div>
               <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
                 <Plus className="mr-2 h-3.5 w-3.5" />
-                {t('products.detail.addComponent') || 'ADD_COMPONENT'}
+                {t('modules.products.detail.addComponent')}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
@@ -443,11 +443,11 @@ export default function ProductDetailPage() {
               <div>
                 <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <History className="h-4 w-4 text-rams-orange" />
-                  {t('products.detail.nodeTelemetry') || 'Node Telemetry Activity'}
+                  {t('modules.products.detail.nodeTelemetry')}
                 </CardTitle>
               </div>
               <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line h-8 text-[9px] font-black uppercase tracking-widest">
-                {t('products.detail.viewAllCycles') || 'VIEW_ALL_CYCLES'}
+                {t('modules.products.detail.viewAllCycles')}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
@@ -497,21 +497,21 @@ export default function ProductDetailPage() {
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-rams-orange" />
-                {t('products.detail.fiscalParameters') || 'Fiscal Parameters'}
+                {t('modules.products.detail.fiscalParameters')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                <span>Standard Cost Protocol</span>
+                <span>{t('modules.products.detail.standardCostProtocol')}</span>
                 <span className="font-mono font-bold text-foreground/80">{formatCurrency(product.standardCost)}</span>
               </div>
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                <span>Strategic List Price</span>
+                <span>{t('modules.products.detail.strategicListPrice')}</span>
                 <span className="font-mono font-bold text-foreground/80">{formatCurrency(product.listPrice)}</span>
               </div>
               <div className="border-t border-rams-line pt-4">
                 <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-                  <span className="text-muted-foreground/40">Fiscal Margin KPI</span>
+                  <span className="text-muted-foreground/40">{t('modules.products.detail.fiscalMarginKpi')}</span>
                   <span className={cn(
                     'font-mono font-bold text-lg tabular-nums',
                     margin >= 40 ? 'text-rams-green' : margin >= 25 ? 'text-rams-orange' : 'text-rams-red'
@@ -521,7 +521,7 @@ export default function ProductDetailPage() {
                 </div>
               </div>
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
-                <span>BOM_SYNC_COST</span>
+                <span>{t('modules.products.detail.bomSyncCost')}</span>
                 <span className="font-mono font-bold">{formatCurrency(bomCost)}</span>
               </div>
             </CardContent>
@@ -532,28 +532,28 @@ export default function ProductDetailPage() {
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                 <Boxes className="h-4 w-4 text-rams-orange" />
-                {t('products.detail.magnitudePulse') || 'Magnitude Pulse'}
+                {t('modules.products.detail.magnitudePulse')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                <span>Authorized Inventory</span>
+                <span>{t('modules.products.detail.authorizedInventory')}</span>
                 <span className={cn('font-mono font-bold text-lg tabular-nums', isLowStock && 'text-rams-red')}>
                   {formatNumber(product.inventoryQty)} {product.unitOfMeasure.toUpperCase()}
                 </span>
               </div>
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
-                <span>Reorder Threshold</span>
+                <span>{t('modules.products.detail.reorderThreshold')}</span>
                 <span className="font-mono font-bold">{formatNumber(product.reorderPoint)} {product.unitOfMeasure.toUpperCase()}</span>
               </div>
               <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground/40">
-                <span>Minimum Sync Magnitude</span>
+                <span>{t('modules.products.detail.minimumSyncMagnitude')}</span>
                 <span className="font-mono font-bold">{formatNumber(product.minimumOrderQty)} {product.unitOfMeasure.toUpperCase()}</span>
               </div>
               {isLowStock && product.status === 'active' && (
                 <div className="flex items-center gap-3 p-3 bg-rams-red/5 border border-rams-red/20 text-rams-red mt-4">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <p className="text-[9px] font-black uppercase tracking-widest">THRESHOLD_BREACH: RESTOCK_REQUIRED</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest">{t('modules.products.detail.thresholdBreach')}</p>
                 </div>
               )}
             </CardContent>
@@ -564,12 +564,12 @@ export default function ProductDetailPage() {
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                 <Clock className="h-4 w-4 text-rams-orange" />
-                {t('products.detail.temporalVelocity') || 'Temporal Velocity'}
+                {t('modules.products.detail.temporalVelocity')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{product.leadTimeDays} DAYS</p>
-              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">Standard Manufacturing Horizon</p>
+              <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{product.leadTimeDays} {t('common.days')}</p>
+              <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('modules.products.detail.standardManufacturingHorizon')}</p>
             </CardContent>
           </Card>
 
@@ -577,19 +577,19 @@ export default function ProductDetailPage() {
           <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none">
             <CardContent className="p-6 space-y-4 text-[10px] font-black uppercase tracking-widest">
               <div className="flex justify-between">
-                <span className="text-muted-foreground/40">Taxonomy_Node</span>
+                <span className="text-muted-foreground/40">{t('modules.products.detail.taxonomyNode')}</span>
                 <span className="text-foreground/70">{product.category}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground/40">Unit_Protocol</span>
+                <span className="text-muted-foreground/40">{t('modules.products.detail.unitProtocol')}</span>
                 <span className="text-foreground/70">{product.unitOfMeasure}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground/40">Node_Initialized</span>
+                <span className="text-muted-foreground/40">{t('modules.products.detail.nodeInitialized')}</span>
                 <span className="text-foreground/70 font-mono">{formatDate(new Date(product.createdAt)).toUpperCase()}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground/40">Latest_Sync</span>
+                <span className="text-muted-foreground/40">{t('modules.products.detail.latestSync')}</span>
                 <span className="text-foreground/70 font-mono">{formatDate(new Date(product.updatedAt)).toUpperCase()}</span>
               </div>
             </CardContent>
@@ -601,7 +601,7 @@ export default function ProductDetailPage() {
       <Dialog open={showAdjustDialog} onOpenChange={setShowAdjustDialog}>
         <DialogContent className="rounded-rams-sm border-rams-line bg-rams-module">
           <DialogHeader className="border-b border-rams-line pb-4">
-            <DialogTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('products.detail.adjustDialog.title') || 'Adjust Magnitude Protocol'}</DialogTitle>
+            <DialogTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.products.detail.adjustDialog.title')}</DialogTitle>
             <DialogDescription className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">
               Current registered stock: {formatNumber(product.inventoryQty)} {product.unitOfMeasure.toUpperCase()}
             </DialogDescription>
@@ -649,10 +649,10 @@ export default function ProductDetailPage() {
           </div>
           <DialogFooter className="border-t border-rams-line pt-4">
             <Button variant="ghost" className="rounded-none text-[9px] font-black uppercase tracking-widest h-10 px-6 transition-none" onClick={() => setShowAdjustDialog(false)}>
-              {t('common.abortProtocol') || 'ABORT_PROTOCOL'}
+              {t('common.abortProtocol')}
             </Button>
             <Button onClick={handleAdjustInventory} disabled={adjustmentQty === 0} className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[9px] h-10 px-8 transition-none">
-              {t('products.detail.adjustDialog.apply') || 'APPLY_MAGNITUDE_SHIFT'}
+              {t('modules.products.detail.adjustDialog.apply')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,18 +3,58 @@ Sensei OS Configuration Module
 
 Centralized configuration management with environment variable loading,
 validation, and secure secret handling.
+
+Security Features:
+- Production secret key validation (entropy check)
+- Secure cookie enforcement in production
+- Email service validation
+- HTTPS enforcement settings
 """
 
+import hashlib
 import logging
+import re
+import secrets
 from functools import lru_cache
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 import json
 
-from pydantic import Field, field_validator, AnyHttpUrl
+from pydantic import Field, field_validator, model_validator, AnyHttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+# Known weak/default secret keys that must be rejected in production
+KNOWN_WEAK_SECRETS = {
+    "development-secret-key-change-in-production",
+    "your-super-secret-key-change-in-production",
+    "change-me-in-production",
+    "secret",
+    "changeme",
+    "password",
+    "test_secret_key_that_is_at_least_32_chars",
+    "jwt-secret-key-change-in-production",
+}
+
+
+def _calculate_entropy(s: str) -> float:
+    """Calculate Shannon entropy of a string to detect weak secrets."""
+    if not s:
+        return 0.0
+    from collections import Counter
+    import math
+    
+    counter = Counter(s)
+    length = len(s)
+    entropy = 0.0
+    
+    for count in counter.values():
+        probability = count / length
+        entropy -= probability * math.log2(probability)
+    
+    return entropy
 
 
 class Settings(BaseSettings):
@@ -85,6 +125,49 @@ class Settings(BaseSettings):
     LOCKOUT_DURATION_MINUTES: int = 15
     SKIP_EMAIL_VERIFICATION: bool = False  # Set to True only in development/testing
     
+    # Secure Cookie/Session Settings
+    # These are enforced in production regardless of settings
+    SECURE_COOKIES: bool = Field(
+        default=False,
+        description="Use secure (HTTPS-only) cookies. Auto-enabled in production."
+    )
+    SESSION_COOKIE_HTTPONLY: bool = True
+    SESSION_COOKIE_SAMESITE: Literal["strict", "lax", "none"] = "lax"
+    SESSION_COOKIE_SECURE: bool = Field(
+        default=False,
+        description="Require HTTPS for session cookies. Auto-enabled in production."
+    )
+    
+    # Session Binding (Device Fingerprinting)
+    SESSION_BINDING_ENABLED: bool = Field(
+        default=True,
+        description="Bind sessions to device fingerprint to prevent session hijacking"
+    )
+    SESSION_FINGERPRINT_SALT: str = Field(
+        default="",
+        description="Salt for session fingerprint hashing. Auto-generated if empty."
+    )
+    
+    # Password Breach Checking (haveibeenpwned)
+    PASSWORD_BREACH_CHECK_ENABLED: bool = Field(
+        default=True,
+        description="Check passwords against known breached passwords (uses k-anonymity)"
+    )
+    PASSWORD_BREACH_CHECK_TIMEOUT_SECONDS: int = 3
+    
+    # HTTPS Enforcement
+    FORCE_HTTPS: bool = Field(
+        default=False,
+        description="Redirect all HTTP requests to HTTPS. Auto-enabled in production."
+    )
+    HSTS_ENABLED: bool = Field(
+        default=True,
+        description="Enable HTTP Strict Transport Security header"
+    )
+    HSTS_MAX_AGE_SECONDS: int = 31536000  # 1 year
+    HSTS_INCLUDE_SUBDOMAINS: bool = True
+    HSTS_PRELOAD: bool = False  # Requires manual submission to preload list
+    
     # Rate Limiting
     # Enabled automatically in production; opt-in elsewhere.
     RATE_LIMIT_ENABLED: bool = False
@@ -103,6 +186,54 @@ class Settings(BaseSettings):
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
     SLOW_REQUEST_THRESHOLD_MS: int = 1000
+    
+    # Observability - OpenTelemetry
+    OTEL_ENABLED: bool = Field(
+        default=False,
+        description="Enable OpenTelemetry distributed tracing"
+    )
+    OTEL_SERVICE_NAME: str = "sensei-os"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = Field(
+        default="",
+        description="OpenTelemetry collector endpoint (e.g., http://localhost:4317)"
+    )
+    OTEL_EXPORTER_OTLP_HEADERS: str = Field(
+        default="",
+        description="Headers for OTLP exporter (format: key=value,key2=value2)"
+    )
+    OTEL_TRACES_SAMPLER: Literal["always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"] = "parentbased_traceidratio"
+    OTEL_TRACES_SAMPLER_ARG: float = 0.1  # Sample 10% of traces by default
+    
+    # Prometheus Metrics
+    METRICS_ENABLED: bool = Field(
+        default=True,
+        description="Enable Prometheus metrics endpoint at /metrics"
+    )
+    METRICS_PATH: str = "/metrics"
+    
+    # SLO Configuration
+    SLO_LATENCY_P99_MS: int = Field(
+        default=1000,
+        description="P99 latency SLO target in milliseconds"
+    )
+    SLO_ERROR_RATE_PCT: float = Field(
+        default=0.1,
+        description="Error rate SLO target as percentage (0.1 = 0.1%)"
+    )
+    SLO_AVAILABILITY_PCT: float = Field(
+        default=99.9,
+        description="Availability SLO target as percentage"
+    )
+    
+    # Webhook/Event System
+    WEBHOOKS_ENABLED: bool = Field(
+        default=True,
+        description="Enable outbound webhook notifications"
+    )
+    WEBHOOKS_MAX_RETRIES: int = 3
+    WEBHOOKS_RETRY_DELAY_SECONDS: int = 60
+    WEBHOOKS_TIMEOUT_SECONDS: int = 30
+    WEBHOOKS_SECRET_HEADER: str = "X-Sensei-Webhook-Signature"
     
     # Feature Flags
     FEATURE_PHASE_2_NPI: bool = False
@@ -163,6 +294,14 @@ class Settings(BaseSettings):
     SMTP_TLS: bool = True
     SMTP_SSL: bool = False
     EMAIL_ENABLED: bool = False
+    EMAIL_REQUIRED_IN_PRODUCTION: bool = Field(
+        default=True,
+        description="Require email configuration in production. Set to False only if using alternative notification system."
+    )
+    EMAIL_FAIL_SILENTLY: bool = Field(
+        default=False,
+        description="If True, email failures are logged but don't raise exceptions. Not recommended in production."
+    )
     
     # Frontend URL for email links
     FRONTEND_URL: str = "http://localhost:3000"
@@ -218,10 +357,115 @@ class Settings(BaseSettings):
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
-        """Ensure secret key is sufficiently long and complex."""
+        """Ensure secret key is sufficiently long, complex, and not a known weak value."""
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        
+        # Check against known weak secrets (will be validated further in model_validator for production)
+        if v.lower() in KNOWN_WEAK_SECRETS or any(weak in v.lower() for weak in ["change", "default", "example", "test"]):
+            # Log warning but don't fail - model_validator will handle production enforcement
+            logger.warning(
+                "SECRET_KEY appears to be a development/example key. "
+                "This MUST be changed before production deployment."
+            )
+        
         return v
+    
+    @field_validator("SESSION_FINGERPRINT_SALT", mode="before")
+    @classmethod
+    def ensure_fingerprint_salt(cls, v: str) -> str:
+        """Generate fingerprint salt if not provided."""
+        if not v:
+            return secrets.token_hex(32)
+        return v
+    
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        """
+        Comprehensive validation of production settings.
+        
+        This validator enforces security requirements that are critical
+        for production deployments and cannot be bypassed.
+        """
+        if self.ENVIRONMENT == "production":
+            # 1. Validate SECRET_KEY is not a known weak value
+            secret_lower = self.SECRET_KEY.lower()
+            if secret_lower in KNOWN_WEAK_SECRETS:
+                raise ValueError(
+                    f"SECRET_KEY is a known weak/default value. "
+                    f"Generate a secure key with: openssl rand -hex 32"
+                )
+            
+            # Check for common weak patterns
+            weak_patterns = ["change", "default", "example", "test", "development", "password"]
+            for pattern in weak_patterns:
+                if pattern in secret_lower:
+                    raise ValueError(
+                        f"SECRET_KEY contains '{pattern}' which suggests a non-production key. "
+                        f"Generate a secure key with: openssl rand -hex 32"
+                    )
+            
+            # Check entropy (a good random key should have entropy > 4.0)
+            entropy = _calculate_entropy(self.SECRET_KEY)
+            if entropy < 3.5:
+                raise ValueError(
+                    f"SECRET_KEY has low entropy ({entropy:.2f}), suggesting a weak key. "
+                    f"Generate a secure key with: openssl rand -hex 32"
+                )
+            
+            # 2. Force secure cookie settings in production
+            object.__setattr__(self, "SECURE_COOKIES", True)
+            object.__setattr__(self, "SESSION_COOKIE_SECURE", True)
+            object.__setattr__(self, "FORCE_HTTPS", True)
+            
+            # 3. Validate email configuration if required
+            if self.EMAIL_REQUIRED_IN_PRODUCTION and not self.EMAIL_ENABLED:
+                logger.warning(
+                    "EMAIL_ENABLED is False in production. Password reset and email verification "
+                    "will not work. Set EMAIL_REQUIRED_IN_PRODUCTION=False to suppress this warning "
+                    "if using an alternative notification system."
+                )
+            
+            if self.EMAIL_ENABLED and not self.SMTP_HOST:
+                raise ValueError(
+                    "EMAIL_ENABLED is True but SMTP_HOST is not configured. "
+                    "Provide SMTP settings or disable email."
+                )
+            
+            # 4. Ensure DEBUG is disabled
+            if self.DEBUG:
+                logger.warning(
+                    "DEBUG=True in production. This may expose sensitive information. "
+                    "Setting DEBUG=False for safety."
+                )
+                object.__setattr__(self, "DEBUG", False)
+            
+            # 5. Validate CORS origins don't include localhost
+            localhost_origins = [o for o in self.CORS_ORIGINS if "localhost" in o or "127.0.0.1" in o]
+            if localhost_origins:
+                logger.warning(
+                    f"CORS_ORIGINS contains localhost entries in production: {localhost_origins}. "
+                    f"This is likely a configuration error."
+                )
+            
+            # 6. Ensure rate limiting is enabled
+            if not self.RATE_LIMIT_ENABLED:
+                logger.info("Enabling rate limiting for production environment")
+                object.__setattr__(self, "RATE_LIMIT_ENABLED", True)
+            
+            # 7. Validate frontend URL is HTTPS
+            if self.FRONTEND_URL.startswith("http://"):
+                logger.warning(
+                    f"FRONTEND_URL uses HTTP ({self.FRONTEND_URL}) in production. "
+                    f"This should be HTTPS for security."
+                )
+        
+        elif self.ENVIRONMENT == "staging":
+            # Staging should also enforce some security settings
+            object.__setattr__(self, "SECURE_COOKIES", True)
+            object.__setattr__(self, "SESSION_COOKIE_SECURE", True)
+        
+        return self
     
     @property
     def is_production(self) -> bool:

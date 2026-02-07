@@ -106,11 +106,13 @@ class HealthCheckService:
         self,
         db_session_factory: Optional[Callable[[], Session]] = None,
         redis_client: Optional[Any] = None,
-        s3_client: Optional[Any] = None
+        s3_client: Optional[Any] = None,
+        llm_client: Optional[Any] = None,
     ):
         self.db_session_factory = db_session_factory
         self.redis_client = redis_client
         self.s3_client = s3_client
+        self.llm_client = llm_client
         
         # Health check configuration
         self.startup_complete = False
@@ -121,6 +123,11 @@ class HealthCheckService:
         self.dependency_health: Dict[str, DependencyHealth] = {}
         self.health_check_interval_seconds = 30
         self.last_full_check: Optional[datetime] = None
+        
+        # AI model health tracking
+        self.ai_model_loaded = False
+        self.ai_model_last_check: Optional[datetime] = None
+        self.ai_model_load_time_seconds: Optional[float] = None
         
         # Auto-scaling thresholds
         self.cpu_scale_up_threshold = 70.0
@@ -336,6 +343,175 @@ class HealthCheckService:
         self.dependency_health["s3"] = health
         return health
     
+    def check_ai_model_health(self) -> DependencyHealth:
+        """
+        Check AI/LLM model health and availability.
+        
+        This performs:
+        1. Model file existence check
+        2. Model loading capability check (if client provided)
+        3. Simple inference test to verify model functionality
+        """
+        start_time = time.time()
+        status = HealthStatus.UNKNOWN
+        error_msg = None
+        metadata: Dict[str, Any] = {}
+        
+        try:
+            # Import settings to check model path
+            from sensei.core.config import settings
+            from pathlib import Path
+            
+            model_path = Path(settings.CHATBOT_MODEL_PATH)
+            metadata["model_path"] = str(model_path)
+            metadata["model_url"] = settings.CHATBOT_MODEL_URL
+            
+            # Step 1: Check if model file exists
+            if model_path.is_absolute():
+                model_exists = model_path.exists()
+            else:
+                # Try relative to workspace
+                workspace_model = Path.cwd() / model_path
+                project_root_model = Path(__file__).parent.parent.parent.parent.parent / model_path
+                model_exists = workspace_model.exists() or project_root_model.exists()
+                if workspace_model.exists():
+                    model_path = workspace_model
+                elif project_root_model.exists():
+                    model_path = project_root_model
+            
+            metadata["model_exists"] = model_exists
+            
+            if not model_exists:
+                status = HealthStatus.DEGRADED
+                error_msg = (
+                    f"Model file not found at {model_path}. "
+                    f"Download from: {settings.CHATBOT_MODEL_URL}"
+                )
+                metadata["download_required"] = True
+            else:
+                # Get model file size
+                model_size_mb = model_path.stat().st_size / (1024 * 1024)
+                metadata["model_size_mb"] = round(model_size_mb, 2)
+                
+                # Step 2: Check if LLM client is available and model can be loaded
+                if self.llm_client is not None:
+                    try:
+                        # Check if client is initialized
+                        if hasattr(self.llm_client, 'is_initialized'):
+                            is_init = self.llm_client.is_initialized()
+                            metadata["client_initialized"] = is_init
+                        
+                        # Check model type
+                        if hasattr(self.llm_client, 'model_type'):
+                            metadata["model_type"] = str(self.llm_client.model_type)
+                        
+                        # Step 3: Simple inference test (fast validation)
+                        if hasattr(self.llm_client, 'complete'):
+                            try:
+                                # Use minimal tokens for health check
+                                test_result = self.llm_client.complete(
+                                    "Hello",
+                                    max_tokens=5,
+                                    temperature=0.0
+                                )
+                                if test_result:
+                                    status = HealthStatus.HEALTHY
+                                    metadata["inference_functional"] = True
+                                else:
+                                    status = HealthStatus.DEGRADED
+                                    metadata["inference_functional"] = False
+                                    error_msg = "Inference returned empty result"
+                            except Exception as inference_error:
+                                status = HealthStatus.DEGRADED
+                                metadata["inference_functional"] = False
+                                error_msg = f"Inference test failed: {inference_error}"
+                        else:
+                            # No complete method, just mark as healthy if model exists
+                            status = HealthStatus.HEALTHY
+                            metadata["inference_functional"] = "not_tested"
+                    except Exception as client_error:
+                        status = HealthStatus.DEGRADED
+                        error_msg = f"LLM client check failed: {client_error}"
+                else:
+                    # No client provided, but model file exists
+                    status = HealthStatus.HEALTHY
+                    metadata["llm_client_available"] = False
+                    metadata["inference_functional"] = "not_tested"
+        
+        except Exception as e:
+            status = HealthStatus.UNHEALTHY
+            error_msg = f"AI model health check failed: {e}"
+            logger.exception("AI model health check error")
+        
+        latency_ms = (time.time() - start_time) * 1000
+        
+        # Mark as degraded if health check takes too long
+        if status == HealthStatus.HEALTHY and latency_ms > 5000:
+            status = HealthStatus.DEGRADED
+            error_msg = f"AI model health check slow ({latency_ms:.0f}ms)"
+        
+        health = DependencyHealth(
+            name="AI/LLM Model",
+            dependency_type=DependencyType.EXTERNAL_API,  # Using EXTERNAL_API type for AI services
+            status=status,
+            latency_ms=latency_ms,
+            last_check=_utcnow(),
+            error_message=error_msg,
+            metadata=metadata
+        )
+        
+        self.dependency_health["ai_model"] = health
+        self.ai_model_last_check = _utcnow()
+        
+        if status == HealthStatus.HEALTHY:
+            self.ai_model_loaded = True
+            if self.ai_model_load_time_seconds is None:
+                self.ai_model_load_time_seconds = latency_ms / 1000
+        
+        return health
+    
+    async def verify_ai_model_at_startup(self) -> bool:
+        """
+        Verify AI model is available at startup.
+        
+        This is a critical startup check that ensures the chatbot model
+        is properly configured and accessible. Returns True if model is
+        healthy or degraded (can work), False if completely unavailable.
+        
+        Call this during application lifespan startup.
+        """
+        logger.info("Verifying AI model availability at startup...")
+        
+        try:
+            health = self.check_ai_model_health()
+            
+            if health.status == HealthStatus.HEALTHY:
+                logger.info(
+                    "AI model healthy",
+                    model_path=health.metadata.get("model_path"),
+                    model_size_mb=health.metadata.get("model_size_mb"),
+                    inference_functional=health.metadata.get("inference_functional"),
+                )
+                return True
+            elif health.status == HealthStatus.DEGRADED:
+                logger.warning(
+                    "AI model degraded",
+                    error=health.error_message,
+                    metadata=health.metadata,
+                )
+                # Still allow startup, but warn
+                return True
+            else:
+                logger.error(
+                    "AI model unhealthy - chatbot will not function",
+                    error=health.error_message,
+                    metadata=health.metadata,
+                )
+                return False
+        except Exception as e:
+            logger.exception("Failed to verify AI model at startup")
+            return False
+    
     def check_all_dependencies(self) -> List[DependencyHealth]:
         """Check health of all configured dependencies"""
         results = []
@@ -348,6 +524,9 @@ class HealthCheckService:
         
         if self.s3_client:
             results.append(self.check_s3_health())
+        
+        # Always check AI model (doesn't require external client)
+        results.append(self.check_ai_model_health())
         
         self.last_full_check = _utcnow()
         return results

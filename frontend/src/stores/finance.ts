@@ -54,6 +54,11 @@ interface FinanceState {
   revenueByProduct: RevenueByProduct[];
   expenseBreakdown: ExpenseBreakdown[];
   pendingApprovals: PendingApproval[];
+  // Banking
+  currencies: any[];
+  paymentTerms: any[];
+  bankAccounts: any[];
+  bankTransactions: any[];
   loading: boolean;
   error: string | null;
 
@@ -79,6 +84,19 @@ interface FinanceState {
   fetchExpenseBreakdown: () => Promise<void>;
   fetchPendingApprovals: () => Promise<void>;
   fetchAll: () => Promise<void>;
+  // Banking methods
+  fetchCurrencies: () => Promise<void>;
+  createCurrency: (payload: any) => Promise<void>;
+  updateCurrency: (id: string, payload: any) => Promise<void>;
+  fetchPaymentTerms: () => Promise<void>;
+  createPaymentTerm: (payload: any) => Promise<void>;
+  updatePaymentTerm: (id: string, payload: any) => Promise<void>;
+  fetchBankAccounts: () => Promise<void>;
+  createBankAccount: (payload: any) => Promise<void>;
+  updateBankAccount: (id: string, payload: any) => Promise<void>;
+  fetchBankTransactions: (bankAccountId?: string) => Promise<void>;
+  createBankTransaction: (payload: any) => Promise<void>;
+  reconcileBankTransaction: (id: string) => Promise<void>;
 }
 
 export const useFinanceStore = create<FinanceState>((set, get) => ({
@@ -95,6 +113,11 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   revenueByProduct: [],
   expenseBreakdown: [],
   pendingApprovals: [],
+  // Banking
+  currencies: [],
+  paymentTerms: [],
+  bankAccounts: [],
+  bankTransactions: [],
   loading: false,
   error: null,
 
@@ -328,5 +351,138 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       fetchExpenseBreakdown(),
       fetchPendingApprovals(),
     ]);
+  },
+
+  // Banking - Currencies
+  fetchCurrencies: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<any[]>('/finance/currencies');
+      set({ currencies: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createCurrency: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/currencies', payload);
+      const response = await apiClient.get<any[]>('/finance/currencies');
+      set({ currencies: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  updateCurrency: async (id, payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.patch(`/finance/currencies/${id}`, payload);
+      const response = await apiClient.get<any[]>('/finance/currencies');
+      set({ currencies: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  // Payment Terms
+  fetchPaymentTerms: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<any[]>('/finance/payment-terms');
+      set({ paymentTerms: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createPaymentTerm: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/payment-terms', payload);
+      const response = await apiClient.get<any[]>('/finance/payment-terms');
+      set({ paymentTerms: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  updatePaymentTerm: async (id, payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.patch(`/finance/payment-terms/${id}`, payload);
+      const response = await apiClient.get<any[]>('/finance/payment-terms');
+      set({ paymentTerms: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  // Bank Accounts
+  fetchBankAccounts: async () => {
+    set({ loading: true });
+    try {
+      const response = await apiClient.get<any[]>('/finance/bank-accounts');
+      set({ bankAccounts: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createBankAccount: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/bank-accounts', payload);
+      const response = await apiClient.get<any[]>('/finance/bank-accounts');
+      set({ bankAccounts: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  updateBankAccount: async (id, payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.patch(`/finance/bank-accounts/${id}`, payload);
+      const response = await apiClient.get<any[]>('/finance/bank-accounts');
+      set({ bankAccounts: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  // Bank Transactions
+  fetchBankTransactions: async (bankAccountId) => {
+    set({ loading: true });
+    try {
+      const params = bankAccountId ? { bank_account_id: bankAccountId } : undefined;
+      const response = await apiClient.get<any[]>('/finance/bank-transactions', { params });
+      set({ bankTransactions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  createBankTransaction: async (payload) => {
+    set({ loading: true });
+    try {
+      await apiClient.post('/finance/bank-transactions', payload);
+      const response = await apiClient.get<any[]>('/finance/bank-transactions');
+      set({ bankTransactions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
+  },
+
+  reconcileBankTransaction: async (id) => {
+    set({ loading: true });
+    try {
+      await apiClient.post(`/finance/bank-transactions/${id}/reconcile`);
+      const response = await apiClient.get<any[]>('/finance/bank-transactions');
+      set({ bankTransactions: response, loading: false });
+    } catch (error: any) {
+      set({ error: error.message, loading: false });
+    }
   },
 }));

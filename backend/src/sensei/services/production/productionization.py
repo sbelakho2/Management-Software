@@ -24,6 +24,7 @@ from sensei.models.product import Product as ProductModel
 from sensei.models.account import Account as AccountModel, AccountType
 from sensei.models.migration import ImportBatch as ImportBatchModel
 from sensei.models.audit_log import AuditLog, AuditAction
+from sensei.models.hr import EmployeeProfile as EmployeeProfileModel
 
 logger = logging.getLogger(__name__)
 
@@ -821,6 +822,139 @@ class AsyncProductionizationService:
         return level
 
     # ----------------------------------------------------------------
+    # Employee Operations (HR)
+    # ----------------------------------------------------------------
+
+    async def create_employee(
+        self,
+        db: AsyncSession,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        first_name: str,
+        last_name: str,
+        email: str | None = None,
+        phone: str | None = None,
+        department: str | None = None,
+        job_title: str | None = None,
+        site_id: str | None = None,
+        cost_center_code: str | None = None,
+        jurisdiction: str = "TN",  # Default Tunisia for legacy compatibility
+        status: str = "active",
+        hire_date: datetime | None = None,
+        user_id: UUID | None = None,
+        manager_id: UUID | None = None,
+    ) -> EmployeeProfileModel:
+        """Create an employee profile with jurisdiction support.
+        
+        For legacy data import, jurisdiction defaults to 'TN' (Tunisia).
+        Supported jurisdictions: TN (Tunisia), MA (Morocco), EG (Egypt).
+        """
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _HR_WRITE_ROLES, "HR write access required")
+
+        # Normalize jurisdiction (default to TN for legacy/invalid)
+        if jurisdiction not in ("TN", "MA", "EG"):
+            logger.warning(
+                "Invalid jurisdiction '%s' for employee %s %s, defaulting to TN",
+                jurisdiction, first_name, last_name
+            )
+            jurisdiction = "TN"
+
+        employee = EmployeeProfileModel(
+            id=uuid4(),
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            phone=phone,
+            department=department,
+            job_title=job_title,
+            site_id=site_id,
+            cost_center_code=cost_center_code,
+            jurisdiction=jurisdiction,
+            status=status,
+            hire_date=hire_date.date() if isinstance(hire_date, datetime) else hire_date,
+            user_id=user_id,
+            manager_id=manager_id,
+            created_by_id=UUID(actor_id) if isinstance(actor_id, str) and len(actor_id) == 36 else None,
+        )
+        db.add(employee)
+        await db.flush()
+
+        await self._audit_event(
+            db=db,
+            actor_id=actor_id,
+            actor_roles=roles,
+            action="employee.create",
+            entity_type="employee",
+            entity_id=str(employee.id),
+            correlation_id=correlation_id,
+            metadata={"jurisdiction": jurisdiction},
+        )
+
+        return employee
+
+    async def list_employees(
+        self,
+        db: AsyncSession,
+        *,
+        actor_roles: Iterable[str],
+        page: PageRequest | None = None,
+        filters: list[FilterSpec] | None = None,
+        jurisdiction: str | None = None,
+    ) -> PageResponse:
+        """List employees with pagination, filtering, and jurisdiction support."""
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _HR_READ_ROLES, "HR read access required")
+
+        stmt = select(EmployeeProfileModel).where(EmployeeProfileModel.deleted_at.is_(None))
+        if jurisdiction:
+            stmt = stmt.where(EmployeeProfileModel.jurisdiction == jurisdiction)
+        
+        result = await db.execute(stmt)
+        employees = result.scalars().all()
+
+        items = [
+            {
+                "id": str(e.id),
+                "first_name": e.first_name,
+                "last_name": e.last_name,
+                "email": e.email,
+                "department": e.department,
+                "job_title": e.job_title,
+                "jurisdiction": e.jurisdiction,
+                "status": e.status,
+            }
+            for e in employees
+        ]
+
+        if filters:
+            items = self._apply_filters(items, filters)
+
+        items.sort(key=lambda x: (x.get("last_name", ""), x.get("first_name", "")))
+
+        return self._paginate(items, page or PageRequest())
+
+    async def get_employee(
+        self,
+        db: AsyncSession,
+        *,
+        actor_roles: Iterable[str],
+        employee_id: UUID,
+    ) -> EmployeeProfileModel | None:
+        """Get a single employee by ID."""
+        roles = _norm_roles(actor_roles)
+        _require_any(roles, _HR_READ_ROLES, "HR read access required")
+        
+        stmt = select(EmployeeProfileModel).where(
+            EmployeeProfileModel.id == employee_id,
+            EmployeeProfileModel.deleted_at.is_(None)
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    # ----------------------------------------------------------------
     # Data Migration / Import
     # ----------------------------------------------------------------
 
@@ -882,6 +1016,30 @@ class AsyncProductionizationService:
                     result = ValidationResult.ERROR
                 if not record.get("description"):
                     messages.append("description is required")
+                    result = ValidationResult.ERROR
+
+            elif entity_type == EntityType.EMPLOYEE:
+                # Validate employee import data with legacy compatibility
+                if not record.get("first_name"):
+                    messages.append("first_name is required")
+                    result = ValidationResult.ERROR
+                if not record.get("last_name"):
+                    messages.append("last_name is required")
+                    result = ValidationResult.ERROR
+                # Jurisdiction validation - default to TN if not provided (legacy compatibility)
+                jurisdiction = record.get("jurisdiction", "TN")
+                if jurisdiction not in ("TN", "MA", "EG"):
+                    # Log warning but don't fail - we'll default to TN during import
+                    logger.warning(
+                        "Invalid jurisdiction '%s' for employee %s %s, will default to TN",
+                        jurisdiction,
+                        record.get("first_name", "?"),
+                        record.get("last_name", "?"),
+                    )
+                # Status validation
+                status = record.get("status", "active")
+                if status not in ("active", "onboarding", "offboarding", "terminated"):
+                    messages.append(f"invalid status '{status}', must be active/onboarding/offboarding/terminated")
                     result = ValidationResult.ERROR
 
             validation = ImportValidation(
@@ -1010,6 +1168,39 @@ class AsyncProductionizationService:
                         category=v.data.get("category"),
                         unit_of_measure=v.data.get("unit_of_measure", "EA"),
                         unit_cost=Decimal(str(v.data.get("unit_cost", "0"))),
+                    )
+                elif entity_type == EntityType.EMPLOYEE:
+                    # Import employee with legacy compatibility
+                    # Default jurisdiction to TN (Tunisia) for legacy data
+                    jurisdiction = v.data.get("jurisdiction", "TN")
+                    if jurisdiction not in ("TN", "MA", "EG"):
+                        jurisdiction = "TN"  # Default invalid to Tunisia
+                    
+                    # Parse hire_date if string
+                    hire_date = v.data.get("hire_date")
+                    if isinstance(hire_date, str) and hire_date:
+                        from datetime import datetime as dt
+                        try:
+                            hire_date = dt.fromisoformat(hire_date.replace("Z", "+00:00"))
+                        except ValueError:
+                            hire_date = None
+                    
+                    await self.create_employee(
+                        db=db,
+                        actor_id=actor_id,
+                        actor_roles=roles,
+                        correlation_id=correlation_id,
+                        first_name=v.data["first_name"],
+                        last_name=v.data["last_name"],
+                        email=v.data.get("email"),
+                        phone=v.data.get("phone"),
+                        department=v.data.get("department"),
+                        job_title=v.data.get("job_title"),
+                        site_id=v.data.get("site_id"),
+                        cost_center_code=v.data.get("cost_center_code"),
+                        jurisdiction=jurisdiction,
+                        status=v.data.get("status", "active"),
+                        hire_date=hire_date,
                     )
                 imported += 1
             except Exception as exc:

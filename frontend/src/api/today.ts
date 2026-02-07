@@ -38,6 +38,8 @@ export interface HandoverNoteSummary {
 }
 
 export const todayApi = {
-  getTodayScreen: (userId: string, userName: string): Promise<TodayScreenData> => 
-    apiClient.get(`/today/screen/${userId}`, { params: { user_name: userName } }),
+  getTodayScreen: (userId: string, userName?: string): Promise<TodayScreenData> => {
+    const safeName = (userName || '').trim() || 'User';
+    return apiClient.get(`/today/screen/${userId}`, { params: { user_name: safeName } });
+  },
 };

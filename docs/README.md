@@ -23,7 +23,8 @@ Complete documentation for developers, administrators, and end users.
 ### For End Users
 
 - **[User Guide](./guides/user-guide.md)** - How to use Sensei (coming soon)
-- **[Admin Guide](./guides/admin-guide.md)** - System administration (coming soon)
+- **[Admin Guide](./guides/admin-guide.md)** - System administration
+- **[StarzERP Migration](./guides/starz-erp-data-migration.md)** - Legacy data import guide
 
 ## 🚀 Quick Links
 
@@ -38,6 +39,7 @@ Complete documentation for developers, administrators, and end users.
 - **Understand the architecture** → [Architecture](./architecture/README.md)
 - **Write tests** → [Testing Guide](./testing/e2e-testing.md)
 - **Configure Kubernetes** → [Helm Chart](./deployment/helm-chart-readme.md)
+- **Migrate from StarzERP** → [StarzERP Migration Guide](./guides/starz-erp-data-migration.md)
 
 ## 📖 Documentation Categories
 

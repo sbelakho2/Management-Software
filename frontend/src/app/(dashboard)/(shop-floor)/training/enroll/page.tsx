@@ -15,27 +15,59 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useI18n } from '@/contexts/i18n-context';
+import { useTrainingStore } from '@/stores/training';
+import { useAuthStore } from '@/stores';
+
 export default function EnrollTrainingPage() {
   const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const programs = [
-    { id: '1', title: 'Safety Fundamentals 2024' },
-    { id: '2', title: 'Lean Six Sigma White Belt' },
-    { id: '3', title: 'Advanced Machining Center Operation' },
-    { id: '4', title: 'Quality Assurance - Basic' },
-  ];
-  const handleSubmit = (e: React.FormEvent) => {
+  const [selectedTrainingId, setSelectedTrainingId] = React.useState<string>('');
+  const [reason, setReason] = React.useState<string>('');
+  const { trainings, fetchTrainings, enrollInTraining } = useTrainingStore();
+  const { user } = useAuthStore();
+
+  React.useEffect(() => {
+    fetchTrainings();
+  }, [fetchTrainings]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setTimeout(() => {
+    if (!selectedTrainingId) {
+      toast({
+        title: t('common.validation_error') || 'Validation Error',
+        description: t('training.enroll.selectProgram') || 'Please select a program node.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!user?.id) {
+      toast({
+        title: t('common.auth_required') || 'Authentication Required',
+        description: t('common.please_login') || 'Please login to enroll in training.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await enrollInTraining(selectedTrainingId, String(user.id), reason || undefined);
       toast({
         title: t('training.enroll.toast.success.title') || 'Enrolled Successfully',
         description: t('training.enroll.toast.success.description') || 'You have been added to the training program.',
       });
       router.push('/training');
-    }, 1000);
+    } catch (error: any) {
+      toast({
+        title: t('common.error') || 'Error',
+        description: error?.message || (t('training.enroll.toast.error.description') as string) || 'Failed to enroll in training.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   return (
     <div className="max-w-2xl mx-auto space-y-8 page-fade-in pb-12">
@@ -57,20 +89,20 @@ export default function EnrollTrainingPage() {
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-2">
               <Label htmlFor="program" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.enroll.strategicProgramNode') || 'Strategic Program Node'}</Label>
-              <Select required>
+              <Select required value={selectedTrainingId} onValueChange={setSelectedTrainingId}>
                 <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                   <SelectValue placeholder={t('training.enroll.selectProgram') || 'Select a program node'} />
                 </SelectTrigger>
                 <SelectContent className="rounded-rams-sm border-rams-line">
-                  {programs.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                  {trainings.map(p => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="reason" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.enroll.rationalOptimization') || 'Rational Optimization Context (Optional)'}</Label>
-              <Input id="reason" placeholder={t('training.enroll.reasonPlaceholder') || 'e.g. Skill gap resolution, maturity escalation...'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
+              <Input id="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('training.enroll.reasonPlaceholder') || 'e.g. Skill gap resolution, maturity escalation...'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
             </div>
             <div className="pt-6 flex gap-4">
               <Button type="button" variant="outline" className="flex-1 rounded-rams-sm border-rams-line h-10 transition-none" onClick={() => router.back()}>{t('common.abort') || 'Abort'}</Button>

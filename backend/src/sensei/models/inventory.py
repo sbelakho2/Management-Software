@@ -183,3 +183,77 @@ class WmsDevice(Base, TimestampMixin, AuditMixin):
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     warehouse: Mapped["Warehouse"] = relationship("Warehouse")
+
+
+# =============================================================================
+# WMS PICKING (for erpStarz import compatibility)
+# =============================================================================
+
+
+class PickList(Base, TimestampMixin, AuditMixin):
+    """
+    Pick list for warehouse order fulfillment.
+    Maps from erpStarz `pick_list` table.
+    """
+    __tablename__ = "pick_lists"
+
+    pick_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    warehouse_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_warehouses.id"), nullable=False, index=True)
+    
+    # Link to source document
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)  # sales_order, transfer_order, work_order
+    source_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    
+    assigned_to_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    device_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("wms_devices.id"), nullable=True)
+    
+    priority: Mapped[int] = mapped_column(default=50, nullable=False)  # Lower = higher priority
+    pick_strategy: Mapped[str] = mapped_column(String(50), default="FIFO", nullable=False)  # FIFO, FEFO, LIFO
+    
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, in_progress, completed, canceled
+    
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    warehouse: Mapped["Warehouse"] = relationship("Warehouse")
+    lines: Mapped[list["PickListLine"]] = relationship("PickListLine", back_populates="pick_list", cascade="all, delete-orphan")
+
+
+class PickListLine(Base, TimestampMixin):
+    """
+    Line item in a pick list.
+    Maps from erpStarz `pick_list_item` table.
+    """
+    __tablename__ = "pick_list_lines"
+
+    pick_list_id: Mapped[UUID] = mapped_column(ForeignKey("pick_lists.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    sku: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    source_location_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_locations.id"), nullable=False)
+    target_location_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("inventory_locations.id"), nullable=True)
+    
+    quantity_requested: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    quantity_picked: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"), nullable=False)
+    uom: Mapped[str] = mapped_column(String(20), default="EA", nullable=False)
+    
+    lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    lpn_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("license_plates.id"), nullable=True)
+    
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, picked, short, skipped
+    picked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    pick_list: Mapped["PickList"] = relationship("PickList", back_populates="lines")
+    source_location: Mapped["Location"] = relationship("Location", foreign_keys=[source_location_id])
+    target_location: Mapped[Optional["Location"]] = relationship("Location", foreign_keys=[target_location_id])
+    lpn: Mapped[Optional["LicensePlate"]] = relationship("LicensePlate")

@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useAuthStore, useFinanceStore } from '@/stores';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import { ContentCard, SectionHeader } from '@/components/ui/content-card';
 
@@ -53,12 +53,10 @@ export default function FinancePage() {
   // Use API data or fallback to demo data
   const stats = dashboardStats || fallbackStats;
 
-  // Format currency for display
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) {
-      return `$${(value / 1000000).toFixed(2)}M`;
-    }
-    return `$${(value / 1000).toFixed(0)}K`;
+  // Format currency with compact notation for large values (e.g., $1.2M)
+  const formatCompactCurrency = (value: number) => {
+    // Use Intl with compact notation for cleaner display
+    return formatCurrency(value, undefined, undefined);
   };
 
   return (

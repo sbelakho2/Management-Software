@@ -97,5 +97,30 @@ For detailed documentation, see [AI Insights Access Reference](../Resources/AI_I
 ### 2FA Enforcement
 Administrators can enforce 2FA globally or for specific roles. This is done in **Admin > Security > Authentication**.
 
+## Data Migration
+
+### StarzERP Import
+Sensei OS provides a comprehensive data migration service for importing data from legacy StarzERP MySQL databases.
+
+1. Go to **Admin > Data Migration > StarzERP Import**
+2. Click "Preview Import" to see record counts
+3. Select entity types to import (56 total entity types available)
+4. Choose conflict resolution: Skip, Update, or Fail on duplicates
+5. Click "Start Import"
+6. Monitor real-time progress
+7. Review results and address any errors
+
+**Supported Modules:**
+- Inventory/WMS (warehouses, locations, devices, LPNs)
+- Products (articles, units, categories)
+- HR (employees, contracts, leaves, clocking, training)
+- Purchasing (suppliers, POs, receipts)
+- Sales (customers, quotations, invoices)
+- Shipping (shipments, pick lists)
+- Finance (payments, bank transactions)
+- Quality (scrap records)
+
+For detailed entity mappings and API usage, see the [StarzERP Data Migration Guide](./starz-erp-data-migration.md).
+
 ## Troubleshooting
 See the [Troubleshooting Guide](./troubleshooting.md) for common issues and their resolutions.

@@ -37,10 +37,10 @@ export default function NewCAPAPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      toast({ title: t('quality.capa.new.capaCreated') || 'CAPA Created', description: t('quality.capa.new.initiatedSuccess') || 'Corrective action plan has been initiated.' });
+      toast({ title: t('modules.quality.capa.new.capaCreated'), description: t('modules.quality.capa.new.initiatedSuccess') });
       router.push('/quality?tab=capas');
     } catch (error) {
-      toast({ title: t('common.error') || 'Error', description: t('quality.capa.new.createFailed') || 'Failed to create CAPA.', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('modules.quality.capa.new.createFailed'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -55,9 +55,9 @@ export default function NewCAPAPage() {
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="space-y-1">
-            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('quality.capa.new.title') || 'Initialize CAPA Protocol'}</h1>
+            <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">{t('modules.quality.capa.new.title')}</h1>
             <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
-              <span>{t('quality.capa.new.subtitle') || 'Corrective & Preventive Action'}</span>
+              <span>{t('modules.quality.capa.new.subtitle')}</span>
               <span className="opacity-30">|</span>
               <span>STATION: QUALITY-PLANNING-01</span>
             </p>
@@ -65,15 +65,15 @@ export default function NewCAPAPage() {
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line h-10 px-6 transition-none" onClick={() => router.back()} disabled={isSubmitting}>
-            {t('common.abort') || 'ABORT'}
+            {t('common.abort')}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting} size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px] h-10 px-8 transition-none">
             {isSubmitting ? (
-              t('common.synchronizing') || 'SYNCHRONIZING...'
+              t('common.synchronizing')
             ) : (
               <>
                 <Save className="h-3.5 w-3.5 mr-2" />
-                {t('quality.capa.new.establishCapa') || 'ESTABLISH_CAPA'}
+                {t('modules.quality.capa.new.establishCapa')}
               </>
             )}
           </Button>
@@ -83,11 +83,11 @@ export default function NewCAPAPage() {
       <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         <Card className="rounded-rams-sm border border-rams-line bg-rams-module shadow-none overflow-hidden">
           <CardHeader className="bg-rams-panel/20 border-b border-rams-line p-6">
-            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('quality.capa.new.actionPlanParameters') || 'Action Plan Parameters'}</CardTitle>
+            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('modules.quality.capa.new.actionPlanParameters')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-8 p-8">
             <div className="space-y-2">
-              <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.capaIdentity') || 'CAPA Identity Protocol'} *</Label>
+              <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.capaIdentity')} *</Label>
               <Input
                 id="title"
                 value={form.title}
@@ -98,47 +98,47 @@ export default function NewCAPAPage() {
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
-                <Label htmlFor="source" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.originNode') || 'Origin Node (Source)'}</Label>
+                <Label htmlFor="source" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.originNode')}</Label>
                 <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
                   <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ncr">NCR_FOLLOW-UP</SelectItem>
-                    <SelectItem value="audit">AUDIT_FINDING</SelectItem>
-                    <SelectItem value="customer">CUSTOMER_FEEDBACK</SelectItem>
-                    <SelectItem value="preventive">PREVENTIVE_SYNC</SelectItem>
+                    <SelectItem value="ncr">{t('modules.quality.capa.new.source.ncr')}</SelectItem>
+                    <SelectItem value="audit">{t('modules.quality.capa.new.source.audit')}</SelectItem>
+                    <SelectItem value="customer">{t('modules.quality.capa.new.source.customer')}</SelectItem>
+                    <SelectItem value="preventive">{t('modules.quality.capa.new.source.preventive')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.priorityLayer') || 'Priority Layer'}</Label>
+                <Label htmlFor="priority" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.priorityLayer')}</Label>
                 <Select value={form.priority} onValueChange={(v) => setForm({ ...form, priority: v })}>
                   <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">LOW_PRIORITY</SelectItem>
-                    <SelectItem value="medium">MEDIUM_SYNC</SelectItem>
-                    <SelectItem value="high">HIGH_URGENCY</SelectItem>
-                    <SelectItem value="critical">CRITICAL_BREACH</SelectItem>
+                    <SelectItem value="low">{t('modules.quality.capa.new.priority.low')}</SelectItem>
+                    <SelectItem value="medium">{t('modules.quality.capa.new.priority.medium')}</SelectItem>
+                    <SelectItem value="high">{t('modules.quality.capa.new.priority.high')}</SelectItem>
+                    <SelectItem value="critical">{t('modules.quality.capa.new.priority.critical')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
-                <Label htmlFor="assignee" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.assignedOperative') || 'Assigned Operative'}</Label>
+                <Label htmlFor="assignee" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.assignedOperative')}</Label>
                 <Input
                   id="assignee"
-                  placeholder="OWNER_IDENTITY"
+                  placeholder={t('modules.quality.capa.new.placeholders.ownerIdentity')}
                   value={form.assignee}
                   onChange={(e) => setForm({ ...form, assignee: e.target.value })}
                   className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="dueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.targetHorizon') || 'Target Horizon Date'}</Label>
+                <Label htmlFor="dueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.targetHorizon')}</Label>
                 <Input
                   id="dueDate"
                   type="date"
@@ -149,7 +149,7 @@ export default function NewCAPAPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('quality.capa.new.rootCauseCountermeasures') || 'Root Cause & Countermeasures'} *</Label>
+              <Label htmlFor="description" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('modules.quality.capa.new.rootCauseCountermeasures')} *</Label>
               <Textarea
                 id="description"
                 rows={5}

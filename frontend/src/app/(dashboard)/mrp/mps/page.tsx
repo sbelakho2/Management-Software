@@ -249,7 +249,7 @@ export default function MpsPage() {
                       <p className="font-mono text-[10px] font-bold text-muted-foreground/60">{line.bucket_date}</p>
                     </td>
                     <td className="px-6 py-4">
-                      <p className="font-mono text-[10px] font-bold text-foreground/80">PRODUCT_{line.product_id}</p>
+                      <p className="font-mono text-[10px] font-bold text-foreground/80">{t('pages.mrp.mps.table.productPrefix')}{line.product_id}</p>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <p className="font-mono font-bold tabular-nums">{line.quantity}</p>

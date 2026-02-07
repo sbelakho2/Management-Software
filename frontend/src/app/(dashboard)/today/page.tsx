@@ -78,14 +78,6 @@ type LswSummary = {
 	next_due_item?: string | null;
 };
 
-function formatHeaderDate(date: Date): string {
-	return date.toLocaleDateString('en-US', {
-		weekday: 'long',
-		month: 'long',
-		day: 'numeric',
-	});
-}
-
 function priorityBadgeVariant(priority: PriorityLevel): 'default' | 'secondary' | 'destructive' {
 	if (priority === 'urgent') return 'destructive';
 	if (priority === 'high') return 'default';
@@ -100,19 +92,8 @@ function severityToPriority(severity?: number): PriorityLevel {
 	return 'medium';
 }
 
-function formatDateLabel(rawDate?: string, rawTime?: string): string {
-	if (!rawDate) return 'Today';
-	const parsed = new Date(rawDate);
-	if (Number.isNaN(parsed.getTime())) return 'Today';
-	const dateLabel = parsed.toLocaleDateString('en-US', {
-		month: 'short',
-		day: 'numeric',
-	});
-	return rawTime ? `${dateLabel} ${rawTime}` : dateLabel;
-}
-
 export default function TodayPage() {
-	const { t } = useI18n();
+	const { t, formatDate } = useI18n();
 	const { user } = useAuthStore();
 	const { data: todayData, loading, error, fetchTodayScreen } = useTodayStore();
 	const [headerDate, setHeaderDate] = React.useState('');
@@ -125,20 +106,72 @@ export default function TodayPage() {
 		return user.roles?.length ? user.roles : [user.role as UserRole];
 	}, [user]);
 
+	const displayName = React.useMemo(() => {
+		if (!user) return t('pages.today.greetingFallback');
+		const fullName = (user.full_name || '').trim();
+		if (fullName) return fullName;
+		const email = (user.email || '').trim();
+		if (email) return email;
+		return t('pages.today.greetingFallback');
+	}, [user, t]);
+
+	const firstName = React.useMemo(() => {
+		const name = displayName.trim();
+		return name.split(' ')[0] || name;
+	}, [displayName]);
+
+	const formatHeaderDate = React.useCallback((date: Date): string => {
+		return formatDate(date, { weekday: 'long', month: 'long', day: 'numeric' });
+	}, [formatDate]);
+
+	const formatDateLabel = React.useCallback((rawDate?: string, rawTime?: string): string => {
+		if (!rawDate) return t('time.today');
+		const parsed = new Date(rawDate);
+		if (Number.isNaN(parsed.getTime())) return t('time.today');
+
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const tomorrow = new Date(today);
+		tomorrow.setDate(today.getDate() + 1);
+		const dateOnly = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+
+		let dateLabel = formatDate(parsed, { month: 'short', day: 'numeric' });
+		if (dateOnly.getTime() === today.getTime()) {
+			dateLabel = t('time.today');
+		} else if (dateOnly.getTime() === tomorrow.getTime()) {
+			dateLabel = t('time.tomorrow');
+		}
+
+		return rawTime ? `${dateLabel} ${rawTime}` : dateLabel;
+	}, [formatDate, t]);
+
+	const formatPriorityLabel = React.useCallback((priority: PriorityLevel) => {
+		return t(`common.priority.${priority}`);
+	}, [t]);
+
+	const formatStatusLabel = React.useCallback((status: string) => {
+		const normalized = status.toLowerCase().replace(/\s+/g, '_');
+		const map: Record<string, string> = {
+			at_risk: t('pages.today.status.atRisk'),
+			reviewing: t('pages.today.status.reviewing'),
+			open: t('pages.today.status.open'),
+		};
+		return map[normalized] || status.replace(/_/g, ' ');
+	}, [t]);
+
 	const getPriorities = React.useCallback((): PriorityItem[] => {
 		const allPossible = [
-			{ id: 'p1', title: 'Close RFQ blockers for today', priority: 'urgent' as PriorityLevel, href: '/pipeline' },
-			{ id: 'p2', title: 'Review monthly strategic targets', priority: 'high' as PriorityLevel, href: '/executive' },
-			{ id: 'p3', title: 'Analyze critical exceptions', priority: 'high' as PriorityLevel, href: '/exceptions' },
-			{ id: 'p4', title: 'Confirm production schedule risks', priority: 'high' as PriorityLevel, href: '/production' },
-			{ id: 'p5', title: 'Review top quality abnormalities', priority: 'medium' as PriorityLevel, href: '/quality' },
+			{ id: 'p1', title: t('pages.today.fallback.priorities.closeRfqBlockers'), priority: 'urgent' as PriorityLevel, href: '/pipeline' },
+			{ id: 'p2', title: t('pages.today.fallback.priorities.reviewMonthlyTargets'), priority: 'high' as PriorityLevel, href: '/executive' },
+			{ id: 'p3', title: t('pages.today.fallback.priorities.analyzeCriticalExceptions'), priority: 'high' as PriorityLevel, href: '/exceptions' },
+			{ id: 'p4', title: t('pages.today.fallback.priorities.confirmProductionScheduleRisks'), priority: 'high' as PriorityLevel, href: '/production' },
+			{ id: 'p5', title: t('pages.today.fallback.priorities.reviewTopQualityAbnormalities'), priority: 'medium' as PriorityLevel, href: '/quality' },
 		];
 
 		return (isTestEnv ? allPossible : allPossible.filter(item => hasPageAccess(item.href, userRoles))).slice(0, 3);
 	}, [userRoles, isTestEnv]);
 
-	const firstName = user?.full_name?.split(' ')[0] || 'there';
-	const greeting = todayData?.greeting || `Hello, ${firstName}!`;
+	const greeting = todayData?.greeting || t('pages.today.greeting', { name: firstName });
 
 	React.useEffect(() => {
 		setMounted(true);
@@ -152,14 +185,14 @@ export default function TodayPage() {
 				setHeaderDate(formatHeaderDate(parsed));
 			}
 		}
-	}, [todayData?.current_date]);
+	}, [todayData?.current_date, formatHeaderDate]);
 	
 	// Fetch data on mount
 	React.useEffect(() => {
-		if (user?.id && user?.full_name) {
-			fetchTodayScreen(user.id, user.full_name);
+		if (user?.id) {
+			fetchTodayScreen(user.id, displayName);
 		}
-	}, [user?.id, user?.full_name, fetchTodayScreen]);
+	}, [user?.id, displayName, fetchTodayScreen]);
 
 	// Convert API priorities to our format
 	const mappedPriorities: PriorityItem[] = React.useMemo(() => {
@@ -190,11 +223,11 @@ export default function TodayPage() {
 			return isTestEnv ? items : items.filter(t => hasPageAccess(t.href, userRoles));
 		}
 		const fallback = [
-			{ id: 't1', title: 'Review open RFQs', dueLabel: 'Today', href: '/pipeline' },
-			{ id: 't2', title: 'Approve draft quote', dueLabel: 'Tomorrow', href: '/quotes' },
+			{ id: 't1', title: t('pages.today.fallback.tasks.reviewOpenRfqs'), dueLabel: t('time.today'), href: '/pipeline' },
+			{ id: 't2', title: t('pages.today.fallback.tasks.approveDraftQuote'), dueLabel: t('time.tomorrow'), href: '/quotes' },
 		];
 		return isTestEnv ? fallback : fallback.filter(t => hasPageAccess(t.href, userRoles));
-	}, [todayData, userRoles]);
+	}, [todayData, userRoles, formatDateLabel, isTestEnv, t]);
 
 	const kpis: KpiItem[] = React.useMemo(() => {
 		if (todayData?.quick_metrics?.length) {
@@ -217,13 +250,13 @@ export default function TodayPage() {
 			return isTestEnv ? items : items.filter(k => hasPageAccess(k.href, userRoles));
 		}
 		const fallback = [
-			{ id: 'k1', title: 'Open RFQs', value: 12, trendLabel: 'from last week', href: '/pipeline' },
-			{ id: 'k2', title: 'Pending Quotes', value: 7, trendLabel: 'from last week', href: '/quotes' },
-			{ id: 'k3', title: 'On-time Delivery', value: 98, trendLabel: 'from last week', href: '/production' },
-			{ id: 'k4', title: 'OEE', value: 86, trendLabel: 'from last week', href: '/production' },
+			{ id: 'k1', title: t('pages.today.fallback.kpis.openRfqs'), value: 12, trendLabel: t('pages.today.fallback.trendFromLastWeek'), href: '/pipeline' },
+			{ id: 'k2', title: t('pages.today.fallback.kpis.pendingQuotes'), value: 7, trendLabel: t('pages.today.fallback.trendFromLastWeek'), href: '/quotes' },
+			{ id: 'k3', title: t('pages.today.fallback.kpis.onTimeDelivery'), value: 98, trendLabel: t('pages.today.fallback.trendFromLastWeek'), href: '/production' },
+			{ id: 'k4', title: t('pages.today.fallback.kpis.oee'), value: 86, trendLabel: t('pages.today.fallback.trendFromLastWeek'), href: '/production' },
 		];
 		return isTestEnv ? fallback : fallback.filter(k => hasPageAccess(k.href, userRoles));
-	}, [todayData, userRoles]);
+	}, [todayData, userRoles, isTestEnv, t]);
 
 	const activity: ActivityItem[] = React.useMemo(() => {
 		// Activity would come from todayData.recent_activity if available
@@ -232,17 +265,17 @@ export default function TodayPage() {
 				.map((a: any, idx: number) => ({
 					id: a.id || `a${idx}`,
 					text: a.description || a.title,
-					when: a.when || a.detected_at || a.created_at || 'Recently',
+					when: a.when || a.detected_at || a.created_at || t('pages.today.recently'),
 					href: a.href || '/quality',
 				}))
 				.filter(a => !a.href || hasPageAccess(a.href, userRoles))
 				.slice(0, 3);
 		}
 		return [
-			{ id: 'a1', text: 'RFQ-2024-0089 status updated', when: '2 hours ago', href: '/pipeline/1' },
-			{ id: 'a2', text: 'Quote sent to Acme Corp', when: '5 hours ago', href: '/quotes' },
+			{ id: 'a1', text: t('pages.today.fallback.activity.rfqStatusUpdated'), when: t('time.hours', { count: 2 }), href: '/pipeline/1' },
+			{ id: 'a2', text: t('pages.today.fallback.activity.quoteSentToAcme'), when: t('time.hours', { count: 5 }), href: '/quotes' },
 		].filter(a => !a.href || hasPageAccess(a.href, userRoles));
-	}, [todayData, userRoles]);
+	}, [todayData, userRoles, t]);
 
 	const rfqs: RFQItem[] = React.useMemo(() => {
 		const risks = todayData?.top_risks
@@ -256,15 +289,15 @@ export default function TodayPage() {
 		return rfqRisks
 			.map((r: any, idx: number) => ({
 				id: r.id || `r${idx}`,
-				title: r.title || r.name || r.description || 'RFQ at risk',
-				customer: r.customer || r.customer_name || r.owner_name || 'Unknown',
+				title: r.title || r.name || r.description || t('pages.today.rfqAtRisk'),
+				customer: r.customer || r.customer_name || r.owner_name || t('common.unknown'),
 				priority: severityToPriority(r.severity),
 				status: r.status || 'at_risk',
 				href: r.href || (r.entity_id ? `/pipeline/${r.entity_id}` : '/pipeline'),
 			}))
 			.filter(r => hasPageAccess(r.href, userRoles))
 			.slice(0, 3);
-	}, [todayData, userRoles]);
+	}, [todayData, userRoles, t]);
 
 	const fallbackRfqs: RFQItem[] = React.useMemo(() => {
 		const base: RFQItem[] = [
@@ -286,9 +319,9 @@ export default function TodayPage() {
 	const fallbackMicroDrills: MicroDrillItem[] = React.useMemo(() => {
 		if (!isTestEnv) return [];
 		return [
-			{ id: 'd1', question: 'What is the priority focus today?', hint: 'Review top priorities.' },
+			{ id: 'd1', question: t('pages.today.fallback.drill.question'), hint: t('pages.today.fallback.drill.hint') },
 		];
-	}, [isTestEnv]);
+	}, [isTestEnv, t]);
 
 	const lswSummary = (todayData?.lsw_summary || null) as LswSummary | null;
 
@@ -309,7 +342,7 @@ export default function TodayPage() {
 			<div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
 				<AlertCircle className="h-12 w-12 text-destructive" />
 				<p className="text-muted-foreground">{t('pages.today.errorLoading')}</p>
-				<Button onClick={() => user && fetchTodayScreen(user.id, user.full_name || '')}>
+				<Button onClick={() => user && fetchTodayScreen(user.id, displayName)}>
 					{t('common.tryAgain')}
 				</Button>
 			</div>
@@ -390,7 +423,7 @@ export default function TodayPage() {
 											</Link>
 											<div className="flex items-center gap-3">
 												<Badge role="status" variant="outline" className="rounded-none border-rams-line text-[9px] font-black uppercase tracking-widest px-1.5 py-0 h-4 bg-rams-panel">
-													{p.priority}
+													{formatPriorityLabel(p.priority)}
 												</Badge>
 											<span className="text-[9px] text-muted-foreground/40 font-mono font-bold uppercase tracking-widest">{t('pages.today.targetToday')}</span>
 											</div>
@@ -493,8 +526,8 @@ export default function TodayPage() {
 										{r.customer} — {r.title}
 								</Link>
 									<div className="flex items-center gap-2 mt-2">
-										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-panel border border-rams-line">{r.priority}</span>
-										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-orange text-black">{r.status}</span>
+										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-panel border border-rams-line">{formatPriorityLabel(r.priority)}</span>
+										<span className="text-[8px] font-black uppercase tracking-widest px-1 bg-rams-orange text-black">{formatStatusLabel(r.status)}</span>
 									</div>
 								</div>
 							))}

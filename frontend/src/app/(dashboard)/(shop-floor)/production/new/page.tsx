@@ -136,11 +136,11 @@ export default function NewWorkOrderPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">LOW_VELOCITY</SelectItem>
-                    <SelectItem value="normal">STANDARD_NODE</SelectItem>
-                    <SelectItem value="high">HIGH_PRIORITY</SelectItem>
-                    <SelectItem value="urgent">URGENT_ESCALATION</SelectItem>
-                    <SelectItem value="critical">CRITICAL_THRESHOLD</SelectItem>
+                    <SelectItem value="low">{t('production.new.priorities.low')}</SelectItem>
+                    <SelectItem value="normal">{t('production.new.priorities.normal')}</SelectItem>
+                    <SelectItem value="high">{t('production.new.priorities.high')}</SelectItem>
+                    <SelectItem value="urgent">{t('production.new.priorities.urgent')}</SelectItem>
+                    <SelectItem value="critical">{t('production.new.priorities.critical')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -194,7 +194,7 @@ export default function NewWorkOrderPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="notes" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">Production Intel & Notes</Label>
+              <Label htmlFor="notes" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('production.new.notesLabel')}</Label>
               <Textarea
                 id="notes"
                 placeholder="INCORPORATE_SPECIAL_INSTRUCTIONS..."

@@ -33,8 +33,10 @@ from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
 from sensei.middleware.secure_headers import SecureHeadersASGIMiddleware, SecureHeadersMiddleware
 from sensei.middleware.rate_limit import RateLimitMiddleware
+from sensei.middleware.session_binding import SessionBindingMiddleware
 from sensei.services.core.backup_scheduler import BackupSchedulerService
 from sensei.services.core.database_backup import DatabaseBackupService
+from sensei.services.core.health_checks import HealthCheckService
 from sensei.services.ops.kpi_app_services import muda_nudging_service
 from sensei.services.ops.muda_nudging_scheduler import (
     MudaNudgingScheduleConfig,
@@ -58,6 +60,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         environment=settings.ENVIRONMENT,
         version=settings.VERSION,
     )
+    
+    # Initialize OpenTelemetry if enabled
+    if settings.OTEL_ENABLED:
+        try:
+            from sensei.core.telemetry import setup_telemetry
+            telemetry_ok = setup_telemetry()
+            if telemetry_ok:
+                logger.info("OpenTelemetry distributed tracing initialized")
+            else:
+                logger.warning("OpenTelemetry initialization failed")
+        except ImportError:
+            logger.info("OpenTelemetry not installed - tracing disabled")
+        except Exception as e:
+            logger.warning(f"OpenTelemetry setup error: {e}")
     
     # Verify connections
     db_ok = await check_database_connection(engine)
@@ -176,6 +192,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Core services pre-initialized successfully")
     except Exception as e:
         logger.error("Failed to pre-initialize core services", error=str(e))
+    
+    # Verify AI/Chatbot model availability at startup
+    try:
+        health_service = HealthCheckService()
+        ai_model_ok = await health_service.verify_ai_model_at_startup()
+        app.state.health_service = health_service
+        
+        if not ai_model_ok:
+            logger.warning(
+                "AI model not available - chatbot functionality will be limited",
+                environment=settings.ENVIRONMENT,
+            )
+            # In production, this might be critical
+            if settings.ENVIRONMENT == "production":
+                logger.error(
+                    "CRITICAL: AI model unavailable in production. "
+                    "Download model or disable chatbot features."
+                )
+    except Exception as e:
+        logger.error("Failed to verify AI model availability", error=str(e))
 
     yield
     
@@ -290,6 +326,23 @@ def create_application() -> FastAPI:
     app.add_middleware(TimingMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)
     
+    # Session binding middleware - enabled in production for security
+    if settings.SESSION_BINDING_ENABLED:
+        app.add_middleware(
+            SessionBindingMiddleware,
+            enabled=True,
+            salt=settings.SESSION_FINGERPRINT_SALT,
+        )
+    
+    # Metrics middleware for Prometheus
+    if settings.METRICS_ENABLED:
+        try:
+            from sensei.core.metrics import MetricsMiddleware
+            app.add_middleware(MetricsMiddleware)
+            logger.info("Prometheus metrics middleware enabled")
+        except ImportError:
+            logger.warning("Metrics module not available")
+    
     # Rate limiting - enabled in production, configurable otherwise
     rate_limit_enabled = settings.ENVIRONMENT == "production" or settings.RATE_LIMIT_ENABLED
     app.add_middleware(
@@ -323,6 +376,24 @@ def create_application() -> FastAPI:
                 "storage": "up" if storage_ok else "down",
             },
         }
+    
+    # Prometheus metrics endpoint
+    if settings.METRICS_ENABLED:
+        try:
+            from sensei.core.metrics import metrics_endpoint, get_slo_summary
+            
+            @app.get(settings.METRICS_PATH, tags=["Metrics"], include_in_schema=False)
+            async def prometheus_metrics(request: Request):
+                """Prometheus metrics endpoint for scraping."""
+                return await metrics_endpoint(request)
+            
+            @app.get("/api/v1/slo/status", tags=["Metrics"])
+            async def slo_status():
+                """Get current SLO compliance status."""
+                return get_slo_summary()
+                
+        except ImportError:
+            logger.warning("Metrics module not available for endpoint")
     
     return app
 

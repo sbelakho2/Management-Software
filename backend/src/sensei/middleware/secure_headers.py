@@ -655,27 +655,65 @@ class SecureHeadersMiddleware:
         self._referrer_policy = ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN
 
     def apply_api_preset(self) -> None:
-        """Apply preset for API endpoints."""
-        # Minimal CSP for API
+        """
+        Apply preset for API endpoints.
+        
+        In production, this preset enforces a strict CSP policy:
+        - default-src 'none' (deny all by default)
+        - frame-ancestors 'none' (prevent framing)
+        - CSP is ENFORCED (not report-only) in production
+        """
+        # Import settings to check environment
+        from sensei.core.config import settings
+        
+        # Minimal CSP for API - very restrictive
         self._csp = CSPConfig()
         self._csp.add_directive(CSPDirective.DEFAULT_SRC, "'none'")
         self._csp.add_directive(CSPDirective.FRAME_ANCESTORS, "'none'")
+        self._csp.add_directive(CSPDirective.BASE_URI, "'none'")
+        self._csp.add_directive(CSPDirective.FORM_ACTION, "'none'")
+        self._csp.add_directive(CSPDirective.OBJECT_SRC, "'none'")
+        
+        # CRITICAL: Enforce CSP in production (not report-only)
+        # In development, use report-only for debugging
+        if settings.ENVIRONMENT == "production":
+            self._csp.report_only = False  # ENFORCE
+        else:
+            self._csp.report_only = True   # Report-only for development
+        
+        # Add CSP report-uri if configured
+        if hasattr(settings, 'CSP_REPORT_URI') and settings.CSP_REPORT_URI:
+            self._csp.add_directive(CSPDirective.REPORT_URI, settings.CSP_REPORT_URI)
 
-        # Standard HSTS
+        # Standard HSTS - enforced in production
         self._hsts = HSTSConfig(
-            max_age=31536000,
+            max_age=31536000,  # 1 year
             include_subdomains=True,
+            preload=settings.ENVIRONMENT == "production",  # Enable preload in production
         )
 
         # Strict X-Frame-Options
         self._x_frame_options = XFrameOption.DENY
 
-        # No cache for API responses
+        # No cache for API responses - prevents sensitive data caching
         self._cache_control = CacheControlConfig(
             no_store=True,
             no_cache=True,
             private=True,
+            must_revalidate=True,
         )
+        
+        # Strict referrer policy
+        self._referrer_policy = ReferrerPolicy.NO_REFERRER
+        
+        # Disable dangerous features
+        self._permissions = PermissionsPolicyConfig()
+        self._permissions.disable_feature("camera")
+        self._permissions.disable_feature("microphone")
+        self._permissions.disable_feature("geolocation")
+        self._permissions.disable_feature("payment")
+        self._permissions.disable_feature("usb")
+        self._permissions.disable_feature("bluetooth")
 
     # Statistics and Summary
 

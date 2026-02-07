@@ -23,6 +23,8 @@ import {
   RefreshCw,
   TrendingUp,
   User,
+  MapPin,
+  Laptop
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -80,19 +82,12 @@ interface TrainingRecord {
   score?: number;
 }
 
-const recordStatusConfig: Record<string, { label: string; variant: BadgeProps['variant']; icon: typeof CheckCircle }> = {
-  enrolled: { label: 'Enrolled', variant: 'secondary', icon: Clock },
-  in_progress: { label: 'In Progress', variant: 'warning', icon: RefreshCw },
-  completed: { label: 'Completed', variant: 'success', icon: CheckCircle },
-  expired: { label: 'Expired', variant: 'danger', icon: AlertTriangle },
-  failed: { label: 'Failed', variant: 'danger', icon: AlertTriangle },
-};
-
-const formatConfig: Record<string, { label: string; color: string }> = {
-  online: { label: 'Online', color: 'bg-primary/10 text-primary' },
-  classroom: { label: 'Classroom', color: 'bg-success/10 text-success' },
-  hands_on: { label: 'Hands-On', color: 'bg-warning/10 text-warning' },
-  blended: { label: 'Blended', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+const recordStatusConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle }> = {
+  enrolled: { label: 'Enrolled', className: 'bg-rams-steel/10 text-rams-steel border-rams-steel/30', icon: Clock },
+  in_progress: { label: 'In Progress', className: 'bg-rams-orange/10 text-rams-orange border-rams-orange/30', icon: RefreshCw },
+  completed: { label: 'Completed', className: 'bg-rams-green/10 text-rams-green border-rams-green/30', icon: CheckCircle },
+  expired: { label: 'Expired', className: 'bg-rams-red/10 text-rams-red border-rams-red/30', icon: AlertTriangle },
+  failed: { label: 'Failed', className: 'bg-rams-red/10 text-rams-red border-rams-red/30', icon: AlertTriangle },
 };
 
 function TrainingStats() {
@@ -100,28 +95,32 @@ function TrainingStats() {
   const { skills, trainings, records } = useTrainingStore();
   
   const expiringCount = records.filter(r => {
-    return false; 
+    return false; // Implement actual logic in store or helper 
   }).length;
 
   return (
     <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
-      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+      <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.activeSkillNodes') || 'Active Skill Nodes'}</p>
-        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{skills.length}</p>
+        <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{skills.length}</div>
+        <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{t('pages.hr.systemActive') || 'System Active'}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+      <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.operationalProtocols') || 'Operational Protocols'}</p>
-        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{trainings.length}</p>
+        <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{trainings.length}</div>
+        <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.hr.availableModules') || 'Available Modules'}</p>
       </div>
-      <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+      <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.synchronizationPulse') || 'Synchronization Pulse'}</p>
-        <p className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{records.filter(r => r.status === 'in_progress').length}</p>
+        <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{records.filter(r => r.status === 'in_progress').length}</div>
+        <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">{t('pages.hr.activeSessions') || 'Active Sessions'}</p>
       </div>
-      <div className="bg-rams-module p-6 border-b border-rams-line">
-        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-red/60 mb-4">{t('training.stats.thresholdAlerts') || 'Threshold Alerts'}</p>
-        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', expiringCount > 0 ? 'text-rams-red' : 'text-foreground/90')}>
+      <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
+        <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('training.stats.thresholdAlerts') || 'Threshold Alerts'}</p>
+        <div className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', expiringCount > 0 ? 'text-rams-red' : 'text-foreground/90')}>
           {expiringCount}
-        </p>
+        </div>
+        <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.hr.expiringSoon') || 'Expiring Soon'}</p>
       </div>
     </div>
   );
@@ -144,7 +143,7 @@ function CertificationsTab() {
 
   if (isLoading && skills.length === 0) {
     return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {[1, 2, 3].map(i => <Card key={i} className="h-40 animate-pulse bg-muted" />)}
+      {[1, 2, 3].map(i => <div key={i} className="h-40 animate-pulse bg-rams-panel border border-rams-line" />)}
     </div>;
   }
 
@@ -152,22 +151,22 @@ function CertificationsTab() {
     <div className="space-y-4">
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder={t('pages.training.certifications.searchPlaceholder') || 'Search skills...'}
-            className="pl-9"
+            className="pl-9 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono focus-visible:ring-rams-orange"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono uppercase tracking-wide">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('common.allCategories') || 'All Categories'}</SelectItem>
+          <SelectContent className="bg-rams-module border-rams-line">
+            <SelectItem value="all" className="text-xs uppercase font-bold">{t('common.allCategories') || 'All Categories'}</SelectItem>
             {categories.map(cat => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+              <SelectItem key={cat} value={cat} className="text-xs uppercase font-mono">{cat}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -175,43 +174,50 @@ function CertificationsTab() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filtered.map((skill) => (
-          <Card 
+          <div 
             key={skill.id} 
-            className="hover:border-primary/50 cursor-pointer transition-colors"
+            className="group relative rounded-rams-sm border border-rams-line bg-rams-module hover:bg-rams-panel transition-colors p-4 cursor-pointer"
             onClick={() => router.push(`/training/certifications/${skill.id}`)}
           >
-            <CardContent className="pt-4">
-              <div className="flex items-start justify-between mb-2">
-                <Badge variant="outline">{skill.skill_category}</Badge>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                    <Button variant="ghost" size="icon-sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem>{t('common.edit') || 'Edit'}</DropdownMenuItem>
-                    <DropdownMenuItem>{t('pages.training.certifications.viewCertifiedEmployees') || 'View Certified Employees'}</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem className="text-danger">{t('common.archive') || 'Archive'}</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            <div className="flex items-start justify-between mb-3">
+              <Badge variant="outline" className="rounded-none bg-transparent border-rams-line text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                {skill.skill_category}
+              </Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48 bg-rams-module border-rams-line rounded-rams-sm">
+                  <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider cursor-pointer">{t('common.edit') || 'Edit'}</DropdownMenuItem>
+                  <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider cursor-pointer">{t('pages.training.certifications.viewCertifiedEmployees') || 'View Certified Personnel'}</DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-rams-line" />
+                  <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider text-rams-red focus:text-rams-red cursor-pointer">{t('common.archive') || 'Archive Protocol'}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            
+            <h3 className="font-sans font-black text-sm uppercase tracking-tight mb-2 group-hover:text-rams-orange transition-colors">{skill.name}</h3>
+            <p className="text-[10px] text-muted-foreground font-mono mb-4 line-clamp-2 h-8">{skill.description}</p>
+            
+            <div className="pt-3 border-t border-rams-line flex items-center justify-between text-[9px] font-mono text-muted-foreground uppercase tracking-wider">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3 w-3 opacity-50" />
+                <span>{t('pages.training.certifications.validMonths') || 'VALID'} {skill.recertification_interval_days / 30} MO</span>
               </div>
-              <h3 className="font-semibold mb-1">{skill.name}</h3>
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{skill.description}</p>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  {t('pages.training.certifications.validMonths') || 'Valid'} {skill.recertification_interval_days / 30} {t('common.months') || 'months'}
-                </div>
-                {skill.is_safety_critical && <Badge variant="destructive" size="sm">{t('pages.training.certifications.safety') || 'Safety'}</Badge>}
-              </div>
-            </CardContent>
-          </Card>
+              {skill.is_safety_critical && (
+                <Badge variant="destructive" className="rounded-none h-4 px-1 text-[8px] font-black bg-rams-red/10 text-rams-red border border-rams-red/30">
+                  {t('pages.training.certifications.safety') || 'CRITICAL'}
+                </Badge>
+              )}
+            </div>
+          </div>
         ))}
         {filtered.length === 0 && !isLoading && (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            {t('pages.training.certifications.noSkillsFound') || 'No skills found'}
+          <div className="col-span-full py-16 text-center border border-dashed border-rams-line rounded-rams-sm bg-rams-module">
+            <Award className="h-10 w-10 mx-auto text-muted-foreground/30 mb-4" />
+            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">No certifications found</p>
           </div>
         )}
       </div>
@@ -236,74 +242,73 @@ function ProgramsTab() {
     <div className="space-y-4">
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder={t('pages.training.programs.searchPlaceholder') || 'Search programs...'}
-            className="pl-9"
+            className="pl-9 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono focus-visible:ring-rams-orange"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <Select value={formatFilter} onValueChange={setFormatFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono uppercase tracking-wide">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('pages.training.programs.allTypes') || 'All Types'}</SelectItem>
-            <SelectItem value="INTERNAL">Internal</SelectItem>
-            <SelectItem value="EXTERNAL">External</SelectItem>
-            <SelectItem value="ON_THE_JOB">On the Job</SelectItem>
-            <SelectItem value="E_LEARNING">E-Learning</SelectItem>
+          <SelectContent className="bg-rams-module border-rams-line">
+            <SelectItem value="all" className="text-xs uppercase font-bold">{t('pages.training.programs.allTypes') || 'All Types'}</SelectItem>
+            <SelectItem value="INTERNAL" className="text-xs uppercase font-mono">Internal</SelectItem>
+            <SelectItem value="EXTERNAL" className="text-xs uppercase font-mono">External</SelectItem>
+            <SelectItem value="ON_THE_JOB" className="text-xs uppercase font-mono">On the Job</SelectItem>
+            <SelectItem value="E_LEARNING" className="text-xs uppercase font-mono">E-Learning</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left p-3 font-medium text-sm">{t('pages.training.programs.table.program') || 'Program'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('common.type') || 'Type'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('pages.training.programs.table.dates') || 'Dates'}</th>
-              <th className="text-center p-3 font-medium text-sm">{t('common.enrolled') || 'Enrolled'}</th>
-              <th className="p-3 w-10"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {filtered.map((program) => {
-              return (
-                <tr 
-                  key={program.id} 
-                  className="hover:bg-muted/50 cursor-pointer"
-                  onClick={() => router.push(`/training/programs/${program.id}`)}
-                >
-                  <td className="p-3">
-                    <p className="font-medium">{program.title}</p>
-                    <p className="text-sm text-muted-foreground line-clamp-1">{program.description}</p>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant="outline">{program.training_type}</Badge>
-                  </td>
-                  <td className="p-3 text-sm">
-                    {formatDate(program.start_date)}
-                  </td>
-                  <td className="p-3 text-center">
-                    <span className="font-medium">{program.enrolled_count}</span>
-                    {program.capacity && <span className="text-muted-foreground text-xs ml-1">/ {program.capacity}</span>}
-                  </td>
-                  <td className="p-3">
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && !isLoading && (
-              <tr>
-                <td colSpan={5} className="p-8 text-center text-muted-foreground">{t('pages.training.programs.noProgramsFound') || 'No programs found'}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="border border-rams-line rounded-rams-sm overflow-hidden bg-rams-module">
+        <div className="grid grid-cols-[2fr,1fr,1fr,1fr,40px] gap-4 p-3 bg-rams-panel/50 border-b border-rams-line text-[10px] uppercase font-black tracking-widest text-muted-foreground">
+          <div>{t('pages.training.programs.table.program') || 'Program ID'}</div>
+          <div>{t('common.type') || 'Type'}</div>
+          <div>{t('pages.training.programs.table.dates') || 'Timeline'}</div>
+          <div className="text-center">{t('common.enrolled') || 'Enrollment'}</div>
+          <div></div>
+        </div>
+        <div className="divide-y divide-rams-line">
+          {filtered.map((program) => {
+            return (
+              <div 
+                key={program.id} 
+                className="grid grid-cols-[2fr,1fr,1fr,1fr,40px] gap-4 p-3 items-center hover:bg-rams-panel transition-colors cursor-pointer group"
+                onClick={() => router.push(`/training/programs/${program.id}`)}
+              >
+                <div>
+                  <p className="font-sans font-black text-xs uppercase tracking-tight truncate group-hover:text-rams-orange">{program.title}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono truncate">{program.description}</p>
+                </div>
+                <div>
+                  <Badge variant="outline" className="rounded-none bg-rams-steel/5 border-rams-steel/30 text-rams-steel text-[8px] font-black uppercase tracking-widest px-1.5 h-5">
+                    {program.training_type.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
+                <div className="text-[10px] font-mono text-muted-foreground uppercase">
+                  {formatDate(program.start_date)}
+                </div>
+                <div className="text-center">
+                  <span className="font-mono font-bold text-sm tabular-nums">{program.enrolled_count}</span>
+                  {program.capacity && <span className="text-muted-foreground text-[10px] font-mono ml-1">/ {program.capacity}</span>}
+                </div>
+                <div className="flex justify-end">
+                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-rams-orange" />
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && !isLoading && (
+            <div className="p-12 text-center text-muted-foreground">
+              <BookOpen className="h-8 w-8 mx-auto opacity-30 mb-3" />
+              <p className="text-xs font-mono uppercase tracking-wider">{t('pages.training.programs.noProgramsFound') || 'No programs found'}</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -311,6 +316,7 @@ function ProgramsTab() {
 
 function RecordsTab() {
   const { t } = useI18n();
+  const router = useRouter(); // Added router
   const { records, isLoading } = useTrainingStore();
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('all');
@@ -328,94 +334,94 @@ function RecordsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t('pages.training.records.searchPlaceholder') || 'Search by employee or training...'}
-            className="pl-9"
+            placeholder={t('pages.training.records.searchPlaceholder') || 'Search personnel or activity...'}
+            className="pl-9 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono focus-visible:ring-rams-orange"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-40 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono uppercase tracking-wide">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('common.allStatus') || 'All Status'}</SelectItem>
+          <SelectContent className="bg-rams-module border-rams-line">
+            <SelectItem value="all" className="text-xs uppercase font-bold">{t('common.allStatus') || 'All Status'}</SelectItem>
             {Object.entries(recordStatusConfig).map(([key, cfg]) => (
-              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+              <SelectItem key={key} value={key} className="text-xs uppercase font-mono">{cfg.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          {t('common.export') || 'Export'}
+        <Button variant="outline" className="h-9 rounded-rams-sm border-rams-line text-[10px] font-black uppercase tracking-wider">
+          <Download className="mr-2 h-3.5 w-3.5" />
+          {t('common.export') || 'Export Data'}
         </Button>
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="text-left p-3 font-medium text-sm">{t('pages.training.records.table.employee') || 'Employee'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('pages.training.records.table.training') || 'Training'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('common.status') || 'Status'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('common.enrolled') || 'Enrolled'}</th>
-              <th className="text-left p-3 font-medium text-sm">{t('common.completed') || 'Completed'}</th>
-              <th className="text-center p-3 font-medium text-sm">{t('pages.training.records.table.score') || 'Score'}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {filtered.map((record) => {
-              const statusCfg = recordStatusConfig[record.status] || { label: record.status, variant: 'secondary', icon: Clock };
-              const StatusIcon = statusCfg.icon;
+      <div className="border border-rams-line rounded-rams-sm overflow-hidden bg-rams-module">
+        <div className="grid grid-cols-[1.5fr,1.5fr,1fr,1fr,1fr,1fr] gap-4 p-3 bg-rams-panel/50 border-b border-rams-line text-[10px] uppercase font-black tracking-widest text-muted-foreground">
+          <div>{t('pages.training.records.table.employee') || 'Personnel'}</div>
+          <div>{t('pages.training.records.table.training') || 'Module'}</div>
+          <div>{t('common.status') || 'Status'}</div>
+          <div>{t('common.enrolled') || 'Start Date'}</div>
+          <div>{t('common.completed') || 'End Date'}</div>
+          <div className="text-center">{t('pages.training.records.table.score') || 'Score'}</div>
+        </div>
+        <div className="divide-y divide-rams-line">
+          {filtered.map((record) => {
+            const statusCfg = recordStatusConfig[record.status] || { label: record.status, className: 'bg-rams-panel border-rams-line', icon: Clock };
+            const StatusIcon = statusCfg.icon;
 
-              return (
-                <tr key={record.id} className={cn('hover:bg-muted/50')}>
-                  <td className="p-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar size="sm">
-                        <AvatarFallback>{getInitials(record.user_name)}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium">{record.user_name}</p>
-                        <p className="text-xs text-muted-foreground">{record.user_id.split('-')[0]}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <p className="text-sm">{record.training_title}</p>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant={statusCfg.variant} size="sm" className="gap-1">
-                      <StatusIcon className="h-3 w-3" />
-                      {statusCfg.label}
-                    </Badge>
-                  </td>
-                  <td className="p-3 text-sm">
-                    {formatDate(record.enrolled_at)}
-                  </td>
-                  <td className="p-3 text-sm">
-                    {record.completed_at ? formatDate(record.completed_at) : '—'}
-                  </td>
-                  <td className="p-3 text-center">
-                    {record.score !== undefined ? (
-                      <span className={cn(
-                        'font-medium',
-                        record.score >= 80 ? 'text-success' : record.score >= 60 ? 'text-warning' : 'text-danger'
-                      )}>
-                        {record.score}%
-                      </span>
-                    ) : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && !isLoading && (
-              <tr>
-                <td colSpan={6} className="p-8 text-center text-muted-foreground">{t('pages.training.records.noRecordsFound') || 'No records found'}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            return (
+              <div 
+                key={record.id} 
+                className="grid grid-cols-[1.5fr,1.5fr,1fr,1fr,1fr,1fr] gap-4 p-3 items-center hover:bg-rams-panel transition-colors text-[11px] cursor-pointer group"
+                onClick={() => router.push(`/training/certifications/${record.id}`)}
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8 rounded-rams-sm border border-rams-line">
+                    <AvatarFallback className="bg-rams-panel text-[10px] font-black">
+                      {getInitials(record.user_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="overflow-hidden">
+                    <p className="font-sans font-bold uppercase tracking-tight truncate">{record.user_name}</p>
+                    <p className="text-[9px] font-mono text-muted-foreground truncate">{record.user_id.split('-')[0]}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="font-mono text-xs truncate" title={record.training_title}>{record.training_title}</p>
+                </div>
+                <div>
+                  <Badge variant="outline" className={cn("rounded-none border px-1.5 h-5 text-[8px] font-black uppercase tracking-widest gap-1", statusCfg.className)}>
+                    <StatusIcon className="h-3 w-3" />
+                    {statusCfg.label}
+                  </Badge>
+                </div>
+                <div className="font-mono text-muted-foreground uppercase">
+                  {formatDate(record.enrolled_at)}
+                </div>
+                <div className="font-mono text-muted-foreground uppercase">
+                  {record.completed_at ? formatDate(record.completed_at) : '—'}
+                </div>
+                <div className="text-center font-mono font-bold">
+                  {record.score !== undefined ? (
+                    <span className={cn(
+                      record.score >= 80 ? 'text-rams-green' : record.score >= 60 ? 'text-rams-orange' : 'text-rams-red'
+                    )}>
+                      {record.score}%
+                    </span>
+                  ) : '—'}
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && !isLoading && (
+            <div className="p-12 text-center text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto opacity-30 mb-3" />
+              <p className="text-xs font-mono uppercase tracking-wider">{t('pages.training.records.noRecordsFound') || 'No records found'}</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -459,29 +465,29 @@ function TrainingPageContent() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => router.push('/training/matrix')}>
+          <Button variant="outline" size="sm" className="rounded-rams-sm border-rams-line" onClick={() => router.push('/training/matrix')}>
             <TrendingUp className="mr-2 h-3.5 w-3.5" />
             {t('training.skillsMatrix') || 'Skills Matrix'}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="default" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
+              <Button size="sm" className="rounded-rams-sm bg-rams-orange text-black font-black uppercase tracking-widest text-[10px]">
                 <Plus className="mr-2 h-3.5 w-3.5" />
                 {t('training.initializeActivity') || 'Initialize Activity'}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => router.push('/training/certifications/new')}>
-                <Award className="mr-2 h-3.5 w-3.5" />
+            <DropdownMenuContent align="end" className="bg-rams-module border-rams-line rounded-rams-sm">
+              <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider cursor-pointer" onClick={() => router.push('/training/certifications/new')}>
+                <Award className="mr-2 h-3 w-3" />
                 {t('training.newCertification') || 'New Certification'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/training/programs/new')}>
-                <BookOpen className="mr-2 h-3.5 w-3.5" />
+              <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider cursor-pointer" onClick={() => router.push('/training/programs/new')}>
+                <BookOpen className="mr-2 h-3 w-3" />
                 {t('training.newTrainingProgram') || 'New Training Program'}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/training/enroll')}>
-                <User className="mr-2 h-3.5 w-3.5" />
+              <DropdownMenuSeparator className="bg-rams-line" />
+              <DropdownMenuItem className="text-xs uppercase font-bold tracking-wider cursor-pointer" onClick={() => router.push('/training/enroll')}>
+                <User className="mr-2 h-3 w-3" />
                 {t('training.enrollEmployee') || 'Enroll Employee'}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -493,15 +499,15 @@ function TrainingPageContent() {
       <TrainingStats />
 
       {/* Main Content (Modular Rack) */}
-      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none">
+      <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none bg-transparent">
         <CardHeader className="p-0 border-b border-rams-line bg-rams-panel/20">
-          <div className="flex">
+          <div className="flex overflow-x-auto scrollbar-hide">
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative whitespace-nowrap',
                 activeTab === 'certifications'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
-                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-line/40'
               )}
               onClick={() => setActiveTab('certifications')}
             >
@@ -512,10 +518,10 @@ function TrainingPageContent() {
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line whitespace-nowrap',
                 activeTab === 'programs'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
-                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-line/40'
               )}
               onClick={() => setActiveTab('programs')}
             >
@@ -526,10 +532,10 @@ function TrainingPageContent() {
             </button>
             <button
               className={cn(
-                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line',
+                'px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] transition-none relative border-l border-rams-line whitespace-nowrap',
                 activeTab === 'records'
                   ? 'text-foreground border-b-2 border-rams-orange bg-rams-module'
-                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-panel/40'
+                  : 'text-muted-foreground/40 hover:text-foreground/60 hover:bg-rams-line/40'
               )}
               onClick={() => setActiveTab('records')}
             >
@@ -540,7 +546,7 @@ function TrainingPageContent() {
             </button>
           </div>
         </CardHeader>
-        <CardContent className="p-6 bg-rams-module">
+        <CardContent className="p-6 bg-rams-module border border-t-0 border-rams-line">
           <div className="animate-in fade-in duration-300">
             {activeTab === 'certifications' && <CertificationsTab />}
             {activeTab === 'programs' && <ProgramsTab />}
@@ -555,18 +561,11 @@ function TrainingPageContent() {
 export default function TrainingPage() {
   return (
     <Suspense fallback={
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="h-8 w-48 bg-muted animate-pulse rounded" />
-            <div className="h-4 w-72 bg-muted animate-pulse rounded mt-2" />
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-muted animate-pulse rounded-lg" />
-          ))}
-        </div>
+      <div className="flex h-[50vh] flex-col items-center justify-center space-y-4">
+        <div className="h-8 w-8 animate-spin text-rams-orange rounded-full border-2 border-current border-t-transparent" />
+        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground animate-pulse">
+          Loading Training Modules...
+        </p>
       </div>
     }>
       <TrainingPageContent />

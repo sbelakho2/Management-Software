@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useI18n, type Locale } from '@/contexts/i18n-context';
 import { Globe, Calendar, Clock, Check, Languages } from 'lucide-react';
+import { CurrencySettings } from '@/components/settings/currency-settings';
 
 export default function LanguageSettingsPage() {
   const { locale, setLocale, availableLocales, t, direction, formatDate, formatNumber } = useI18n();
@@ -97,6 +98,14 @@ export default function LanguageSettingsPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Currency Display */}
+        <section className="space-y-6">
+          <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">
+            {t('settings.currency.displayCurrency')}
+          </Label>
+          <CurrencySettings />
         </section>
 
         {/* Success message */}

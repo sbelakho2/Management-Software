@@ -175,3 +175,75 @@ class InvoiceDispute(Base, TimestampMixin):
     invoice: Mapped["CustomerInvoice"] = relationship("CustomerInvoice")
     opened_by: Mapped["User"] = relationship("User", foreign_keys=[opened_by_id])
     resolved_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[resolved_by_id])
+
+
+# =============================================================================
+# SHIPPING AND FULFILLMENT (for erpStarz import compatibility)
+# =============================================================================
+
+
+class Shipment(Base, TimestampMixin, AuditMixin):
+    """
+    Outbound shipment to customer.
+    Maps from erpStarz `shipment` table.
+    """
+    __tablename__ = "shipments"
+
+    shipment_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    sales_order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("sales_orders.id"), nullable=True, index=True)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    
+    ship_from_warehouse_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    ship_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    expected_delivery: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    actual_delivery: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    
+    carrier: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tracking_number: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    service_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # ground, express, overnight
+    
+    ship_to_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    ship_to_address: Mapped[str] = mapped_column(Text, nullable=False)
+    ship_to_city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ship_to_state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ship_to_postal: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    ship_to_country: Mapped[str] = mapped_column(String(100), default="Tunisia", nullable=False)
+    
+    weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    weight_uom: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # kg, lb
+    
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, picked, packed, shipped, delivered, canceled
+    
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    sales_order: Mapped[Optional["SalesOrder"]] = relationship("SalesOrder")
+    account: Mapped["Account"] = relationship("Account")
+    lines: Mapped[list["ShipmentLine"]] = relationship("ShipmentLine", back_populates="shipment", cascade="all, delete-orphan")
+
+
+class ShipmentLine(Base, TimestampMixin):
+    """
+    Line item in a shipment.
+    Maps from erpStarz `shipment_item` table.
+    """
+    __tablename__ = "shipment_lines"
+
+    shipment_id: Mapped[UUID] = mapped_column(ForeignKey("shipments.id", ondelete="CASCADE"), nullable=False, index=True)
+    sales_order_line_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("sales_order_lines.id"), nullable=True)
+    
+    sku: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quantity_shipped: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    uom: Mapped[str] = mapped_column(String(20), default="EA", nullable=False)
+    
+    lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    shipment: Mapped["Shipment"] = relationship("Shipment", back_populates="lines")
+    sales_order_line: Mapped[Optional["SalesOrderLine"]] = relationship("SalesOrderLine")

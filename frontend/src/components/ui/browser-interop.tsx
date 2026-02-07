@@ -746,11 +746,20 @@ export function I18nProvider({
     return new Intl.NumberFormat(locale, options).format(value);
   }, [locale]);
 
-  // Currency formatting
-  const formatCurrency = useCallback((value: number, currency: string = 'USD'): string => {
-    return new Intl.NumberFormat(locale, {
+  // Currency formatting - integrates with currency store for user preferences
+  const formatCurrency = useCallback((value: number, currency?: string): string => {
+    // Import store state for user's display currency preference
+    const { useCurrencyStore, CURRENCIES } = require('@/stores/currency-store');
+    const store = useCurrencyStore.getState();
+    const targetCurrency = currency || store.displayCurrency || 'USD';
+    const currencyInfo = CURRENCIES[targetCurrency];
+    const targetLocale = currencyInfo?.locale || locale;
+    
+    return new Intl.NumberFormat(targetLocale, {
       style: 'currency',
-      currency,
+      currency: targetCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
     }).format(value);
   }, [locale]);
 

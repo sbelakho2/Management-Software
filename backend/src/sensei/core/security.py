@@ -624,3 +624,322 @@ def get_lockout_key(identifier: str) -> str:
         Redis key string
     """
     return f"lockout:{identifier}"
+
+
+# =============================================================================
+# Password Breach Checking (HaveIBeenPwned k-Anonymity API)
+# =============================================================================
+
+import hashlib
+import httpx
+import asyncio
+import logging
+from typing import Tuple
+
+_breach_check_logger = logging.getLogger(__name__)
+
+
+class PasswordBreachCheckResult(BaseModel):
+    """Result from password breach checking."""
+    
+    is_breached: bool
+    breach_count: int
+    check_performed: bool
+    error: Optional[str] = None
+
+
+async def check_password_breach(
+    password: str,
+    timeout_seconds: float = 3.0,
+) -> PasswordBreachCheckResult:
+    """
+    Check if a password has been exposed in known data breaches.
+    
+    Uses the HaveIBeenPwned Passwords API with k-anonymity model:
+    - Only sends first 5 characters of SHA-1 hash
+    - Checks returned suffixes locally
+    - Never exposes the actual password
+    
+    This is the RECOMMENDED way to check passwords against breach databases.
+    
+    Args:
+        password: The password to check (never sent to API)
+        timeout_seconds: API request timeout
+        
+    Returns:
+        PasswordBreachCheckResult with breach status and count
+        
+    Security:
+        - Only first 5 chars of SHA-1 hash are transmitted
+        - Full hash is compared locally
+        - Uses HTTPS for all communication
+    """
+    if not settings.PASSWORD_BREACH_CHECK_ENABLED:
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error="Password breach checking is disabled"
+        )
+    
+    try:
+        # Compute SHA-1 hash of password
+        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        
+        # k-anonymity: only send first 5 characters
+        prefix = sha1_hash[:5]
+        suffix = sha1_hash[5:]
+        
+        # Query HaveIBeenPwned API
+        url = f"https://api.pwnedpasswords.com/range/{prefix}"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                timeout=timeout_seconds,
+                headers={
+                    "User-Agent": "Sensei-OS-Password-Checker",
+                    "Add-Padding": "true",  # Request padded responses to prevent timing attacks
+                }
+            )
+            
+            if response.status_code != 200:
+                _breach_check_logger.warning(
+                    f"Password breach API returned status {response.status_code}"
+                )
+                return PasswordBreachCheckResult(
+                    is_breached=False,
+                    breach_count=0,
+                    check_performed=False,
+                    error=f"API returned status {response.status_code}"
+                )
+            
+            # Parse response - each line is "SUFFIX:COUNT"
+            # Find our suffix in the response
+            breach_count = 0
+            for line in response.text.splitlines():
+                if ':' not in line:
+                    continue
+                hash_suffix, count_str = line.split(':', 1)
+                if hash_suffix.strip().upper() == suffix:
+                    breach_count = int(count_str.strip())
+                    break
+            
+            return PasswordBreachCheckResult(
+                is_breached=breach_count > 0,
+                breach_count=breach_count,
+                check_performed=True,
+                error=None
+            )
+            
+    except asyncio.TimeoutError:
+        _breach_check_logger.warning("Password breach check timed out")
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error="Request timed out"
+        )
+    except httpx.RequestError as e:
+        _breach_check_logger.warning(f"Password breach check network error: {e}")
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error=f"Network error: {str(e)}"
+        )
+    except Exception as e:
+        _breach_check_logger.exception("Password breach check failed")
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error=f"Unexpected error: {str(e)}"
+        )
+
+
+def check_password_breach_sync(
+    password: str,
+    timeout_seconds: float = 3.0,
+) -> PasswordBreachCheckResult:
+    """
+    Synchronous version of password breach checking.
+    
+    For use in synchronous contexts. Uses the same k-anonymity approach.
+    
+    Args:
+        password: The password to check
+        timeout_seconds: API request timeout
+        
+    Returns:
+        PasswordBreachCheckResult with breach status
+    """
+    if not settings.PASSWORD_BREACH_CHECK_ENABLED:
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error="Password breach checking is disabled"
+        )
+    
+    try:
+        # Compute SHA-1 hash
+        sha1_hash = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        prefix = sha1_hash[:5]
+        suffix = sha1_hash[5:]
+        
+        url = f"https://api.pwnedpasswords.com/range/{prefix}"
+        
+        with httpx.Client() as client:
+            response = client.get(
+                url,
+                timeout=timeout_seconds,
+                headers={
+                    "User-Agent": "Sensei-OS-Password-Checker",
+                    "Add-Padding": "true",
+                }
+            )
+            
+            if response.status_code != 200:
+                return PasswordBreachCheckResult(
+                    is_breached=False,
+                    breach_count=0,
+                    check_performed=False,
+                    error=f"API returned status {response.status_code}"
+                )
+            
+            breach_count = 0
+            for line in response.text.splitlines():
+                if ':' not in line:
+                    continue
+                hash_suffix, count_str = line.split(':', 1)
+                if hash_suffix.strip().upper() == suffix:
+                    breach_count = int(count_str.strip())
+                    break
+            
+            return PasswordBreachCheckResult(
+                is_breached=breach_count > 0,
+                breach_count=breach_count,
+                check_performed=True,
+                error=None
+            )
+            
+    except Exception as e:
+        _breach_check_logger.warning(f"Sync password breach check failed: {e}")
+        return PasswordBreachCheckResult(
+            is_breached=False,
+            breach_count=0,
+            check_performed=False,
+            error=str(e)
+        )
+
+
+class PasswordStrengthResult(BaseModel):
+    """Comprehensive password strength analysis result."""
+    
+    is_strong: bool
+    score: int  # 0-100
+    is_breached: bool
+    breach_count: int
+    issues: list[str]
+    suggestions: list[str]
+
+
+async def validate_password_strength(
+    password: str,
+    check_breach: bool = True,
+    min_length: int = 12,
+) -> PasswordStrengthResult:
+    """
+    Comprehensive password strength validation.
+    
+    Checks:
+    1. Length requirements
+    2. Character diversity (uppercase, lowercase, digits, special)
+    3. Common password patterns
+    4. Breach database (HaveIBeenPwned)
+    
+    Args:
+        password: Password to validate
+        check_breach: Whether to check breach database
+        min_length: Minimum password length
+        
+    Returns:
+        PasswordStrengthResult with detailed analysis
+    """
+    issues: list[str] = []
+    suggestions: list[str] = []
+    score = 100
+    
+    # Length check
+    if len(password) < min_length:
+        issues.append(f"Password must be at least {min_length} characters")
+        score -= 30
+    elif len(password) < 16:
+        suggestions.append("Consider using a longer password (16+ characters)")
+        score -= 10
+    
+    # Character diversity
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" for c in password)
+    
+    diversity_count = sum([has_upper, has_lower, has_digit, has_special])
+    
+    if diversity_count < 3:
+        issues.append("Use a mix of uppercase, lowercase, numbers, and symbols")
+        score -= 20
+    elif diversity_count < 4:
+        suggestions.append("Adding more character types improves security")
+        score -= 5
+    
+    # Common patterns
+    common_patterns = [
+        ("123456", "Sequential numbers"),
+        ("password", "Common word"),
+        ("qwerty", "Keyboard pattern"),
+        ("111111", "Repeated characters"),
+        ("admin", "Common username"),
+    ]
+    
+    password_lower = password.lower()
+    for pattern, description in common_patterns:
+        if pattern in password_lower:
+            issues.append(f"Avoid {description.lower()} in password")
+            score -= 15
+    
+    # Check if password is mostly repeated characters
+    if len(set(password)) < len(password) / 3:
+        issues.append("Password has too many repeated characters")
+        score -= 20
+    
+    # Breach check
+    is_breached = False
+    breach_count = 0
+    
+    if check_breach and settings.PASSWORD_BREACH_CHECK_ENABLED:
+        breach_result = await check_password_breach(password)
+        if breach_result.is_breached:
+            is_breached = True
+            breach_count = breach_result.breach_count
+            issues.append(
+                f"This password has been seen in {breach_count:,} data breaches - "
+                "choose a different password"
+            )
+            score -= 50  # Major penalty for breached passwords
+    
+    # Ensure score is within bounds
+    score = max(0, min(100, score))
+    
+    # Determine if password is strong enough
+    is_strong = score >= 60 and not is_breached and len(issues) == 0
+    
+    return PasswordStrengthResult(
+        is_strong=is_strong,
+        score=score,
+        is_breached=is_breached,
+        breach_count=breach_count,
+        issues=issues,
+        suggestions=suggestions
+    )

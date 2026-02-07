@@ -7,7 +7,7 @@ interface TodayState {
   loading: boolean;
   error: string | null;
 
-  fetchTodayScreen: (userId: string, userName: string) => Promise<void>;
+  fetchTodayScreen: (userId: string, userName?: string) => Promise<void>;
 }
 
 export const useTodayStore = create<TodayState>((set) => ({
@@ -18,7 +18,8 @@ export const useTodayStore = create<TodayState>((set) => ({
   fetchTodayScreen: async (userId, userName) => {
     set({ loading: true, error: null });
     try {
-      const data = await todayApi.getTodayScreen(userId, userName);
+      const safeName = (userName || '').trim() || 'User';
+      const data = await todayApi.getTodayScreen(userId, safeName);
       set({ data, loading: false });
     } catch (error: unknown) {
       set({ error: getErrorMessage(error), loading: false });

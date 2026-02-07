@@ -1002,7 +1002,7 @@ describe('NotificationCenter', () => {
       await user.click(screen.getByText('Open'));
     });
 
-    expect(screen.getByText('2 unread')).toBeInTheDocument();
+    expect(screen.getByText('2 Unread')).toBeInTheDocument();
   });
 
   it('should have close button', async () => {

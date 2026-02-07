@@ -302,3 +302,52 @@ export async function initializeCurrency() {
     store.fetchRates();
   }, 60 * 60 * 1000);
 }
+
+/**
+ * Standalone currency formatter for use outside React components.
+ * Uses the user's persisted display currency preference.
+ * 
+ * @param amount - The amount to format
+ * @param currency - Optional currency code override
+ * @returns Formatted currency string
+ */
+export function formatCurrencyStandalone(
+  amount: number,
+  currency?: CurrencyCode
+): string {
+  const store = useCurrencyStore.getState();
+  const targetCurrency = currency || store.displayCurrency;
+  const currencyInfo = CURRENCIES[targetCurrency];
+  
+  return new Intl.NumberFormat(currencyInfo?.locale || 'en-US', {
+    style: 'currency',
+    currency: targetCurrency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * Convert and format an amount from one currency to the user's display currency.
+ * Useful for normalizing multi-currency data in dashboards.
+ * 
+ * @param amount - The amount in the original currency
+ * @param originalCurrency - The currency the amount is stored in
+ * @returns Formatted string in user's display currency
+ */
+export function convertAndFormat(
+  amount: number,
+  originalCurrency: CurrencyCode
+): string {
+  const store = useCurrencyStore.getState();
+  const displayCurrency = store.displayCurrency;
+  
+  // If same currency, just format
+  if (originalCurrency === displayCurrency) {
+    return formatCurrencyStandalone(amount, displayCurrency);
+  }
+  
+  // Convert via store's convert function
+  const converted = store.convert(amount, originalCurrency, displayCurrency);
+  return formatCurrencyStandalone(converted, displayCurrency);
+}

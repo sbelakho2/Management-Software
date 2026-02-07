@@ -17,6 +17,9 @@ import ar from '@/locales/ar.json';
 import es from '@/locales/es.json';
 import de from '@/locales/de.json';
 
+// Import currency store for integrated formatting
+import { useCurrencyStore, CURRENCIES, type CurrencyCode } from '@/stores/currency-store';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -253,12 +256,22 @@ export function I18nProvider({
     [bcp47Locale]
   );
 
-  // Currency formatting
+  // Currency formatting - integrates with currency store for user preferences
   const formatCurrency = useCallback(
     (value: number, currency?: string): string => {
-      return new Intl.NumberFormat(bcp47Locale, {
+      // Get the user's display currency from the store if no explicit currency provided
+      const currencyStore = useCurrencyStore.getState();
+      const targetCurrency = currency || currencyStore.displayCurrency || DEFAULT_CURRENCY[locale];
+      
+      // Use the currency's native locale for proper symbol placement
+      const currencyInfo = CURRENCIES[targetCurrency as CurrencyCode];
+      const formatLocale = currencyInfo?.locale || bcp47Locale;
+      
+      return new Intl.NumberFormat(formatLocale, {
         style: 'currency',
-        currency: currency || DEFAULT_CURRENCY[locale],
+        currency: targetCurrency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
       }).format(value);
     },
     [bcp47Locale, locale]

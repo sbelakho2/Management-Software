@@ -82,6 +82,7 @@ from sensei.api.v1.endpoints import (
     it_monitoring,
     auditor,
     chat,
+    starz_import,
 )
 
 api_router = APIRouter()
@@ -133,6 +134,7 @@ api_router.include_router(backup_scheduler.router, prefix="/backup-scheduler", t
 api_router.include_router(exceptions.router, prefix="/exceptions", tags=["Exceptions"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(hr.router, prefix="/hr", tags=["HR"])
+api_router.include_router(hr.self_service_router, prefix="/hr", tags=["HR Self-Service"])
 api_router.include_router(gm_onboarding.router, prefix="/gm-onboarding", tags=["GM Onboarding"])
 api_router.include_router(rfq_time_tracking.router, prefix="/rfq-time-tracking", tags=["RFQ Time Tracking"])
 api_router.include_router(quoting_helper.router, prefix="/quoting-helper", tags=["Quoting Helper"])
@@ -165,3 +167,4 @@ api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehous
 api_router.include_router(it_monitoring.router, prefix="/it", tags=["IT Monitoring"])
 api_router.include_router(auditor.router, prefix="/auditor", tags=["Auditor"])
 api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
+api_router.include_router(starz_import.router, prefix="/admin/import/starz-erp", tags=["StarzERP Import"])

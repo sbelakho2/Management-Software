@@ -1,6 +1,178 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosRequestConfig } from 'axios';
 
 /**
+ * Circuit Breaker States
+ */
+enum CircuitState {
+  CLOSED = 'CLOSED',      // Normal operation - requests flow through
+  OPEN = 'OPEN',          // Circuit tripped - requests fail fast
+  HALF_OPEN = 'HALF_OPEN' // Testing if service recovered
+}
+
+/**
+ * Circuit Breaker Configuration
+ */
+interface CircuitBreakerConfig {
+  failureThreshold: number;      // Number of failures before opening circuit
+  successThreshold: number;      // Successes needed in half-open to close
+  timeout: number;               // Time in ms before trying half-open
+  monitoringWindow: number;      // Time window for failure counting (ms)
+}
+
+/**
+ * Circuit Breaker Implementation
+ * 
+ * Prevents cascading failures by failing fast when the backend is unhealthy.
+ * This protects both the user experience (fast failure feedback) and the
+ * backend (reduces load during recovery).
+ */
+class CircuitBreaker {
+  private state: CircuitState = CircuitState.CLOSED;
+  private failures: number[] = [];  // Timestamps of failures
+  private successes: number = 0;
+  private lastFailureTime: number = 0;
+  private config: CircuitBreakerConfig;
+
+  constructor(config?: Partial<CircuitBreakerConfig>) {
+    this.config = {
+      failureThreshold: 5,        // 5 failures
+      successThreshold: 2,        // 2 successes to close
+      timeout: 30000,             // 30 seconds before half-open
+      monitoringWindow: 60000,    // 1 minute window
+      ...config
+    };
+  }
+
+  /**
+   * Check if request should be allowed
+   */
+  canRequest(): boolean {
+    this.cleanupOldFailures();
+
+    switch (this.state) {
+      case CircuitState.CLOSED:
+        return true;
+
+      case CircuitState.OPEN:
+        // Check if timeout has passed to try half-open
+        if (Date.now() - this.lastFailureTime >= this.config.timeout) {
+          this.state = CircuitState.HALF_OPEN;
+          this.successes = 0;
+          console.log('[CIRCUIT BREAKER] Transitioning to HALF_OPEN state');
+          return true;
+        }
+        return false;
+
+      case CircuitState.HALF_OPEN:
+        return true;
+    }
+  }
+
+  /**
+   * Record a successful request
+   */
+  recordSuccess(): void {
+    if (this.state === CircuitState.HALF_OPEN) {
+      this.successes++;
+      if (this.successes >= this.config.successThreshold) {
+        this.state = CircuitState.CLOSED;
+        this.failures = [];
+        this.successes = 0;
+        console.log('[CIRCUIT BREAKER] Circuit CLOSED - service recovered');
+      }
+    } else if (this.state === CircuitState.CLOSED) {
+      // Partial healing - remove oldest failure on success
+      if (this.failures.length > 0) {
+        this.failures.shift();
+      }
+    }
+  }
+
+  /**
+   * Record a failed request
+   */
+  recordFailure(): void {
+    const now = Date.now();
+    this.lastFailureTime = now;
+    
+    if (this.state === CircuitState.HALF_OPEN) {
+      // Any failure in half-open reopens the circuit
+      this.state = CircuitState.OPEN;
+      console.log('[CIRCUIT BREAKER] Circuit OPEN - failure during recovery');
+      return;
+    }
+
+    // Add failure timestamp
+    this.failures.push(now);
+    this.cleanupOldFailures();
+
+    // Check if we should open the circuit
+    if (this.failures.length >= this.config.failureThreshold) {
+      this.state = CircuitState.OPEN;
+      console.log('[CIRCUIT BREAKER] Circuit OPEN - failure threshold reached', {
+        failures: this.failures.length,
+        threshold: this.config.failureThreshold
+      });
+    }
+  }
+
+  /**
+   * Remove failures outside the monitoring window
+   */
+  private cleanupOldFailures(): void {
+    const cutoff = Date.now() - this.config.monitoringWindow;
+    this.failures = this.failures.filter(t => t > cutoff);
+  }
+
+  /**
+   * Get current circuit state
+   */
+  getState(): { state: CircuitState; failures: number; isOpen: boolean } {
+    return {
+      state: this.state,
+      failures: this.failures.length,
+      isOpen: this.state === CircuitState.OPEN
+    };
+  }
+
+  /**
+   * Force close the circuit (for recovery/admin purposes)
+   */
+  forceClose(): void {
+    this.state = CircuitState.CLOSED;
+    this.failures = [];
+    this.successes = 0;
+    console.log('[CIRCUIT BREAKER] Circuit force-closed');
+  }
+
+  /**
+   * Determine if error should trip circuit
+   * Only server errors (5xx) and network errors should count
+   */
+  shouldCountAsFailure(error: AxiosError): boolean {
+    // Network errors always count
+    if (!error.response) {
+      return true;
+    }
+
+    const status = error.response.status;
+    
+    // Server errors (5xx) count
+    if (status >= 500 && status < 600) {
+      return true;
+    }
+
+    // Rate limiting (429) counts but with less weight
+    if (status === 429) {
+      return true;
+    }
+
+    // Client errors (4xx) don't count - they're not service issues
+    return false;
+  }
+}
+
+/**
  * Safely normalize an API root URL.
  * 
  * Handles various input formats:
@@ -120,9 +292,19 @@ class ApiClient {
   private accessToken: string | null = null;
   private pendingRequests: Map<string, AbortController> = new Map();
   private refreshPromise: Promise<void> | null = null;
+  private circuitBreaker: CircuitBreaker;
 
   constructor() {
     console.log('[API CLIENT] Initializing with API_ROOT:', API_ROOT);
+    
+    // Initialize circuit breaker
+    this.circuitBreaker = new CircuitBreaker({
+      failureThreshold: 5,
+      successThreshold: 2,
+      timeout: 30000,
+      monitoringWindow: 60000
+    });
+    
     this.client = axios.create({
       baseURL: `${API_ROOT}/api/v1`,
       headers: {
@@ -134,9 +316,16 @@ class ApiClient {
     // Load token immediately
     this.loadToken();
 
-    // Request interceptor
+    // Request interceptor - includes circuit breaker check
     this.client.interceptors.request.use(
       (config) => {
+        // Check circuit breaker before making request
+        if (!this.circuitBreaker.canRequest()) {
+          const circuitError = new Error('Service temporarily unavailable - circuit breaker open');
+          (circuitError as Error & { code: string }).code = 'CIRCUIT_OPEN';
+          return Promise.reject(circuitError);
+        }
+        
         if (this.accessToken) {
           config.headers.Authorization = `Bearer ${this.accessToken}`;
         }
@@ -145,13 +334,22 @@ class ApiClient {
       (error) => Promise.reject(error)
     );
 
-    // Response interceptor
+    // Response interceptor - updates circuit breaker state
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Successful response - record success
+        this.circuitBreaker.recordSuccess();
+        return response;
+      },
       async (error: AxiosError<ApiError>) => {
-        // Don't retry aborted requests
+        // Don't count aborted requests as failures
         if (isAbortError(error)) {
           return Promise.reject({ message: 'Request cancelled', code: 'CANCELLED' });
+        }
+
+        // Check if this error should count towards circuit breaker
+        if (this.circuitBreaker.shouldCountAsFailure(error)) {
+          this.circuitBreaker.recordFailure();
         }
 
         const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
@@ -181,6 +379,20 @@ class ApiClient {
         return Promise.reject(this.formatError(error));
       }
     );
+  }
+
+  /**
+   * Get the current circuit breaker state
+   */
+  getCircuitState(): { state: CircuitState; failures: number; isOpen: boolean } {
+    return this.circuitBreaker.getState();
+  }
+
+  /**
+   * Force reset the circuit breaker (admin/debug use)
+   */
+  resetCircuitBreaker(): void {
+    this.circuitBreaker.forceClose();
   }
 
   private formatError(error: AxiosError<ApiError>): ApiError {

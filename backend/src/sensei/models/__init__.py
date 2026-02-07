@@ -213,6 +213,10 @@ from sensei.models.finance import (
     TaxJurisdiction,
     TaxRate,
     TaxTransaction,
+    Currency,
+    PaymentTerm,
+    BankAccount,
+    BankTransaction,
 )
 from sensei.models.site import Site
 from sensei.models.accounts_payable import (
@@ -237,6 +241,8 @@ from sensei.models.accounts_receivable import (
     PaymentReceipt,
     PaymentAllocation,
     InvoiceDispute,
+    Shipment,
+    ShipmentLine,
 )
 from sensei.models.maintenance import (
     Asset,
@@ -302,8 +308,33 @@ from sensei.models.hr import (
     HRJobApplication,
     HRAppraisal,
     HRLeaveRequest,
+    # Benefits Administration - North Africa (Tunisia, Morocco, Egypt)
+    HRJurisdictionConfig,
+    HRSocialSecurityRecord,
+    HRContributionPeriod,
+    HRFamilyAllowance,
+    HRSicknessMaternityBenefit,
+    HRPensionEntitlement,
+    HRWorkInjuryRecord,
+    HRUnemploymentBenefit,
+    HRDeathSurvivorBenefit,
+    HRMedicalCoverage,
+    # Mobile Time Clock with Geofencing
+    HRTimeClockEvent,
+    HRGeofence,
 )
-from sensei.models.inventory import Warehouse, Location, InventoryLevel, StockMove, ValuationLayer
+from sensei.models.inventory import (
+    Warehouse,
+    Location,
+    InventoryLevel,
+    StockMove,
+    ValuationLayer,
+    LicensePlate,
+    WmsWorkstation,
+    WmsDevice,
+    PickList,
+    PickListLine,
+)
 from sensei.models.migration import ImportBatch
 from sensei.models.analytics import (
     DailySnapshot,
@@ -514,8 +545,23 @@ __all__ = [
     # Finance
     "GLAccount",
     "OpeningBalance",
+    "Currency",
+    "PaymentTerm",
+    "BankAccount",
+    "BankTransaction",
     # Inventory
     "InventoryLevel",
+    "Warehouse",
+    "Location",
+    "StockMove",
+    "LicensePlate",
+    "WmsWorkstation",
+    "WmsDevice",
+    "PickList",
+    "PickListLine",
+    # Shipping
+    "Shipment",
+    "ShipmentLine",
     # Migration
     "ImportBatch",
     # Analytics

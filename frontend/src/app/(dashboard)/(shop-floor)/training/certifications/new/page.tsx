@@ -13,23 +13,65 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
+import { useTrainingStore } from '@/stores/training';
+import { useHRStore } from '@/stores/hr';
 import { useI18n } from '@/contexts/i18n-context';
+import { useToast } from '@/hooks/use-toast';
+
 export default function NewCertificationPage() {
   const { t } = useI18n();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const handleSubmit = (e: React.FormEvent) => {
+  const [skillId, setSkillId] = React.useState<string>('');
+  const [userId, setUserId] = React.useState<string>('');
+  const [proficiency, setProficiency] = React.useState<string>('');
+  const [issueDate, setIssueDate] = React.useState<string>('');
+  const [expiryDate, setExpiryDate] = React.useState<string>('');
+  
+  const { skills, fetchSkills, registerCertification } = useTrainingStore();
+  const { employees, fetchEmployees } = useHRStore();
+
+  React.useEffect(() => {
+    fetchSkills();
+    fetchEmployees();
+  }, [fetchSkills, fetchEmployees]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setTimeout(() => {
+
+    if (!skillId || !userId) {
+      toast({
+        title: t('common.validation_error') || 'Validation Error',
+        description: t('training.certifications.new.validation') || 'Please select a competency and a team member.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await registerCertification({
+        userId: String(userId),
+        skillId: String(skillId),
+        proficiency: Number(proficiency) || 0,
+        issueDate: issueDate || undefined,
+        expiryDate: expiryDate || undefined,
+      });
       toast({
         title: t('training.certifications.new.toast.success.title') || 'Certification Registered',
         description: t('training.certifications.new.toast.success.description') || 'New certification has been added to the system.',
       });
       router.push('/training');
-    }, 1000);
+    } catch (error: any) {
+      toast({
+        title: t('common.error') || 'Error',
+        description: error?.message || (t('training.certifications.new.toast.error.description') as string) || 'Failed to register certification.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   return (
     <div className="max-w-2xl mx-auto space-y-8 page-fade-in pb-12">
@@ -62,32 +104,56 @@ export default function NewCertificationPage() {
         <CardContent className="p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-2">
-              <Label htmlFor="title" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.certificationTitle') || 'Certification Title'} *</Label>
-              <Input id="title" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" required />
+              <Label htmlFor="skill" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.certificationTitle') || 'Target Competency'} *</Label>
+              <Select required value={skillId} onValueChange={setSkillId}>
+                <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                  <SelectValue placeholder="Select Competency / Skill" />
+                </SelectTrigger>
+                <SelectContent className="rounded-rams-sm border-rams-line max-h-[200px]">
+                   {skills.map(s => (
+                       <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.code})</SelectItem>
+                   ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
                 <Label htmlFor="user" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.teamMember') || 'Team Member'}</Label>
-                <Input id="user" placeholder={t('training.certifications.new.teamMemberPlaceholder') || 'Name or Employee ID'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
+                <Select required value={userId} onValueChange={setUserId}>
+                    <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                    <SelectValue placeholder="Select Employee" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-rams-sm border-rams-line max-h-[200px]">
+                    {employees.map(e => (
+                        <SelectItem key={e.id} value={String(e.id)}>{e.first_name} {e.last_name}</SelectItem>
+                    ))}
+                    </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="score" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.finalScore') || 'Final Score / Grade'}</Label>
-                <Input id="score" placeholder={t('training.certifications.new.scorePlaceholder') || 'e.g., 95% or Pass'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
+                <Label htmlFor="score" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.finalScore') || 'Grade / Proficiency'}</Label>
+                <Select value={proficiency} onValueChange={setProficiency}>
+                    <SelectTrigger className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider">
+                    <SelectValue placeholder="Level 0-4" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-rams-sm border-rams-line">
+                        <SelectItem value="1">Level 1 - Novice</SelectItem>
+                        <SelectItem value="2">Level 2 - Intermediate</SelectItem>
+                        <SelectItem value="3">Level 3 - Advanced</SelectItem>
+                        <SelectItem value="4">Level 4 - Expert</SelectItem>
+                    </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-8">
               <div className="space-y-2">
                 <Label htmlFor="issueDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.issueDate') || 'Issue Date'}</Label>
-                <Input id="issueDate" type="date" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
+                <Input id="issueDate" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="expiryDate" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.expiryDate') || 'Expiry Date'}</Label>
-                <Input id="expiryDate" type="date" className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
+                <Input id="expiryDate" type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-mono font-bold" />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="issuer" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('training.certifications.new.issuingAuthority') || 'Issuing Authority'}</Label>
-              <Input id="issuer" defaultValue={t('training.certifications.new.defaultIssuer') || 'Internal Training Dept'} className="h-10 rounded-rams-sm bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" />
             </div>
           </form>
         </CardContent>
@@ -95,3 +161,4 @@ export default function NewCertificationPage() {
     </div>
   );
 }
+

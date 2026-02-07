@@ -1,14 +1,18 @@
+'use client';
+
 import * as React from 'react';
 import { Zap, AlertTriangle, Info } from 'lucide-react';
 import { GlobalPulseSummary } from '@/api/today';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface SenseiPulseProps {
 	pulses: GlobalPulseSummary[];
 }
 
 export function SenseiPulse({ pulses }: SenseiPulseProps) {
+	const { t } = useI18n();
 	if (!pulses || pulses.length === 0) return null;
 
 	return (
@@ -41,7 +45,7 @@ export function SenseiPulse({ pulses }: SenseiPulseProps) {
 								"font-black uppercase text-[10px] tracking-[0.2em]",
 								pulse.severity === 'critical' ? "text-white/70" : "text-black/50"
 							)}>
-								Sensei Pulse
+								{t('pages.today.senseiPulse')}
 							</span>
 							{pulse.highlight_metric_name && (
 								<Badge variant="outline" className={cn(

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface ErrorProps {
   error: Error & { digest?: string };
@@ -11,6 +12,8 @@ interface ErrorProps {
 }
 
 export default function AuthError({ error, reset }: ErrorProps) {
+  const { t } = useI18n();
+
   useEffect(() => {
     console.error('Auth error:', error);
   }, [error]);
@@ -22,9 +25,9 @@ export default function AuthError({ error, reset }: ErrorProps) {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
             <AlertTriangle className="h-6 w-6 text-destructive" />
           </div>
-          <CardTitle>Authentication Error</CardTitle>
+          <CardTitle>{t('auth.error.title')}</CardTitle>
           <CardDescription>
-            We couldn&apos;t complete the authentication process.
+            {t('auth.error.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -39,7 +42,7 @@ export default function AuthError({ error, reset }: ErrorProps) {
           <div className="flex flex-col gap-2">
             <Button onClick={reset} className="gap-2 w-full">
               <RefreshCw className="h-4 w-4" />
-              Try Again
+              {t('auth.error.tryAgain')}
             </Button>
             <Button 
               variant="outline" 
@@ -47,7 +50,7 @@ export default function AuthError({ error, reset }: ErrorProps) {
               className="gap-2 w-full"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Login
+              {t('auth.error.backToLogin')}
             </Button>
           </div>
         </CardContent>

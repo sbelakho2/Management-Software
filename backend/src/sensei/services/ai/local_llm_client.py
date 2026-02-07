@@ -17,7 +17,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, List, Optional, Dict, Any
+from queue import Queue, Empty
+from threading import Thread
+from typing import Iterator, List, Optional, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -254,11 +259,129 @@ class TransformersClient(BaseLLMClient):
         temperature: Optional[float] = None,
         stop: Optional[List[str]] = None
     ) -> Iterator[str]:
-        """Stream completion tokens."""
-        # Transformers streaming is complex, for now just yield full response
-        # TODO: Implement proper streaming with TextIteratorStreamer
-        response = self.generate(prompt, max_tokens, temperature, stop)
-        yield response
+        """Stream completion tokens using TextIteratorStreamer."""
+        import torch
+        from threading import Thread
+        from queue import Queue, Empty
+        
+        if not self.model or not self.tokenizer:
+            raise RuntimeError("Model not loaded")
+        
+        try:
+            from transformers import TextIteratorStreamer
+        except ImportError:
+            # Fallback to non-streaming if TextIteratorStreamer not available
+            logger.warning("TextIteratorStreamer not available, falling back to non-streaming")
+            response = self.generate(prompt, max_tokens, temperature, stop)
+            yield response
+            return
+        
+        # Tokenize input
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        
+        # Create streamer
+        streamer = TextIteratorStreamer(
+            self.tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True,
+            timeout=60.0  # Timeout for each token
+        )
+        
+        # Generation parameters
+        generation_kwargs = {
+            **inputs,
+            "streamer": streamer,
+            "max_new_tokens": max_tokens or self.config.max_tokens,
+            "temperature": temperature or self.config.temperature,
+            "top_p": self.config.top_p,
+            "top_k": self.config.top_k,
+            "do_sample": True,
+            "pad_token_id": self.tokenizer.eos_token_id,
+        }
+        
+        # Run generation in a thread
+        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        thread.start()
+        
+        # Stream tokens
+        generated_text = ""
+        stop_sequences = stop or []
+        
+        try:
+            for text in streamer:
+                if text:
+                    generated_text += text
+                    
+                    # Check for stop sequences
+                    should_stop = False
+                    for stop_seq in stop_sequences:
+                        if stop_seq in generated_text:
+                            # Yield text up to stop sequence
+                            idx = generated_text.index(stop_seq)
+                            remaining = generated_text[:idx]
+                            if remaining:
+                                yield text[:len(text) - (len(generated_text) - idx)]
+                            should_stop = True
+                            break
+                    
+                    if should_stop:
+                        break
+                    
+                    yield text
+        except Exception as e:
+            logger.error(f"Error during streaming: {e}")
+            raise
+        finally:
+            thread.join(timeout=5.0)
+
+
+class TextIteratorStreamerFallback:
+    """
+    Fallback streamer for older transformers versions.
+    Implements a queue-based streaming interface.
+    """
+    
+    def __init__(self, tokenizer, skip_prompt=True, skip_special_tokens=True, timeout=60.0):
+        self.tokenizer = tokenizer
+        self.skip_prompt = skip_prompt
+        self.skip_special_tokens = skip_special_tokens
+        self.timeout = timeout
+        self.text_queue: Queue = Queue()
+        self.stop_signal = object()
+        self._prompt_tokens = 0
+    
+    def put(self, value):
+        """Add tokens to the queue."""
+        if isinstance(value, torch.Tensor):
+            if self.skip_prompt and self._prompt_tokens == 0:
+                self._prompt_tokens = value.shape[-1]
+                return
+            
+            # Decode tokens
+            text = self.tokenizer.decode(
+                value[0] if len(value.shape) > 1 else value,
+                skip_special_tokens=self.skip_special_tokens
+            )
+            if text:
+                self.text_queue.put(text)
+    
+    def end(self):
+        """Signal end of generation."""
+        self.text_queue.put(self.stop_signal)
+    
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        try:
+            value = self.text_queue.get(timeout=self.timeout)
+        except Empty:
+            raise StopIteration()
+        
+        if value is self.stop_signal:
+            raise StopIteration()
+        
+        return value
 
 
 class LocalLLMService:

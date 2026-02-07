@@ -606,15 +606,13 @@ export function getPriorityColor(priority: Priority): string {
 }
 
 /**
- * Format currency helper
+ * Format currency helper - re-exports from centralized utils
+ * This ensures consistency with user's display currency preferences
  */
-export function formatCurrency(amount: number, currency: string = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+import { formatCurrency as formatCurrencyFromUtils } from '@/lib/utils';
+
+export function formatCurrency(amount: number, currency?: string): string {
+  return formatCurrencyFromUtils(amount, currency);
 }
 
 /**

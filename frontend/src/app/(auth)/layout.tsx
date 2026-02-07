@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores';
+import { useI18n } from '@/contexts/i18n-context';
 import { useRouter } from 'next/navigation';
 import { SkipToContent } from '@/components/ui/accessibility';
 
@@ -11,6 +12,7 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const { isAuthenticated, isLoading, resetAuth } = useAuthStore();
   const router = useRouter();
 
@@ -76,12 +78,12 @@ export default function AuthLayout({
       {/* System Metadata Bar (Bottom) */}
       <div className="fixed bottom-0 left-0 right-0 h-8 bg-rams-chassis z-[100] border-t border-rams-line px-6 hidden md:flex items-center justify-between text-[10px] font-mono opacity-60 uppercase tracking-widest pointer-events-none">
         <div className="flex gap-6">
-          <span>STATION: AUTH-01</span>
-          <span>OS_VER: 3.0.0-RAMS</span>
+          <span>{t('auth.footer.station')}: AUTH-01</span>
+          <span>{t('auth.footer.osVer')}: 3.0.0-RAMS</span>
         </div>
         <div className="flex gap-6 text-right">
           <span>{new Date().getFullYear()} &copy; STARZ_MOROCCO</span>
-          <span>PROTOCOL: ACCESS_CONTROL</span>
+          <span>{t('auth.footer.protocol')}: ACCESS_CONTROL</span>
         </div>
       </div>
     </div>

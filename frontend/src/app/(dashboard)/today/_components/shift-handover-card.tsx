@@ -1,3 +1,5 @@
+'use client';
+
 import * as React from 'react';
 import { ClipboardList, Shield, CheckCircle2, Truck, MessageSquare, Check, Loader2 } from 'lucide-react';
 import { HandoverNoteSummary } from '@/api/today';
@@ -7,22 +9,33 @@ import { cn } from '@/lib/utils';
 import { productionApi } from '@/api/production';
 import { useTodayStore } from '@/stores/today';
 import { useAuthStore } from '@/stores';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface ShiftHandoverCardProps {
 	handovers: HandoverNoteSummary[];
 }
 
 export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
+	const { t, formatDate } = useI18n();
 	const { user } = useAuthStore();
 	const { fetchTodayScreen } = useTodayStore();
 	const [acknowledgingId, setAcknowledgingId] = React.useState<number | null>(null);
+
+	const displayName = React.useMemo(() => {
+		if (!user) return t('pages.today.greetingFallback');
+		const fullName = (user.full_name || '').trim();
+		if (fullName) return fullName;
+		const email = (user.email || '').trim();
+		if (email) return email;
+		return t('pages.today.greetingFallback');
+	}, [user, t]);
 
 	const handleAcknowledge = async (id: number) => {
 		setAcknowledgingId(id);
 		try {
 			await productionApi.acknowledgeHandover(id);
-			if (user?.id && user?.full_name) {
-				fetchTodayScreen(user.id, user.full_name);
+			if (user?.id) {
+				fetchTodayScreen(user.id, displayName);
 			}
 		} catch (error) {
 			console.error('Failed to acknowledge handover:', error);
@@ -36,10 +49,10 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 	return (
 		<div className="bg-rams-module border border-rams-line rounded-rams-sm overflow-hidden h-full flex flex-col">
 			<div className="px-6 py-4 border-b border-rams-line bg-rams-panel flex items-center justify-between">
-				<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">Shift Handover</h2>
+				<h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-foreground/70">{t('pages.today.handover.title')}</h2>
 				<div className="flex items-center gap-3">
 					<Badge variant="outline" className="rounded-none border-rams-line text-[9px] font-black uppercase tracking-widest px-1.5 py-0 h-4 bg-rams-panel">
-						{handovers.length} {handovers.length === 1 ? 'Note' : 'Notes'}
+						{handovers.length} {handovers.length === 1 ? t('pages.today.handover.note') : t('pages.today.handover.notes')}
 					</Badge>
 					<ClipboardList className="h-4 w-4 text-muted-foreground/40" />
 				</div>
@@ -51,10 +64,10 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 						<div className="flex justify-between items-start">
 							<div className="space-y-1">
 								<div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
-									Station {note.station_id}
+									{t('pages.today.handover.station', { id: note.station_id })}
 								</div>
 								<div className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase">
-									{new Date(note.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+									{formatDate(note.created_at, { timeStyle: 'short' })}
 								</div>
 							</div>
 							<Badge
@@ -65,7 +78,7 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 											"bg-rams-panel text-foreground/60 border border-rams-line"
 								)}
 							>
-								{note.severity}
+								{t(`pages.today.severity.${note.severity}`)}
 							</Badge>
 						</div>
 
@@ -74,7 +87,7 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 								<div className="flex gap-3 items-start">
 									<div className="mt-1 h-1.5 w-1.5 rounded-none bg-rams-red flex-shrink-0" />
 									<div>
-										<span className="text-[9px] font-black uppercase tracking-widest text-rams-red/80">Safety</span>
+										<span className="text-[9px] font-black uppercase tracking-widest text-rams-red/80">{t('pages.today.handover.safety')}</span>
 										<p className="text-[11px] font-sans font-bold uppercase tracking-tight text-foreground/80 leading-tight">{note.safety}</p>
 									</div>
 								</div>
@@ -83,7 +96,7 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 								<div className="flex gap-3 items-start">
 									<div className="mt-1 h-1.5 w-1.5 rounded-none bg-rams-green flex-shrink-0" />
 									<div>
-										<span className="text-[9px] font-black uppercase tracking-widest text-rams-green/80">Quality</span>
+										<span className="text-[9px] font-black uppercase tracking-widest text-rams-green/80">{t('pages.today.handover.quality')}</span>
 										<p className="text-[11px] font-sans font-bold uppercase tracking-tight text-foreground/80 leading-tight">{note.quality}</p>
 									</div>
 								</div>
@@ -92,7 +105,7 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 								<div className="flex gap-3 items-start">
 									<div className="mt-1 h-1.5 w-1.5 rounded-none bg-rams-steel flex-shrink-0" />
 									<div>
-										<span className="text-[9px] font-black uppercase tracking-widest text-rams-steel/80">Delivery</span>
+										<span className="text-[9px] font-black uppercase tracking-widest text-rams-steel/80">{t('pages.today.handover.delivery')}</span>
 										<p className="text-[11px] font-sans font-bold uppercase tracking-tight text-foreground/80 leading-tight">{note.delivery}</p>
 									</div>
 								</div>
@@ -120,7 +133,7 @@ export function ShiftHandoverCard({ handovers }: ShiftHandoverCardProps) {
 								) : (
 									<Check className="h-3 w-3 mr-2" />
 								)}
-								Acknowledge
+								{t('pages.today.handover.acknowledge')}
 							</Button>
 						</div>
 					</div>

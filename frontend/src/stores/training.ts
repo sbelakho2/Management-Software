@@ -66,6 +66,18 @@ interface TrainingState {
   fetchTrainings: () => Promise<void>;
   fetchRecords: () => Promise<void>;
   fetchUserSkills: (userId?: string) => Promise<void>;
+  enrollInTraining: (trainingId: string | number, userId: string, notes?: string) => Promise<void>;
+  registerCertification: (
+    params: {
+      userId: string;
+      skillId: string | number;
+      proficiency: number | string;
+      issueDate?: string;
+      expiryDate?: string;
+      certificateNumber?: string;
+      notes?: string;
+    }
+  ) => Promise<void>;
   clearError: () => void;
 }
 
@@ -119,6 +131,67 @@ export const useTrainingStore = create<TrainingState>()(
             set({ userSkills: data.items || [], isLoading: false });
           } catch (error: any) {
             set({ error: error.message || 'Failed to fetch user skills', isLoading: false });
+          }
+        },
+
+        enrollInTraining: async (trainingId, userId, notes) => {
+          set({ isLoading: true, error: null });
+          try {
+            await apiClient.post<any>(`/training/trainings/${trainingId}/participants`, {
+              user_id: userId,
+              notes,
+            });
+            // Optional: caller can refresh trainings to update enrolled_count
+            set({ isLoading: false });
+          } catch (error: any) {
+            set({ error: error.message || 'Failed to enroll in training', isLoading: false });
+            throw error;
+          }
+        },
+
+        registerCertification: async ({ userId, skillId, proficiency, issueDate, expiryDate, certificateNumber, notes }) => {
+          set({ isLoading: true, error: null });
+          try {
+            // Step 1: find or create user-skill
+            let userSkillId: number | undefined;
+            try {
+              const list = await apiClient.get<any>(`/training/user-skills?user_id=${userId}&skill_id=${skillId}`);
+              const existing = list?.items?.[0];
+              if (existing?.id) {
+                userSkillId = existing.id as number;
+              }
+            } catch {
+              // listing may fail due to filters; proceed to create
+            }
+
+            if (!userSkillId) {
+              const created = await apiClient.post<any>('/training/user-skills', {
+                user_id: userId,
+                skill_id: Number(skillId),
+                proficiency_level: Number(proficiency) || 0,
+                notes,
+              });
+              // unwrapResponse returns inner data when using APIResponse
+              userSkillId = created?.id ?? created?.data?.id;
+            }
+
+            if (!userSkillId) {
+              throw new Error('Unable to resolve user skill record');
+            }
+
+            // Step 2: certify the user-skill
+            await apiClient.post<any>(`/training/user-skills/${userSkillId}/certify`, {
+              proficiency_level: Number(proficiency) || 0,
+              expiration_date: expiryDate || undefined,
+              certificate_number: certificateNumber || undefined,
+              notes,
+            });
+
+            // Optional: caller can refresh user skills cache if needed
+            set({ isLoading: false });
+          } catch (error: any) {
+            set({ error: error.message || 'Failed to register certification', isLoading: false });
+            throw error;
           }
         },
 

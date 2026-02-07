@@ -24,6 +24,7 @@ from sensei.models.base import Base, TimestampMixin, AuditMixin
 
 if TYPE_CHECKING:
     from sensei.models.user import User
+    from sensei.models.site import Site
 
 
 class GLAccount(Base, TimestampMixin, AuditMixin):
@@ -236,3 +237,107 @@ class TaxTransaction(Base, TimestampMixin, AuditMixin):
 
     jurisdiction: Mapped["TaxJurisdiction"] = relationship("TaxJurisdiction")
     tax_rate: Mapped["TaxRate"] = relationship("TaxRate")
+
+
+# =============================================================================
+# BANKING AND PAYMENTS (for erpStarz import compatibility)
+# =============================================================================
+
+
+class Currency(Base, TimestampMixin, AuditMixin):
+    """
+    Currency definition.
+    Maps from erpStarz `currency` table.
+    """
+    __tablename__ = "currencies"
+
+    code: Mapped[str] = mapped_column(String(3), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    symbol: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    decimal_places: Mapped[int] = mapped_column(default=2, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+
+
+class PaymentTerm(Base, TimestampMixin, AuditMixin):
+    """
+    Payment term definition.
+    Maps from erpStarz `pay_term` table.
+    """
+    __tablename__ = "payment_terms"
+
+    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    days_due: Mapped[int] = mapped_column(default=30, nullable=False)  # Net days
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"), nullable=False)
+    discount_days: Mapped[int] = mapped_column(default=0, nullable=False)  # Days for early payment discount
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+
+
+class BankAccount(Base, TimestampMixin, AuditMixin):
+    """
+    Bank account for company financial operations.
+    Maps from erpStarz `bank_account` and `company_bank` tables.
+    """
+    __tablename__ = "bank_accounts"
+
+    account_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_number: Mapped[str] = mapped_column(String(100), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    bank_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., SWIFT/BIC
+    iban: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="TND", nullable=False)
+    account_type: Mapped[str] = mapped_column(String(50), default="checking", nullable=False)  # checking, savings, cash
+    
+    site_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"), nullable=True)
+    gl_account_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("gl_accounts.id", ondelete="SET NULL"), nullable=True)
+    
+    current_balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    site: Mapped[Optional["Site"]] = relationship("Site")
+    gl_account: Mapped[Optional["GLAccount"]] = relationship("GLAccount")
+    transactions: Mapped[list["BankTransaction"]] = relationship("BankTransaction", back_populates="bank_account")
+
+
+class BankTransaction(Base, TimestampMixin, AuditMixin):
+    """
+    Bank transaction record.
+    Maps from erpStarz `bank_transaction` table.
+    """
+    __tablename__ = "bank_transactions"
+
+    bank_account_id: Mapped[UUID] = mapped_column(ForeignKey("bank_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    transaction_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    value_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    
+    transaction_type: Mapped[str] = mapped_column(String(50), nullable=False)  # deposit, withdrawal, transfer, fee, interest
+    reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="TND", nullable=False)
+    running_balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), nullable=True)
+    
+    status: Mapped[str] = mapped_column(String(20), default="posted", nullable=False)  # pending, posted, reconciled, voided
+    reconciled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reconciled_by_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    
+    # Link to source documents
+    source_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # payment, receipt, journal
+    source_id: Mapped[Optional[UUID]] = mapped_column(nullable=True)
+    
+    # For legacy import tracking
+    legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    
+    bank_account: Mapped["BankAccount"] = relationship("BankAccount", back_populates="transactions")
+    reconciled_by: Mapped[Optional["User"]] = relationship("User")

@@ -3,6 +3,12 @@
 Provides deterministic integrity binding across modules:
 RFQ -> Quote -> Production (Work Orders) -> Quality (NCs) -> Shipping/Invoice.
 
+Extended to support HR module bindings:
+Employee -> Work Order (labor booking)
+Employee -> Training Record (skill verification)
+Employee -> Leave Request (capacity planning)
+Employee -> Performance Review (A3/OEE integration)
+
 This module focuses on two things:
 1) ensuring lineage edges exist between stages (DataLineageService)
 2) ensuring each entity is tagged with a Reasoning ID (ReasoningTrace)
@@ -189,6 +195,170 @@ class CommonThreadService:
                 ("non_conformance", non_conformance_id),
                 ("shipment", shipment_id),
                 ("invoice", invoice_id),
+            ):
+                if eid is not None:
+                    await self.record_reasoning(
+                        db,
+                        entity_type=et,
+                        entity_id=_id(eid),
+                        reasoning_id=reasoning_id,
+                        created_by_id=created_by_id,
+                        source=source,
+                    )
+
+    async def bind_hr(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: Any | None = None,
+        work_order_id: Any | None = None,
+        training_record_id: Any | None = None,
+        leave_request_id: Any | None = None,
+        performance_review_id: Any | None = None,
+        labor_booking_id: Any | None = None,
+        hr_case_id: Any | None = None,
+        timecard_id: Any | None = None,
+        created_by_id: Any | None = None,
+        reasoning_id: str | None = None,
+        source: str | None = None,
+    ) -> None:
+        """Create best-effort lineage links for HR module entities.
+        
+        Connects HR data to the production common thread:
+        - Employee -> Work Order (labor booking linkage)
+        - Employee -> Training Record (skill verification)
+        - Employee -> Leave Request (capacity planning)
+        - Employee -> Performance Review (A3/OEE integration)
+        - Employee -> HR Case (disciplinary/grievance tracking)
+        - Employee -> Timecard (time & attendance)
+        """
+
+        def _id(x: Any | None) -> str | None:
+            return None if x is None else str(x)
+
+        # Employee -> Work Order (labor booking)
+        if employee_id is not None and work_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="worked_on",
+                target_entity_type="work_order",
+                target_entity_id=_id(work_order_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> Labor Booking (direct time tracking)
+        if employee_id is not None and labor_booking_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_labor_booking",
+                target_entity_type="labor_booking",
+                target_entity_id=_id(labor_booking_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Labor Booking -> Work Order (cost attribution)
+        if labor_booking_id is not None and work_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="labor_booking",
+                source_entity_id=_id(labor_booking_id),
+                relationship_type="charged_to",
+                target_entity_type="work_order",
+                target_entity_id=_id(work_order_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> Training Record (skill verification)
+        if employee_id is not None and training_record_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_training",
+                target_entity_type="training_record",
+                target_entity_id=_id(training_record_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> Leave Request (capacity planning)
+        if employee_id is not None and leave_request_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_leave_request",
+                target_entity_type="leave_request",
+                target_entity_id=_id(leave_request_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> Performance Review (A3/OEE integration)
+        if employee_id is not None and performance_review_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_performance_review",
+                target_entity_type="performance_review",
+                target_entity_id=_id(performance_review_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> HR Case (disciplinary/grievance)
+        if employee_id is not None and hr_case_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_hr_case",
+                target_entity_type="hr_case",
+                target_entity_id=_id(hr_case_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Employee -> Timecard (time & attendance)
+        if employee_id is not None and timecard_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="employee",
+                source_entity_id=_id(employee_id),
+                relationship_type="has_timecard",
+                target_entity_type="timecard",
+                target_entity_id=_id(timecard_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "hr_common_thread"},
+            )
+
+        # Reasoning trace stamping for HR entities
+        if reasoning_id:
+            for et, eid in (
+                ("employee", employee_id),
+                ("work_order", work_order_id),
+                ("training_record", training_record_id),
+                ("leave_request", leave_request_id),
+                ("performance_review", performance_review_id),
+                ("labor_booking", labor_booking_id),
+                ("hr_case", hr_case_id),
+                ("timecard", timecard_id),
             ):
                 if eid is not None:
                     await self.record_reasoning(

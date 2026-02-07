@@ -1,41 +1,12 @@
 {
-  "Processing": {
-    "": {
-      "": {
-        "": ""
-      }
-    }
-  },
-  "RFQ_001_20250115": {
-    "pdf": "Pdf"
-  },
-  "Reconnecting": {
-    "": {
-      "": {
-        "": ""
-      }
-    }
-  },
-  "Search": {
-    "": {
-      "": {
-        "": ""
-      }
-    }
-  },
-  "Syncing": {
-    "": {
-      "": {
-        "": ""
-      }
-    }
-  },
   "a3": {
     "detail": {
       "exportProtocol": "Protokoll exportieren",
       "implementation": {
         "countermeasures": "Gegenmaßnahmen",
         "subtitle": "Maßnahmenumsetzung",
+        "greeting": "Hallo, {name}!",
+        "greetingFallback": "zusammen",
         "timeline": "Zeitplan",
         "title": "Titel"
       },
@@ -64,9 +35,9 @@
       "content": "Inhalt",
       "reportTitle": "Berichtstitel",
       "reportType": "Berichttyp",
-    "drafts": {
-      "snippet": "{snippet}…"
-    },
+      "drafts": {
+        "snippet": "{snippet}…"
+      },
       "saveChanges": "Änderungen speichern",
       "saving": "Wird gespeichert",
       "sections": {
@@ -149,165 +120,165 @@
       "horizonOverdue": "Überfälliger Horizont",
       "pendingApprovals": "Ausstehende Freigaben",
       "queueGates": "Warteschlangen-Gates",
-    "emailDrafting": {
-      "title": "KI-E-Mail-Assistent",
-      "aria": {
-        "selectPurpose": "Zweck auswählen",
-        "toneGroup": "Ton auswählen",
-        "selectLanguage": "Sprache auswählen",
-        "recipientEmail": "Empfänger-E-Mail",
-        "recipientName": "Empfängername",
-        "addKeyPoint": "Kernaussage hinzufügen",
-        "keyPointsList": "Liste der Kernaussagen",
-        "removeKeyPoint": "Entfernen: {point}",
-        "copyToClipboard": "In die Zwischenablage kopieren",
-        "editSubject": "Betreff bearbeiten",
-        "close": "Schließen",
-        "draftsList": "E-Mail-Entwürfe"
-      },
-      "placeholders": {
-        "selectPurpose": "Zweck auswählen...",
-        "recipientEmail": "recipient@example.com",
-        "recipientNameOptional": "Name (optional)",
-        "keyPoint": "Kernaussage hinzufügen",
-        "senderName": "z. B. Alex Morgan",
-        "senderEmail": "z. B. alex@sensei.com",
-        "senderTitle": "z. B. Account Manager",
-        "companyName": "z. B. Sensei GmbH",
-        "threadEntityType": "Thread-Entität auswählen...",
-        "threadEntityId": "Entitäts-ID eingeben...",
-        "referenceNumber": "z. B. RFQ-2024-001",
-        "subjectHint": "z. B. Preisupdate für Q2"
-      },
-      "purpose": {
-        "missingInfoRequest": "Anforderung fehlender Informationen",
-        "quoteFollowup": "Angebotsnachverfolgung",
-        "quoteSubmission": "Angebotseinreichung",
-        "supplierInquiry": "Lieferantenanfrage",
-        "meetingRequest": "Besprechungsanfrage",
-        "meetingConfirmation": "Besprechungsbestätigung",
-        "meetingReschedule": "Besprechung verschieben",
-        "issueNotification": "Fehlerbenachrichtigung",
-        "statusUpdate": "Statusaktualisierung",
-        "thankYou": "Danke",
-        "introduction": "Vorstellung",
-        "escalation": "Eskalation",
-        "apology": "Entschuldigung",
-        "custom": "Benutzerdefinierte E-Mail"
-      },
-      "tone": {
-        "formal": "Formell",
-        "professional": "Professionell",
-        "friendly": "Freundlich",
-        "urgent": "Dringend",
-        "apologetic": "Entschuldigend",
-        "appreciative": "Wertschätzend",
-        "concise": "Kompakt"
-      },
-      "language": {
-        "english": "Englisch",
-        "french": "Französisch",
-        "german": "Deutsch",
-        "spanish": "Spanisch",
-        "italian": "Italienisch",
-        "portuguese": "Portugiesisch",
-        "japanese": "Japanisch",
-        "chinese": "Chinesisch",
-        "korean": "Koreanisch",
-        "arabic": "Arabisch"
-      },
-      "actions": {
-        "add": "Hinzufügen",
-        "apply": "Anwenden",
-        "edit": "Bearbeiten",
-        "generating": "Wird erstellt...",
-        "generateDraft": "Entwurf erstellen",
-        "regenerate": "Neu erstellen",
-        "send": "Senden"
-      },
-      "preview": {
-        "title": "Entwurfsvorschau",
-        "subjectLabel": "Betreff",
-        "confidence": "Konfidenz: {score}",
-        "generatedIn": "Erstellt in {time}"
-      },
-      "units": {
-        "milliseconds": "ms",
-        "seconds": "s"
-      },
-      "compliance": {
-        "none": "Keine Compliance-Probleme erkannt",
-        "title": "Compliance-Probleme ({count})"
-      },
-      "suggestions": {
-        "title": "Vorschläge ({count})"
-      },
-      "alternatives": {
-        "title": "Alternative Betreffzeilen:"
-      },
-      "thread": {
-        "entityType": {
-          "rfq": "Anfrage (RFQ)",
-          "quote": "Angebot",
-          "workOrder": "Arbeitsauftrag",
-          "opportunity": "Verkaufschance",
-          "nonConformance": "Nichtkonformität",
-          "shipment": "Sendung",
-          "invoice": "Rechnung"
+      "emailDrafting": {
+        "title": "KI-E-Mail-Assistent",
+        "aria": {
+          "selectPurpose": "Zweck auswählen",
+          "toneGroup": "Ton auswählen",
+          "selectLanguage": "Sprache auswählen",
+          "recipientEmail": "Empfänger-E-Mail",
+          "recipientName": "Empfängername",
+          "addKeyPoint": "Kernaussage hinzufügen",
+          "keyPointsList": "Liste der Kernaussagen",
+          "removeKeyPoint": "Entfernen: {point}",
+          "copyToClipboard": "In die Zwischenablage kopieren",
+          "editSubject": "Betreff bearbeiten",
+          "close": "Schließen",
+          "draftsList": "E-Mail-Entwürfe"
         },
-        "loadFailed": "Thread-Verlauf konnte nicht geladen werden",
-        "helper": "Verbinden Sie diesen Entwurf mit einem Thread, damit der gemeinsame Daten-Thread erhalten bleibt.",
-        "loading": "Thread-Verlauf wird geladen...",
-        "traceTitle": "Thread-Verlauf",
-        "traceStats": "Verlauf: {nodes} Knoten / {edges} Kanten",
-        "reasoningId": "Begründungs-ID: {id}"
+        "placeholders": {
+          "selectPurpose": "Zweck auswählen...",
+          "recipientEmail": "recipient@example.com",
+          "recipientNameOptional": "Name (optional)",
+          "keyPoint": "Kernaussage hinzufügen",
+          "senderName": "z. B. Alex Morgan",
+          "senderEmail": "z. B. alex@sensei.com",
+          "senderTitle": "z. B. Account Manager",
+          "companyName": "z. B. Sensei GmbH",
+          "threadEntityType": "Thread-Entität auswählen...",
+          "threadEntityId": "Entitäts-ID eingeben...",
+          "referenceNumber": "z. B. RFQ-2024-001",
+          "subjectHint": "z. B. Preisupdate für Q2"
+        },
+        "purpose": {
+          "missingInfoRequest": "Anforderung fehlender Informationen",
+          "quoteFollowup": "Angebotsnachverfolgung",
+          "quoteSubmission": "Angebotseinreichung",
+          "supplierInquiry": "Lieferantenanfrage",
+          "meetingRequest": "Besprechungsanfrage",
+          "meetingConfirmation": "Besprechungsbestätigung",
+          "meetingReschedule": "Besprechung verschieben",
+          "issueNotification": "Fehlerbenachrichtigung",
+          "statusUpdate": "Statusaktualisierung",
+          "thankYou": "Danke",
+          "introduction": "Vorstellung",
+          "escalation": "Eskalation",
+          "apology": "Entschuldigung",
+          "custom": "Benutzerdefinierte E-Mail"
+        },
+        "tone": {
+          "formal": "Formell",
+          "professional": "Professionell",
+          "friendly": "Freundlich",
+          "urgent": "Dringend",
+          "apologetic": "Entschuldigend",
+          "appreciative": "Wertschätzend",
+          "concise": "Kompakt"
+        },
+        "language": {
+          "english": "Englisch",
+          "french": "Französisch",
+          "german": "Deutsch",
+          "spanish": "Spanisch",
+          "italian": "Italienisch",
+          "portuguese": "Portugiesisch",
+          "japanese": "Japanisch",
+          "chinese": "Chinesisch",
+          "korean": "Koreanisch",
+          "arabic": "Arabisch"
+        },
+        "actions": {
+          "add": "Hinzufügen",
+          "apply": "Anwenden",
+          "edit": "Bearbeiten",
+          "generating": "Wird erstellt...",
+          "generateDraft": "Entwurf erstellen",
+          "regenerate": "Neu erstellen",
+          "send": "Senden"
+        },
+        "preview": {
+          "title": "Entwurfsvorschau",
+          "subjectLabel": "Betreff",
+          "confidence": "Konfidenz: {score}",
+          "generatedIn": "Erstellt in {time}"
+        },
+        "units": {
+          "milliseconds": "ms",
+          "seconds": "s"
+        },
+        "compliance": {
+          "none": "Keine Compliance-Probleme erkannt",
+          "title": "Compliance-Probleme ({count})"
+        },
+        "suggestions": {
+          "title": "Vorschläge ({count})"
+        },
+        "alternatives": {
+          "title": "Alternative Betreffzeilen:"
+        },
+        "thread": {
+          "entityType": {
+            "rfq": "Anfrage (RFQ)",
+            "quote": "Angebot",
+            "workOrder": "Arbeitsauftrag",
+            "opportunity": "Verkaufschance",
+            "nonConformance": "Nichtkonformität",
+            "shipment": "Sendung",
+            "invoice": "Rechnung"
+          },
+          "loadFailed": "Thread-Verlauf konnte nicht geladen werden",
+          "helper": "Verbinden Sie diesen Entwurf mit einem Thread, damit der gemeinsame Daten-Thread erhalten bleibt.",
+          "loading": "Thread-Verlauf wird geladen...",
+          "traceTitle": "Thread-Verlauf",
+          "traceStats": "Verlauf: {nodes} Knoten / {edges} Kanten",
+          "reasoningId": "Begründungs-ID: {id}"
+        },
+        "defaults": {
+          "senderName": "Sensei Operator",
+          "senderEmail": "operator@sensei.com",
+          "companyName": "Sensei"
+        },
+        "sections": {
+          "recipient": "Empfänger",
+          "purpose": "Zweck",
+          "sender": "Absender",
+          "threadContext": "Thread-Kontext",
+          "tone": "Ton",
+          "language": "Sprache",
+          "keyPoints": "Kernaussagen"
+        },
+        "fields": {
+          "senderName": "Absendername",
+          "senderEmail": "Absender-E-Mail",
+          "senderTitle": "Absendertitel",
+          "companyName": "Firmenname",
+          "threadEntityType": "Thread-Entitätstyp",
+          "threadEntityId": "Thread-Entitäts-ID",
+          "referenceNumberOptional": "Referenznummer (optional)",
+          "subjectHintOptional": "Betreffhinweis (optional)"
+        },
+        "status": {
+          "generating": "Wird erstellt...",
+          "ready": "Bereit zur Prüfung",
+          "reviewed": "Geprüft",
+          "approved": "Genehmigt",
+          "sent": "Gesendet",
+          "discarded": "Verworfen",
+          "failed": "Fehlgeschlagen"
+        },
+        "notifications": {
+          "copied": "In die Zwischenablage kopiert!"
+        },
+        "empty": {
+          "title": "Noch kein Entwurf",
+          "description": "Erstellen Sie einen Entwurf, um Vorschau und Compliance-Prüfungen zu sehen.",
+          "list": "Noch keine Entwürfe"
+        },
+        "validation": {
+          "emailRequired": "E-Mail ist erforderlich",
+          "emailInvalid": "Ungültiges E-Mail-Format"
+        }
       },
-      "defaults": {
-        "senderName": "Sensei Operator",
-        "senderEmail": "operator@sensei.com",
-        "companyName": "Sensei"
-      },
-      "sections": {
-        "recipient": "Empfänger",
-        "purpose": "Zweck",
-        "sender": "Absender",
-        "threadContext": "Thread-Kontext",
-        "tone": "Ton",
-        "language": "Sprache",
-        "keyPoints": "Kernaussagen"
-      },
-      "fields": {
-        "senderName": "Absendername",
-        "senderEmail": "Absender-E-Mail",
-        "senderTitle": "Absendertitel",
-        "companyName": "Firmenname",
-        "threadEntityType": "Thread-Entitätstyp",
-        "threadEntityId": "Thread-Entitäts-ID",
-        "referenceNumberOptional": "Referenznummer (optional)",
-        "subjectHintOptional": "Betreffhinweis (optional)"
-      },
-      "status": {
-        "generating": "Wird erstellt...",
-        "ready": "Bereit zur Prüfung",
-        "reviewed": "Geprüft",
-        "approved": "Genehmigt",
-        "sent": "Gesendet",
-        "discarded": "Verworfen",
-        "failed": "Fehlgeschlagen"
-      },
-      "notifications": {
-        "copied": "In die Zwischenablage kopiert!"
-      },
-      "empty": {
-        "title": "Noch kein Entwurf",
-        "description": "Erstellen Sie einen Entwurf, um Vorschau und Compliance-Prüfungen zu sehen.",
-        "list": "Noch keine Entwürfe"
-      },
-      "validation": {
-        "emailRequired": "E-Mail ist erforderlich",
-        "emailInvalid": "Ungültiges E-Mail-Format"
-      }
-    },
       "thresholdExceptions": "Schwellenausnahmen",
       "totalNodes": "Gesamtanzahl Knoten"
     },
@@ -325,7 +296,15 @@
       "offlineIntelligenceDesc": "Operative Knoten für Umgebungen mit hoher Latenz zwischenspeichern",
       "telemetryPush": "Telemetrie-Push-Signale",
       "telemetryPushDesc": "Echtzeit-Organisationsalarme auf mobilen Geräten empfangen",
-      "title": "Mobiler Operativ-Knoten"
+      "title": "Mobiler Operativ-Knoten",
+      "author": "Author",
+      "identifier": "Identifier",
+      "priority": "Priority",
+      "progressKpi": "Fortschritts-KPI",
+      "protocolType": "Protokolltyp",
+      "resolutionTitle": "Lösungstitel",
+      "statusNode": "Statusknoten",
+      "targetHorizon": "Zielhorizont"
     },
     "types": {
       "problemSolving": "Problemlösung",
@@ -351,11 +330,11 @@
   },
   "andon": {
     "actions": {
-      "escalate": "ESKALIEREN",
+      "escalate": "Eskalieren",
       "globalBroadcast": "Globaler Broadcast",
       "logisticsSync": "Logistik synchronisieren",
       "protocolException": "Protokollausnahme",
-      "sync": "SYNCHRONISIEREN",
+      "sync": "Synchronisieren",
       "syncSupervisor": "Supervisor synchronisieren",
       "technicianNode": "Techniker-Knoten"
     },
@@ -506,7 +485,19 @@
     "twoFactorAuth": "Zwei-Faktor-Authentifizierung",
     "verificationSent": "Bestätigung gesendet",
     "verifyIdentity": "Identität bestätigen",
-    "welcomeBack": "Willkommen zurück"
+    "welcomeBack": "Willkommen zurück",
+    "loading": "Authentifizierung wird geladen...",
+    "error": {
+      "title": "Authentifizierungsfehler",
+      "description": "Wir konnten den Authentifizierungsprozess nicht abschließen.",
+      "tryAgain": "Erneut versuchen",
+      "backToLogin": "Zurück zum Login"
+    },
+    "footer": {
+      "station": "Station",
+      "osVer": "Os Ver",
+      "protocol": "Protokoll"
+    }
   },
   "common": {
     "abort": "Abbrechen",
@@ -802,7 +793,7 @@
     "unassigned": "Nicht zugewiesen",
     "unknown": "Unbekannt",
     "unknownProduct": "Unbekanntes Produkt",
-    "unread": "ungelesen",
+    "unread": "Ungelesen",
     "update": "Aktualisieren",
     "upload": "Hochladen",
     "urgent": "Dringend",
@@ -811,16 +802,12 @@
     "viewAll": "Alle anzeigen",
     "viewDetails": "Details ansehen",
     "warning": "Warnung",
-    "yes": "Ja"
-  },
-  "components": {
-    "factoryFloor": {
-      "machineStatus": {
-        "maintenanceRequired": "Wartung erforderlich",
-        "productionIssue": "Produktionsproblem",
-        "qualityAlert": "Qualitätswarnung",
-        "safetyAlert": "Sicherheitswarnung"
-      }
+    "yes": "Ja",
+    "tests": {
+      "aoi": "AOI",
+      "xray": "X-Ray",
+      "ict": "ICT",
+      "fct": "FCT"
     }
   },
   "confirmations": {
@@ -933,7 +920,24 @@
       "scrap": "Ausschuss",
       "title": "Produktion",
       "workOrders": "Arbeitsaufträge",
-      "yield": "Ausbeute"
+      "yield": "Ausbeute",
+      "detail": {
+        "title": "Betriebssteuerung",
+        "resourceAllocation": "Ressourcenzuweisung",
+        "standardWorkProtocol": "Standardarbeitsprotokoll",
+        "activeOperativesAssigned": "Zugewiesene Mitarbeiter",
+        "shiftConfiguration": "Schichtkonfiguration",
+        "efficiencyRating": "Effizienzbewertung",
+        "documentation": "Dokumentation",
+        "safety": "Sicherheitsprotokolle",
+        "quality": "Qualitätskontrollpunkte",
+        "status": {
+          "active": "Aktiv",
+          "halted": "Angehalten",
+          "maintenance": "Wartung",
+          "completed": "Abgeschlossen"
+        }
+      }
     },
     "purchase": {
       "mrp": "MRP",
@@ -947,14 +951,75 @@
     },
     "quality": {
       "audit": "Audit",
-      "capa": "CAPA",
+      "capa": {
+        "new": {
+          "title": "Neue CAPA",
+          "subtitle": "Korrekturmaßnahme",
+          "establishCapa": "CAPA ERSTELLEN",
+          "actionPlanParameters": "Maßnahmenplan",
+          "capaIdentity": "CAPA-ID",
+          "originNode": "Ursprung",
+          "priorityLayer": "Priorität",
+          "assignedOperative": "Zugewiesen an",
+          "targetHorizon": "Zielhorizont",
+          "rootCauseCountermeasures": "Ursache & Gegenmaßnahmen",
+          "source": {
+            "ncr": "NCR-FOLGE",
+            "audit": "Audit",
+            "customer": "Kunde",
+            "preventive": "PRÄVENTIV"
+          },
+          "priority": {
+            "low": "Klassisch",
+            "medium": "Mittel",
+            "high": "Hoch",
+            "critical": "Kritisch"
+          }
+        }
+      },
       "certifications": "Zertifizierungen",
       "compliance": "Konformität",
       "defects": "Mängel",
       "inspections": "Prüfungen",
-      "ncr": "NCR",
+      "ncr": {
+        "new": {
+          "title": "Neuer NCR",
+          "subtitle": "Nichtkonformitätsbericht",
+          "establishNcr": "NCR ERSTELLEN",
+          "ncrParameters": "NCR-Parameter",
+          "issueTitleProtocol": "Vorfalltitel",
+          "severityMagnitude": "Schweregrad",
+          "detectionNode": "Erkennungsort",
+          "relatedProduct": "Betroffenes Produkt",
+          "associatedWo": "Zugehöriger Auftrag",
+          "discrepancyIntelligence": "Abweichungsdetails",
+          "severity": {
+            "minor": "Gering",
+            "major": "Mittel",
+            "critical": "Kritisch"
+          }
+        }
+      },
       "passRate": "Erfolgsquote",
-      "title": "Qualität"
+      "title": "Qualität",
+      "inspection": {
+        "new": {
+          "title": "Neue Inspektion",
+          "subtitle": "Prüfpunkt",
+          "establishInspection": "Starten",
+          "gateParameters": "Gate-Parameter",
+          "protocolIdentity": "Protokoll",
+          "phaseNode": "Phase",
+          "assignedInspector": "Prüfer",
+          "productPartNode": "Produkt/Teil",
+          "type": {
+            "fai": "FAI (Erstmuster)",
+            "inProcess": "IN-PROZESS",
+            "final": "ENDPRÜFUNG",
+            "receiving": "Wareneingang"
+          }
+        }
+      }
     },
     "sales": {
       "forecast": "Prognose",
@@ -968,6 +1033,53 @@
       "rfqs": "Angebotsanfragen",
       "title": "Vertrieb",
       "won": "Gewonnen"
+    },
+    "products": {
+      "new": {
+        "title": "Neues Produkt",
+        "subtitle": "Produktdatenerfassung",
+        "globalIdentity": "Globale Identität",
+        "technicalSpecs": "Technische Daten",
+        "logisticsParams": "Logistikparameter",
+        "partNumber": "Teilenummer",
+        "nomenclature": "Nomenklatur",
+        "description": "Beschreibung",
+        "category": "Kategorie",
+        "uom": "Einheit (UOM)",
+        "unitCost": "Stückkosten",
+        "minStock": "Mindestbestand",
+        "maxStock": "Maximalbestand",
+        "leadTime": "Vorlaufzeit (Tage)",
+        "location": "Lagerort",
+        "supplier": "Lieferant",
+        "createSuccess": "Produkt erfolgreich erstellt",
+        "createError": "Fehler beim Erstellen",
+        "placeholders": {
+          "partNumber": "z.B. PN-2024-001"
+        },
+        "abort": "Abbrechen",
+        "synchronizing": "SYNCHRONISIEREN...",
+        "commitData": "BESTÄTIGEN"
+      },
+      "detail": {
+        "title": "Produktdetails",
+        "subtitle": "Komponentenanalyse",
+        "sku": "ARTIKELNUMMER (SKU)",
+        "nomenclature": "Nomenklatur",
+        "unitCost": "STÜCKKOSTEN",
+        "fiscalParameters": "Steuerliche Parameter",
+        "fiscalMargin": "Steuerliche Marge",
+        "bomCost": "Stücklistenkosten",
+        "operationalOverhead": "Betriebskosten",
+        "inventory": "Inventar",
+        "currentLevel": "Aktueller Bestand",
+        "authorizedInventory": "Autorisierter Bestand",
+        "reorderPoint": "Meldebestand",
+        "meta": "Meta",
+        "created": "ERSTELLT AM",
+        "updated": "AKTUALISIERT AM",
+        "revision": "Revision"
+      }
     }
   },
   "navigation": {
@@ -1097,8 +1209,8 @@
       "approvals": {
         "actions": {
           "delete": "LÖSCHEN",
-          "duplicate": "DUPLIZIEREN",
-          "edit": "BEARBEITEN"
+          "duplicate": "Duplizieren",
+          "edit": "Bearbeiten"
         },
         "description": "Genehmigungsketten und Autorisierungsstufen konfigurieren",
         "initializeWorkflow": "Workflow initialisieren",
@@ -1139,7 +1251,7 @@
       "gates": {
         "actions": {
           "delete": "LÖSCHEN",
-          "edit": "BEARBEITEN",
+          "edit": "Bearbeiten",
           "moveDown": "Nach unten",
           "moveUp": "Nach oben"
         },
@@ -1159,8 +1271,8 @@
       "learning": {
         "actions": {
           "delete": "LÖSCHEN",
-          "duplicate": "DUPLIZIEREN",
-          "edit": "BEARBEITEN"
+          "duplicate": "Duplizieren",
+          "edit": "Bearbeiten"
         },
         "badge": {
           "mandatory": "Pflicht",
@@ -1188,7 +1300,7 @@
       "roles": {
         "actions": {
           "delete": "LÖSCHEN",
-          "edit": "BEARBEITEN",
+          "edit": "Bearbeiten",
           "manageUsers": "Benutzer verwalten"
         },
         "auth": {
@@ -1298,9 +1410,9 @@
         "90d": "Letzte 90 Tage"
       },
       "riskLevels": {
-        "high": "HOCH",
-        "low": "NIEDRIG",
-        "medium": "MITTEL"
+        "high": "Hoch",
+        "low": "Niedrig",
+        "medium": "Mittel"
       },
       "stableGradient": "Stabiler Gradient",
       "station": "STATION: ANALYTIK-01",
@@ -1347,7 +1459,7 @@
         "inferenceStream": "Inferenzstrom-Visualisierung",
         "projection30d": "30-Tage-Projektion",
         "projection7d": "7-Tage-Projektion",
-        "protocol": "PROTOKOLL",
+        "protocol": "Protokoll",
         "temporalModel": "Modell: TEMPORAL-CONV-04",
         "training": "Sensei KI trainiert temporale Projektionsmodelle..."
       }
@@ -1446,7 +1558,7 @@
         "allCategories": "Alle Kategorien",
         "allPriorities": "Alle Prioritäten",
         "allStatuses": "Alle Status",
-        "dimensional": "DIMENSIONAL",
+        "dimensional": "Dimensional",
         "material": "Material",
         "monitoring": "ÜBERWACHUNG",
         "p1Critical": "P1 Kritisch",
@@ -1670,18 +1782,18 @@
         "allCategories": "Alle Kategorien",
         "allSeverities": "Alle Schweregrade",
         "allStatuses": "Alle Status",
-        "critical": "KRITISCH",
-        "delivery": "LIEFERUNG",
-        "high": "HOCH",
+        "critical": "Kritisch",
+        "delivery": "Lieferung",
+        "high": "Hoch",
         "investigating": "In Untersuchung",
-        "low": "NIEDRIG",
-        "medium": "MITTEL",
-        "open": "OFFEN",
-        "pending": "AUSSTEHEND",
-        "process": "PROZESS",
+        "low": "Niedrig",
+        "medium": "Mittel",
+        "open": "Offen",
+        "pending": "Ausstehend",
+        "process": "Prozess",
         "quality": "QUALITÄT",
         "resolved": "GELÖST",
-        "safety": "SICHERHEIT"
+        "safety": "Sicherheit"
       },
       "highUrgencyDeviations": "Abweichungen mit hoher Dringlichkeit",
       "meanResolution": "Durchschnittliche Lösung",
@@ -1700,7 +1812,7 @@
         "ownerSync": "Verantwortlich",
         "pulseDetection": "Puls-Erkennung",
         "severity": "Schweregrad",
-        "statusNode": "Status",
+        "statusNode": "Statusknoten",
         "title": "Ausnahmeregister"
       },
       "tabs": {
@@ -1821,7 +1933,7 @@
         "recordRollup": "Rollup erfassen",
         "relievedCost": "Ausgebuchte Kosten",
         "saveStandardCost": "Standardkosten speichern",
-        "sku": "SKU",
+        "sku": "Sku",
         "standardCost": "Standardkosten",
         "standardCosts": "Standardkosten",
         "subtitle": "Produktkostenanalyse und Margenoptimierung",
@@ -1865,7 +1977,7 @@
         "delta": "Delta",
         "grossMargin": "Bruttomarge",
         "liquidity": "Liquidität",
-        "opex": "OPEX",
+        "opex": "Opex",
         "revenue": "Umsatz"
       },
       "ledger": {
@@ -1951,7 +2063,7 @@
     },
     "hr": {
       "accessTrainingMatrix": "Schulungsmatrix öffnen",
-      "activeRecruitment": "AKTIVE_REKRUTIERUNG",
+      "activeRecruitment": "Aktive Rekrutierung",
       "capacitySync": "Kapazität synchronisieren",
       "commitSync": "SYNC_BESTÄTIGEN",
       "complianceGates": "COMPLIANCE-PRÜFUNGEN",
@@ -1960,9 +2072,9 @@
       "initializePersonnel": "Personal initialisieren",
       "intelligenceThresholds": "Intelligenz-Schwellenwerte",
       "nodeDistribution": "Knotenverteilung",
-      "nodes": "KNOTEN",
+      "nodes": "Knoten",
       "opportunityPulse": "Chancenpuls",
-      "pendingRequests": "AUSSTEHENDE_ANFRAGEN",
+      "pendingRequests": "Ausstehende Anfragen",
       "reviewAll": "ALLE_PRÜFEN",
       "sections": {
         "directory": "Mitarbeiterverzeichnis",
@@ -1984,20 +2096,20 @@
         "overview": "Übersicht",
         "performance": "Leistung"
       },
-      "thisCycle": "DIESER_ZYKLUS",
+      "thisCycle": "Dieser Zyklus",
       "thresholdBreaches": "Schwellenwertverletzungen",
       "title": "Personal & Talent",
       "trainingMatrix": "Schulungsmatrix"
     },
     "it": {
-      "active": "AKTIV",
-      "activeBreach": "AKTIVER_VERSTOSS",
+      "active": "Aktiv",
+      "activeBreach": "Aktiver Verstoss",
       "activeComputeNode": "Aktiver_Compute-Knoten",
-      "activeNodes": "AKTIVE_KNOTEN",
+      "activeNodes": "Aktive Knoten",
       "activeSockets": "Aktive Verbindungen",
       "allSystemsNominal": "Alle Systeme im Normalbetrieb",
       "connectedOperatives": "Verbundene Operatoren",
-      "connectionsSynced": "VERBINDUNGEN_SYNCHRONISIERT",
+      "connectionsSynced": "Verbindungen Synchronisiert",
       "continuousPulseEstablished": "Kontinuierlicher Puls hergestellt",
       "cpuUtilization": "CPU-Auslastung",
       "diskSaturation": "Festplattenauslastung",
@@ -2005,7 +2117,7 @@
       "firewallArchitecture": "Firewall-Architektur",
       "globalInfrastructureSynchronized": "Globale Infrastruktur synchronisiert",
       "intelligenceNodeCluster": "Intelligenz-Knoten-Cluster",
-      "latency": "LATENZ",
+      "latency": "Latenz",
       "liveLogs": "Live-Logs",
       "memoryPulse": "Speicherpuls",
       "messageQueueDegraded": "Message-Queue degradiert",
@@ -2019,7 +2131,7 @@
       },
       "securitySyncProtocol": "Sicherheits-Sync-Protokoll",
       "sslCertificate": "SSL-Zertifikat",
-      "stable": "STABIL",
+      "stable": "Stabil",
       "station": "STATION: INFRA-KOMMANDO-01",
       "stats": {
         "activeIncidents": "Aktive Vorfälle",
@@ -2036,8 +2148,8 @@
       },
       "telemetryAnomalies": "Telemetrieanomalien",
       "title": "IT-Kommandozentrale",
-      "trafficUp": "DATENVERKEHR_HOCH",
-      "updateSecurityPolicies": "SICHERHEITSRICHTLINIEN_AKTUALISIEREN",
+      "trafficUp": "Datenverkehr Hoch",
+      "updateSecurityPolicies": "Sicherheitsrichtlinien Aktualisieren",
       "uptime": "Betriebszeit",
       "validNode": "GÜLTIGER_KNOTEN"
     },
@@ -2135,7 +2247,7 @@
       "tabs": {
         "assets": "Anlagen",
         "budget": "Budget",
-        "loto": "LOTO",
+        "loto": "Loto",
         "pmSchedule": "PM-Zeitplan",
         "pmSchedules": "PM-Zeitpläne",
         "toolCrib": "Werkzeuglager",
@@ -2167,20 +2279,21 @@
         "station": "STATION: MRP-SYNCHRONISIEREN-01",
         "subtitle": "Produktionsplanung und -terminierung",
         "table": {
-          "bucketDate": "BUCKET_DATUM",
-          "days": "TAGE",
-          "horizonState": "HORIZONT_STATUS",
-          "manual": "MANUELL",
-          "periodRange": "ZEITRAUM_BEREICH",
+          "bucketDate": "Bucket Datum",
+          "days": "Tage",
+          "horizonState": "Horizont Status",
+          "manual": "Manuell",
+          "periodRange": "Zeitraum Bereich",
           "planIdentity": "PLAN_IDENTITÄT",
           "planLineExposure": "Planzeilen-Exposition",
           "planProtocolRegistry": "MPS-Protokollregister",
-          "productNode": "PRODUKT_KNOTEN",
-          "quantity": "MENGE",
-          "sourceStream": "QUELL_STREAM",
-          "statusNode": "STATUS_KNOTEN",
-          "zeroDemandLines": "NULL_BEDARF_ZEILEN_EINGESPEIST",
-          "zeroProtocols": "NULL_PROTOKOLLE_IDENTIFIZIERT"
+          "productNode": "Produkt Knoten",
+          "quantity": "Menge",
+          "sourceStream": "Quell Stream",
+          "statusNode": "Statusknoten",
+          "zeroDemandLines": "Null Bedarf Zeilen Eingespeist",
+          "zeroProtocols": "Null Protokolle Identifiziert",
+          "productPrefix": "Produkt_"
         },
         "title": "Produktionsprogrammplanung"
       },
@@ -2352,13 +2465,16 @@
           "customer": "Kunden suchen...",
           "description": "Zusätzliche Informationen zum RFQ-Protokoll...",
           "notes": "Vertrauliche Informationen, eingeschränkter Zugriff...",
-          "title": "z. B. Präzisionsteile für ein Luftfahrtprojekt"
+          "title": "z. B. Präzisionsteile für ein Luftfahrtprojekt",
+          "partNumber": "PN-XXXX",
+          "itemDescription": "Item description...",
+          "unit": "pcs, kg, etc."
         },
         "priority": {
           "high": "HOHE_PRIORITÄT",
           "low": "NIEDRIGE_PRIORITÄT",
           "medium": "MITTLERE_PRIORITÄT",
-          "urgent": "DRINGEND_SYNC"
+          "urgent": "Dringend Sync"
         },
         "station": "STATION: PIPELINE-EINTRAG-01",
         "subtitle": "RFQ erfassen und priorisieren",
@@ -2425,13 +2541,15 @@
         "uom": "Maßeinheit"
       },
       "tableHeaders": {
-        "customerNode": "KUNDEN_KNOTEN",
+        "customerNode": "Kunden Knoten",
         "estValue": "SCHÄTZWERT",
-        "opportunityTitle": "OPPORTUNITY_TITEL",
+        "opportunityTitle": "Opportunity Titel",
         "priorityLvl": "PRIORITÄTS_STUFE",
-        "rfqNumber": "RFQ_NUMMER",
-        "statusState": "STATUS_STATUS",
-        "thresholdDate": "SCHWELLENDATUM"
+        "rfqNumber": "Rfq Nummer",
+        "statusState": "Status Status",
+        "thresholdDate": "Schwellendatum",
+        "triageScore": "Triage Score",
+        "completeness": "Completeness"
       },
       "title": "Umsatz-Pipeline",
       "unknown": "Unbekannt",
@@ -2446,7 +2564,7 @@
     },
     "production": {
       "actions": {
-        "analyze": "ANALYSIEREN",
+        "analyze": "Analysieren",
         "modify": "Bearbeiten",
         "newWorkOrder": "Neuer Arbeitsauftrag"
       },
@@ -2492,33 +2610,6 @@
         "schedule": "Terminplan"
       },
       "workCenter": "Arbeitszentrum"
-    },
-    "products": {
-      "actions": {
-        "newProduct": "Neues Produkt"
-      },
-      "details": {
-        "bom": "Stückliste",
-        "history": "Verlauf",
-        "inventory": "Bestand",
-        "overview": "Übersicht",
-        "routing": "Arbeitsplan",
-        "specifications": "Spezifikationen"
-      },
-      "station": "STATION: BESTAND-01",
-      "stats": {
-        "activeProducts": "Aktive Produkte",
-        "avgLeadTime": "Durchschnittliche Durchlaufzeit",
-        "bomsDefined": "Definierte Stücklisten",
-        "routingsActive": "Aktive Arbeitspläne"
-      },
-      "subtitle": "Verwalten Sie Fertigungsspezifikationen und Stammdatenintelligenz",
-      "tabs": {
-        "boms": "Stücklisten",
-        "products": "Produkte",
-        "routings": "Arbeitspläne"
-      },
-      "title": "Produktportfolio"
     },
     "projectManagement": {
       "actions": {
@@ -2588,7 +2679,7 @@
         "kaizen": "Kaizen",
         "kanban": "Kanban",
         "maintenance": "Wartung",
-        "npi": "NPI",
+        "npi": "Npi",
         "scrum": "Scrum",
         "standard": "Standard"
       },
@@ -2642,26 +2733,26 @@
           "high": "HOHE_PRIORITÄT",
           "low": "NIEDRIGE_PRIORITÄT",
           "medium": "MITTLERE_PRIORITÄT",
-          "urgent": "DRINGEND_SYNC"
+          "urgent": "Dringend Sync"
         },
         "priorityLayer": "Priority Layer",
         "requisitionParameters": "Bestellanforderungs-Parameter",
         "resourceLineIntel": "Ressourcenpositions-Intelligenz",
         "resourceNodes": "Ressourcenknoten",
-        "saveDraft": "ENTWURF_SPEICHERN",
+        "saveDraft": "Entwurf Speichern",
         "savedAsDraft": "Bestellanforderung als Entwurf gespeichert",
         "searchProductNodes": "PRODUKTKNOTEN_SUCHEN...",
         "selectProductNode": "PRODUKTKNOTEN_AUSWÄHLEN...",
         "station": "STATION: REQ-ENTRY-01",
-        "submitForApproval": "ZUR_GENEHMIGUNG_EINREICHEN",
+        "submitForApproval": "Zur Genehmigung Einreichen",
         "submittedForApproval": "Bestellanforderung zur Genehmigung eingereicht",
         "subtitle": "Einkaufsbedarf erfassen",
         "success": "Erfolgreich",
         "tableHeaders": {
           "estPrice": "SCHÄTZPREIS",
-          "magnitude": "AUSMASS",
+          "magnitude": "Ausmass",
           "productNodeDesc": "PRODUKTKNOTEN / BESCHREIBUNG",
-          "subtotal": "ZWISCHENSUMME",
+          "subtotal": "Zwischensumme",
           "uom": "MAßEINHEIT"
         },
         "thresholdDate": "Schwellendatum (erforderlich ab)",
@@ -2703,7 +2794,7 @@
         "justificationLog": "Begründungsprotokoll",
         "lines": "Positionen",
         "orderId": "Bestell-ID",
-        "poNode": "PO_KNOTEN",
+        "poNode": "Po Knoten",
         "reqNumber": "Anforderungsnummer",
         "statusState": "Status",
         "supplierNode": "Lieferantenknoten",
@@ -2711,7 +2802,7 @@
         "synchronizingRequisitions": "Bestellanforderungen werden synchronisiert...",
         "timestamp": "Zeitstempel",
         "totalValue": "Gesamtwert",
-        "unknownSupplier": "UNBEKANNTER_LIEFERANT",
+        "unknownSupplier": "Unbekannter Lieferant",
         "zeroOrdersIdentified": "Keine Bestellungen gefunden",
         "zeroRequisitionsIdentified": "Keine Bestellanforderungen gefunden"
       },
@@ -2914,7 +3005,7 @@
           "uom": "Maßeinheit"
         },
         "tax": "Steuer",
-        "termsConditions": "AGB",
+        "termsConditions": "Agb",
         "total": "Gesamt",
         "validUntil": "Gültig bis",
         "versionHistory": "Versionsverlauf",
@@ -2963,7 +3054,7 @@
         "subtotal": "Zwischensumme",
         "tax": "Steuer",
         "taxRate": "Steuersatz",
-        "termsAndConditions": "AGB",
+        "termsAndConditions": "Agb",
         "termsAndNotes": "Bedingungen und Hinweise",
         "title": "Titel",
         "total": "Gesamt",
@@ -3038,7 +3129,7 @@
         "assignee": "Zuständig",
         "dueDate": "Fälligkeitsdatum",
         "priority": "Priorität",
-        "rfq": "RFQ",
+        "rfq": "Rfq",
         "status": "Status",
         "title": "Titel",
         "value": "Wert"
@@ -3159,14 +3250,14 @@
       "station": "STATION: GLOBALE-LOGISTIK-01",
       "stats": {
         "activeSuppliers": "Aktive Lieferanten",
-        "activeSyncNodes": "AKTIVE_SYNC_KNOTEN",
+        "activeSyncNodes": "Aktive Sync Knoten",
         "atRisk": "Gefährdet",
         "globalRiskIndex": "Globaler Risikoindex",
         "intelNodes": "Intelligenzknoten",
         "mitigationReadiness": "Bereitschaft zur Gegenmaßnahme",
         "onTimeDelivery": "Pünktliche Lieferung",
-        "optimalReserve": "OPTIMALE_RESERVE",
-        "protocolVerifications": "PROTOKOLL_VERIFIKATIONEN",
+        "optimalReserve": "Optimale Reserve",
+        "protocolVerifications": "Protokoll Verifikationen",
         "qualityScore": "Qualitätsbewertung",
         "simulationCycles": "Simulationszyklen",
         "thresholdExceeded": "SCHWELLENWERT_ÜBERSCHRITTEN"
@@ -3187,10 +3278,10 @@
         "newTask": "Neue Aufgabe"
       },
       "card": {
-        "asap": "ASAP",
-        "refineProtocol": "PROTOKOLL_VERFEINERN",
-        "terminateProtocol": "PROTOKOLL_BEENDEN",
-        "viewNode": "KNOTEN_ANSEHEN"
+        "asap": "Asap",
+        "refineProtocol": "Protokoll Verfeinern",
+        "terminateProtocol": "Protokoll Beenden",
+        "viewNode": "Knoten Ansehen"
       },
       "filters": {
         "allPriorities": "Alle Prioritäten",
@@ -3203,7 +3294,7 @@
         "configureMetadata": "Metadaten konfigurieren",
         "createAssignment": "Aufgabe erstellen",
         "descriptionPlaceholder": "Beschreibung eingeben",
-        "discard": "VERWERFEN",
+        "discard": "Verwerfen",
         "protocolParameters": "Protokollparameter",
         "station": "STATION: AUFGABE-ENTRY-01",
         "subtitle": "Aufgabe anlegen und zuweisen",
@@ -3246,34 +3337,34 @@
       "zeroProtocolNodes": "Keine Protokollknoten"
     },
     "today": {
-      "allClearStatus": "Status: ALLES_OK",
+      "allClearStatus": "Status: Alles_Klar",
       "assignedTasks": "Zugewiesene Aufgaben",
       "criticalAnomalies": "Kritische Anomalien",
       "defaultDrillHint": "Berücksichtigen Sie aktuelle operative Prioritäten und Risikofaktoren.",
-      "defaultDrillQuestion": "Initialisieren Sie die tägliche Protokollanalyse zur Risikominderung.",
+      "defaultDrillQuestion": "Tägliche Protokollanalyse zur Risikominderung initialisieren.",
       "drill": {
-        "completed": "Drill Abgeschlossen!",
+        "completed": "Drill abgeschlossen!",
         "dailyProtocol": "Tägliches Protokoll",
-        "drillComplete": "Drill abgeschlossen",
-        "engageQuestion": "Beantworten Sie die heutige operative Frage",
+        "drillComplete": "Drill Abgeschlossen",
+        "engageQuestion": "Beteiligen Sie sich an der heutigen operativen Frage",
         "hideHint": "Hinweis ausblenden",
-        "keepMomentum": "Ihre Antwort wurde gespeichert. Bleiben Sie dran!",
-        "responsePlaceholder": "Antwort zum Drill eingeben...",
-        "responseRecorded": "Antwort erfolgreich gespeichert",
+        "keepMomentum": "Ihre Antwort wurde aufgezeichnet. Behalten Sie den Schwung bei!",
+        "responsePlaceholder": "Geben Sie Ihre Antwort zum Drill ein...",
+        "responseRecorded": "Antwort erfolgreich aufgezeichnet",
         "showHint": "Hinweis anzeigen",
-        "submitResponse": "Antwort absenden",
-        "submitting": "Wird gesendet...",
+        "submitResponse": "Antwort Senden",
+        "submitting": "Übermittlung...",
         "title": "Sensei_Täglicher_Drill",
         "yourResponse": "Ihre Antwort"
       },
-      "errorLoading": "Heute konnte nicht geladen werden",
-      "executeAnswer": "Antwort ausführen",
+      "errorLoading": "Fehler beim Laden der heutigen Daten",
+      "executeAnswer": "Antwort Ausführen",
       "greetings": {
         "afternoon": "Guten Tag",
         "evening": "Guten Abend",
         "morning": "Guten Morgen"
       },
-      "initializeRFQ": "RFQ initialisieren",
+      "initializeRFQ": "RFQ Initialisieren",
       "lsw": {
         "daily": "Täglich",
         "monthly": "Monatlich",
@@ -3283,24 +3374,77 @@
       },
       "maturityLevel": "Reifegrad",
       "myWork": {
-        "criticalAnomalies": "KRITISCHE_ANOMALIEN",
-        "noAssignments": "Keine Aufgaben gefunden",
+        "criticalAnomalies": "Kritische Anomalien",
+        "noAssignments": "Keine Zuweisungen identifiziert",
         "strategicClarity": "Strategische Klarheit",
-        "strategicUserStories": "STRATEGISCHE_USER_STORIES"
+        "strategicUserStories": "Strategische User Stories"
       },
       "priorityRfqs": "Prioritäts-RFQs",
       "sections": {
         "myWork": "Meine Arbeit",
         "priorityTasks": "Prioritätsaufgaben",
         "quickActions": "Schnellaktionen",
-        "recentActivity": "Letzte Aktivitäten",
-        "upcoming": "Bevorstehend"
+        "recentActivity": "Kürzliche Aktivität",
+        "upcoming": "Demnächst"
       },
-      "senseiDailyDrill": "Sensei Tages-Drill",
+      "senseiDailyDrill": "Täglicher Sensei-Drill",
       "stationStatus": "STATION_STATUS: OPTIMAL",
-      "subtitle": "Intelligenz-Kommandozentrale",
-      "targetToday": "ZIEL_HEUTE",
-      "topPriorities": "Top-Prioritäten"
+      "subtitle": "Intelligence Command Center",
+      "targetToday": "Ziel_Heute",
+      "topPriorities": "Top Prioritäten",
+      "greeting": "Hallo, {name}!",
+      "greetingFallback": "zusammen",
+      "senseiPulse": "Sensei Puls",
+      "recently": "Kürzlich",
+      "rfqAtRisk": "RFQ gefährdet",
+      "status": {
+        "atRisk": "Gefährdet",
+        "reviewing": "Überprüfung",
+        "open": "Offen"
+      },
+      "severity": {
+        "critical": "Kritisch",
+        "warning": "Warnung",
+        "info": "Info"
+      },
+      "handover": {
+        "title": "Schichtübergabe",
+        "station": "Station {id}",
+        "note": "Notiz",
+        "notes": "Notizen",
+        "safety": "Sicherheit",
+        "quality": "Qualität",
+        "delivery": "Lieferung",
+        "acknowledge": "Bestätigen"
+      },
+      "fallback": {
+        "priorities": {
+          "closeRfqBlockers": "RFQ-Blocker für heute schließen",
+          "reviewMonthlyTargets": "Monatliche strategische Ziele überprüfen",
+          "analyzeCriticalExceptions": "Kritische Ausnahmen analysieren",
+          "confirmProductionScheduleRisks": "Produktionsplanrisiken bestätigen",
+          "reviewTopQualityAbnormalities": "Top Qualitätsabweichungen prüfen"
+        },
+        "tasks": {
+          "reviewOpenRfqs": "Offene RFQs überprüfen",
+          "approveDraftQuote": "Angebotsentwurf genehmigen"
+        },
+        "kpis": {
+          "openRfqs": "Offene RFQs",
+          "pendingQuotes": "Ausstehende Angebote",
+          "onTimeDelivery": "Pünktliche Lieferung",
+          "oee": "OEE"
+        },
+        "activity": {
+          "rfqStatusUpdated": "Status für RFQ-2024-0089 aktualisiert",
+          "quoteSentToAcme": "Angebot an Acme Corp gesendet"
+        },
+        "drill": {
+          "question": "Was ist der heutige Fokus?",
+          "hint": "Überprüfe die Top-Prioritäten."
+        },
+        "trendFromLastWeek": "seit letzter Woche"
+      }
     },
     "training": {
       "certifications": {
@@ -3396,26 +3540,6 @@
     }
   },
   "production": {
-    "detail": {
-      "aggregationPulse": "Aggregationspuls",
-      "escalateAnomaly": "Anomalie eskalieren",
-      "executionVelocity": "Ausführungsgeschwindigkeit",
-      "exportSpec": "Spezifikation exportieren",
-      "gateVerified": "Gate verifiziert",
-      "initiateExecution": "Ausführung starten",
-      "node": "Knoten",
-      "scrapDeviation": "Ausschussabweichung",
-      "suspendProtocol": "Protokoll aussetzen",
-      "tabs": {
-        "bom": "Stückliste",
-        "history": "Verlauf",
-        "operations": "Vorgänge",
-        "quality": "Qualität"
-      },
-      "targetMagnitude": "Zielausmaß",
-      "unknownProduct": "Unbekanntes Produkt",
-      "viewHistory": "Verlauf ansehen"
-    },
     "emptyState": {
       "description": "Es wurden noch keine Fertigungsaufträge gefunden.",
       "title": "Keine Fertigungsaufträge"
@@ -3440,7 +3564,15 @@
       "title": "Neuer Fertigungsauftrag",
       "validationError": "Validierungsfehler",
       "workOrderCreated": "Fertigungsauftrag erstellt",
-      "workOrderIdentity": "Fertigungsauftrags-ID"
+      "workOrderIdentity": "Fertigungsauftrags-ID",
+      "notesLabel": "Production Intel & Notes",
+      "priorities": {
+        "low": "Niedrige Geschwindigkeit",
+        "normal": "Standard-Knoten",
+        "high": "Hohe Priorität",
+        "urgent": "Dringende Eskalation",
+        "critical": "Kritischer Schwellenwert"
+      }
     },
     "searchPlaceholder": "Suchen...",
     "stats": {
@@ -3590,106 +3722,6 @@
       "velocityGain": "Geschwindigkeitsgewinn",
       "vsLastCycle": "Gegenüber letztem Zyklus"
     },
-    "capa": {
-      "detail": {
-        "addNode": "Hinzufügen Knoten",
-        "commitAction": "Maßnahme bestätigen",
-        "countermeasureNodes": "Gegenmaßnahmen-Knoten",
-        "exportProtocol": "Protokoll exportieren",
-        "implementationMagnitude": "Umsetzungsausmaß",
-        "problemStatement": "Problemstellung",
-        "refineCapa": "CAPA verfeinern",
-        "rootCauseAnalysis": "Ursachenanalyse",
-        "subtitle": "CAPA-Details und Maßnahmensteuerung",
-        "syncPulse": "Synchronisationspuls",
-        "tabs": {
-          "actionProtocol": "Maßnahmenprotokoll",
-          "effectivenessSync": "Wirksamkeitssync",
-          "relatedAnomalies": "Zugehörige Anomalien"
-        },
-        "terminateNode": "Beenden Knoten",
-        "verifyEffectiveness": "Wirksamkeit prüfen"
-      },
-      "new": {
-        "actionPlanParameters": "Maßnahmenplan-Parameter",
-        "assignedOperative": "Zugewiesener Operateur",
-        "capaCreated": "CAPA erstellt",
-        "capaIdentity": "CAPA-Identität",
-        "createFailed": "Erstellung fehlgeschlagen",
-        "establishCapa": "CAPA anlegen",
-        "initiatedSuccess": "Erfolgreich initialisiert",
-        "originNode": "Ursprungsknoten",
-        "priorityLayer": "Prioritätsebene",
-        "rootCauseCountermeasures": "Gegenmaßnahmen zur Ursachenanalyse",
-        "subtitle": "Neue CAPA anlegen",
-        "targetHorizon": "Zielhorizont",
-        "title": "Titel"
-      }
-    },
-    "inspection": {
-      "detail": {
-        "assignmentTelemetry": "Zuweisungstelemetrie",
-        "checklist": "Checkliste",
-        "commitSync": "Sync bestätigen",
-        "inspectionIntelligence": "Prüfungsintelligenz",
-        "leadInspector": "Leitprüfer",
-        "printEvidence": "Nachweis drucken",
-        "resultsAnalytics": "Ergebnisanalytik",
-        "scheduledSync": "Geplanter Sync"
-      },
-      "new": {
-        "assignedInspector": "Zugewiesener Prüfer",
-        "associatedWoSync": "Zugehöriger WA-Sync",
-        "createFailed": "Erstellung fehlgeschlagen",
-        "establishInspection": "Prüfung anlegen",
-        "gateParameters": "Gate-Parameter",
-        "initialObservation": "Erste Beobachtung",
-        "initializedSuccess": "Erfolgreich initialisiert",
-        "inspectionStarted": "Prüfung gestartet",
-        "phaseNode": "Phasenknoten",
-        "productPartNode": "Produkt-Teilknoten",
-        "protocolIdentity": "Protokoll-Identität",
-        "subtitle": "Neue Prüfung anlegen",
-        "title": "Titel"
-      }
-    },
-    "ncr": {
-      "detail": {
-        "assignCapa": "CAPA zuweisen",
-        "comment": "Kommentar",
-        "discrepancyIntelligence": "Abweichungsintelligenz",
-        "investigationProtocol": "Untersuchungsprotokoll",
-        "noDescription": "Keine Beschreibung",
-        "refineProtocol": "Protokoll verfeinern",
-        "subjectiveData": "Subjektive Daten",
-        "subtitle": "NCR-Details und Ursachenanalyse",
-        "tabs": {
-          "disposition": "Disposition",
-          "eventLog": "Ereignisprotokoll",
-          "evidence": "Nachweise",
-          "rootCause": "Ursache"
-        },
-        "terminateNode": "Beenden Knoten",
-        "viewLogs": "Ansehen Logs"
-      },
-      "new": {
-        "associatedWo": "Zugehöriger WA",
-        "createFailed": "Erstellung fehlgeschlagen",
-        "detectionNode": "Erkennungsknoten",
-        "discrepancyIntelligence": "Abweichungsintelligenz",
-        "establishNcr": "NCR anlegen",
-        "issueTitleProtocol": "Problem-Titel-Protokoll",
-        "ncrCreated": "NCR erstellt",
-        "ncrParameters": "NCR-Parameter",
-        "recordedSuccess": "Erfolgreich erfasst",
-        "relatedProduct": "Zugehöriges Produkt",
-        "severityMagnitude": "Schweregrad-Ausmaß",
-        "subtitle": "Neuen NCR anlegen",
-        "title": "Titel",
-        "titleDescRequired": "Titel und Beschreibung erforderlich",
-        "validationError": "Validierungsfehler"
-      }
-    },
     "newCAPA": "Neue CAPA",
     "newInspection": "Neue Prüfung",
     "newNCR": "Neuer NCR",
@@ -3729,23 +3761,24 @@
       "subtitle": "Zugangsdatenrotation und Knotenkonfiguration",
       "timezone": "Zeitzone",
       "title": "Konto",
-      "updateCredentials": "ZUGANGSDATEN_AKTUALISIEREN"
+      "updateCredentials": "Zugangsdaten Aktualisieren",
+      "changePasswordDesc": "Geben Sie Ihr aktuelles Passwort und ein neues Passwort ein"
     },
     "api": {
       "_value": "API-Schlüssel",
-      "activeAuthNodes": "Aktive Auth-Knoten",
-      "description": "Autorisierungsschlüssel für externe Intelligenz-Streams verwalten",
-      "initializeNewKey": "NEUEN_SCHLÜSSEL_INITIALISIEREN",
-      "intelligenceThroughput": "Intelligenz-Durchsatz",
-      "optimalLoad": "Optimaler Load",
+      "activeAuthNodes": "Aktive Authentifizierungsknoten",
+      "description": "Autorisierungsschlüssel für externe Intelligence-Streams verwalten",
+      "initializeNewKey": "Neuen Schlüssel initialisieren",
+      "intelligenceThroughput": "Intelligence-Durchsatz",
+      "optimalLoad": "Optimale Last",
       "title": "API-Zugriffstoken",
-      "initializedOn": "INITIALISIERT_AM",
+      "initializedOn": "Initialisiert Am",
       "requestVolume": "ANFRAGEVOLUMEN (24H)",
-      "errorRate": "FEHLERRATE",
+      "errorRate": "Fehlerrate",
       "protocolStream": "Protokoll: REST_JSON_STREAM // KNOTEN: SENSEI_CORE_V3",
       "keys": {
         "erpSync": "ERP-Sync",
-        "shopFloorDisplay": "Shopfloor-Anzeige"
+        "shopFloorDisplay": "Shop-Floor-Anzeige"
       }
     },
     "appearance": {
@@ -3773,12 +3806,12 @@
         "title": "Intelligenz-Modul 04",
         "subtitle": "Live-Operations-Stream synchronisiert",
         "primaryAction": "BEFEHL_AUSFÜHREN",
-        "secondaryAction": "INTEL_ANZEIGEN",
-        "tertiaryAction": "BEENDEN"
+        "secondaryAction": "Intel Anzeigen",
+        "tertiaryAction": "Beenden"
       },
       "reducedMotion": "Reduzierte Bewegung",
       "reducedMotionDesc": "Animationen und Übergänge der Oberfläche minimieren",
-      "save": "SPEICHERN",
+      "save": "Speichern",
       "saveSuccess": "Speichern Erfolgreich",
       "saving": "SPEICHERN...",
       "senseiOrange": "Sensei Orange",
@@ -3803,13 +3836,13 @@
       "defaults": {
         "legalEntityIdentity": "Sensei Manufacturing Solutions",
         "taxIdVat": "MA-123456789",
-        "registeredOffice": "123 Industrial Ave, Casablanca, Morocco"
+        "registeredOffice": "123 Industriestraße, Casablanca, Marokko"
       },
       "branding": {
-        "primaryLogoNode": "PRIMÄRLOGO_KNOTEN",
-        "logoPlaceholder": "LOGO",
-        "updateStream": "STREAM_AKTUALISIEREN",
-        "interfaceAccentSync": "AKZENT_SYNC",
+        "primaryLogoNode": "PRIMÄRER_LOGO_KNOTEN",
+        "logoPlaceholder": "Logo",
+        "updateStream": "Update-Stream",
+        "interfaceAccentSync": "Interface Akzent Sync",
         "activeAccent": "Aktiv: Rams_Orange (#FFBE00)"
       }
     },
@@ -3838,7 +3871,7 @@
     },
     "data": {
       "description": "Hochrangige Datenprotokolle und Exporte verwalten",
-      "establishExport": "EXPORT_STARTEN",
+      "establishExport": "Export Starten",
       "executePurge": "BEREINIGUNG_AUSFÜHREN",
       "fullExport": "Vollständiger Intelligenz-Export",
       "fullExportDesc": "Alle Organisationsknoten im JSON/CSV-Format für Auditsynchronisierung herunterladen",
@@ -3855,7 +3888,7 @@
       "serverSync": "Server-Synchronisierung",
       "title": "Kommunikations-Relay",
       "defaults": {
-        "dispatchIdentity": "SENSEI_OS_COMMAND",
+        "dispatchIdentity": "Sensei OS Befehl",
         "relayReplyTo": "no-reply@sensei-manuf.com"
       },
       "smtpStatus": "SMTP_RELAY: SYNCHRONISIERT",
@@ -3867,25 +3900,25 @@
       "description": "Organisatorische Intelligenz mit externen Systemen synchronisieren",
       "title": "Integrations-Hub",
       "status": {
-        "connected": "VERBUNDEN",
-        "disconnected": "NICHT_VERBUNDEN"
+        "connected": "Verbunden",
+        "disconnected": "Nicht Verbunden"
       },
       "items": {
         "sap": {
-          "name": "SAP-ERP-Protokoll",
+          "name": "SAP ERP Protokoll",
           "desc": "Bidirektionale Synchronisierung von Produktionszyklen und Bestandsknoten"
         },
         "teams": {
-          "name": "Microsoft-Teams-Kanal",
-          "desc": "Automatischer Versand von Andon-Signalen an operative Kanäle"
+          "name": "Microsoft Teams Kanal",
+          "desc": "Automatisierter Versand von Andon-Signalen an operative Kanäle"
         },
         "powerbi": {
-          "name": "PowerBI-Intelligenz",
-          "desc": "Strategischer Datenexport für tiefe zeitliche Analysen"
+          "name": "PowerBI Intelligence",
+          "desc": "Strategischer Datenstrom-Export für tiefe zeitliche Analyse"
         },
         "slack": {
-          "name": "Slack-Integration",
-          "desc": "Echtzeit-Telemetriebenachrichtigungen und operativer Befehlssync"
+          "name": "Slack Integration",
+          "desc": "Echtzeit-Telemetrie-Benachrichtigungen und operative Befehlssynchronisierung"
         }
       }
     },
@@ -3898,10 +3931,10 @@
       "intelligenceLanguage": "Oberflächensprache",
       "measurementUnits": "Maßeinheiten",
       "numericPrecisionPreview": "Vorschau numerische Genauigkeit",
-      "rtlActive": "Rechts-nach-links-(RTL)-Layout aktiv",
+      "rtlActive": "Rechts-nach-Links (RTL) Layout aktiv",
       "preview": "Vorschau",
       "standardMetric": "Standardmetrik",
-      "efficiencyPercentage": "Effizienzprozent",
+      "efficiencyPercentage": "Effizienzprozentsatz",
       "temporalFormat": "Zeitformat",
       "timeFormat": "Uhrzeitformat",
       "timezone": "Zeitzone",
@@ -3949,7 +3982,7 @@
       "qualityAssuranceAlerts": "Qualitätssicherungsalarme",
       "resolutionProtocol": "Lösungsprotokoll (CAPA)",
       "resolutionProtocolDesc": "Wenn eine Korrekturmaßnahme zur Ausführung zugewiesen wird",
-      "saveRouting": "ROUTING_SPEICHERN",
+      "saveRouting": "Routing Speichern",
       "strategicSummaries": "Strategische Zusammenfassungen",
       "subtitle": "Alarmkonfiguration und Kommunikationsprotokolle",
       "title": "Benachrichtigungen",
@@ -4242,7 +4275,7 @@
           "description": "Vollzugriff auf das System"
         },
         "ceo": {
-          "name": "CEO",
+          "name": "Ceo",
           "description": "Geschäftsführer"
         },
         "gm": {
@@ -4355,7 +4388,7 @@
       "organizationalRole": "Organisatorische Rolle",
       "personalInfo": "Persönliche Informationen",
       "personnelSummary": "Kurzprofil",
-      "personnelSummaryPlaceholder": "Kurze berufliche Zusammenfassung",
+      "personnelSummaryPlaceholder": "Schreiben Sie eine kurze berufliche Zusammenfassung",
       "phone": "Telefon",
       "phoneNumber": "Telefonnummer",
       "removeAvatar": "Avatar entfernen",
@@ -4373,14 +4406,16 @@
         "americaLosAngeles": "(GMT-8) Los Angeles"
       },
       "departments": {
-        "engineering": "Technik",
+        "engineering": "Ingenieurwesen",
         "production": "Produktion",
         "quality": "Qualität",
         "sales": "Vertrieb",
-        "operations": "Betrieb",
+        "operations": "Operationen",
         "finance": "Finanzen",
-        "humanResources": "Personal",
-        "it": "IT"
+        "humanResources": "Personalwesen",
+        "it": "IT",
+        "management": "Management",
+        "warehouse": "Lager"
       },
       "toast": {
         "updated": {
@@ -4389,7 +4424,7 @@
         },
         "failed": {
           "title": "Aktualisierung fehlgeschlagen",
-          "description": "Beim Speichern ist ein Fehler aufgetreten."
+          "description": "Beim Speichern Ihrer Änderungen ist ein Fehler aufgetreten."
         }
       },
       "title": "Profil"
@@ -4408,7 +4443,7 @@
       "atRisk": "Gefährdet",
       "authenticationKeys": "Authentifizierungsschlüssel",
       "authenticatorProtocol": "Authenticator-Protokoll",
-      "cancelProtocol": "PROTOKOLL_ABBRECHEN",
+      "cancelProtocol": "Protokoll Abbrechen",
       "changePassword": "Passwort ändern",
       "changePasswordDesc": "Geben Sie Ihr aktuelles Passwort und ein neues Passwort ein",
       "confirmPassword": "Passwort bestätigen",
@@ -4420,16 +4455,16 @@
       "lastActive": "Zuletzt aktiv",
       "lastRotated": "Zuletzt vor 3 Tagen rotiert",
       "newPassword": "Neues Passwort",
-      "passwordStrengthHint": "Das Passwort muss mindestens 8 Zeichen lang sein und einen Großbuchstaben sowie eine Zahl enthalten",
+      "passwordStrengthHint": "Passwort muss mindestens 8 Zeichen lang sein und einen Großbuchstaben sowie eine Zahl enthalten",
       "passwordsDoNotMatch": "Passwörter stimmen nicht überein",
       "passwordVisibility": {
         "show": "Anzeigen",
-        "hide": "Ausblenden",
-        "label": "Passwörter"
+        "hide": "Verbergen",
+        "label": "passwörter"
       },
-      "changingPassword": "Wird geändert...",
+      "changingPassword": "Ändere...",
       "primaryNode": "PRIMÄR_KNOTEN",
-      "pulse": "PULS",
+      "pulse": "Puls",
       "revokeAllSessions": "Alle Sitzungen widerrufen",
       "revokeSession": "Widerrufen",
       "securityRecommendation1": "Zwei-Faktor-Authentifizierung ist aktiv und synchronisiert",
@@ -4441,7 +4476,7 @@
       "subtitle": "Authentifizierungsschlüssel und Zugriffsprotokolle",
       "syncedWithToken": "Mit externem Token-Generator synchronisiert",
       "terminateAllRemoteSessions": "Alle Remote-Sitzungen beenden",
-      "terminateNode": "KNOTEN_BEENDEN",
+      "terminateNode": "Knoten Beenden",
       "terminateNodeAuthorization": "Knotenbeendigung autorisieren",
       "terminateNodeDescription": "Diese Aktion meldet das Gerät in {location} ab. Fortfahren?",
       "thisDevice": "Dieses Gerät",
@@ -4458,7 +4493,7 @@
       "countrySync": "Land-Synchronisierung",
       "currencyNode": "Währungsknoten",
       "initializeFirstNode": "Ersten Knoten initialisieren",
-      "initializeProtocol": "PROTOKOLL_INITIALISIEREN",
+      "initializeProtocol": "Protokoll Initialisieren",
       "initializeSiteNode": "Standortknoten initialisieren",
       "nodeCommonName": "Knoten-Name",
       "physicalAddressNode": "Physische Adresse",
@@ -4466,7 +4501,10 @@
       "siteCodeIdentifier": "Standortcode-Bezeichner",
       "siteName": "Standortname",
       "station": "STATION: GLOBAL-OPS-01",
-      "status": "Status",
+      "status": {
+        "active": "Aktiv",
+        "inactive": "Inaktiv"
+      },
       "subtitle": "Standortknoten-Konfiguration",
       "synchronizing": "SYNCHRONISIERUNG...",
       "temporalAlignment": "Zeitabgleich (Zeitzone)",
@@ -4474,26 +4512,22 @@
       "title": "Fertigungsstandorte",
       "zeroSitesIdentified": "Keine Standorte gefunden",
       "placeholders": {
-        "siteCode": "z. B. SITE-NY-01",
-        "nodeCommonName": "z. B. Werk New York Advanced",
-        "countrySync": "USA",
-        "currencyNode": "USD",
-        "temporalAlignment": "America/New_York",
-        "physicalAddressNode": "Industriestraße 123, NY"
+        "siteCode": "z.B. SITE-NY-01",
+        "nodeCommonName": "z.B. New York Advanced Plant",
+        "countrySync": "Usa",
+        "currencyNode": "Usd",
+        "temporalAlignment": "Amerika/New_York",
+        "physicalAddressNode": "123 Industriestraße, NY"
       },
       "table": {
-        "code": "CODE",
+        "code": "Code",
         "siteIdentity": "STANDORT_IDENTITÄT",
-        "temporalSync": "ZEIT_SYNC",
-        "currency": "WÄHR.",
-        "statusNode": "STATUS_KNOTEN"
+        "temporalSync": "Zeit Sync",
+        "currency": "WÄHRUNG",
+        "statusNode": "Statusknoten"
       },
-      "addressUnavailable": "ADRESSE_UNBEKANNT",
-      "valueUnavailable": "—",
-      "status": {
-        "active": "AKTIV",
-        "inactive": "INAKTIV"
-      }
+      "addressUnavailable": "Ort Unbestimmt",
+      "valueUnavailable": "—"
     },
     "system": "System",
     "team": {
@@ -4508,31 +4542,31 @@
       "totalRegistry": "Gesamtregister",
       "waitingForGate": "Warten auf Gate",
       "zeroOperativesIdentified": "Keine Mitarbeitenden gefunden",
-      "searchPlaceholder": "MITARBEITER_SUCHE...",
-      "valueUnavailable": "—",
-      "invitedAt": "Eingeladen {date}",
+      "searchPlaceholder": "Mitglieder suchen...",
+      "valueUnavailable": "N/V",
+      "invitedAt": "Eingeladen am {date}",
       "filters": {
-        "role": "ROLLE",
-        "status": "STATUS",
-        "allRoles": "ALLE_ROLLEN",
-        "allStatus": "ALLE_STATUS"
+        "role": "Rolle",
+        "status": "Status",
+        "allRoles": "Alle Rollen",
+        "allStatus": "Jeder Status"
       },
       "table": {
-        "operativeIdentity": "MITARBEITER_ID",
-        "accessLayer": "ZUGRIFFSEBENE",
-        "departmentNode": "ABTEILUNG_KNOTEN",
-        "syncStatus": "SYNC_STATUS",
-        "lastPulse": "LETZTER_PULS"
+        "operativeIdentity": "OPERATIVE_IDENTITÄT",
+        "accessLayer": "Zugriffsebene",
+        "departmentNode": "Abteilungsknoten",
+        "syncStatus": "Sync-Status",
+        "lastPulse": "Letzter Impuls"
       },
       "roles": {
         "admin": "Admin",
         "adminDesc": "Vollzugriff auf alle Funktionen und Einstellungen",
         "manager": "Manager",
-        "managerDesc": "Kann Team verwalten und Workflows genehmigen",
+        "managerDesc": "Kann Teammitglieder verwalten und Workflows genehmigen",
         "user": "Benutzer",
         "userDesc": "Standardzugriff auf zugewiesene Funktionen",
         "viewer": "Betrachter",
-        "viewerDesc": "Nur Lesezugriff"
+        "viewerDesc": "Lesezugriff"
       },
       "status": {
         "active": "Aktiv",
@@ -4541,29 +4575,29 @@
       },
       "departments": {
         "management": "Management",
-        "engineering": "Technik",
+        "engineering": "Ingenieurwesen",
         "production": "Produktion",
         "quality": "Qualität",
         "sales": "Vertrieb",
         "warehouse": "Lager"
       },
       "inviteDialog": {
-        "title": "Teammitglied einladen",
-        "description": "Senden Sie eine Einladung, Ihrer Organisation beizutreten",
+        "title": "Mitglied einladen",
+        "description": "Senden Sie eine Einladung zum Beitritt zu Ihrer Organisation",
         "emailLabel": "E-Mail-Adresse",
-        "emailPlaceholder": "kollege@example.com",
+        "emailPlaceholder": "kollege@beispiel.com",
         "roleLabel": "Rolle",
         "departmentLabel": "Abteilung",
         "departmentPlaceholder": "Abteilung auswählen",
         "sendInvitation": "Einladung senden"
       },
       "actions": {
-        "refineNode": "KNOTEN_VERFEINERN",
-        "rotateRole": "ROLLE_ROTIEREN",
-        "resendSync": "SYNC_ERNEUT_SENDEN",
-        "deauthorize": "DEAUTORISIEREN",
-        "reauthorize": "REAUTORISIEREN",
-        "terminateProtocol": "PROTOKOLL_BEENDEN"
+        "refineNode": "Knoten Verfeinern",
+        "rotateRole": "Rolle Rotieren",
+        "resendSync": "Sync Erneut Senden",
+        "deauthorize": "Deautorisieren",
+        "reauthorize": "Reautorisieren",
+        "terminateProtocol": "Protokoll Beenden"
       }
     },
     "title": "Einstellungen",
@@ -4743,5 +4777,167 @@
     "required": "Dieses Feld ist erforderlich",
     "unique": "Dieser Wert ist bereits vergeben",
     "url": "Bitte geben Sie eine gültige URL ein"
+  },
+  "emailDrafting": {
+    "title": "KI-E-Mail-Verfasser",
+    "aria": {
+      "selectPurpose": "Zweck auswählen",
+      "toneGroup": "Tonfall auswählen",
+      "selectLanguage": "Sprache auswählen",
+      "recipientEmail": "Empfänger-E-Mail",
+      "recipientName": "Empfängername",
+      "addKeyPoint": "Hauptpunkt hinzufügen",
+      "keyPointsList": "Liste der Hauptpunkte",
+      "removeKeyPoint": "Entfernen: {point}",
+      "copyToClipboard": "In die Zwischenablage kopieren",
+      "editSubject": "Betreff bearbeiten",
+      "close": "Schließen",
+      "draftsList": "E-Mail-Entwürfe"
+    },
+    "placeholders": {
+      "selectPurpose": "Zweck auswählen...",
+      "recipientEmail": "empfaenger@beispiel.de",
+      "recipientNameOptional": "Name (optional)",
+      "keyPoint": "Hauptpunkt hinzufügen",
+      "senderName": "z.B. Max Mustermann",
+      "senderEmail": "z.B. max@sensei.com",
+      "senderTitle": "z.B. Account Manager",
+      "companyName": "z.B. Sensei GmbH",
+      "threadEntityType": "Thread-Entität auswählen...",
+      "threadEntityId": "Entitäts-ID eingeben...",
+      "referenceNumber": "z.B. RFQ-2024-001",
+      "subjectHint": "z.B. Preisupdate für Q2"
+    },
+    "purpose": {
+      "missingInfoRequest": "Anfrage fehlender Informationen",
+      "quoteFollowup": "Angebotsnachverfolgung",
+      "quoteSubmission": "Angebotsabgabe",
+      "supplierInquiry": "Lieferantenanfrage",
+      "meetingRequest": "Terminanfrage",
+      "meetingConfirmation": "Terminbestätigung",
+      "meetingReschedule": "Terminverschiebung",
+      "issueNotification": "Problembenachrichtigung",
+      "statusUpdate": "Statusaktualisierung",
+      "thankYou": "Danksagung",
+      "introduction": "Vorstellung",
+      "escalation": "Eskalation",
+      "apology": "Entschuldigung",
+      "custom": "Benutzerdefinierte E-Mail"
+    },
+    "tone": {
+      "formal": "Formell",
+      "professional": "Professionell",
+      "friendly": "Freundlich",
+      "urgent": "Dringend",
+      "apologetic": "Entschuldigend",
+      "appreciative": "Wertschätzend",
+      "concise": "Prägnant"
+    },
+    "language": {
+      "english": "Englisch",
+      "french": "Französisch",
+      "german": "Deutsch",
+      "spanish": "Spanisch",
+      "italian": "Italienisch",
+      "portuguese": "Portugiesisch",
+      "japanese": "Japanisch",
+      "chinese": "Chinesisch",
+      "korean": "Koreanisch",
+      "arabic": "Arabisch"
+    },
+    "actions": {
+      "add": "Hinzufügen",
+      "apply": "Anwenden",
+      "edit": "Bearbeiten",
+      "generating": "Wird generiert...",
+      "generateDraft": "Entwurf generieren",
+      "regenerate": "Neu generieren",
+      "send": "Senden"
+    },
+    "preview": {
+      "title": "Entwurfsvorschau",
+      "subjectLabel": "Betreff",
+      "confidence": "Konfidenz: {score}",
+      "generatedIn": "Generiert in {time}"
+    },
+    "units": {
+      "milliseconds": "ms",
+      "seconds": "s"
+    },
+    "compliance": {
+      "none": "Keine Compliance-Probleme erkannt",
+      "title": "Compliance-Probleme ({count})"
+    },
+    "suggestions": {
+      "title": "Vorschläge ({count})"
+    },
+    "alternatives": {
+      "title": "Alternative Betreffzeilen:"
+    },
+    "thread": {
+      "entityType": {
+        "rfq": "Anfrage (RFQ)",
+        "quote": "Angebot",
+        "workOrder": "Arbeitsauftrag",
+        "opportunity": "Verkaufschance",
+        "nonConformance": "Nichtkonformität",
+        "shipment": "Sendung",
+        "invoice": "Rechnung"
+      },
+      "loadFailed": "Laden der Thread-Verfolgung fehlgeschlagen",
+      "helper": "Verbinden Sie diesen Entwurf mit einem Thread, um den Datenkontext beizubehalten.",
+      "loading": "Thread-Verfolgung wird geladen...",
+      "traceTitle": "Thread-Verfolgung",
+      "traceStats": "Trace: {nodes} Knoten / {edges} Kanten",
+      "reasoningId": "Reasoning-ID: {id}"
+    },
+    "defaults": {
+      "senderName": "Sensei Operator",
+      "senderEmail": "operator@sensei.com",
+      "companyName": "Sensei"
+    },
+    "sections": {
+      "recipient": "Empfänger",
+      "purpose": "Zweck",
+      "sender": "Absender",
+      "threadContext": "Thread-Kontext",
+      "tone": "Tonfall",
+      "language": "Sprache",
+      "keyPoints": "Wichtige Punkte"
+    },
+    "fields": {
+      "senderName": "Absendername",
+      "senderEmail": "Absender-E-Mail",
+      "senderTitle": "Absendertitel",
+      "companyName": "Firmenname",
+      "threadEntityType": "Thread-Entitätstyp",
+      "threadEntityId": "Thread-Entitäts-ID",
+      "referenceNumberOptional": "Referenznummer (optional)",
+      "subjectHintOptional": "Betreff-Hinweis (optional)"
+    },
+    "status": {
+      "generating": "Wird generiert...",
+      "ready": "Bereit zur Überprüfung",
+      "reviewed": "Überprüft",
+      "approved": "Genehmigt",
+      "sent": "Gesendet",
+      "discarded": "Verworfen",
+      "failed": "Fehlgeschlagen"
+    },
+    "notifications": {
+      "copied": "In die Zwischenablage kopiert!"
+    },
+    "empty": {
+      "title": "Noch kein Entwurf",
+      "description": "Erstellen Sie einen Entwurf, um die Vorschau und die Compliance-Prüfungen zu sehen.",
+      "list": "Noch keine Entwürfe"
+    },
+    "drafts": {
+      "snippet": "{snippet}..."
+    },
+    "validation": {
+      "emailRequired": "E-Mail ist erforderlich",
+      "emailInvalid": "Ungültiges E-Mail-Format"
+    }
   }
 }
