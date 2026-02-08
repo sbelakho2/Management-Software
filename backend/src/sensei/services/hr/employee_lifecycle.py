@@ -13,11 +13,16 @@ This module is intentionally in-memory and pure-Python to match other services i
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Iterable, overload
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.services.core.pii_controls import (
@@ -151,8 +156,10 @@ class PersonnelDocument:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class EmployeeLifecycleService:
+class EmployeeLifecycleService(PersistentServiceMixin):
     """Lean HR lifecycle service for profiles, checklists, and personnel files."""
+
+    SERVICE_NAME = "employee_lifecycle"
 
     def __init__(self, *, pii: PIIControlsService | None = None) -> None:
         self._profiles: dict[UUID, EmployeeProfile] = {}

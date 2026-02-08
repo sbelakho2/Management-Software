@@ -1,5 +1,11 @@
+import logging
+
 from celery import Celery
+from celery.signals import worker_shutting_down
+
 from sensei.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "sensei",
@@ -47,3 +53,15 @@ celery_app.conf.update(
 
 # Autodiscover tasks from all registered apps
 celery_app.autodiscover_tasks(["sensei.tasks"])
+
+
+# ---------- Graceful Shutdown (#407) ----------
+@worker_shutting_down.connect
+def worker_shutdown_handler(sig, how, exitcode, **kwargs):
+    """Log and handle graceful worker shutdown."""
+    logger.info(
+        "Celery worker shutting down (signal=%s, how=%s, exitcode=%s)",
+        sig, how, exitcode,
+    )
+    # Allow in-flight tasks to complete (acks_late ensures redelivery on crash)
+    # Additional cleanup hooks can be registered here.

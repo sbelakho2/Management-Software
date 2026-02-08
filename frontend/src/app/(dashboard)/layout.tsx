@@ -6,8 +6,31 @@ import { useAuthStore } from '@/stores';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MainLayout, CommandPalette } from '@/components/layout';
 import { Loader2 } from 'lucide-react';
+import { OfflineBanner } from '@/components/ui/error-experience';
+import type { OfflineStatus } from '@/components/ui/error-experience';
 import type { UserRole } from '@/types';
 import { getUnauthorizedRedirectForRoles, hasPageAccess } from '@/lib/page-access';
+
+/** Hook to track online/offline state (#354, #443) */
+function useOnlineStatus(): OfflineStatus {
+  const [status, setStatus] = React.useState<OfflineStatus>(
+    typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online',
+  );
+
+  React.useEffect(() => {
+    const goOnline = () => setStatus('online');
+    const goOffline = () => setStatus('offline');
+
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  return status;
+}
 
 export default function DashboardLayout({
   children,
@@ -19,6 +42,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = React.useState(false);
+  const onlineStatus = useOnlineStatus();
 
   const userRoles = React.useMemo(() => {
     if (!user) return [] as UserRole[];
@@ -97,6 +121,7 @@ export default function DashboardLayout({
         {children}
       </MainLayout>
       <CommandPalette />
+      <OfflineBanner status={onlineStatus} />
     </TooltipProvider>
   );
 }

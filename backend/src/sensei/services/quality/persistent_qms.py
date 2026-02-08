@@ -1,3 +1,11 @@
+"""
+Persistent QMS Service.
+
+Database-backed implementation of the Quality Management
+System. Persists documents, audits, findings, gauges,
+SCARs, and risk assessments to PostgreSQL.
+"""
+
 from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal

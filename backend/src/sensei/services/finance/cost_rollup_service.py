@@ -1,3 +1,11 @@
+"""
+Cost Rollup Service.
+
+Aggregates costs across materials, labor, overhead, and
+subcontracting into rolled-up product costs. Supports
+standard cost updates and variance analysis.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

@@ -22,7 +22,10 @@ interface ShippingState {
   // Stats
   stats: ShippingStats | null;
   // UI State
+  /** @deprecated Use loadingOps for per-operation states */
   isLoading: boolean;
+  /** Set of currently in-progress operation names */
+  loadingOps: Set<string>;
   error: string | null;
   lastFetchedAt: number | null;
 
@@ -46,6 +49,25 @@ interface ShippingState {
   // Stats
   fetchStats: () => Promise<void>;
   clearError: () => void;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
+}
+
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: ShippingState) => Partial<ShippingState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, isLoading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: ShippingState) => Partial<ShippingState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, isLoading: next.size > 0 };
+  });
 }
 
 export const useShippingStore = create<ShippingState>()(
@@ -58,12 +80,13 @@ export const useShippingStore = create<ShippingState>()(
         selectedPickList: null,
         stats: null,
         isLoading: false,
+  loadingOps: new Set<string>(),
         error: null,
         lastFetchedAt: null,
 
         // Shipment methods
         fetchShipments: async (params) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchShipments');
           try {
             let url = '/shipping/shipments';
             const queryParams = new URLSearchParams();
@@ -72,65 +95,83 @@ export const useShippingStore = create<ShippingState>()(
             if (queryParams.toString()) url += `?${queryParams.toString()}`;
             
             const response = await apiClient.get<{ items: Shipment[] }>(url);
-            set({ shipments: response.items || [], isLoading: false, lastFetchedAt: Date.now() });
+            set({ shipments: response.items || [], lastFetchedAt: Date.now() });
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'fetchShipments');
           }
         },
 
         fetchShipment: async (id) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchShipment');
           try {
             const response = await apiClient.get<Shipment>(`/shipping/shipments/${id}`);
-            set({ selectedShipment: response, isLoading: false });
+            set({ selectedShipment: response });
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'fetchShipment');
           }
         },
 
         createShipment: async (payload) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createShipment');
           try {
             await apiClient.post('/shipping/shipments', payload);
             await get().fetchShipments();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'createShipment');
           }
         },
 
         updateShipment: async (id, payload) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateShipment');
           try {
             await apiClient.patch(`/shipping/shipments/${id}`, payload);
             await get().fetchShipments();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'updateShipment');
           }
         },
 
         updateShipmentStatus: async (id, status) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateShipmentStatus');
           try {
             await apiClient.post(`/shipping/shipments/${id}/status`, { status });
             await get().fetchShipments();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'updateShipmentStatus');
           }
         },
 
         addShipmentLine: async (shipmentId, line) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'addShipmentLine');
           try {
             await apiClient.post(`/shipping/shipments/${shipmentId}/lines`, line);
             await get().fetchShipment(shipmentId);
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'addShipmentLine');
           }
         },
 
         // Pick List methods
         fetchPickLists: async (params) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchPickLists');
           try {
             let url = '/wms/pick-lists';
             const queryParams = new URLSearchParams();
@@ -139,71 +180,92 @@ export const useShippingStore = create<ShippingState>()(
             if (queryParams.toString()) url += `?${queryParams.toString()}`;
             
             const response = await apiClient.get<{ items: PickList[] }>(url);
-            set({ pickLists: response.items || [], isLoading: false });
+            set({ pickLists: response.items || [] });
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'fetchPickLists');
           }
         },
 
         fetchPickList: async (id) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchPickList');
           try {
             const response = await apiClient.get<PickList>(`/wms/pick-lists/${id}`);
-            set({ selectedPickList: response, isLoading: false });
+            set({ selectedPickList: response });
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'fetchPickList');
           }
         },
 
         createPickList: async (payload) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createPickList');
           try {
             await apiClient.post('/wms/pick-lists', payload);
             await get().fetchPickLists();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'createPickList');
           }
         },
 
         updatePickList: async (id, payload) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updatePickList');
           try {
             await apiClient.patch(`/wms/pick-lists/${id}`, payload);
             await get().fetchPickLists();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'updatePickList');
           }
         },
 
         startPicking: async (id) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'startPicking');
           try {
             await apiClient.post(`/wms/pick-lists/${id}/start`);
             await get().fetchPickList(id);
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'startPicking');
           }
         },
 
         completePicking: async (id) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'completePicking');
           try {
             await apiClient.post(`/wms/pick-lists/${id}/complete`);
             await get().fetchPickLists();
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'completePicking');
           }
         },
 
         updatePickLine: async (pickListId, lineId, quantityPicked) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updatePickLine');
           try {
             await apiClient.patch(`/wms/pick-lists/${pickListId}/lines/${lineId}`, {
               quantity_picked: quantityPicked,
             });
             await get().fetchPickList(pickListId);
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'updatePickLine');
           }
         },
 
@@ -219,12 +281,15 @@ export const useShippingStore = create<ShippingState>()(
           
           if (isLoading) return;
           
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchStats');
           try {
             const data = await apiClient.get<ShippingStats>('/shipping/stats');
-            set({ stats: data, isLoading: false, lastFetchedAt: now });
+            set({ stats: data, lastFetchedAt: now });
           } catch (error) {
-            set({ error: (error as Error).message, isLoading: false });
+            set({ error: (error as Error).message });
+          }
+          finally {
+            endOp(set, 'fetchStats');
           }
         },
 

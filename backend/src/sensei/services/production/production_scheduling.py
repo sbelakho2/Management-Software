@@ -14,10 +14,16 @@ This module is intentionally in-memory and pure-Python to match other services i
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Protocol, Any
+
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 class TaskPriority(str, Enum):
@@ -175,8 +181,10 @@ def _priority_rank(priority: TaskPriority) -> int:
     }[priority]
 
 
-class ProductionSchedulingService:
+class ProductionSchedulingService(PersistentServiceMixin):
     """Finite-capacity scheduling engine with constraint and resource checks."""
+
+    SERVICE_NAME = "production_scheduling"
 
     def __init__(
         self,
@@ -438,7 +446,7 @@ class ProductionSchedulingService:
 
         # If no shift windows provided, treat the station as continuously available.
         if not shift_windows:
-            end_limit = horizon_end or (earliest + timedelta(days=365))
+            end_limit = horizon_end or (earliest + timedelta(days=settings.SCHEDULING_HORIZON_DAYS))
             start = self._find_gap_in_window(
                 window_start=earliest,
                 window_end=end_limit,

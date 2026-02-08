@@ -717,3 +717,70 @@ html[dir="rtl"] .animate-slide-in-left {
     opacity: 1;
   }
 }
+
+/* ─── Print Styles ─────────────────────────────────────────────── */
+@media print {
+  /* Hide non-essential UI elements */
+  nav,
+  aside,
+  header,
+  footer,
+  .sidebar,
+  .no-print,
+  button:not(.print-visible),
+  [data-testid="sidebar"],
+  [data-testid="offline-banner"],
+  .toaster,
+  .toast-viewport {
+    display: none !important;
+  }
+
+  /* Reset backgrounds for ink savings */
+  body,
+  main,
+  .bg-rams-module,
+  .bg-rams-panel,
+  .bg-background {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Ensure tables and cards have visible borders */
+  table {
+    border-collapse: collapse;
+  }
+  th, td {
+    border: 1px solid #ccc !important;
+    padding: 4px 8px !important;
+    font-size: 10pt !important;
+  }
+
+  /* Full width for main content */
+  main, .main-content, [role="main"] {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0.5cm !important;
+  }
+
+  /* Prevent page breaks inside cards */
+  .card, tr, .grid > div {
+    page-break-inside: avoid;
+  }
+
+  /* Show link URLs in printout */
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 8pt;
+    color: #666;
+  }
+  a[href^="#"]::after,
+  a[href^="javascript"]::after {
+    content: "";
+  }
+
+  /* Page margins */
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+}

@@ -1,3 +1,11 @@
+"""
+Quality Traceability Service.
+
+Provides end-to-end traceability linking inspections,
+NCRs, CAPAs, and audit findings to source materials,
+processes, and customer complaints.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

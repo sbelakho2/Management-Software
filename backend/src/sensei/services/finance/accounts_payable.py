@@ -13,6 +13,7 @@ Persistence + APIs are planned later in 22.10.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -20,6 +21,10 @@ from enum import Enum
 from collections.abc import Callable
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -327,8 +332,14 @@ class APConfig:
     price_tolerance_pct: Decimal = Decimal("0")
 
 
-class AccountsPayableService:
-    """Procure-to-Pay workflows with optional GL postings."""
+class AccountsPayableService(PersistentServiceMixin):
+    """Procure-to-Pay workflows with optional GL postings.
+
+    In-memory state backed by PostgreSQL ap_invoices, ap_payments,
+    purchase_orders, purchase_requisitions, and goods_receipts tables.
+    """
+
+    SERVICE_NAME = "accounts_payable"
 
     def __init__(
         self,
@@ -477,6 +488,12 @@ class AccountsPayableService:
         if pr.status not in {PRStatus.SUBMITTED, PRStatus.APPROVED}:
             raise ValueError("PR must be submitted before approval")
 
+        # Segregation of Duties: approver must differ from requester
+        if pr.requested_by == actor_id:
+            raise ValueError(
+                "Segregation of duties violation: requester cannot approve their own PR"
+            )
+
         pr.status = PRStatus.APPROVED
         pr.approved_at = _now()
         pr.approved_by = actor_id
@@ -599,6 +616,12 @@ class AccountsPayableService:
             raise ValueError("Unknown PO")
         if po.status not in {POStatus.DRAFT, POStatus.APPROVED}:
             raise ValueError("PO cannot be approved in current status")
+
+        # Segregation of Duties: approver must differ from creator
+        if po.created_by == actor_id:
+            raise ValueError(
+                "Segregation of duties violation: creator cannot approve their own PO"
+            )
 
         po.status = POStatus.APPROVED
         po.approved_at = _now()
@@ -925,6 +948,12 @@ class AccountsPayableService:
         if inv.status not in {InvoiceStatus.SUBMITTED, InvoiceStatus.APPROVED}:
             raise ValueError("Invoice must be submitted before approval")
 
+        # Segregation of Duties: approver must differ from creator
+        if inv.created_by == actor_id:
+            raise ValueError(
+                "Segregation of duties violation: creator cannot approve their own invoice"
+            )
+
         match = self.three_way_match(actor_roles=roles, invoice_id=inv.id)
         if not match.ok and not allow_exceptions:
             raise ValueError("3-way match failed")
@@ -1069,6 +1098,12 @@ class AccountsPayableService:
             raise ValueError("Unknown payment run")
         if pr.status not in {PaymentRunStatus.DRAFT, PaymentRunStatus.APPROVED}:
             raise ValueError("Payment run cannot be approved in current status")
+
+        # Segregation of Duties: approver must differ from creator
+        if pr.created_by == actor_id:
+            raise ValueError(
+                "Segregation of duties violation: creator cannot approve their own payment run"
+            )
 
         pr.status = PaymentRunStatus.APPROVED
         pr.approved_at = _now()

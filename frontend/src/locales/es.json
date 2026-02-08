@@ -928,7 +928,32 @@
           "halted": "Detenido",
           "maintenance": "Mantenimiento",
           "completed": "Completado"
-        }
+        },
+        "aggregationPulse": "Aggregation Pulse",
+        "escalateAnomaly": "Escalate Anomaly",
+        "executionVelocity": "Execution Velocity",
+        "exportSpec": "Export Spec",
+        "gateVerified": "Gate Verified",
+        "initiateExecution": "Initiate Execution",
+        "node": "Node",
+        "scrapDeviation": "Scrap Deviation",
+        "suspendProtocol": "Suspend Protocol",
+        "tabs": {
+          "bom": "Bom",
+          "history": "History",
+          "operations": "Operations",
+          "quality": "Quality"
+        },
+        "targetMagnitude": "Target Magnitude",
+        "unknownProduct": "Unknown Product",
+        "viewHistory": "View History",
+        "loadingBom": "Retrieving Bill of Materials protocol nodes...",
+        "temporalSchedule": "Temporal Schedule",
+        "startHorizon": "Start Horizon",
+        "targetTerminal": "Target Terminal",
+        "standardLeadTime": "Standard Lead Time",
+        "days": "DAYS",
+        "station": "STATION"
       }
     },
     "purchase": {
@@ -966,7 +991,29 @@
             "medium": "Media",
             "high": "Alta",
             "critical": "Crítica"
-          }
+          },
+          "capaCreated": "Capa Created",
+          "createFailed": "Create Failed",
+          "initiatedSuccess": "Initiated Success"
+        },
+        "detail": {
+          "addNode": "Add Node",
+          "commitAction": "Commit Action",
+          "countermeasureNodes": "Countermeasure Nodes",
+          "exportProtocol": "Export Protocol",
+          "implementationMagnitude": "Implementation Magnitude",
+          "problemStatement": "Problem Statement",
+          "refineCapa": "Refine Capa",
+          "rootCauseAnalysis": "Root Cause Analysis",
+          "subtitle": "Subtitle",
+          "syncPulse": "Sync Pulse",
+          "tabs": {
+            "actionProtocol": "Action Protocol",
+            "effectivenessSync": "Effectiveness Sync",
+            "relatedAnomalies": "Related Anomalies"
+          },
+          "terminateNode": "Terminate Node",
+          "verifyEffectiveness": "Verify Effectiveness"
         }
       },
       "certifications": "Certificaciones",
@@ -989,7 +1036,37 @@
             "minor": "Menor",
             "major": "Mayor",
             "critical": "Crítica"
+          },
+          "validationError": "Validation Error",
+          "titleDescRequired": "Title and Description are required.",
+          "ncrCreated": "NCR Created",
+          "recordedSuccess": "NCR has been successfully recorded.",
+          "createFailed": "Failed to create NCR",
+          "placeholders": {
+            "title": "e.g., Dimensional deviation in bracket holes",
+            "location": "e.g., Assembly Line 2",
+            "partNumber": "PART_NUMBER",
+            "woNumber": "WO_NUMBER",
+            "description": "Provide detailed evidence regarding the discrepancy protocol..."
           }
+        },
+        "detail": {
+          "assignCapa": "Assign Capa",
+          "comment": "Comment",
+          "discrepancyIntelligence": "Discrepancy Intelligence",
+          "investigationProtocol": "Investigation Protocol",
+          "noDescription": "No Description",
+          "refineProtocol": "Refine Protocol",
+          "subjectiveData": "Subjective Data",
+          "subtitle": "Subtitle",
+          "tabs": {
+            "disposition": "Disposition",
+            "eventLog": "Event Log",
+            "evidence": "Evidence",
+            "rootCause": "Root Cause"
+          },
+          "terminateNode": "Terminate Node",
+          "viewLogs": "View Logs"
         }
       },
       "passRate": "Tasa de aprobación",
@@ -1009,7 +1086,29 @@
             "inProcess": "EN PROCESO",
             "final": "Final",
             "receiving": "Recepción"
+          },
+          "inspectionStarted": "Inspection Started",
+          "initializedSuccess": "New inspection record has been initialized.",
+          "createFailed": "Failed to create inspection.",
+          "associatedWoSync": "Associated WO Sync",
+          "initialObservation": "Initial Observation Intel",
+          "placeholders": {
+            "protocolIdentity": "e.g., Final Inspection Protocol - BRK-2024",
+            "operatorIdentity": "OPERATIVE_IDENTITY",
+            "partNumber": "PART_NUMBER",
+            "woNumber": "WO_NUMBER",
+            "notes": "Incorporate initial findings and contextual data..."
           }
+        },
+        "detail": {
+          "assignmentTelemetry": "Assignment Telemetry",
+          "checklist": "Checklist",
+          "commitSync": "Commit Sync",
+          "inspectionIntelligence": "Inspection Intelligence",
+          "leadInspector": "Lead Inspector",
+          "printEvidence": "Print Evidence",
+          "resultsAnalytics": "Results Analytics",
+          "scheduledSync": "Scheduled Sync"
         }
       }
     },
@@ -1047,11 +1146,26 @@
         "createSuccess": "Producto creado con éxito",
         "createError": "Error al crear",
         "placeholders": {
-          "partNumber": "ej: PN-2024-001"
+          "partNumber": "ej: PN-2024-001",
+          "nomenclature": "PRODUCT_NAME_STR",
+          "description": "Brief description of the product or component specifications...",
+          "uom": "ISO_CODE",
+          "unitCost": "0.00",
+          "minStock": "MIN_QTY",
+          "maxStock": "MAX_QTY",
+          "leadTime": "DAYS",
+          "location": "ZONE-BIN-SHELF",
+          "supplier": "SUPPLIER_ID"
         },
         "abort": "Abortar",
         "synchronizing": "SINCRONIZANDO...",
-        "commitData": "Confirmar"
+        "commitData": "Confirmar",
+        "requiredParams": "Required Parameters Missing",
+        "providePartAndName": "Please provide at least a Part Number and Name for the node.",
+        "nodeSynchronized": "Node Synchronized",
+        "establishedSuccess": "{name} has been successfully established in the catalog.",
+        "syncFailed": "Synchronization Failed",
+        "failedToEstablish": "Failed to establish product node in the registry."
       },
       "detail": {
         "title": "Detalle del Producto",
@@ -1071,7 +1185,61 @@
         "created": "Creado",
         "updated": "Actualizado",
         "revision": "Revisión"
-      }
+      },
+      "title": "Product Catalog",
+      "subtitle": "Manage products, BOMs, and manufacturing routings",
+      "station": "PRODUCTS",
+      "stats": {
+        "activeProducts": "Active Products",
+        "bomsDefined": "BOMs Defined",
+        "routingsActive": "Active Routings",
+        "avgLeadTime": "Avg. Lead Time",
+        "activeInventoryNodes": "Active Products",
+        "aggregatedRevenue": "Total Revenue",
+        "meanMarginKPI": "Average Margin",
+        "stockAbnormalities": "Low Stock Alerts"
+      },
+      "actions": {
+        "newProduct": "New Product"
+      },
+      "tabs": {
+        "products": "Products",
+        "boms": "BOMs",
+        "routings": "Routings"
+      },
+      "details": {
+        "overview": "Overview",
+        "specifications": "Specifications",
+        "bom": "Bill of Materials",
+        "routing": "Routing",
+        "inventory": "Inventory",
+        "history": "History"
+      },
+      "status": {
+        "discontinued": "Discontinued"
+      },
+      "viewBom": "View BOM",
+      "viewAnalytics": "View Analytics",
+      "stockLevel": "Stock Level",
+      "allStock": "All Stock",
+      "lowStock": "Low Stock",
+      "outOfStock": "Out of Stock",
+      "table": {
+        "product": "Product",
+        "standardCost": "Standard Cost",
+        "listPrice": "List Price",
+        "margin": "Margin",
+        "inventory": "Inventory",
+        "leadTime": "Lead Time",
+        "totalSold": "Total Sold"
+      },
+      "emptyState": {
+        "description": "Start by adding your first product to the catalog.",
+        "title": "No products found"
+      },
+      "exportIntel": "Export Catalog",
+      "import": "Import",
+      "initializeNode": "Create Product"
     }
   },
   "navigation": {
@@ -3596,7 +3764,32 @@
       "statusState": "Estado",
       "workCenter": "Centro de trabajo"
     },
-    "workCenter": "Centro de trabajo"
+    "workCenter": "Centro de trabajo",
+    "title": "Production",
+    "workOrders": {
+      "title": "Work Orders",
+      "addWorkOrder": "Create Work Order",
+      "woNumber": "WO Number",
+      "product": "Product",
+      "quantity": "Quantity",
+      "status": "Status",
+      "planned": "Planned",
+      "released": "Released",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "priority": "Priority",
+      "startDate": "Start Date",
+      "dueDate": "Due Date"
+    },
+    "scheduling": {
+      "title": "Scheduling",
+      "gantt": "Gantt Chart",
+      "calendar": "Calendar"
+    },
+    "tabs": {
+      "workOrders": "Work Orders",
+      "scheduling": "Scheduling"
+    }
   },
   "products": {
     "allStock": "Todo el stock",
@@ -3732,7 +3925,69 @@
       "anomalies": "Anomalías",
       "customerSatisfaction": "Satisfacción del cliente",
       "protocols": "Protocolos",
-      "syncGates": "Compuertas de sincronización"
+      "syncGates": "Compuertas de sincronización",
+      "inspections": "Inspections",
+      "ncrs": "NCRs",
+      "capas": "CAPAs",
+      "msa": "MSA",
+      "capability": "Capability",
+      "complaints": "Complaints",
+      "surveys": "Surveys",
+      "fai": "FAI",
+      "selfInspection": "Self Inspection",
+      "labTesting": "Lab Testing",
+      "aql": "AQL Sampling",
+      "traceability": "Traceability",
+      "changePoint": "Change Point"
+    },
+    "title": "Quality",
+    "inspections": {
+      "title": "Inspections",
+      "addInspection": "New Inspection",
+      "workOrder": "Work Order",
+      "product": "Product",
+      "type": "Type",
+      "date": "Inspection Date",
+      "status": "Status",
+      "passed": "Passed",
+      "failed": "Failed",
+      "pending": "Pending",
+      "quantityInspected": "Qty Inspected",
+      "quantityPassed": "Qty Passed",
+      "quantityFailed": "Qty Failed",
+      "searchPlaceholder": "Search inspections..."
+    },
+    "ncrs": {
+      "title": "Non-Conformance Reports",
+      "addNCR": "Create NCR",
+      "severity": "Severity",
+      "critical": "Critical",
+      "major": "Major",
+      "minor": "Minor",
+      "rootCause": "Root Cause",
+      "containmentAction": "Containment Action"
+    },
+    "capas": {
+      "title": "CAPA",
+      "addCAPA": "Create CAPA",
+      "correctiveAction": "Corrective Action",
+      "preventiveAction": "Preventive Action",
+      "effectiveness": "Effectiveness"
+    },
+    "msa": {
+      "title": "MSA Studies",
+      "gageRR": "Gage R&R",
+      "compute": "Compute GRR",
+      "repeatability": "Repeatability",
+      "reproducibility": "Reproducibility"
+    },
+    "capability": {
+      "title": "Process Capability",
+      "compute": "Compute Cp/Cpk",
+      "cpk": "Cpk",
+      "cp": "Cp",
+      "pp": "Pp",
+      "ppk": "Ppk"
     }
   },
   "quickActions": {
@@ -4674,7 +4929,15 @@
             "title": "Certificación registrada"
           }
         }
-      }
+      },
+      "title": "Certifications",
+      "name": "Certification Name",
+      "status": "Status",
+      "enrolled": "Enrolled",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "expired": "Expired",
+      "expiryDate": "Expiry Date"
     },
     "enroll": {
       "configureParams": "Configurar parámetros",
@@ -4731,7 +4994,12 @@
             "title": "Programa creado"
           }
         }
-      }
+      },
+      "title": "Training Programs",
+      "addProgram": "Add Program",
+      "name": "Program Name",
+      "duration": "Duration",
+      "participants": "Participants"
     },
     "skillsMatrix": "Matriz de habilidades",
     "stats": {
@@ -4744,6 +5012,14 @@
       "certifications": "Certificaciones",
       "programs": "Programas",
       "records": "Registros"
+    },
+    "title": "Training",
+    "records": {
+      "title": "Training Records",
+      "employee": "Employee",
+      "course": "Course",
+      "completedDate": "Completed Date",
+      "score": "Score"
     }
   },
   "userMenu": {
@@ -4934,6 +5210,191 @@
     "validation": {
       "emailRequired": "El correo es obligatorio",
       "emailInvalid": "Formato de correo inválido"
+    }
+  },
+  "Processing": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "Reconnecting": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "RFQ_001_20250115": {
+    "pdf": "Pdf"
+  },
+  "Search": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "Syncing": {
+    "": {
+      "": {
+        "": ""
+      }
+    }
+  },
+  "components": {
+    "factoryFloor": {
+      "machineStatus": {
+        "productionIssue": "Production Issue",
+        "qualityAlert": "Quality Alert",
+        "safetyAlert": "Safety Alert",
+        "maintenanceRequired": "Maintenance Required"
+      }
+    }
+  },
+  "hr": {
+    "title": "Human Resources",
+    "employees": {
+      "title": "Employees",
+      "addEmployee": "Add Employee",
+      "editEmployee": "Edit Employee",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "department": "Department",
+      "position": "Position",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "onLeave": "On Leave",
+      "hireDate": "Hire Date",
+      "searchPlaceholder": "Search employees...",
+      "noEmployees": "No employees found",
+      "createSuccess": "Employee created successfully",
+      "updateSuccess": "Employee updated successfully",
+      "deleteSuccess": "Employee removed successfully",
+      "deleteConfirm": "Are you sure you want to delete this employee?",
+      "requiredField": "This field is required",
+      "invalidEmail": "Please enter a valid email address"
+    },
+    "jobOpenings": {
+      "title": "Job Openings",
+      "addOpening": "Add Job Opening",
+      "jobTitle": "Job Title",
+      "department": "Department",
+      "location": "Location",
+      "type": "Employment Type",
+      "status": "Status",
+      "open": "Open",
+      "closed": "Closed",
+      "filled": "Filled",
+      "postedDate": "Posted Date",
+      "closingDate": "Closing Date",
+      "applications": "Applications",
+      "noOpenings": "No job openings"
+    },
+    "leaveRequests": {
+      "title": "Leave Requests",
+      "addRequest": "New Leave Request",
+      "employee": "Employee",
+      "leaveType": "Leave Type",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "status": "Status",
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "reason": "Reason",
+      "noRequests": "No leave requests",
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "applicationsPipeline": {
+      "title": "Applications Pipeline",
+      "applied": "Applied",
+      "screening": "Screening",
+      "interview": "Interview",
+      "offered": "Offered",
+      "hired": "Hired"
+    },
+    "tabs": {
+      "employees": "Employees",
+      "jobOpenings": "Job Openings",
+      "leaveRequests": "Leave Requests",
+      "applicationsPipeline": "Applications Pipeline"
+    },
+    "toasts": {
+      "employeeCreated": "Employee created successfully",
+      "employeeUpdated": "Employee updated successfully",
+      "leaveApproved": "Leave request approved",
+      "leaveRejected": "Leave request rejected",
+      "openingCreated": "Job opening created"
+    }
+  },
+  "maintenance": {
+    "title": "Maintenance",
+    "assets": {
+      "title": "Assets",
+      "addAsset": "Add Asset",
+      "name": "Asset Name",
+      "serialNumber": "Serial Number",
+      "location": "Location",
+      "status": "Status",
+      "operational": "Operational",
+      "needsRepair": "Needs Repair",
+      "outOfService": "Out of Service",
+      "searchPlaceholder": "Search assets..."
+    },
+    "workOrders": {
+      "title": "Work Orders",
+      "addWorkOrder": "Create Work Order",
+      "title_field": "Title",
+      "priority": "Priority",
+      "status": "Status",
+      "assignee": "Assignee",
+      "dueDate": "Due Date",
+      "open": "Open",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "preventiveMaintenance": {
+      "title": "Preventive Maintenance",
+      "schedule": "Schedule",
+      "frequency": "Frequency",
+      "lastCompleted": "Last Completed",
+      "nextDue": "Next Due"
+    },
+    "tabs": {
+      "assets": "Assets",
+      "workOrders": "Work Orders",
+      "pmSchedules": "PM Schedules",
+      "tools": "Tools",
+      "warranties": "Warranties",
+      "loto": "LOTO",
+      "fieldReturns": "Field Returns",
+      "budgets": "Budgets"
+    }
+  },
+  "executive": {
+    "title": "Executive Dashboard",
+    "kpis": "Key Performance Indicators",
+    "northStar": "North Star",
+    "riskDashboard": "Risk Dashboard",
+    "strategicDirectives": {
+      "title": "Strategic Directives",
+      "addDirective": "Add Directive",
+      "status": "Status",
+      "progress": "Progress",
+      "active": "Active",
+      "completed": "Completed",
+      "onHold": "On Hold"
+    },
+    "nl2sql": {
+      "title": "Natural Language Query",
+      "placeholder": "Ask a question about your data...",
+      "execute": "Execute Query"
     }
   }
 }

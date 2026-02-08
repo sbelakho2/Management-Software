@@ -352,7 +352,10 @@ interface QualityState {
   changePointEvents: ChangePointEvent[];
   managementReviews: ManagementReview[];
   managementReviewActions: ManagementReviewAction[];
+  /** @deprecated Use `loadingOps` for per-operation loading states */
   loading: boolean;
+  /** Set of currently in-progress operation names (e.g. "fetchInspections") */
+  loadingOps: Set<string>;
   error: string | null;
   totalInspections: number;
   totalNcrs: number;
@@ -444,6 +447,24 @@ interface QualityState {
   createManagementReview: (data: CreateManagementReviewInput) => Promise<void>;
   addManagementReviewAction: (reviewId: string, data: CreateManagementReviewActionInput) => Promise<void>;
   closeManagementReview: (reviewId: string) => Promise<void>;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
+}
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: QualityState) => Partial<QualityState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, loading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: QualityState) => Partial<QualityState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, loading: next.size > 0 };
+  });
 }
 
 export const useQualityStore = create<QualityState>((set, get) => ({
@@ -470,6 +491,7 @@ export const useQualityStore = create<QualityState>((set, get) => ({
   managementReviews: [],
   managementReviewActions: [],
   loading: false,
+  loadingOps: new Set<string>(),
   error: null,
   totalInspections: 0,
   totalNcrs: 0,
@@ -492,8 +514,10 @@ export const useQualityStore = create<QualityState>((set, get) => ({
   totalManagementReviews: 0,
   totalManagementReviewActions: 0,
 
+  isOpLoading: (op: string) => get().loadingOps.has(op),
+
   fetchInspections: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchInspections');
     try {
       const response = await qualityApi.inspectionApi.list(params);
       const items = Array.isArray(response.items) ? response.items : [];
@@ -501,15 +525,16 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       set({ 
         inspections: items,
         totalInspections: total,
-        loading: false 
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    } finally {
+      endOp(set, 'fetchInspections');
     }
   },
 
   fetchNCRs: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchNCRs');
     try {
       const response = await qualityApi.ncrApi.list(params);
       const items = Array.isArray(response.items) ? response.items : [];
@@ -517,15 +542,17 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       set({ 
         ncrs: items,
         totalNcrs: total,
-        loading: false 
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchNCRs');
     }
   },
 
   fetchCAPAs: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchCAPAs');
     try {
       const response = await qualityApi.capaApi.list(params);
       const items = Array.isArray(response.items) ? response.items : [];
@@ -533,382 +560,450 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       set({ 
         capas: items,
         totalCapas: total,
-        loading: false 
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchCAPAs');
     }
   },
 
   fetchMsaStudies: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchMsaStudies');
     try {
       const response = await qualityApi.msaApi.list(params);
       const items = Array.isArray(response) ? response : [];
       set({
         msaStudies: items,
         totalMsaStudies: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchMsaStudies');
     }
   },
 
   fetchCapabilityStudies: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchCapabilityStudies');
     try {
       const response = await qualityApi.capabilityApi.list(params);
       const items = Array.isArray(response) ? response : [];
       set({
         capabilityStudies: items,
         totalCapabilityStudies: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchCapabilityStudies');
     }
   },
 
   fetchCustomerComplaints: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchCustomerComplaints');
     try {
       const response = await qualityApi.customerSatisfactionApi.listComplaints();
       const items = Array.isArray(response) ? response : [];
       set({
         customerComplaints: items,
         totalCustomerComplaints: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchCustomerComplaints');
     }
   },
 
   fetchCustomerSurveys: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchCustomerSurveys');
     try {
       const response = await qualityApi.customerSatisfactionApi.listSurveys();
       const items = Array.isArray(response) ? response : [];
       set({
         customerSurveys: items,
         totalCustomerSurveys: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchCustomerSurveys');
     }
   },
 
   fetchCustomerSatisfactionStats: async (surveyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchCustomerSatisfactionStats');
     try {
       const stats = await qualityApi.customerSatisfactionApi.getStats(surveyId);
-      set({ customerSatisfactionStats: stats, loading: false });
+      set({ customerSatisfactionStats: stats });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchCustomerSatisfactionStats');
     }
   },
 
   fetchFAIInspections: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchFAIInspections');
     try {
       const response = await qualityApi.faiApi.list();
       const items = Array.isArray(response) ? response : [];
       set({
         faiInspections: items,
         totalFaiInspections: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchFAIInspections');
     }
   },
 
   fetchSelfInspections: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchSelfInspections');
     try {
       const response = await qualityApi.selfInspectionApi.list();
       const items = Array.isArray(response) ? response : [];
       set({
         selfInspections: items,
         totalSelfInspections: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchSelfInspections');
     }
   },
 
   fetchLabMethods: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchLabMethods');
     try {
       const response = await qualityApi.labApi.listMethods();
       const items = Array.isArray(response) ? response : [];
       set({
         labMethods: items,
         totalLabMethods: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchLabMethods');
     }
   },
 
   fetchLabSamples: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchLabSamples');
     try {
       const response = await qualityApi.labApi.listSamples();
       const items = Array.isArray(response) ? response : [];
       set({
         labSamples: items,
         totalLabSamples: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchLabSamples');
     }
   },
 
   fetchAqlPlans: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchAqlPlans');
     try {
       const response = await qualityApi.aqlApi.listPlans();
       const items = Array.isArray(response) ? response : [];
       set({
         aqlPlans: items,
         totalAqlPlans: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchAqlPlans');
     }
   },
 
   fetchAqlInspections: async (planId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchAqlInspections');
     try {
       const response = await qualityApi.aqlApi.listInspections(planId);
       const items = Array.isArray(response) ? response : [];
       set({
         aqlInspections: items,
         totalAqlInspections: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchAqlInspections');
     }
   },
 
   fetchTraceabilityMatrices: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchTraceabilityMatrices');
     try {
       const response = await qualityApi.traceabilityApi.listMatrices();
       const items = Array.isArray(response) ? response : [];
       set({
         traceabilityMatrices: items,
         totalTraceabilityMatrices: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchTraceabilityMatrices');
     }
   },
 
   fetchTraceabilityLinks: async (matrixId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchTraceabilityLinks');
     try {
       const response = await qualityApi.traceabilityApi.listLinks(matrixId);
       const items = Array.isArray(response) ? response : [];
       set({
         traceabilityLinks: items,
         totalTraceabilityLinks: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchTraceabilityLinks');
     }
   },
 
   fetchChangePointStudies: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchChangePointStudies');
     try {
       const response = await qualityApi.changePointApi.listStudies();
       const items = Array.isArray(response) ? response : [];
       set({
         changePointStudies: items,
         totalChangePointStudies: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchChangePointStudies');
     }
   },
 
   fetchChangePointObservations: async (studyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchChangePointObservations');
     try {
       const response = await qualityApi.changePointApi.listObservations(studyId);
       const items = Array.isArray(response) ? response : [];
       set({
         changePointObservations: items,
         totalChangePointObservations: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchChangePointObservations');
     }
   },
 
   fetchChangePointEvents: async (studyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchChangePointEvents');
     try {
       const response = await qualityApi.changePointApi.listEvents(studyId);
       const items = Array.isArray(response) ? response : [];
       set({
         changePointEvents: items,
         totalChangePointEvents: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchChangePointEvents');
     }
   },
 
   fetchManagementReviews: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchManagementReviews');
     try {
       const response = await qualityApi.managementReviewApi.listReviews();
       const items = Array.isArray(response) ? response : [];
       set({
         managementReviews: items,
         totalManagementReviews: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchManagementReviews');
     }
   },
 
   fetchManagementReviewActions: async (reviewId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchManagementReviewActions');
     try {
       const response = await qualityApi.managementReviewApi.listActions(reviewId);
       const items = Array.isArray(response) ? response : [];
       set({
         managementReviewActions: items,
         totalManagementReviewActions: items.length,
-        loading: false,
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchManagementReviewActions');
     }
   },
 
   createInspection: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createInspection');
     try {
       await qualityApi.inspectionApi.create(data as Parameters<typeof qualityApi.inspectionApi.create>[0]);
       await get().fetchInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createInspection');
     }
   },
 
   updateInspection: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateInspection');
     try {
       await qualityApi.inspectionApi.update(id, data as Parameters<typeof qualityApi.inspectionApi.update>[1]);
       await get().fetchInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateInspection');
     }
   },
 
   createNCR: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createNCR');
     try {
       await qualityApi.ncrApi.create(data as Parameters<typeof qualityApi.ncrApi.create>[0]);
       await get().fetchNCRs();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createNCR');
     }
   },
 
   updateNCR: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateNCR');
     try {
       await qualityApi.ncrApi.update(id, data as Parameters<typeof qualityApi.ncrApi.update>[1]);
       await get().fetchNCRs();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateNCR');
     }
   },
 
   createCAPA: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createCAPA');
     try {
       await qualityApi.capaApi.create(data as Parameters<typeof qualityApi.capaApi.create>[0]);
       await get().fetchCAPAs();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createCAPA');
     }
   },
 
   updateCAPA: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateCAPA');
     try {
       await qualityApi.capaApi.update(id, data as Parameters<typeof qualityApi.capaApi.update>[1]);
       await get().fetchCAPAs();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateCAPA');
     }
   },
 
   createMsaStudy: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createMsaStudy');
     try {
       await qualityApi.msaApi.create(data as Parameters<typeof qualityApi.msaApi.create>[0]);
       await get().fetchMsaStudies();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createMsaStudy');
     }
   },
 
   addMsaMeasurement: async (studyId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addMsaMeasurement');
     try {
       await qualityApi.msaApi.addMeasurement(studyId, data as Parameters<typeof qualityApi.msaApi.addMeasurement>[1]);
       await get().fetchMsaStudies();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addMsaMeasurement');
     }
   },
 
   computeMsaStudy: async (studyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'computeMsaStudy');
     try {
       const result = await qualityApi.msaApi.compute(studyId);
       await get().fetchMsaStudies();
       return result;
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
       return null;
+    } finally {
+      endOp(set, 'computeMsaStudy');
     }
   },
 
   createCapabilityStudy: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createCapabilityStudy');
     try {
       await qualityApi.capabilityApi.create(data as Parameters<typeof qualityApi.capabilityApi.create>[0]);
       await get().fetchCapabilityStudies();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createCapabilityStudy');
     }
   },
 
   addCapabilityMeasurement: async (studyId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addCapabilityMeasurement');
     try {
       await qualityApi.capabilityApi.addMeasurement(
         studyId,
@@ -916,24 +1011,29 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchCapabilityStudies();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addCapabilityMeasurement');
     }
   },
 
   computeCapabilityStudy: async (studyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'computeCapabilityStudy');
     try {
       const result = await qualityApi.capabilityApi.compute(studyId);
       await get().fetchCapabilityStudies();
       return result;
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
       return null;
+    } finally {
+      endOp(set, 'computeCapabilityStudy');
     }
   },
 
   createCustomerComplaint: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createCustomerComplaint');
     try {
       await qualityApi.customerSatisfactionApi.createComplaint(
         data as Parameters<typeof qualityApi.customerSatisfactionApi.createComplaint>[0]
@@ -941,12 +1041,15 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       await get().fetchCustomerComplaints();
       await get().fetchCustomerSatisfactionStats();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createCustomerComplaint');
     }
   },
 
   updateCustomerComplaint: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateCustomerComplaint');
     try {
       await qualityApi.customerSatisfactionApi.updateComplaint(
         id,
@@ -955,35 +1058,44 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       await get().fetchCustomerComplaints();
       await get().fetchCustomerSatisfactionStats();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateCustomerComplaint');
     }
   },
 
   closeCustomerComplaint: async (id) => {
-    set({ loading: true, error: null });
+    startOp(set, 'closeCustomerComplaint');
     try {
       await qualityApi.customerSatisfactionApi.closeComplaint(id);
       await get().fetchCustomerComplaints();
       await get().fetchCustomerSatisfactionStats();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'closeCustomerComplaint');
     }
   },
 
   createCustomerSurvey: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createCustomerSurvey');
     try {
       await qualityApi.customerSatisfactionApi.createSurvey(
         data as Parameters<typeof qualityApi.customerSatisfactionApi.createSurvey>[0]
       );
       await get().fetchCustomerSurveys();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createCustomerSurvey');
     }
   },
 
   addCustomerSurveyResponse: async (surveyId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addCustomerSurveyResponse');
     try {
       await qualityApi.customerSatisfactionApi.addSurveyResponse(
         surveyId,
@@ -992,32 +1104,41 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       await get().fetchCustomerSurveys();
       await get().fetchCustomerSatisfactionStats(surveyId);
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addCustomerSurveyResponse');
     }
   },
 
   createFAIInspection: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createFAIInspection');
     try {
       await qualityApi.faiApi.create(data as Parameters<typeof qualityApi.faiApi.create>[0]);
       await get().fetchFAIInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createFAIInspection');
     }
   },
 
   updateFAIInspection: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateFAIInspection');
     try {
       await qualityApi.faiApi.update(id, data as Parameters<typeof qualityApi.faiApi.update>[1]);
       await get().fetchFAIInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateFAIInspection');
     }
   },
 
   addFAICharacteristic: async (inspectionId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addFAICharacteristic');
     try {
       await qualityApi.faiApi.addCharacteristic(
         inspectionId,
@@ -1025,34 +1146,43 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchFAIInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addFAICharacteristic');
     }
   },
 
   closeFAIInspection: async (id) => {
-    set({ loading: true, error: null });
+    startOp(set, 'closeFAIInspection');
     try {
       await qualityApi.faiApi.close(id);
       await get().fetchFAIInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'closeFAIInspection');
     }
   },
 
   createSelfInspection: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createSelfInspection');
     try {
       await qualityApi.selfInspectionApi.create(
         data as Parameters<typeof qualityApi.selfInspectionApi.create>[0]
       );
       await get().fetchSelfInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createSelfInspection');
     }
   },
 
   updateSelfInspection: async (id, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'updateSelfInspection');
     try {
       await qualityApi.selfInspectionApi.update(
         id,
@@ -1060,12 +1190,15 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchSelfInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'updateSelfInspection');
     }
   },
 
   addSelfInspectionCheck: async (inspectionId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addSelfInspectionCheck');
     try {
       await qualityApi.selfInspectionApi.addCheck(
         inspectionId,
@@ -1073,46 +1206,58 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchSelfInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addSelfInspectionCheck');
     }
   },
 
   closeSelfInspection: async (id) => {
-    set({ loading: true, error: null });
+    startOp(set, 'closeSelfInspection');
     try {
       await qualityApi.selfInspectionApi.close(id);
       await get().fetchSelfInspections();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'closeSelfInspection');
     }
   },
 
   createLabMethod: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createLabMethod');
     try {
       await qualityApi.labApi.createMethod(
         data as Parameters<typeof qualityApi.labApi.createMethod>[0]
       );
       await get().fetchLabMethods();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createLabMethod');
     }
   },
 
   createLabSample: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createLabSample');
     try {
       await qualityApi.labApi.createSample(
         data as Parameters<typeof qualityApi.labApi.createSample>[0]
       );
       await get().fetchLabSamples();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createLabSample');
     }
   },
 
   addLabTestRun: async (sampleId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addLabTestRun');
     try {
       await qualityApi.labApi.addTestRun(
         sampleId,
@@ -1120,72 +1265,90 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchLabSamples();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addLabTestRun');
     }
   },
 
   createAqlPlan: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createAqlPlan');
     try {
       await qualityApi.aqlApi.createPlan(
         data as Parameters<typeof qualityApi.aqlApi.createPlan>[0]
       );
       await get().fetchAqlPlans();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createAqlPlan');
     }
   },
 
   createAqlInspection: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createAqlInspection');
     try {
       await qualityApi.aqlApi.createInspection(
         data as Parameters<typeof qualityApi.aqlApi.createInspection>[0]
       );
       await get().fetchAqlInspections(data.plan_id);
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createAqlInspection');
     }
   },
 
   createTraceabilityMatrix: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createTraceabilityMatrix');
     try {
       await qualityApi.traceabilityApi.createMatrix(
         data as Parameters<typeof qualityApi.traceabilityApi.createMatrix>[0]
       );
       await get().fetchTraceabilityMatrices();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createTraceabilityMatrix');
     }
   },
 
   createTraceabilityLink: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createTraceabilityLink');
     try {
       await qualityApi.traceabilityApi.createLink(
         data as Parameters<typeof qualityApi.traceabilityApi.createLink>[0]
       );
       await get().fetchTraceabilityLinks(data.matrix_id);
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createTraceabilityLink');
     }
   },
 
   createChangePointStudy: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createChangePointStudy');
     try {
       await qualityApi.changePointApi.createStudy(
         data as Parameters<typeof qualityApi.changePointApi.createStudy>[0]
       );
       await get().fetchChangePointStudies();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createChangePointStudy');
     }
   },
 
   addChangePointObservation: async (studyId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addChangePointObservation');
     try {
       await qualityApi.changePointApi.addObservation(
         studyId,
@@ -1193,34 +1356,43 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       );
       await get().fetchChangePointObservations(studyId);
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addChangePointObservation');
     }
   },
 
   detectChangePoint: async (studyId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'detectChangePoint');
     try {
       await qualityApi.changePointApi.detect(studyId);
       await get().fetchChangePointEvents(studyId);
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'detectChangePoint');
     }
   },
 
   createManagementReview: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createManagementReview');
     try {
       await qualityApi.managementReviewApi.createReview(
         data as Parameters<typeof qualityApi.managementReviewApi.createReview>[0]
       );
       await get().fetchManagementReviews();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'createManagementReview');
     }
   },
 
   addManagementReviewAction: async (reviewId, data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'addManagementReviewAction');
     try {
       await qualityApi.managementReviewApi.addAction(
         reviewId,
@@ -1229,17 +1401,23 @@ export const useQualityStore = create<QualityState>((set, get) => ({
       await get().fetchManagementReviewActions(reviewId);
       await get().fetchManagementReviews();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'addManagementReviewAction');
     }
   },
 
   closeManagementReview: async (reviewId) => {
-    set({ loading: true, error: null });
+    startOp(set, 'closeManagementReview');
     try {
       await qualityApi.managementReviewApi.closeReview(reviewId);
       await get().fetchManagementReviews();
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'closeManagementReview');
     }
   },
 }));

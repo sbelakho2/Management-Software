@@ -4622,104 +4622,96 @@
     }
   },
   "production": {
-    "emptyState": {
-      "description": "Description",
-      "title": "Title"
-    },
-    "initializeWO": "Initialize Wo",
-    "new": {
-      "createFailed": "Create Failed",
-      "establishOrder": "Establish Order",
-      "fillRequired": "Fill Required",
-      "magnitude": "Magnitude",
-      "operationalParameters": "Operational Parameters",
-      "priorityLayer": "Priority Layer",
-      "subtitle": "Subtitle",
-      "targetProduct": "Target Product",
-      "temporalHorizon": "Temporal Horizon",
-      "title": "Title",
-      "validationError": "Validation Error",
-      "workOrderCreated": "Work Order Created",
-      "workOrderIdentity": "Work Order Identity",
-      "notesLabel": "Production Intel & Notes",
-      "priorities": {
-        "low": "LOW_VELOCITY",
-        "normal": "STANDARD_NODE",
-        "high": "HIGH_PRIORITY",
-        "urgent": "URGENT_ESCALATION",
-        "critical": "CRITICAL_THRESHOLD"
-      }
-    },
-    "searchPlaceholder": "Search Placeholder",
-    "stats": {
-      "executionPulse": "Execution Pulse",
-      "operationalVelocity": "Operational Velocity",
-      "overdueHorizon": "Overdue Horizon",
-      "suspendedNodes": "Suspended Nodes"
-    },
-    "status": {
-      "cancelled": "Cancelled",
-      "closed": "Closed",
-      "completed": "Completed",
-      "inProgress": "In Progress",
-      "onHold": "On Hold",
+    "title": "Production",
+    "workOrders": {
+      "title": "Work Orders",
+      "addWorkOrder": "Create Work Order",
+      "woNumber": "WO Number",
+      "product": "Product",
+      "quantity": "Quantity",
+      "status": "Status",
       "planned": "Planned",
-      "released": "Released"
+      "released": "Released",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "priority": "Priority",
+      "startDate": "Start Date",
+      "dueDate": "Due Date"
     },
-    "table": {
-      "dueHorizon": "Due Horizon",
-      "exProgress": "Ex Progress",
-      "operator": "Operator",
-      "orderId": "Order ID",
-      "priorityLevel": "Priority Level",
-      "productNode": "Product Node",
-      "statusState": "Status State",
-      "workCenter": "Work Center"
-    },
-    "filters": {
-      "allNodes": "All Nodes",
-      "allStatus": "All Status",
-      "statusState": "Status State",
-      "workCenter": "Work Center"
-    },
-    "workCenter": "Work Center"
-  },
-  "quality": {
-    "analytics": {
-      "_value": "Analytics",
-      "activeAnomalies": "Active Anomalies",
-      "adjustParameters": "Adjust Parameters",
-      "awaitingDisposition": "Awaiting Disposition",
-      "exportIntel": "Export Intel",
-      "firstPassYield": "First Pass Yield",
-      "ignoreRisk": "Ignore Risk",
-      "implementationPhase": "Implementation Phase",
-      "inspectionGateOutcomes": "Inspection Gate Outcomes",
-      "meanInspectionPulse": "Mean Inspection Pulse",
-      "ncrRootCause": "Ncr Root Cause",
-      "predictiveIntelligence": "Predictive Intelligence",
-      "resolutionProtocols": "Resolution Protocols",
-      "strategicWindow": "Strategic Window",
-      "subtitle": "Subtitle",
-      "title": "Title",
-      "velocityGain": "Velocity Gain",
-      "vsLastCycle": "Vs Last Cycle"
-    },
-    "newCAPA": "New Capa",
-    "newInspection": "New Inspection",
-    "newNCR": "New Ncr",
-    "newProtocol": "New Protocol",
-    "stats": {
-      "activeSyncGates": "Active Sync Gates",
-      "firstPassVelocity": "First Pass Velocity",
-      "globalAnomalies": "Global Anomalies",
-      "resolutionProtocols": "Resolution Protocols"
+    "scheduling": {
+      "title": "Scheduling",
+      "gantt": "Gantt Chart",
+      "calendar": "Calendar"
     },
     "tabs": {
-      "anomalies": "Anomalies",
-      "customerSatisfaction": "Customer Satisfaction",
-      "protocols": "Protocols",
-      "syncGates": "Sync Gates"
+      "workOrders": "Work Orders",
+      "scheduling": "Scheduling"
+    }
+  },
+  "quality": {
+    "title": "Quality",
+    "inspections": {
+      "title": "Inspections",
+      "addInspection": "New Inspection",
+      "workOrder": "Work Order",
+      "product": "Product",
+      "type": "Type",
+      "date": "Inspection Date",
+      "status": "Status",
+      "passed": "Passed",
+      "failed": "Failed",
+      "pending": "Pending",
+      "quantityInspected": "Qty Inspected",
+      "quantityPassed": "Qty Passed",
+      "quantityFailed": "Qty Failed",
+      "searchPlaceholder": "Search inspections..."
+    },
+    "ncrs": {
+      "title": "Non-Conformance Reports",
+      "addNCR": "Create NCR",
+      "severity": "Severity",
+      "critical": "Critical",
+      "major": "Major",
+      "minor": "Minor",
+      "rootCause": "Root Cause",
+      "containmentAction": "Containment Action"
+    },
+    "capas": {
+      "title": "CAPA",
+      "addCAPA": "Create CAPA",
+      "correctiveAction": "Corrective Action",
+      "preventiveAction": "Preventive Action",
+      "effectiveness": "Effectiveness"
+    },
+    "msa": {
+      "title": "MSA Studies",
+      "gageRR": "Gage R&R",
+      "compute": "Compute GRR",
+      "repeatability": "Repeatability",
+      "reproducibility": "Reproducibility"
+    },
+    "capability": {
+      "title": "Process Capability",
+      "compute": "Compute Cp/Cpk",
+      "cpk": "Cpk",
+      "cp": "Cp",
+      "pp": "Pp",
+      "ppk": "Ppk"
+    },
+    "tabs": {
+      "inspections": "Inspections",
+      "ncrs": "NCRs",
+      "capas": "CAPAs",
+      "msa": "MSA",
+      "capability": "Capability",
+      "complaints": "Complaints",
+      "surveys": "Surveys",
+      "fai": "FAI",
+      "selfInspection": "Self Inspection",
+      "labTesting": "Lab Testing",
+      "aql": "AQL Sampling",
+      "traceability": "Traceability",
+      "changePoint": "Change Point"
     }
   },
   "Reconnecting": {
@@ -4747,102 +4739,30 @@
     }
   },
   "training": {
+    "title": "Training",
     "certifications": {
-      "detail": {
-        "awardedTo": "Awarded To",
-        "certificateOfAchievement": "Certificate Of Achievement",
-        "downloadCertificate": "Download Certificate",
-        "expiresOn": "Expires On",
-        "finalScore": "Final Score",
-        "issueDate": "Issue Date",
-        "scopeOfCertification": "Scope Of Certification",
-        "title": "Title"
-      },
-      "new": {
-        "certificationDetails": "Certification Details",
-        "certificationTitle": "Certification Title",
-        "defaultIssuer": "Default Issuer",
-        "expiryDate": "Expiry Date",
-        "finalScore": "Final Score",
-        "issueDate": "Issue Date",
-        "issuingAuthority": "Issuing Authority",
-        "registerCertification": "Register Certification",
-        "scorePlaceholder": "Score Placeholder",
-        "subtitle": "Subtitle",
-        "teamMember": "Team Member",
-        "teamMemberPlaceholder": "Team Member Placeholder",
-        "title": "Title",
-        "toast": {
-          "success": {
-            "description": "Description",
-            "title": "Title"
-          }
-        }
-      }
+      "title": "Certifications",
+      "name": "Certification Name",
+      "status": "Status",
+      "enrolled": "Enrolled",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "expired": "Expired",
+      "expiryDate": "Expiry Date"
     },
-    "enroll": {
-      "configureParams": "Configure Params",
-      "establishEnrollment": "Establish Enrollment",
-      "initiateEnrollment": "Initiate Enrollment",
-      "rationalOptimization": "Rational Optimization",
-      "reasonPlaceholder": "Reason Placeholder",
-      "selectProgram": "Select Program",
-      "strategicProgramNode": "Strategic Program Node",
-      "subtitle": "Subtitle",
-      "title": "Title",
-      "toast": {
-        "success": {
-          "description": "Description",
-          "title": "Title"
-        }
-      }
-    },
-    "enrollEmployee": "Enroll Employee",
-    "initializeActivity": "Initialize Activity",
-    "matrix": {
-      "competencyMatrix": "Competency Matrix",
-      "departmentNode": "Department Node",
-      "exportMatrix": "Export Matrix",
-      "operativeNode": "Operative Node",
-      "searchPlaceholder": "Search Placeholder",
-      "strategicAvg": "Strategic Avg",
-      "subtitle": "Subtitle",
-      "title": "Title"
-    },
-    "newCertification": "New Certification",
-    "newTrainingProgram": "New Training Program",
     "programs": {
-      "detail": {
-        "continueLearning": "Continue Learning",
-        "curriculum": "Curriculum",
-        "details": "Details",
-        "programDescription": "Program Description"
-      },
-      "new": {
-        "category": "Category",
-        "createProgram": "Create Program",
-        "durationPlaceholder": "Duration Placeholder",
-        "estimatedDuration": "Estimated Duration",
-        "instructor": "Instructor",
-        "programDetails": "Program Details",
-        "programTitle": "Program Title",
-        "skillLevel": "Skill Level",
-        "subtitle": "Subtitle",
-        "title": "Title",
-        "toast": {
-          "success": {
-            "description": "Description",
-            "title": "Title"
-          }
-        }
-      }
+      "title": "Training Programs",
+      "addProgram": "Add Program",
+      "name": "Program Name",
+      "duration": "Duration",
+      "participants": "Participants"
     },
-    "skillsMatrix": "Skills Matrix",
-    "stats": {
-      "activeSkillNodes": "Active Skill Nodes",
-      "operationalProtocols": "Operational Protocols",
-      "synchronizationPulse": "Synchronization Pulse",
-      "thresholdAlerts": "Threshold Alerts"
+    "records": {
+      "title": "Training Records",
+      "employee": "Employee",
+      "course": "Course",
+      "completedDate": "Completed Date",
+      "score": "Score"
     },
     "tabs": {
       "certifications": "Certifications",
@@ -4858,6 +4778,150 @@
         "safetyAlert": "Safety Alert",
         "maintenanceRequired": "Maintenance Required"
       }
+    }
+  },
+  "hr": {
+    "title": "Human Resources",
+    "employees": {
+      "title": "Employees",
+      "addEmployee": "Add Employee",
+      "editEmployee": "Edit Employee",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "department": "Department",
+      "position": "Position",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "onLeave": "On Leave",
+      "hireDate": "Hire Date",
+      "searchPlaceholder": "Search employees...",
+      "noEmployees": "No employees found",
+      "createSuccess": "Employee created successfully",
+      "updateSuccess": "Employee updated successfully",
+      "deleteSuccess": "Employee removed successfully",
+      "deleteConfirm": "Are you sure you want to delete this employee?",
+      "requiredField": "This field is required",
+      "invalidEmail": "Please enter a valid email address"
+    },
+    "jobOpenings": {
+      "title": "Job Openings",
+      "addOpening": "Add Job Opening",
+      "jobTitle": "Job Title",
+      "department": "Department",
+      "location": "Location",
+      "type": "Employment Type",
+      "status": "Status",
+      "open": "Open",
+      "closed": "Closed",
+      "filled": "Filled",
+      "postedDate": "Posted Date",
+      "closingDate": "Closing Date",
+      "applications": "Applications",
+      "noOpenings": "No job openings"
+    },
+    "leaveRequests": {
+      "title": "Leave Requests",
+      "addRequest": "New Leave Request",
+      "employee": "Employee",
+      "leaveType": "Leave Type",
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "status": "Status",
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "reason": "Reason",
+      "noRequests": "No leave requests",
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "applicationsPipeline": {
+      "title": "Applications Pipeline",
+      "applied": "Applied",
+      "screening": "Screening",
+      "interview": "Interview",
+      "offered": "Offered",
+      "hired": "Hired"
+    },
+    "tabs": {
+      "employees": "Employees",
+      "jobOpenings": "Job Openings",
+      "leaveRequests": "Leave Requests",
+      "applicationsPipeline": "Applications Pipeline"
+    },
+    "toasts": {
+      "employeeCreated": "Employee created successfully",
+      "employeeUpdated": "Employee updated successfully",
+      "leaveApproved": "Leave request approved",
+      "leaveRejected": "Leave request rejected",
+      "openingCreated": "Job opening created"
+    }
+  },
+  "maintenance": {
+    "title": "Maintenance",
+    "assets": {
+      "title": "Assets",
+      "addAsset": "Add Asset",
+      "name": "Asset Name",
+      "serialNumber": "Serial Number",
+      "location": "Location",
+      "status": "Status",
+      "operational": "Operational",
+      "needsRepair": "Needs Repair",
+      "outOfService": "Out of Service",
+      "searchPlaceholder": "Search assets..."
+    },
+    "workOrders": {
+      "title": "Work Orders",
+      "addWorkOrder": "Create Work Order",
+      "title_field": "Title",
+      "priority": "Priority",
+      "status": "Status",
+      "assignee": "Assignee",
+      "dueDate": "Due Date",
+      "open": "Open",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "preventiveMaintenance": {
+      "title": "Preventive Maintenance",
+      "schedule": "Schedule",
+      "frequency": "Frequency",
+      "lastCompleted": "Last Completed",
+      "nextDue": "Next Due"
+    },
+    "tabs": {
+      "assets": "Assets",
+      "workOrders": "Work Orders",
+      "pmSchedules": "PM Schedules",
+      "tools": "Tools",
+      "warranties": "Warranties",
+      "loto": "LOTO",
+      "fieldReturns": "Field Returns",
+      "budgets": "Budgets"
+    }
+  },
+  "executive": {
+    "title": "Executive Dashboard",
+    "kpis": "Key Performance Indicators",
+    "northStar": "North Star",
+    "riskDashboard": "Risk Dashboard",
+    "strategicDirectives": {
+      "title": "Strategic Directives",
+      "addDirective": "Add Directive",
+      "status": "Status",
+      "progress": "Progress",
+      "active": "Active",
+      "completed": "Completed",
+      "onHold": "On Hold"
+    },
+    "nl2sql": {
+      "title": "Natural Language Query",
+      "placeholder": "Ask a question about your data...",
+      "execute": "Execute Query"
     }
   }
 }

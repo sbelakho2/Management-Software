@@ -9,16 +9,53 @@ import asyncio
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import aiosmtplib
 import structlog
 
+try:
+    from jinja2 import Environment, BaseLoader, select_autoescape
+    _JINJA2_AVAILABLE = True
+except ImportError:  # graceful fallback to str.format()
+    _JINJA2_AVAILABLE = False
+
 from sensei.core.config import settings
 
 
 logger = structlog.get_logger(__name__)
+
+
+# ─── Jinja2 template environment (#381, #467) ─────────────────────────────────
+
+def _make_jinja_env() -> Any:
+    """Create a sandboxed Jinja2 environment for email rendering."""
+    if not _JINJA2_AVAILABLE:
+        return None
+    return Environment(
+        loader=BaseLoader(),
+        autoescape=select_autoescape(default_for_string=True, default=True),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+
+_jinja_env = _make_jinja_env()
+
+
+def _render_template(template_str: str, context: Dict[str, Any]) -> str:
+    """Render a template string with the given context.
+
+    Uses Jinja2 if available; falls back to Python ``str.format_map()``
+    for backward compatibility.
+    """
+    if _jinja_env is not None:
+        tmpl = _jinja_env.from_string(template_str)
+        return tmpl.render(**context)
+    # Fallback: convert Jinja2 {{var}} to {var} for str.format_map
+    return template_str.replace("{{", "{").replace("}}", "}").format_map(context)
 
 
 class EmailType(str, Enum):
@@ -105,7 +142,7 @@ class EmailService:
         <h2 style="color: #333; margin-top: 0;">Reset Your Password</h2>
         <p>You requested to reset your password. Click the button below to create a new password:</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{reset_link}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
+            <a href="{{ reset_link }}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
         </div>
         <p style="color: #666; font-size: 14px;">This link will expire in 1 hour.</p>
         <p style="color: #666; font-size: 14px;">If you didn't request this reset, you can safely ignore this email.</p>
@@ -120,7 +157,7 @@ Sensei OS - Password Reset
 
 You requested to reset your password. Visit the link below to create a new password:
 
-{reset_link}
+{{ reset_link }}
 
 This link will expire in 1 hour.
 
@@ -148,7 +185,7 @@ This is an automated message from Sensei OS.
         <h2 style="color: #333; margin-top: 0;">Verify Your Email</h2>
         <p>Please verify your email address by clicking the button below:</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{verify_link}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Verify Email</a>
+            <a href="{{ verify_link }}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Verify Email</a>
         </div>
         <p style="color: #666; font-size: 14px;">This link will expire in 24 hours.</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
@@ -162,7 +199,7 @@ Sensei OS - Email Verification
 
 Please verify your email address by visiting the link below:
 
-{verify_link}
+{{ verify_link }}
 
 This link will expire in 24 hours.
 
@@ -185,10 +222,10 @@ This is an automated message from Sensei OS.
         <h1 style="color: white; margin: 0; font-size: 24px;">Welcome to Sensei OS!</h1>
     </div>
     <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
-        <h2 style="color: #333; margin-top: 0;">Hello {name}!</h2>
+        <h2 style="color: #333; margin-top: 0;">Hello {{ user_name }}!</h2>
         <p>Your account has been created successfully. You can now log in and start using Sensei OS.</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="{login_link}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Go to Login</a>
+            <a href="{{ login_link }}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;">Go to Login</a>
         </div>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
         <p style="color: #999; font-size: 12px;">This is an automated message from Sensei OS. Please do not reply to this email.</p>
@@ -199,11 +236,11 @@ This is an automated message from Sensei OS.
                 "text": """
 Welcome to Sensei OS!
 
-Hello {name}!
+Hello {{ user_name }}!
 
 Your account has been created successfully. You can now log in and start using Sensei OS.
 
-Login: {login_link}
+Login: {{ login_link }}
 
 --
 This is an automated message from Sensei OS.
@@ -345,11 +382,12 @@ This is an automated message from Sensei OS.
         template = self._templates[EmailType.PASSWORD_RESET]
         reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={reset_token}"
         
+        ctx = {"reset_link": reset_link}
         message = EmailMessage(
             to=[email],
             subject=template["subject"],
-            body_html=template["html"].format(reset_link=reset_link),
-            body_text=template["text"].format(reset_link=reset_link),
+            body_html=_render_template(template["html"], ctx),
+            body_text=_render_template(template["text"], ctx),
         )
         
         return await self.send_email(message)
@@ -393,11 +431,12 @@ This is an automated message from Sensei OS.
         template = self._templates[EmailType.EMAIL_VERIFICATION]
         verify_link = f"{settings.FRONTEND_URL}/auth/verify-email?token={verification_token}"
         
+        ctx = {"verify_link": verify_link}
         message = EmailMessage(
             to=[email],
             subject=template["subject"],
-            body_html=template["html"].format(verify_link=verify_link),
-            body_text=template["text"].format(verify_link=verify_link),
+            body_html=_render_template(template["html"], ctx),
+            body_text=_render_template(template["text"], ctx),
         )
         
         return await self.send_email(message)
@@ -420,14 +459,12 @@ This is an automated message from Sensei OS.
         template = self._templates[EmailType.WELCOME]
         login_link = f"{settings.FRONTEND_URL}/login"
         
-        # Sanitize name to prevent format string injection (#148)
-        safe_name = str(name).replace("{", "{{").replace("}", "}}")
-        
+        ctx = {"user_name": str(name), "login_link": login_link}
         message = EmailMessage(
             to=[email],
             subject=template["subject"],
-            body_html=template["html"].format(name=safe_name, login_link=login_link),
-            body_text=template["text"].format(name=safe_name, login_link=login_link),
+            body_html=_render_template(template["html"], ctx),
+            body_text=_render_template(template["text"], ctx),
         )
         
         return await self.send_email(message)

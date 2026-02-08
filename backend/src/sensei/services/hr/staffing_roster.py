@@ -18,6 +18,8 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 class ShiftType(str, Enum):
     MORNING = "morning"
@@ -117,8 +119,10 @@ class SkillCoverageRisk:
     acknowledged_by: UUID | None = None
 
 
-class StaffingRosterService:
+class StaffingRosterService(PersistentServiceMixin):
     """In-memory roster + absence + skill-coverage risk service."""
+
+    SERVICE_NAME = "staffing_roster"
 
     def __init__(self) -> None:
         self._shifts: dict[UUID, ShiftDefinition] = {}

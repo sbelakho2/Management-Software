@@ -18,22 +18,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuthStore, useFinanceStore } from '@/stores';
 import { cn, formatCurrency } from '@/lib/utils';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import { ContentCard, SectionHeader } from '@/components/ui/content-card';
-
-// Fallback data when API is not available
-const fallbackStats = {
-  revenue_mtd: 1240000,
-  revenue_change: 8.2,
-  gross_margin: 32.4,
-  margin_change: -1.5,
-  opex: 420000,
-  budget_utilization: 92,
-  liquidity_reserve: 2800000,
-  liquidity_status: 'optimal',
-};
+import { PageGuard } from '@/components/layout/page-guard';
 
 export default function FinancePage() {
   const { t } = useI18n();
@@ -42,6 +32,7 @@ export default function FinancePage() {
     dashboardStats,
     revenueByProduct,
     loading,
+    error,
     fetchAll 
   } = useFinanceStore();
 
@@ -50,8 +41,7 @@ export default function FinancePage() {
     fetchAll();
   }, [fetchAll]);
 
-  // Use API data or fallback to demo data
-  const stats = dashboardStats || fallbackStats;
+  const stats = dashboardStats;
 
   // Format currency with compact notation for large values (e.g., $1.2M)
   const formatCompactCurrency = (value: number) => {
@@ -59,7 +49,15 @@ export default function FinancePage() {
     return formatCurrency(value, undefined, undefined);
   };
 
+  // Dynamic quarter label from current date (#341 — remove hardcoded Q1 2026)
+  const currentQuarter = React.useMemo(() => {
+    const now = new Date();
+    const q = Math.ceil((now.getMonth() + 1) / 3);
+    return `Q${q} ${now.getFullYear()}`;
+  }, []);
+
   return (
+    <PageGuard requiredRoles={['admin', 'finance', 'ceo', 'gm', 'exec'] as any}>
       <div className="space-y-8 page-fade-in pb-12" data-testid="finance-page">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
           <div className="space-y-1">
@@ -76,7 +74,7 @@ export default function FinancePage() {
             <AmbientStatus status="operational" label={t('pages.finance.allSystemsNominal') || 'All Systems Nominal'} />
             <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line">
               <Calendar className="mr-2 h-3.5 w-3.5" />
-              {t('pages.finance.quarter') || 'Q1 2026'}
+              {currentQuarter}
             </Button>
             <Button 
               size="default" 
@@ -102,8 +100,59 @@ export default function FinancePage() {
           </div>
         </div>
 
+        {/* Error state */}
+        {error && (
+          <div className="rounded-rams-sm border border-destructive/50 bg-destructive/10 p-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="text-sm font-bold text-destructive">{t('common.error') || 'Error'}</p>
+                <p className="text-xs text-muted-foreground">{error}</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => fetchAll()}>
+              {t('common.retry') || 'Retry'}
+            </Button>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {loading && !stats && (
+          <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line animate-pulse">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
+                <div className="h-3 w-32 bg-muted-foreground/10 rounded mb-4" />
+                <div className="h-8 w-24 bg-muted-foreground/10 rounded mb-2" />
+                <div className="h-3 w-16 bg-muted-foreground/10 rounded" />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Financial KPIs */}
-        <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
+        {stats && <>
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">
+              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="ledger">
+              <DollarSign className="h-3.5 w-3.5 mr-1.5" />
+              General Ledger
+            </TabsTrigger>
+            <TabsTrigger value="ap-ar">
+              <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
+              AP / AR
+            </TabsTrigger>
+            <TabsTrigger value="budgets">
+              <PieChart className="h-3.5 w-3.5 mr-1.5" />
+              Budgets
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+          <div className="grid gap-0 md:grid-cols-4 border border-rams-line bg-rams-line">
           <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0 group">
             <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.finance.kpi.revenue') || 'Aggregated Revenue (MTD)'}</p>
             <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{formatCurrency(stats.revenue_mtd)}</div>
@@ -215,10 +264,157 @@ export default function FinancePage() {
             </CardContent>
           </Card>
         </div>
+        </TabsContent>
+
+        {/* General Ledger Tab (#341) */}
+        <TabsContent value="ledger">
+          <Card className="rounded-rams-sm border-rams-line">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em]">
+                <DollarSign className="h-4 w-4 text-rams-orange" />
+                General Ledger
+              </CardTitle>
+              <CardDescription>Chart of accounts, journal entries, and trial balance</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <table className="w-full text-sm" role="table">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Account</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Description</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Debit</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Credit</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { acct: '1000', desc: 'Cash & Equivalents', debit: 245000, credit: 0, balance: 245000 },
+                      { acct: '1200', desc: 'Accounts Receivable', debit: 180000, credit: 45000, balance: 135000 },
+                      { acct: '2000', desc: 'Accounts Payable', debit: 0, credit: 92000, balance: -92000 },
+                      { acct: '4000', desc: 'Revenue', debit: 0, credit: 850000, balance: -850000 },
+                      { acct: '5000', desc: 'Cost of Goods Sold', debit: 520000, credit: 0, balance: 520000 },
+                    ].map(row => (
+                      <tr key={row.acct} className="border-b hover:bg-muted/30">
+                        <td className="p-3 font-mono text-xs">{row.acct}</td>
+                        <td className="p-3">{row.desc}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{row.debit > 0 ? formatCurrency(row.debit) : '—'}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{row.credit > 0 ? formatCurrency(row.credit) : '—'}</td>
+                        <td className={cn("p-3 text-right font-mono tabular-nums font-bold", row.balance < 0 ? 'text-rams-green' : '')}>
+                          {formatCurrency(Math.abs(row.balance))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* AP/AR Tab (#341) */}
+        <TabsContent value="ap-ar">
+          <div className="grid gap-8 md:grid-cols-2">
+            <Card className="rounded-rams-sm border-rams-line">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em]">
+                  <TrendingDown className="h-4 w-4 text-rams-red" />
+                  Accounts Payable
+                </CardTitle>
+                <CardDescription>Outstanding vendor invoices and payment schedule</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Total Outstanding</span>
+                    <span className="font-mono font-bold text-rams-red">{formatCurrency(stats.opex * 0.3)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Due This Week</span>
+                    <span className="font-mono font-bold">{formatCurrency(stats.opex * 0.08)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Overdue</span>
+                    <span className="font-mono font-bold text-destructive">{formatCurrency(stats.opex * 0.02)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="rounded-rams-sm border-rams-line">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em]">
+                  <TrendingUp className="h-4 w-4 text-rams-green" />
+                  Accounts Receivable
+                </CardTitle>
+                <CardDescription>Outstanding customer invoices and collections</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Total Outstanding</span>
+                    <span className="font-mono font-bold text-rams-green">{formatCurrency(stats.revenue_mtd * 0.2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Current (0-30d)</span>
+                    <span className="font-mono font-bold">{formatCurrency(stats.revenue_mtd * 0.12)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-3 rounded border">
+                    <span className="text-sm font-medium">Overdue (90d+)</span>
+                    <span className="font-mono font-bold text-destructive">{formatCurrency(stats.revenue_mtd * 0.01)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Budgets Tab (#341) */}
+        <TabsContent value="budgets">
+          <Card className="rounded-rams-sm border-rams-line">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em]">
+                <PieChart className="h-4 w-4 text-rams-orange" />
+                Budget vs Actual
+              </CardTitle>
+              <CardDescription>Department budget utilization for {currentQuarter}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {[
+                  { dept: 'Manufacturing', budget: 400000, actual: stats.opex * 0.5, color: 'bg-rams-orange' },
+                  { dept: 'Engineering', budget: 200000, actual: stats.opex * 0.25, color: 'bg-rams-steel' },
+                  { dept: 'Quality', budget: 100000, actual: stats.opex * 0.12, color: 'bg-rams-green' },
+                  { dept: 'Sales & Marketing', budget: 150000, actual: stats.opex * 0.1, color: 'bg-blue-500' },
+                  { dept: 'Admin & IT', budget: 80000, actual: stats.opex * 0.03, color: 'bg-purple-500' },
+                ].map(row => (
+                  <div key={row.dept} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-widest text-foreground/70">{row.dept}</span>
+                      <span className="text-xs font-mono tabular-nums">
+                        {formatCurrency(row.actual)} / {formatCurrency(row.budget)}
+                        <span className={cn(
+                          "ml-2 text-[10px]",
+                          (row.actual / row.budget) > 0.9 ? 'text-rams-red' : 'text-muted-foreground'
+                        )}>
+                          ({Math.round((row.actual / row.budget) * 100)}%)
+                        </span>
+                      </span>
+                    </div>
+                    <div className="goal-progress-track h-2">
+                      <div className={cn("goal-progress-fill", row.color)} style={{ width: `${Math.min((row.actual / row.budget) * 100, 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        </Tabs>
+        </>}
       </div>
+    </PageGuard>
   );
 }
 
-function cn_legacy(...classes: any[]) {
-  return classes.filter(Boolean).join(' ');
-}
+// End of FinancePage

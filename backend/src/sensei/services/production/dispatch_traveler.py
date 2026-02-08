@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Any, Iterable, Protocol
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 class OperationStatus(str, Enum):
     PENDING = "pending"
@@ -219,8 +221,10 @@ class SkillsProvider(Protocol):
 # ============================================================
 
 
-class DispatchTravelerService:
+class DispatchTravelerService(PersistentServiceMixin):
     """In-memory dispatching and electronic traveler service."""
+
+    SERVICE_NAME = "dispatch_traveler"
 
     def __init__(
         self,

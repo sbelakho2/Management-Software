@@ -17,6 +17,9 @@ import logging
 import re
 import hashlib
 
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -183,7 +186,7 @@ class ScanRecoveryWorkflow:
     workflow_steps: list[dict[str, Any]] = field(default_factory=list)
     auto_actions: list[str] = field(default_factory=list)
     requires_supervisor: bool = False
-    timeout_seconds: int = 300
+    timeout_seconds: int = field(default_factory=lambda: settings.LABEL_PRINT_TIMEOUT_SECONDS)
 
 
 # =============================================================================
@@ -191,7 +194,7 @@ class ScanRecoveryWorkflow:
 # =============================================================================
 
 
-class LabelPrintingService:
+class LabelPrintingService(PersistentServiceMixin):
     """
     Label Printing & Barcode Standards Service.
     
@@ -201,6 +204,8 @@ class LabelPrintingService:
     - Print queue management
     - Scanner error handling with recovery workflows
     """
+
+    SERVICE_NAME = "label_printing"
     
     # GS1 Application Identifiers
     GS1_AIS = {
@@ -918,8 +923,10 @@ class LabelPrintingService:
         workflow_steps: list[dict[str, Any]],
         auto_actions: list[str] | None = None,
         requires_supervisor: bool = False,
-        timeout_seconds: int = 300,
+        timeout_seconds: int | None = None,
     ) -> ScanRecoveryWorkflow:
+        if timeout_seconds is None:
+            timeout_seconds = settings.LABEL_PRINT_TIMEOUT_SECONDS
         """Create a scan error recovery workflow."""
         workflow = ScanRecoveryWorkflow(
             id=str(uuid4()),

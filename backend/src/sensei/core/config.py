@@ -318,6 +318,7 @@ class Settings(BaseSettings):
     ML_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"  # Fallback model
     ML_EMBEDDING_DIM: int = 384
     ML_DEVICE: str = "auto"  # auto, cpu, cuda - auto detects available hardware
+    SOCRATIC_RAG_RETRIEVAL_MODE: str = "lexical"  # lexical or onnx — retrieval strategy for Socratic pedagogy RAG
     
     # Local LLM Configuration (On-Device Only)
     LOCAL_LLM_MODEL_PATH: str = "backend/models/llm/tinyllama-1.1b-chat.gguf"
@@ -342,7 +343,47 @@ class Settings(BaseSettings):
     CHATBOT_SESSION_TIMEOUT_HOURS: int = 24
     CHATBOT_RATE_LIMIT_PER_MINUTE: int = 20
     CHATBOT_INFERENCE_TIMEOUT_SECONDS: int = 30
-    
+
+    # ── Domain Service Defaults ─────────────────────────────────────────
+    # #385 production_scheduling — fallback scheduling horizon (days)
+    SCHEDULING_HORIZON_DAYS: int = 365
+    # #386 mrp_lite — planning horizon (days)
+    MRP_PLANNING_HORIZON_DAYS: int = 30
+    # #388 lot_serial_traceability — expiry warning threshold (days)
+    LOT_EXPIRY_WARNING_DAYS: int = 30
+    # #389 lot_serial_traceability — max genealogy trace depth
+    LOT_GENEALOGY_MAX_DEPTH: int = 10
+    # #390 label_printing — scan recovery workflow timeout (seconds)
+    LABEL_PRINT_TIMEOUT_SECONDS: int = 300
+    # #391 qms_quality — SPC lookback period (days)
+    QMS_SPC_LOOKBACK_DAYS: int = 180
+    # #393 various — default lookback for analytics (days)
+    ANALYTICS_LOOKBACK_DAYS: int = 90
+    # #394 audit_log — default query limit
+    AUDIT_LOG_QUERY_LIMIT: int = 50
+    # #395 wms_integration — cycle count batch size
+    WMS_CYCLE_COUNT_BATCH_SIZE: int = 10
+    # #397 backup_scheduler — defaults
+    BACKUP_FULL_RETENTION_DAYS: int = 30
+    BACKUP_INCREMENTAL_RETENTION_DAYS: int = 7
+    # #398 health_checks — thresholds
+    HEALTH_LATENCY_OK_MS: int = 60
+    HEALTH_LATENCY_WARN_MS: int = 30
+    HEALTH_CPU_OK_PCT: float = 70.0
+    HEALTH_CPU_WARN_PCT: float = 30.0
+    HEALTH_MEMORY_OK_PCT: float = 80.0
+    HEALTH_MEMORY_WARN_PCT: float = 40.0
+    # #392 lsw_scheduling — default durations for walk types (JSON map)
+    LSW_DEFAULT_DURATIONS: dict[str, int] = {
+        "daily-gemba": 30, "daily-tier1": 15, "daily-safety": 10,
+        "weekly-tier2": 60, "weekly-coaching": 30, "weekly-process-audit": 20,
+        "monthly-tier3": 120, "monthly-standard-review": 45,
+        "monthly-training-check": 30, "monthly-recognition": 15,
+    }
+    # #396 wms_integration — cycle count priority thresholds
+    WMS_CYCLE_COUNT_CRITICAL_THRESHOLD: int = 50
+    WMS_CYCLE_COUNT_HIGH_THRESHOLD: int = 20
+
     @field_validator("ML_MODEL_PATH", "ML_ONNX_MODEL_PATH")
     @classmethod
     def ensure_model_paths_exist(cls, v: str) -> str:

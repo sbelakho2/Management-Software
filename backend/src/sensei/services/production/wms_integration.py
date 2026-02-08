@@ -18,6 +18,8 @@ from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 # =============================================================================
@@ -332,7 +334,7 @@ class StockLevel:
 # =============================================================================
 
 
-class WMSIntegrationService:
+class WMSIntegrationService(PersistentServiceMixin):
     """
     Warehouse Management System (WMS-Lite) Service.
     
@@ -343,7 +345,14 @@ class WMSIntegrationService:
     - Cycle counting
     - ERP synchronization
     """
+
+    SERVICE_NAME = "wms_integration"
     
+    _MAX_TRANSACTIONS = 50_000
+    _MAX_SYNC_QUEUE = 10_000
+    _MAX_RECEIPT_LINES = 20_000
+    _MAX_PACKING_LINES = 20_000
+
     def __init__(self, default_pick_strategy: PickStrategy = PickStrategy.FIFO):
         self.default_pick_strategy = default_pick_strategy
         
@@ -359,6 +368,12 @@ class WMSIntegrationService:
         self._goods_receipt_lines: list[GoodsReceiptLine] = []
         self._shipments: dict[str, Shipment] = {}
         self._packing_list_lines: list[PackingListLine] = []
+        
+        # Secondary indexes (#95, #99)
+        self._location_by_code: dict[str, str] = {}  # code -> location_id
+        self._inventory_by_part: dict[str, set[str]] = {}  # part_id -> {record_ids}
+        self._inventory_by_location: dict[str, set[str]] = {}  # location_id -> {record_ids}
+        self._inventory_by_lot: dict[str, set[str]] = {}  # lot_number -> {record_ids}
         
         # ERP sync queue
         self._erp_sync_queue: list[dict[str, Any]] = []
@@ -415,7 +430,16 @@ class WMSIntegrationService:
         capacity: Decimal = Decimal("0"),
         pick_sequence: int = 0,
     ) -> WarehouseLocation:
-        """Create a warehouse location."""
+        """Create a warehouse location.
+
+        Raises:
+            ValueError: If a location with the given code already exists.
+        """
+        if code in self._location_by_code:
+            raise ValueError(
+                f"Location code '{code}' already exists "
+                f"(id={self._location_by_code[code]})"
+            )
         location_id = str(uuid4())
         location = WarehouseLocation(
             id=location_id,
@@ -431,6 +455,7 @@ class WMSIntegrationService:
             pick_sequence=pick_sequence,
         )
         self._locations[location_id] = location
+        self._location_by_code[code] = location_id
         logger.info(f"Created location: {code} ({location_type.value})")
         return location
     
@@ -439,11 +464,11 @@ class WMSIntegrationService:
         return self._locations.get(location_id)
     
     def get_location_by_code(self, code: str) -> WarehouseLocation | None:
-        """Get a location by code."""
-        for loc in self._locations.values():
-            if loc.code == code:
-                return loc
-        return None
+        """Get a location by code (O(1) via secondary index)."""
+        loc_id = self._location_by_code.get(code)
+        if loc_id is None:
+            return None
+        return self._locations.get(loc_id)
     
     def get_locations(
         self,
@@ -469,6 +494,7 @@ class WMSIntegrationService:
         """Update a location."""
         location = self._locations.get(location_id)
         if not location:
+            logger.warning("Location %s not found for update", location_id)
             return None
         
         for key, value in kwargs.items():
@@ -514,6 +540,12 @@ class WMSIntegrationService:
         )
         self._inventory[record_id] = record
         
+        # Update secondary indexes
+        self._inventory_by_part.setdefault(part_id, set()).add(record_id)
+        self._inventory_by_location.setdefault(location_id, set()).add(record_id)
+        if lot_number:
+            self._inventory_by_lot.setdefault(lot_number, set()).add(record_id)
+        
         # Update location usage
         location = self._locations.get(location_id)
         if location:
@@ -532,8 +564,9 @@ class WMSIntegrationService:
         status: InventoryStatus | None = None,
         location_id: str | None = None,
     ) -> list[InventoryRecord]:
-        """Get inventory records for a part."""
-        records = [r for r in self._inventory.values() if r.part_id == part_id]
+        """Get inventory records for a part (O(k) via secondary index)."""
+        ids = self._inventory_by_part.get(part_id, set())
+        records = [self._inventory[rid] for rid in ids if rid in self._inventory]
         
         if status:
             records = [r for r in records if r.status == status]
@@ -548,8 +581,9 @@ class WMSIntegrationService:
         location_id: str,
         status: InventoryStatus | None = None,
     ) -> list[InventoryRecord]:
-        """Get inventory records at a location."""
-        records = [r for r in self._inventory.values() if r.location_id == location_id]
+        """Get inventory records at a location (O(k) via secondary index)."""
+        ids = self._inventory_by_location.get(location_id, set())
+        records = [self._inventory[rid] for rid in ids if rid in self._inventory]
         
         if status:
             records = [r for r in records if r.status == status]
@@ -557,8 +591,9 @@ class WMSIntegrationService:
         return records
     
     def get_inventory_by_lot(self, lot_number: str) -> list[InventoryRecord]:
-        """Get inventory records for a lot number."""
-        return [r for r in self._inventory.values() if r.lot_number == lot_number]
+        """Get inventory records for a lot number (O(k) via secondary index)."""
+        ids = self._inventory_by_lot.get(lot_number, set())
+        return [self._inventory[rid] for rid in ids if rid in self._inventory]
     
     def get_stock_level(self, part_id: str) -> StockLevel | None:
         """Get aggregated stock level for a part."""
@@ -608,6 +643,7 @@ class WMSIntegrationService:
         """Update inventory status."""
         record = self._inventory.get(record_id)
         if not record:
+            logger.warning("Inventory record %s not found for status update", record_id)
             return None
         
         old_status = record.status
@@ -708,6 +744,8 @@ class WMSIntegrationService:
             notes=notes,
         )
         self._transactions.append(transaction)
+        if len(self._transactions) > self._MAX_TRANSACTIONS:
+            self._transactions = self._transactions[-self._MAX_TRANSACTIONS // 2:]
         
         # Queue for ERP sync
         self._erp_sync_queue.append({
@@ -715,6 +753,8 @@ class WMSIntegrationService:
             "id": transaction.id,
             "data": transaction,
         })
+        if len(self._erp_sync_queue) > self._MAX_SYNC_QUEUE:
+            self._erp_sync_queue = self._erp_sync_queue[-self._MAX_SYNC_QUEUE // 2:]
         
         return transaction
     
@@ -903,6 +943,7 @@ class WMSIntegrationService:
         """Adjust inventory quantity."""
         record = self._inventory.get(record_id)
         if not record:
+            logger.warning("Inventory record %s not found for quantity adjustment", record_id)
             return None
         
         old_quantity = record.quantity
@@ -944,6 +985,7 @@ class WMSIntegrationService:
         """Scrap inventory."""
         record = self._inventory.get(record_id)
         if not record:
+            logger.warning("Inventory record %s not found for scrap", record_id)
             return None
         
         if quantity > record.quantity:
@@ -1389,7 +1431,7 @@ class WMSIntegrationService:
     
     def generate_smart_cycle_counts(
         self,
-        max_counts: int = 10,
+        max_counts: int = settings.WMS_CYCLE_COUNT_BATCH_SIZE,
     ) -> list[CycleCount]:
         """Generate smart cycle count suggestions based on discrepancy risk."""
         # Calculate transaction volume per location
@@ -1408,8 +1450,8 @@ class WMSIntegrationService:
         
         counts = []
         for loc_id, activity in high_risk_locations:
-            priority = CycleCountPriority.CRITICAL if activity > 50 else (
-                CycleCountPriority.HIGH if activity > 20 else CycleCountPriority.MEDIUM
+            priority = CycleCountPriority.CRITICAL if activity > settings.WMS_CYCLE_COUNT_CRITICAL_THRESHOLD else (
+                CycleCountPriority.HIGH if activity > settings.WMS_CYCLE_COUNT_HIGH_THRESHOLD else CycleCountPriority.MEDIUM
             )
             count = self.create_cycle_count(
                 location_id=loc_id,
@@ -1687,6 +1729,77 @@ class WMSIntegrationService:
                 
                 return True
         return False
+
+    def flush_sync_queue(
+        self,
+        batch_size: int = 100,
+        *,
+        erp_callback: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Consume and flush the ERP sync queue in batches.
+
+        If *erp_callback* is provided it is called for each item; items where
+        the callback returns ``True`` are marked as synced and removed from the
+        queue.  Items where the callback returns ``False`` or raises are left
+        in the queue for retry.
+
+        Without a callback every queued item is marked as synced (useful for
+        testing or when the ERP system has already been notified externally).
+
+        Returns a summary dict with ``processed``, ``succeeded``, ``failed``,
+        and ``remaining`` counts.
+        """
+        pending = list(self._erp_sync_queue[:batch_size])
+        succeeded = 0
+        failed = 0
+
+        for item in pending:
+            try:
+                if erp_callback is not None:
+                    ok = erp_callback(item)
+                else:
+                    ok = True
+
+                if ok:
+                    self.mark_erp_synced(item["id"])
+                    succeeded += 1
+                else:
+                    failed += 1
+            except Exception:
+                logger.exception(
+                    "ERP sync callback failed for item %s", item["id"]
+                )
+                failed += 1
+
+        logger.info(
+            "ERP sync flush complete: %d succeeded, %d failed, %d remaining",
+            succeeded,
+            failed,
+            len(self._erp_sync_queue),
+        )
+
+        return {
+            "processed": len(pending),
+            "succeeded": succeeded,
+            "failed": failed,
+            "remaining": len(self._erp_sync_queue),
+        }
+
+    def get_sync_queue_stats(self) -> dict[str, Any]:
+        """Return queue depth statistics broken down by item type."""
+        from collections import Counter
+
+        type_counts = Counter(item["type"] for item in self._erp_sync_queue)
+        return {
+            "total": len(self._erp_sync_queue),
+            "by_type": dict(type_counts),
+            "max_capacity": self._MAX_SYNC_QUEUE,
+            "utilization_pct": round(
+                len(self._erp_sync_queue) / self._MAX_SYNC_QUEUE * 100, 1
+            )
+            if self._MAX_SYNC_QUEUE
+            else 0.0,
+        }
     
     # =========================================================================
     # STATISTICS

@@ -1,3 +1,11 @@
+"""
+Persistent Maintenance Service.
+
+Database-backed maintenance management. Persists assets,
+PM schedules, work orders, spare parts inventory, and
+downtime events to PostgreSQL.
+"""
+
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal

@@ -1,3 +1,10 @@
+"""
+Site Service.
+
+Manages multi-site configuration, site-specific settings,
+and cross-site data visibility rules.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

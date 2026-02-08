@@ -14,7 +14,10 @@ interface MaintenanceState {
   pmSchedules: any[];
   pmRoute: any[];
   budgets: MaintenanceBudget[];
+  /** @deprecated Use loadingOps for per-operation states */
   loading: boolean;
+  /** Set of currently in-progress operation names */
+  loadingOps: Set<string>;
   error: string | null;
 
   fetchStats: () => Promise<void>;
@@ -29,6 +32,25 @@ interface MaintenanceState {
   fetchPMSchedules: () => Promise<void>;
   fetchPMRoute: (daysAhead?: number) => Promise<void>;
   fetchBudgets: () => Promise<void>;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
+}
+
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: MaintenanceState) => Partial<MaintenanceState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, loading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: MaintenanceState) => Partial<MaintenanceState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, loading: next.size > 0 };
+  });
 }
 
 export const useMaintenanceStore = create<MaintenanceState>((set) => ({
@@ -45,125 +67,162 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
   pmRoute: [],
   budgets: [],
   loading: false,
+  loadingOps: new Set<string>(),
   error: null,
 
   fetchStats: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchStats');
     try {
       const stats = await maintenanceApi.getStats();
-      set({ stats, loading: false });
+      set({ stats });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchStats');
+      }
   },
 
   fetchAssets: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchAssets');
     try {
       const assets = await maintenanceApi.listAssets();
-      set({ assets, loading: false });
+      set({ assets });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchAssets');
+      }
   },
 
   fetchWorkOrders: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchWorkOrders');
     try {
       const workOrders = await maintenanceApi.listWorkOrders();
-      set({ workOrders, loading: false });
+      set({ workOrders });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchWorkOrders');
+      }
   },
 
   fetchLotoProcedures: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchLotoProcedures');
     try {
       const lotoProcedures = await maintenanceApi.listLotoProcedures();
-      set({ lotoProcedures, loading: false });
+      set({ lotoProcedures });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchLotoProcedures');
+      }
   },
 
   fetchActiveLotoLocks: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchActiveLotoLocks');
     try {
       const activeLotoLocks = await maintenanceApi.listActiveLotoLocks();
-      set({ activeLotoLocks, loading: false });
+      set({ activeLotoLocks });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchActiveLotoLocks');
+      }
   },
 
   fetchTools: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchTools');
     try {
       const tools = await maintenanceApi.listTools();
-      set({ tools, loading: false });
+      set({ tools });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchTools');
+      }
   },
 
   fetchActiveToolCheckouts: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchActiveToolCheckouts');
     try {
       const activeToolCheckouts = await maintenanceApi.listActiveToolCheckouts();
-      set({ activeToolCheckouts, loading: false });
+      set({ activeToolCheckouts });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchActiveToolCheckouts');
+      }
   },
 
   fetchWarranties: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchWarranties');
     try {
       const warranties = await maintenanceApi.listWarranties();
-      set({ warranties, loading: false });
+      set({ warranties });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchWarranties');
+      }
   },
 
   fetchFieldReturns: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchFieldReturns');
     try {
       const fieldReturns = await maintenanceApi.listFieldReturns();
-      set({ fieldReturns, loading: false });
+      set({ fieldReturns });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchFieldReturns');
+      }
   },
 
   fetchPMSchedules: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchPMSchedules');
     try {
       const pmSchedules = await maintenanceApi.listPMSchedules();
-      set({ pmSchedules, loading: false });
+      set({ pmSchedules });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchPMSchedules');
+      }
   },
 
   fetchPMRoute: async (daysAhead: number = 7) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchPMRoute');
     try {
       const pmRoute = await maintenanceApi.getPMRoute(daysAhead);
-      set({ pmRoute, loading: false });
+      set({ pmRoute });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchPMRoute');
+      }
   },
 
   fetchBudgets: async () => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchBudgets');
     try {
       const budgets = await maintenanceApi.listMaintenanceBudgets();
-      set({ budgets, loading: false });
+      set({ budgets });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      set({ error: error.message });
     }
+      finally {
+        endOp(set, 'fetchBudgets');
+      }
   },
 }));

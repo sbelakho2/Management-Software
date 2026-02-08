@@ -39,9 +39,11 @@ from sensei.api.repository import BaseRepository
 
 from sensei.api.deps import (
     DBSession,
+    ReadOnlyDBSession,
     CurrentUser,
     CurrentActiveUser,
     CurrentSuperuser,
+    OptionalCurrentUser,
     Pagination,
     StandardRateLimit,
     StrictRateLimit,
@@ -94,9 +96,11 @@ __all__ = [
     "BaseRepository",
     # Dependencies
     "DBSession",
+    "ReadOnlyDBSession",
     "CurrentUser",
     "CurrentActiveUser",
     "CurrentSuperuser",
+    "OptionalCurrentUser",
     "Pagination",
     "StandardRateLimit",
     "StrictRateLimit",

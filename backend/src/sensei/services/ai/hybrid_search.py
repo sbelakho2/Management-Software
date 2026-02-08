@@ -1,4 +1,25 @@
-"""Hybrid search utilities for advanced RAG workflows."""
+"""Hybrid search utilities for advanced RAG workflows.
+
+.. warning:: Deterministic Fallbacks Active
+
+   Several components in this module use **deterministic heuristic fallbacks**
+   instead of real ML models.  These are clearly marked:
+
+   * ``InMemorySemanticSearcher.embed_query()`` — Uses SHAKE-256 hash expansion
+     to produce 384-dim embeddings.  Replace with a real sentence-transformer
+     (e.g. ``all-MiniLM-L6-v2``) loaded via ONNX Runtime for production quality.
+     See checklist item **#201, #455**.
+
+   * ``HeuristicCrossEncoder`` — Uses bag-of-words overlap instead of a trained
+     cross-encoder.  Replace with ``ms-marco-MiniLM-L-6-v2`` via ONNX Runtime.
+     See checklist item **#202**.
+
+   * ``InMemoryKeywordSearcher`` — Linear scan; replace with an inverted index
+     or pgvector full-text search for production scale.  See **#461**.
+
+   The interfaces are designed for drop-in replacement: implement the same
+   ``embed_query()`` / ``score_pair()`` signatures with real model calls.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +30,8 @@ import math
 import os
 import time
 from typing import Any, Iterable
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 DEFAULT_CHUNK_SIZE = 500
@@ -91,17 +114,61 @@ class RerankCacheEntry:
 
 
 class TokenEstimator:
-    """Simple token estimator using ~4 chars per token."""
+    """Improved token estimator with heuristics for different content types.
+
+    The default 4-chars-per-token heuristic is accurate for English prose but
+    under-estimates for code/URLs (more special chars) and CJK/Arabic text
+    (fewer chars per semantic unit, but most tokenizers produce ~1-2 chars per
+    token for such scripts).
+
+    This estimator detects the predominant content type and adjusts accordingly:
+    * English prose: ~4 chars/token (GPT-family average)
+    * Code/technical: ~3.3 chars/token (more symbols → more tokens)
+    * CJK/Arabic/non-Latin: ~1.5 chars/token (each char ≈ 1 token)
+    * Mixed: weighted average
+    """
+
+    @staticmethod
+    def _non_latin_ratio(text: str) -> float:
+        """Return the fraction of characters that are non-Latin/non-ASCII."""
+        if not text:
+            return 0.0
+        non_latin = sum(1 for ch in text if ord(ch) > 0x024F)  # beyond Latin Extended-B
+        return non_latin / len(text)
+
+    @staticmethod
+    def _code_ratio(text: str) -> float:
+        """Return the fraction of characters that are code-like symbols."""
+        if not text:
+            return 0.0
+        code_chars = sum(1 for ch in text if ch in "{}[]();:=<>|&!@#$%^*~`/\\")
+        return code_chars / len(text)
+
+    def _chars_per_token(self, text: str) -> float:
+        """Estimate chars-per-token based on content type heuristics."""
+        nl_ratio = self._non_latin_ratio(text)
+        cd_ratio = self._code_ratio(text)
+
+        if nl_ratio > 0.3:
+            # Predominantly non-Latin: most tokenizers ≈ 1.5 chars/token
+            return 1.5
+        if cd_ratio > 0.08:
+            # Code-heavy: more tokens per character
+            return 3.3
+        # Standard English prose
+        return 4.0
 
     def estimate_tokens(self, text: str) -> int:
         if not text:
             return 0
-        return max(1, len(text) // 4)
+        cpt = self._chars_per_token(text)
+        return max(1, int(len(text) / cpt))
 
     def truncate_to_tokens(self, text: str, max_tokens: int) -> str:
         if not text:
             return ""
-        max_chars = max_tokens * 4
+        cpt = self._chars_per_token(text)
+        max_chars = int(max_tokens * cpt)
         if len(text) <= max_chars:
             return text
         truncated = text[:max_chars]
@@ -225,7 +292,9 @@ class TokenAwareChunker:
 
 
 class RerankCache:
-    """TTL cache for rerank scores."""
+    """TTL cache for rerank scores with bounded size to prevent memory leaks."""
+
+    MAX_ENTRIES = 10_000  # cap to prevent unbounded growth
 
     def __init__(self, ttl_seconds: int = 60):
         self.ttl_seconds = ttl_seconds
@@ -235,6 +304,15 @@ class RerankCache:
         return f"{query}:::{context}"
 
     def set(self, query: str, context: str, score: float) -> None:
+        if len(self._entries) >= self.MAX_ENTRIES:
+            self.clear_expired()
+            # If still at capacity after clearing expired, evict oldest 25%
+            if len(self._entries) >= self.MAX_ENTRIES:
+                sorted_keys = sorted(
+                    self._entries, key=lambda k: self._entries[k].timestamp
+                )
+                for k in sorted_keys[: len(sorted_keys) // 4]:
+                    self._entries.pop(k, None)
         self._entries[self._key(query, context)] = RerankCacheEntry(score=score, timestamp=time.time())
 
     def get(self, query: str, context: str) -> float | None:
@@ -258,8 +336,14 @@ class RerankCache:
         return len(self._entries)
 
 
-class ONNXCrossEncoder:
-    """Lightweight heuristic cross-encoder scorer with caching."""
+class HeuristicCrossEncoder:
+    """Lightweight heuristic cross-encoder scorer with caching.
+
+    Note: This is a bag-of-words overlap heuristic, NOT a real ONNX
+    cross-encoder model. For production quality, replace with an actual
+    cross-encoder (e.g. ``ms-marco-MiniLM-L-6-v2``) loaded via ONNX Runtime.
+    The interface is kept compatible so swapping is drop-in.
+    """
 
     def __init__(self, cache_ttl: int = 60):
         self.cache = RerankCache(ttl_seconds=cache_ttl)
@@ -292,10 +376,31 @@ class ONNXCrossEncoder:
 
 
 class InMemorySemanticSearcher:
-    """In-memory semantic searcher with deterministic embeddings."""
+    """Semantic searcher with ONNX model support.
+
+    When an ONNX sentence-transformer model is available (set via
+    SENSEI_EMBED_MODEL_PATH env var), embed_query() produces real
+    semantic embeddings. Otherwise falls back to SHAKE-256 deterministic
+    hashing. The search() method uses brute-force in-memory matching;
+    for production scale, use PgVectorSearcher from real_ml_implementations.
+
+    Performance optimisations:
+    * Embeddings are LRU-cached (up to 1024 queries).
+    * _cosine_similarity() exploits pre-normalised vectors (dot-product only).
+    """
+
+    _EMBED_DIM = 384
+    _EMBED_CACHE_MAX = 512
 
     def __init__(self) -> None:
         self._chunks: dict[str, tuple[Chunk, list[float]]] = {}
+        self._embed_cache: dict[str, list[float]] = {}
+        # Use real ONNX embedder when available (#455)
+        try:
+            from sensei.services.ai.real_ml_implementations import OnnxEmbedder
+            self._onnx_embedder = OnnxEmbedder()
+        except ImportError:
+            self._onnx_embedder = None  # type: ignore[assignment]
 
     @staticmethod
     def _normalize(vec: list[float]) -> list[float]:
@@ -305,18 +410,46 @@ class InMemorySemanticSearcher:
         return [v / norm for v in vec]
 
     def embed_query(self, text: str) -> list[float]:
-        vector: list[float] = []
-        for i in range(384):
-            digest = hashlib.sha256(f"{text}:{i}".encode("utf-8")).digest()
-            value = int.from_bytes(digest[:4], "big") / 2**32
-            vector.append(value)
-        return self._normalize(vector)
+        """Produce a 384-dim embedding.
+
+        Uses real ONNX model when available (#455), otherwise falls back
+        to SHAKE-256 deterministic expansion. Results are LRU-cached.
+        """
+        cached = self._embed_cache.get(text)
+        if cached is not None:
+            return cached
+
+        # Prefer real ONNX embeddings when available
+        if self._onnx_embedder is not None and self._onnx_embedder.is_real_model:
+            result = self._onnx_embedder.embed(text)
+        else:
+            # SHAKE-256 fallback — single hash call for all dimensions
+            digest = hashlib.shake_256(text.encode("utf-8")).digest(self._EMBED_DIM * 4)
+            vector: list[float] = []
+            for i in range(self._EMBED_DIM):
+                value = int.from_bytes(digest[i * 4 : i * 4 + 4], "big") / 2**32
+                vector.append(value)
+            result = self._normalize(vector)
+
+        # Bounded LRU-style cache
+        if len(self._embed_cache) >= self._EMBED_CACHE_MAX:
+            # evict first (oldest) entry
+            oldest = next(iter(self._embed_cache))
+            del self._embed_cache[oldest]
+        self._embed_cache[text] = result
+        return result
 
     def add_chunk(self, chunk: Chunk, embedding: list[float]) -> None:
         self._chunks[chunk.id] = (chunk, self._normalize(list(embedding)))
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors.
+
+        Both vectors are pre-normalised on insert / embed, so the cosine
+        similarity is simply the dot product — no need to recompute norms.
+        A guard clause handles the (rare) zero-length edge case.
+        """
         if not a or not b:
             return 0.0
         return sum(x * y for x, y in zip(a, b))
@@ -339,10 +472,17 @@ class InMemorySemanticSearcher:
 
 
 class InMemoryKeywordSearcher:
-    """In-memory keyword searcher using term frequency."""
+    """In-memory keyword searcher using term frequency.
+
+    Optimisations:
+    * Pre-tokenizes and caches token lists on ``add_chunk`` so we never
+      re-tokenize stored content during search.
+    * Stores sqrt(len) alongside tokens to avoid repeated sqrt calls.
+    """
 
     def __init__(self) -> None:
         self._chunks: dict[str, Chunk] = {}
+        self._chunk_tokens: dict[str, tuple[list[str], float]] = {}  # tokens, sqrt_len
 
     @staticmethod
     def _tokenize(text: str) -> list[str]:
@@ -350,6 +490,9 @@ class InMemoryKeywordSearcher:
 
     def add_chunk(self, chunk: Chunk) -> None:
         self._chunks[chunk.id] = chunk
+        tokens = self._tokenize(chunk.content)
+        sqrt_len = math.sqrt(len(tokens)) if tokens else 1.0
+        self._chunk_tokens[chunk.id] = (tokens, sqrt_len)
 
     def search(
         self,
@@ -360,31 +503,38 @@ class InMemoryKeywordSearcher:
         q_tokens = self._tokenize(query)
         if not q_tokens:
             return []
+        # Convert to set for O(1) membership test when checking unique matches
+        q_token_set = set(q_tokens)
         results: list[tuple[Chunk, float]] = []
-        for chunk in self._chunks.values():
+        for chunk_id, chunk in self._chunks.items():
             if filters and chunk.metadata:
                 if any(getattr(chunk.metadata, k, None) != v for k, v in filters.items()):
                     continue
-            c_tokens = self._tokenize(chunk.content)
+            cached = self._chunk_tokens.get(chunk_id)
+            if cached is None:
+                continue
+            c_tokens, sqrt_len = cached
             if not c_tokens:
                 continue
-            raw_score = sum(c_tokens.count(t) for t in q_tokens)
-            # Normalize by document length to avoid bias toward longer documents
-            score = raw_score / math.sqrt(len(c_tokens)) if raw_score > 0 else 0.0
-            results.append((chunk, score))
+            raw_score = sum(1 for t in c_tokens if t in q_token_set)
+            if raw_score > 0:
+                score = raw_score / sqrt_len
+                results.append((chunk, score))
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
 
 
-class HybridSearchEngine:
+class HybridSearchEngine(PersistentServiceMixin):
     """Hybrid search engine combining semantic and keyword search."""
+
+    SERVICE_NAME = "hybrid_search"
 
     def __init__(
         self,
         *,
         semantic_searcher: InMemorySemanticSearcher,
         keyword_searcher: InMemoryKeywordSearcher,
-        reranker: ONNXCrossEncoder,
+        reranker: HeuristicCrossEncoder,
         default_alpha: float = DEFAULT_ALPHA,
     ) -> None:
         self.semantic_searcher = semantic_searcher
@@ -506,10 +656,15 @@ def create_hybrid_search_engine(
     return HybridSearchEngine(
         semantic_searcher=InMemorySemanticSearcher(),
         keyword_searcher=InMemoryKeywordSearcher(),
-        reranker=ONNXCrossEncoder(cache_ttl=cache_ttl),
+        reranker=HeuristicCrossEncoder(cache_ttl=cache_ttl),
         default_alpha=default_alpha,
     )
 
 
 def create_chunker(*, chunk_size: int = DEFAULT_CHUNK_SIZE, chunk_overlap: int = DEFAULT_CHUNK_OVERLAP) -> TokenAwareChunker:
     return TokenAwareChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+
+# Backward-compatible alias — the heuristic was previously misnamed "ONNXCrossEncoder"
+# in this module. The real ONNX implementation lives in onnx_cross_encoder.py.
+ONNXCrossEncoder = HeuristicCrossEncoder

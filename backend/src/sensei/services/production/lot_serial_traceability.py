@@ -17,6 +17,8 @@ from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 # =============================================================================
@@ -227,7 +229,7 @@ class TraceabilityTree:
 # =============================================================================
 
 
-class LotSerialTraceabilityService:
+class LotSerialTraceabilityService(PersistentServiceMixin):
     """
     Lot & Serial Traceability (Genealogy) Service.
     
@@ -239,7 +241,11 @@ class LotSerialTraceabilityService:
     - Certificate/evidence binding
     - Recall management
     """
+
+    SERVICE_NAME = "lot_traceability"
     
+    _MAX_GENEALOGY_LINKS = 100_000
+
     def __init__(self):
         # Storage
         self._lots: dict[str, LotRecord] = {}
@@ -463,7 +469,7 @@ class LotSerialTraceabilityService:
             return {"expired": True, "days_remaining": 0}
         
         days_remaining = (lot.expiry_date - now).days
-        expiring_soon = days_remaining <= 30
+        expiring_soon = days_remaining <= settings.LOT_EXPIRY_WARNING_DAYS
         
         return {
             "expired": False,
@@ -642,6 +648,9 @@ class LotSerialTraceabilityService:
             notes=notes,
         )
         self._genealogy_links.append(link)
+        # Trim if over cap (#118 — prevent unbounded memory growth)
+        if len(self._genealogy_links) > self._MAX_GENEALOGY_LINKS:
+            self._genealogy_links = self._genealogy_links[-self._MAX_GENEALOGY_LINKS // 2:]
         return link
     
     def record_production(
@@ -707,7 +716,7 @@ class LotSerialTraceabilityService:
         self,
         lot_id: str | None = None,
         serial_id: str | None = None,
-        max_levels: int = 10,
+        max_levels: int = settings.LOT_GENEALOGY_MAX_DEPTH,
     ) -> TraceabilityTree:
         """Trace upstream (1-Down): Where did this come from?"""
         root = TraceabilityTree(
@@ -778,7 +787,7 @@ class LotSerialTraceabilityService:
         self,
         lot_id: str | None = None,
         serial_id: str | None = None,
-        max_levels: int = 10,
+        max_levels: int = settings.LOT_GENEALOGY_MAX_DEPTH,
     ) -> TraceabilityTree:
         """Trace downstream (1-Up): Where did this go?"""
         root = TraceabilityTree(

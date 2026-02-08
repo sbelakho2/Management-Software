@@ -1,3 +1,11 @@
+"""
+Warranty Tracking Service.
+
+Manages warranty registrations, claim submissions,
+coverage verification, and warranty cost analysis.
+Tracks warranty periods and exclusions.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

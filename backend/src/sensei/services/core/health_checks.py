@@ -28,6 +28,7 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
+from sensei.core.config import settings
 
 
 def _utcnow() -> datetime:
@@ -117,11 +118,11 @@ class HealthCheckService:
         # Health check configuration
         self.startup_complete = False
         self.startup_time = _utcnow()
-        self.max_startup_duration_seconds = 60
+        self.max_startup_duration_seconds = settings.HEALTH_LATENCY_OK_MS
         
         # Dependency health tracking
         self.dependency_health: Dict[str, DependencyHealth] = {}
-        self.health_check_interval_seconds = 30
+        self.health_check_interval_seconds = settings.HEALTH_LATENCY_WARN_MS
         self.last_full_check: Optional[datetime] = None
         
         # AI model health tracking
@@ -129,11 +130,11 @@ class HealthCheckService:
         self.ai_model_last_check: Optional[datetime] = None
         self.ai_model_load_time_seconds: Optional[float] = None
         
-        # Auto-scaling thresholds
-        self.cpu_scale_up_threshold = 70.0
-        self.cpu_scale_down_threshold = 30.0
-        self.memory_scale_up_threshold = 80.0
-        self.memory_scale_down_threshold = 40.0
+        # Auto-scaling thresholds (configurable via settings)
+        self.cpu_scale_up_threshold = settings.HEALTH_CPU_OK_PCT
+        self.cpu_scale_down_threshold = settings.HEALTH_CPU_WARN_PCT
+        self.memory_scale_up_threshold = settings.HEALTH_MEMORY_OK_PCT
+        self.memory_scale_down_threshold = settings.HEALTH_MEMORY_WARN_PCT
         self.min_replicas = 2
         self.max_replicas = 10
         self.current_replicas = 2
@@ -250,43 +251,47 @@ class HealthCheckService:
         self.dependency_health["database"] = health
         return health
     
-    def check_redis_health(self) -> DependencyHealth:
-        """Check Redis connectivity and performance"""
+    def _check_redis_health_sync(self) -> tuple:
+        """Synchronous Redis health check (run in thread)."""
+        status = HealthStatus.UNKNOWN
+        error_msg = None
+        metadata = {}
+        if self.redis_client is None:
+            raise Exception("Redis client not configured")
+        result = self.redis_client.ping()
+        if result:
+            status = HealthStatus.HEALTHY
+            try:
+                info = self.redis_client.info()
+                metadata["connected_clients"] = info.get("connected_clients", 0)
+                metadata["used_memory_mb"] = info.get("used_memory", 0) / 1024 / 1024
+            except Exception:
+                logger.exception("Failed to fetch Redis metrics")
+        else:
+            status = HealthStatus.UNHEALTHY
+            error_msg = "Redis ping failed"
+        return status, error_msg, metadata
+
+    async def check_redis_health(self) -> DependencyHealth:
+        """Check Redis connectivity and performance (async)."""
         start_time = time.time()
         status = HealthStatus.UNKNOWN
         error_msg = None
         metadata = {}
-        
+
         try:
-            if self.redis_client is None:
-                raise Exception("Redis client not configured")
-            
-            # Ping Redis
-            result = self.redis_client.ping()
-            
-            if result:
-                status = HealthStatus.HEALTHY
-                
-                # Get Redis info
-                try:
-                    info = self.redis_client.info()
-                    metadata["connected_clients"] = info.get("connected_clients", 0)
-                    metadata["used_memory_mb"] = info.get("used_memory", 0) / 1024 / 1024
-                except Exception:
-                    logger.exception("Failed to fetch Redis metrics")
-            else:
-                status = HealthStatus.UNHEALTHY
-                error_msg = "Redis ping failed"
-        
+            status, error_msg, metadata = await asyncio.to_thread(
+                self._check_redis_health_sync
+            )
         except Exception as e:
             status = HealthStatus.UNHEALTHY
             error_msg = str(e)
-        
+
         latency_ms = (time.time() - start_time) * 1000
-        
+
         if status == HealthStatus.HEALTHY and latency_ms > 50:
             status = HealthStatus.DEGRADED
-        
+
         health = DependencyHealth(
             name="Redis Cache",
             dependency_type=DependencyType.CACHE,
@@ -296,40 +301,46 @@ class HealthCheckService:
             error_message=error_msg,
             metadata=metadata
         )
-        
+
         self.dependency_health["redis"] = health
         return health
     
-    def check_s3_health(self) -> DependencyHealth:
-        """Check S3 storage connectivity"""
+    def _check_s3_health_sync(self) -> tuple:
+        """Synchronous S3 health check (run in thread)."""
+        status = HealthStatus.UNKNOWN
+        error_msg = None
+        metadata = {}
+        if self.s3_client is None:
+            raise Exception("S3 client not configured")
+        buckets = self.s3_client.list_buckets()
+        if buckets:
+            status = HealthStatus.HEALTHY
+            metadata["bucket_count"] = len(buckets.get("Buckets", []))
+        else:
+            status = HealthStatus.DEGRADED
+            error_msg = "S3 accessible but no buckets found"
+        return status, error_msg, metadata
+
+    async def check_s3_health(self) -> DependencyHealth:
+        """Check S3 storage connectivity (async)."""
         start_time = time.time()
         status = HealthStatus.UNKNOWN
         error_msg = None
         metadata = {}
-        
+
         try:
-            if self.s3_client is None:
-                raise Exception("S3 client not configured")
-            
-            # List buckets as a health check
-            buckets = self.s3_client.list_buckets()
-            
-            if buckets:
-                status = HealthStatus.HEALTHY
-                metadata["bucket_count"] = len(buckets.get("Buckets", []))
-            else:
-                status = HealthStatus.DEGRADED
-                error_msg = "S3 accessible but no buckets found"
-        
+            status, error_msg, metadata = await asyncio.to_thread(
+                self._check_s3_health_sync
+            )
         except Exception as e:
             status = HealthStatus.UNHEALTHY
             error_msg = str(e)
-        
+
         latency_ms = (time.time() - start_time) * 1000
-        
+
         if status == HealthStatus.HEALTHY and latency_ms > 200:
             status = HealthStatus.DEGRADED
-        
+
         health = DependencyHealth(
             name="S3 Storage",
             dependency_type=DependencyType.STORAGE,
@@ -339,7 +350,7 @@ class HealthCheckService:
             error_message=error_msg,
             metadata=metadata
         )
-        
+
         self.dependency_health["s3"] = health
         return health
     
@@ -473,17 +484,17 @@ class HealthCheckService:
     async def verify_ai_model_at_startup(self) -> bool:
         """
         Verify AI model is available at startup.
-        
+
         This is a critical startup check that ensures the chatbot model
         is properly configured and accessible. Returns True if model is
         healthy or degraded (can work), False if completely unavailable.
-        
+
         Call this during application lifespan startup.
         """
         logger.info("Verifying AI model availability at startup...")
-        
+
         try:
-            health = self.check_ai_model_health()
+            health = await asyncio.to_thread(self.check_ai_model_health)
             
             if health.status == HealthStatus.HEALTHY:
                 logger.info(
@@ -512,58 +523,56 @@ class HealthCheckService:
             logger.exception("Failed to verify AI model at startup")
             return False
     
-    def check_all_dependencies(self) -> List[DependencyHealth]:
-        """Check health of all configured dependencies"""
-        results = []
-        
+    async def check_all_dependencies(self) -> List[DependencyHealth]:
+        """Check health of all configured dependencies concurrently."""
+        tasks = []
+
         if self.db_session_factory:
-            results.append(self.check_database_health())
-        
+            tasks.append(self.check_database_health())
+
         if self.redis_client:
-            results.append(self.check_redis_health())
-        
+            tasks.append(self.check_redis_health())
+
         if self.s3_client:
-            results.append(self.check_s3_health())
-        
-        # Always check AI model (doesn't require external client)
-        results.append(self.check_ai_model_health())
-        
+            tasks.append(self.check_s3_health())
+
+        # AI model check is CPU-bound; wrap in to_thread
+        tasks.append(asyncio.to_thread(self.check_ai_model_health))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        clean: List[DependencyHealth] = []
+        for r in results:
+            if isinstance(r, BaseException):
+                logger.exception("Dependency health check failed", exc_info=r)
+            else:
+                clean.append(r)
+
         self.last_full_check = _utcnow()
-        return results
+        return clean
     
-    def get_resource_metrics(self) -> ResourceMetrics:
-        """Get current resource utilization metrics"""
-        # CPU usage
+    def _get_resource_metrics_sync(self) -> ResourceMetrics:
+        """Synchronous resource metrics (run in thread)."""
         cpu_percent = psutil.cpu_percent(interval=0.1)
-        
-        # Memory usage
         memory = psutil.virtual_memory()
-        memory_percent = memory.percent
-        memory_used_mb = memory.used / 1024 / 1024
-        memory_available_mb = memory.available / 1024 / 1024
-        
-        # Disk usage
         disk = psutil.disk_usage('/')
-        disk_percent = disk.percent
-        disk_used_gb = disk.used / 1024 / 1024 / 1024
-        disk_available_gb = disk.free / 1024 / 1024 / 1024
-        
-        # Network connections
         network_connections = len(psutil.net_connections())
-        
         return ResourceMetrics(
             cpu_percent=cpu_percent,
-            memory_percent=memory_percent,
-            memory_used_mb=memory_used_mb,
-            memory_available_mb=memory_available_mb,
-            disk_percent=disk_percent,
-            disk_used_gb=disk_used_gb,
-            disk_available_gb=disk_available_gb,
+            memory_percent=memory.percent,
+            memory_used_mb=memory.used / 1024 / 1024,
+            memory_available_mb=memory.available / 1024 / 1024,
+            disk_percent=disk.percent,
+            disk_used_gb=disk.used / 1024 / 1024 / 1024,
+            disk_available_gb=disk.free / 1024 / 1024 / 1024,
             network_connections=network_connections,
-            timestamp=_utcnow()
+            timestamp=_utcnow(),
         )
+
+    async def get_resource_metrics(self) -> ResourceMetrics:
+        """Get current resource utilization metrics (async)."""
+        return await asyncio.to_thread(self._get_resource_metrics_sync)
     
-    def get_scaling_recommendation(
+    async def get_scaling_recommendation(
         self,
         metrics: Optional[ResourceMetrics] = None
     ) -> ScalingRecommendation:
@@ -572,7 +581,7 @@ class HealthCheckService:
         Used by Kubernetes HPA for intelligent scaling decisions
         """
         if metrics is None:
-            metrics = self.get_resource_metrics()
+            metrics = await self.get_resource_metrics()
         
         action = "maintain"
         reason = "Resource utilization within normal range"
@@ -608,12 +617,12 @@ class HealthCheckService:
             metrics_snapshot=metrics
         )
     
-    def get_health_summary(self) -> Dict[str, Any]:
-        """Get comprehensive health summary for monitoring"""
+    async def get_health_summary(self) -> Dict[str, Any]:
+        """Get comprehensive health summary for monitoring (async)."""
         # Get fresh dependency health if stale
         if (self.last_full_check is None or 
             (_utcnow() - self.last_full_check).total_seconds() > self.health_check_interval_seconds):
-            self.check_all_dependencies()
+            await self.check_all_dependencies()
         
         # Determine overall health
         overall_status = HealthStatus.HEALTHY
@@ -626,10 +635,10 @@ class HealthCheckService:
                 overall_status = HealthStatus.DEGRADED
         
         # Get resource metrics
-        metrics = self.get_resource_metrics()
+        metrics = await self.get_resource_metrics()
         
         # Get scaling recommendation
-        scaling = self.get_scaling_recommendation(metrics)
+        scaling = await self.get_scaling_recommendation(metrics)
         
         return {
             "status": overall_status.value,

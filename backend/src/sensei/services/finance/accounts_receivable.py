@@ -13,12 +13,17 @@ Optionally integrates with `AccountingLedgerService` to post GL journal entries.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -276,8 +281,14 @@ def _parse_quote_like(quote: Any) -> dict[str, Any]:
     }
 
 
-class AccountsReceivableService:
-    """Order-to-cash workflows with optional GL postings."""
+class AccountsReceivableService(PersistentServiceMixin):
+    """Order-to-cash workflows with optional GL postings.
+
+    In-memory state backed by PostgreSQL ar_invoices, ar_payments,
+    and credit_memos tables.
+    """
+
+    SERVICE_NAME = "accounts_receivable"
 
     def __init__(self, *, config: ARConfig | None = None, ledger: Any | None = None):
         self._cfg = config or ARConfig()

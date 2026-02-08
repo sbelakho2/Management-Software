@@ -11,11 +11,16 @@ This module is pure-Python and in-memory with strict RBAC.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -203,8 +208,14 @@ class FixedAssetsConfig:
 # ---------------------- Service ----------------------
 
 
-class FixedAssetsService:
-    """In-memory fixed asset register with depreciation and optional GL postings."""
+class FixedAssetsService(PersistentServiceMixin):
+    """Fixed asset register with depreciation and optional GL postings.
+
+    In-memory state backed by PostgreSQL fixed_assets and
+    depreciation_schedules tables.
+    """
+
+    SERVICE_NAME = "fixed_assets"
 
     def __init__(
         self,

@@ -1,3 +1,12 @@
+"""
+First Article Inspection (FAI) Service.
+
+Manages AS9102 First Article Inspection Reports.
+Tracks Form 1 (Part Number Accountability), Form 2
+(Product Accountability), and Form 3 (Characteristic
+Accountability).
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

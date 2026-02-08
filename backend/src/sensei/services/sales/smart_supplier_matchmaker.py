@@ -21,6 +21,8 @@ import math
 import re
 import uuid
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 # =============================================================================
 # Enums
@@ -1029,13 +1031,15 @@ class RankAggregator:
 # Smart Supplier Matchmaker
 # =============================================================================
 
-class SmartSupplierMatchmaker:
+class SmartSupplierMatchmaker(PersistentServiceMixin):
     """
     AI-powered supplier matching engine.
     
     Combines capability graphs, semantic matching, and multi-criteria
     scoring to find optimal suppliers for RFQ requirements.
     """
+
+    SERVICE_NAME = "supplier_matchmaker"
     
     def __init__(self):
         """Initialize matchmaker."""

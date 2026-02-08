@@ -65,6 +65,9 @@ interface SyncActions {
   setSyncError: (error: string | null) => void;
   setOnline: (isOnline: boolean) => void;
   
+  // Sync processing
+  processPendingOperations: () => Promise<void>;
+
   // Utilities
   getPendingCount: () => number;
   getFailedOperations: () => PendingOperation[];
@@ -192,6 +195,53 @@ export const useSyncStore = create<SyncState & SyncActions>()(
               : op
           ),
         }));
+      },
+
+      processPendingOperations: async () => {
+        const state = get();
+        if (state.isSyncing || !state.isOnline) return;
+
+        const pending = state.pendingOperations.filter(
+          (op) => op.status === 'pending' && op.retryCount < op.maxRetries
+        );
+        if (pending.length === 0) return;
+
+        set({ isSyncing: true, syncError: null });
+
+        for (const op of pending) {
+          get().updateOperationStatus(op.id, 'syncing');
+          try {
+            const fetchOptions: RequestInit = {
+              method: op.method,
+              headers: { 'Content-Type': 'application/json' },
+            };
+            if (op.data && op.method !== 'DELETE') {
+              fetchOptions.body = JSON.stringify(op.data);
+            }
+            const response = await fetch(op.url, fetchOptions);
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            get().updateOperationStatus(op.id, 'completed');
+            // Remove optimistic entity if linked
+            if (op.optimisticId) {
+              get().removeOptimisticEntity(op.optimisticId);
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            get().incrementRetry(op.id);
+            const updated = get().pendingOperations.find((o) => o.id === op.id);
+            if (updated && updated.retryCount >= updated.maxRetries) {
+              get().updateOperationStatus(op.id, 'failed', message);
+            } else {
+              get().updateOperationStatus(op.id, 'pending', message);
+            }
+          }
+        }
+
+        set({ isSyncing: false, lastSyncAt: Date.now() });
+        // Clean up completed operations
+        get().clearCompletedOperations();
       },
 
       clearAll: () => {

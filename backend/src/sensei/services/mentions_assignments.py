@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 # =============================================================================
 # Enums
@@ -502,8 +504,10 @@ def generate_entity_link(entity_type: EntityType, entity_id: str) -> str:
 # Service Class
 # =============================================================================
 
-class MentionsAssignmentsService:
+class MentionsAssignmentsService(PersistentServiceMixin):
     """Service for handling mentions and assignments."""
+
+    SERVICE_NAME = "mentions_assignments"
     
     def __init__(self) -> None:
         """Initialize the service."""

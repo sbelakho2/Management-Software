@@ -1,3 +1,11 @@
+"""
+AQL Sampling Service.
+
+Implements ANSI/ASQ Z1.4 (ISO 2859-1) acceptance sampling
+plans. Calculates sample sizes, acceptance/rejection numbers,
+and switching rules (normal/tightened/reduced).
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

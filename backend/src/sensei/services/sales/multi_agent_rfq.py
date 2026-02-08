@@ -7,6 +7,13 @@ Includes:
 - Commercial Agent: Price-point analysis
 - Risk Agent: Multi-vector risk scoring
 - Agent Consensus Logic: Debate protocol for discrepancies
+
+.. warning:: Synthetic Agent Debate
+
+   The "agent debate" consensus mechanism generates positions via
+   deterministic hashing, not actual LLM inference. Replace with real
+   LLM calls (e.g. OpenAI, Anthropic, or local model) for genuine
+   multi-agent reasoning. See checklist items **#207, #475**.
 """
 
 from dataclasses import dataclass, field
@@ -23,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.strategic_v2 import AgentAnalysisRecord, ConsensusDebateRecord
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 # =============================================================================
@@ -277,12 +285,24 @@ class AgentProtocol(Protocol):
 # =============================================================================
 
 class BaseAgent:
-    """Base class for specialized agents."""
+    """Base class for specialized agents.
+
+    When an LLM API is configured (SENSEI_LLM_API_BASE and SENSEI_LLM_API_KEY
+    env vars), agent positions are generated via real LLM inference (#475).
+    Otherwise uses rule-based heuristics based on actual RFQ field values.
+    """
     
     def __init__(self, agent_type: AgentType):
         """Initialize agent."""
         self._agent_type = agent_type
         self._positions: dict[str, AgentPosition] = {}
+        # Real LLM debate when available (#475)
+        self._llm_debate = None
+        try:
+            from sensei.services.ai.real_ml_implementations import LLMAgentDebate
+            self._llm_debate = LLMAgentDebate()
+        except ImportError:
+            pass
     
     @property
     def agent_type(self) -> AgentType:
@@ -316,13 +336,62 @@ class BaseAgent:
         )
     
     def get_position(self, topic: str, context: dict[str, Any]) -> AgentPosition:
-        """Get agent's position on a topic."""
+        """Get agent's position on a topic.
+
+        Uses LLM inference when configured, otherwise rule-based
+        assessment using actual context values (#475).
+        """
+        if self._llm_debate is not None and self._llm_debate.is_real_llm:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, create a task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        result = pool.submit(
+                            asyncio.run,
+                            self._llm_debate.generate_position(
+                                self._agent_type.value, context
+                            )
+                        ).result(timeout=30)
+                else:
+                    result = asyncio.run(
+                        self._llm_debate.generate_position(
+                            self._agent_type.value, context
+                        )
+                    )
+                return AgentPosition(
+                    agent_type=self._agent_type,
+                    topic=topic,
+                    position=result.get("position", "neutral"),
+                    justification=result.get("justification", "LLM-generated"),
+                    confidence=result.get("confidence", 0.5),
+                )
+            except Exception:
+                pass  # Fall through to heuristic
+
+        # Rule-based fallback using actual context values
+        score = 0.5
+        if "price_score" in context:
+            score = context["price_score"] * 0.4 + score * 0.6
+        if "quality_score" in context:
+            score = context["quality_score"] * 0.3 + score * 0.7
+        score = max(0.1, min(0.9, score))
+
+        if score >= 0.6:
+            position = "approve"
+        elif score <= 0.4:
+            position = "reject"
+        else:
+            position = "neutral"
+
         return AgentPosition(
             agent_type=self._agent_type,
             topic=topic,
-            position="neutral",
-            justification="No strong position",
-            confidence=0.5,
+            position=position,
+            justification=f"Rule-based {self._agent_type.value} assessment",
+            confidence=round(score, 3),
         )
     
     def update_position(self, topic: str, other_positions: list[AgentPosition]) -> AgentPosition:
@@ -1470,12 +1539,14 @@ class AgentOrchestrator:
 # Multi-Agent RFQ Analyzer
 # =============================================================================
 
-class MultiAgentRFQAnalyzer:
+class MultiAgentRFQAnalyzer(PersistentServiceMixin):
     """
     Multi-Agent RFQ Analyzer - Main interface.
     
     Combines all specialized agents for comprehensive RFQ analysis.
     """
+
+    SERVICE_NAME = "multi_agent_rfq"
     
     def __init__(
         self,

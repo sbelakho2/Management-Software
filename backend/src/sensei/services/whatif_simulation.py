@@ -15,6 +15,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 class SimulationVariableType(str, Enum):
     """Types of variables that can be adjusted in simulations."""
@@ -181,8 +183,10 @@ class ScenarioComparison:
     recommendations: list[str] = field(default_factory=list)
 
 
-class WhatIfSimulationService:
+class WhatIfSimulationService(PersistentServiceMixin):
     """Service for what-if scenario planning on quotes."""
+
+    SERVICE_NAME = "whatif_simulation"
     
     def __init__(self) -> None:
         """Initialize the simulation service."""

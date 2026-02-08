@@ -1,3 +1,11 @@
+"""
+Management Review Service.
+
+Supports ISO 9001 management review processes including
+agenda generation, data collection, action item tracking,
+and meeting minutes management.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

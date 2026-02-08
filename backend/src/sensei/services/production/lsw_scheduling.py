@@ -14,6 +14,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sensei.core.config import settings
+
 
 class LSWFrequency(str, Enum):
     """Frequency of LSW checklist items."""
@@ -208,6 +210,7 @@ class LSWSchedulingService:
     
     def _register_default_templates(self) -> None:
         """Register default LSW templates."""
+        _dur = settings.LSW_DEFAULT_DURATIONS
         defaults = [
             # Daily items
             LSWChecklistTemplate(
@@ -216,7 +219,7 @@ class LSWSchedulingService:
                 description="Go to the production floor, observe operations, identify abnormalities",
                 category=LSWCategory.GEMBA_WALK,
                 frequency=LSWFrequency.DAILY,
-                estimated_duration_minutes=30,
+                estimated_duration_minutes=_dur.get("daily-gemba", 30),
                 required=True,
                 preferred_time=time(8, 0),
                 requires_notes=True,
@@ -234,7 +237,7 @@ class LSWSchedulingService:
                 description="Daily production team meeting at the gemba board",
                 category=LSWCategory.TIER_MEETING,
                 frequency=LSWFrequency.DAILY,
-                estimated_duration_minutes=15,
+                estimated_duration_minutes=_dur.get("daily-tier1", 15),
                 required=True,
                 preferred_time=time(7, 30),
                 requires_notes=True,
@@ -252,7 +255,7 @@ class LSWSchedulingService:
                 description="Observe one safety behavior or condition",
                 category=LSWCategory.SAFETY_CHECK,
                 frequency=LSWFrequency.DAILY,
-                estimated_duration_minutes=10,
+                estimated_duration_minutes=_dur.get("daily-safety", 10),
                 required=True,
                 requires_notes=True,
                 requires_evidence=True,
@@ -266,7 +269,7 @@ class LSWSchedulingService:
                 description="Weekly value stream/area review meeting",
                 category=LSWCategory.TIER_MEETING,
                 frequency=LSWFrequency.WEEKLY,
-                estimated_duration_minutes=60,
+                estimated_duration_minutes=_dur.get("weekly-tier2", 60),
                 required=True,
                 days_of_week=[DayOfWeek.MONDAY],
                 preferred_time=time(9, 0),
@@ -285,7 +288,7 @@ class LSWSchedulingService:
                 description="Individual coaching session with direct report",
                 category=LSWCategory.COACHING,
                 frequency=LSWFrequency.WEEKLY,
-                estimated_duration_minutes=30,
+                estimated_duration_minutes=_dur.get("weekly-coaching", 30),
                 required=False,
                 requires_notes=True,
                 evidence_prompt="Document development goals discussed",
@@ -296,7 +299,7 @@ class LSWSchedulingService:
                 description="Verify one process follows standard work",
                 category=LSWCategory.PROCESS_AUDIT,
                 frequency=LSWFrequency.WEEKLY,
-                estimated_duration_minutes=20,
+                estimated_duration_minutes=_dur.get("weekly-process-audit", 20),
                 required=True,
                 requires_notes=True,
                 requires_evidence=True,
@@ -316,7 +319,7 @@ class LSWSchedulingService:
                 description="Monthly plant/organization review in Obeya room",
                 category=LSWCategory.TIER_MEETING,
                 frequency=LSWFrequency.MONTHLY,
-                estimated_duration_minutes=120,
+                estimated_duration_minutes=_dur.get("monthly-tier3", 120),
                 required=True,
                 week_of_month=1,
                 days_of_week=[DayOfWeek.WEDNESDAY],
@@ -336,7 +339,7 @@ class LSWSchedulingService:
                 description="Review and update standard work documents due for review",
                 category=LSWCategory.STANDARD_REVIEW,
                 frequency=LSWFrequency.MONTHLY,
-                estimated_duration_minutes=45,
+                estimated_duration_minutes=_dur.get("monthly-standard-review", 45),
                 required=True,
                 requires_notes=True,
             ),
@@ -346,7 +349,7 @@ class LSWSchedulingService:
                 description="Verify training completeness for team",
                 category=LSWCategory.TRAINING,
                 frequency=LSWFrequency.MONTHLY,
-                estimated_duration_minutes=30,
+                estimated_duration_minutes=_dur.get("monthly-training-check", 30),
                 required=True,
                 requires_notes=True,
             ),
@@ -356,7 +359,7 @@ class LSWSchedulingService:
                 description="Recognize team member achievements",
                 category=LSWCategory.RECOGNITION,
                 frequency=LSWFrequency.MONTHLY,
-                estimated_duration_minutes=15,
+                estimated_duration_minutes=_dur.get("monthly-recognition", 15),
                 required=False,
                 requires_notes=True,
                 evidence_prompt="Document recognition given",

@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Settings,
   AlertTriangle,
+  AlertCircle,
   CheckCircle,
   Clock,
   Wrench,
@@ -40,7 +41,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn, formatDate } from '@/lib/utils';
+import { Pagination } from '@/components/ui/pagination';
 import { useMaintenanceStore } from '@/stores';
+
+const MAINT_PAGE_SIZE = 15;
+
+function usePagination<T>(items: T[], pageSize = MAINT_PAGE_SIZE) {
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const paginated = items.slice((page - 1) * pageSize, page * pageSize);
+  return { page, setPage, totalPages, paginated, totalItems: items.length };
+}
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
 type TabType = 'assets' | 'work-orders' | 'pm-schedules' | 'loto' | 'tool-crib' | 'warranty' | 'field-returns' | 'budget';
@@ -84,6 +95,9 @@ function AssetsTab() {
     asset.asset_number.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const { page: assetPage, setPage: setAssetPage, totalPages: assetTotalPages, paginated: paginatedAssets, totalItems: assetTotalItems } = usePagination(filteredAssets);
+  React.useEffect(() => setAssetPage(1), [searchQuery, setAssetPage]);
+
   const assetChildren = React.useMemo(() => {
     const childrenMap = new Map<string | null, typeof assets>();
     assets.forEach((asset) => {
@@ -95,7 +109,10 @@ function AssetsTab() {
     return childrenMap;
   }, [assets]);
 
+  const MAX_TREE_DEPTH = 10; // #325 — prevent stack overflow on deeply nested hierarchies
+
   const renderAssetTree = (parentId: string | null, depth: number = 0) => {
+    if (depth >= MAX_TREE_DEPTH) return null; // #325 — depth guard
     const children = assetChildren.get(parentId) ?? [];
     return children.map((asset) => (
       <div key={asset.id} className="space-y-2">
@@ -147,7 +164,7 @@ function AssetsTab() {
               ) : filteredAssets.length === 0 ? (
                 <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noAssetsFound') || 'No assets found.'}</td></tr>
               ) : (
-                filteredAssets.map((asset) => (
+                paginatedAssets.map((asset) => (
                   <tr key={asset.id} className="border-b hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{asset.asset_number}</td>
                     <td className="py-3 px-4">{asset.name}</td>
@@ -202,7 +219,10 @@ function WorkOrdersTab() {
     fetchWorkOrders();
   }, [fetchWorkOrders]);
 
+  const { page: woPage, setPage: setWoPage, totalPages: woTotalPages, paginated: paginatedWOs, totalItems: woTotalItems } = usePagination(workOrders);
+
   return (
+    <>
     <Card>
       <CardContent className="p-0">
         <table className="w-full">
@@ -224,7 +244,7 @@ function WorkOrdersTab() {
             ) : workOrders.length === 0 ? (
               <tr><td colSpan={8} className="py-8 text-center text-muted-foreground">{t('pages.maintenance.noWorkOrdersFound') || 'No work orders found.'}</td></tr>
             ) : (
-              workOrders.map((wo) => (
+              paginatedWOs.map((wo) => (
                 <tr key={wo.id} className="border-b hover:bg-muted/50 transition-colors">
                   <td className="py-3 px-4 font-medium">{wo.work_order_number}</td>
                   <td className="py-3 px-4 capitalize">{wo.work_order_type}</td>
@@ -249,6 +269,8 @@ function WorkOrdersTab() {
         </table>
       </CardContent>
     </Card>
+    <Pagination currentPage={woPage} totalPages={woTotalPages} onPageChange={setWoPage} totalItems={woTotalItems} />
+    </>
   );
 }
 
@@ -688,7 +710,7 @@ function BudgetTab() {
 function MaintenancePageContent() {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = React.useState<TabType>('assets');
-  const { fetchStats } = useMaintenanceStore();
+  const { fetchStats, error } = useMaintenanceStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -697,6 +719,22 @@ function MaintenancePageContent() {
 
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="maintenance-page">
+      {/* Error state */}
+      {error && (
+        <div className="rounded-rams-sm border border-destructive/50 bg-destructive/10 p-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="text-sm font-bold text-destructive">Error loading maintenance data</p>
+              <p className="text-xs text-muted-foreground">{error}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => fetchStats()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">

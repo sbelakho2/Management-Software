@@ -1,3 +1,11 @@
+"""
+Shift Handover Service.
+
+Manages shift-to-shift handover documentation including
+open items, safety alerts, production status, and
+pending actions. Ensures continuity across shifts.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

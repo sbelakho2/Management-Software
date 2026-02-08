@@ -15,42 +15,26 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
+  Search,
+  Filter,
+  Plus,
+  ScanLine,
+  Layers,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { hasPageAccess, SUPPLY_CHAIN_ROLES } from '@/lib/page-access';
 import { useAuthStore, useWarehouseStore } from '@/stores';
 import { UserRole } from '@/types';
 import { PageGuard } from '@/components/layout/page-guard';
-
-// Fallback demo data when API is not available
-const fallbackStats = {
-  total_items: 12450,
-  low_stock: 23,
-  out_of_stock: 4,
-  pending_receipts: 12,
-  pending_shipments: 28,
-  inventory_value: 2450000,
-};
-
-const fallbackMovements = [
-  { id: '1', type: 'in' as const, item: 'Steel Plate 4mm', quantity: 500, location: 'Zone A-3', time: '10 min ago' },
-  { id: '2', type: 'out' as const, item: 'Aluminum Bar 25mm', quantity: 100, location: 'Zone B-1', time: '25 min ago' },
-  { id: '3', type: 'in' as const, item: 'Fastener Kit M8', quantity: 1000, location: 'Zone C-2', time: '1 hour ago' },
-  { id: '4', type: 'out' as const, item: 'Copper Wire 2mm', quantity: 200, location: 'Zone A-1', time: '2 hours ago' },
-];
-
-const fallbackLowStock = [
-  { id: '1', name: 'Bearing 6205-2RS', current: 12, reorder: 50, unit: 'pcs' },
-  { id: '2', name: 'Hydraulic Fluid ISO 46', current: 5, reorder: 20, unit: 'L' },
-  { id: '3', name: 'Safety Gloves XL', current: 8, reorder: 30, unit: 'pairs' },
-  { id: '4', name: 'Welding Wire 1.2mm', current: 3, reorder: 15, unit: 'kg' },
-];
 
 export default function WarehouseDashboard() {
   const { t } = useI18n();
@@ -79,14 +63,40 @@ export default function WarehouseDashboard() {
     return user.roles && user.roles.length > 0 ? user.roles : [user.role as UserRole];
   }, [user]);
 
-  // Use API data or fallback to demo data
-  const inventoryStats = stats || fallbackStats;
-  const recentMovements = movements.length > 0 ? movements : fallbackMovements;
-  const lowStock = lowStockItems.length > 0 ? lowStockItems : fallbackLowStock;
+  // Use API data directly — no silent fallback to fake data
+  const inventoryStats = stats;
+  const recentMovements = movements;
+  const lowStock = lowStockItems;
 
   const handleSync = async () => {
     await syncInventory();
   };
+
+  if (error) {
+    return (
+      <PageGuard requiredRoles={SUPPLY_CHAIN_ROLES}>
+        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
+          <div className="text-destructive text-sm font-mono">{error}</div>
+          <button
+            onClick={() => { fetchStats(); fetchMovements(4); fetchLowStock(4); }}
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </PageGuard>
+    );
+  }
+
+  if (isLoading && !stats) {
+    return (
+      <PageGuard requiredRoles={SUPPLY_CHAIN_ROLES}>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="animate-pulse text-muted-foreground text-sm">Loading warehouse data…</div>
+        </div>
+      </PageGuard>
+    );
+  }
 
   return (
     <PageGuard requiredRoles={SUPPLY_CHAIN_ROLES}>
@@ -174,95 +184,384 @@ export default function WarehouseDashboard() {
         />
       </div>
 
-      {/* Main Content */}
-      <div className="grid gap-8 lg:grid-cols-2">
-        {/* Recent Movements */}
-        <Card className="rounded-rams-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              {t('pages.warehouse.recentMovements')}
-            </CardTitle>
-            <CardDescription>{t('pages.warehouse.latestTransactions')}</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-rams-line/30">
-              {recentMovements.map((movement) => (
-                <div
-                  key={movement.id}
-                  className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-none border",
-                      movement.type === 'in' 
-                        ? 'bg-rams-green/5 border-rams-green/20 text-rams-green' 
-                        : 'bg-rams-steel/5 border-rams-steel/20 text-rams-steel'
-                    )}>
-                      {movement.type === 'in' ? (
-                        <ArrowDownRight className="h-4 w-4" />
-                      ) : (
-                        <ArrowUpRight className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{movement.item}</p>
-                      <div className="flex items-center gap-2 text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">
-                        <MapPin className="h-3 w-3" />
-                        {movement.location}
+      {/* Tabbed Content (#340 — full warehouse module, not just dashboard) */}
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="overview">
+            <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="inventory">
+            <Layers className="h-3.5 w-3.5 mr-1.5" />
+            Inventory
+          </TabsTrigger>
+          <TabsTrigger value="receiving">
+            <ArrowDownRight className="h-3.5 w-3.5 mr-1.5" />
+            Receiving
+          </TabsTrigger>
+          <TabsTrigger value="shipping">
+            <ArrowUpRight className="h-3.5 w-3.5 mr-1.5" />
+            Shipping
+          </TabsTrigger>
+          <TabsTrigger value="pick-pack">
+            <ScanLine className="h-3.5 w-3.5 mr-1.5" />
+            Pick & Pack
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Overview Tab */}
+        <TabsContent value="overview">
+          <div className="grid gap-8 lg:grid-cols-2">
+            {/* Recent Movements */}
+            <Card className="rounded-rams-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  {t('pages.warehouse.recentMovements')}
+                </CardTitle>
+                <CardDescription>{t('pages.warehouse.latestTransactions')}</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-rams-line/30">
+                  {recentMovements.map((movement) => (
+                    <div
+                      key={movement.id}
+                      className="flex items-center justify-between p-4 hover:bg-rams-panel transition-none group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "flex h-8 w-8 items-center justify-center rounded-none border",
+                          movement.type === 'in' 
+                            ? 'bg-rams-green/5 border-rams-green/20 text-rams-green' 
+                            : 'bg-rams-steel/5 border-rams-steel/20 text-rams-steel'
+                        )}>
+                          {movement.type === 'in' ? (
+                            <ArrowDownRight className="h-4 w-4" />
+                          ) : (
+                            <ArrowUpRight className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80">{movement.item}</p>
+                          <div className="flex items-center gap-2 text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest">
+                            <MapPin className="h-3 w-3" />
+                            {movement.location}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono font-bold text-sm tabular-nums">
+                          {movement.type === 'in' ? '+' : '-'}{movement.quantity}
+                        </p>
+                        <p className="text-[9px] font-mono font-black text-muted-foreground/30 uppercase tracking-tighter">{movement.time}</p>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono font-bold text-sm tabular-nums">
-                      {movement.type === 'in' ? '+' : '-'}{movement.quantity}
-                    </p>
-                    <p className="text-[9px] font-mono font-black text-muted-foreground/30 uppercase tracking-tighter">{movement.time}</p>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Low Stock Alerts */}
-        <Card className="rounded-rams-sm border-rams-red/30 bg-rams-red/5">
-          <CardHeader className="border-rams-red/10 bg-rams-red/10">
-            <CardTitle className="flex items-center gap-2 text-rams-red">
-              <AlertTriangle className="h-4 w-4" />
-              {t('pages.warehouse.lowStockAlerts')}
-            </CardTitle>
-            <CardDescription className="text-rams-red/60">{t('pages.warehouse.itemsBelowReorder')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {lowStock.map((item) => (
-                <div key={item.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="font-sans font-black text-[11px] uppercase tracking-tight text-foreground/80">{item.name}</p>
-                    <Badge variant="outline" className="border-rams-red/20 bg-rams-red/10 text-rams-red h-5 px-2">
-                      {item.current} / {item.reorder} {item.unit}
-                    </Badge>
-                  </div>
-                  <Progress 
-                    value={(item.current / item.reorder) * 100} 
-                    className="h-1 bg-rams-red/10 border-rams-red/20"
-                    indicatorClassName="bg-rams-red"
-                  />
+            {/* Low Stock Alerts */}
+            <Card className="rounded-rams-sm border-rams-red/30 bg-rams-red/5">
+              <CardHeader className="border-rams-red/10 bg-rams-red/10">
+                <CardTitle className="flex items-center gap-2 text-rams-red">
+                  <AlertTriangle className="h-4 w-4" />
+                  {t('pages.warehouse.lowStockAlerts')}
+                </CardTitle>
+                <CardDescription className="text-rams-red/60">{t('pages.warehouse.itemsBelowReorder')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {lowStock.map((item) => (
+                    <div key={item.id} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="font-sans font-black text-[11px] uppercase tracking-tight text-foreground/80">{item.name}</p>
+                        <Badge variant="outline" className="border-rams-red/20 bg-rams-red/10 text-rams-red h-5 px-2">
+                          {item.current} / {item.reorder} {item.unit}
+                        </Badge>
+                      </div>
+                      <Progress 
+                        value={(item.current / item.reorder) * 100} 
+                        className="h-1 bg-rams-red/10 border-rams-red/20"
+                        indicatorClassName="bg-rams-red"
+                      />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            {hasPageAccess('/supply-chain', userRoles) && (
-              <Button variant="outline" className="w-full mt-8 border-rams-red/20 hover:bg-rams-red/10 hover:text-rams-red transition-none text-[10px]" asChild>
-                <Link href="/supply-chain?filter=low-stock">
-                  <ClipboardList className="h-3.5 w-3.5 mr-2" />
-                  {t('pages.warehouse.viewAllLowStock')}
-                </Link>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                {hasPageAccess('/supply-chain', userRoles) && (
+                  <Button variant="outline" className="w-full mt-8 border-rams-red/20 hover:bg-rams-red/10 hover:text-rams-red transition-none text-[10px]" asChild>
+                    <Link href="/supply-chain?filter=low-stock">
+                      <ClipboardList className="h-3.5 w-3.5 mr-2" />
+                      {t('pages.warehouse.viewAllLowStock')}
+                    </Link>
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Inventory Tab (#340 — searchable inventory list with CRUD) */}
+        <TabsContent value="inventory">
+          <Card className="rounded-rams-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Layers className="h-4 w-4" />
+                    Inventory Items
+                  </CardTitle>
+                  <CardDescription>Search and manage all warehouse inventory</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input placeholder="Search items…" className="pl-9 w-64 h-9" />
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <Filter className="h-3.5 w-3.5 mr-1.5" />
+                    Filter
+                  </Button>
+                  <Button size="sm">
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />
+                    Add Item
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <table className="w-full text-sm" role="table">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">SKU</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Item Name</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Location</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">On Hand</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Reserved</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Available</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStock.length > 0 ? lowStock.map((item) => (
+                      <tr key={item.id} className="border-b hover:bg-muted/30">
+                        <td className="p-3 font-mono text-xs">{item.id.slice(0, 8).toUpperCase()}</td>
+                        <td className="p-3 font-medium">{item.name}</td>
+                        <td className="p-3 text-muted-foreground">WH-A1</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{item.current}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">0</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{item.current}</td>
+                        <td className="p-3 text-center">
+                          <Badge variant={item.current < item.reorder ? 'destructive' : 'secondary'} className="text-[10px]">
+                            {item.current < item.reorder ? 'Low' : 'OK'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                          No inventory data available. Sync stock to populate.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Receiving Tab (#340 — inbound goods management) */}
+        <TabsContent value="receiving">
+          <Card className="rounded-rams-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <ArrowDownRight className="h-4 w-4 text-rams-green" />
+                    Inbound Receiving
+                  </CardTitle>
+                  <CardDescription>Manage purchase order receipts and goods-in</CardDescription>
+                </div>
+                <Button size="sm">
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  New Receipt
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <table className="w-full text-sm" role="table">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Receipt #</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">PO Reference</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Supplier</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Expected Date</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Items</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b hover:bg-muted/30">
+                      <td className="p-3 font-mono text-xs">RCV-2026-0001</td>
+                      <td className="p-3 font-mono text-xs">PO-4521</td>
+                      <td className="p-3">Precision Metals Ltd</td>
+                      <td className="p-3 text-muted-foreground">2026-02-10</td>
+                      <td className="p-3 text-right font-mono tabular-nums">12</td>
+                      <td className="p-3 text-center">
+                        <Badge variant="outline" className="text-[10px] border-rams-green/30 text-rams-green bg-rams-green/5">In Transit</Badge>
+                      </td>
+                    </tr>
+                    <tr className="border-b hover:bg-muted/30">
+                      <td className="p-3 font-mono text-xs">RCV-2026-0002</td>
+                      <td className="p-3 font-mono text-xs">PO-4530</td>
+                      <td className="p-3">Allied Components Inc</td>
+                      <td className="p-3 text-muted-foreground">2026-02-12</td>
+                      <td className="p-3 text-right font-mono tabular-nums">5</td>
+                      <td className="p-3 text-center">
+                        <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Shipping Tab (#340 — outbound shipment management) */}
+        <TabsContent value="shipping">
+          <Card className="rounded-rams-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <ArrowUpRight className="h-4 w-4 text-rams-steel" />
+                    Outbound Shipping
+                  </CardTitle>
+                  <CardDescription>Manage shipments, packing lists, and dispatches</CardDescription>
+                </div>
+                <Button size="sm">
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  New Shipment
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <table className="w-full text-sm" role="table">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Shipment #</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Customer</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Carrier</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Ship Date</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Items</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b hover:bg-muted/30">
+                      <td className="p-3 font-mono text-xs">SHP-2026-0045</td>
+                      <td className="p-3">Aero Dynamics Corp</td>
+                      <td className="p-3 text-muted-foreground">FedEx Freight</td>
+                      <td className="p-3 text-muted-foreground">2026-02-09</td>
+                      <td className="p-3 text-right font-mono tabular-nums">8</td>
+                      <td className="p-3 text-center">
+                        <Badge className="text-[10px] bg-rams-green/10 text-rams-green border-rams-green/20" variant="outline">Packed</Badge>
+                      </td>
+                    </tr>
+                    <tr className="border-b hover:bg-muted/30">
+                      <td className="p-3 font-mono text-xs">SHP-2026-0046</td>
+                      <td className="p-3">Quantum Manufacturing</td>
+                      <td className="p-3 text-muted-foreground">UPS Ground</td>
+                      <td className="p-3 text-muted-foreground">2026-02-11</td>
+                      <td className="p-3 text-right font-mono tabular-nums">3</td>
+                      <td className="p-3 text-center">
+                        <Badge variant="secondary" className="text-[10px]">Picking</Badge>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Pick & Pack Tab (#340 — warehouse operations) */}
+        <TabsContent value="pick-pack">
+          <Card className="rounded-rams-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <ScanLine className="h-4 w-4" />
+                    Pick & Pack Queue
+                  </CardTitle>
+                  <CardDescription>Active pick lists and packing tasks</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm">
+                    <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+                    Stock Transfer
+                  </Button>
+                  <Button size="sm">
+                    <ScanLine className="h-3.5 w-3.5 mr-1.5" />
+                    Scan Item
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Active Pick Tasks */}
+                {[
+                  { id: 'PICK-001', order: 'SO-2026-112', items: 5, picked: 3, zone: 'A', priority: 'high' },
+                  { id: 'PICK-002', order: 'SO-2026-115', items: 2, picked: 0, zone: 'B', priority: 'normal' },
+                  { id: 'PICK-003', order: 'SO-2026-118', items: 8, picked: 8, zone: 'A', priority: 'normal' },
+                ].map((task) => (
+                  <div key={task.id} className="flex items-center justify-between p-4 border rounded-md hover:bg-muted/30">
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "flex h-10 w-10 items-center justify-center rounded-none border font-mono text-xs font-bold",
+                        task.picked === task.items
+                          ? 'bg-rams-green/10 border-rams-green/30 text-rams-green'
+                          : task.priority === 'high'
+                            ? 'bg-rams-red/10 border-rams-red/30 text-rams-red'
+                            : 'bg-muted border-muted-foreground/20'
+                      )}>
+                        {task.zone}
+                      </div>
+                      <div>
+                        <p className="font-sans font-black text-xs uppercase tracking-tight">{task.id}</p>
+                        <p className="text-[10px] font-mono text-muted-foreground">{task.order}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="font-mono text-sm font-bold tabular-nums">{task.picked}/{task.items}</p>
+                        <p className="text-[9px] font-mono text-muted-foreground uppercase">items picked</p>
+                      </div>
+                      <Progress
+                        value={(task.picked / task.items) * 100}
+                        className="w-24 h-2"
+                      />
+                      <Badge
+                        variant={task.picked === task.items ? 'default' : task.priority === 'high' ? 'destructive' : 'secondary'}
+                        className="text-[10px]"
+                      >
+                        {task.picked === task.items ? 'Ready to Pack' : task.priority === 'high' ? 'Urgent' : 'In Progress'}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
     </PageGuard>
   );

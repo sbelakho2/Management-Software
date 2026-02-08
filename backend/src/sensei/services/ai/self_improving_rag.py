@@ -1,4 +1,4 @@
-"""Self-improving RAG components with in-memory persistence for tests."""
+"""Self-improving RAG components with in-memory persistence for tests.\n\n.. warning:: Fake Embeddings Active\n\n   This module uses ``hash()``-based fake embeddings (16 calls per chunk)\n   instead of real sentence-transformer embeddings. Replace with actual\n   ONNX model calls for production quality. All state is in-memory only;\n   back with pgvector/Redis for persistence. See **#208, #32, #455**.\n"""
 
 from __future__ import annotations
 
@@ -6,9 +6,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timezone
 from enum import Enum
 import asyncio
+import heapq
 import hashlib
 import math
 from typing import Any
+
+import numpy as np
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 def _utcnow() -> datetime:
@@ -227,14 +232,35 @@ class InMemoryVectorStore:
         top_k: int = 5,
         filter: dict[str, Any] | None = None,
     ) -> list[tuple[str, float, dict[str, Any]]]:
-        results: list[tuple[str, float, dict[str, Any]]] = []
-        for vid, (vec, metadata) in self._vectors.items():
-            if filter and any(metadata.get(k) != v for k, v in filter.items()):
-                continue
-            score = self._cosine_similarity(vector, vec)
-            results.append((vid, score, metadata))
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
+        # Pre-filter by metadata
+        candidates = [
+            (vid, vec, metadata)
+            for vid, (vec, metadata) in self._vectors.items()
+            if not filter or all(metadata.get(k) == v for k, v in filter.items())
+        ]
+        if not candidates:
+            return []
+
+        # Vectorised cosine similarity (#92 — avoid O(n) Python loop)
+        query_arr = np.array(vector, dtype=np.float32)
+        query_norm = np.linalg.norm(query_arr)
+        if query_norm == 0:
+            return []
+
+        vecs = np.array([c[1] for c in candidates], dtype=np.float32)
+        norms = np.linalg.norm(vecs, axis=1)
+        norms = np.clip(norms, 1e-10, None)
+        scores = (vecs @ query_arr) / (norms * query_norm)
+
+        # Use argpartition for efficient top-k selection
+        k = min(top_k, len(scores))
+        top_indices = np.argpartition(scores, -k)[-k:]
+        top_indices = top_indices[np.argsort(scores[top_indices])[::-1]]
+
+        return [
+            (candidates[i][0], float(scores[i]), candidates[i][2])
+            for i in top_indices
+        ]
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -298,6 +324,7 @@ class ThrottleManager:
     def __init__(self, config: ThrottleConfig | None = None) -> None:
         self.config = config or ThrottleConfig()
         self._semaphore = asyncio.Semaphore(self.config.off_hours_threads)
+        self._current_limit = self.config.off_hours_threads
 
     def _is_business_hours(self, dt: datetime) -> bool:
         return self.config.business_hours_start <= dt.time() <= self.config.business_hours_end
@@ -313,7 +340,15 @@ class ThrottleManager:
             return self.config.business_hours_threads
         return self.config.off_hours_threads
 
+    def _refresh_semaphore(self) -> None:
+        """Dynamically adjust semaphore limit based on current time window (#195)."""
+        new_limit = self.get_allowed_threads()
+        if new_limit != self._current_limit:
+            self._semaphore = asyncio.Semaphore(new_limit)
+            self._current_limit = new_limit
+
     async def acquire(self) -> None:
+        self._refresh_semaphore()
         await self._semaphore.acquire()
 
     def release(self) -> None:
@@ -418,8 +453,10 @@ class SimpleDocumentProcessor:
         return chunks
 
 
-class SelfImprovingRAGService:
+class SelfImprovingRAGService(PersistentServiceMixin):
     """Top-level orchestrator for self-improving RAG."""
+
+    SERVICE_NAME = "self_improving_rag"
 
     def __init__(
         self,

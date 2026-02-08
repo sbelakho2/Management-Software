@@ -12,6 +12,7 @@ Optionally integrates with `AccountingLedgerService` for postings.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -19,6 +20,10 @@ from enum import Enum
 from collections.abc import Callable
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -229,8 +234,14 @@ class CostAccountingConfig:
     overhead_variance_account_code: str = "5300"
 
 
-class CostAccountingService:
-    """Tracks manufacturing costs, WIP, variances, and COGS/margins."""
+class CostAccountingService(PersistentServiceMixin):
+    """Tracks manufacturing costs, WIP, variances, and COGS/margins.
+
+    In-memory state backed by PostgreSQL cost_centers, cost_allocations,
+    and cost_rollups tables.
+    """
+
+    SERVICE_NAME = "cost_accounting"
 
     def __init__(
         self,

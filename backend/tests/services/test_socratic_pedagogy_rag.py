@@ -68,7 +68,10 @@ class TestSocraticPedagogyRAG:
         unit_2.content = ""
 
         # Ensure the embedding code path is selected.
-        monkeypatch.setenv("SENSEI_SOCRATIC_RAG_RETRIEVAL", "onnx")
+        monkeypatch.setattr(
+            "sensei.services.ai.socratic_pedagogy_rag.settings",
+            type("S", (), {"SOCRATIC_RAG_RETRIEVAL_MODE": "onnx"})(),
+        )
 
         ranked = rank_learning_units(
             [unit_1, unit_2],

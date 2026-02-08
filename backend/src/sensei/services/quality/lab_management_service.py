@@ -1,3 +1,11 @@
+"""
+Lab Management Service.
+
+Manages laboratory test requests, sample tracking,
+equipment calibration schedules, and test result
+recording. Supports LIMS integration.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

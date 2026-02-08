@@ -1,3 +1,11 @@
+"""
+Pulse Service.
+
+Real-time factory pulse monitoring combining KPIs from
+production, quality, maintenance, and safety into a
+single operational heartbeat view.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

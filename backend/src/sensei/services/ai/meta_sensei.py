@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 from collections import defaultdict
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -322,7 +324,7 @@ class AutonomousKnowledgeSynthesizer:
     def _compute_cluster_key(self, correction: UserCorrection) -> str:
         """Compute a clustering key based on correction type and content."""
         # Simple hash-based clustering on correction pattern
-        pattern = f"{correction.correction_type}:{correction.original_text[:50]}"
+        pattern = f"{correction.correction_type}:{correction.original_text}"
         return hashlib.md5(pattern.encode()).hexdigest()[:8]
     
     def _compute_similarity(self, text1: str, text2: str) -> float:
@@ -428,16 +430,31 @@ class SemanticDeduplicator:
         return dot_product / (norm1 * norm2)
     
     def find_duplicates(self) -> list[tuple[str, str, float]]:
-        """Find duplicate chunk pairs above similarity threshold."""
-        duplicates: list[tuple[str, str, float]] = []
+        """Find duplicate chunk pairs above similarity threshold.
+
+        Uses vectorised cosine-similarity matrix to avoid O(n²) Python
+        loop (#91).
+        """
         chunk_list = list(self.chunks.values())
-        
-        for i, chunk1 in enumerate(chunk_list):
-            for chunk2 in chunk_list[i + 1:]:
-                similarity = self._cosine_similarity(chunk1.embedding, chunk2.embedding)
-                if similarity >= self.similarity_threshold:
-                    duplicates.append((chunk1.id, chunk2.id, similarity))
-        
+        if len(chunk_list) < 2:
+            return []
+
+        embeddings = np.array([c.embedding for c in chunk_list], dtype=np.float32)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.clip(norms, 1e-10, None)
+        normalised = embeddings / norms
+        sim_matrix = normalised @ normalised.T
+
+        # Extract upper-triangle pairs above threshold
+        duplicates: list[tuple[str, str, float]] = []
+        rows, cols = np.where(
+            np.triu(sim_matrix, k=1) >= self.similarity_threshold
+        )
+        for r, c in zip(rows, cols):
+            duplicates.append(
+                (chunk_list[r].id, chunk_list[c].id, float(sim_matrix[r, c]))
+            )
+
         return duplicates
     
     def deduplicate(self) -> DeduplicationResult:
@@ -642,31 +659,57 @@ class DocImplementationSync:
         return " ".join(docstring_lines).strip() if docstring_lines else None
     
     def scan_source_files(self) -> list[FeatureDetection]:
-        """Scan source files for new features."""
-        self.detected_features = []
-        
+        """Scan source files for new features.
+
+        Uses incremental scanning: only re-reads files whose mtime has changed
+        since the last scan, dramatically reducing I/O for repeated calls.
+        """
+        # Initialise per-file caches on first call
+        if not hasattr(self, "_file_cache"):
+            # _file_cache: path -> (mtime, list[FeatureDetection])
+            self._file_cache: dict[str, tuple[float, list[FeatureDetection]]] = {}
+
         if not self.source_dir.exists():
+            self.detected_features = []
             return []
-        
+
+        current_files: set[str] = set()
+        updated_features: list[FeatureDetection] = []
+
         for py_file in self.source_dir.rglob("*.py"):
             if "__pycache__" in str(py_file):
                 continue
-            
+
+            file_key = str(py_file)
+            current_files.add(file_key)
+
+            try:
+                mtime = py_file.stat().st_mtime
+            except OSError:
+                continue
+
+            cached = self._file_cache.get(file_key)
+            if cached and cached[0] == mtime:
+                # File unchanged — reuse cached features
+                updated_features.extend(cached[1])
+                continue
+
+            # File is new or modified — rescan
+            file_features: list[FeatureDetection] = []
             try:
                 content = py_file.read_text()
-                lines = content.split("\n")
-                
+
                 for pattern, feature_type in self.FEATURE_PATTERNS:
                     for match in re.finditer(pattern, content):
                         line_num = content[:match.start()].count("\n")
-                        
+
                         if feature_type == "endpoint":
                             name = f"{match.group(1).upper()} {match.group(2)}"
                         else:
                             name = match.group(1)
-                        
+
                         description = self._parse_docstring(content, line_num + 1) or f"A {feature_type}"
-                        
+
                         feature = FeatureDetection(
                             feature_id=f"{py_file.stem}_{name}_{line_num}",
                             name=name,
@@ -676,10 +719,19 @@ class DocImplementationSync:
                             detected_at=datetime.now(),
                             documented=name in self._documented_features,
                         )
-                        self.detected_features.append(feature)
+                        file_features.append(feature)
             except Exception:
                 continue
-        
+
+            self._file_cache[file_key] = (mtime, file_features)
+            updated_features.extend(file_features)
+
+        # Evict cache entries for deleted files
+        stale_keys = set(self._file_cache.keys()) - current_files
+        for key in stale_keys:
+            del self._file_cache[key]
+
+        self.detected_features = updated_features
         return self.detected_features
     
     def load_documented_features(self) -> set[str]:
@@ -799,15 +851,21 @@ class DevelopmentPlanTracker:
     def verify_item_implementation(self, item: PlanItem) -> bool:
         """Verify if a plan item has been implemented."""
         keywords = self._extract_keywords(item.text)
+        if not keywords:
+            return False
         
-        # Look for matching files or tests
+        # Require majority of keywords to match (#197: single keyword match is too loose)
+        matches = 0
         for keyword in keywords:
             if self._check_file_exists(f"*{keyword}*.py"):
-                self._verification_methods[item.text] = f"file_match:{keyword}"
-                return True
-            if self._check_test_passes(keyword):
-                self._verification_methods[item.text] = f"test_match:{keyword}"
-                return True
+                matches += 1
+            elif self._check_test_passes(keyword):
+                matches += 1
+        
+        threshold = max(2, len(keywords) // 2)  # At least 2 or half of keywords
+        if matches >= threshold:
+            self._verification_methods[item.text] = f"multi_match:{matches}/{len(keywords)}"
+            return True
         
         return False
     
@@ -1244,11 +1302,10 @@ class PrivacyPreservingAggregator:
     """
     
     ANONYMIZATION_PATTERNS: list[tuple[str, str, int]] = [
-        (r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\b", "[PERSON]", 0),  # Names
-        (r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b", "[PHONE]", 0),  # Phone
+        (r"\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b", "[PERSON]", 0),  # Names (min 3 chars per word to reduce false positives)
+        (r"\b\d{3}[-.]\d{3}[-.]\d{4}\b", "[PHONE]", 0),  # Phone (require separators to avoid matching part numbers)
         (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", 0),  # Email
         (r"\$[\d,]+(?:\.\d{2})?", "[AMOUNT]", 0),  # Dollar amounts
-        (r"\b(?:customer|client|vendor)\s+\w+\b", "[ENTITY]", re.IGNORECASE),  # Entity names
     ]
     
     def __init__(self):

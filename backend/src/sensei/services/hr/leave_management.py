@@ -11,12 +11,17 @@ This module is intentionally in-memory and pure-Python to match other services.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------- Enums ----------------------
@@ -212,8 +217,10 @@ class PayrollLeaveRecord:
 # ---------------------- Service ----------------------
 
 
-class LeaveManagementService:
+class LeaveManagementService(PersistentServiceMixin):
     """In-memory leave management service with RBAC."""
+
+    SERVICE_NAME = "leave_management"
 
     def __init__(self) -> None:
         self._policies: dict[UUID, AccrualPolicy] = {}
@@ -222,6 +229,10 @@ class LeaveManagementService:
         self._requests: dict[UUID, LeaveRequest] = {}
         self._exports: dict[UUID, PayrollLeaveExport] = {}
         self._audit: list[AuditEvent] = []
+        # Secondary index: (employee_id, leave_type, year) -> balance_id (#97)
+        self._balance_lookup: dict[tuple[UUID, LeaveType, int], UUID] = {}
+        # Secondary index: (employee_id, leave_type) -> set of balance_ids
+        self._balances_by_emp_type: dict[tuple[UUID, LeaveType], set[UUID]] = {}
 
     # ---------------------- Audit ----------------------
 
@@ -444,14 +455,10 @@ class LeaveManagementService:
         if not policy:
             raise ValueError("Policy not found")
 
-        # Check for existing balance
-        for bal in self._balances.values():
-            if (
-                bal.employee_id == employee_id
-                and bal.leave_type == leave_type
-                and bal.year == year
-            ):
-                raise ValueError("Balance already exists for this employee/type/year")
+        # Check for existing balance (O(1) via index)
+        key = (employee_id, leave_type, year)
+        if key in self._balance_lookup:
+            raise ValueError("Balance already exists for this employee/type/year")
 
         balance = LeaveBalance(
             id=uuid4(),
@@ -466,6 +473,8 @@ class LeaveManagementService:
         )
 
         self._balances[balance.id] = balance
+        self._balance_lookup[key] = balance.id
+        self._balances_by_emp_type.setdefault((employee_id, leave_type), set()).add(balance.id)
         self._audit_event(
             actor_id=actor_id,
             actor_roles=roles,
@@ -559,15 +568,11 @@ class LeaveManagementService:
         leave_type: LeaveType,
         year: int,
     ) -> LeaveBalance | None:
-        """Internal balance lookup without RBAC check."""
-        for bal in self._balances.values():
-            if (
-                bal.employee_id == employee_id
-                and bal.leave_type == leave_type
-                and bal.year == year
-            ):
-                return bal
-        return None
+        """Internal balance lookup without RBAC check (O(1) via index)."""
+        bal_id = self._balance_lookup.get((employee_id, leave_type, year))
+        if bal_id is None:
+            return None
+        return self._balances.get(bal_id)
 
     def get_balance(
         self,
@@ -909,11 +914,10 @@ class LeaveManagementService:
 
         for req in approved:
             policy = None
-            for bal in self._balances.values():
-                if (
-                    bal.employee_id == req.employee_id
-                    and bal.leave_type == req.leave_type
-                ):
+            bal_ids = self._balances_by_emp_type.get((req.employee_id, req.leave_type), set())
+            for bal_id in bal_ids:
+                bal = self._balances.get(bal_id)
+                if bal:
                     policy = self._policies.get(bal.policy_id)
                     break
 

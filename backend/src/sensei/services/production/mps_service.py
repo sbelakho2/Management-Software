@@ -1,3 +1,11 @@
+"""
+Master Production Schedule (MPS) Service.
+
+Manages the master production schedule including demand
+planning, capacity allocation, and schedule leveling.
+Feeds MRP and shop floor scheduling.
+"""
+
 from __future__ import annotations
 
 from typing import Optional

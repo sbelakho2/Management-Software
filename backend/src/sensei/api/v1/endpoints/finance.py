@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from sensei.api import deps
 from sensei.api.schemas import APIResponse
+from sensei.core.config import settings
 from sensei.core.database import get_db_session
 from sensei.models.finance import GLAccount, JournalEntry, JournalLine, AccountingPeriod, CurrencySetting, FXRate
 from sensei.models.user import User
@@ -646,7 +647,7 @@ async def get_pending_approvals(
         .where(JournalEntry.status == "draft")
         .group_by(JournalEntry.id, User.first_name, User.last_name)
         .order_by(JournalEntry.entry_date.desc())
-        .limit(50)
+        .limit(settings.AUDIT_LOG_QUERY_LIMIT)
     )
 
     approvals: list[dict] = []

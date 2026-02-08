@@ -17,6 +17,8 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 class OrgUnitType(str, Enum):
     COMPANY = "company"
@@ -141,8 +143,10 @@ class ReportingRelation:
     relation_type: str = "direct"  # direct, dotted, matrix
 
 
-class OrgStructureService:
+class OrgStructureService(PersistentServiceMixin):
     """In-memory org structure service."""
+
+    SERVICE_NAME = "org_structure"
 
     def __init__(self) -> None:
         self._units: dict[UUID, OrgUnit] = {}

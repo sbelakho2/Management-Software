@@ -1,3 +1,11 @@
+"""
+Lockout/Tagout (LOTO) Service.
+
+Manages energy isolation procedures, LOTO permit
+workflows, equipment lockout status tracking, and
+compliance reporting per OSHA 29 CFR 1910.147.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

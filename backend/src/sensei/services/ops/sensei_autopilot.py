@@ -25,6 +25,8 @@ import threading
 import time
 import uuid
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -1153,10 +1155,12 @@ class ModelLifecycleManager:
 # Sensei Autopilot
 # =============================================================================
 
-class SenseiAutopilot:
+class SenseiAutopilot(PersistentServiceMixin):
     """
     Main autopilot orchestrator combining all self-management capabilities.
     """
+
+    SERVICE_NAME = "sensei_autopilot"
     
     def __init__(self):
         """Initialize autopilot."""

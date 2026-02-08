@@ -1,3 +1,11 @@
+"""
+ERP Integration Service.
+
+Provides integration points with external ERP systems.
+Manages data synchronization, transaction mapping, and
+error handling for bi-directional ERP communication.
+"""
+
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, date

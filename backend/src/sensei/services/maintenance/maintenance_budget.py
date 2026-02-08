@@ -1,3 +1,11 @@
+"""
+Maintenance Budget Service.
+
+Manages maintenance cost budgets, tracks actual spending
+against budget, and provides variance analysis by asset
+category, cost type, and time period.
+"""
+
 from __future__ import annotations
 
 from decimal import Decimal

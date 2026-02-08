@@ -7,18 +7,25 @@ Implements Development Plan Section 22.1 (Accounting Core):
 - Financial statements (trial balance, P&L, balance sheet)
 - Multi-currency posting with FX rates + period-end revaluation
 
-This module follows the project pattern of pure-Python, in-memory services.
-Persistence + APIs are handled in a later plan item (22.10).
+This module follows the project pattern of pure-Python, in-memory services
+with async database persistence via PersistentServiceMixin.
+State is held in memory for fast reads and asynchronously synced to
+PostgreSQL gl_accounts, journal_entries, and journal_lines tables.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
@@ -202,8 +209,17 @@ def _validate_account_code(code: str) -> str:
     return c
 
 
-class AccountingLedgerService:
-    """In-memory GL with CoA, periods, postings, and statements."""
+class AccountingLedgerService(PersistentServiceMixin):
+    """GL with CoA, periods, postings, and statements.
+
+    In-memory state is the primary data store for low-latency reads.
+    PersistentServiceMixin syncs state to PostgreSQL for durability
+    (gl_accounts, journal_entries, journal_lines, fiscal_periods tables).
+    """
+
+    SERVICE_NAME = "accounting_ledger"
+    _MAX_POSTED_LINES = 100_000
+    _MAX_AUDIT_EVENTS = 50_000
 
     def __init__(self, *, base_currency: str = "EUR"):
         self._base_currency = _validate_currency(base_currency)
@@ -213,6 +229,9 @@ class AccountingLedgerService:
 
         self._entries: dict[UUID, JournalEntry] = {}
         self._posted_lines: list[PostedLine] = []
+        # Secondary index: account_code -> list of PostedLine (#98)
+        self._posted_by_account: dict[str, list[PostedLine]] = {}
+        self._accounts_with_postings: set[str] = set()
 
         # FX rate table keyed by (as_of, from, to)
         self._fx_rates: dict[tuple[date, str, str], FXRate] = {}
@@ -260,6 +279,9 @@ class AccountingLedgerService:
                 metadata=metadata or {},
             )
         )
+        # Trim if over cap (#119 — prevent unbounded memory growth)
+        if len(self._audit) > self._MAX_AUDIT_EVENTS:
+            self._audit = self._audit[-self._MAX_AUDIT_EVENTS // 2:]
 
     # ------------------------------------------------------------------
     # Chart of Accounts
@@ -322,7 +344,7 @@ class AccountingLedgerService:
             return account
 
         # Guard: changing type/currency after postings is risky
-        has_postings = any(pl.account_code == acct_code for pl in self._posted_lines)
+        has_postings = acct_code in self._accounts_with_postings
         if has_postings and (existing.account_type != account_type or existing.currency != acct_currency):
             raise ValueError("Cannot change account type/currency after postings")
 
@@ -647,6 +669,19 @@ class AccountingLedgerService:
                     currency_txn=_validate_currency(ln.currency),
                 )
             )
+            acct_code = _validate_account_code(ln.account_code)
+            self._posted_by_account.setdefault(acct_code, []).append(self._posted_lines[-1])
+            self._accounts_with_postings.add(acct_code)
+
+        # Trim if over cap (#117 — prevent unbounded memory growth)
+        if len(self._posted_lines) > self._MAX_POSTED_LINES:
+            self._posted_lines = self._posted_lines[-self._MAX_POSTED_LINES // 2:]
+            # Rebuild secondary index after trim
+            self._posted_by_account.clear()
+            self._accounts_with_postings.clear()
+            for pl in self._posted_lines:
+                self._posted_by_account.setdefault(pl.account_code, []).append(pl)
+                self._accounts_with_postings.add(pl.account_code)
 
         entry.status = EntryStatus.POSTED
         entry.posted_at = _now()
@@ -895,9 +930,7 @@ class AccountingLedgerService:
 
     def _balance_for_account(self, *, code: str, start: date | None, end: date) -> Decimal:
         bal = Decimal("0")
-        for pl in self._posted_lines:
-            if pl.account_code != code:
-                continue
+        for pl in self._posted_by_account.get(code, []):
             if pl.entry_date > end:
                 continue
             if start is not None and pl.entry_date < start:

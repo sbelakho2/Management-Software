@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -312,8 +313,8 @@ class TransformersClient(BaseLLMClient):
             "pad_token_id": self.tokenizer.eos_token_id,
         }
         
-        # Run generation in a thread
-        thread = Thread(target=self.model.generate, kwargs=generation_kwargs)
+        # Run generation in a daemon thread (auto-cleaned on process exit)
+        thread = Thread(target=self.model.generate, kwargs=generation_kwargs, daemon=True)
         thread.start()
         
         # Stream tokens
@@ -346,6 +347,11 @@ class TransformersClient(BaseLLMClient):
             raise
         finally:
             thread.join(timeout=5.0)
+            if thread.is_alive():
+                logger.warning(
+                    "LLM generation thread still running after 5s timeout; "
+                    "daemon thread will be cleaned up on process exit"
+                )
 
 
 class TextIteratorStreamerFallback:
@@ -486,7 +492,6 @@ class LocalLLMService:
 
 
 # Thread-safe singleton (#226)
-import threading
 
 _llm_service: Optional[LocalLLMService] = None
 _llm_service_lock = threading.Lock()

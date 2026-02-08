@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 import re
 import json
 import asyncio
+import heapq
 from collections import defaultdict, deque
 import hashlib
 
@@ -459,6 +460,8 @@ class SLAWatchdog:
         self.notification_callback = notification_callback
         
         self._deadlines: dict[str, SLADeadline] = {}
+        # Priority heap: (deadline_datetime, item_id) for O(n log n) ordered iteration
+        self._deadline_heap: list[tuple[datetime, str]] = []
         self._rules: dict[str, NotificationRule] = {}
         self._notification_history: dict[str, datetime] = {}
         self._critical_path_calculator = CriticalPathCalculator()
@@ -520,6 +523,7 @@ class SLAWatchdog:
     def add_deadline(self, deadline: SLADeadline) -> None:
         """Add or update an SLA deadline."""
         self._deadlines[deadline.item_id] = deadline
+        heapq.heappush(self._deadline_heap, (deadline.deadline, deadline.item_id))
         
         # Add to critical path calculator
         self._critical_path_calculator.add_item(
@@ -603,19 +607,28 @@ class SLAWatchdog:
         self,
         now: datetime | None = None
     ) -> list[TimeToFailure]:
-        """Check all deadlines and return status."""
+        """Check all deadlines and return status, using heap for efficient ordering."""
         now = now or datetime.now(timezone.utc)
         self._last_check = now
-        
+
+        # Compact the heap: remove stale entries (deleted / updated deadlines)
+        compacted: list[tuple[datetime, str]] = []
+        for dl_time, item_id in self._deadline_heap:
+            deadline = self._deadlines.get(item_id)
+            if deadline is not None and deadline.deadline == dl_time:
+                compacted.append((dl_time, item_id))
+        heapq.heapify(compacted)
+        self._deadline_heap = compacted
+
         results = []
-        for item_id in self._deadlines:
+        for _dl_time, item_id in self._deadline_heap:
             ttf = self.calculate_time_to_failure(item_id, now)
             if ttf:
                 results.append(ttf)
-        
+
         # Sort by risk score descending
         results.sort(key=lambda x: -x.risk_score)
-        
+
         return results
     
     def get_critical_items(
@@ -930,17 +943,20 @@ class BriefingNoteGenerator:
     ) -> dict[str, Any]:
         """Fetch related data for entities."""
         related_data = {}
-        
+
+        # Extract record IDs once — avoids rebuilding list per provider (#93)
+        record_ids = [
+            e.linked_record_id for e in entities
+            if e.linked_record_id
+        ]
+        if not record_ids:
+            return related_data
+
         for provider_name, provider in self._data_providers.items():
-            record_ids = [
-                e.linked_record_id for e in entities
-                if e.linked_record_id
-            ]
-            if record_ids:
-                try:
-                    related_data[provider_name] = provider(record_ids)
-                except Exception:
-                    related_data[provider_name] = {}
+            try:
+                related_data[provider_name] = provider(record_ids)
+            except Exception:
+                related_data[provider_name] = {}
         
         return related_data
     

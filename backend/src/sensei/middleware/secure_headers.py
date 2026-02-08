@@ -247,11 +247,11 @@ class SecureHeadersMiddleware:
         self._csp.add_directive(CSPDirective.FORM_ACTION, "'self'")
         self._csp.add_directive(CSPDirective.OBJECT_SRC, "'none'")
 
-        # Default HSTS
+        # Default HSTS — preload enabled per #426 for HSTS preload registration
         self._hsts = HSTSConfig(
             max_age=31536000,
             include_subdomains=True,
-            preload=False,
+            preload=True,
         )
 
         # Default Permissions Policy
@@ -774,7 +774,12 @@ class SecureHeadersMiddleware:
 
 
 class SecureHeadersASGIMiddleware(BaseHTTPMiddleware):
-    """Starlette/FastAPI middleware that applies SecureHeadersMiddleware output."""
+    """Starlette/FastAPI middleware that applies SecureHeadersMiddleware output.
+
+    Generates a per-request CSP nonce and stores it on ``request.state.csp_nonce``
+    so that templates / SSR can inject ``nonce="..."`` into ``<script>`` and
+    ``<style>`` tags (#425).
+    """
 
     def __init__(
         self,
@@ -790,10 +795,27 @@ class SecureHeadersASGIMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        # Generate a per-request CSP nonce (#425)
+        import secrets
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+
         response = await call_next(request)
 
-        # Apply generated headers to response
+        # Clone the CSP config for this request so the nonce doesn't
+        # persist across requests in the shared config object.
         headers = self._config.generate_headers(path=request.url.path, method=request.method)
+
+        # Inject the nonce into CSP script-src / style-src
+        if "Content-Security-Policy" in headers:
+            csp = headers["Content-Security-Policy"]
+            nonce_value = f"'nonce-{nonce}'"
+            # Append nonce to script-src
+            csp = csp.replace("script-src ", f"script-src {nonce_value} ")
+            # Append nonce to style-src
+            csp = csp.replace("style-src ", f"style-src {nonce_value} ")
+            headers["Content-Security-Policy"] = csp
+
         for name, value in headers.items():
             response.headers[name] = value
 

@@ -1,3 +1,11 @@
+"""
+Change Point Detection Service.
+
+Detects statistically significant changes in process
+parameters using CUSUM, EWMA, and Bayesian change point
+algorithms. Triggers alerts on detected shifts.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

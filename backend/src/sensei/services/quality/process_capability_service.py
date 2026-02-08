@@ -1,3 +1,11 @@
+"""
+Process Capability Service.
+
+Calculates Cp, Cpk, Pp, Ppk indices with normality testing.
+Supports bilateral and unilateral specifications,
+histogram generation, and capability trending.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

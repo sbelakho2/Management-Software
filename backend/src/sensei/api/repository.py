@@ -62,6 +62,7 @@ class BaseRepository(Generic[ModelT]):
         db: AsyncSession,
         *,
         soft_delete: bool = True,
+        tenant_id: Optional[UUID] = None,
     ):
         """
         Initialize repository.
@@ -70,10 +71,25 @@ class BaseRepository(Generic[ModelT]):
             model: SQLAlchemy model class
             db: Async database session
             soft_delete: Whether to use soft delete (default: True)
+            tenant_id: Optional tenant UUID for multi-tenant scoping (#143)
         """
         self.model = model
         self.db = db
         self.soft_delete = soft_delete
+        self.tenant_id = tenant_id
+
+    def _apply_base_filters(
+        self,
+        query: Select,  # type: ignore[type-arg]
+        *,
+        include_deleted: bool = False,
+    ) -> Select:  # type: ignore[type-arg]
+        """Apply standard soft-delete and tenant scoping filters."""
+        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
+            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        if self.tenant_id is not None and hasattr(self.model, "tenant_id"):
+            query = query.where(self.model.tenant_id == self.tenant_id)  # type: ignore[attr-defined]
+        return query
     
     # =========================================================================
     # Read Operations
@@ -98,9 +114,7 @@ class BaseRepository(Generic[ModelT]):
             Entity or None if not found
         """
         query = select(self.model).where(self.model.id == id)
-        
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if load_relations:
             for relation in load_relations:
@@ -167,9 +181,7 @@ class BaseRepository(Generic[ModelT]):
             return []
         
         query = select(self.model).where(self.model.id.in_(ids))
-        
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if load_relations:
             for relation in load_relations:
@@ -198,9 +210,7 @@ class BaseRepository(Generic[ModelT]):
             List of all entities (capped at max_rows)
         """
         query = select(self.model)
-        
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if load_relations:
             for relation in load_relations:
@@ -251,10 +261,7 @@ class BaseRepository(Generic[ModelT]):
         # Single query instead of separate count + data queries
         count_over = func.count(self.model.id).over().label("_total_count")
         query = select(self.model, count_over)
-        
-        # Exclude deleted
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         # Apply filters
         if filters:
@@ -317,9 +324,7 @@ class BaseRepository(Generic[ModelT]):
     ) -> bool:
         """Check if entity exists by ID."""
         query = select(func.count(self.model.id)).where(self.model.id == id)
-        
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         result = await self.db.execute(query)
         count = result.scalar() or 0
@@ -334,9 +339,7 @@ class BaseRepository(Generic[ModelT]):
     ) -> int:
         """Count entities with optional filters."""
         query = select(func.count(self.model.id))
-        
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if filters:
             for f in filters:
@@ -759,8 +762,7 @@ class BaseRepository(Generic[ModelT]):
             if hasattr(self.model, key):
                 query = query.where(getattr(self.model, key) == value)
         
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if load_relations:
             for relation in load_relations:
@@ -794,8 +796,7 @@ class BaseRepository(Generic[ModelT]):
             if hasattr(self.model, key):
                 query = query.where(getattr(self.model, key) == value)
         
-        if not include_deleted and self.soft_delete and hasattr(self.model, "deleted_at"):
-            query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        query = self._apply_base_filters(query, include_deleted=include_deleted)
         
         if load_relations:
             for relation in load_relations:

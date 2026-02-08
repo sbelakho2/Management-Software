@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatDate, getInitials } from '@/lib/utils';
+import { Pagination } from '@/components/ui/pagination';
 import { useTrainingStore } from '@/stores/training';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 
@@ -145,6 +146,12 @@ function CertificationsTab() {
     return true;
   });
 
+  const CERT_PAGE_SIZE = 12;
+  const [certPage, setCertPage] = React.useState(1);
+  React.useEffect(() => setCertPage(1), [search, categoryFilter]);
+  const certTotalPages = Math.max(1, Math.ceil(filtered.length / CERT_PAGE_SIZE));
+  const paginatedSkills = filtered.slice((certPage - 1) * CERT_PAGE_SIZE, certPage * CERT_PAGE_SIZE);
+
   if (isLoading && skills.length === 0) {
     return <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {[1, 2, 3].map(i => <div key={i} className="h-40 animate-pulse bg-rams-panel border border-rams-line" />)}
@@ -177,7 +184,7 @@ function CertificationsTab() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((skill) => (
+        {paginatedSkills.map((skill) => (
           <div 
             key={skill.id} 
             className="group relative rounded-rams-sm border border-rams-line bg-rams-module hover:bg-rams-panel transition-colors p-4 cursor-pointer"
@@ -225,6 +232,7 @@ function CertificationsTab() {
           </div>
         )}
       </div>
+      <Pagination currentPage={certPage} totalPages={certTotalPages} onPageChange={setCertPage} totalItems={filtered.length} />
     </div>
   );
 }
@@ -241,6 +249,12 @@ function ProgramsTab() {
     if (formatFilter !== 'all' && program.training_type !== formatFilter) return false;
     return true;
   });
+
+  const PROG_PAGE_SIZE = 12;
+  const [progPage, setProgPage] = React.useState(1);
+  React.useEffect(() => setProgPage(1), [search, formatFilter]);
+  const progTotalPages = Math.max(1, Math.ceil(filtered.length / PROG_PAGE_SIZE));
+  const paginatedPrograms = filtered.slice((progPage - 1) * PROG_PAGE_SIZE, progPage * PROG_PAGE_SIZE);
 
   return (
     <div className="space-y-4">
@@ -277,7 +291,7 @@ function ProgramsTab() {
           <div></div>
         </div>
         <div className="divide-y divide-rams-line">
-          {filtered.map((program) => {
+          {paginatedPrograms.map((program) => {
             return (
               <div 
                 key={program.id} 
@@ -314,6 +328,7 @@ function ProgramsTab() {
           )}
         </div>
       </div>
+      <Pagination currentPage={progPage} totalPages={progTotalPages} onPageChange={setProgPage} totalItems={filtered.length} />
     </div>
   );
 }
@@ -331,6 +346,12 @@ function RecordsTab() {
     if (statusFilter !== 'all' && record.status !== statusFilter) return false;
     return true;
   });
+
+  const REC_PAGE_SIZE = 15;
+  const [recPage, setRecPage] = React.useState(1);
+  React.useEffect(() => setRecPage(1), [search, statusFilter]);
+  const recTotalPages = Math.max(1, Math.ceil(filtered.length / REC_PAGE_SIZE));
+  const paginatedRecords = filtered.slice((recPage - 1) * REC_PAGE_SIZE, recPage * REC_PAGE_SIZE);
 
   return (
     <div className="space-y-4">
@@ -371,7 +392,7 @@ function RecordsTab() {
           <div className="text-center">{t('pages.training.records.table.score') || 'Score'}</div>
         </div>
         <div className="divide-y divide-rams-line">
-          {filtered.map((record) => {
+          {paginatedRecords.map((record) => {
             const statusCfg = recordStatusConfig[record.status] || { label: record.status, className: 'bg-rams-panel border-rams-line', icon: Clock };
             const StatusIcon = statusCfg.icon;
 
@@ -427,6 +448,7 @@ function RecordsTab() {
           )}
         </div>
       </div>
+      <Pagination currentPage={recPage} totalPages={recTotalPages} onPageChange={setRecPage} totalItems={filtered.length} />
     </div>
   );
 }

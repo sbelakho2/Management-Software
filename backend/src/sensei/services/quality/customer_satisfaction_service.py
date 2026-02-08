@@ -1,3 +1,11 @@
+"""
+Customer Satisfaction Service.
+
+Manages customer satisfaction surveys, Net Promoter Score
+(NPS) tracking, complaint correlation analysis, and
+customer feedback workflows.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

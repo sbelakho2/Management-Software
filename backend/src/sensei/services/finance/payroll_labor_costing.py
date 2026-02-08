@@ -12,11 +12,16 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 class AttendanceEventType(str, Enum):
@@ -128,8 +133,14 @@ _APPROVER_ROLES: set[str] = {
 _FINANCE_WRITE_ROLES: set[str] = {"admin", "finance", "accountant", "gm", "exec"}
 
 
-class PayrollLaborCostingService:
-    """In-memory payroll exports, labor booking, and variance approvals."""
+class PayrollLaborCostingService(PersistentServiceMixin):
+    """Payroll exports, labor booking, and variance approvals.
+
+    In-memory state backed by PostgreSQL labor_rates, time_entries,
+    and payroll_batches tables.
+    """
+
+    SERVICE_NAME = "payroll_labor"
 
     def __init__(self, *, erp_service: Any | None = None):
         self._events: list[AttendanceEvent] = []

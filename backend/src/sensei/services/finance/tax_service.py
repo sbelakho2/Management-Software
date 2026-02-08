@@ -1,7 +1,17 @@
+"""
+Tax Service.
+
+Manages tax rates, tax rules, jurisdiction mappings, and
+tax calculations for sales tax, VAT, and withholding tax.
+Supports multi-jurisdiction tax compliance.
+"""
 from __future__ import annotations
 
+import logging
 from typing import Optional
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

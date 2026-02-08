@@ -22,6 +22,7 @@ from sensei.services.core.database_backup import (
 )
 
 logger = logging.getLogger(__name__)
+from sensei.core.config import settings
 
 
 class ScheduleType(str, Enum):
@@ -118,7 +119,7 @@ class BackupSchedulerService:
             schedule_type=ScheduleType.DAILY,
             strategy=BackupStrategy.FULL,
             cron_expression="0 2 * * *",
-            retention_days=30,
+            retention_days=settings.BACKUP_FULL_RETENTION_DAYS,
             auto_test_restore=True,
             test_frequency_days=7,
         ))
@@ -130,7 +131,7 @@ class BackupSchedulerService:
             schedule_type=ScheduleType.CUSTOM,
             strategy=BackupStrategy.INCREMENTAL,
             interval_minutes=240,
-            retention_days=7,
+            retention_days=settings.BACKUP_INCREMENTAL_RETENTION_DAYS,
             auto_test_restore=False,
         ))
         

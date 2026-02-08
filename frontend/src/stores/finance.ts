@@ -1,6 +1,128 @@
 import { create } from 'zustand';
 import { apiClient } from '@/api/client';
 
+// ─── Domain Types ──────────────────────────────────────────────────────────────
+
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  parent_id?: string | null;
+  currency: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface JournalEntry {
+  id: string;
+  entry_number: string;
+  description: string;
+  entry_date: string;
+  status: string;
+  total_debit: number;
+  total_credit: number;
+  created_by: string;
+  created_at: string;
+}
+
+interface FxRate {
+  id: string;
+  from_currency: string;
+  to_currency: string;
+  rate: number;
+  effective_date: string;
+}
+
+interface StandardCost {
+  id: string;
+  sku: string;
+  material_cost: number;
+  labor_cost: number;
+  overhead_cost: number;
+  total_cost: number;
+  effective_date: string;
+}
+
+interface CostRollup {
+  id: string;
+  work_order_id: string;
+  material_cost: number;
+  labor_cost: number;
+  overhead_cost: number;
+  total_cost: number;
+  status: string;
+}
+
+interface TaxJurisdiction {
+  id: string;
+  name: string;
+  code: string;
+  country: string;
+  active: boolean;
+}
+
+interface TaxRate {
+  id: string;
+  jurisdiction_id: string;
+  name: string;
+  rate: number;
+  tax_type: string;
+  effective_date: string;
+}
+
+interface TaxTransaction {
+  id: string;
+  reference_id: string;
+  tax_amount: number;
+  rate_applied: number;
+  jurisdiction_id: string;
+  created_at: string;
+}
+
+interface CurrencyConfig {
+  base_currency: string;
+  supported_currencies: string[];
+  auto_update_rates: boolean;
+}
+
+interface Currency {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  active: boolean;
+}
+
+interface PaymentTerm {
+  id: string;
+  name: string;
+  days: number;
+  discount_percent: number;
+  discount_days: number;
+}
+
+interface BankAccount {
+  id: string;
+  name: string;
+  account_number: string;
+  bank_name: string;
+  currency: string;
+  balance: number;
+  active: boolean;
+}
+
+interface BankTransaction {
+  id: string;
+  bank_account_id: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: string;
+  reconciled: boolean;
+}
+
 interface DashboardStats {
   revenue_mtd: number;
   revenue_change: number;
@@ -40,45 +162,55 @@ interface PendingApproval {
   submitted: string;
 }
 
+// ─── Error auto-clear timeout (ms) ────────────────────────────────────────────
+const ERROR_CLEAR_DELAY = 8_000;
+let _errorTimer: ReturnType<typeof setTimeout> | null = null;
+
+function setErrorWithAutoClear(set: (partial: Partial<FinanceState>) => void, message: string) {
+  if (_errorTimer) clearTimeout(_errorTimer);
+  set({ error: message, loading: false });
+  _errorTimer = setTimeout(() => set({ error: null }), ERROR_CLEAR_DELAY);
+}
+
 interface FinanceState {
-  accounts: any[];
-  journalEntries: any[];
-  currencySettings: any | null;
-  fxRates: any[];
-  standardCosts: any[];
-  costRollups: any[];
-  taxJurisdictions: any[];
-  taxRates: any[];
-  taxTransactions: any[];
+  accounts: Account[];
+  journalEntries: JournalEntry[];
+  currencySettings: CurrencyConfig | null;
+  fxRates: FxRate[];
+  standardCosts: StandardCost[];
+  costRollups: CostRollup[];
+  taxJurisdictions: TaxJurisdiction[];
+  taxRates: TaxRate[];
+  taxTransactions: TaxTransaction[];
   dashboardStats: DashboardStats | null;
   revenueByProduct: RevenueByProduct[];
   expenseBreakdown: ExpenseBreakdown[];
   pendingApprovals: PendingApproval[];
   // Banking
-  currencies: any[];
-  paymentTerms: any[];
-  bankAccounts: any[];
-  bankTransactions: any[];
+  currencies: Currency[];
+  paymentTerms: PaymentTerm[];
+  bankAccounts: BankAccount[];
+  bankTransactions: BankTransaction[];
   loading: boolean;
   error: string | null;
 
   fetchAccounts: () => Promise<void>;
   fetchJournalEntries: () => Promise<void>;
-  createAccount: (account: any) => Promise<void>;
+  createAccount: (account: Partial<Account>) => Promise<void>;
   fetchCurrencySettings: () => Promise<void>;
-  updateCurrencySettings: (settings: any) => Promise<void>;
+  updateCurrencySettings: (settings: Partial<CurrencyConfig>) => Promise<void>;
   fetchFxRates: (asOf?: string) => Promise<void>;
-  upsertFxRate: (rate: any) => Promise<void>;
+  upsertFxRate: (rate: Partial<FxRate>) => Promise<void>;
   fetchStandardCosts: (sku?: string) => Promise<void>;
-  upsertStandardCost: (payload: any) => Promise<void>;
+  upsertStandardCost: (payload: Partial<StandardCost>) => Promise<void>;
   fetchCostRollups: (workOrderId?: string) => Promise<void>;
-  createCostRollup: (payload: any) => Promise<void>;
+  createCostRollup: (payload: Partial<CostRollup>) => Promise<void>;
   fetchTaxJurisdictions: () => Promise<void>;
-  createTaxJurisdiction: (payload: any) => Promise<void>;
+  createTaxJurisdiction: (payload: Partial<TaxJurisdiction>) => Promise<void>;
   fetchTaxRates: (jurisdictionId?: string) => Promise<void>;
-  createTaxRate: (payload: any) => Promise<void>;
+  createTaxRate: (payload: Partial<TaxRate>) => Promise<void>;
   fetchTaxTransactions: (referenceId?: string) => Promise<void>;
-  createTaxTransaction: (payload: any) => Promise<void>;
+  createTaxTransaction: (payload: Partial<TaxTransaction>) => Promise<void>;
   fetchDashboardStats: () => Promise<void>;
   fetchRevenueByProduct: () => Promise<void>;
   fetchExpenseBreakdown: () => Promise<void>;
@@ -86,16 +218,16 @@ interface FinanceState {
   fetchAll: () => Promise<void>;
   // Banking methods
   fetchCurrencies: () => Promise<void>;
-  createCurrency: (payload: any) => Promise<void>;
-  updateCurrency: (id: string, payload: any) => Promise<void>;
+  createCurrency: (payload: Partial<Currency>) => Promise<void>;
+  updateCurrency: (id: string, payload: Partial<Currency>) => Promise<void>;
   fetchPaymentTerms: () => Promise<void>;
-  createPaymentTerm: (payload: any) => Promise<void>;
-  updatePaymentTerm: (id: string, payload: any) => Promise<void>;
+  createPaymentTerm: (payload: Partial<PaymentTerm>) => Promise<void>;
+  updatePaymentTerm: (id: string, payload: Partial<PaymentTerm>) => Promise<void>;
   fetchBankAccounts: () => Promise<void>;
-  createBankAccount: (payload: any) => Promise<void>;
-  updateBankAccount: (id: string, payload: any) => Promise<void>;
+  createBankAccount: (payload: Partial<BankAccount>) => Promise<void>;
+  updateBankAccount: (id: string, payload: Partial<BankAccount>) => Promise<void>;
   fetchBankTransactions: (bankAccountId?: string) => Promise<void>;
-  createBankTransaction: (payload: any) => Promise<void>;
+  createBankTransaction: (payload: Partial<BankTransaction>) => Promise<void>;
   reconcileBankTransaction: (id: string) => Promise<void>;
 }
 
@@ -127,7 +259,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/accounts');
       set({ accounts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -137,7 +269,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/journal-entries');
       set({ journalEntries: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -148,7 +280,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/accounts');
       set({ accounts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -158,7 +290,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any>('/finance/currency-settings');
       set({ currencySettings: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -168,7 +300,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.post<any>('/finance/currency-settings', settings);
       set({ currencySettings: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -179,7 +311,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/fx-rates', { params });
       set({ fxRates: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -190,7 +322,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/fx-rates');
       set({ fxRates: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -201,7 +333,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/costing/standard-costs', { params });
       set({ standardCosts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -212,7 +344,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/costing/standard-costs');
       set({ standardCosts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -223,7 +355,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/costing/rollups', { params });
       set({ costRollups: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -234,7 +366,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/costing/rollups');
       set({ costRollups: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -244,7 +376,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/jurisdictions');
       set({ taxJurisdictions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -255,7 +387,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/jurisdictions');
       set({ taxJurisdictions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -266,7 +398,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/rates', { params });
       set({ taxRates: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -277,7 +409,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/rates');
       set({ taxRates: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -288,7 +420,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/transactions', { params });
       set({ taxTransactions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -299,7 +431,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/tax/transactions');
       set({ taxTransactions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -309,7 +441,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<DashboardStats>('/finance/dashboard-stats');
       set({ dashboardStats: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -319,7 +451,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<RevenueByProduct[]>('/finance/revenue-by-product');
       set({ revenueByProduct: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -329,7 +461,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<ExpenseBreakdown[]>('/finance/expense-breakdown');
       set({ expenseBreakdown: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -339,7 +471,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<PendingApproval[]>('/finance/pending-approvals');
       set({ pendingApprovals: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -360,7 +492,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/currencies');
       set({ currencies: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -371,7 +503,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/currencies');
       set({ currencies: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -382,7 +514,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/currencies');
       set({ currencies: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -393,7 +525,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/payment-terms');
       set({ paymentTerms: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -404,7 +536,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/payment-terms');
       set({ paymentTerms: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -415,7 +547,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/payment-terms');
       set({ paymentTerms: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -426,7 +558,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-accounts');
       set({ bankAccounts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -437,7 +569,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-accounts');
       set({ bankAccounts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -448,7 +580,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-accounts');
       set({ bankAccounts: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -460,7 +592,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-transactions', { params });
       set({ bankTransactions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -471,7 +603,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-transactions');
       set({ bankTransactions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 
@@ -482,7 +614,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const response = await apiClient.get<any[]>('/finance/bank-transactions');
       set({ bankTransactions: response, loading: false });
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      setErrorWithAutoClear(set, error.message);
     }
   },
 }));

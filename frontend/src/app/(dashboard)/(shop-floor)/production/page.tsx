@@ -18,6 +18,7 @@ import {
   CheckCircle,
   Clock,
   AlertTriangle,
+  AlertCircle,
   Calendar,
   Users,
   Package,
@@ -55,6 +56,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn, formatDate, formatNumber, getInitials } from '@/lib/utils';
+import { Pagination } from '@/components/ui/pagination';
 import { useProductionStore } from '@/stores/production';
 import { WorkOrderStatus, WorkOrderPriority } from '@/api/production';
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
@@ -291,7 +293,8 @@ function ProductionPageContent() {
     workOrders, 
     fetchWorkOrders, 
     fetchStats,
-    loading 
+    loading,
+    error 
   } = useProductionStore();
   const workOrdersList = React.useMemo(() => (Array.isArray(workOrders) ? workOrders : []), [workOrders]);
 
@@ -322,6 +325,12 @@ function ProductionPageContent() {
       return matchesSearch && matchesStatus && matchesWorkCenter;
     });
   }, [workOrdersList, searchQuery, statusFilter, workCenterFilter]);
+
+  const PAGE_SIZE = 12;
+  const [woPage, setWoPage] = React.useState(1);
+  React.useEffect(() => setWoPage(1), [searchQuery, statusFilter, workCenterFilter]);
+  const woTotalPages = Math.max(1, Math.ceil(filteredWorkOrders.length / PAGE_SIZE));
+  const paginatedWorkOrders = filteredWorkOrders.slice((woPage - 1) * PAGE_SIZE, woPage * PAGE_SIZE);
 
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="production-page">
@@ -408,6 +417,22 @@ function ProductionPageContent() {
         </div>
       </div>
 
+      {/* Error state */}
+      {error && (
+        <div className="rounded-rams-sm border border-destructive/50 bg-destructive/10 p-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="text-sm font-bold text-destructive">Error loading production data</p>
+              <p className="text-xs text-muted-foreground">{error}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { fetchWorkOrders(); fetchStats(); }}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -444,7 +469,7 @@ function ProductionPageContent() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredWorkOrders.map((wo) => (
+              {paginatedWorkOrders.map((wo) => (
                 <WorkOrderRow key={wo.id} workOrder={wo} />
               ))}
             </TableBody>
@@ -452,11 +477,12 @@ function ProductionPageContent() {
         </Card>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredWorkOrders.map((wo) => (
+          {paginatedWorkOrders.map((wo) => (
             <WorkOrderCard key={wo.id} workOrder={wo} />
           ))}
         </div>
       )}
+      <Pagination currentPage={woPage} totalPages={woTotalPages} onPageChange={setWoPage} totalItems={filteredWorkOrders.length} />
     </div>
   );
 }

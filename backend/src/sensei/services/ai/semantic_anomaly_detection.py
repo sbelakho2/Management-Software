@@ -23,6 +23,7 @@ from collections import defaultdict
 # =============================================================================
 
 SEQUENCE_WINDOW_SIZE = 10
+SENTIMENT_HISTORY_SIZE = 100  # #233: Increased from 20 for better escalation tracking
 MIN_SEQUENCE_LENGTH = 3
 ANOMALY_SCORE_THRESHOLD = 0.7
 SENTIMENT_ESCALATION_THRESHOLD = 0.3
@@ -341,8 +342,8 @@ class SentimentAnalyzer:
         if entity_id:
             self._history[entity_id].append(result)
             # Keep only recent history
-            if len(self._history[entity_id]) > 20:
-                self._history[entity_id] = self._history[entity_id][-20:]
+            if len(self._history[entity_id]) > SENTIMENT_HISTORY_SIZE:
+                self._history[entity_id] = self._history[entity_id][-SENTIMENT_HISTORY_SIZE:]
         
         return result
     
@@ -601,15 +602,24 @@ class SequenceAnalyzer:
         """Check for ordering anomalies."""
         anomalies = []
         event_types = [e.event_type for e in events]
-        
+
+        # Build type→sorted-indices map for O(1) lookup per type (#93)
+        from collections import defaultdict
+        type_indices: dict[str, list[int]] = defaultdict(list)
+        for i, et in enumerate(event_types):
+            type_indices[et].append(i)
+        # Each list is already in ascending order since we iterate i in order.
+
         # Check against expected workflows
         for workflow_name, expected in self.EXPECTED_WORKFLOWS.items():
-            # Find events that match this workflow
-            matched_indices = []
+            # Find first available index per expected type
+            matched_indices: list[int] = []
+            used: set[int] = set()
             for expected_type in expected:
-                for i, actual_type in enumerate(event_types):
-                    if actual_type == expected_type and i not in matched_indices:
-                        matched_indices.append(i)
+                for idx in type_indices.get(expected_type, []):
+                    if idx not in used:
+                        matched_indices.append(idx)
+                        used.add(idx)
                         break
             
             # Check if matched events are in order
@@ -886,20 +896,27 @@ class AnomalyDetectionEngine:
         
         self._event_buffer: dict[str, list[ProcessEvent]] = defaultdict(list)
         self._detected_anomalies: list[Anomaly] = []
+        # Track event ids already analysed to avoid duplicates
+        self._analyzed_event_ids: set[str] = set()
     
     def process_event(self, event: ProcessEvent) -> list[Alert]:
         """Process a single event and return any triggered alerts."""
+        # Skip if already processed
+        if event.event_id in self._analyzed_event_ids:
+            return []
+        self._analyzed_event_ids.add(event.event_id)
+
         alerts = []
-        
+
         # Add to buffer
         self._event_buffer[event.entity_id].append(event)
-        
+
         # Limit buffer size
         if len(self._event_buffer[event.entity_id]) > SEQUENCE_WINDOW_SIZE:
             self._event_buffer[event.entity_id] = (
                 self._event_buffer[event.entity_id][-SEQUENCE_WINDOW_SIZE:]
             )
-        
+
         # Analyze sentiment if content exists
         if event.content:
             sentiment_anomalies = self._analyze_sentiment_anomaly(event)
@@ -908,21 +925,21 @@ class AnomalyDetectionEngine:
                 alert = self.alert_manager.create_alert(anomaly)
                 if alert:
                     alerts.append(alert)
-        
+
         # Learn patterns
         self.sequence_analyzer.learn_pattern(self._event_buffer[event.entity_id])
-        
-        # Detect sequence anomalies
+
+        # Detect sequence anomalies on the full buffer (cheap with small window)
         sequence_anomalies = self.sequence_analyzer.detect_sequence_anomalies(
             self._event_buffer[event.entity_id]
         )
-        
+
         for anomaly in sequence_anomalies:
             self._detected_anomalies.append(anomaly)
             alert = self.alert_manager.create_alert(anomaly)
             if alert:
                 alerts.append(alert)
-        
+
         return alerts
     
     def process_events(self, events: list[ProcessEvent]) -> list[Alert]:
@@ -934,23 +951,24 @@ class AnomalyDetectionEngine:
         return all_alerts
     
     def analyze_entity(self, entity_id: str) -> list[Anomaly]:
-        """Analyze all events for an entity."""
+        """Analyze all events for an entity, skipping already-analyzed events."""
         events = self._event_buffer.get(entity_id, [])
         if not events:
             return []
-        
+
         anomalies = []
-        
-        # Sequence anomalies
+
+        # Sequence anomalies (operates on full buffer, lightweight)
         sequence_anomalies = self.sequence_analyzer.detect_sequence_anomalies(events)
         anomalies.extend(sequence_anomalies)
-        
-        # Sentiment analysis on content
+
+        # Sentiment analysis only on events not yet processed
         for event in events:
-            if event.content:
+            if event.content and event.event_id not in self._analyzed_event_ids:
                 sentiment_anomalies = self._analyze_sentiment_anomaly(event)
                 anomalies.extend(sentiment_anomalies)
-        
+                self._analyzed_event_ids.add(event.event_id)
+
         return anomalies
     
     def _analyze_sentiment_anomaly(self, event: ProcessEvent) -> list[Anomaly]:

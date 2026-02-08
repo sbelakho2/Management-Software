@@ -98,6 +98,13 @@ DEFAULT_RATE_LIMITS: Dict[str, RateLimitConfig] = {
         requests_per_hour=20,
         burst_size=2,
     ),
+    # Email sending - prevent abuse (#161)
+    "/api/v1/email": RateLimitConfig(
+        requests_per_minute=10,
+        requests_per_hour=100,
+        burst_size=5,
+        block_duration_seconds=300,
+    ),
     # Default for all other API endpoints
     # Production-appropriate: reveals bottlenecks that dev limits would hide
     "/api/v1": RateLimitConfig(
@@ -352,8 +359,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         from sensei.api.utils import get_client_ip
         client_ip = get_client_ip(request)
         
-        # Get user ID if authenticated
-        user_id = getattr(request.state, "user_id", None)
+        # Get user ID if authenticated (#158 — read from request.state.user object, not user_id)
+        user = getattr(request.state, "user", None)
+        user_id = getattr(user, "id", None) if user else None
         
         # Create composite key
         key_parts = [client_ip, str(user_id or "anon"), path_pattern]

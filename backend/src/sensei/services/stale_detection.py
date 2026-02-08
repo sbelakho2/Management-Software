@@ -15,6 +15,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 class EntityType(str, Enum):
     """Entity types that support stale detection."""
@@ -140,7 +142,7 @@ class StaleDetectionResult:
         return sum(1 for e in self.stale_entities if e.severity == StaleSeverity.HIGH)
 
 
-class StaleDetectionService:
+class StaleDetectionService(PersistentServiceMixin):
     """
     Service for detecting stale entities across the system.
     
@@ -157,6 +159,8 @@ class StaleDetectionService:
         urgent = [e for e in result.stale_entities 
                   if e.severity in (StaleSeverity.CRITICAL, StaleSeverity.HIGH)]
     """
+
+    SERVICE_NAME = "stale_detection"
     
     # Default thresholds - can be overridden via constructor
     DEFAULT_OPPORTUNITY_THRESHOLDS: dict[str, StaleThreshold] = {

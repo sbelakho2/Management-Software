@@ -1,3 +1,11 @@
+"""
+Quoting Helper.
+
+Assists with RFQ work-packet breakdown, cost estimation,
+and quote package assembly. Integrates with AI-assisted
+quoting for automated pricing suggestions.
+"""
+
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone

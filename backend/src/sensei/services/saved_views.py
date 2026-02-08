@@ -13,6 +13,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -524,8 +526,10 @@ class ViewFilterResult:
     has_more: bool = False
 
 
-class SavedViewsService:
+class SavedViewsService(PersistentServiceMixin):
     """Service for managing saved views/filters."""
+
+    SERVICE_NAME = "saved_views"
     
     def __init__(self, session: AsyncSession | None = None) -> None:
         """Initialize the service.

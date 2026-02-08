@@ -26,6 +26,8 @@ from uuid import UUID, uuid4
 import re
 import json
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -384,8 +386,10 @@ CLOSING_TEMPLATES: dict[EmailTone, dict[Language, list[str]]] = {
 # AI Email Drafting Service
 # ============================================================================
 
-class AIEmailDraftingService:
+class AIEmailDraftingService(PersistentServiceMixin):
     """Service for AI-powered email draft generation."""
+
+    SERVICE_NAME = "ai_email_drafting"
     
     def __init__(
         self,

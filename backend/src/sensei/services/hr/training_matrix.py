@@ -14,6 +14,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -189,7 +191,7 @@ class ExpirationAlertResult:
     checked_at: datetime = field(default_factory=_utcnow)
 
 
-class TrainingMatrixService:
+class TrainingMatrixService(PersistentServiceMixin):
     """
     Service for training matrix analysis and gap detection.
     
@@ -199,6 +201,8 @@ class TrainingMatrixService:
     - Alert on expiring certifications
     - Generate recertification task suggestions
     """
+
+    SERVICE_NAME = "training_matrix"
     
     # Default expiration thresholds (days)
     EXPIRATION_THRESHOLDS = {

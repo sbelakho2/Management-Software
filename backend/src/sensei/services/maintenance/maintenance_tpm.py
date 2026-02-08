@@ -19,6 +19,8 @@ from decimal import Decimal
 import logging
 import statistics
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -273,7 +275,7 @@ class FailureRecord:
 # =============================================================================
 
 
-class MaintenanceService:
+class MaintenanceService(PersistentServiceMixin):
     """
     Maintenance & Asset Reliability (TPM Layer) Service.
     
@@ -285,6 +287,8 @@ class MaintenanceService:
     - MTBF/MTTR metrics
     - Spare parts management
     """
+
+    SERVICE_NAME = "maintenance_tpm"
     
     def __init__(self):
         # Storage

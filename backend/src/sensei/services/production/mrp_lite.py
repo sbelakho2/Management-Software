@@ -11,11 +11,14 @@ This module is in-memory and pure-Python to match other services.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 class RequirementType(str, Enum):
@@ -135,8 +138,10 @@ class MRPRunResult:
     shortage_items: tuple[str, ...]
 
 
-class MRPService:
+class MRPService(PersistentServiceMixin):
     """In-memory MRP-lite service."""
+
+    SERVICE_NAME = "mrp_lite"
 
     def __init__(self) -> None:
         # Master data
@@ -405,7 +410,7 @@ class MRPService:
         actor_id: str,
         actor_roles: Iterable[str],
         correlation_id: str,
-        planning_horizon_days: int = 30,
+        planning_horizon_days: int = settings.MRP_PLANNING_HORIZON_DAYS,
         as_of_date: date | None = None,
     ) -> MRPRunResult:
         """Run MRP calculation and generate suggestions."""
@@ -416,7 +421,7 @@ class MRPService:
             raise ValueError("planning_horizon_days must be >= 1")
 
         run_date = as_of_date or date.today()
-        horizon_end = run_date + __import__("datetime").timedelta(days=planning_horizon_days)
+        horizon_end = run_date + timedelta(days=planning_horizon_days)
 
         # Collect demands within horizon
         demands_in_scope = [

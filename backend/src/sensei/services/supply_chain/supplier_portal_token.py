@@ -16,6 +16,8 @@ from enum import Enum
 from typing import Optional, Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -109,8 +111,8 @@ class PortalToken:
     """A secure portal access token."""
     
     id: UUID
-    token_value: str
-    token_hash: str  # Store hash, not plain token
+    token_value: str  # Truncated prefix for display only (first 8 chars + "...")
+    token_hash: str  # SHA-256 hash used for lookup/validation
     token_type: TokenType
     status: TokenStatus
     access_level: AccessLevel
@@ -270,7 +272,7 @@ class SubmissionResult:
     warnings: list[str] = field(default_factory=list)
 
 
-class SupplierPortalTokenService:
+class SupplierPortalTokenService(PersistentServiceMixin):
     """
     Service for managing supplier portal tokens.
     
@@ -280,6 +282,8 @@ class SupplierPortalTokenService:
     - Submission processing and tracking
     - Access logging and analytics
     """
+
+    SERVICE_NAME = "supplier_portal"
     
     def __init__(
         self,

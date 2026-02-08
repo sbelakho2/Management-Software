@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Shield,
   Search,
+  Sun,
+  Moon,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -301,6 +303,40 @@ export function Sidebar() {
 
         {/* Control Buttons */}
         <div className="mt-1 flex flex-col gap-1">
+          {/* Dark mode toggle (#352) */}
+          {isCollapsed ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="flex h-12 w-12 items-center justify-center rounded-rams-sm mx-auto text-muted-foreground hover:text-foreground hover:bg-rams-panel transition-none"
+              onClick={() => {
+                const root = document.documentElement;
+                root.classList.toggle('dark');
+                localStorage.setItem('theme', root.classList.contains('dark') ? 'dark' : 'light');
+              }}
+              aria-label="Toggle dark mode"
+            >
+              <Sun className="h-5 w-5 hidden dark:block" />
+              <Moon className="h-5 w-5 block dark:hidden" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 px-4 h-10 rounded-rams-sm text-muted-foreground hover:text-foreground hover:bg-rams-panel transition-none border border-transparent hover:border-rams-line"
+              onClick={() => {
+                const root = document.documentElement;
+                root.classList.toggle('dark');
+                localStorage.setItem('theme', root.classList.contains('dark') ? 'dark' : 'light');
+              }}
+            >
+              <Sun className="h-4 w-4 shrink-0 hidden dark:block" />
+              <Moon className="h-4 w-4 shrink-0 block dark:hidden" />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                Theme
+              </span>
+            </Button>
+          )}
+
           {isCollapsed ? (
             <Button
               variant="ghost"

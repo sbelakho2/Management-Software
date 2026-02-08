@@ -1,3 +1,11 @@
+"""
+AI Quoting Assistant.
+
+Provides AI-powered quote generation, cost estimation,
+and pricing recommendations using historical RFQ data
+and machine learning models.
+"""
+
 import logging
 import math
 from typing import Any, Dict, List, Optional

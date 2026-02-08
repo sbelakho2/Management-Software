@@ -6,10 +6,19 @@ FastAPI dependencies for:
 - Authentication and authorization
 - Rate limiting
 - Request validation
+
+Role Terminology (#255, #497):
+    "admin" and "superuser" are treated as interchangeable aliases throughout
+    the codebase. Both grant full administrative access. The canonical role
+    name is "admin"; "superuser" exists for backward compatibility with
+    seeded accounts that set ``is_superuser=True``.
 """
 
 from typing import Annotated, Any, AsyncGenerator, Optional, TYPE_CHECKING, TypeAlias
 from uuid import UUID
+import logging
+
+logger = logging.getLogger(__name__)
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -25,6 +34,18 @@ from sensei.core.security import TokenData, decode_token, get_rate_limit_key
 
 if TYPE_CHECKING:
     from sensei.models.user import User
+
+__all__ = [
+    "get_db",
+    "get_readonly_db",
+    "PaginationParams",
+    "Pagination",
+    "CorrelationId",
+    "get_correlation_id",
+    "StandardRateLimit",
+    "StrictRateLimit",
+    "AuthRateLimit",
+]
 
 
 # =============================================================================
@@ -284,6 +305,10 @@ class PermissionChecker:
         """Check if user has required permission."""
         # Admin has all permissions (full system access)
         if "admin" in token_data.roles or "superuser" in token_data.roles:
+            logger.info(
+                "Admin/superuser permission bypass: user=%s permission=%s",
+                token_data.user_id, self.required_permission,
+            )
             return True
         
         if self.required_permission not in token_data.permissions:
@@ -377,6 +402,10 @@ class RoleChecker:
 
         # CEO has broad access to non-admin surfaces.
         if "ceo" in user_roles:
+            logger.info(
+                "CEO role bypass: user=%s required_roles=%s",
+                token_data.user_id, self.required_roles,
+            )
             return True
 
         # Check direct role match
@@ -434,7 +463,16 @@ def require_role(*roles: str) -> Any:
 
 class RateLimiter:
     """
-    Rate limiting dependency.
+    Rate limiting dependency (unified with middleware — #435).
+
+    This dependency delegates to the same sliding-window Redis limiter
+    used by the global ``RateLimitMiddleware``.  It lets individual
+    routes **override** the global rate limit with a stricter or
+    more permissive value.
+
+    In production the limiter is **fail-closed** (returns 429 when
+    Redis is unavailable) matching the middleware behaviour.  In
+    development / test it falls back to an in-memory counter.
     
     Usage:
         @router.post("/login")
@@ -449,6 +487,8 @@ class RateLimiter:
         requests: int | None = None,
         window: int | None = None,
         key_prefix: str = "api",
+        *,
+        fail_open: bool | None = None,
     ):
         """
         Initialize rate limiter.
@@ -457,10 +497,16 @@ class RateLimiter:
             requests: Maximum requests allowed (default from settings)
             window: Time window in seconds (default from settings)
             key_prefix: Prefix for Redis key
+            fail_open: Override fail-mode. ``None`` → fail-closed in prod,
+                       fail-open in dev.  ``True``/``False`` forces the mode.
         """
         self.requests = requests or settings.RATE_LIMIT_REQUESTS
         self.window = window or settings.RATE_LIMIT_WINDOW_SECONDS
         self.key_prefix = key_prefix
+        if fail_open is None:
+            self._fail_open = settings.ENVIRONMENT != "production"
+        else:
+            self._fail_open = fail_open
     
     async def __call__(
         self,
@@ -476,29 +522,39 @@ class RateLimiter:
             identifier = get_client_ip(request)
         
         key = get_rate_limit_key(identifier, self.key_prefix)
-        
-        # Increment counter (fail-open if Redis unavailable - #183)
+
+        # ---------- sliding-window via Redis sorted set ----------
+        import time as _time
+        now = _time.time()
+        window_start = now - self.window
+
         try:
-            count = await redis_client.incr(key)
+            pipe = redis_client.pipeline()
+            pipe.zremrangebyscore(key, 0, window_start)
+            pipe.zadd(key, {str(now): now})
+            pipe.zcard(key)
+            pipe.expire(key, self.window + 1)
+            results = await pipe.execute()
+            count = results[2]  # ZCARD result
         except Exception:
-            import structlog
-            structlog.get_logger(__name__).warning(
-                "redis_unavailable_for_rate_limit",
-                key_prefix=self.key_prefix,
+            logger.warning(
+                "redis_unavailable_for_rate_limit key_prefix=%s fail_open=%s",
+                self.key_prefix,
+                self._fail_open,
             )
-            return True  # Allow request through if Redis is down
-        
-        # Set expiry on first request
-        if count == 1:
-            try:
-                await redis_client.expire(key, self.window)
-            except Exception:
-                pass  # Best-effort; key will eventually expire or be overwritten
-        
+            if self._fail_open:
+                return True
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Rate limiting service unavailable",
+            )
+
         # Check limit
         if count > self.requests:
             try:
-                ttl = await redis_client.ttl(key)
+                # Estimate retry time from oldest entry in window
+                oldest = await redis_client.zrange(key, 0, 0, withscores=True)
+                ttl = int(self.window - (now - oldest[0][1])) if oldest else self.window
             except Exception:
                 ttl = self.window
             raise HTTPException(

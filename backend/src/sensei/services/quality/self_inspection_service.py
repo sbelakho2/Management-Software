@@ -1,3 +1,11 @@
+"""
+Self-Inspection Service.
+
+Enables operator-level quality checks at the point of
+manufacture. Manages inspection checklists, pass/fail
+criteria, and automatic escalation on failures.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

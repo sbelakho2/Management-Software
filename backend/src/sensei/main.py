@@ -6,6 +6,8 @@ routers, and lifecycle handlers.
 """
 
 import asyncio
+import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from uuid import UUID
@@ -33,6 +35,8 @@ from sensei.middleware.timing import TimingMiddleware
 from sensei.middleware.correlation import CorrelationIdMiddleware
 from sensei.middleware.secure_headers import SecureHeadersASGIMiddleware, SecureHeadersMiddleware
 from sensei.middleware.rate_limit import RateLimitMiddleware
+from sensei.middleware.idempotency import IdempotencyMiddleware
+from sensei.middleware.etag import ETagMiddleware
 from sensei.middleware.session_binding import SessionBindingMiddleware
 from sensei.middleware.request_guard import RequestGuardMiddleware
 from sensei.services.core.backup_scheduler import BackupSchedulerService
@@ -49,6 +53,57 @@ from sensei.services.core.factory_launchpad import get_factory_launchpad
 from sensei.services.core.edge_ai import get_edge_orchestrator
 from sensei.services.core.rbac_bootstrap import ensure_core_users_have_roles
 from sensei.core.websocket import get_websocket_manager
+
+
+def configure_logging() -> None:
+    """Configure structlog with JSON rendering for production, pretty for dev."""
+    shared_processors: list[structlog.types.Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.UnicodeDecoder(),
+    ]
+
+    if settings.ENVIRONMENT == "production":
+        renderer: structlog.types.Processor = structlog.processors.JSONRenderer()
+    else:
+        renderer = structlog.dev.ConsoleRenderer()
+
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
+    )
+
+    root_logger = logging.getLogger()
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(
+        logging.WARNING if settings.ENVIRONMENT == "production" else logging.INFO
+    )
+    # Ensure our app logs at INFO
+    logging.getLogger("sensei").setLevel(logging.INFO)
+    # Quiet noisy third-party loggers
+    for noisy in ("uvicorn.access", "sqlalchemy.engine"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+configure_logging()
 
 logger = structlog.get_logger(__name__)
 
@@ -390,6 +445,12 @@ def create_application() -> FastAPI:
         RateLimitMiddleware,
         enabled=rate_limit_enabled,
     )
+
+    # Idempotency-Key support for mutating requests (#269)
+    app.add_middleware(IdempotencyMiddleware)
+
+    # ETag / conditional-GET for bandwidth savings (#270)
+    app.add_middleware(ETagMiddleware)
     
     # Include API routers
     app.include_router(api_router, prefix="/api/v1")
@@ -417,6 +478,20 @@ def create_application() -> FastAPI:
                 "storage": "up" if storage_ok else "down",
             },
         }
+
+    # security.txt endpoint (RFC 9116, #427)
+    @app.get("/.well-known/security.txt", tags=["Security"], include_in_schema=False)
+    async def security_txt():
+        """Serve security.txt per RFC 9116."""
+        from fastapi.responses import PlainTextResponse
+
+        body = (
+            "Contact: mailto:security@sensei-os.dev\n"
+            "Preferred-Languages: en\n"
+            "Canonical: https://sensei-os.dev/.well-known/security.txt\n"
+            "Policy: https://sensei-os.dev/security-policy\n"
+        )
+        return PlainTextResponse(body, media_type="text/plain")
     
     # Prometheus metrics endpoint
     if settings.METRICS_ENABLED:

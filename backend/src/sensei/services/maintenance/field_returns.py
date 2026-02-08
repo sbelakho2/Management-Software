@@ -1,3 +1,11 @@
+"""
+Field Returns / RMA Service.
+
+Manages Return Merchandise Authorization (RMA) workflows,
+field failure analysis, root cause tracking, and
+replacement part logistics.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

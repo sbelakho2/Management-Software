@@ -13,6 +13,8 @@ from enum import Enum
 from typing import Any, Callable, Union
 from uuid import uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 # --------------------------------------------------------------------------
 # Safe Expression Evaluator
@@ -441,7 +443,7 @@ class KPICalculationResult:
 # KPI Service
 # --------------------------------------------------------------------------
 
-class KPIService:
+class KPIService(PersistentServiceMixin):
     """
     Service for managing KPI definitions and calculations.
     
@@ -451,6 +453,8 @@ class KPIService:
     - Trend analysis
     - Dashboard management
     """
+
+    SERVICE_NAME = "kpi_metrics"
     
     def __init__(self) -> None:
         """Initialize the KPI service."""

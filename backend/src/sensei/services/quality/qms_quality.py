@@ -15,6 +15,7 @@ This module follows the repo convention of in-memory, test-friendly services.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
@@ -23,6 +24,10 @@ from typing import Optional, Iterable, Any
 from uuid import UUID, uuid4
 
 from sensei.services.ai.reasoning_engine import SenseiReasoningEngine, A3Phase, MentorPersona
+from sensei.core.config import settings
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -372,7 +377,7 @@ class Gauge:
     location: str = ""
     owner: str = ""
     status: GaugeStatus = GaugeStatus.ACTIVE
-    calibration_interval_days: int = 180
+    calibration_interval_days: int = settings.QMS_SPC_LOOKBACK_DAYS
     last_calibrated_at: Optional[datetime] = None
     next_due_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -508,8 +513,10 @@ class ManagementReviewPack:
 # =============================================================================
 
 
-class QMSQualityService:
+class QMSQualityService(PersistentServiceMixin):
     """In-memory Advanced QMS service."""
+
+    SERVICE_NAME = "qms_quality"
 
     def __init__(self, reasoning_engine: Optional[SenseiReasoningEngine] = None) -> None:
         self.reasoning_engine = reasoning_engine
@@ -1177,7 +1184,7 @@ class QMSQualityService:
         description: str,
         location: str,
         owner: str,
-        calibration_interval_days: int = 180,
+        calibration_interval_days: int = settings.QMS_SPC_LOOKBACK_DAYS,
         last_calibrated_at: Optional[datetime] = None,
     ) -> Gauge:
         self._require(bool(gauge_number.strip()), "gauge_number is required")

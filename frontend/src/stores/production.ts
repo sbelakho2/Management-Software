@@ -23,7 +23,10 @@ interface ProductionState {
   /** Production statistics */
   stats: ProductionStats | null;
   /** Loading state for async operations */
+  /** @deprecated Use loadingOps for per-operation states */
   loading: boolean;
+  /** Set of currently in-progress operation names */
+  loadingOps: Set<string>;
   /** Error message if any operation fails */
   error: string | null;
 
@@ -35,6 +38,8 @@ interface ProductionState {
   updateWorkOrderStatus: (id: number, status: string) => Promise<void>;
   /** Create a new work order */
   createWorkOrder: (data: CreateWorkOrderData) => Promise<WorkOrder>;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -47,15 +52,33 @@ function getErrorMessage(error: unknown): string {
   return 'An unexpected error occurred';
 }
 
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: ProductionState) => Partial<ProductionState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, loading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: ProductionState) => Partial<ProductionState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, loading: next.size > 0 };
+  });
+}
+
 export const useProductionStore = create<ProductionState>((set, get) => ({
   workOrders: [],
   totalWorkOrders: 0,
   stats: null,
   loading: false,
+  loadingOps: new Set<string>(),
   error: null,
 
   fetchWorkOrders: async (params) => {
-    set({ loading: true, error: null });
+    startOp(set, 'fetchWorkOrders');
     try {
       const response = await productionApi.listWorkOrders(params);
       const items = Array.isArray(response.items) ? response.items : [];
@@ -63,10 +86,12 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
       set({ 
         workOrders: items,
         totalWorkOrders: total,
-        loading: false 
       });
     } catch (error: unknown) {
-      set({ error: getErrorMessage(error), loading: false });
+      set({ error: getErrorMessage(error) });
+    }
+    finally {
+      endOp(set, 'fetchWorkOrders');
     }
   },
 
@@ -78,6 +103,9 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
       // Stats fetch is non-critical, log but don't block UI
       console.warn('Failed to fetch production stats:', getErrorMessage(error));
     }
+    finally {
+      endOp(set, 'fetchStats');
+    }
   },
 
   updateWorkOrderStatus: async (id, status) => {
@@ -87,22 +115,27 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
     } catch (error: unknown) {
       set({ error: getErrorMessage(error) });
     }
+    finally {
+      endOp(set, 'updateWorkOrderStatus');
+    }
   },
 
   createWorkOrder: async (data) => {
-    set({ loading: true, error: null });
+    startOp(set, 'createWorkOrder');
     try {
       const workOrder = await productionApi.createWorkOrder(data);
       set((state) => ({ 
         workOrders: [workOrder, ...state.workOrders],
         totalWorkOrders: state.totalWorkOrders + 1,
-        loading: false 
       }));
       return workOrder;
     } catch (error: unknown) {
       const errorMsg = getErrorMessage(error);
-      set({ error: errorMsg, loading: false });
+      set({ error: errorMsg });
       throw new Error(errorMsg);
     }
+      finally {
+        endOp(set, 'createWorkOrder');
+      }
   },
 }));

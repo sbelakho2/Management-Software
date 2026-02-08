@@ -47,7 +47,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { Pagination } from '@/components/ui/pagination';
 import { useQualityStore, useAnalyticsStore } from '@/stores';
+
+const QA_PAGE_SIZE = 15;
+function useQaPagination<T>(items: T[], deps: unknown[] = []) {
+  const [page, setPage] = React.useState(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => setPage(1), deps);
+  const totalPages = Math.max(1, Math.ceil(items.length / QA_PAGE_SIZE));
+  const paginated = items.slice((page - 1) * QA_PAGE_SIZE, page * QA_PAGE_SIZE);
+  return { page, setPage, totalPages, paginated, total: items.length };
+}
 import { StatCard, StatSection, AmbientStatus } from '@/components/ui/stat-card';
 import {
   QualityInspection,
@@ -166,8 +177,10 @@ function QualityStats() {
       </div>
       <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.globalAnomalies') || 'Global Anomalies'}</p>
-        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', totalNcrs > 0 ? 'text-rams-red' : 'text-foreground/90')}>
+        <p className={cn('text-3xl font-mono font-bold tracking-tight tabular-nums', totalNcrs > 0 ? 'text-rams-red' : 'text-foreground/90')}
+           aria-label={`${totalNcrs} anomalies${totalNcrs > 0 ? ' — attention needed' : ''}`}>
           {totalNcrs}
+          {totalNcrs > 0 && <span className="sr-only"> — attention needed</span>}
         </p>
       </div>
       <div className="bg-rams-module p-6 border-r border-b border-rams-line last:border-r-0">
@@ -176,7 +189,7 @@ function QualityStats() {
       </div>
       <div className="bg-rams-module p-6 border-b border-rams-line">
         <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('quality.stats.firstPassVelocity') || 'First Pass Velocity'}</p>
-        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{currentFPY}%</p>
+        <p className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums" aria-label={`First pass yield: ${currentFPY}%`}>{currentFPY}%</p>
       </div>
     </div>
   );
@@ -200,6 +213,8 @@ function InspectionsTab() {
     const matchesStatus = statusFilter === 'all' || insp.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const { page: inspPage, setPage: setInspPage, totalPages: inspTotalPages, paginated: paginatedInspections, total: inspTotal } = useQaPagination(filteredInspections, [searchQuery, statusFilter]);
 
   return (
     <div className="space-y-4">
@@ -247,13 +262,16 @@ function InspectionsTab() {
                 </tr>
               </thead>
               <tbody>
-                {filteredInspections.map((insp) => {
+                {paginatedInspections.map((insp) => {
                   const config = inspectionStatusConfig[insp.status];
                   const StatusIcon = config.icon;
                   return (
                     <tr 
                       key={insp.id}
                       className="border-b hover:bg-muted/50 cursor-pointer"
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/quality/inspections/${insp.id}`); } }}
                       onClick={() => router.push(`/quality/inspections/${insp.id}`)}
                     >
                       <td className="py-3 px-4 font-medium">{insp.inspection_number}</td>
@@ -271,7 +289,7 @@ function InspectionsTab() {
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon-sm">
+                            <Button variant="ghost" size="icon-sm" aria-label="Actions">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -295,6 +313,7 @@ function InspectionsTab() {
           </div>
         </CardContent>
       </Card>
+      <Pagination currentPage={inspPage} totalPages={inspTotalPages} onPageChange={setInspPage} totalItems={inspTotal} />
     </div>
   );
 }
@@ -3184,6 +3203,8 @@ function NCRsTab() {
     return matchesSearch && matchesStatus && matchesSeverity;
   });
 
+  const { page: ncrPage, setPage: setNcrPage, totalPages: ncrTotalPages, paginated: paginatedNCRs, total: ncrTotal } = useQaPagination(filteredNCRs, [searchQuery, statusFilter, severityFilter]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -3241,13 +3262,16 @@ function NCRsTab() {
                 </tr>
               </thead>
               <tbody>
-                {filteredNCRs.map((ncr) => {
+                {paginatedNCRs.map((ncr) => {
                   const statusCfg = ncrStatusConfig[ncr.status];
                   const severityCfg = severityConfig[ncr.severity];
                   return (
                     <tr 
                       key={ncr.id}
                       className="border-b hover:bg-muted/50 cursor-pointer"
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/quality/ncrs/${ncr.id}`); } }}
                       onClick={() => router.push(`/quality/ncrs/${ncr.id}`)}
                     >
                       <td className="py-3 px-4 font-medium">{ncr.ncr_number}</td>
@@ -3264,7 +3288,7 @@ function NCRsTab() {
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon-sm">
+                            <Button variant="ghost" size="icon-sm" aria-label="Actions">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -3288,6 +3312,7 @@ function NCRsTab() {
           </div>
         </CardContent>
       </Card>
+      <Pagination currentPage={ncrPage} totalPages={ncrTotalPages} onPageChange={setNcrPage} totalItems={ncrTotal} />
     </div>
   );
 }
@@ -3312,6 +3337,8 @@ function CAPAsTab() {
     const matchesType = typeFilter === 'all' || capa.type === typeFilter;
     return matchesSearch && matchesStatus && matchesType;
   });
+
+  const { page: capaPage, setPage: setCapaPage, totalPages: capaTotalPages, paginated: paginatedCAPAs, total: capaTotal } = useQaPagination(filteredCAPAs, [searchQuery, statusFilter, typeFilter]);
 
   return (
     <div className="space-y-4">
@@ -3369,13 +3396,16 @@ function CAPAsTab() {
                 </tr>
               </thead>
               <tbody>
-                {filteredCAPAs.map((capa) => {
+                {paginatedCAPAs.map((capa) => {
                   const statusCfg = capaStatusConfig[capa.status];
                   const isOverdue = new Date(capa.due_date) < new Date() && capa.status !== 'closed';
                   return (
                     <tr 
                       key={capa.id}
                       className="border-b hover:bg-muted/50 cursor-pointer"
+                      role="link"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/quality/capas/${capa.id}`); } }}
                       onClick={() => router.push(`/quality/capas/${capa.id}`)}
                     >
                       <td className="py-3 px-4 font-medium">{capa.capa_number}</td>
@@ -3395,7 +3425,7 @@ function CAPAsTab() {
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon-sm">
+                            <Button variant="ghost" size="icon-sm" aria-label="Actions">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -3419,6 +3449,7 @@ function CAPAsTab() {
           </div>
         </CardContent>
       </Card>
+      <Pagination currentPage={capaPage} totalPages={capaTotalPages} onPageChange={setCapaPage} totalItems={capaTotal} />
     </div>
   );
 }
@@ -3427,6 +3458,7 @@ function QualityPageContent() {
   const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { error, fetchInspections, fetchNCRs, fetchCAPAs } = useQualityStore();
   const [activeTab, setActiveTab] = React.useState<TabType>(
     (searchParams.get('tab') as TabType) || 'inspections'
   );
@@ -3438,6 +3470,22 @@ function QualityPageContent() {
 
   return (
     <div className="space-y-8 page-fade-in pb-12" data-testid="quality-page">
+      {/* Error state */}
+      {error && (
+        <div className="rounded-rams-sm border border-destructive/50 bg-destructive/10 p-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="text-sm font-bold text-destructive">Error loading quality data</p>
+              <p className="text-xs text-muted-foreground">{error}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { fetchInspections(); fetchNCRs(); fetchCAPAs(); }}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">

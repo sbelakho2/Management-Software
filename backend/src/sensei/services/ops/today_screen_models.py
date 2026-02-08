@@ -1,3 +1,11 @@
+"""
+Today Screen Models.
+
+Data models and aggregation logic for the shift-level
+'Today' dashboard. Combines production, quality,
+maintenance, and safety metrics into a unified view.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, date

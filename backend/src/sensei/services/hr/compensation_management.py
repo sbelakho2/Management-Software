@@ -11,12 +11,17 @@ This module is in-memory and pure-Python to match other services.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 class CompensationType(str, Enum):
@@ -136,14 +141,18 @@ class CompensationChange:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class CompensationManagementService:
+class CompensationManagementService(PersistentServiceMixin):
     """In-memory compensation management service."""
+
+    SERVICE_NAME = "compensation_management"
 
     def __init__(self) -> None:
         self._pay_bands: dict[UUID, PayBand] = {}
         self._compensation_records: dict[UUID, CompensationRecord] = {}
         self._changes: dict[UUID, CompensationChange] = {}
         self._audit: list[AuditEvent] = []
+        # Secondary index: employee_id -> set of record ids (#96)
+        self._records_by_employee: dict[UUID, set[UUID]] = {}
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -313,9 +322,10 @@ class CompensationManagementService:
                     f"amount must be within band range [{band.min_amount}, {band.max_amount}]"
                 )
 
-        # End any current record for this employee
-        for rec in self._compensation_records.values():
-            if rec.employee_id == employee_id and rec.end_date is None:
+        # End any current record for this employee (O(k) via index)
+        for rec_id in list(self._records_by_employee.get(employee_id, set())):
+            rec = self._compensation_records.get(rec_id)
+            if rec and rec.end_date is None:
                 if eff_date < rec.effective_date:
                     raise ValueError(
                         "effective_date must be on or after current record effective_date"
@@ -352,6 +362,7 @@ class CompensationManagementService:
             created_by=actor_id,
         )
         self._compensation_records[record.id] = record
+        self._records_by_employee.setdefault(record.employee_id, set()).add(record.id)
 
         self._audit_event(
             actor_id=actor_id,
@@ -383,8 +394,9 @@ class CompensationManagementService:
 
         can_see_salary = bool(roles.intersection(_SALARY_VIEW_ROLES))
 
-        for rec in self._compensation_records.values():
-            if rec.employee_id == employee_id and rec.end_date is None:
+        for rec_id in self._records_by_employee.get(employee_id, set()):
+            rec = self._compensation_records.get(rec_id)
+            if rec and rec.end_date is None:
                 if mask_amount and not can_see_salary:
                     # Return record with masked amount
                     return CompensationRecord(
@@ -416,7 +428,9 @@ class CompensationManagementService:
         _require_any(roles, _SALARY_VIEW_ROLES, "Salary view role required")
 
         result = [
-            r for r in self._compensation_records.values() if r.employee_id == employee_id
+            self._compensation_records[rid]
+            for rid in self._records_by_employee.get(employee_id, set())
+            if rid in self._compensation_records
         ]
         return sorted(result, key=lambda r: r.effective_date)
 

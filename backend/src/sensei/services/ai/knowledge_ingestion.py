@@ -291,9 +291,24 @@ class ContentNormalizer:
 
 
 class SemanticChunker:
-    """Chunk documents with heading-aware semantic splitting."""
+    """Chunk documents with heading-aware semantic splitting.
+
+    .. note::
+
+        ``max_chunk_size`` (and ``overlap``) are measured in **characters**,
+        not words (#217).  The name was kept short for ergonomics; both the
+        threshold check (``len(content) > self.max_chunk_size``) and the
+        sliding-window splitter (``text[i:i+max_chunk_size]``) operate in
+        characters so the units are fully consistent.
+    """
     
     def __init__(self, max_chunk_size: int = 1000, overlap: int = 100):
+        """Initialise chunker.
+
+        Args:
+            max_chunk_size: Maximum chunk size **in characters** (not words).
+            overlap: Overlap between consecutive chunks **in characters**.
+        """
         self.max_chunk_size = max_chunk_size
         self.overlap = overlap
     
@@ -511,11 +526,11 @@ class QualityFilter:
         if _seen_hashes is not None:
             return chunk_hash in _seen_hashes
 
-        # Legacy fallback — kept for callers that don't pass the set
-        for existing in existing_chunks:
-            if hashlib.md5(existing.encode()).hexdigest() == chunk_hash:
-                return True
-        return False
+        # Legacy fallback — convert list to set for O(1) lookup (#90)
+        existing_hashes = {
+            hashlib.md5(t.encode()).hexdigest() for t in existing_chunks
+        }
+        return chunk_hash in existing_hashes
 
 
 class TaxonomyTagger:
@@ -716,7 +731,14 @@ class KnowledgePackIngestionService:
         """
         # Chunk document
         chunk_dicts = self.semantic_chunker.chunk_document(document.normalized_content)
-        
+
+        # Guard: document must have a persisted ID before creating chunks (#167)
+        if document.id is None:
+            raise ValueError(
+                "Document must be persisted (flushed) before processing into chunks; "
+                "document_id is None"
+            )
+
         chunks = []
         existing_texts: list[str] = []
         _seen_hashes: set[str] = set()  # O(1) dedup lookups (#90)

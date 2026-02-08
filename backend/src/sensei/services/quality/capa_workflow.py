@@ -11,8 +11,11 @@ Handles Corrective and Preventive Action (CAPA) workflow:
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta, timezone
 from enum import Enum
+import logging
 from typing import Optional, Any
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 
 class NCType(str, Enum):
@@ -343,10 +346,19 @@ class RecurrenceCheckResult:
 
 @dataclass
 class CAPAConfig:
-    """Configuration for CAPA workflow."""
+    """Configuration for CAPA workflow.
+
+    .. note::
+
+        ``auto_create_severity_threshold`` (#364) controls which severity
+        levels trigger automatic CAPA creation.  By default only ``CRITICAL``
+        is included; set it to ``{NCSeverity.CRITICAL, NCSeverity.HIGH}`` to
+        also auto-create on HIGH severity NCs.
+    """
     
     auto_create_on_critical: bool = True
     auto_create_on_recurrence: bool = True
+    auto_create_severity_threshold: set | None = None  # if None → {CRITICAL}; set of NCSeverity values
     recurrence_threshold: int = 2  # Number of occurrences to trigger
     recurrence_period_days: int = 90  # Time window for recurrence check
     default_target_days: int = 30  # Default days to complete CAPA
@@ -464,16 +476,17 @@ class CAPAWorkflowIntegrationService:
         
         self._ncs[nc.id] = nc
         
-        # Check if CAPA should be auto-created
+        # Check if CAPA should be auto-created (#364)
         capa_result = None
+        severity_threshold = self.config.auto_create_severity_threshold or {NCSeverity.CRITICAL}
         
-        if self.config.auto_create_on_critical and severity == NCSeverity.CRITICAL:
+        if self.config.auto_create_on_critical and severity in severity_threshold:
             nc.capa_required = True
             capa_result = self.create_capa_from_nc(
                 nc_id=nc.id,
                 created_by=detected_by,
                 auto_created=True,
-                creation_reason="Auto-created due to CRITICAL severity",
+                creation_reason=f"Auto-created due to {severity.value.upper()} severity",
             )
         elif self.config.auto_create_on_recurrence and recurrence_result.is_recurrence:
             nc.capa_required = True
@@ -731,6 +744,7 @@ class CAPAWorkflowIntegrationService:
         """Add root cause analysis to a CAPA."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for root cause analysis", capa_id)
             return None
         
         rca = RootCauseAnalysis(
@@ -791,6 +805,7 @@ class CAPAWorkflowIntegrationService:
         """Add a corrective/preventive action to a CAPA."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for add_action", capa_id)
             return None
         
         action = CorrectiveAction(
@@ -817,6 +832,7 @@ class CAPAWorkflowIntegrationService:
         """Mark an action as started."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for start_action", capa_id)
             return None
         
         for action in capa.actions:
@@ -830,6 +846,7 @@ class CAPAWorkflowIntegrationService:
                 
                 return action
         
+        logger.warning("Action %s not found in CAPA %s", action_id, capa_id)
         return None
     
     def complete_action(
@@ -843,6 +860,7 @@ class CAPAWorkflowIntegrationService:
         """Mark an action as completed."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for complete_action", capa_id)
             return None
         
         for action in capa.actions:
@@ -856,6 +874,7 @@ class CAPAWorkflowIntegrationService:
                     action.evidence_links = evidence_links
                 return action
         
+        logger.warning("Action %s not found in CAPA %s for completion", action_id, capa_id)
         return None
     
     def verify_action(
@@ -868,6 +887,7 @@ class CAPAWorkflowIntegrationService:
         """Verify a completed action."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for verify_action", capa_id)
             return None
         
         for action in capa.actions:
@@ -878,6 +898,7 @@ class CAPAWorkflowIntegrationService:
                 action.verification_result = verification_result
                 return action
         
+        logger.warning("Action %s not found in CAPA %s for verification", action_id, capa_id)
         return None
     
     def get_overdue_actions(self, capa_id: Optional[UUID] = None) -> list[CorrectiveAction]:
@@ -967,6 +988,7 @@ class CAPAWorkflowIntegrationService:
         """Add an entity link to a CAPA."""
         capa = self._capas.get(capa_id)
         if not capa:
+            logger.warning("CAPA %s not found for entity link", capa_id)
             return None
         
         link = EntityLink(

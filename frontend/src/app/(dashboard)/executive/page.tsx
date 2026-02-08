@@ -63,6 +63,25 @@ export default function ExecutivePage() {
   const [skipRate, setSkipRate] = React.useState(0.25);
   const [peerComparison, setPeerComparison] = React.useState(1.4);
 
+  // Derive dynamic quarter label from current date instead of hardcoding
+  const currentQuarter = React.useMemo(() => {
+    const now = new Date();
+    const q = Math.ceil((now.getMonth() + 1) / 3);
+    return `Q${q} ${now.getFullYear()}`;
+  }, []);
+
+  // Compute revenue delta vs previous month (data-driven, not hardcoded)
+  const revenueMtd = ((todayData as any)?.metrics?.revenue || 0);
+  const revenuePrevMonth = ((todayData as any)?.metrics?.revenue_prev_month || 0);
+  const revenueDeltaPct = revenuePrevMonth > 0
+    ? (((revenueMtd - revenuePrevMonth) / revenuePrevMonth) * 100).toFixed(1)
+    : '—';
+  const revenueDeltaPositive = revenuePrevMonth > 0 && revenueMtd >= revenuePrevMonth;
+
+  // Compute uptime from real data
+  const uptimeValue = ((todayData as any)?.metrics?.uptime_pct ?? null);
+  const uptimeDisplay = uptimeValue !== null ? `${Number(uptimeValue).toFixed(1)}%` : (t('pages.executive.kpi.uptimeValue') || 'N/A');
+
   const handleRunNl2sql = () => {
     runNl2sql({ question: nl2sqlQuestion });
   };
@@ -121,10 +140,10 @@ export default function ExecutivePage() {
               <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
                 <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.revenueMtd') || 'Revenue Intelligence (MTD)'}</p>
                 <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">
-                  ${(((todayData as any)?.metrics?.revenue || 0) / 1000000).toFixed(1)}M
+                  ${(revenueMtd / 1000000).toFixed(1)}M
                 </div>
-                <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2 flex items-center gap-1">
-                  <TrendingUp className="h-3 w-3" /> +2.1% {t('pages.executive.kpi.alphaTrend') || 'ALPHA_TREND'}
+                <p className={cn("text-[9px] font-mono font-bold uppercase tracking-widest mt-2 flex items-center gap-1", revenueDeltaPositive ? "text-rams-green" : "text-rams-red")}>
+                  <TrendingUp className="h-3 w-3" /> {revenueDeltaPct !== '—' ? `${revenueDeltaPositive ? '+' : ''}${revenueDeltaPct}%` : revenueDeltaPct} {currentQuarter}
                 </p>
               </div>
               <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
@@ -141,8 +160,8 @@ export default function ExecutivePage() {
               </div>
               <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
                 <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.operationalUptime') || 'Operational Uptime'}</p>
-                <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{t('pages.executive.kpi.uptimeValue') || 'N/A'}</div>
-                <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{t('pages.executive.kpi.optimalState') || 'OPTIMAL_STATE'}</p>
+                <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", uptimeValue !== null && uptimeValue >= 99 ? "text-rams-green" : uptimeValue !== null && uptimeValue < 95 ? "text-rams-red" : "text-foreground/90")}>{uptimeDisplay}</div>
+                <p className={cn("text-[9px] font-mono font-bold uppercase tracking-widest mt-2", uptimeValue !== null && uptimeValue >= 99 ? "text-rams-green" : "text-muted-foreground/40")}>{uptimeValue !== null && uptimeValue >= 99 ? (t('pages.executive.kpi.optimalState') || 'OPTIMAL_STATE') : uptimeValue !== null ? (t('pages.executive.kpi.belowTarget') || 'BELOW_TARGET') : (t('pages.executive.kpi.awaitingData') || 'AWAITING_DATA')}</p>
               </div>
             </div>
 
@@ -178,12 +197,24 @@ export default function ExecutivePage() {
                     {t('pages.executive.operationalOverview') || 'Operational Overview'}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-12 flex items-center justify-center bg-rams-module relative overflow-hidden">
-                  <div className="relative z-10 text-center space-y-4">
-                    <div className="p-4 rounded-none bg-rams-panel border border-rams-line inline-block">
-                      <Users className="h-8 w-8 text-rams-orange/40" />
+                <CardContent className="p-6 bg-rams-module relative overflow-hidden space-y-4">
+                  <div className="relative z-10 grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.activeUsers') || 'Active Users'}</p>
+                      <p className="text-2xl font-mono font-bold tabular-nums text-foreground/90">{(todayData as any)?.metrics?.active_users ?? '—'}</p>
                     </div>
-                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-muted-foreground/40">{t('pages.executive.metricsComingSoon') || 'Global Metrics — Coming Soon'}</p>
+                    <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.openWorkOrders') || 'Open Work Orders'}</p>
+                      <p className="text-2xl font-mono font-bold tabular-nums text-foreground/90">{(todayData as any)?.metrics?.open_work_orders ?? '—'}</p>
+                    </div>
+                    <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.productionEfficiency') || 'Production Efficiency'}</p>
+                      <p className="text-2xl font-mono font-bold tabular-nums text-rams-green">{(todayData as any)?.metrics?.production_efficiency ? `${Number((todayData as any).metrics.production_efficiency).toFixed(1)}%` : '—'}</p>
+                    </div>
+                    <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.pendingApprovals') || 'Pending Approvals'}</p>
+                      <p className="text-2xl font-mono font-bold tabular-nums text-rams-orange">{(todayData as any)?.metrics?.pending_approvals ?? '—'}</p>
+                    </div>
                   </div>
                   <div className="absolute inset-0 perforated-bg opacity-5" />
                 </CardContent>
@@ -359,7 +390,7 @@ export default function ExecutivePage() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-8 bg-rams-panel/40 border border-rams-line gap-6">
                       <div className="space-y-1">
                         <div className="text-3xl font-sans font-black uppercase tracking-tight text-foreground/90">{riskResult.employee_name}</div>
-                        <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.risk.scoreConfidence') || 'Predictive Score Confidence: 94.8%'}</div>
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.risk.scoreConfidence') || 'Predictive Score Confidence:'} {riskResult.confidence ? `${(riskResult.confidence * 100).toFixed(1)}%` : 'N/A'}</div>
                       </div>
                       <div className="flex gap-12">
                         <div className="space-y-3">

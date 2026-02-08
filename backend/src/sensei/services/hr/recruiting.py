@@ -11,12 +11,17 @@ This module is intentionally in-memory and pure-Python to match other services.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------- Enums ----------------------
@@ -292,8 +297,10 @@ class OfferLetter:
 # ---------------------- Service ----------------------
 
 
-class RecruitingService:
+class RecruitingService(PersistentServiceMixin):
     """In-memory recruiting/ATS service with RBAC and PII controls."""
+
+    SERVICE_NAME = "recruiting"
 
     def __init__(self) -> None:
         self._requisitions: dict[UUID, JobRequisition] = {}

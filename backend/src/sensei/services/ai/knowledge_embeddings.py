@@ -252,19 +252,38 @@ class KnowledgeEmbeddingService:
         # Generate embeddings in batch (CPU-bound; offload to thread pool #81)
         logger.info(f"Generating embeddings for {len(chunks)} chunks from document {document_id}")
         loop = asyncio.get_running_loop()
-        embeddings = await loop.run_in_executor(
-            None,
-            functools.partial(self.embedding_service.encode_batch, texts, batch_size=batch_size),
-        )
-        
-        # Store embeddings
-        for chunk, embedding in zip(chunks, embeddings):
-            chunk.embedding = embedding.tolist()
+        failed = 0
+        try:
+            embeddings = await loop.run_in_executor(
+                None,
+                functools.partial(self.embedding_service.encode_batch, texts, batch_size=batch_size),
+            )
+            # Store embeddings
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding.tolist()
+        except Exception as batch_err:
+            # Batch failed — fall back to per-chunk processing so one bad chunk
+            # doesn't kill the entire document (#182)
+            logger.warning(
+                f"Batch embedding failed for document {document_id}, "
+                f"falling back to per-chunk: {batch_err}"
+            )
+            for chunk in chunks:
+                try:
+                    emb = await loop.run_in_executor(
+                        None,
+                        functools.partial(self.embedding_service.encode_batch, [chunk.chunk_text], batch_size=1),
+                    )
+                    chunk.embedding = emb[0].tolist()
+                except Exception as chunk_err:
+                    logger.error(f"Failed to embed chunk {chunk.id}: {chunk_err}")
+                    failed += 1
         
         await session.commit()
         
-        logger.info(f"Successfully embedded {len(chunks)} chunks for document {document_id}")
-        return len(chunks)
+        embedded = len(chunks) - failed
+        logger.info(f"Successfully embedded {embedded}/{len(chunks)} chunks for document {document_id}")
+        return embedded
     
     async def embed_all_unembedded(
         self,
@@ -512,15 +531,16 @@ class SemanticSearchService:
             logger.warning(f"Chunk {chunk_id} not found or has no embedding")
             return []
         
-        # Search using chunk's embedding
+        # Search using chunk's embedding (use labeled expression to avoid recomputing)
+        similarity_expr = (1 - KnowledgeChunk.embedding.cosine_distance(source_chunk.embedding))
         stmt = select(
             KnowledgeChunk,
-            (1 - KnowledgeChunk.embedding.cosine_distance(source_chunk.embedding)).label("similarity")
+            similarity_expr.label("similarity")
         ).where(
             KnowledgeChunk.embedding.isnot(None),
             KnowledgeChunk.id != chunk_id,  # Exclude self
         ).order_by(
-            (1 - KnowledgeChunk.embedding.cosine_distance(source_chunk.embedding)).desc()
+            text("similarity DESC")
         ).limit(limit)
         
         result = await session.execute(stmt)

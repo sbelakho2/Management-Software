@@ -1,3 +1,11 @@
+"""
+Measurement System Analysis (MSA) Service.
+
+Performs Gage R&R studies, linearity/bias analysis,
+and stability assessments per AIAG MSA 4th edition.
+Calculates %GRR, ndc, and measurement uncertainty.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict

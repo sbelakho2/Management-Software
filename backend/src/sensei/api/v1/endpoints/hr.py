@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from sensei.api import deps
 from sensei.api.deps import DBSession, CurrentUser
+from sensei.core.config import settings
 from sensei.models.user import User, Role
 from sensei.models.hr import EmployeeProfile, HRJobOpening, HRLeaveRequest, HRJobApplication, HRAppraisal
 from sensei.models.learning import UserLearningProgress, LearningModule
@@ -164,7 +165,7 @@ async def get_expiring_certs(db: DBSession, current_user: CurrentUser) -> Any:
             UserSkill.expiration_date <= cutoff,
         )
         .order_by(UserSkill.expiration_date.asc())
-        .limit(50)
+        .limit(settings.AUDIT_LOG_QUERY_LIMIT)
     )
 
     rows = result.all()
@@ -370,7 +371,7 @@ async def get_my_leave_requests(db: DBSession, current_user: CurrentUser) -> Any
         select(HRLeaveRequest)
         .where(HRLeaveRequest.employee_id == profile.id)
         .order_by(HRLeaveRequest.created_at.desc())
-        .limit(50)
+        .limit(settings.AUDIT_LOG_QUERY_LIMIT)
     )
     requests = result.scalars().all()
     

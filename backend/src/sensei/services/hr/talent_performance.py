@@ -18,6 +18,8 @@ from enum import Enum
 from typing import Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
 
 def _require_tzaware(dt: datetime) -> None:
     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
@@ -163,8 +165,10 @@ class PraiseMilestone:
     awarded_by: str
 
 
-class TalentPerformanceService:
+class TalentPerformanceService(PersistentServiceMixin):
     """Lean talent & performance service."""
+
+    SERVICE_NAME = "talent_performance"
 
     def __init__(self) -> None:
         self._a3_contribs: dict[UUID, A3Contribution] = {}

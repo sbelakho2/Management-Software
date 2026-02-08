@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-import os
 import re
 from typing import Iterable
 
+from sensei.core.config import settings
 from sensei.services.ai.reasoning_engine import A3Phase
 
 
@@ -64,7 +64,7 @@ def rank_learning_units(
     max_sources: int = 5,
     embedder: object | None = None,
 ) -> list[RankedLearningUnit]:
-    retrieval_mode = os.getenv("SENSEI_SOCRATIC_RAG_RETRIEVAL", "lexical").lower()
+    retrieval_mode = settings.SOCRATIC_RAG_RETRIEVAL_MODE.lower()
     units_list = list(units)
 
     if retrieval_mode == "onnx" and embedder is not None:

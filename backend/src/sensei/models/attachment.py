@@ -13,6 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -175,6 +176,12 @@ class Attachment(Base, TimestampMixin):
     )
     
     __table_args__ = (
+        CheckConstraint(
+            "entity_type IN ('rfq', 'quote', 'a3', 'contact', 'account', 'work_order', "
+            "'inspection', 'ncr', 'capa', 'invoice', 'purchase_order', 'asset', "
+            "'training', 'employee', 'knowledge_pack', 'ticket', 'project', 'general')",
+            name="ck_attachments_entity_type_valid",
+        ),
         Index("ix_attachments_entity", entity_type, entity_id),
         Index("ix_attachments_entity_category", entity_type, entity_id, category),
         Index(

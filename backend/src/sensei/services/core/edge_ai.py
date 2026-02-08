@@ -12,6 +12,7 @@ import struct
 import hashlib
 import time
 import zlib
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -538,7 +539,15 @@ class PredictiveMaintenanceEngine:
         self._update_machine_health(detection)
         
         return detection
-    
+
+    async def analyze_reading_async(self, reading: SensorReading) -> AnomalyDetection:
+        """Analyze a sensor reading asynchronously (offloads CPU-bound CNN to thread)."""
+        return await asyncio.to_thread(self.analyze_reading, reading)
+
+    async def classify_async(self, signal: list[float]) -> tuple[int, float]:
+        """Run CNN classification asynchronously (offloads to thread)."""
+        return await asyncio.to_thread(self._classify, signal)
+
     def _update_machine_health(self, detection: AnomalyDetection) -> None:
         """Update machine health status."""
         machine_id = detection.machine_id
@@ -1035,16 +1044,27 @@ class EdgeOrchestrator:
 # SINGLETON & FACTORY FUNCTIONS
 # =============================================================================
 
+import threading as _threading
 
 _edge_orchestrator: EdgeOrchestrator | None = None
+_edge_orchestrator_lock = _threading.Lock()
 
 
 def get_edge_orchestrator(machine_id: str = "default_machine") -> EdgeOrchestrator:
-    """Get the Edge Orchestrator singleton."""
+    """Get the Edge Orchestrator singleton (thread-safe, #369)."""
     global _edge_orchestrator
     if _edge_orchestrator is None:
-        _edge_orchestrator = EdgeOrchestrator(machine_id=machine_id)
+        with _edge_orchestrator_lock:
+            if _edge_orchestrator is None:
+                _edge_orchestrator = EdgeOrchestrator(machine_id=machine_id)
     return _edge_orchestrator
+
+
+def reset_edge_orchestrator() -> None:
+    """Reset the singleton for testing or reconfiguration."""
+    global _edge_orchestrator
+    with _edge_orchestrator_lock:
+        _edge_orchestrator = None
 
 
 def create_predictive_maintenance_engine(

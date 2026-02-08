@@ -75,6 +75,37 @@ import { PageGuard } from '@/components/layout/page-guard';
 import type { UserRole, EmployeeProfile, HRJobOpening, HRJobApplication, HRLeaveRequest } from '@/types';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { Pagination } from '@/components/ui/pagination';
+import { z } from 'zod';
+
+// --- Zod schemas for form validation ---
+const employeeSchema = z.object({
+  first_name: z.string().min(1, 'First name is required').max(100),
+  last_name: z.string().min(1, 'Last name is required').max(100),
+  email: z.string().min(1, 'Email is required').email('Invalid email format'),
+  department: z.string().optional(),
+  job_title: z.string().optional(),
+  jurisdiction: z.string().default('TN'),
+  status: z.enum(['active', 'inactive', 'on_leave', 'terminated']).default('active'),
+});
+
+const jobOpeningSchema = z.object({
+  title: z.string().min(1, 'Job title is required'),
+  department: z.string().min(1, 'Department is required'),
+  description: z.string().optional(),
+  employment_type: z.string().default('full_time'),
+  status: z.string().default('open'),
+});
+
+const leaveRequestSchema = z.object({
+  employee_id: z.string().min(1, 'Employee is required'),
+  leave_type: z.string().min(1, 'Leave type is required'),
+  start_date: z.string().min(1, 'Start date is required'),
+  end_date: z.string().min(1, 'End date is required'),
+  reason: z.string().optional(),
+});
+
+type FieldErrors = Record<string, string>;
 
 // Application status pipeline stages
 const APPLICATION_STAGES = ['received', 'screening', 'interview', 'offer', 'hired', 'rejected'] as const;
@@ -108,6 +139,7 @@ export default function HRDashboard() {
     applications,
     leaveRequests,
     loading,
+    error,
     fetchStats, 
     fetchHeadcount, 
     fetchExpiringCerts,
@@ -130,6 +162,16 @@ export default function HRDashboard() {
   const [activeTab, setActiveTab] = React.useState('overview');
   const [searchTerm, setSearchTerm] = React.useState('');
   const [jobSearchTerm, setJobSearchTerm] = React.useState('');
+
+  // Pagination state (#289)
+  const PAGE_SIZE = 12;
+  const [employeePage, setEmployeePage] = React.useState(1);
+  const [jobPage, setJobPage] = React.useState(1);
+  const [leavePage, setLeavePage] = React.useState(1);
+
+  // Reset page when search changes
+  React.useEffect(() => { setEmployeePage(1); }, [searchTerm]);
+  React.useEffect(() => { setJobPage(1); }, [jobSearchTerm]);
   
   // Dialog states
   const [showAddDialog, setShowAddDialog] = React.useState(false);
@@ -153,6 +195,7 @@ export default function HRDashboard() {
   });
 
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({});
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [selectedApplication, setSelectedApplication] = React.useState<HRJobApplication | null>(null);
@@ -227,6 +270,10 @@ export default function HRDashboard() {
     );
   }, [employees, searchTerm]);
 
+  // Paginated slices (#289)
+  const employeeTotalPages = Math.max(1, Math.ceil(filteredEmployees.length / PAGE_SIZE));
+  const paginatedEmployees = filteredEmployees.slice((employeePage - 1) * PAGE_SIZE, employeePage * PAGE_SIZE);
+
   const filteredJobOpenings = React.useMemo(() => {
     if (!jobSearchTerm) return jobOpenings;
     return jobOpenings.filter(job => 
@@ -235,9 +282,15 @@ export default function HRDashboard() {
     );
   }, [jobOpenings, jobSearchTerm]);
 
+  const jobTotalPages = Math.max(1, Math.ceil(filteredJobOpenings.length / PAGE_SIZE));
+  const paginatedJobOpenings = filteredJobOpenings.slice((jobPage - 1) * PAGE_SIZE, jobPage * PAGE_SIZE);
+
   const pendingLeaveRequests = React.useMemo(() => {
     return leaveRequests.filter(req => req.status === 'pending');
   }, [leaveRequests]);
+
+  const leaveTotalPages = Math.max(1, Math.ceil(leaveRequests.length / PAGE_SIZE));
+  const paginatedLeaveRequests = leaveRequests.slice((leavePage - 1) * PAGE_SIZE, leavePage * PAGE_SIZE);
 
   // Group applications by status for pipeline view
   const applicationsByStatus = React.useMemo(() => {
@@ -264,8 +317,16 @@ export default function HRDashboard() {
 
   const handleCreateEmployee = async () => {
     setFormError(null);
-    if (!newEmployee.first_name || !newEmployee.last_name || !newEmployee.email) {
-      setFormError("Please fill in all required fields (First Name, Last Name, Email)");
+    setFieldErrors({});
+    const result = employeeSchema.safeParse(newEmployee);
+    if (!result.success) {
+      const errs: FieldErrors = {};
+      result.error.issues.forEach(issue => {
+        const key = issue.path[0] as string;
+        if (!errs[key]) errs[key] = issue.message;
+      });
+      setFieldErrors(errs);
+      setFormError(Object.values(errs).join('. '));
       return;
     }
     setIsSubmitting(true);
@@ -418,6 +479,22 @@ export default function HRDashboard() {
   return (
     <PageGuard requiredRoles={HR_ROLES}>
       <div className="space-y-4 page-fade-in pb-12" data-testid="hr-dashboard">
+        {/* Error state */}
+        {error && (
+          <div className="rounded-rams-sm border border-destructive/50 bg-destructive/10 p-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="text-sm font-bold text-destructive">Error loading HR data</p>
+                <p className="text-xs text-muted-foreground">{error}</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { fetchStats(); fetchEmployees(); }}>
+              Retry
+            </Button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
           <div className="space-y-1">
@@ -684,7 +761,7 @@ export default function HRDashboard() {
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {filteredEmployees.map((emp) => (
+                    {paginatedEmployees.map((emp) => (
                       <div key={emp.id} className="relative rounded-rams-sm border border-rams-line bg-rams-module hover:bg-rams-panel transition-colors group p-4">
                         <div className="flex items-start justify-between mb-3">
                           <Avatar className="h-10 w-10 rounded-rams-sm border border-rams-line">
@@ -740,6 +817,12 @@ export default function HRDashboard() {
                       </div>
                     ))}
                   </div>
+                  <Pagination
+                    currentPage={employeePage}
+                    totalPages={employeeTotalPages}
+                    onPageChange={setEmployeePage}
+                    totalItems={filteredEmployees.length}
+                  />
                 )}
               </TabsContent>
 
@@ -777,7 +860,7 @@ export default function HRDashboard() {
                     </div>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                      {filteredJobOpenings.map((job) => (
+                      {paginatedJobOpenings.map((job) => (
                         <div key={job.id} className="rounded-rams-sm border border-rams-line bg-rams-module hover:bg-rams-panel transition-colors p-4">
                           <div className="flex items-start justify-between mb-3">
                             <Badge 
@@ -858,6 +941,7 @@ export default function HRDashboard() {
                       ))}
                     </div>
                   )}
+                  <Pagination currentPage={jobPage} totalPages={jobTotalPages} onPageChange={setJobPage} totalItems={filteredJobOpenings.length} />
                 </div>
 
                 {/* Applications Pipeline */}
@@ -875,9 +959,9 @@ export default function HRDashboard() {
                       <p className="text-sm text-muted-foreground">No applications yet</p>
                     </div>
                   ) : (
-                    <div className="grid gap-3 lg:grid-cols-5">
+                    <div className="grid gap-3 lg:grid-cols-5" role="region" aria-label="Candidate Pipeline Board">
                       {APPLICATION_STAGES.filter(s => s !== 'rejected').map((stage) => (
-                        <div key={stage} className="space-y-2">
+                        <div key={stage} className="space-y-2" role="list" aria-label={`${stage} stage — ${applicationsByStatus[stage].length} candidates`}>
                           <div className="flex items-center justify-between px-2">
                             <Badge variant="outline" className={cn("rounded-none text-[8px] font-black uppercase tracking-widest px-1.5 h-5", statusColors[stage])}>
                               {stage}
@@ -890,10 +974,20 @@ export default function HRDashboard() {
                               return (
                                 <Card 
                                   key={app.id} 
-                                  className="rounded-rams-sm border-rams-line bg-rams-panel hover:border-rams-orange/50 transition-colors cursor-pointer"
+                                  className="rounded-rams-sm border-rams-line bg-rams-panel hover:border-rams-orange/50 focus-visible:border-rams-orange focus-visible:ring-2 focus-visible:ring-rams-orange/40 focus-visible:outline-none transition-colors cursor-pointer"
+                                  tabIndex={0}
+                                  role="button"
+                                  aria-label={`${app.first_name} ${app.last_name} — ${job?.title || 'Unknown Position'} — ${stage}`}
                                   onClick={() => {
                                     setSelectedApplication(app);
                                     setShowApplicationDetailDialog(true);
+                                  }}
+                                  onKeyDown={(e: React.KeyboardEvent) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setSelectedApplication(app);
+                                      setShowApplicationDetailDialog(true);
+                                    }
                                   }}
                                 >
                                   <CardContent className="p-3">
@@ -948,7 +1042,7 @@ export default function HRDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {leaveRequests.map((request) => {
+                    {paginatedLeaveRequests.map((request) => {
                       const emp = employees.find(e => e.id === request.employee_id);
                       return (
                         <div key={request.id} className="rounded-rams-sm border border-rams-line bg-rams-module p-3">
@@ -1031,6 +1125,7 @@ export default function HRDashboard() {
                     })}
                   </div>
                 )}
+                <Pagination currentPage={leavePage} totalPages={leaveTotalPages} onPageChange={setLeavePage} totalItems={leaveRequests.length} />
               </TabsContent>
             </Tabs>
           </div>
@@ -1053,17 +1148,20 @@ export default function HRDashboard() {
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" placeholder="E.g. John" value={newEmployee.first_name} onChange={(e) => setNewEmployee(prev => ({ ...prev, first_name: e.target.value }))} />
+                  <Label htmlFor="firstName">First Name *</Label>
+                  <Input id="firstName" placeholder="E.g. John" value={newEmployee.first_name} onChange={(e) => setNewEmployee(prev => ({ ...prev, first_name: e.target.value }))} className={fieldErrors.first_name ? 'border-red-500' : ''} />
+                  {fieldErrors.first_name && <p className="text-[10px] text-red-500 font-mono">{fieldErrors.first_name}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" placeholder="E.g. Doe" value={newEmployee.last_name} onChange={(e) => setNewEmployee(prev => ({ ...prev, last_name: e.target.value }))} />
+                  <Label htmlFor="lastName">Last Name *</Label>
+                  <Input id="lastName" placeholder="E.g. Doe" value={newEmployee.last_name} onChange={(e) => setNewEmployee(prev => ({ ...prev, last_name: e.target.value }))} className={fieldErrors.last_name ? 'border-red-500' : ''} />
+                  {fieldErrors.last_name && <p className="text-[10px] text-red-500 font-mono">{fieldErrors.last_name}</p>}
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input id="email" type="email" placeholder="john.doe@company.com" value={newEmployee.email} onChange={(e) => setNewEmployee(prev => ({ ...prev, email: e.target.value }))} />
+                <Label htmlFor="email">Email Address *</Label>
+                <Input id="email" type="email" placeholder="john.doe@company.com" value={newEmployee.email} onChange={(e) => setNewEmployee(prev => ({ ...prev, email: e.target.value }))} className={fieldErrors.email ? 'border-red-500' : ''} />
+                {fieldErrors.email && <p className="text-[10px] text-red-500 font-mono">{fieldErrors.email}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">

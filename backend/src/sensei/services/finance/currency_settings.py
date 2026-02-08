@@ -1,3 +1,11 @@
+"""
+Currency Settings Service.
+
+Manages multi-currency configuration, exchange rate
+sources, rounding rules, and default currency settings
+for the organization.
+"""
+
 from __future__ import annotations
 
 from datetime import date

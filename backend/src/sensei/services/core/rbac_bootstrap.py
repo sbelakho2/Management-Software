@@ -1,3 +1,10 @@
+"""
+RBAC Bootstrap.
+
+Initializes default roles, permissions, and role-permission
+mappings on application startup.
+"""
+
 from __future__ import annotations
 
 import structlog

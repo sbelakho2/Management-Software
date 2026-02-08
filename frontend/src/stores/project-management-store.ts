@@ -231,7 +231,10 @@ interface ProjectManagementState {
   commentsByStoryId: Record<string, StoryComment[]>;
   commentsByIssueId: Record<string, IssueComment[]>;
 
+  /** @deprecated Use loadingOps for per-operation states */
   isLoading: boolean;
+  /** Set of currently in-progress operation names */
+  loadingOps: Set<string>;
   error: string | null;
 
   fetchProjects: () => Promise<void>;
@@ -278,6 +281,25 @@ interface ProjectManagementState {
   updateStory: (storyId: string, updates: Partial<UserStory>) => Promise<UserStory>;
 
   clearError: () => void;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
+}
+
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: ProjectManagementState) => Partial<ProjectManagementState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, isLoading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: ProjectManagementState) => Partial<ProjectManagementState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, isLoading: next.size > 0 };
+  });
 }
 
 export const useProjectManagementStore = create<ProjectManagementState>()(
@@ -296,34 +318,41 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
     commentsByStoryId: {},
     commentsByIssueId: {},
     isLoading: false,
+  loadingOps: new Set<string>(),
     error: null,
 
     clearError: () => set({ error: null }),
 
     fetchProjects: async () => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchProjects');
       try {
         const res = await apiGet<ApiPaginated<Project[]>>('/projects?page=1&page_size=50');
-        set({ projects: res.data, isLoading: false });
+        set({ projects: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load projects', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load projects' });
       }
+        finally {
+          endOp(set, 'fetchProjects');
+        }
     },
 
     fetchProjectById: async (id: string) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchProjectById');
       try {
         const res = await apiGet<ApiEnvelope<Project>>(`/projects/${id}`);
-        set({ selectedProject: res.data, isLoading: false });
+        set({ selectedProject: res.data });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load project', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load project' });
         return null;
+      }
+      finally {
+        endOp(set, 'fetchProjectById');
       }
     },
 
     createProject: async (payload) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createProject');
       const body = {
         name: payload.name,
         description: payload.description ?? null,
@@ -336,68 +365,82 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
       };
       try {
         const res = await apiSend<ApiEnvelope<Project>>('/projects', 'POST', body);
-        set({ projects: [res.data, ...get().projects], isLoading: false });
+        set({ projects: [res.data, ...get().projects] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create project', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create project' });
         throw e;
       }
+        finally {
+          endOp(set, 'createProject');
+        }
     },
 
     updateProject: async (id, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateProject');
       try {
         const res = await apiSend<ApiEnvelope<Project>>(`/projects/${id}`, 'PATCH', updates);
         set({
           projects: get().projects.map((p) => (p.id === id ? res.data : p)),
           selectedProject: get().selectedProject?.id === id ? res.data : get().selectedProject,
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update project', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update project' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateProject');
+        }
     },
 
     fetchEpics: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchEpics');
       try {
         const res = await apiGet<ApiEnvelope<Epic[]>>(`/projects/${encodeURIComponent(projectId)}/epics`);
-        set({ epics: res.data, isLoading: false });
+        set({ epics: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load epics', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load epics' });
       }
+        finally {
+          endOp(set, 'fetchEpics');
+        }
     },
 
     createEpic: async (projectId, subject, description) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createEpic');
       try {
         const res = await apiSend<ApiEnvelope<Epic>>('/epics', 'POST', {
           project_id: projectId,
           subject,
           description: description ?? null,
         });
-        set({ epics: [...get().epics, res.data], isLoading: false });
+        set({ epics: [...get().epics, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create epic', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create epic' });
         throw e;
       }
+        finally {
+          endOp(set, 'createEpic');
+        }
     },
 
     fetchSprints: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchSprints');
       try {
         const res = await apiGet<ApiEnvelope<Sprint[]>>(`/projects/${encodeURIComponent(projectId)}/sprints`);
-        set({ sprints: res.data, isLoading: false });
+        set({ sprints: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load sprints', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load sprints' });
       }
+        finally {
+          endOp(set, 'fetchSprints');
+        }
     },
 
     createSprint: async (projectId, name, start_date, end_date) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createSprint');
       try {
         const res = await apiSend<ApiEnvelope<Sprint>>('/sprints', 'POST', {
           project_id: projectId,
@@ -405,91 +448,110 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
           start_date,
           end_date,
         });
-        set({ sprints: [...get().sprints, res.data], isLoading: false });
+        set({ sprints: [...get().sprints, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create sprint', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create sprint' });
         throw e;
       }
+        finally {
+          endOp(set, 'createSprint');
+        }
     },
 
     fetchStories: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchStories');
       try {
         const res = await apiGet<ApiEnvelope<UserStory[]>>(`/projects/${encodeURIComponent(projectId)}/user-stories`);
-        set({ stories: res.data, isLoading: false });
+        set({ stories: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load stories', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load stories' });
       }
+        finally {
+          endOp(set, 'fetchStories');
+        }
     },
 
     createStory: async (payload) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createStory');
       try {
         const res = await apiSend<ApiEnvelope<UserStory>>('/user-stories', 'POST', {
           ...payload,
           priority: payload.priority ?? 50,
         });
-        set({ stories: [...get().stories, res.data], isLoading: false });
+        set({ stories: [...get().stories, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create story', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create story' });
         throw e;
       }
+        finally {
+          endOp(set, 'createStory');
+        }
     },
     
     fetchIssues: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchIssues');
       try {
         const res = await apiGet<ApiEnvelope<Issue[]>>(`/projects/${encodeURIComponent(projectId)}/issues`);
-        set({ issues: res.data, isLoading: false });
+        set({ issues: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load issues', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load issues' });
       }
+        finally {
+          endOp(set, 'fetchIssues');
+        }
     },
 
     createIssue: async (payload) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createIssue');
       try {
         const res = await apiSend<ApiEnvelope<Issue>>('/issues', 'POST', payload);
-        set({ issues: [...get().issues, res.data], isLoading: false });
+        set({ issues: [...get().issues, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create issue', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create issue' });
         throw e;
       }
+        finally {
+          endOp(set, 'createIssue');
+        }
     },
 
     updateIssue: async (issueId, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateIssue');
       try {
         const res = await apiSend<ApiEnvelope<Issue>>(`/issues/${issueId}`, 'PATCH', updates);
         set({
           issues: get().issues.map((i) => (i.id === issueId ? res.data : i)),
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update issue', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update issue' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateIssue');
+        }
     },
 
     fetchIssueComments: async (issueId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchIssueComments');
       try {
         const res = await apiGet<ApiEnvelope<IssueComment[]>>(`/issues/${issueId}/comments`);
         set({
           commentsByIssueId: { ...get().commentsByIssueId, [issueId]: res.data },
-          isLoading: false,
         });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load issue comments', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load issue comments' });
       }
+        finally {
+          endOp(set, 'fetchIssueComments');
+        }
     },
 
     createIssueComment: async (issueId, content) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createIssueComment');
       try {
         const res = await apiSend<ApiEnvelope<IssueComment>>(`/issues/${issueId}/comments`, 'POST', {
           content,
@@ -497,138 +559,166 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         const existing = get().commentsByIssueId[issueId] ?? [];
         set({
           commentsByIssueId: { ...get().commentsByIssueId, [issueId]: [...existing, res.data] },
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create issue comment', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create issue comment' });
         throw e;
       }
+        finally {
+          endOp(set, 'createIssueComment');
+        }
     },
 
     fetchWikiPages: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchWikiPages');
       try {
         const res = await apiGet<ApiEnvelope<WikiPage[]>>(`/projects/${encodeURIComponent(projectId)}/wiki-pages`);
-        set({ wikiPages: res.data, isLoading: false });
+        set({ wikiPages: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load wiki pages', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load wiki pages' });
       }
+        finally {
+          endOp(set, 'fetchWikiPages');
+        }
     },
 
     createWikiPage: async (payload) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createWikiPage');
       try {
         const res = await apiSend<ApiEnvelope<WikiPage>>('/wiki-pages', 'POST', payload);
-        set({ wikiPages: [...get().wikiPages, res.data], isLoading: false });
+        set({ wikiPages: [...get().wikiPages, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create wiki page', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create wiki page' });
         throw e;
       }
+        finally {
+          endOp(set, 'createWikiPage');
+        }
     },
 
     updateWikiPage: async (pageId, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateWikiPage');
       try {
         const res = await apiSend<ApiEnvelope<WikiPage>>(`/wiki-pages/${pageId}`, 'PATCH', updates);
         set({
           wikiPages: get().wikiPages.map((p) => (p.id === pageId ? res.data : p)),
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update wiki page', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update wiki page' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateWikiPage');
+        }
     },
 
     fetchMilestones: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchMilestones');
       try {
         const res = await apiGet<ApiEnvelope<ProjectMilestone[]>>(`/projects/${encodeURIComponent(projectId)}/milestones`);
-        set({ milestones: res.data, isLoading: false });
+        set({ milestones: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load milestones', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load milestones' });
       }
+        finally {
+          endOp(set, 'fetchMilestones');
+        }
     },
 
     createMilestone: async (payload) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createMilestone');
       try {
         const res = await apiSend<ApiEnvelope<ProjectMilestone>>('/milestones', 'POST', payload);
-        set({ milestones: [...get().milestones, res.data], isLoading: false });
+        set({ milestones: [...get().milestones, res.data] });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create milestone', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create milestone' });
         throw e;
       }
+        finally {
+          endOp(set, 'createMilestone');
+        }
     },
 
     updateMilestone: async (milestoneId, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateMilestone');
       try {
         const res = await apiSend<ApiEnvelope<ProjectMilestone>>(`/milestones/${milestoneId}`, 'PATCH', updates);
         set({
           milestones: get().milestones.map((m) => (m.id === milestoneId ? res.data : m)),
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update milestone', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update milestone' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateMilestone');
+        }
     },
 
     deleteMilestone: async (milestoneId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'deleteMilestone');
       try {
         await apiSend(`/milestones/${milestoneId}`, 'DELETE');
         set({
           milestones: get().milestones.filter((m) => m.id !== milestoneId),
-          isLoading: false,
         });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to delete milestone', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to delete milestone' });
         throw e;
       }
+        finally {
+          endOp(set, 'deleteMilestone');
+        }
     },
 
     fetchActivities: async (projectId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchActivities');
       try {
         const res = await apiClient.get<ApiPaginated<ProjectActivity[]>>(`/project-management/projects/${encodeURIComponent(projectId)}/activities`);
-        set({ activities: res.data, isLoading: false });
+        set({ activities: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load activities', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load activities' });
       }
+        finally {
+          endOp(set, 'fetchActivities');
+        }
     },
 
     fetchMyWork: async () => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchMyWork');
       try {
         const res = await apiGet<ApiEnvelope<{ stories: UserStory[]; issues: Issue[] }>>('/my-work');
-        set({ myWork: res.data, isLoading: false });
+        set({ myWork: res.data });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load my work', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load my work' });
       }
+        finally {
+          endOp(set, 'fetchMyWork');
+        }
     },
 
     fetchSubtasks: async (storyId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchSubtasks');
       try {
         const res = await apiGet<ApiEnvelope<Subtask[]>>(`/user-stories/${storyId}/subtasks`);
         set({
           subtasksByStoryId: { ...get().subtasksByStoryId, [storyId]: res.data },
-          isLoading: false,
         });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load subtasks', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load subtasks' });
       }
+        finally {
+          endOp(set, 'fetchSubtasks');
+        }
     },
 
     createSubtask: async (storyId, subject, description, status) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createSubtask');
       try {
         const res = await apiSend<ApiEnvelope<Subtask>>('/subtasks', 'POST', {
           user_story_id: storyId,
@@ -639,17 +729,19 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         const existing = get().subtasksByStoryId[storyId] ?? [];
         set({
           subtasksByStoryId: { ...get().subtasksByStoryId, [storyId]: [...existing, res.data] },
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create subtask', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create subtask' });
         throw e;
       }
+        finally {
+          endOp(set, 'createSubtask');
+        }
     },
 
     updateSubtask: async (subtaskId, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateSubtask');
       try {
         const res = await apiSend<ApiEnvelope<Subtask>>(`/subtasks/${subtaskId}`, 'PATCH', updates);
         const subtasksByStoryId = { ...get().subtasksByStoryId };
@@ -661,29 +753,34 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
             subtasksByStoryId[storyId] = next;
           }
         }
-        set({ subtasksByStoryId, isLoading: false });
+        set({ subtasksByStoryId });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update subtask', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update subtask' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateSubtask');
+        }
     },
 
     fetchStoryComments: async (storyId) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'fetchStoryComments');
       try {
         const res = await apiGet<ApiEnvelope<StoryComment[]>>(`/user-stories/${storyId}/story-comments`);
         set({
           commentsByStoryId: { ...get().commentsByStoryId, [storyId]: res.data },
-          isLoading: false,
         });
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to load comments', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to load comments' });
       }
+        finally {
+          endOp(set, 'fetchStoryComments');
+        }
     },
 
     createStoryComment: async (storyId, content) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'createStoryComment');
       try {
         const res = await apiSend<ApiEnvelope<StoryComment>>('/story-comments', 'POST', {
           user_story_id: storyId,
@@ -692,13 +789,15 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         const existing = get().commentsByStoryId[storyId] ?? [];
         set({
           commentsByStoryId: { ...get().commentsByStoryId, [storyId]: [...existing, res.data] },
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to create comment', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to create comment' });
         throw e;
       }
+        finally {
+          endOp(set, 'createStoryComment');
+        }
     },
 
     updateStoryStatus: async (storyId, status) => {
@@ -710,11 +809,10 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
       });
 
       try {
-        set({ isLoading: true, error: null });
+        startOp(set, 'updateStoryStatus');
         const res = await apiSend<ApiEnvelope<UserStory>>(`/user-stories/${storyId}`, 'PATCH', { status });
         set({
           stories: get().stories.map((s) => (s.id === storyId ? res.data : s)),
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
@@ -722,25 +820,29 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
         set({
           stories: originalStories,
           error: e instanceof Error ? e.message : 'Failed to update story status',
-          isLoading: false
         });
         throw e;
       }
+        finally {
+          endOp(set, 'updateStoryStatus');
+        }
     },
 
     updateStory: async (storyId, updates) => {
-      set({ isLoading: true, error: null });
+      startOp(set, 'updateStory');
       try {
         const res = await apiSend<ApiEnvelope<UserStory>>(`/user-stories/${storyId}`, 'PATCH', updates);
         set({
           stories: get().stories.map((s) => (s.id === storyId ? res.data : s)),
-          isLoading: false,
         });
         return res.data;
       } catch (e) {
-        set({ error: e instanceof Error ? e.message : 'Failed to update story', isLoading: false });
+        set({ error: e instanceof Error ? e.message : 'Failed to update story' });
         throw e;
       }
+        finally {
+          endOp(set, 'updateStory');
+        }
     },
   }))
 );

@@ -176,7 +176,7 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     # Parent account for hierarchies
     parent_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("accounts.id", ondelete="SET NULL"),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )
@@ -185,7 +185,11 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     parent: Mapped["Account | None"] = relationship(
         "Account",
         remote_side="Account.id",
-        backref="subsidiaries",
+        back_populates="subsidiaries",
+    )
+    subsidiaries: Mapped[list["Account"]] = relationship(
+        "Account",
+        back_populates="parent",
     )
     
     contacts: Mapped[list["AccountContact"]] = relationship(

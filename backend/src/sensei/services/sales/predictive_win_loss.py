@@ -5,6 +5,13 @@ Includes:
 - Explainability (SHAP/LIME): Feature contribution analysis
 - Counterfactual Analysis: "What if" simulations
 - Confidence Intervals: Score ranges based on data volatility
+
+.. warning:: Simulated Predictions
+
+   This module uses **hashlib-based deterministic scoring** instead of a real
+   trained ML model. The predictions, SHAP values, and confidence intervals
+   are synthetic. Replace with a properly trained model (e.g. XGBoost or
+   LightGBM) for production accuracy. See checklist items **#206, #474**.
 """
 
 from dataclasses import dataclass, field
@@ -15,6 +22,8 @@ import math
 import random
 from collections import defaultdict
 import hashlib
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 # =============================================================================
@@ -850,10 +859,15 @@ class WinLossPredictionModel:
     """
     Win/Loss prediction model with explainability.
     
-    Uses a simplified logistic-like model for predictions.
+    Uses a trained sklearn/ONNX model when available (set via
+    SENSEI_WIN_LOSS_MODEL_PATH env var), otherwise falls back to
+    a simplified logistic model with hand-tuned weights.
+
+    The trained model can be produced by the offline training script
+    and serialized via joblib. See real_ml_implementations.TrainedWinLossModel.
     """
     
-    # Feature weights (learned from data or predefined)
+    # Feature weights (fallback when no trained model is available)
     DEFAULT_WEIGHTS = {
         "price_competitiveness": 2.5,
         "price_vs_target": 1.5,
@@ -871,13 +885,28 @@ class WinLossPredictionModel:
     }
     
     def __init__(self):
-        """Initialize model."""
+        """Initialize model, attempting to load trained version."""
         self._weights = self.DEFAULT_WEIGHTS.copy()
         self._intercept = 0.0
         self._trained = False
+        self._trained_model = None
+        # Try loading real trained model (#474)
+        try:
+            from sensei.services.ai.real_ml_implementations import TrainedWinLossModel
+            self._trained_model = TrainedWinLossModel()
+            if self._trained_model.is_trained_model:
+                self._trained = True
+                logger.info("Using trained win/loss model")
+        except ImportError:
+            pass
     
     def predict(self, features: dict[str, float]) -> float:
-        """Predict win probability."""
+        """Predict win probability using trained model or logistic fallback."""
+        # Use trained model when available (#474)
+        if self._trained_model is not None and self._trained_model.is_trained_model:
+            return self._trained_model.predict(features)
+
+        # Logistic fallback with hand-tuned weights
         score = self._intercept
         
         for feature_name, value in features.items():
@@ -945,12 +974,14 @@ class WinLossPredictionModel:
 # Predictive Win/Loss Attribution Engine
 # =============================================================================
 
-class PredictiveWinLossEngine:
+class PredictiveWinLossEngine(PersistentServiceMixin):
     """
     Complete predictive win/loss attribution engine.
     
     Combines prediction, explainability, and counterfactual analysis.
     """
+
+    SERVICE_NAME = "predictive_win_loss"
     
     def __init__(
         self,

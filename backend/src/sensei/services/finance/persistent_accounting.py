@@ -1,3 +1,11 @@
+"""
+Persistent Accounting Ledger Service.
+
+Database-backed general ledger implementation. Persists
+accounts, journal entries, posted lines, fiscal periods,
+and FX rates to PostgreSQL.
+"""
+
 from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal

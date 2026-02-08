@@ -512,3 +512,174 @@ def get_slo_summary() -> Dict:
         },
         "overall_healthy": all(s.is_meeting for s in status.values()) if status else True,
     }
+
+# =============================================================================
+# SLO Export (#424) — Push SLO data to external monitoring systems
+# =============================================================================
+
+
+class SLOExporter:
+    """Export SLO metrics to external monitoring backends.
+
+    Supports:
+    - JSON export for dashboards / REST consumers
+    - Prometheus text format for scraping
+    - StatsD-style UDP push (best-effort)
+    - CSV / NDJSON file export for offline analysis
+
+    Usage::
+
+        exporter = SLOExporter(slo_tracker, metrics_registry)
+        payload = exporter.export_json()          # dict
+        text    = exporter.export_prometheus()     # str
+        await exporter.push_statsd("127.0.0.1", 8125)
+        exporter.export_csv("/tmp/slo_snapshot.csv")
+    """
+
+    def __init__(
+        self,
+        tracker: SLOTracker | None = None,
+        registry: MetricsRegistry | None = None,
+    ) -> None:
+        self.tracker = tracker or slo_tracker
+        self.registry = registry or metrics_registry
+
+    # ------------------------------------------------------------------
+    # JSON export (for REST/webhook consumers)
+    # ------------------------------------------------------------------
+
+    def export_json(self) -> Dict:
+        """Full SLO snapshot as a JSON-serialisable dictionary."""
+        import json as _json  # noqa: F811
+
+        status = self.tracker.get_slo_status()
+        now = datetime.now(timezone.utc)
+
+        snapshot: Dict = {
+            "exported_at": now.isoformat(),
+            "window_hours": self.tracker._window_duration.total_seconds() / 3600,
+            "slos": {},
+            "overall_healthy": True,
+        }
+
+        for key, s in status.items():
+            snapshot["slos"][key] = {
+                "name": s.name,
+                "target": s.target,
+                "current": round(s.current, 4),
+                "is_meeting": s.is_meeting,
+                "error_budget_remaining": round(s.error_budget_remaining, 4),
+                "window_start": s.window_start.isoformat(),
+                "window_end": s.window_end.isoformat(),
+            }
+            if not s.is_meeting:
+                snapshot["overall_healthy"] = False
+
+        # Include high-level counter totals
+        with self.registry._lock:
+            total_requests = sum(self.registry._counters.get("http_requests_total", {}).values())
+            total_errors = sum(self.registry._counters.get("http_request_errors_total", {}).values())
+
+        snapshot["counters"] = {
+            "total_requests": int(total_requests),
+            "total_errors": int(total_errors),
+        }
+
+        return snapshot
+
+    # ------------------------------------------------------------------
+    # Prometheus text export
+    # ------------------------------------------------------------------
+
+    def export_prometheus(self) -> str:
+        """Generate SLO-specific Prometheus text output."""
+        status = self.tracker.get_slo_status()
+        lines: list[str] = []
+
+        for key, s in status.items():
+            metric = f"slo_{key}"
+            lines.append(f"# HELP {metric}_target SLO target for {s.name}")
+            lines.append(f"# TYPE {metric}_target gauge")
+            lines.append(f"{metric}_target {s.target}")
+
+            lines.append(f"# HELP {metric}_current Current value for {s.name}")
+            lines.append(f"# TYPE {metric}_current gauge")
+            lines.append(f"{metric}_current {round(s.current, 4)}")
+
+            lines.append(f"# HELP {metric}_meeting Whether SLO is being met (1=yes)")
+            lines.append(f"# TYPE {metric}_meeting gauge")
+            lines.append(f"{metric}_meeting {1 if s.is_meeting else 0}")
+
+            lines.append(f"# HELP {metric}_error_budget_remaining Error budget remaining")
+            lines.append(f"# TYPE {metric}_error_budget_remaining gauge")
+            lines.append(f"{metric}_error_budget_remaining {round(s.error_budget_remaining, 4)}")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # StatsD push (best-effort UDP)
+    # ------------------------------------------------------------------
+
+    async def push_statsd(self, host: str = "127.0.0.1", port: int = 8125, prefix: str = "sensei") -> int:
+        """Push SLO metrics to a StatsD-compatible server via UDP."""
+        import socket
+
+        status = self.tracker.get_slo_status()
+        sent = 0
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        try:
+            for key, s in status.items():
+                for suffix, value in [
+                    ("target", s.target),
+                    ("current", round(s.current, 4)),
+                    ("meeting", 1 if s.is_meeting else 0),
+                    ("error_budget", round(s.error_budget_remaining, 4)),
+                ]:
+                    metric_name = f"{prefix}.slo.{key}.{suffix}"
+                    packet = f"{metric_name}:{value}|g".encode()
+                    try:
+                        sock.sendto(packet, (host, port))
+                        sent += 1
+                    except OSError:
+                        pass
+        finally:
+            sock.close()
+
+        return sent
+
+    # ------------------------------------------------------------------
+    # CSV / NDJSON file export
+    # ------------------------------------------------------------------
+
+    def export_csv(self, filepath: str) -> None:
+        """Write a CSV snapshot of current SLO status to *filepath*."""
+        import csv
+
+        status = self.tracker.get_slo_status()
+        now = datetime.now(timezone.utc)
+
+        with open(filepath, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["timestamp", "slo_name", "target", "current", "is_meeting", "error_budget_remaining"])
+            for key, s in status.items():
+                writer.writerow([
+                    now.isoformat(),
+                    s.name,
+                    s.target,
+                    round(s.current, 4),
+                    s.is_meeting,
+                    round(s.error_budget_remaining, 4),
+                ])
+
+    def export_ndjson(self, filepath: str) -> None:
+        """Write an NDJSON snapshot (one JSON object per line) to *filepath*."""
+        import json as _json  # noqa: F811
+
+        snapshot = self.export_json()
+        with open(filepath, "a") as f:
+            f.write(_json.dumps(snapshot) + "\n")
+
+
+# Module-level convenience instance
+slo_exporter = SLOExporter()

@@ -131,7 +131,10 @@ interface AdminState {
   stats: AdminStats | null;
   
   // Loading & Error States
+  /** @deprecated Use loadingOps for per-operation states */
   isLoading: boolean;
+  /** Set of currently in-progress operation names */
+  loadingOps: Set<string>;
   error: string | null;
   lastFetchedAt: number | null;
   
@@ -187,10 +190,29 @@ interface AdminState {
   
   // Utility
   clearError: () => void;
+  /** Check if a specific operation is in progress */
+  isOpLoading: (op: string) => boolean;
 }
 
 const CACHE_DURATION = 30000; // 30 seconds
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+
+/* ── Per-operation loading helpers ─────────────────────────────────── */
+function startOp(set: (fn: (s: AdminState) => Partial<AdminState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.add(op);
+    return { loadingOps: next, isLoading: true, error: null };
+  });
+}
+function endOp(set: (fn: (s: AdminState) => Partial<AdminState>) => void, op: string) {
+  set((s) => {
+    const next = new Set(s.loadingOps);
+    next.delete(op);
+    return { loadingOps: next, isLoading: next.size > 0 };
+  });
+}
 
 export const useAdminStore = create<AdminState>()(
   devtools(
@@ -206,6 +228,7 @@ export const useAdminStore = create<AdminState>()(
         auditLogs: [],
         stats: null,
         isLoading: false,
+  loadingOps: new Set<string>(),
         error: null,
         lastFetchedAt: null,
         
@@ -222,107 +245,113 @@ export const useAdminStore = create<AdminState>()(
             return;
           }
           
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchGates');
           
           try {
             const data = await apiClient.get<any>('/admin/gates');
             
             set({
               gates: data.items || [],
-              isLoading: false,
               lastFetchedAt: now,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch gates',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchGates');
+            }
         },
         
         fetchGateById: async (id: string) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchGateById');
           
           try {
             const gate = await apiClient.get<Gate>(`/admin/gates/${id}`);
             
-            set({ isLoading: false });
+            set({  });
             return gate;
           } catch (error) {
             // Fallback to local cache if API fails
             const cachedGate = get().gates.find(g => g.id === id);
             if (cachedGate) {
-              set({ isLoading: false });
+              set({  });
               return cachedGate;
             }
             
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch gate',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'fetchGateById');
+            }
         },
         
         createGate: async (gateData) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createGate');
           
           try {
             const newGate = await apiClient.post<Gate>('/admin/gates', gateData);
             
             set((state) => ({
               gates: [...state.gates, newGate],
-              isLoading: false,
             }));
             
             return newGate;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to create gate',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'createGate');
+            }
         },
         
         updateGate: async (id: string, updates: Partial<Gate>) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateGate');
           
           try {
             const updatedGate = await apiClient.patch<Gate>(`/admin/gates/${id}`, updates);
             
             set((state) => ({
               gates: state.gates.map(g => g.id === id ? updatedGate : g),
-              isLoading: false,
             }));
             
             return updatedGate;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update gate',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateGate');
+            }
         },
         
         deleteGate: async (id: string) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'deleteGate');
           
           try {
             await apiClient.delete(`/admin/gates/${id}`);
             
             set((state) => ({
               gates: state.gates.filter(g => g.id !== id),
-              isLoading: false,
             }));
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to delete gate',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'deleteGate');
+            }
         },
         
         toggleGateStatus: async (id: string) => {
@@ -334,7 +363,7 @@ export const useAdminStore = create<AdminState>()(
         },
         
         reorderGates: async (gateIds: string[]) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'reorderGates');
           
           try {
             await apiClient.post('/admin/gates/reorder', { gate_ids: gateIds });
@@ -354,33 +383,35 @@ export const useAdminStore = create<AdminState>()(
                   return gate ? { ...gate, order: index + 1 } : null;
                 })
                 .filter(Boolean) as Gate[],
-              isLoading: false,
             }));
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to reorder gates',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'reorderGates');
+            }
         },
         
         // Approvals Actions
         fetchApprovals: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchApprovals');
           
           try {
             const data = await apiClient.get<any>('/admin/approvals');
             set({
               approvals: data.items || [],
-              isLoading: false,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch approvals',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchApprovals');
+            }
         },
         
         fetchApprovalById: async (id: string) => {
@@ -390,64 +421,67 @@ export const useAdminStore = create<AdminState>()(
         },
         
         createApproval: async (approvalData) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createApproval');
           
           try {
             const newApproval = await apiClient.post<ApprovalWorkflow>('/admin/approvals', approvalData);
             
             set((state) => ({
               approvals: [...state.approvals, newApproval],
-              isLoading: false,
             }));
             
             return newApproval;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to create approval',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'createApproval');
+            }
         },
         
         updateApproval: async (id: string, updates: Partial<ApprovalWorkflow>) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateApproval');
           
           try {
             const updatedApproval = await apiClient.patch<ApprovalWorkflow>(`/admin/approvals/${id}`, updates);
             
             set((state) => ({
               approvals: state.approvals.map(a => a.id === id ? updatedApproval : a),
-              isLoading: false,
             }));
             
             return updatedApproval;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update approval',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateApproval');
+            }
         },
         
         deleteApproval: async (id: string) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'deleteApproval');
           
           try {
             await apiClient.delete(`/admin/approvals/${id}`);
             
             set((state) => ({
               approvals: state.approvals.filter(a => a.id !== id),
-              isLoading: false,
             }));
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to delete approval',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'deleteApproval');
+            }
         },
         
         toggleApprovalStatus: async (id: string) => {
@@ -459,20 +493,21 @@ export const useAdminStore = create<AdminState>()(
         
         // Templates Actions
         fetchTemplates: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchTemplates');
           
           try {
             const data = await apiClient.get<any>('/admin/templates');
             set({
               templates: data.items || [],
-              isLoading: false,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch templates',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchTemplates');
+            }
         },
         
         fetchTemplateById: async (id: string) => {
@@ -482,64 +517,67 @@ export const useAdminStore = create<AdminState>()(
         },
         
         createTemplate: async (templateData) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createTemplate');
           
           try {
             const newTemplate = await apiClient.post<Template>('/admin/templates', templateData);
             
             set((state) => ({
               templates: [...state.templates, newTemplate],
-              isLoading: false,
             }));
             
             return newTemplate;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to create template',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'createTemplate');
+            }
         },
         
         updateTemplate: async (id: string, updates: Partial<Template>) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateTemplate');
           
           try {
             const updatedTemplate = await apiClient.patch<Template>(`/admin/templates/${id}`, updates);
             
             set((state) => ({
               templates: state.templates.map(t => t.id === id ? updatedTemplate : t),
-              isLoading: false,
             }));
             
             return updatedTemplate;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update template',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateTemplate');
+            }
         },
         
         deleteTemplate: async (id: string) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'deleteTemplate');
           
           try {
             await apiClient.delete(`/admin/templates/${id}`);
             
             set((state) => ({
               templates: state.templates.filter(t => t.id !== id),
-              isLoading: false,
             }));
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to delete template',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'deleteTemplate');
+            }
         },
         
         setDefaultTemplate: async (id: string) => {
@@ -562,20 +600,21 @@ export const useAdminStore = create<AdminState>()(
         
         // Roles Actions
         fetchRoles: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchRoles');
           
           try {
             const data = await apiClient.get<any>('/admin/roles');
             set({
               roles: data.items || [],
-              isLoading: false,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch roles',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchRoles');
+            }
         },
         
         fetchRoleById: async (id: string) => {
@@ -585,7 +624,7 @@ export const useAdminStore = create<AdminState>()(
         },
         
         updateRolePermissions: async (id: string, permissions: string[]) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateRolePermissions');
           
           try {
             const updatedRole = {
@@ -595,35 +634,37 @@ export const useAdminStore = create<AdminState>()(
             
             set((state) => ({
               roles: state.roles.map(r => r.id === id ? updatedRole : r),
-              isLoading: false,
             }));
             
             return updatedRole;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update role',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateRolePermissions');
+            }
         },
         
         // Learning Actions
         fetchLearningCadences: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchLearningCadences');
           
           try {
             const data = await apiClient.get<any>('/admin/learning-cadences');
             set({
               learningCadences: data.items || [],
-              isLoading: false,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch learning cadences',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchLearningCadences');
+            }
         },
         
         fetchLearningCadenceById: async (id: string) => {
@@ -633,64 +674,67 @@ export const useAdminStore = create<AdminState>()(
         },
         
         createLearningCadence: async (cadenceData) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'createLearningCadence');
           
           try {
             const newCadence = await apiClient.post<LearningCadence>('/admin/learning-cadences', cadenceData);
             
             set((state) => ({
               learningCadences: [...state.learningCadences, newCadence],
-              isLoading: false,
             }));
             
             return newCadence;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to create learning cadence',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'createLearningCadence');
+            }
         },
         
         updateLearningCadence: async (id: string, updates: Partial<LearningCadence>) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateLearningCadence');
           
           try {
             const updatedCadence = await apiClient.patch<LearningCadence>(`/admin/learning-cadences/${id}`, updates);
             
             set((state) => ({
               learningCadences: state.learningCadences.map(c => c.id === id ? updatedCadence : c),
-              isLoading: false,
             }));
             
             return updatedCadence;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update learning cadence',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateLearningCadence');
+            }
         },
         
         deleteLearningCadence: async (id: string) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'deleteLearningCadence');
           
           try {
             await apiClient.delete(`/admin/learning-cadences/${id}`);
             
             set((state) => ({
               learningCadences: state.learningCadences.filter(c => c.id !== id),
-              isLoading: false,
             }));
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to delete learning cadence',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'deleteLearningCadence');
+            }
         },
         
         toggleLearningCadenceStatus: async (id: string) => {
@@ -702,41 +746,43 @@ export const useAdminStore = create<AdminState>()(
         
         // Feature Flags Actions
         fetchFeatureFlags: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchFeatureFlags');
           
           try {
             const data = await apiClient.get<any>('/admin/feature-flags');
             set({
               featureFlags: data.items || [],
-              isLoading: false,
             });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch feature flags',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchFeatureFlags');
+            }
         },
         
         updateFeatureFlag: async (id: string, updates: Partial<FeatureFlag>) => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'updateFeatureFlag');
           
           try {
             const updatedFlag = await apiClient.patch<FeatureFlag>(`/admin/feature-flags/${id}`, updates);
             
             set((state) => ({
               featureFlags: state.featureFlags.map(f => f.id === id ? updatedFlag : f),
-              isLoading: false,
             }));
             
             return updatedFlag;
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to update feature flag',
-              isLoading: false,
             });
             throw error;
           }
+            finally {
+              endOp(set, 'updateFeatureFlag');
+            }
         },
         
         toggleFeatureFlag: async (id: string) => {
@@ -752,31 +798,35 @@ export const useAdminStore = create<AdminState>()(
         
         // Audit Logs Actions
         fetchAuditLogs: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchAuditLogs');
           try {
             const data = await apiClient.get<any>('/audit-logs');
-            set({ auditLogs: data.items || [], isLoading: false });
+            set({ auditLogs: data.items || [] });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch audit logs',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchAuditLogs');
+            }
         },
         
         // Stats Actions
         fetchStats: async () => {
-          set({ isLoading: true, error: null });
+          startOp(set, 'fetchStats');
           
           try {
             const data = await apiClient.get<any>('/admin/stats');
-            set({ stats: data, isLoading: false });
+            set({ stats: data });
           } catch (error) {
             set({
               error: error instanceof Error ? error.message : 'Failed to fetch admin stats',
-              isLoading: false,
             });
           }
+            finally {
+              endOp(set, 'fetchStats');
+            }
         },
         
         // Utility

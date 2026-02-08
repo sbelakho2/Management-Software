@@ -11,6 +11,7 @@ This module is in-memory and pure-Python to match other services.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +19,10 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterable, Protocol
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 class ControlChartType(str, Enum):
@@ -261,8 +266,13 @@ class NCProvider(Protocol):
 # ============================================================
 
 
-class SPCScrapReworkService:
+class SPCScrapReworkService(PersistentServiceMixin):
     """In-memory SPC and Scrap/Rework accounting service."""
+
+    SERVICE_NAME = "spc_scrap_rework"
+
+    _MAX_DATA_POINTS = 100_000
+    _MAX_AUDIT_EVENTS = 50_000
 
     def __init__(
         self,
@@ -320,6 +330,9 @@ class SPCScrapReworkService:
             metadata=metadata or {},
         )
         self._audit.append(ev)
+        # Trim if over cap (#120 — prevent unbounded memory growth)
+        if len(self._audit) > self._MAX_AUDIT_EVENTS:
+            self._audit = self._audit[-self._MAX_AUDIT_EVENTS // 2:]
 
     def _check_control_limits(
         self, chart: ControlChart, value: float
@@ -767,6 +780,11 @@ class SPCScrapReworkService:
                 ],
                 correlation_id=correlation_id,
             )
+        else:
+            logger.warning(
+                "No AccountingProvider injected — scrap GL posting skipped",
+                extra={"scrap_id": str(scrap_id), "cost": str(record.total_cost)},
+            )
 
         updated = ScrapRecord(
             id=record.id,
@@ -958,6 +976,11 @@ class SPCScrapReworkService:
                     (self._wip_account, Decimal("0"), record.total_cost),
                 ],
                 correlation_id=correlation_id,
+            )
+        else:
+            logger.warning(
+                "No AccountingProvider injected — rework GL posting skipped",
+                extra={"rework_id": str(rework_id), "cost": str(record.total_cost)},
             )
 
         updated = ReworkRecord(

@@ -30,7 +30,6 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Generic
-import threading
 import uuid
 import os
 
@@ -327,6 +326,9 @@ class FeedbackCollector:
         if not feedback_list and self._feature_store:
             group_name = f"{self._feature_group_prefix}:{model_name}"
             persisted: list[LearningFeedback] = []
+            # Use prefix-based index if available; otherwise iterate with
+            # an early-out limit to avoid O(N) full-store scans.
+            _MAX_FALLBACK = max_samples or 10_000
             for key, vectors in self._feature_store.feature_vectors.items():
                 if not key.startswith(f"{group_name}:"):
                     continue
@@ -354,6 +356,10 @@ class FeedbackCollector:
                             user_id=vector.features.get("user_id"),
                         )
                     )
+                    if len(persisted) >= _MAX_FALLBACK:
+                        break
+                if len(persisted) >= _MAX_FALLBACK:
+                    break
             feedback_list = persisted
         
         # Filter by confidence
@@ -618,8 +624,8 @@ class RetrainingManager:
         # Callbacks
         self._on_retrain_callbacks: List[Callable[[RetrainingJob], None]] = []
         
-        # Lock for thread safety
-        self._lock = threading.Lock()
+        # Lock for async safety (#133 — threading.Lock blocks event loop in async context)
+        self._lock = asyncio.Lock()
     
     def register_model(
         self,
@@ -778,7 +784,7 @@ class RetrainingManager:
         Returns:
             The retraining job
         """
-        with self._lock:
+        async with self._lock:
             # Check concurrent limit
             if len(self._active_jobs) >= self.config.max_concurrent_retraining:
                 raise RuntimeError(
@@ -800,7 +806,7 @@ class RetrainingManager:
         try:
             await self._execute_retraining(job, model, feature_names)
         finally:
-            with self._lock:
+            async with self._lock:
                 self._active_jobs.pop(job.job_id, None)
         
         # Notify callbacks
@@ -838,12 +844,21 @@ class RetrainingManager:
             
             job.sample_count = len(X)
             
-            # Evaluate current performance
-            if hasattr(model, "predict") and len(X) > 0:
+            # Train/test split (#132/#209: avoid evaluating on training data)
+            from sklearn.model_selection import train_test_split
+            if len(X) >= 10:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+            else:
+                X_train, X_test, y_train, y_test = X, X, y, y
+            
+            # Evaluate current performance on held-out test set
+            if hasattr(model, "predict") and len(X_test) > 0:
                 try:
                     from sklearn.metrics import accuracy_score
-                    predictions = model.predict(X)
-                    job.previous_metrics["accuracy"] = accuracy_score(y, predictions)
+                    predictions = model.predict(X_test)
+                    job.previous_metrics["accuracy"] = accuracy_score(y_test, predictions)
                 except Exception as e:
                     logger.debug(f"Could not evaluate previous model: {e}")
             
@@ -851,7 +866,7 @@ class RetrainingManager:
             if job.learning_mode == LearningMode.INCREMENTAL:
                 if self.incremental_learner.can_learn_incrementally(model):
                     model = self.incremental_learner.incremental_fit(
-                        model, X, y,
+                        model, X_train, y_train,
                         model_id=job.model_name,
                     )
                 else:
@@ -871,13 +886,13 @@ class RetrainingManager:
                     )
             
             else:  # BATCH
-                model.fit(X, y)
+                model.fit(X_train, y_train)
             
-            # Evaluate new performance
+            # Evaluate new performance on held-out test set
             try:
                 from sklearn.metrics import accuracy_score
-                predictions = model.predict(X)
-                job.new_metrics["accuracy"] = accuracy_score(y, predictions)
+                predictions = model.predict(X_test)
+                job.new_metrics["accuracy"] = accuracy_score(y_test, predictions)
                 
                 if "accuracy" in job.previous_metrics:
                     job.improvement = (
@@ -1182,14 +1197,18 @@ def create_retraining_celery_tasks():
     Returns task functions that can be registered with Celery.
     """
     
-    async def check_drift_and_retrain(model_name: str):
+    def check_drift_and_retrain(model_name: str):
         """Celery task to check drift and trigger retraining if needed."""
+        import asyncio
         from sensei.services.ai.continuous_learning import (
             get_continuous_learning_service,
         )
         
-        service = get_continuous_learning_service()
-        job = await service.check_and_retrain_if_needed(model_name)
+        async def _inner():
+            service = get_continuous_learning_service()
+            return await service.check_and_retrain_if_needed(model_name)
+        
+        job = asyncio.run(_inner())
         
         if job:
             return {
@@ -1200,31 +1219,35 @@ def create_retraining_celery_tasks():
             }
         return {"model": model_name, "status": "no_retraining_needed"}
     
-    async def scheduled_retrain_all():
+    def scheduled_retrain_all():
         """Celery task for scheduled retraining of all models."""
+        import asyncio
         from sensei.services.ai.continuous_learning import (
             get_continuous_learning_service,
         )
         
-        service = get_continuous_learning_service()
-        results = []
-        
-        for model_name in list(service._models.keys()):
-            try:
-                job = await service.check_and_retrain_if_needed(model_name)
-                if job:
+        async def _inner():
+            service = get_continuous_learning_service()
+            results = []
+            
+            for model_name in list(service._models.keys()):
+                try:
+                    job = await service.check_and_retrain_if_needed(model_name)
+                    if job:
+                        results.append({
+                            "model": model_name,
+                            "job_id": job.job_id,
+                            "status": job.status,
+                        })
+                except Exception as e:
                     results.append({
                         "model": model_name,
-                        "job_id": job.job_id,
-                        "status": job.status,
+                        "error": str(e),
                     })
-            except Exception as e:
-                results.append({
-                    "model": model_name,
-                    "error": str(e),
-                })
+            
+            return results
         
-        return results
+        return asyncio.run(_inner())
     
     return {
         "check_drift_and_retrain": check_drift_and_retrain,

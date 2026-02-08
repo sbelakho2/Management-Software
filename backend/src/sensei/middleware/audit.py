@@ -24,6 +24,10 @@ from sensei.models.user import User
 
 _logger = logging.getLogger(__name__)
 
+# Simple LRU cache: user_id → email to avoid repeated DB lookups (#104)
+_user_email_cache: dict[str, str | None] = {}
+_MAX_EMAIL_CACHE = 256
+
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _SKIP_PREFIXES = (
@@ -104,10 +108,20 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 async with async_session_factory() as session:
                     resolved_email = user_email
                     if resolved_email is None and user_id is not None:
-                        result = await session.execute(
-                            select(User.email).where(User.id == user_id)
-                        )
-                        resolved_email = result.scalar_one_or_none()
+                        # Check cache first (#104 — avoid N+1 DB query per request)
+                        uid_key = str(user_id)
+                        if uid_key in _user_email_cache:
+                            resolved_email = _user_email_cache[uid_key]
+                        else:
+                            result = await session.execute(
+                                select(User.email).where(User.id == user_id)
+                            )
+                            resolved_email = result.scalar_one_or_none()
+                            # Evict oldest entries if cache is full
+                            if len(_user_email_cache) >= _MAX_EMAIL_CACHE:
+                                for k in list(_user_email_cache)[:_MAX_EMAIL_CACHE // 4]:
+                                    _user_email_cache.pop(k, None)
+                            _user_email_cache[uid_key] = resolved_email
                     log = AuditLog.create_log(
                         entity_type=entity_type,
                         entity_id=entity_id or path,

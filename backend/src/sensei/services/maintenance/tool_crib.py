@@ -1,3 +1,11 @@
+"""
+Tool Crib Management Service.
+
+Manages tool inventory, check-out/check-in workflows,
+calibration tracking, tool life monitoring, and
+replacement ordering for shop floor tooling.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

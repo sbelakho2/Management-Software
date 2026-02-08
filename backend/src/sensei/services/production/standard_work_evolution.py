@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.a3 import A3, A3SectionType
 from sensei.models.standard_work import StandardWork, StandardWorkStatus
+from sensei.core.config import settings
 from sensei.core.time import utcnow_naive
 from sensei.services.ops.kpi_metrics import KPIService
 
@@ -154,7 +155,7 @@ class AutonomousStandardWorkEvolutionService:
         self,
         db: AsyncSession,
         *,
-        since_days: int = 90,
+        since_days: int = settings.ANALYTICS_LOOKBACK_DAYS,
         actor_user_id: UUID = SYSTEM_ACTOR_ID,
     ) -> list[EvolutionDecision]:
         """Evaluate recently completed A3s and draft standard work updates."""

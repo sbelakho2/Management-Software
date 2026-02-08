@@ -3,6 +3,9 @@ Product, BOM, and Routing models for production management.
 
 Products represent manufactured items with their bill of materials
 and routing (sequence of operations).
+
+Note (#168, #405, #453): Product PK was migrated from Integer to UUID
+to match the standard Base PK strategy used by all other models.
 """
 
 import enum
@@ -75,7 +78,7 @@ class Product(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
 
     __tablename__ = "products"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
+    # Use UUID PK from Base — consistent with all other models (#168, #405, #453)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     part_number: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     sku: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)  # SKU/Stock Keeping Unit
