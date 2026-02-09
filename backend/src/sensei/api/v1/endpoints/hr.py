@@ -18,6 +18,11 @@ from sensei.models.learning import UserLearningProgress, LearningModule
 from sensei.models.training import UserSkill, CertificationStatus, Skill
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
+from sensei.services.core.common_thread import get_common_thread_service
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 AllowHRModule = deps.require_role("hr", "supervisor", "gm", "exec")  # type: ignore[valid-type]
 
@@ -425,6 +430,20 @@ async def submit_leave_request(
     db.add(leave_request)
     await db.flush()
     await db.refresh(leave_request)
+
+    # Wire into common thread lineage
+    try:
+        await get_common_thread_service().bind_hr_lineage(
+            db,
+            employee_id=profile.id,
+            leave_request_id=leave_request.id,
+            created_by_id=getattr(current_user, "id", None),
+            source="hr_self_service_leave_request",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture leave request lineage")
     
     return SelfServiceLeaveResponse(
         id=str(leave_request.id),
@@ -786,6 +805,20 @@ async def clock_in_out(
     db.add(event)
     await db.flush()
     await db.refresh(event)
+
+    # Wire into common thread lineage
+    try:
+        await get_common_thread_service().bind_hr_lineage(
+            db,
+            employee_id=profile.id,
+            timecard_id=event.id,
+            created_by_id=getattr(current_user, "id", None),
+            source="hr_self_service_time_clock",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("Failed to capture time clock lineage")
     
     return {
         "id": str(event.id),

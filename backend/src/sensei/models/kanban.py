@@ -268,8 +268,8 @@ class KanbanCard(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     work_order_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("work_orders.id"), nullable=True, index=True
     )
-    product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    product_id: Mapped[Optional[PyUUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
 
     # Quantity (for material/production cards)

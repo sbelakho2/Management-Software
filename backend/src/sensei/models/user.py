@@ -210,14 +210,14 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         "Task",
         foreign_keys="Task.assignee_id",
         back_populates="assignee",
-        lazy="dynamic",
+        lazy="select",
     )
     
     tasks_created: Mapped[list["Task"]] = relationship(
         "Task",
         foreign_keys="Task.created_by_id",
         back_populates="creator",
-        lazy="dynamic",
+        lazy="select",
     )
     
     notifications: Mapped[list["Notification"]] = relationship(
@@ -225,7 +225,7 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
         back_populates="user",
         foreign_keys="Notification.user_id",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (
@@ -298,7 +298,7 @@ class Role(Base, TimestampMixin):
         "UserRole",
         back_populates="role",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     permissions: Mapped[list["RolePermission"]] = relationship(
@@ -344,7 +344,7 @@ class Permission(Base, TimestampMixin):
         "RolePermission",
         back_populates="permission",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

@@ -64,7 +64,7 @@ export default function TaxCompliancePage() {
       code: jurisdictionForm.code.toUpperCase(),
       name: jurisdictionForm.name,
       country: jurisdictionForm.country,
-      region: jurisdictionForm.region || null,
+      region: jurisdictionForm.region || undefined,
       status: jurisdictionForm.status,
     });
     setJurisdictionForm({

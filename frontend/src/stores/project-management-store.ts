@@ -844,5 +844,7 @@ export const useProjectManagementStore = create<ProjectManagementState>()(
           endOp(set, 'updateStory');
         }
     },
+
+    isOpLoading: (op: string) => get().loadingOps.has(op),
   }))
 );

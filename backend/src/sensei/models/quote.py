@@ -298,7 +298,7 @@ class Quote(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="quote",
         cascade="all, delete-orphan",
         order_by="desc(QuoteVersion.version_number)",
-        lazy="dynamic",
+        lazy="select",
     )
     
     line_items: Mapped[list["QuoteLineItem"]] = relationship(

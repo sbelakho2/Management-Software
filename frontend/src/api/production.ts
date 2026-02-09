@@ -23,7 +23,7 @@ export interface WorkOrder {
   id: number;
   work_order_number: string;
   external_reference?: string;
-  product_id: number;
+  product_id: string;
   product_name?: string;
   part_number?: string;
   quantity_ordered: number;
@@ -82,7 +82,7 @@ export interface CreateWorkOrderData {
   work_order_number: string;
   external_reference?: string;
   quote_id?: string;
-  product_id: number;
+  product_id: string;
   quantity_ordered: number;
   priority?: WorkOrderPriority;
   status?: WorkOrderStatus;

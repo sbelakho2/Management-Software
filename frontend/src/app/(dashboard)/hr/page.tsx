@@ -760,6 +760,7 @@ export default function HRDashboard() {
                     </Button>
                   </div>
                 ) : (
+                  <>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {paginatedEmployees.map((emp) => (
                       <div key={emp.id} className="relative rounded-rams-sm border border-rams-line bg-rams-module hover:bg-rams-panel transition-colors group p-4">
@@ -823,6 +824,7 @@ export default function HRDashboard() {
                     onPageChange={setEmployeePage}
                     totalItems={filteredEmployees.length}
                   />
+                  </>
                 )}
               </TabsContent>
 

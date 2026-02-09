@@ -30,8 +30,8 @@ class BOMComponent(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "mrp_bom_components"
 
-    parent_product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
-    component_product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    parent_product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    component_product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     
     quantity_per: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     scrap_factor: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0"), nullable=False)
@@ -48,7 +48,7 @@ class MRPDemand(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "mrp_demands"
 
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     required_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     demand_type: Mapped[str] = mapped_column(String(50), nullable=False) # sales_order, forecast, safety_stock, work_order
@@ -65,7 +65,7 @@ class MRPSuggestion(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "mrp_suggestions"
 
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     requirement_type: Mapped[str] = mapped_column(String(20), nullable=False) # buy, build
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     needed_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -124,7 +124,7 @@ class MPSPlanLine(Base, TimestampMixin, AuditMixin):
     __tablename__ = "mps_plan_lines"
 
     plan_id: Mapped[UUID] = mapped_column(ForeignKey("mps_plans.id", ondelete="CASCADE"), nullable=False, index=True)
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     bucket_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     source_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)

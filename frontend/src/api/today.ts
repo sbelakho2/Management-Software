@@ -14,6 +14,7 @@ export interface TodayScreenData {
   todays_micro_drills: any[];
   active_pulses: GlobalPulseSummary[];
   active_handovers: HandoverNoteSummary[];
+  active_risks?: Array<{ id: string; title: string; severity: string; area: string }>;
 }
 
 export interface GlobalPulseSummary {

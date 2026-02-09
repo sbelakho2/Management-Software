@@ -107,14 +107,41 @@ class CommonThreadService:
         non_conformance_id: Any | None = None,
         shipment_id: Any | None = None,
         invoice_id: Any | None = None,
+        sales_order_id: Any | None = None,
+        purchase_order_id: Any | None = None,
+        goods_receipt_id: Any | None = None,
+        inventory_move_id: Any | None = None,
+        andon_event_id: Any | None = None,
+        capa_id: Any | None = None,
+        opportunity_id: Any | None = None,
         created_by_id: Any | None = None,
         reasoning_id: str | None = None,
         source: str | None = None,
     ) -> None:
-        """Create best-effort lineage links across the common thread stages."""
+        """Create best-effort lineage links across the common thread stages.
+
+        Full thread:
+        Opportunity -> RFQ -> Quote -> SalesOrder -> WorkOrder -> NC -> Shipment -> Invoice
+        Plus cross-links: NC -> CAPA, Andon -> CAPA, Quote -> Opportunity, PO -> WorkOrder.
+        Supply chain links: PO -> GoodsReceipt -> InventoryMove.
+        """
 
         def _id(x: Any | None) -> str | None:
             return None if x is None else str(x)
+
+        # Opportunity -> RFQ
+        if opportunity_id is not None and rfq_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="opportunity",
+                source_entity_id=_id(opportunity_id),
+                relationship_type="has_rfq",
+                target_entity_type="rfq",
+                target_entity_id=_id(rfq_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
 
         # RFQ -> Quote
         if rfq_id is not None and quote_id is not None:
@@ -125,6 +152,20 @@ class CommonThreadService:
                 relationship_type="has_quote",
                 target_entity_type="quote",
                 target_entity_id=_id(quote_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Quote -> Sales Order (revenue linkage)
+        if quote_id is not None and sales_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="quote",
+                source_entity_id=_id(quote_id),
+                relationship_type="has_sales_order",
+                target_entity_type="sales_order",
+                target_entity_id=_id(sales_order_id),
                 created_by_id=created_by_id,
                 reasoning_id=reasoning_id,
                 metadata={"source": source or "common_thread"},
@@ -144,6 +185,20 @@ class CommonThreadService:
                 metadata={"source": source or "common_thread"},
             )
 
+        # Sales Order -> Work Order
+        if sales_order_id is not None and work_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="sales_order",
+                source_entity_id=_id(sales_order_id),
+                relationship_type="has_work_order",
+                target_entity_type="work_order",
+                target_entity_id=_id(work_order_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
         # Work Order -> Non Conformance
         if work_order_id is not None and non_conformance_id is not None:
             await self._lineage.link(
@@ -153,6 +208,90 @@ class CommonThreadService:
                 relationship_type="has_non_conformance",
                 target_entity_type="non_conformance",
                 target_entity_id=_id(non_conformance_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Non Conformance -> CAPA (escalation)
+        if non_conformance_id is not None and capa_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="non_conformance",
+                source_entity_id=_id(non_conformance_id),
+                relationship_type="escalated_to_capa",
+                target_entity_type="capa",
+                target_entity_id=_id(capa_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Andon Event -> CAPA (recurrence-triggered CAPA)
+        if andon_event_id is not None and capa_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="andon_event",
+                source_entity_id=_id(andon_event_id),
+                relationship_type="triggered_capa",
+                target_entity_type="capa",
+                target_entity_id=_id(capa_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Andon Event -> Work Order (production disruption link)
+        if andon_event_id is not None and work_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="andon_event",
+                source_entity_id=_id(andon_event_id),
+                relationship_type="disrupted_work_order",
+                target_entity_type="work_order",
+                target_entity_id=_id(work_order_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Purchase Order -> Work Order (material sourcing)
+        if purchase_order_id is not None and work_order_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="purchase_order",
+                source_entity_id=_id(purchase_order_id),
+                relationship_type="supplies_material_for",
+                target_entity_type="work_order",
+                target_entity_id=_id(work_order_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Purchase Order -> Goods Receipt (receiving)
+        if purchase_order_id is not None and goods_receipt_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="purchase_order",
+                source_entity_id=_id(purchase_order_id),
+                relationship_type="has_goods_receipt",
+                target_entity_type="goods_receipt",
+                target_entity_id=_id(goods_receipt_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Goods Receipt -> Inventory Move (stock update)
+        if goods_receipt_id is not None and inventory_move_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="goods_receipt",
+                source_entity_id=_id(goods_receipt_id),
+                relationship_type="created_stock_move",
+                target_entity_type="inventory_move",
+                target_entity_id=_id(inventory_move_id),
                 created_by_id=created_by_id,
                 reasoning_id=reasoning_id,
                 metadata={"source": source or "common_thread"},
@@ -186,13 +325,34 @@ class CommonThreadService:
                 metadata={"source": source or "common_thread"},
             )
 
+        # Sales Order -> Invoice (revenue recognition)
+        if sales_order_id is not None and invoice_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="sales_order",
+                source_entity_id=_id(sales_order_id),
+                relationship_type="has_invoice",
+                target_entity_type="invoice",
+                target_entity_id=_id(invoice_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
         # Reasoning trace stamping
         if reasoning_id:
             for et, eid in (
+                ("opportunity", opportunity_id),
                 ("rfq", rfq_id),
                 ("quote", quote_id),
+                ("sales_order", sales_order_id),
                 ("work_order", work_order_id),
                 ("non_conformance", non_conformance_id),
+                ("capa", capa_id),
+                ("andon_event", andon_event_id),
+                ("purchase_order", purchase_order_id),
+                ("goods_receipt", goods_receipt_id),
+                ("inventory_move", inventory_move_id),
                 ("shipment", shipment_id),
                 ("invoice", invoice_id),
             ):

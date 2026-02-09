@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements; -- Query performance monitori
 
 -- Performance tuning for connection-heavy workloads
 -- These settings are optimized for 4 gunicorn workers × 30 pool connections
-ALTER SYSTEM SET max_connections = 300;
+ALTER SYSTEM SET max_connections = 200;
 ALTER SYSTEM SET shared_buffers = '512MB';
 ALTER SYSTEM SET effective_cache_size = '1536MB';
 ALTER SYSTEM SET work_mem = '8MB';

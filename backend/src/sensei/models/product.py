@@ -12,6 +12,7 @@ import enum
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
+from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
@@ -201,16 +202,16 @@ class BOMItem(Base, TimestampMixin, AuditMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Parent product
-    product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False, index=True
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("products.id"), nullable=False, index=True
     )
 
     # Component details
     component_part_number: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True
     )
-    component_product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    component_product_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
     component_description: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True
@@ -287,8 +288,8 @@ class Routing(Base, TimestampMixin, AuditMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)  # type: ignore[assignment]
 
     # Product and sequence
-    product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False, index=True
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("products.id"), nullable=False, index=True
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 

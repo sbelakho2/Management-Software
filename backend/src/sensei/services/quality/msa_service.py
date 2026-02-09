@@ -112,7 +112,12 @@ class MSAService:
             op_std = op_var.sqrt()
         else:
             op_std = Decimal("0")
-        av = op_std * Decimal(sqrt(study.parts_count * study.trials_count))
+
+        # AIAG MSA 4th edition: AV² = (x̄_diff * K₂)² − (EV² / (n * r))
+        # Simplified range method: AV² = σ²_operator * n * r − EV² / (n * r)
+        n_r = Decimal(study.parts_count * study.trials_count)
+        av_squared = (op_std ** 2) * n_r - (ev ** 2) / n_r
+        av = av_squared.sqrt() if av_squared > 0 else Decimal("0")
 
         # PV (part variation)
         part_means = []

@@ -47,6 +47,7 @@ export interface MaintenanceStats {
   total_downtime_events: number;
   total_spare_parts: number;
   parts_below_reorder: number;
+  efficiency_pulse?: number;
 }
 
 export interface LOTOEnergySource {

@@ -98,8 +98,8 @@ class StandardWork(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
 
     # Linkages
-    product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    product_id: Mapped[Optional[PyUUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
     station_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("stations.id"), nullable=True, index=True

@@ -90,15 +90,15 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         Enum(AndonType), nullable=False, index=True
     )
     severity: Mapped[AndonSeverity] = mapped_column(
-        Enum(AndonSeverity), nullable=False, default=AndonSeverity.YELLOW, index=True
+        Enum(AndonSeverity), nullable=False, default=AndonSeverity.MEDIUM, index=True
     )
 
     # Location and context
     station_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("stations.id"), nullable=False, index=True
     )
-    product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    product_id: Mapped[Optional[PyUUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
     work_order_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("work_orders.id"), nullable=True, index=True

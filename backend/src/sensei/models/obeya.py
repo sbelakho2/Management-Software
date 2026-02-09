@@ -254,7 +254,7 @@ class ObeyaItem(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="item",
         cascade="all, delete-orphan",
         order_by="ObeyaComment.created_at",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

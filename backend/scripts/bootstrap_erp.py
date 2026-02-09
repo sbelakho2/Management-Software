@@ -1,9 +1,10 @@
 import asyncio
 import sys
 import os
+from pathlib import Path
 
-# Add src to path
-sys.path.append(os.path.join(os.getcwd(), "src"))
+# Add src to path (robust: relative to this script's location)
+sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 
 from sensei.core.database import async_session_factory
 from sensei.services.finance.persistent_accounting import PersistentAccountingLedgerService

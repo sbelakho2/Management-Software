@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { accountApi, AccountListParams } from '@/api/accounts';
+import { accountApi, AccountListParams, CreateAccountData } from '@/api/accounts';
 import { Customer } from '@/types';
 
 function getErrorMessage(error: unknown): string {
@@ -17,7 +17,7 @@ interface CustomersState {
   error: string | null;
 
   fetchCustomers: (params?: AccountListParams) => Promise<void>;
-  createCustomer: (data: Partial<Customer>) => Promise<Customer>;
+  createCustomer: (data: Partial<Customer> | CreateAccountData) => Promise<Customer>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<Customer>;
   deleteCustomer: (id: string) => Promise<void>;
   clearError: () => void;
@@ -48,7 +48,7 @@ export const useCustomersStore = create<CustomersState>((set) => ({
   createCustomer: async (data) => {
     set({ loading: true, error: null });
     try {
-      const customer = await accountApi.create(data);
+      const customer = await accountApi.create(data as CreateAccountData);
       set((state) => ({ 
         customers: [customer, ...state.customers],
         totalCustomers: state.totalCustomers + 1,

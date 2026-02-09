@@ -144,7 +144,7 @@ class LearningModule(Base, TimestampMixin, AuditMixin):
         back_populates="module",
         cascade="all, delete-orphan",
         order_by="LearningUnit.unit_order",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (
@@ -273,14 +273,14 @@ class LearningUnit(Base, TimestampMixin, AuditMixin):
         "UserLearningProgress",
         back_populates="unit",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     assessments: Mapped[list["LearningAssessment"]] = relationship(
         "LearningAssessment",
         back_populates="unit",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

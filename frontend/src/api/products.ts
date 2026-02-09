@@ -1,7 +1,7 @@
 import { apiClient, PaginationParams } from './client';
 
 export interface Product {
-  id: number;
+  id: string;
   name: string;
   part_number: string;
   revision: string;
@@ -42,18 +42,18 @@ export const productApi = {
   listProducts: (params?: ProductListParams): Promise<Product[]> => 
     apiClient.get<Product[]>('/products', { params }),
   
-  getProduct: (id: number): Promise<ProductDetail> => 
+  getProduct: (id: string): Promise<ProductDetail> => 
     apiClient.get<ProductDetail>(`/products/${id}`),
   
   createProduct: (data: Partial<ProductDetail>): Promise<ProductDetail> => 
     apiClient.post<ProductDetail>('/products', data),
   
-  updateProduct: (id: number, data: Partial<ProductDetail>): Promise<ProductDetail> => 
+  updateProduct: (id: string, data: Partial<ProductDetail>): Promise<ProductDetail> => 
     apiClient.patch<ProductDetail>(`/products/${id}`, data),
   
-  deleteProduct: (id: number): Promise<void> => 
+  deleteProduct: (id: string): Promise<void> => 
     apiClient.delete<void>(`/products/${id}`),
     
-  getProductStats: (id: number): Promise<any> =>
+  getProductStats: (id: string): Promise<any> =>
     apiClient.get<any>(`/products/${id}/stats`),
 };

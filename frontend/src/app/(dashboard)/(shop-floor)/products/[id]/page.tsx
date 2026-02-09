@@ -192,7 +192,7 @@ export default function ProductDetailPage() {
       if (params.id) {
         setIsLoading(true);
         try {
-          await fetchProduct(Number(params.id));
+          await fetchProduct(params.id as string);
         } catch (err) {
           console.error('Failed to load product:', err);
           // Fallback to mock

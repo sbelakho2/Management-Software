@@ -479,9 +479,10 @@ export function GateCheckDisplay({
   title = 'Pre-submission Checks',
   showAllChecks = false,
 }: GateCheckDisplayProps) {
-  const failedBlocking = result.checks.filter(c => c.blocking && !c.result.passed);
-  const failedWarnings = result.checks.filter(c => !c.blocking && !c.result.passed);
-  const passed = result.checks.filter(c => c.result.passed);
+  const checks = result.checks ?? [];
+  const failedBlocking = checks.filter(c => c.blocking && !c.result?.passed);
+  const failedWarnings = checks.filter(c => !c.blocking && !c.result?.passed);
+  const passed = checks.filter(c => c.result?.passed);
   
   return (
     <div className={cn('space-y-4', className)}>
@@ -512,18 +513,18 @@ export function GateCheckDisplay({
           </h4>
           <ul className="space-y-2">
             {failedBlocking.map((check) => (
-              <li key={check.id} className="text-sm">
+              <li key={check.id ?? check.key} className="text-sm">
                 <div className="font-medium text-red-600 dark:text-red-400">
-                  {check.name}: {check.result.message}
+                  {check.name ?? check.label}: {check.result?.message}
                 </div>
-                {check.result.details && check.result.details.length > 0 && (
+                {check.result?.details && check.result.details.length > 0 && (
                   <ul className="ml-4 mt-1 list-disc text-muted-foreground">
-                    {check.result.details.map((detail, i) => (
+                    {check.result.details.map((detail: string, i: number) => (
                       <li key={i}>{detail}</li>
                     ))}
                   </ul>
                 )}
-                {check.result.suggestions && (
+                {check.result?.suggestions && (
                   <p className="mt-1 text-muted-foreground italic">
                     {check.result.suggestions[0]}
                   </p>
@@ -542,9 +543,9 @@ export function GateCheckDisplay({
           </h4>
           <ul className="space-y-2">
             {failedWarnings.map((check) => (
-              <li key={check.id} className="text-sm">
+              <li key={check.id ?? check.key} className="text-sm">
                 <div className="font-medium text-amber-600 dark:text-amber-400">
-                  {check.name}: {check.result.message}
+                  {check.name ?? check.label}: {check.result?.message}
                 </div>
               </li>
             ))}
@@ -560,11 +561,11 @@ export function GateCheckDisplay({
           </h4>
           <ul className="space-y-1">
             {passed.map((check) => (
-              <li key={check.id} className="text-sm flex items-center gap-2">
+              <li key={check.id ?? check.key} className="text-sm flex items-center gap-2">
                 <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span>{check.name}</span>
+                <span>{check.name ?? check.label}</span>
               </li>
             ))}
           </ul>
@@ -593,7 +594,7 @@ export function FormSummary({
   
   if (!form) return null;
   
-  const { hasErrors, hasWarnings, errors, warnings, isValid } = form;
+  const { hasErrors, hasWarnings, errors = [], warnings = [], isValid } = form;
   
   if (isValid && !hasWarnings && !showWhenValid) {
     return null;
@@ -669,18 +670,21 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
   const registerField = useFormValidationStore((state) => state.registerField);
   const unregisterField = useFormValidationStore((state) => state.unregisterField);
   
+  // Derive the field name from schema.name or fallback to schema.field
+  const fieldName = schema.name ?? schema.field;
+  
   // Register field on mount
   useEffect(() => {
     const rules = createRulesFromSchema(schema);
     registerField(formId, {
-      name: schema.name,
+      name: fieldName,
       rules,
     });
     
     return () => {
-      unregisterField(formId, schema.name);
+      unregisterField(formId, fieldName);
     };
-  }, [formId, schema.name, registerField, unregisterField]);
+  }, [formId, fieldName, registerField, unregisterField]);
   
   // Render appropriate component based on type
   switch (schema.type) {
@@ -688,7 +692,7 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedTextarea
           formId={formId}
-          name={schema.name}
+          name={fieldName}
           label={schema.label}
           helperText={schema.helperText}
           required={schema.required}
@@ -701,7 +705,7 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedSelect
           formId={formId}
-          name={schema.name}
+          name={fieldName}
           label={schema.label}
           helperText={schema.helperText}
           required={schema.required}
@@ -715,7 +719,7 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedCheckbox
           formId={formId}
-          name={schema.name}
+          name={fieldName}
           label={schema.label}
           helperText={schema.helperText}
           wrapperClassName={className}
@@ -726,7 +730,7 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedInput
           formId={formId}
-          name={schema.name}
+          name={fieldName}
           type="number"
           label={schema.label}
           helperText={schema.helperText}
@@ -745,8 +749,8 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedInput
           formId={formId}
-          name={schema.name}
-          type={schema.type === 'phone' ? 'tel' : schema.type}
+          name={fieldName}
+          type={(schema.type ?? 'text') === 'phone' ? 'tel' : (schema.type ?? 'text')}
           label={schema.label}
           helperText={schema.helperText}
           required={schema.required}
@@ -759,7 +763,7 @@ export function AutoField({ formId, schema, className }: AutoFieldProps) {
       return (
         <ValidatedInput
           formId={formId}
-          name={schema.name}
+          name={fieldName}
           type="text"
           label={schema.label}
           helperText={schema.helperText}

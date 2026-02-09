@@ -310,7 +310,7 @@ class QualificationCriterion(Base, TimestampMixin):
     scores: Mapped[list["QualificationScore"]] = relationship(
         "QualificationScore",
         back_populates="criterion",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

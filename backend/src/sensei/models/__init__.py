@@ -157,6 +157,15 @@ from sensei.models.pii import (
     PIIAccessLog,
     DeletionRequest,
 )
+from sensei.models.kpi import (
+    KPIDefinitionRow,
+    KPIValueRow,
+    KPIDashboardRow,
+    KPICategoryDB,
+    KPIUnitDB,
+    KPIDirectionDB,
+    KPIStatusDB,
+)
 from sensei.models.kanban import (
     KanbanBoard,
     BoardType,

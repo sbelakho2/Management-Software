@@ -197,7 +197,7 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="account",
         cascade="save-update, merge",
         passive_deletes=True,
-        lazy="dynamic",
+        lazy="select",
     )
     
     opportunities: Mapped[list["Opportunity"]] = relationship(
@@ -206,7 +206,7 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         foreign_keys="Opportunity.account_id",
         cascade="save-update, merge",
         passive_deletes=True,
-        lazy="dynamic",
+        lazy="select",
     )
     
     rfqs: Mapped[list["RFQ"]] = relationship(
@@ -215,21 +215,21 @@ class Account(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         foreign_keys="RFQ.account_id",
         cascade="save-update, merge",
         passive_deletes=True,
-        lazy="dynamic",
+        lazy="select",
     )
     
     supplier_quotes: Mapped[list["SupplierQuote"]] = relationship(
         "SupplierQuote",
         back_populates="supplier",
         foreign_keys="SupplierQuote.supplier_id",
-        lazy="dynamic",
+        lazy="select",
     )
     
     # Phase 3: Work centers owned by this account
     work_centers: Mapped[list["WorkCenter"]] = relationship(
         "WorkCenter",
         back_populates="account",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (
@@ -363,7 +363,7 @@ class Contact(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         "AccountContact",
         back_populates="contact",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

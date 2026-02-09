@@ -232,13 +232,13 @@ class Opportunity(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     rfqs: Mapped[list["RFQ"]] = relationship(
         "RFQ",
         back_populates="opportunity",
-        lazy="dynamic",
+        lazy="select",
     )
     
     quotes: Mapped[list["Quote"]] = relationship(
         "Quote",
         back_populates="opportunity",
-        lazy="dynamic",
+        lazy="select",
     )
     
     notes: Mapped[list["OpportunityNote"]] = relationship(
@@ -246,7 +246,7 @@ class Opportunity(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="opportunity",
         cascade="all, delete-orphan",
         order_by="desc(OpportunityNote.created_at)",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

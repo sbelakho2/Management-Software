@@ -11,7 +11,7 @@ interface MRPState {
   fetchMpsPlans: () => Promise<void>;
   createMpsPlan: (payload: Partial<MPSPlan> & { name: string; period_start: string; period_end: string }) => Promise<void>;
   fetchMpsLines: (planId: string) => Promise<void>;
-  createMpsLine: (planId: string, payload: Partial<MPSPlanLine> & { product_id: number; bucket_date: string; quantity: number }) => Promise<void>;
+  createMpsLine: (planId: string, payload: Partial<MPSPlanLine> & { product_id: string; bucket_date: string; quantity: number }) => Promise<void>;
 }
 
 export const useMrpStore = create<MRPState>((set, get) => ({

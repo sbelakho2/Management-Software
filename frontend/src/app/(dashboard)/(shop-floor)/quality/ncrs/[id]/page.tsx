@@ -63,9 +63,11 @@ export default function NCRDetailsPage() {
 
   const statusConfig = {
     open: { label: 'Open', variant: 'warning' as const, icon: AlertCircle },
-    investigating: { label: 'Investigating', variant: 'default' as const, icon: Search },
-    disposed: { label: 'Disposed', variant: 'success' as const, icon: CheckCircle2 },
+    under_investigation: { label: 'Investigating', variant: 'default' as const, icon: Search },
+    pending_disposition: { label: 'Pending Disposition', variant: 'secondary' as const, icon: Search },
+    dispositioned: { label: 'Dispositioned', variant: 'success' as const, icon: CheckCircle2 },
     closed: { label: 'Closed', variant: 'secondary' as const, icon: ShieldAlert },
+    escalated_to_capa: { label: 'Escalated to CAPA', variant: 'danger' as const, icon: AlertCircle },
   };
 
   const severityConfig = {

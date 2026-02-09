@@ -138,4 +138,6 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
         endOp(set, 'createWorkOrder');
       }
   },
+
+  isOpLoading: (op: string) => get().loadingOps.has(op),
 }));

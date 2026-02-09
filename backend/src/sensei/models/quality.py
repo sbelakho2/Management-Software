@@ -130,15 +130,22 @@ class CAPASourceType(enum.Enum):
 
 
 class CAPAStatus(enum.Enum):
-    """Status of CAPA."""
+    """
+    Status of CAPA.
+
+    Canonical workflow: OPEN → INVESTIGATING → IMPLEMENTING → VERIFYING → EFFECTIVENESS_CHECK → EFFECTIVE/INEFFECTIVE → CLOSED
+    Aliases kept for backward compatibility with existing DB records:
+      - IN_PROGRESS: prefer INVESTIGATING or IMPLEMENTING
+      - VERIFICATION: prefer VERIFYING
+    """
 
     OPEN = "open"
-    IN_PROGRESS = "in_progress"  # Alias for active states
+    IN_PROGRESS = "in_progress"  # DEPRECATED alias — prefer INVESTIGATING or IMPLEMENTING
     INVESTIGATING = "investigating"
     IMPLEMENTING = "implementing"
-    VERIFICATION = "verification"  # Alias for verifying
+    VERIFICATION = "verification"  # DEPRECATED alias — prefer VERIFYING
     VERIFYING = "verifying"
-    EFFECTIVENESS_CHECK = "effectiveness_check"  # Effectiveness review stage
+    EFFECTIVENESS_CHECK = "effectiveness_check"
     EFFECTIVE = "effective"
     CLOSED = "closed"
     INEFFECTIVE = "ineffective"
@@ -155,12 +162,18 @@ class CAPAPriority(enum.Enum):
 
 
 class VerificationStatus(enum.Enum):
-    """Status of verification check."""
+    """
+    Status of verification check.
+
+    Aliases kept for backward compatibility:
+      - VERIFIED: prefer PASSED
+      - REJECTED: prefer FAILED
+    """
 
     PENDING = "pending"
-    VERIFIED = "verified"  # Alias for passed
+    VERIFIED = "verified"  # DEPRECATED alias — prefer PASSED
     PASSED = "passed"
-    REJECTED = "rejected"  # Alias for failed
+    REJECTED = "rejected"  # DEPRECATED alias — prefer FAILED
     FAILED = "failed"
     PARTIAL = "partial"
     NOT_APPLICABLE = "not_applicable"
@@ -243,8 +256,8 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
 
     # Location and context
-    product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    product_id: Mapped[Optional[PyUUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
     work_order_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("work_orders.id"), nullable=True, index=True
@@ -767,8 +780,8 @@ class InspectionPlan(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Scope
-    product_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=True, index=True
+    product_id: Mapped[Optional[PyUUID]] = mapped_column(
+        ForeignKey("products.id"), nullable=True, index=True
     )
     station_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("stations.id"), nullable=True, index=True

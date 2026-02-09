@@ -101,11 +101,15 @@ const severityConfig: Record<string, any> = {
 const capaStatusConfig: Record<string, any> = {
   open: { labelKey: 'pages.quality.status.open', variant: 'warning' as const },
   in_progress: { labelKey: 'common.inProgress', variant: 'default' as const },
-  pending_verification: { labelKey: 'pages.quality.status.verifying', variant: 'secondary' as const },
-  verified: { labelKey: 'pages.quality.status.verified', variant: 'success' as const },
-  closed: { labelKey: 'pages.quality.status.closed', variant: 'success' as const },
+  investigating: { labelKey: 'pages.quality.status.investigating', variant: 'default' as const },
   implementing: { labelKey: 'pages.quality.status.implementing', variant: 'default' as const },
+  verification: { labelKey: 'pages.quality.status.verifying', variant: 'secondary' as const },
   verifying: { labelKey: 'pages.quality.status.verifying', variant: 'secondary' as const },
+  effectiveness_check: { labelKey: 'pages.quality.status.effectivenessCheck', variant: 'secondary' as const },
+  effective: { labelKey: 'pages.quality.status.effective', variant: 'success' as const },
+  closed: { labelKey: 'pages.quality.status.closed', variant: 'success' as const },
+  ineffective: { labelKey: 'pages.quality.status.ineffective', variant: 'danger' as const },
+  on_hold: { labelKey: 'pages.quality.status.onHold', variant: 'secondary' as const },
 };
 
 const priorityConfig = {
@@ -2317,7 +2321,7 @@ function TraceabilityTab() {
       name: matrixForm.name,
       description: matrixForm.description || undefined,
       status: matrixForm.status,
-      product_id: matrixForm.productId ? Number(matrixForm.productId) : undefined,
+      product_id: matrixForm.productId ? String(matrixForm.productId) : undefined,
       work_order_id: matrixForm.workOrderId ? Number(matrixForm.workOrderId) : undefined,
       lot_number: matrixForm.lotNumber || undefined,
       batch_id: matrixForm.batchId || undefined,
@@ -3226,8 +3230,10 @@ function NCRsTab() {
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="investigating">Investigating</SelectItem>
-              <SelectItem value="disposition">Disposition</SelectItem>
+              <SelectItem value="under_investigation">Investigating</SelectItem>
+              <SelectItem value="pending_disposition">Pending Disposition</SelectItem>
+              <SelectItem value="dispositioned">Dispositioned</SelectItem>
+              <SelectItem value="escalated_to_capa">Escalated to CAPA</SelectItem>
               <SelectItem value="closed">Closed</SelectItem>
             </SelectContent>
           </Select>

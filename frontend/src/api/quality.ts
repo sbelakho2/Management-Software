@@ -145,24 +145,24 @@ export const inspectionApi = {
   },
 
   /**
-   * Add inspection result
+   * Add inspection result (measurement item)
    */
-  async addResult(inspectionId: string, data: CreateInspectionResultData): Promise<InspectionResult> {
+  async addResult(inspectionId: string, data: CreateInspectionResultData): Promise<unknown> {
     return apiClient.post(`/quality/inspections/${inspectionId}/results`, data);
   },
 
   /**
-   * Update inspection result
+   * Update inspection result by index
    */
-  async updateResult(inspectionId: string, resultId: string, data: Partial<CreateInspectionResultData>): Promise<InspectionResult> {
-    return apiClient.patch(`/quality/inspections/${inspectionId}/results/${resultId}`, data);
+  async updateResult(inspectionId: string, resultIndex: number, data: CreateInspectionResultData): Promise<unknown> {
+    return apiClient.patch(`/quality/inspections/${inspectionId}/results/${resultIndex}`, data);
   },
 
   /**
-   * Delete inspection result
+   * Delete inspection result by index
    */
-  async deleteResult(inspectionId: string, resultId: string): Promise<void> {
-    return apiClient.delete(`/quality/inspections/${inspectionId}/results/${resultId}`);
+  async deleteResult(inspectionId: string, resultIndex: number): Promise<void> {
+    return apiClient.delete(`/quality/inspections/${inspectionId}/results/${resultIndex}`);
   },
 
   /**
@@ -842,7 +842,7 @@ export interface CreateTraceabilityMatrixData {
   name: string;
   description?: string;
   status?: string;
-  product_id?: number;
+  product_id?: string;
   work_order_id?: number;
   lot_number?: string;
   batch_id?: string;

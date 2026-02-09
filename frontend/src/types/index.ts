@@ -414,9 +414,11 @@ export interface QualityInspection extends AuditableEntity {
 }
 
 export type InspectionType = 
-  | 'receiving'
+  | 'incoming'
   | 'in_process'
   | 'final'
+  | 'patrol'
+  | 'first_article'
   | 'audit';
 
 export type InspectionStatus = 
@@ -457,18 +459,23 @@ export interface NonConformanceReport extends AuditableEntity {
 
 export type NCRStatus = 
   | 'open'
-  | 'investigating'
+  | 'under_investigation'
   | 'pending_disposition'
-  | 'closed';
+  | 'dispositioned'
+  | 'closed'
+  | 'escalated_to_capa';
 
 export type Severity = 'minor' | 'major' | 'critical';
 
 export type NCRDisposition = 
   | 'use_as_is'
   | 'rework'
+  | 'repair'
   | 'scrap'
-  | 'return_to_vendor'
-  | 'concession';
+  | 'return_to_supplier'
+  | 'concession'
+  | 'sort'
+  | 'downgrade';
 
 export interface CAPA extends AuditableEntity {
   capa_number: string;
@@ -495,9 +502,15 @@ export type CAPAType = 'corrective' | 'preventive' | 'both';
 export type CAPAStatus = 
   | 'open'
   | 'in_progress'
-  | 'pending_verification'
-  | 'verified'
-  | 'closed';
+  | 'investigating'
+  | 'implementing'
+  | 'verification'
+  | 'verifying'
+  | 'effectiveness_check'
+  | 'effective'
+  | 'closed'
+  | 'ineffective'
+  | 'on_hold';
 
 export type MSAStudyType = 'grr' | 'bias' | 'linearity' | 'stability';
 
@@ -750,7 +763,7 @@ export interface TraceabilityMatrix extends AuditableEntity {
   name: string;
   description?: string;
   status: string;
-  product_id?: number;
+  product_id?: string;
   work_order_id?: number;
   lot_number?: string;
   batch_id?: string;
@@ -993,7 +1006,7 @@ export interface MPSPlan extends AuditableEntity {
 
 export interface MPSPlanLine extends AuditableEntity {
   plan_id: UUID;
-  product_id: number;
+  product_id: string;
   bucket_date: string;
   quantity: number;
   source_type?: string;

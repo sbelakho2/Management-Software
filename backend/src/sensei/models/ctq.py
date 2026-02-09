@@ -189,7 +189,7 @@ class CTQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="ctq",
         cascade="all, delete-orphan",
         order_by="desc(CTQMeasurement.measured_at)",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers
 revision = "20260207_130000"
-down_revision = "20260207_120000"
+down_revision = "perf_indexes_v2"
 branch_labels = None
 depends_on = None
 

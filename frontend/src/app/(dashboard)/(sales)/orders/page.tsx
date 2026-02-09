@@ -137,7 +137,7 @@ function OrderRow({ order, onApprove, onRelease }: {
             <Link 
               href={`/quotes/${order.source_quote_id}`}
               className="text-[9px] font-mono uppercase tracking-tight text-muted-foreground/40 hover:text-rams-orange"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
               {t('pages.orders.sourceQuote')}
             </Link>
@@ -148,7 +148,7 @@ function OrderRow({ order, onApprove, onRelease }: {
         <Link 
           href={`/customers/${order.account_id}`}
           className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 hover:text-rams-orange transition-none"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
           {order.account_name || t('common.unknown')}
         </Link>

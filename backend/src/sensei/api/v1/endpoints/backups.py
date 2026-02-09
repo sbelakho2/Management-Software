@@ -11,7 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api.deps import get_current_active_user, get_db, require_role
 from sensei.models.user import User, RoleType
@@ -116,20 +116,24 @@ class RetentionPolicyRequest(BaseModel):
     retention_days: int = Field(ge=1, le=3650, description="Retention period in days")
 
 
-# Dependency: Get backup service
-def get_backup_service(db: Session = Depends(get_db)) -> DatabaseBackupService:
-    """Get database backup service instance"""
+# Module-level singleton backup service
+_backup_service: Optional[DatabaseBackupService] = None
+
+
+def get_backup_service(db: AsyncSession = Depends(get_db)) -> DatabaseBackupService:
+    """Get database backup service singleton instance."""
+    global _backup_service
     from sensei.core.config import settings
-    
-    # In production, this would be initialized once and reused
-    service = DatabaseBackupService(
-        db_session_factory=lambda: db,
-        backup_storage_path="/var/backups/sensei",  # From config
-        database_url=settings.DATABASE_URL_SYNC,
-        s3_client=None  # Would be initialized with S3 config
-    )
-    
-    return service
+
+    if _backup_service is None:
+        _backup_service = DatabaseBackupService(
+            db_session_factory=get_db,
+            backup_storage_path="/var/backups/sensei",
+            database_url=settings.DATABASE_URL_SYNC,
+            s3_client=None,
+        )
+
+    return _backup_service
 
 
 @router.post(

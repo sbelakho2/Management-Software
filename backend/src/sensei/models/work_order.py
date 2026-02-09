@@ -103,8 +103,8 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )  # Customer PO, etc.
 
     # Product reference
-    product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False, index=True
+    product_id: Mapped[PyUUID] = mapped_column(
+        ForeignKey("products.id"), nullable=False, index=True
     )
 
     # Quantities

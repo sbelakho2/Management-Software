@@ -13,6 +13,11 @@ interface Account {
   active: boolean;
   created_at: string;
   updated_at: string;
+  /** Alias used by ledger page */
+  account_code?: string;
+  account_name?: string;
+  account_type?: string;
+  is_active?: boolean;
 }
 
 interface JournalEntry {
@@ -33,6 +38,7 @@ interface FxRate {
   to_currency: string;
   rate: number;
   effective_date: string;
+  as_of?: string;
 }
 
 interface StandardCost {
@@ -43,6 +49,10 @@ interface StandardCost {
   overhead_cost: number;
   total_cost: number;
   effective_date: string;
+  currency?: string;
+  material_unit_cost?: number;
+  labor_unit_cost?: number;
+  overhead_unit_cost?: number;
 }
 
 interface CostRollup {
@@ -53,6 +63,18 @@ interface CostRollup {
   overhead_cost: number;
   total_cost: number;
   status: string;
+  finished_sku?: string;
+  currency?: string;
+  planned_quantity?: number;
+  completed_quantity?: number;
+  actual_material_cost?: number;
+  actual_labor_cost?: number;
+  actual_overhead_cost?: number;
+  relieved_actual_cost?: number;
+  variance_material?: number;
+  variance_labor?: number;
+  variance_overhead?: number;
+  variance_total?: number;
 }
 
 interface TaxJurisdiction {
@@ -61,6 +83,8 @@ interface TaxJurisdiction {
   code: string;
   country: string;
   active: boolean;
+  region?: string;
+  status?: string;
 }
 
 interface TaxRate {
@@ -70,6 +94,7 @@ interface TaxRate {
   rate: number;
   tax_type: string;
   effective_date: string;
+  status?: string;
 }
 
 interface TaxTransaction {
@@ -79,12 +104,20 @@ interface TaxTransaction {
   rate_applied: number;
   jurisdiction_id: string;
   created_at: string;
+  tax_rate_id?: string;
+  reference_type?: string;
+  taxable_amount?: number;
+  currency?: string;
+  status?: string;
 }
 
 interface CurrencyConfig {
   base_currency: string;
   supported_currencies: string[];
   auto_update_rates: boolean;
+  reporting_currency?: string;
+  allowed_currencies?: string[];
+  fx_source?: string;
 }
 
 interface Currency {
@@ -101,6 +134,13 @@ interface PaymentTerm {
   days: number;
   discount_percent: number;
   discount_days: number;
+  code?: string;
+  is_active?: boolean;
+  days_due?: number;
+  description?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface BankAccount {
@@ -111,6 +151,8 @@ interface BankAccount {
   currency: string;
   balance: number;
   active: boolean;
+  account_name?: string;
+  current_balance?: number;
 }
 
 interface BankTransaction {
@@ -121,6 +163,11 @@ interface BankTransaction {
   amount: number;
   type: string;
   reconciled: boolean;
+  reference?: string;
+  transaction_type?: string;
+  transaction_date?: string;
+  currency?: string;
+  status?: string;
 }
 
 interface DashboardStats {

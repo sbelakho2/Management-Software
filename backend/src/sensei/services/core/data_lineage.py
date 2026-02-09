@@ -94,9 +94,10 @@ class DataLineageService:
         )
         db.add(link)
         try:
-            await db.flush()
+            # Use a savepoint so rollback doesn't kill the outer transaction
+            async with db.begin_nested():
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
             # Another concurrent request inserted the same link.
             existing2 = await db.execute(
                 select(DataLineageLink).where(

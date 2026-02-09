@@ -97,30 +97,36 @@ class SessionListResponse(BaseModel):
 # ============================================================================
 
 # Global service instance (will be properly initialized with dependencies)
-_chat_service: Optional[ChatService] = None
-
-
 def get_chat_service(
     db: AsyncSession = Depends(deps.get_db),
 ) -> ChatService:
-    """Get or create chat service instance."""
-    global _chat_service
-    if _chat_service is None:
-        _chat_service = create_chat_service(
-            session=db,
-            enable_vps_optimization=True,
-        )
-    return _chat_service
+    """Get or create chat service instance - always uses current request's db session."""
+    return create_chat_service(
+        session=db,
+        enable_vps_optimization=True,
+    )
 
 
 def build_user_context(user: User) -> UserContext:
     """Build UserContext from authenticated User model."""
+    # Extract role names from the User→UserRole→Role relationship
+    role_names: set[str] = set()
+    permission_names: set[str] = set()
+    if hasattr(user, 'roles') and user.roles:
+        for user_role in user.roles:
+            if hasattr(user_role, 'role') and user_role.role:
+                role_names.add(user_role.role.name)
+                # Gather permissions from each role
+                if hasattr(user_role.role, 'permissions') and user_role.role.permissions:
+                    for rp in user_role.role.permissions:
+                        if hasattr(rp, 'permission') and rp.permission:
+                            permission_names.add(f"{rp.permission.resource}:{rp.permission.action}")
     return UserContext(
         user_id=user.id,
         email=user.email,
         name=user.full_name or user.email,
-        role=user.role.value if hasattr(user.role, 'value') else str(user.role),
-        permissions=set(user.permissions) if hasattr(user, 'permissions') and user.permissions else set(),
+        roles=role_names,
+        permissions=permission_names,
         department=getattr(user, 'department', None),
     )
 

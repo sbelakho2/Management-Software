@@ -45,7 +45,7 @@ interface Contact {
 interface CustomerFormData {
   name: string;
   code: string;
-  status: 'active' | 'inactive' | 'prospect';
+  status: string;
   industry: string;
   website: string;
   address: {
@@ -322,9 +322,9 @@ export default function CustomerFormPage() {
     setIsSaving(true);
     try {
       if (isEditing) {
-        await updateCustomer(params.id as string, formData);
+        await updateCustomer(params.id as string, formData as any);
       } else {
-        await createCustomer(formData);
+        await createCustomer(formData as any);
       }
       toast({
         title: isEditing ? t('pages.customers.new.toast.customerUpdated') : t('pages.customers.new.toast.customerCreated'),

@@ -500,7 +500,7 @@ export default function TodayPage() {
 						</div>
 						<div className="p-4 space-y-3">
 							{(todayData?.active_risks ?? []).length > 0 ? (
-								(todayData.active_risks as Array<{ id?: string; rfq?: string; risk_title?: string; discipline?: string }>).slice(0, 5).map((risk, idx) => (
+								(todayData?.active_risks as Array<{ id?: string; rfq?: string; risk_title?: string; discipline?: string }>).slice(0, 5).map((risk, idx) => (
 									<div key={risk.id ?? `risk-${idx}`} className="flex items-center justify-between border-b border-rams-line/30 pb-3 last:border-0 last:pb-0">
 										<div>
 											<p className="text-[10px] font-black uppercase text-foreground/80">{risk.rfq ?? t('common.unknown')}</p>

@@ -53,7 +53,7 @@ function endOp(set: (fn: (s: MaintenanceState) => Partial<MaintenanceState>) => 
   });
 }
 
-export const useMaintenanceStore = create<MaintenanceState>((set) => ({
+export const useMaintenanceStore = create<MaintenanceState>((set, get) => ({
   assets: [],
   workOrders: [],
   stats: null,
@@ -225,4 +225,6 @@ export const useMaintenanceStore = create<MaintenanceState>((set) => ({
         endOp(set, 'fetchBudgets');
       }
   },
+
+  isOpLoading: (op: string) => get().loadingOps.has(op),
 }));

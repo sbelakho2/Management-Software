@@ -59,9 +59,9 @@ export default function CurrencySettingsPage() {
 
     await updateCurrencySettings({
       base_currency: settingsForm.baseCurrency,
-      reporting_currency: settingsForm.reportingCurrency || null,
-      allowed_currencies: allowed.length ? allowed : null,
-      fx_source: settingsForm.fxSource || null,
+      reporting_currency: settingsForm.reportingCurrency || undefined,
+      allowed_currencies: allowed.length ? allowed : undefined,
+      fx_source: settingsForm.fxSource || undefined,
       auto_update_rates: settingsForm.autoUpdateRates,
     });
   };

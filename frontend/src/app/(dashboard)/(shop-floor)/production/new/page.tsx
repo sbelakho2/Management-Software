@@ -52,7 +52,7 @@ export default function NewWorkOrderPage() {
     try {
       await createWorkOrder({
         work_order_number: form.orderNumber,
-        product_id: Number(form.productId),
+        product_id: form.productId,
         quantity_ordered: form.quantity,
         priority: form.priority as any,
         scheduled_end: form.dueDate,

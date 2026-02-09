@@ -825,15 +825,15 @@ class FiveWhysAssistant:
                     if re.search(rf'\b{re.escape(kw)}\b', all_text)
                 )
                 if matched / len(principle_keywords) >= 0.4:
-                suggestion = RootCauseSuggestion(
-                    why_number=next_why,
-                    suggested_cause=f"Expert Principle: {distilled_principle}",
-                    confidence=0.85,
-                    waste_category=LeanWasteCategory.MUDA, # Default for expert principles
-                    similar_historical_causes=[findings.get("source_book", "Distilled Knowledge")],
-                    evidence_needed=trace.get("recommendations", [])
-                )
-                suggestions.append(suggestion)
+                    suggestion = RootCauseSuggestion(
+                        why_number=next_why,
+                        suggested_cause=f"Expert Principle: {distilled_principle}",
+                        confidence=0.85,
+                        waste_category=LeanWasteCategory.MUDA, # Default for expert principles
+                        similar_historical_causes=[findings.get("source_book", "Distilled Knowledge")],
+                        evidence_needed=trace.get("recommendations", [])
+                    )
+                    suggestions.append(suggestion)
         
         # Add general "go deeper" suggestions if few matches
         if len(suggestions) < 2:

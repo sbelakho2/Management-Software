@@ -1197,6 +1197,16 @@ async def enroll_participant(
             reasoning_id=x_reasoning_id,
         )
 
+        # Wire employee→training into common thread HR lineage
+        await get_common_thread_service().bind_hr_lineage(
+            db,
+            employee_id=participant.user_id,
+            training_record_id=participant.id,
+            created_by_id=current_user.id,
+            reasoning_id=x_reasoning_id,
+            source="training_enroll",
+        )
+
         if x_reasoning_id:
             await get_common_thread_service().record_reasoning(
                 db,

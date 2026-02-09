@@ -443,12 +443,12 @@ export default function BankingPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="p-2 rounded-full bg-muted">
-                                {transactionTypeIcons[tx.transaction_type as BankTransactionType]}
+                                {transactionTypeIcons[(tx.transaction_type ?? tx.type) as BankTransactionType]}
                               </div>
                               <div>
                                 <p className="font-medium text-sm">{tx.description}</p>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span>{new Date(tx.transaction_date).toLocaleDateString()}</span>
+                                  <span>{new Date(tx.transaction_date ?? tx.date).toLocaleDateString()}</span>
                                   {tx.reference && <span>• {tx.reference}</span>}
                                 </div>
                               </div>
@@ -457,19 +457,19 @@ export default function BankingPage() {
                               <div className="text-right">
                                 <p className={cn(
                                   'font-semibold',
-                                  tx.transaction_type === 'deposit' || tx.transaction_type === 'interest'
+                                  (tx.transaction_type ?? tx.type) === 'deposit' || (tx.transaction_type ?? tx.type) === 'interest'
                                     ? 'text-emerald-500'
                                     : 'text-red-500'
                                 )}>
-                                  {tx.transaction_type === 'deposit' || tx.transaction_type === 'interest' ? '+' : '-'}
+                                  {(tx.transaction_type ?? tx.type) === 'deposit' || (tx.transaction_type ?? tx.type) === 'interest' ? '+' : '-'}
                                   {Math.abs(tx.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-xs text-muted-foreground">{tx.currency}</p>
                               </div>
-                              <Badge className={cn('text-xs', statusColors[tx.status as BankTransactionStatus])}>
+                              <Badge className={cn('text-xs', statusColors[(tx.status ?? 'pending') as BankTransactionStatus])}>
                                 {tx.status === 'reconciled' && <CheckCircle2 className="h-3 w-3 mr-1" />}
                                 {tx.status === 'pending' && <Clock className="h-3 w-3 mr-1" />}
-                                {tx.status.toUpperCase()}
+                                {(tx.status ?? 'pending').toUpperCase()}
                               </Badge>
                               {tx.status === 'posted' && (
                                 <Button

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useExecutiveStore, useQualityStore, useTodayStore } from '@/stores';
+import { useExecutiveStore, useQualityStore, useTodayStore, useAnalyticsStore } from '@/stores';
 import { Loader2, Download, Search, Send, Users, AlertTriangle, TrendingUp, Shield, ArrowRight, RefreshCw, CheckCircle2, DollarSign, XCircle } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { PageGuard } from '@/components/layout/page-guard';
@@ -38,23 +38,32 @@ export default function ExecutivePage() {
     nl2sqlError,
     riskLoading,
     riskError,
+    sqdcp,
+    kpiSummary,
+    sqdcpLoading,
     runNl2sql,
-    analyzeRisk 
+    analyzeRisk,
+    fetchSQDCP,
+    fetchKPISummary,
   } = useExecutiveStore();
 
   const { totalNcrs, totalCapas, fetchNCRs, fetchCAPAs } = useQualityStore();
   const { data: todayData, fetchTodayScreen } = useTodayStore();
+  const { insights, fetchInsights } = useAnalyticsStore();
 
   React.useEffect(() => {
     if (isAuthenticated) {
       fetchNCRs();
       fetchCAPAs();
+      fetchInsights();
+      fetchSQDCP();
+      fetchKPISummary();
       if (user) {
         const name = (user.full_name || '').trim() || (user.email || '').trim() || 'User';
         fetchTodayScreen(user.id, name);
       }
     }
-  }, [fetchNCRs, fetchCAPAs, fetchTodayScreen, user, isAuthenticated]);
+  }, [fetchNCRs, fetchCAPAs, fetchInsights, fetchSQDCP, fetchKPISummary, fetchTodayScreen, user, isAuthenticated]);
 
   const [employeeName, setEmployeeName] = React.useState('Alice Example');
   const [department, setDepartment] = React.useState('Operations');
@@ -69,6 +78,28 @@ export default function ExecutivePage() {
     const q = Math.ceil((now.getMonth() + 1) / 3);
     return `Q${q} ${now.getFullYear()}`;
   }, []);
+
+  // Derive strategic directives from live insights data
+  const strategicDirectives = React.useMemo(() => {
+    const insightsList = Array.isArray(insights) ? insights : [];
+    const priorityLabels = ['Priority Alpha', 'Priority Beta', 'Priority Gamma', 'Priority Delta'];
+    // Take the top insights sorted by severity (critical > warning > info)
+    const severityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+    const sorted = [...insightsList]
+      .sort((a, b) => (severityOrder[a.severity ?? 'info'] ?? 3) - (severityOrder[b.severity ?? 'info'] ?? 3))
+      .slice(0, 4);
+    if (sorted.length === 0) {
+      return [
+        { label: 'Priority Alpha', title: 'Awaiting Data', desc: 'Insights pipeline is initializing. Data will appear once analytics engine processes live metrics.', severity: 'info' },
+      ];
+    }
+    return sorted.map((insight, idx) => ({
+      label: priorityLabels[idx] || `Priority ${idx + 1}`,
+      title: insight.title || 'Insight',
+      desc: insight.description || insight.recommendation || '',
+      severity: insight.severity === 'critical' ? 'critical' : insight.severity === 'warning' ? 'warning' : 'strategic',
+    }));
+  }, [insights]);
 
   // Compute revenue delta vs previous month (data-driven, not hardcoded)
   const revenueMtd = ((todayData as any)?.metrics?.revenue || 0);
@@ -130,6 +161,7 @@ export default function ExecutivePage() {
         <Tabs defaultValue="north-star" className="space-y-8 animate-in fade-in duration-700">
           <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
             <TabsTrigger value="north-star">NORTH_STAR</TabsTrigger>
+            <TabsTrigger value="sqdcp">SQDCP</TabsTrigger>
             <TabsTrigger value="nl2sql">SENSEI_AI</TabsTrigger>
             <TabsTrigger value="employee-risk">RISK_PREDICTION</TabsTrigger>
           </TabsList>
@@ -174,10 +206,7 @@ export default function ExecutivePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-1 space-y-1">
-                  {[
-                    { label: t('pages.executive.strategicDirectives.priorityAlpha') || 'Priority Alpha', title: t('pages.executive.strategicDirectives.directive1Title') || 'Address Margin Leakage in Tier 2 Suppliers', desc: t('pages.executive.strategicDirectives.directive1Desc') || 'AI detected 4.2% variance in Q3 procurement vs budget protocols.', severity: 'critical' },
-                    { label: t('pages.executive.strategicDirectives.priorityBeta') || 'Priority Beta', title: t('pages.executive.strategicDirectives.directive2Title') || 'Accelerate Level 4 Maturity Training', desc: t('pages.executive.strategicDirectives.directive2Desc') || 'Operations bottlenecking at specialized inspection gates requiring sync.', severity: 'strategic' },
-                  ].map((item) => (
+                  {strategicDirectives.map((item) => (
                     <div key={item.label} className="p-5 bg-rams-panel/40 border border-rams-line hover:bg-rams-panel transition-none group">
                       <div className="flex items-center justify-between mb-4">
                         <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{item.label}</span>
@@ -220,6 +249,67 @@ export default function ExecutivePage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* SQDCP Dashboard Tab */}
+          <TabsContent value="sqdcp" data-testid="sqdcp" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="grid gap-0 md:grid-cols-5 border border-rams-line bg-rams-line">
+              {(['safety', 'quality', 'delivery', 'cost', 'people'] as const).map((pillar) => {
+                const data = sqdcp?.[pillar];
+                const status = (data?.status || 'GREEN') as string;
+                const statusColor = status === 'RED' ? 'bg-rams-red text-white' : status === 'YELLOW' ? 'bg-rams-orange text-black' : 'bg-rams-green text-white';
+                const entries = data ? Object.entries(data).filter(([k]) => k !== 'status') : [];
+                return (
+                  <div key={pillar} className="bg-rams-module p-6 border-r border-rams-line group hover:bg-rams-panel transition-none">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{pillar}</p>
+                      <span className={cn("px-2 py-0.5 text-[8px] font-black uppercase tracking-widest", statusColor)}>{status}</span>
+                    </div>
+                    <div className="space-y-3">
+                      {entries.map(([key, val]) => (
+                        <div key={key} className="flex justify-between items-baseline">
+                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground/50">
+                            {key.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-sm font-mono font-bold tabular-nums text-foreground/90">
+                            {typeof val === 'number' ? (val >= 1000 ? `${(val / 1000).toFixed(1)}K` : val.toLocaleString()) : String(val)}
+                          </span>
+                        </div>
+                      ))}
+                      {entries.length === 0 && (
+                        <p className="text-[9px] font-mono text-muted-foreground/30 uppercase tracking-widest">Loading...</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* KPI Score Cards */}
+            {kpiSummary && (
+              <div className="grid gap-0 md:grid-cols-5 border border-rams-line bg-rams-line">
+                {[
+                  { label: 'Quality Score', value: kpiSummary.quality_score },
+                  { label: 'Delivery Score', value: kpiSummary.delivery_score },
+                  { label: 'Cost Efficiency', value: kpiSummary.cost_efficiency },
+                  { label: 'Workforce', value: kpiSummary.workforce_utilization },
+                  { label: 'Overall Score', value: kpiSummary.overall_score },
+                ].map((kpi) => (
+                  <div key={kpi.label} className="bg-rams-module p-6 border-r border-rams-line text-center">
+                    <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-3">{kpi.label}</p>
+                    <div className={cn(
+                      "text-3xl font-mono font-bold tracking-tight tabular-nums",
+                      kpi.value >= 80 ? "text-rams-green" : kpi.value >= 60 ? "text-rams-orange" : "text-rams-red"
+                    )}>
+                      {kpi.value.toFixed(1)}
+                    </div>
+                    <Progress value={kpi.value} className="h-1 mt-4" indicatorClassName={
+                      kpi.value >= 80 ? "bg-rams-green" : kpi.value >= 60 ? "bg-rams-orange" : "bg-rams-red"
+                    } />
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="nl2sql" data-testid="nl2sql" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">

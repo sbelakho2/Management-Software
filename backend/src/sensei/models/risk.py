@@ -240,7 +240,7 @@ class Risk(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="risk",
         cascade="all, delete-orphan",
         order_by="RiskMitigation.created_at",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

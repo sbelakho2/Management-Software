@@ -208,7 +208,7 @@ class Task(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="task",
         cascade="all, delete-orphan",
         order_by="TaskComment.created_at",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

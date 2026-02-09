@@ -275,7 +275,7 @@ export interface CreateTraceabilityMatrixInput {
   name: string;
   description?: string;
   status?: string;
-  product_id?: number;
+  product_id?: string;
   work_order_id?: number;
   lot_number?: string;
   batch_id?: string;

@@ -83,7 +83,7 @@ class WorkOrderCreate(BaseModel):
     work_order_number: str = Field(..., min_length=1, max_length=50)
     external_reference: Optional[str] = Field(None, max_length=100)
     quote_id: Optional[UUID] = None
-    product_id: int = Field(..., gt=0)
+    product_id: UUID
     quantity_ordered: Decimal = Field(..., gt=0)
     priority: Optional[str] = Field(None)
     status: Optional[str] = Field(None)
@@ -215,7 +215,7 @@ class WorkOrderResponse(BaseModel):
     id: int
     work_order_number: str
     external_reference: Optional[str]
-    product_id: int
+    product_id: UUID
     quantity_ordered: Decimal
     quantity_completed: Decimal
     quantity_scrapped: Decimal
@@ -269,7 +269,7 @@ class WorkOrderListResponse(BaseModel):
     id: int
     work_order_number: str
     external_reference: Optional[str]
-    product_id: int
+    product_id: UUID
     quantity_ordered: Decimal
     quantity_completed: Decimal
     completion_percentage: Decimal

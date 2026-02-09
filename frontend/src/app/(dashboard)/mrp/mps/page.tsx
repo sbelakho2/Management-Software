@@ -79,7 +79,7 @@ export default function MpsPage() {
       return;
     }
     await createMpsLine(lineForm.planId, {
-      product_id: Number(lineForm.productId),
+      product_id: lineForm.productId,
       bucket_date: lineForm.bucketDate,
       quantity: Number(lineForm.quantity),
       source_type: lineForm.sourceType || undefined,

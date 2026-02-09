@@ -29,6 +29,43 @@ export interface EmployeeRiskResponse {
   burnout_score: number;
   risk_factors: string[];
   recommendations: string[];
+  confidence?: number;
+}
+
+export interface SQDCPPillar {
+  status: 'GREEN' | 'YELLOW' | 'RED';
+  [key: string]: unknown;
+}
+
+export interface SQDCPResponse {
+  safety: SQDCPPillar;
+  quality: SQDCPPillar;
+  delivery: SQDCPPillar;
+  cost: SQDCPPillar;
+  people: SQDCPPillar;
+  generated_at: string;
+}
+
+export interface CrossFunctionalKPIResponse {
+  quality_score: number;
+  delivery_score: number;
+  cost_efficiency: number;
+  workforce_utilization: number;
+  overall_score: number;
+  details: Record<string, unknown>;
+}
+
+export interface StrategicDirective {
+  priority: string;
+  title: string;
+  description: string;
+  severity: string;
+  category: string;
+}
+
+export interface StrategicDirectivesResponse {
+  directives: StrategicDirective[];
+  generated_at: string;
 }
 
 export const executiveApi = {
@@ -43,5 +80,17 @@ export const executiveApi = {
       '/executive/employee-risk/analyze',
       payload
     );
+  },
+
+  async getSQDCP(): Promise<SQDCPResponse> {
+    return apiClient.get<SQDCPResponse>('/executive/sqdcp');
+  },
+
+  async getKPISummary(): Promise<CrossFunctionalKPIResponse> {
+    return apiClient.get<CrossFunctionalKPIResponse>('/executive/kpi-summary');
+  },
+
+  async getStrategicDirectives(): Promise<StrategicDirectivesResponse> {
+    return apiClient.get<StrategicDirectivesResponse>('/executive/strategic-directives');
   },
 };

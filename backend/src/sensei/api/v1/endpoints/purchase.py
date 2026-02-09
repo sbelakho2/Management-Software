@@ -32,6 +32,7 @@ from sensei.models.accounts_payable import (
     POLine, PRLine, GoodsReceipt, ReceiptLine, SupplierInvoiceLine
 )
 from sensei.models.account import Account
+from sensei.services.core.common_thread import get_common_thread_service
 
 # Purchasing/AP is cross-functional (purchasing + supply chain + logistics + finance oversight).
 # CEO/admin are handled centrally by RoleChecker.
@@ -526,6 +527,19 @@ async def create_purchase_order(
     )
     po = result.scalar_one()
     
+    # ---- Single Data Thread: bind PO into lineage ----
+    try:
+        ct = get_common_thread_service()
+        await ct.bind(
+            db,
+            purchase_order_id=po.id,
+            created_by_id=current_user.id,
+            source="purchase_order_create",
+        )
+        await db.commit()
+    except Exception:
+        logger.debug("common_thread bind skipped for PO %s", po.id, exc_info=True)
+    
     total = _calc_total(po.lines)
     return build_created_response(POResponse(
         id=po.id, po_number=po.po_number, status=po.status, currency=po.currency,
@@ -708,6 +722,19 @@ async def create_goods_receipt(
         .options(selectinload(GoodsReceipt.lines), selectinload(GoodsReceipt.po))
     )
     loaded_grn = grn_result.scalar_one()
+    
+    # ---- Single Data Thread: link GRN to PO lineage ----
+    try:
+        ct = get_common_thread_service()
+        await ct.bind(
+            db,
+            purchase_order_id=payload.po_id,
+            created_by_id=current_user.id,
+            source="goods_receipt_create",
+        )
+        await db.commit()
+    except Exception:
+        logger.debug("common_thread bind skipped for GRN %s", grn.id, exc_info=True)
     
     return build_created_response(GRNResponse(
         id=loaded_grn.id, po_id=loaded_grn.po_id, po_number=loaded_grn.po.po_number if loaded_grn.po else None,

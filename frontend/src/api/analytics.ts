@@ -10,6 +10,8 @@ export interface MLInsight {
   category: string;
   model_name: string;
   action_items?: string[];
+  severity?: 'critical' | 'warning' | 'info';
+  recommendation?: string;
 }
 
 export interface PerformanceTrend {

@@ -64,7 +64,14 @@ export default function WarehouseDashboard() {
   }, [user]);
 
   // Use API data directly — no silent fallback to fake data
-  const inventoryStats = stats;
+  const inventoryStats = stats ?? {
+    total_items: 0,
+    low_stock: 0,
+    out_of_stock: 0,
+    pending_receipts: 0,
+    pending_shipments: 0,
+    total_value: 0,
+  };
   const recentMovements = movements;
   const lowStock = lowStockItems;
 

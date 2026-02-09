@@ -172,7 +172,7 @@ class Attachment(Base, TimestampMixin):
         back_populates="attachment",
         cascade="all, delete-orphan",
         order_by="desc(AttachmentVersion.version_number)",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

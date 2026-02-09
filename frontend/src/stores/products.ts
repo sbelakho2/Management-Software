@@ -10,10 +10,10 @@ interface ProductState {
   error: string | null;
 
   fetchProducts: (params?: ProductListParams) => Promise<void>;
-  fetchProduct: (id: number) => Promise<void>;
+  fetchProduct: (id: string) => Promise<void>;
   createProduct: (data: Partial<ProductDetail>) => Promise<void>;
-  updateProduct: (id: number, data: Partial<ProductDetail>) => Promise<void>;
-  deleteProduct: (id: number) => Promise<void>;
+  updateProduct: (id: string, data: Partial<ProductDetail>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
 }
 
 export const useProductStore = create<ProductState>((set, get) => ({

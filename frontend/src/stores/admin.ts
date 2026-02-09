@@ -831,6 +831,7 @@ export const useAdminStore = create<AdminState>()(
         
         // Utility
         clearError: () => set({ error: null }),
+        isOpLoading: (op: string) => get().loadingOps.has(op),
       }),
       {
         name: 'admin-storage',

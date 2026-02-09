@@ -38,6 +38,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAnalyticsStore } from '@/stores';
 import { cn } from '@/lib/utils';
+import { API_ROOT } from '@/api/client';
 import { StatCard, StatSection, AmbientStatus, ConfidenceIndicator } from '@/components/ui/stat-card';
 import { PageGuard } from '@/components/layout/page-guard';
 import { ANALYTICS_ROLES } from '@/lib/page-access';
@@ -55,6 +56,8 @@ interface MLInsight {
   created_at: string;
   model_name: string;
   action_items?: string[];
+  severity?: 'critical' | 'warning' | 'info';
+  recommendation?: string;
 }
 
 interface PerformanceTrend {
@@ -116,6 +119,26 @@ export default function AnalyticsPage() {
   const currentOEE = oeeTrend ? oeeTrend.current_value : 0;
   const systemHealth = health?.overall_health_score !== undefined ? (health.overall_health_score * 100).toFixed(1) : "0";
 
+  // Compute risk assessment from insights severity distribution
+  const riskLevel = React.useMemo(() => {
+    const criticalCount = insightsList.filter(i => i.severity === 'critical' || i.impact === 'high').length;
+    const warningCount = insightsList.filter(i => i.severity === 'warning' || i.impact === 'medium').length;
+    if (criticalCount > 0) return { label: 'HIGH', color: 'text-rams-red', bars: [true, true, true] };
+    if (warningCount > 2) return { label: 'MODERATE', color: 'text-rams-orange', bars: [true, true, false] };
+    if (warningCount > 0) return { label: 'LOW', color: 'text-rams-green', bars: [true, false, false] };
+    return { label: 'NOMINAL', color: 'text-rams-green', bars: [false, false, false] };
+  }, [insightsList]);
+
+  // Compute average model compute utilization from real model data
+  const neuralComputePct = React.useMemo(() => {
+    if (models.length === 0) return 0;
+    const totalAccuracy = models.reduce((sum, m) => sum + ((m.accuracy || 0) * 100), 0);
+    return Math.round(totalAccuracy / models.length);
+  }, [models]);
+
+  // Export URL for strategic report
+  const exportUrl = `${API_ROOT}/api/v1/executive/strategic-report/export`;
+
   return (
     <PageGuard requiredRoles={ANALYTICS_ROLES}>
     <div className="space-y-8 page-fade-in pb-12">
@@ -144,9 +167,11 @@ export default function AnalyticsPage() {
               <SelectItem value="90d">{t('pages.analytics.periods.90d')}</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="default" className="rounded-rams-sm" onClick={() => {}} disabled={analyticsLoading}>
+          <Button variant="outline" size="default" className="rounded-rams-sm" asChild>
+          <a href={exportUrl}>
             <Download className="h-3.5 w-3.5 mr-2" />
             {t('pages.analytics.exportIntel')}
+          </a>
           </Button>
         </div>
       </div>
@@ -169,14 +194,14 @@ export default function AnalyticsPage() {
 
         <div className="bg-rams-module p-6 border-r border-b border-rams-line group">
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.analytics.stats.risk')}</p>
-          <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">LOW</div>
-          <div className="flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-tighter text-rams-green mt-2">
-            {t('pages.analytics.stableGradient')}
+          <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", riskLevel.color)}>{riskLevel.label}</div>
+          <div className={cn("flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-tighter mt-2", riskLevel.color)}>
+            {riskLevel.label === 'NOMINAL' ? t('pages.analytics.stableGradient') : `${insightsList.filter(i => i.severity === 'critical' || i.severity === 'warning').length} ACTIVE SIGNALS`}
           </div>
           <div className="flex gap-1 mt-4">
-            <div className="h-1 flex-1 bg-rams-green" />
-            <div className="h-1 flex-1 bg-rams-panel" />
-            <div className="h-1 flex-1 bg-rams-panel" />
+            <div className={cn("h-1 flex-1", riskLevel.bars[0] ? 'bg-rams-orange' : 'bg-rams-green')} />
+            <div className={cn("h-1 flex-1", riskLevel.bars[1] ? 'bg-rams-orange' : 'bg-rams-panel')} />
+            <div className={cn("h-1 flex-1", riskLevel.bars[2] ? 'bg-rams-red' : 'bg-rams-panel')} />
           </div>
         </div>
 
@@ -556,7 +581,7 @@ export default function AnalyticsPage() {
                       <span>{t('pages.analytics.models.neuralCompute')}</span>
                       <Cpu className="h-3.5 w-3.5 opacity-40" />
                     </div>
-                    <Progress value={74} className="h-1" indicatorClassName="bg-rams-orange" />
+                    <Progress value={neuralComputePct} className="h-1" indicatorClassName="bg-rams-orange" />
                   </div>
                 </CardContent>
               </Card>

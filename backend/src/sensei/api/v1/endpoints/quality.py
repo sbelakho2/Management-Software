@@ -1862,10 +1862,9 @@ async def create_non_conformance(
     )
 
     db.add(nc)
-    await db.commit()
-    await db.refresh(nc)
+    await db.flush()
 
-    # Best-effort: capture lineage links (do not block NC creation).
+    # Capture lineage links within the same transaction (best-effort, non-blocking).
     try:
         await get_data_lineage_service().capture_non_conformance_created(
             db,
@@ -1885,11 +1884,11 @@ async def create_non_conformance(
                 created_by_id=getattr(current_user, "id", None),
                 source="non_conformance_create",
             )
-
-        await db.commit()
     except Exception:
-        await db.rollback()
         logger.exception("Failed to capture non-conformance lineage")
+
+    await db.commit()
+    await db.refresh(nc)
 
     return build_created_response(data=nc_to_response(nc), resource_name="Non-conformance")
 
@@ -2165,16 +2164,14 @@ async def create_capa_from_nc_endpoint(
         updated_at=now_utc(),
     )
     db.add(capa)
-    
-    nc.capa_id = capa.id # This might not work if capa.id is not yet available, but it should be on flush or commit
+    await db.flush()  # Flush to generate capa.id (integer autoincrement PK)
+
+    nc.capa_id = capa.id
     nc.status = NCStatus.ESCALATED_TO_CAPA
-    
+
     await db.commit()
     await db.refresh(capa)
-    
-    # We need to refresh NC too to get the linked capa_id correctly if needed, 
-    # but we are returning the CAPA response.
-    
+
     return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
 
 
@@ -2345,10 +2342,9 @@ async def create_capa(
     )
 
     db.add(capa)
-    await db.commit()
-    await db.refresh(capa)
+    await db.flush()
 
-    # Best-effort: capture lineage links (do not block CAPA creation).
+    # Capture lineage links within the same transaction (best-effort, non-blocking).
     try:
         await get_data_lineage_service().capture_capa_created(
             db,
@@ -2367,11 +2363,11 @@ async def create_capa(
                 created_by_id=getattr(current_user, "id", None),
                 source="capa_create",
             )
-
-        await db.commit()
     except Exception:
-        await db.rollback()
         logger.exception("Failed to capture CAPA lineage")
+
+    await db.commit()
+    await db.refresh(capa)
 
     return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
 
@@ -2453,6 +2449,16 @@ async def get_capa(
     return build_response(data=capa_to_response(capa))
 
 
+# Valid CAPA status transitions — enforce workflow discipline
+_CAPA_STATUS_TRANSITIONS: dict[CAPAStatus, set[CAPAStatus]] = {
+    CAPAStatus.OPEN: {CAPAStatus.IN_PROGRESS},
+    CAPAStatus.IN_PROGRESS: {CAPAStatus.VERIFICATION},
+    CAPAStatus.VERIFICATION: {CAPAStatus.EFFECTIVENESS_CHECK, CAPAStatus.IN_PROGRESS},
+    CAPAStatus.EFFECTIVENESS_CHECK: {CAPAStatus.CLOSED, CAPAStatus.IN_PROGRESS},
+    CAPAStatus.CLOSED: set(),  # Terminal state — no transitions allowed
+}
+
+
 @router.patch("/capas/{capa_id}", response_model=APIResponse[CAPAResponse])
 async def update_capa(
     capa_id: int,
@@ -2466,6 +2472,20 @@ async def update_capa(
         raise NotFoundError("CAPA", str(capa_id))
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Enforce valid status transitions if status is being changed
+    if "status" in update_data and update_data["status"] is not None:
+        new_status = update_data["status"]
+        current_status = capa.status
+        if new_status != current_status:
+            allowed = _CAPA_STATUS_TRANSITIONS.get(current_status, set())
+            if new_status not in allowed:
+                allowed_names = ", ".join(s.value for s in allowed) if allowed else "none (terminal state)"
+                raise BadRequestError(
+                    f"Cannot transition CAPA from '{current_status.value}' to '{new_status.value}'. "
+                    f"Allowed transitions: {allowed_names}. "
+                    f"Use the dedicated /start, /submit-for-verification, /verify, /reject, /close endpoints for status changes."
+                )
 
     for field, value in update_data.items():
         setattr(capa, field, value)
@@ -2724,10 +2744,9 @@ async def create_capa_action(
     )
 
     db.add(action)
-    await db.commit()
-    await db.refresh(action)
+    await db.flush()
 
-    # Best-effort: capture lineage links (do not block CAPA action creation).
+    # Capture lineage links within the same transaction (best-effort, non-blocking).
     try:
         await get_data_lineage_service().capture_capa_action_created(
             db,
@@ -2746,11 +2765,11 @@ async def create_capa_action(
                 created_by_id=getattr(current_user, "id", None),
                 source="capa_action_create",
             )
-
-        await db.commit()
     except Exception:
-        await db.rollback()
         logger.exception("Failed to capture CAPA action lineage")
+
+    await db.commit()
+    await db.refresh(action)
 
     return build_created_response(data=_capa_action_to_response(action), resource_name="CAPA action")
 
@@ -2905,10 +2924,9 @@ async def create_inspection_plan(
     )
 
     db.add(plan)
-    await db.commit()
-    await db.refresh(plan)
+    await db.flush()
 
-    # Best-effort: capture lineage links (do not block inspection plan creation).
+    # Capture lineage links within the same transaction (best-effort, non-blocking).
     try:
         await get_data_lineage_service().capture_inspection_plan_created(
             db,
@@ -2928,11 +2946,11 @@ async def create_inspection_plan(
                 created_by_id=getattr(current_user, "id", None),
                 source="inspection_plan_create",
             )
-
-        await db.commit()
     except Exception:
-        await db.rollback()
         logger.exception("Failed to capture inspection plan lineage")
+
+    await db.commit()
+    await db.refresh(plan)
 
     return build_created_response(data=inspection_plan_to_response(plan), resource_name="Inspection plan")
 
@@ -3148,9 +3166,9 @@ async def create_inspection(
     )
 
     db.add(record)
-    await db.commit()
-    await db.refresh(record)
+    await db.flush()
 
+    # Capture lineage links within the same transaction (best-effort, non-blocking).
     try:
         await get_data_lineage_service().capture_inspection_record_created(
             db,
@@ -3171,11 +3189,11 @@ async def create_inspection(
                 created_by_id=getattr(current_user, "id", None),
                 source="inspection_record_create",
             )
-
-        await db.commit()
     except Exception:
-        await db.rollback()
         logger.exception("Failed to capture inspection record lineage")
+
+    await db.commit()
+    await db.refresh(record)
 
     return build_created_response(data=inspection_record_to_response(record), resource_name="Inspection")
 
@@ -3227,6 +3245,149 @@ async def cancel_inspection(
         "Inspection records are immutable once created; cancel is not applicable. "
         "If you need cancellable inspections, add an inspection session/workflow resource."
     )
+
+
+# ---------------------------------------------------------------------------
+# Inspection Result sub-resource endpoints (measurements_json items)
+# ---------------------------------------------------------------------------
+
+
+class InspectionResultItemCreate(BaseModel):
+    """Schema for adding a single measurement result to an inspection record."""
+    characteristic: str = Field(..., min_length=1, max_length=255)
+    specification: str = Field(..., min_length=1, max_length=255)
+    actual_value: str = Field(..., min_length=1)
+    is_pass: bool
+    notes: Optional[str] = None
+
+
+class InspectionResultItemResponse(BaseModel):
+    index: int
+    characteristic: str
+    specification: str
+    actual_value: str
+    result: str
+    notes: Optional[str] = None
+
+
+def _result_item_response(idx: int, item: dict[str, Any]) -> InspectionResultItemResponse:
+    return InspectionResultItemResponse(
+        index=idx,
+        characteristic=item.get("characteristic", ""),
+        specification=item.get("specification", ""),
+        actual_value=item.get("actual_value", ""),
+        result=item.get("result", "unknown"),
+        notes=item.get("notes"),
+    )
+
+
+@router.post(
+    "/inspections/{record_id}/results",
+    response_model=APIResponse[InspectionResultItemResponse],
+)
+async def add_inspection_result(
+    record_id: int,
+    data: InspectionResultItemCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[InspectionResultItemResponse]:
+    """Add a measurement result item to an inspection record's measurements_json."""
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection record", str(record_id))
+
+    new_item: dict[str, Any] = {
+        "characteristic": data.characteristic,
+        "specification": data.specification,
+        "actual_value": data.actual_value,
+        "result": "pass" if data.is_pass else "fail",
+        "notes": data.notes,
+    }
+
+    measurements = list(record.measurements_json or [])
+    measurements.append(new_item)
+    record.measurements_json = measurements
+    record.updated_by_id = getattr(current_user, "id", None)
+    record.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(record)
+
+    idx = len(measurements) - 1
+    return build_created_response(
+        data=_result_item_response(idx, new_item),
+        resource_name="Inspection result",
+    )
+
+
+@router.patch(
+    "/inspections/{record_id}/results/{result_index}",
+    response_model=APIResponse[InspectionResultItemResponse],
+)
+async def update_inspection_result(
+    record_id: int,
+    result_index: int,
+    data: InspectionResultItemCreate,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[InspectionResultItemResponse]:
+    """Update a single measurement result item by index in measurements_json."""
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection record", str(record_id))
+
+    measurements = list(record.measurements_json or [])
+    if result_index < 0 or result_index >= len(measurements):
+        raise BadRequestError(f"Result index {result_index} out of range (0-{len(measurements) - 1})")
+
+    updated_item: dict[str, Any] = {
+        "characteristic": data.characteristic,
+        "specification": data.specification,
+        "actual_value": data.actual_value,
+        "result": "pass" if data.is_pass else "fail",
+        "notes": data.notes,
+    }
+    measurements[result_index] = updated_item
+    record.measurements_json = measurements
+    record.updated_by_id = getattr(current_user, "id", None)
+    record.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(record)
+
+    return build_updated_response(
+        data=_result_item_response(result_index, updated_item),
+        resource_name="Inspection result",
+    )
+
+
+@router.delete(
+    "/inspections/{record_id}/results/{result_index}",
+    response_model=APIResponse[None],
+)
+async def delete_inspection_result(
+    record_id: int,
+    result_index: int,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[None]:
+    """Delete a single measurement result item by index from measurements_json."""
+    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
+    if not record:
+        raise NotFoundError("Inspection record", str(record_id))
+
+    measurements = list(record.measurements_json or [])
+    if result_index < 0 or result_index >= len(measurements):
+        raise BadRequestError(f"Result index {result_index} out of range (0-{len(measurements) - 1})")
+
+    measurements.pop(result_index)
+    record.measurements_json = measurements
+    record.updated_by_id = getattr(current_user, "id", None)
+    record.updated_at = now_utc()
+
+    await db.commit()
+
+    return build_deleted_response(resource_name="Inspection result")
 
 
 @router.post("/inspections/{record_id}/create-ncr", response_model=APIResponse[NonConformanceResponse])

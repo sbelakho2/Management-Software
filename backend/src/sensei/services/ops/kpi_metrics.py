@@ -7,6 +7,8 @@ Key Performance Indicators (KPIs) across all business domains.
 
 import ast
 import operator
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from enum import Enum
@@ -14,6 +16,8 @@ from typing import Any, Callable, Union
 from uuid import uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------
@@ -464,9 +468,9 @@ class KPIService(PersistentServiceMixin):
         
         # Register default Phase 1 KPIs
         self._register_default_kpis()
-    
+
     # --------------------------------------------------------------------------
-    # KPI Definition Management
+    # KPI Definition Management (in-memory, used by calculation engine only)
     # --------------------------------------------------------------------------
     
     def create_definition(self, definition: KPIDefinition) -> KPIDefinition:

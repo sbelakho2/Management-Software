@@ -550,7 +550,7 @@ class TraceabilityMatrix(Base, TimestampMixin, AuditMixin):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
 
-    product_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("products.id"), nullable=True, index=True)
+    product_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
     work_order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("work_orders.id"), nullable=True, index=True)
     lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     batch_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

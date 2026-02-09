@@ -242,16 +242,22 @@ async def check_customer_credit(
     )
     profile = profile_result.scalar_one_or_none()
     
-    # Calculate outstanding balance
+    # Calculate outstanding balance from invoice line totals
     outstanding_result = await db.execute(
-        select(func.coalesce(func.sum(CustomerInvoice.id), Decimal("0")))
+        select(
+            func.coalesce(
+                func.sum(CustomerInvoiceLine.quantity * CustomerInvoiceLine.unit_price),
+                Decimal("0"),
+            )
+        )
+        .select_from(CustomerInvoiceLine)
+        .join(CustomerInvoice, CustomerInvoiceLine.invoice_id == CustomerInvoice.id)
         .where(and_(
             CustomerInvoice.account_id == account_id,
             CustomerInvoice.status == "issued"
         ))
     )
-    # Simplified - in reality would sum invoice totals minus payments
-    outstanding = Decimal("0")
+    outstanding = outstanding_result.scalar_one() or Decimal("0")
     
     credit_limit = profile.credit_limit if profile else Decimal("0")
     available = credit_limit - outstanding

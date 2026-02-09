@@ -43,6 +43,13 @@ def _display_name(role: str) -> str:
 
 
 async def main() -> None:
+    # Safety guard: refuse to run in production
+    env = os.getenv("ENVIRONMENT", os.getenv("ENV", "development")).lower()
+    if env in ("production", "prod"):
+        print("ERROR: This script must NOT be run in production environments!")
+        print("       It creates test users with known passwords.")
+        raise SystemExit(1)
+
     password_hash = hash_password(PASSWORD)
 
     created_users = 0

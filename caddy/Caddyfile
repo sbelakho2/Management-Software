@@ -46,7 +46,7 @@
         }
     }
 
-    route / {
+    route /* {
         reverse_proxy web:3000
     }
 }

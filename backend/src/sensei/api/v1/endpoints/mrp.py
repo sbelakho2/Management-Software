@@ -29,6 +29,7 @@ from sensei.models.accounts_payable import PurchaseRequisition, PRLine
 from sensei.models.product import Product
 from sensei.services.production.mps_service import MPSService
 from sensei.services.production.persistent_mrp import PersistentMRPService
+from sensei.services.core.common_thread import get_common_thread_service
 from pydantic import BaseModel, Field
 
 AllowMRPModule = deps.require_role(

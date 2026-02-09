@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # PostgreSQL Database
   db:
@@ -146,6 +144,22 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # SMTP
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@sensei.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Sensei OS}
+      # Observability
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Feature flags
+      ENABLE_ML_FEATURES: ${ENABLE_ML_FEATURES:-true}
+      ENABLE_WEBSOCKETS: ${ENABLE_WEBSOCKETS:-true}
+      ENABLE_BACKGROUND_JOBS: ${ENABLE_BACKGROUND_JOBS:-true}
+      DEBUG: ${DEBUG:-false}
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     ports:
       - "${API_PORT:-8000}:8000"
     command: ["uvicorn", "sensei.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
@@ -314,6 +328,8 @@ services:
         reservations:
           cpus: '0.1'
           memory: 64M
+    networks:
+      - sensei-network
 volumes:
   postgres_data:
   redis_data:

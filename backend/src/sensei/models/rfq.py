@@ -275,27 +275,27 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         back_populates="rfq",
         cascade="all, delete-orphan",
         order_by="RFQQuestion.created_at",
-        lazy="dynamic",
+        lazy="select",
     )
     
     attachments: Mapped[list["RFQAttachment"]] = relationship(
         "RFQAttachment",
         back_populates="rfq",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     qualifications: Mapped[list["Qualification"]] = relationship(
         "Qualification",
         back_populates="rfq",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     quotes: Mapped[list["Quote"]] = relationship(
         "Quote",
         back_populates="rfq",
-        lazy="dynamic",
+        lazy="select",
     )
     
     work_packets: Mapped[list["WorkPacket"]] = relationship(
@@ -316,7 +316,7 @@ class RFQ(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         "RFQPackageVersion",
         back_populates="rfq",
         cascade="all, delete-orphan",
-        lazy="dynamic",
+        lazy="select",
     )
     
     __table_args__ = (

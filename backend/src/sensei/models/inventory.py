@@ -60,7 +60,7 @@ class InventoryLevel(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "inventory_levels"
 
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     location_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_locations.id"), nullable=False, index=True)
     
     quantity_on_hand: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal("0"), nullable=False)
@@ -86,7 +86,7 @@ class StockMove(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "inventory_stock_moves"
 
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     source_location_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_locations.id"), nullable=False)
     destination_location_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_locations.id"), nullable=False)
     
@@ -111,7 +111,7 @@ class ValuationLayer(Base, TimestampMixin):
     __tablename__ = "inventory_valuation_layers"
 
     stock_move_id: Mapped[UUID] = mapped_column(ForeignKey("inventory_stock_moves.id"), nullable=False, index=True)
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id: Mapped[UUID] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
     
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -245,7 +245,7 @@ class PickListLine(Base, TimestampMixin):
     
     lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     serial_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    lpn_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("license_plates.id"), nullable=True)
+    lpn_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("wms_license_plates.id"), nullable=True)
     
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, picked, short, skipped
     picked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -193,7 +193,7 @@ class ProductUpdate(BaseModel):
 class ProductResponse(BaseModel):
     """Product response."""
     
-    id: int
+    id: UUID
     name: str
     part_number: str
     revision: str
@@ -237,7 +237,7 @@ class ProductResponse(BaseModel):
 class ProductListResponse(BaseModel):
     """Simplified product for list views."""
     
-    id: int
+    id: UUID
     name: str
     part_number: str
     revision: str
@@ -299,9 +299,9 @@ class BOMItemResponse(BaseModel):
     """BOM item response."""
     
     id: int
-    product_id: int
+    product_id: UUID
     component_part_number: str
-    component_product_id: Optional[int]
+    component_product_id: Optional[UUID]
     component_description: Optional[str]
     
     quantity: Decimal
@@ -384,7 +384,7 @@ class RoutingResponse(BaseModel):
     """Routing response."""
     
     id: int
-    product_id: int
+    product_id: UUID
     sequence: int
     operation_name: str
     operation_code: Optional[str]
@@ -646,7 +646,7 @@ async def create_product(
 
 @router.get("/{product_id}", response_model=APIResponse)
 async def get_product(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
     include_deleted: bool = Query(default=False, description="Include if soft-deleted"),
@@ -676,7 +676,7 @@ async def get_product(
 
 @router.patch("/{product_id}", response_model=APIResponse)
 async def update_product(
-    product_id: int,
+    product_id: UUID,
     product_data: ProductUpdate,
     db: DBSession,
     current_user: CurrentUser,
@@ -721,7 +721,7 @@ async def update_product(
 
 @router.delete("/{product_id}", response_model=APIResponse)
 async def delete_product(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
     hard_delete: bool = Query(default=False, description="Permanently delete"),
@@ -758,7 +758,7 @@ async def delete_product(
 
 @router.post("/{product_id}/new-revision", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_revision(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
     new_revision: str = Query(..., min_length=1, max_length=20, description="New revision code"),
@@ -878,7 +878,7 @@ async def create_new_revision(
 
 @router.get("/{product_id}/bom", response_model=APIResponse)
 async def list_bom_items(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
 ):
@@ -910,7 +910,7 @@ async def list_bom_items(
 
 @router.post("/{product_id}/bom", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def add_bom_item(
-    product_id: int,
+    product_id: UUID,
     item_data: BOMItemCreate,
     db: DBSession,
     current_user: CurrentUser,
@@ -966,7 +966,7 @@ async def add_bom_item(
 
 @router.patch("/{product_id}/bom/{bom_id}", response_model=APIResponse)
 async def update_bom_item(
-    product_id: int,
+    product_id: UUID,
     bom_id: int,
     item_data: BOMItemUpdate,
     db: DBSession,
@@ -1010,7 +1010,7 @@ async def update_bom_item(
 
 @router.delete("/{product_id}/bom/{bom_id}", response_model=APIResponse)
 async def delete_bom_item(
-    product_id: int,
+    product_id: UUID,
     bom_id: int,
     db: DBSession,
     current_user: CurrentUser,
@@ -1043,7 +1043,7 @@ async def delete_bom_item(
 
 @router.get("/{product_id}/routing", response_model=APIResponse)
 async def list_routing_steps(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
 ):
@@ -1075,7 +1075,7 @@ async def list_routing_steps(
 
 @router.post("/{product_id}/routing", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
 async def add_routing_step(
-    product_id: int,
+    product_id: UUID,
     routing_data: RoutingCreate,
     db: DBSession,
     current_user: CurrentUser,
@@ -1126,7 +1126,7 @@ async def add_routing_step(
 
 @router.patch("/{product_id}/routing/{routing_id}", response_model=APIResponse)
 async def update_routing_step(
-    product_id: int,
+    product_id: UUID,
     routing_id: int,
     routing_data: RoutingUpdate,
     db: DBSession,
@@ -1178,7 +1178,7 @@ async def update_routing_step(
 
 @router.delete("/{product_id}/routing/{routing_id}", response_model=APIResponse)
 async def delete_routing_step(
-    product_id: int,
+    product_id: UUID,
     routing_id: int,
     db: DBSession,
     current_user: CurrentUser,
@@ -1211,7 +1211,7 @@ async def delete_routing_step(
 
 @router.get("/{product_id}/stats", response_model=APIResponse)
 async def get_product_stats(
-    product_id: int,
+    product_id: UUID,
     db: DBSession,
     current_user: CurrentUser,
 ):

@@ -363,7 +363,7 @@ export default function QuoteDetailPage() {
                   <span className="text-sm text-muted-foreground">{t('pages.quotes.detail.validUntil')}</span>
                 </div>
                 <p className={cn('text-3xl font-heading font-bold tracking-tight mt-1', isExpiringSoon && 'text-amber-600 dark:text-amber-500')}>
-                  {formatDate(new Date(quote.validUntil), { month: 'short', day: 'numeric' })}
+                  {formatDate(new Date(quote.validUntil))}
                 </p>
               </CardContent>
             </Card>

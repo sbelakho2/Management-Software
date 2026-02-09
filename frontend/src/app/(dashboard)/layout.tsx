@@ -77,7 +77,7 @@ export default function DashboardLayout({
     if (!mounted || isLoading || !isAuthenticated || !user || !pathname) return;
 
     if (!hasPageAccess(pathname, userRoles)) {
-      router.replace(getUnauthorizedRedirectForRoles(pathname, userRoles));
+      router.replace(getUnauthorizedRedirectForRoles(userRoles));
     }
   }, [mounted, isLoading, isAuthenticated, user, pathname, userRoles, router]);
 

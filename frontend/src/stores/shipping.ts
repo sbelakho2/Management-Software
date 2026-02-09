@@ -294,6 +294,7 @@ export const useShippingStore = create<ShippingState>()(
         },
 
         clearError: () => set({ error: null }),
+        isOpLoading: (op: string) => get().loadingOps.has(op),
       }),
       {
         name: 'shipping-storage',

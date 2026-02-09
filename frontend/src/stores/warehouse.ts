@@ -38,7 +38,7 @@ export interface Warehouse {
 
 export interface InventoryLevel {
   id: string;
-  product_id: number;
+  product_id: string;
   product_name: string;
   location_id: string;
   location_name: string;
@@ -61,7 +61,7 @@ interface WarehouseState {
   fetchMovements: (limit?: number) => Promise<void>;
   fetchLowStock: (limit?: number) => Promise<void>;
   fetchWarehouses: () => Promise<void>;
-  fetchInventoryLevels: (params?: { location_id?: string; product_id?: number }) => Promise<void>;
+  fetchInventoryLevels: (params?: { location_id?: string; product_id?: string }) => Promise<void>;
   syncInventory: () => Promise<void>;
   clearError: () => void;
 }

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_db
+from sensei.api.deps import get_db, DBSession
 from sensei.core.config import settings
 from sensei.services.ops.kpi_metrics import (
     KPIDefinition,
@@ -30,6 +30,8 @@ from sensei.services.ops.kpi_metrics import (
     get_default_kpi_ids,
     get_default_dashboard_ids,
 )
+from sensei.services.ops import kpi_repository as kpi_repo
+from sensei.models.kpi import KPIDefinitionRow, KPIValueRow, KPIDashboardRow
 
 from sensei.services.ops.kpi_app_services import (
     kpi_service as _service,
@@ -270,8 +272,36 @@ class MudaNudgeResponse(BaseModel):
 # Helper Functions
 # --------------------------------------------------------------------------
 
-def _definition_to_response(d: KPIDefinition) -> KPIDefinitionResponse:
-    """Convert definition to response."""
+def _definition_to_response(d: KPIDefinition | KPIDefinitionRow) -> KPIDefinitionResponse:
+    """Convert definition (dataclass or ORM row) to response."""
+    if isinstance(d, KPIDefinitionRow):
+        threshold = None
+        if d.threshold_target is not None:
+            threshold = ThresholdSchema(
+                target=d.threshold_target,
+                warning_threshold=d.threshold_warning,
+                critical_threshold=d.threshold_critical,
+                min_value=d.threshold_min,
+                max_value=d.threshold_max,
+            )
+        return KPIDefinitionResponse(
+            id=str(d.id),
+            name=d.name,
+            description=d.description or "",
+            category=d.category.value if d.category else "custom",
+            unit=d.unit.value if d.unit else "count",
+            direction=d.direction.value if d.direction else "higher_is_better",
+            threshold=threshold,
+            formula=d.formula or "",
+            component_kpis=d.component_kpis or [],
+            decimal_places=d.decimal_places or 2,
+            display_format=d.display_format or "",
+            owner_role=d.owner_role or "",
+            frequency=d.frequency or "daily",
+            is_active=d.is_active if d.is_active is not None else True,
+            tags=d.tags or [],
+        )
+    # Legacy KPIDefinition dataclass path
     threshold = None
     if d.threshold:
         threshold = ThresholdSchema(
@@ -281,7 +311,6 @@ def _definition_to_response(d: KPIDefinition) -> KPIDefinitionResponse:
             min_value=d.threshold.min_value,
             max_value=d.threshold.max_value,
         )
-    
     return KPIDefinitionResponse(
         id=d.id,
         name=d.name,
@@ -347,8 +376,21 @@ async def generate_muda_nudges(
     ]
 
 
-def _value_to_response(v: KPIValue) -> KPIValueResponse:
-    """Convert value to response."""
+def _value_to_response(v: KPIValue | KPIValueRow) -> KPIValueResponse:
+    """Convert value (dataclass or ORM row) to response."""
+    if isinstance(v, KPIValueRow):
+        return KPIValueResponse(
+            id=str(v.id),
+            kpi_id=str(v.kpi_id),
+            value=v.value,
+            timestamp=v.recorded_at or datetime.now(),
+            period_start=v.period_start,
+            period_end=v.period_end,
+            status=v.status.value if v.status else "no_data",
+            dimensions=v.dimensions or {},
+            calculated_at=v.created_at or datetime.now(),
+            sample_size=v.sample_size or 0,
+        )
     return KPIValueResponse(
         id=v.id,
         kpi_id=v.kpi_id,
@@ -363,8 +405,21 @@ def _value_to_response(v: KPIValue) -> KPIValueResponse:
     )
 
 
-def _dashboard_to_response(d: KPIDashboard) -> DashboardResponse:
-    """Convert dashboard to response."""
+def _dashboard_to_response(d: KPIDashboard | KPIDashboardRow) -> DashboardResponse:
+    """Convert dashboard (dataclass or ORM row) to response."""
+    if isinstance(d, KPIDashboardRow):
+        return DashboardResponse(
+            id=str(d.id),
+            name=d.name or "",
+            description=d.description or "",
+            kpi_ids=d.kpi_ids or [],
+            layout=d.layout or {},
+            default_time_range=d.default_time_range or "last_30_days",
+            dimension_filters=d.dimension_filters or {},
+            owner_id=d.owner_id or "",
+            is_public=d.is_public if d.is_public is not None else False,
+            created_at=d.created_at or datetime.now(),
+        )
     return DashboardResponse(
         id=d.id,
         name=d.name,
@@ -390,40 +445,37 @@ def _dashboard_to_response(d: KPIDashboard) -> DashboardResponse:
     summary="Create KPI definition",
     description="Create a new KPI definition.",
 )
-async def create_definition(request: KPIDefinitionCreateRequest) -> KPIDefinitionResponse:
-    """Create a new KPI definition."""
-    threshold = None
-    if request.threshold:
-        threshold = KPIThreshold(
-            target=request.threshold.target,
-            warning_threshold=request.threshold.warning_threshold,
-            critical_threshold=request.threshold.critical_threshold,
-            min_value=request.threshold.min_value,
-            max_value=request.threshold.max_value,
-        )
-    
-    data_source = None
+async def create_definition(
+    request: KPIDefinitionCreateRequest,
+    db: DBSession,
+) -> KPIDefinitionResponse:
+    """Create a new KPI definition (persisted to database)."""
+    data_source_dict = None
     if request.data_source:
-        data_source = KPIDataSource(
-            entity_type=request.data_source.entity_type,
-            fields=request.data_source.fields,
-            filters=request.data_source.filters,
-            aggregation=AggregationType(request.data_source.aggregation),
-            timestamp_field=request.data_source.timestamp_field,
-            group_by=request.data_source.group_by,
-        )
-    
-    definition = KPIDefinition(
-        id=request.id or "",
+        data_source_dict = {
+            "entity_type": request.data_source.entity_type,
+            "fields": request.data_source.fields,
+            "filters": request.data_source.filters,
+            "aggregation": request.data_source.aggregation,
+            "timestamp_field": request.data_source.timestamp_field,
+            "group_by": request.data_source.group_by,
+        }
+
+    row = await kpi_repo.create_definition(
+        db,
         name=request.name,
         description=request.description,
-        category=KPICategory(request.category),
-        unit=KPIUnit(request.unit),
-        direction=KPIDirection(request.direction),
-        threshold=threshold,
-        data_source=data_source,
+        category=request.category,
+        unit=request.unit,
+        direction=request.direction,
+        data_source=data_source_dict,
         formula=request.formula,
         component_kpis=request.component_kpis,
+        threshold_target=request.threshold.target if request.threshold else None,
+        threshold_warning=request.threshold.warning_threshold if request.threshold else 10.0,
+        threshold_critical=request.threshold.critical_threshold if request.threshold else 20.0,
+        threshold_min=request.threshold.min_value if request.threshold else None,
+        threshold_max=request.threshold.max_value if request.threshold else None,
         decimal_places=request.decimal_places,
         display_format=request.display_format,
         owner_role=request.owner_role,
@@ -431,10 +483,10 @@ async def create_definition(request: KPIDefinitionCreateRequest) -> KPIDefinitio
         is_active=request.is_active,
         tags=request.tags,
         custom_calculator=request.custom_calculator,
+        definition_id=UUID(request.id) if request.id else None,
     )
-    
-    result = _service.create_definition(definition)
-    return _definition_to_response(result)
+    await db.commit()
+    return _definition_to_response(row)
 
 
 @router.get(
@@ -447,15 +499,16 @@ async def list_definitions(
     category: str | None = Query(None, description="Filter by category"),
     active_only: bool = Query(True, description="Only active KPIs"),
     tags: list[str] | None = Query(None, description="Filter by tags"),
+    db: AsyncSession = Depends(get_db),
 ) -> list[KPIDefinitionResponse]:
-    """List KPI definitions."""
-    cat = KPICategory(category) if category else None
-    definitions = _service.list_definitions(
-        category=cat,
+    """List KPI definitions from database."""
+    rows = await kpi_repo.list_definitions(
+        db,
+        category=category,
         active_only=active_only,
         tags=tags,
     )
-    return [_definition_to_response(d) for d in definitions]
+    return [_definition_to_response(r) for r in rows]
 
 
 @router.get(
@@ -475,15 +528,22 @@ async def get_default_kpis() -> list[str]:
     summary="Get KPI definition",
     description="Get a specific KPI definition.",
 )
-async def get_definition(kpi_id: str) -> KPIDefinitionResponse:
-    """Get a KPI definition."""
-    definition = _service.get_definition(kpi_id)
-    if not definition:
+async def get_definition(kpi_id: str, db: DBSession) -> KPIDefinitionResponse:
+    """Get a KPI definition from database."""
+    try:
+        uid = UUID(kpi_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid KPI ID format: {kpi_id}",
+        )
+    row = await kpi_repo.get_definition(db, uid)
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"KPI {kpi_id} not found",
         )
-    return _definition_to_response(definition)
+    return _definition_to_response(row)
 
 
 @router.put(
@@ -495,19 +555,36 @@ async def get_definition(kpi_id: str) -> KPIDefinitionResponse:
 async def update_definition(
     kpi_id: str,
     request: KPIDefinitionUpdateRequest,
+    db: DBSession,
 ) -> KPIDefinitionResponse:
-    """Update a KPI definition."""
+    """Update a KPI definition in database."""
+    try:
+        uid = UUID(kpi_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid KPI ID format: {kpi_id}",
+        )
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
-    
+
+    # Flatten threshold into DB columns
     if "threshold" in updates and updates["threshold"]:
-        updates["threshold"] = KPIThreshold(**updates["threshold"])
-    
-    result = _service.update_definition(kpi_id, updates)
+        th = updates.pop("threshold")
+        updates["threshold_target"] = th.get("target")
+        updates["threshold_warning"] = th.get("warning_threshold", 10.0)
+        updates["threshold_critical"] = th.get("critical_threshold", 20.0)
+        updates["threshold_min"] = th.get("min_value")
+        updates["threshold_max"] = th.get("max_value")
+    else:
+        updates.pop("threshold", None)
+
+    result = await kpi_repo.update_definition(db, uid, updates)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"KPI {kpi_id} not found",
         )
+    await db.commit()
     return _definition_to_response(result)
 
 
@@ -517,21 +594,22 @@ async def update_definition(
     summary="Delete KPI definition",
     description="Delete a KPI definition.",
 )
-async def delete_definition(kpi_id: str) -> None:
-    """Delete a KPI definition."""
-    # Prevent deletion of default KPIs
-    if kpi_id in get_default_kpi_ids():
+async def delete_definition(kpi_id: str, db: DBSession) -> None:
+    """Delete a KPI definition from database."""
+    try:
+        uid = UUID(kpi_id)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete default KPIs",
+            detail=f"Invalid KPI ID format: {kpi_id}",
         )
-    
-    result = _service.delete_definition(kpi_id)
+    result = await kpi_repo.delete_definition(db, uid)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"KPI {kpi_id} not found",
         )
+    await db.commit()
 
 
 # --------------------------------------------------------------------------
@@ -545,23 +623,28 @@ async def delete_definition(kpi_id: str) -> None:
     summary="Record KPI value",
     description="Record a new KPI value.",
 )
-async def record_value(request: KPIValueRecordRequest) -> KPIValueResponse:
-    """Record a KPI value."""
-    from uuid import uuid4
-    
-    value = KPIValue(
-        id=str(uuid4()),
-        kpi_id=request.kpi_id,
+async def record_value(request: KPIValueRecordRequest, db: DBSession) -> KPIValueResponse:
+    """Record a KPI value to database."""
+    try:
+        kpi_uuid = UUID(request.kpi_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid KPI ID format: {request.kpi_id}",
+        )
+
+    row = await kpi_repo.record_value(
+        db,
+        kpi_id=kpi_uuid,
         value=request.value,
-        timestamp=request.timestamp or datetime.now(),
+        recorded_at=request.timestamp,
         period_start=request.period_start,
         period_end=request.period_end,
         dimensions=request.dimensions,
         sample_size=request.sample_size,
     )
-    
-    result = _service.record_value(value)
-    return _value_to_response(result)
+    await db.commit()
+    return _value_to_response(row)
 
 
 @router.get(
@@ -573,10 +656,19 @@ async def record_value(request: KPIValueRecordRequest) -> KPIValueResponse:
 async def get_latest_value(
     kpi_id: str,
     dimensions: str | None = Query(None, description="Dimensions as JSON"),
+    db: AsyncSession = Depends(get_db),
 ) -> KPIValueResponse | None:
-    """Get the latest KPI value."""
+    """Get the latest KPI value from database."""
     import json
-    
+
+    try:
+        kpi_uuid = UUID(kpi_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid KPI ID format: {kpi_id}",
+        )
+
     dims = None
     if dimensions:
         try:
@@ -586,11 +678,11 @@ async def get_latest_value(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dimensions JSON",
             )
-    
-    value = _service.get_latest_value(kpi_id, dims)
-    if not value:
+
+    row = await kpi_repo.get_latest_value(db, kpi_uuid, dims)
+    if not row:
         return None
-    return _value_to_response(value)
+    return _value_to_response(row)
 
 
 @router.get(
@@ -604,15 +696,24 @@ async def get_values(
     start_date: date | None = Query(None, description="Start date"),
     end_date: date | None = Query(None, description="End date"),
     limit: int | None = Query(None, description="Maximum values to return"),
+    db: AsyncSession = Depends(get_db),
 ) -> list[KPIValueResponse]:
-    """Get KPI values."""
-    values = _service.get_values(
-        kpi_id,
+    """Get KPI values from database."""
+    try:
+        kpi_uuid = UUID(kpi_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid KPI ID format: {kpi_id}",
+        )
+    rows = await kpi_repo.get_values(
+        db,
+        kpi_uuid,
         start_date=start_date,
         end_date=end_date,
-        limit=limit,
+        limit=limit or 100,
     )
-    return [_value_to_response(v) for v in values]
+    return [_value_to_response(r) for r in rows]
 
 
 # --------------------------------------------------------------------------
@@ -717,10 +818,10 @@ async def analyze_trend(
     summary="Create dashboard",
     description="Create a new KPI dashboard.",
 )
-async def create_dashboard(request: DashboardCreateRequest) -> DashboardResponse:
-    """Create a dashboard."""
-    dashboard = KPIDashboard(
-        id=request.id or "",
+async def create_dashboard(request: DashboardCreateRequest, db: DBSession) -> DashboardResponse:
+    """Create a dashboard (persisted to database)."""
+    row = await kpi_repo.create_dashboard(
+        db,
         name=request.name,
         description=request.description,
         kpi_ids=request.kpi_ids,
@@ -729,10 +830,10 @@ async def create_dashboard(request: DashboardCreateRequest) -> DashboardResponse
         dimension_filters=request.dimension_filters,
         owner_id=request.owner_id,
         is_public=request.is_public,
+        dashboard_id=UUID(request.id) if request.id else None,
     )
-    
-    result = _service.create_dashboard(dashboard)
-    return _dashboard_to_response(result)
+    await db.commit()
+    return _dashboard_to_response(row)
 
 
 @router.get(
@@ -744,13 +845,15 @@ async def create_dashboard(request: DashboardCreateRequest) -> DashboardResponse
 async def list_dashboards(
     owner_id: str | None = Query(None, description="Filter by owner"),
     include_public: bool = Query(True, description="Include public dashboards"),
+    db: AsyncSession = Depends(get_db),
 ) -> list[DashboardResponse]:
-    """List dashboards."""
-    dashboards = _service.list_dashboards(
+    """List dashboards from database."""
+    rows = await kpi_repo.list_dashboards(
+        db,
         owner_id=owner_id,
         include_public=include_public,
     )
-    return [_dashboard_to_response(d) for d in dashboards]
+    return [_dashboard_to_response(r) for r in rows]
 
 
 @router.get(
@@ -770,15 +873,22 @@ async def get_default_dashboards() -> list[str]:
     summary="Get dashboard",
     description="Get a specific dashboard.",
 )
-async def get_dashboard(dashboard_id: str) -> DashboardResponse:
-    """Get a dashboard."""
-    dashboard = _service.get_dashboard(dashboard_id)
-    if not dashboard:
+async def get_dashboard(dashboard_id: str, db: DBSession) -> DashboardResponse:
+    """Get a dashboard from database."""
+    try:
+        uid = UUID(dashboard_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid dashboard ID format: {dashboard_id}",
+        )
+    row = await kpi_repo.get_dashboard(db, uid)
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dashboard {dashboard_id} not found",
         )
-    return _dashboard_to_response(dashboard)
+    return _dashboard_to_response(row)
 
 
 @router.put(
@@ -790,16 +900,25 @@ async def get_dashboard(dashboard_id: str) -> DashboardResponse:
 async def update_dashboard(
     dashboard_id: str,
     request: DashboardUpdateRequest,
+    db: DBSession,
 ) -> DashboardResponse:
-    """Update a dashboard."""
+    """Update a dashboard in database."""
+    try:
+        uid = UUID(dashboard_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid dashboard ID format: {dashboard_id}",
+        )
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
     
-    result = _service.update_dashboard(dashboard_id, updates)
+    result = await kpi_repo.update_dashboard(db, uid, updates)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dashboard {dashboard_id} not found",
         )
+    await db.commit()
     return _dashboard_to_response(result)
 
 
@@ -809,21 +928,22 @@ async def update_dashboard(
     summary="Delete dashboard",
     description="Delete a dashboard.",
 )
-async def delete_dashboard(dashboard_id: str) -> None:
-    """Delete a dashboard."""
-    # Prevent deletion of default dashboards
-    if dashboard_id in get_default_dashboard_ids():
+async def delete_dashboard(dashboard_id: str, db: DBSession) -> None:
+    """Delete a dashboard from database."""
+    try:
+        uid = UUID(dashboard_id)
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete default dashboards",
+            detail=f"Invalid dashboard ID format: {dashboard_id}",
         )
-    
-    result = _service.delete_dashboard(dashboard_id)
+    result = await kpi_repo.delete_dashboard(db, uid)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dashboard {dashboard_id} not found",
         )
+    await db.commit()
 
 
 @router.get(
@@ -837,33 +957,57 @@ async def get_dashboard_data(
     start_date: date = Query(..., description="Start date"),
     end_date: date = Query(..., description="End date"),
     dimensions: str | None = Query(None, description="Dimensions as JSON"),
+    db: AsyncSession = Depends(get_db),
 ) -> DashboardDataResponse:
-    """Get dashboard data."""
+    """Get dashboard data from database."""
     import json
-    
-    dims = None
+
+    try:
+        uid = UUID(dashboard_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid dashboard ID format: {dashboard_id}",
+        )
+
     if dimensions:
         try:
-            dims = json.loads(dimensions)
+            json.loads(dimensions)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid dimensions JSON",
             )
-    
-    dashboard = _service.get_dashboard(dashboard_id)
+
+    dashboard = await kpi_repo.get_dashboard(db, uid)
     if not dashboard:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Dashboard {dashboard_id} not found",
         )
-    
-    data = _service.get_dashboard_data(dashboard_id, start_date, end_date, dims)
-    
+
+    # Build KPI data for each KPI in the dashboard
+    kpis_data: dict[str, dict[str, Any]] = {}
+    for kid_str in (dashboard.kpi_ids or []):
+        try:
+            kid = UUID(kid_str)
+        except ValueError:
+            continue
+        defn = await kpi_repo.get_definition(db, kid)
+        if not defn:
+            continue
+        latest = await kpi_repo.get_latest_value(db, kid)
+        kpis_data[kid_str] = {
+            "name": defn.name,
+            "category": defn.category.value if defn.category else "custom",
+            "latest_value": latest.value if latest else None,
+            "status": latest.status.value if latest and latest.status else "no_data",
+        }
+
     return DashboardDataResponse(
-        dashboard=data.get("dashboard", {}),
-        period=data.get("period", {}),
-        kpis=data.get("kpis", {}),
+        dashboard={"id": str(dashboard.id), "name": dashboard.name},
+        period={"start": str(start_date), "end": str(end_date)},
+        kpis=kpis_data,
     )
 
 

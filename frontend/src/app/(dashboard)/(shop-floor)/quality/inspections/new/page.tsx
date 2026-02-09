@@ -107,7 +107,7 @@ export default function NewInspectionPage() {
                     <SelectItem value="first_article">{t('modules.quality.inspection.new.type.fai')}</SelectItem>
                     <SelectItem value="in_process">{t('modules.quality.inspection.new.type.inProcess')}</SelectItem>
                     <SelectItem value="final">{t('modules.quality.inspection.new.type.final')}</SelectItem>
-                    <SelectItem value="receiving">{t('modules.quality.inspection.new.type.receiving')}</SelectItem>
+                    <SelectItem value="incoming">{t('modules.quality.inspection.new.type.receiving')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

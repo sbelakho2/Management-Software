@@ -16,8 +16,6 @@ import {
   type GateValidationResult,
   createFieldValidation,
   createFormValidationState,
-  validateField,
-  combineResults,
   runGateChecks,
 } from '@/lib/validation';
 
@@ -93,6 +91,36 @@ interface FormValidationStore {
 }
 
 // =============================================================================
+// Internal Helpers
+// =============================================================================
+
+/**
+ * Run validation rules against a single value.
+ * This wraps the library's validateField which works on FieldValidation objects.
+ */
+async function validateField(
+  value: unknown,
+  rules: ValidationRule[],
+  context?: ValidationContext,
+): Promise<ValidationResult[]> {
+  const results: ValidationResult[] = [];
+  for (const rule of rules) {
+    const result = rule.validate(value, context);
+    if (result) results.push(result);
+  }
+  return results;
+}
+
+/**
+ * Combine validation results into a summary with valid/errors/warnings.
+ */
+function combineResults(results: ValidationResult[]): { valid: boolean; errors: ValidationResult[]; warnings: ValidationResult[] } {
+  const errors = results.filter(r => !r.valid && r.severity === 'error');
+  const warnings = results.filter(r => r.message && r.severity === 'warning');
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+// =============================================================================
 // Store Implementation
 // =============================================================================
 
@@ -163,7 +191,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
             ...state.forms,
             [formId]: {
               ...createFormValidationState(),
-              values: form.values, // Keep initial values
+              values: form.values ?? {}, // Keep initial values
             },
           },
         }), false, 'resetForm');
@@ -186,8 +214,8 @@ export const useFormValidationStore = create<FormValidationStore>()(
                   [name]: form.fields[name] ?? createFieldValidation(),
                 },
                 values: {
-                  ...form.values,
-                  [name]: form.values[name] ?? initialValue,
+                  ...(form.values ?? {}),
+                  [name]: (form.values ?? {})[name] ?? initialValue,
                 },
               },
             },
@@ -215,7 +243,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
           if (!form) return state;
           
           const { [fieldName]: _field, ...restFields } = form.fields;
-          const { [fieldName]: _value, ...restValues } = form.values;
+          const { [fieldName]: _value, ...restValues } = (form.values ?? {});
           const rules = state.fieldRules[formId] ?? {};
           const { [fieldName]: _rules, ...restRules } = rules;
           const deps = state.fieldDependencies[formId] ?? {};
@@ -259,7 +287,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
               [formId]: {
                 ...form,
                 values: {
-                  ...form.values,
+                  ...(form.values ?? {}),
                   [fieldName]: value,
                 },
                 fields: {
@@ -318,7 +346,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
               [formId]: {
                 ...form,
                 values: {
-                  ...form.values,
+                  ...(form.values ?? {}),
                   ...values,
                 },
                 fields: updatedFields,
@@ -331,7 +359,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
       
       getValue: (formId, fieldName) => {
         const form = get().forms[formId];
-        return form?.values[fieldName];
+        return form?.values?.[fieldName];
       },
       
       getValues: (formId) => {
@@ -429,7 +457,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
         // Create validation context
         const context: ValidationContext = {
           fieldName,
-          values: form.values,
+          values: form.values ?? {},
           touched: Object.fromEntries(
             Object.entries(form.fields).map(([k, v]) => [k, v.touched])
           ),
@@ -439,7 +467,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
         };
         
         // Run validation
-        const value = form.values[fieldName];
+        const value = (form.values ?? {})[fieldName];
         const results = await validateField(value, rules, context);
         const { valid, errors, warnings } = combineResults(results);
         
@@ -598,7 +626,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
                 ...form,
                 isValid: false,
                 hasErrors: true,
-                errors: [...form.errors, errorResult],
+                errors: [...(form.errors ?? []), errorResult],
                 fields: {
                   ...form.fields,
                   [fieldName]: {
@@ -660,7 +688,7 @@ export const useFormValidationStore = create<FormValidationStore>()(
               ...state.forms,
               [formId]: {
                 ...form,
-                submitCount: form.submitCount + 1,
+                submitCount: (form.submitCount ?? 0) + 1,
               },
             },
           };

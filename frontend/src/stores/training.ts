@@ -41,6 +41,7 @@ export interface TrainingRecord {
   enrolled_at: string;
   completed_at?: string;
   score?: number;
+  expiresDate?: string;
 }
 
 export interface UserSkill {

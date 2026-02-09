@@ -571,11 +571,11 @@ export const useKanbanStore = create<KanbanState>()(
       }),
       // Defensive merge: ensure Map-typed fields are never overwritten by plain objects from localStorage
       merge: (persisted, current) => ({
-        ...(current as Record<string, unknown>),
-        ...(persisted as Record<string, unknown>),
-        cards: (current as any).cards,
-        columnCards: (current as any).columnCards,
-      }),
+        ...current,
+        ...(persisted as Partial<KanbanState>),
+        cards: current.cards,
+        columnCards: current.columnCards,
+      } as KanbanState),
       // Custom serialization for Maps
       storage: {
         getItem: (name) => {

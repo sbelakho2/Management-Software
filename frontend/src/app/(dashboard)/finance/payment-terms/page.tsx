@@ -271,7 +271,7 @@ export default function PaymentTermsPage() {
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => setEditingTerm(term)}
+                    onClick={() => setEditingTerm(term as unknown as PaymentTerm)}
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
