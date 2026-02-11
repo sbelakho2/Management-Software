@@ -596,6 +596,11 @@ async def update_definition(
 )
 async def delete_definition(kpi_id: str, db: DBSession) -> None:
     """Delete a KPI definition from database."""
+    if kpi_id in get_default_kpi_ids():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete default KPIs",
+        )
     try:
         uid = UUID(kpi_id)
     except ValueError:
@@ -930,6 +935,11 @@ async def update_dashboard(
 )
 async def delete_dashboard(dashboard_id: str, db: DBSession) -> None:
     """Delete a dashboard from database."""
+    if dashboard_id in get_default_dashboard_ids():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete default dashboards",
+        )
     try:
         uid = UUID(dashboard_id)
     except ValueError:

@@ -23,9 +23,9 @@ async def readiness_check() -> Response:
 
     # Check database
     try:
-        from sensei.core.database import async_engine  # noqa: WPS433
+        from sensei.core.database import engine  # noqa: WPS433
 
-        async with async_engine.connect() as conn:
+        async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
         checks["database"] = "ok"
     except Exception as exc:
@@ -35,10 +35,9 @@ async def readiness_check() -> Response:
 
     # Check Redis
     try:
-        from sensei.core.redis import get_redis  # noqa: WPS433
+        from sensei.core.redis import redis_client as _redis  # noqa: WPS433
 
-        redis = get_redis()
-        await redis.ping()
+        await _redis.ping()
         checks["redis"] = "ok"
     except Exception as exc:
         logger.warning("Readiness: redis check failed: %s", exc)
@@ -83,15 +82,14 @@ async def prometheus_metrics() -> Response:
     db_up = 1
     redis_up = 1
     try:
-        from sensei.core.database import async_engine  # noqa: WPS433
-        async with async_engine.connect() as conn:
+        from sensei.core.database import engine  # noqa: WPS433
+        async with engine.connect() as conn:
             await conn.execute(__import__("sqlalchemy").text("SELECT 1"))
     except Exception:
         db_up = 0
     try:
-        from sensei.core.redis import get_redis  # noqa: WPS433
-        redis = get_redis()
-        await redis.ping()
+        from sensei.core.redis import redis_client as _redis  # noqa: WPS433
+        await _redis.ping()
     except Exception:
         redis_up = 0
 

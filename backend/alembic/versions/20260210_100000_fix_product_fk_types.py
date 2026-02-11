@@ -35,50 +35,119 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table_name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables"
+            "  WHERE table_schema = 'public' AND table_name = :tbl"
+            ")"
+        ),
+        {"tbl": table_name},
+    )
+    return result.scalar() or False
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.columns"
+            "  WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col"
+            ")"
+        ),
+        {"tbl": table_name, "col": column_name},
+    )
+    return result.scalar() or False
+
+
+def _constraint_exists(constraint_name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.table_constraints"
+            "  WHERE constraint_name = :cname AND constraint_schema = 'public'"
+            ")"
+        ),
+        {"cname": constraint_name},
+    )
+    return result.scalar() or False
+
+
+def _index_exists(index_name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM pg_indexes"
+            "  WHERE schemaname = 'public' AND indexname = :idx"
+            ")"
+        ),
+        {"idx": index_name},
+    )
+    return result.scalar() or False
+
+
 def _convert_fk_to_uuid(table: str, fk_col: str, on_delete: str = "CASCADE") -> None:
     """Convert a single FK column from Integer to UUID, mapping existing rows."""
-    try:
-        # Add temporary UUID FK column
-        op.add_column(
-            table,
-            sa.Column(f"new_{fk_col}", PGUUID(as_uuid=True), nullable=True),
-        )
+    if not _table_exists(table) or not _column_exists(table, fk_col):
+        return
 
-        # Map old integer references to new UUIDs
-        op.execute(
-            f"""
-            UPDATE {table} t
-            SET new_{fk_col} = p.id
-            FROM products p
-            WHERE t.{fk_col}::text = p.id::text
-            """
-        )
+    # Check if column is already UUID type
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col"
+        ),
+        {"tbl": table, "col": fk_col},
+    )
+    row = result.fetchone()
+    if row and row[0].lower() == "uuid":
+        return  # Already UUID
 
-        # Drop old FK constraint (best-effort)
-        try:
-            op.drop_constraint(f"{table}_{fk_col}_fkey", table, type_="foreignkey")
-        except Exception:
-            pass
+    # Add temporary UUID FK column
+    op.add_column(
+        table,
+        sa.Column(f"new_{fk_col}", PGUUID(as_uuid=True), nullable=True),
+    )
 
-        # Drop old column and rename new one
-        op.drop_column(table, fk_col)
-        op.alter_column(table, f"new_{fk_col}", new_column_name=fk_col)
+    # Map old integer references to new UUIDs
+    op.execute(
+        f"""
+        UPDATE {table} t
+        SET new_{fk_col} = p.id
+        FROM products p
+        WHERE t.{fk_col}::text = p.id::text
+        """
+    )
 
-        # Add FK constraint
-        op.create_foreign_key(
-            f"{table}_{fk_col}_fkey",
-            table,
-            "products",
-            [fk_col],
-            ["id"],
-            ondelete=on_delete,
-        )
+    # Drop old FK constraint if it exists
+    fk_name = f"{table}_{fk_col}_fkey"
+    if _constraint_exists(fk_name):
+        op.drop_constraint(fk_name, table, type_="foreignkey")
 
-        # Re-create index
-        op.create_index(f"ix_{table}_{fk_col}", table, [fk_col])
-    except Exception:
-        # Table may not exist in all environments
-        pass
+    # Drop old column and rename new one
+    op.drop_column(table, fk_col)
+    op.alter_column(table, f"new_{fk_col}", new_column_name=fk_col)
+
+    # Add FK constraint
+    op.create_foreign_key(
+        fk_name,
+        table,
+        "products",
+        [fk_col],
+        ["id"],
+        ondelete=on_delete,
+    )
+
+    # Re-create index
+    idx_name = f"ix_{table}_{fk_col}"
+    if not _index_exists(idx_name):
+        op.create_index(idx_name, table, [fk_col])
 
 
 def upgrade() -> None:
@@ -106,6 +175,9 @@ def upgrade() -> None:
         ("inspection_plans", "product_id", "SET NULL"),
         # QMS
         ("qms_traceability_matrices", "product_id", "SET NULL"),
+        ("qms_first_article_inspections", "product_id", "SET NULL"),
+        ("qms_self_inspections", "product_id", "SET NULL"),
+        ("qms_lab_samples", "product_id", "SET NULL"),
         # Standard Work, Training
         ("standard_works", "product_id", "SET NULL"),
         ("skill_requirements", "product_id", "SET NULL"),

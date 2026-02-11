@@ -186,9 +186,9 @@ class TestParseFilterValue:
         assert _parse_single_value("-10") == -10
     
     def test_parse_float(self):
-        """Test parsing float."""
-        assert _parse_single_value("3.14") == 3.14
-        assert _parse_single_value("-2.5") == -2.5
+        """Test float-like strings stay as strings (float coercion disabled)."""
+        assert _parse_single_value("3.14") == "3.14"
+        assert _parse_single_value("-2.5") == "-2.5"
     
     def test_parse_uuid(self):
         """Test parsing UUID."""

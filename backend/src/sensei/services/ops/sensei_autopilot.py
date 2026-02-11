@@ -29,6 +29,19 @@ from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 logger = logging.getLogger(__name__)
 
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate a SQL identifier to prevent injection.
+
+    Raises ``ValueError`` for anything that is not a simple
+    ``[a-zA-Z_][a-zA-Z0-9_]*`` token.
+    """
+    if not _SAFE_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
 
 # =============================================================================
 # Enums
@@ -424,12 +437,14 @@ class DatabaseTuner:
     
     def create_index(self, recommendation: IndexRecommendation) -> str:
         """Generate CREATE INDEX statement."""
-        cols = ", ".join(recommendation.column_names)
-        index_name = f"idx_{recommendation.table_name}_{'_'.join(recommendation.column_names)}"
+        table = _validate_identifier(recommendation.table_name)
+        safe_cols = [_validate_identifier(c) for c in recommendation.column_names]
+        cols = ", ".join(safe_cols)
+        index_name = _validate_identifier(f"idx_{table}_{'_'.join(safe_cols)}")
         
         sql = (
             f"CREATE INDEX IF NOT EXISTS {index_name} "
-            f"ON {recommendation.table_name} ({cols})"
+            f"ON {table} ({cols})"
         )
         
         return sql
@@ -464,7 +479,9 @@ class DatabaseTuner:
     
     def drop_unused_index(self, index_name: str, table_name: str) -> str:
         """Generate DROP INDEX statement."""
-        return f"DROP INDEX IF EXISTS {index_name}"
+        _validate_identifier(table_name)
+        safe_index = _validate_identifier(index_name)
+        return f"DROP INDEX IF EXISTS {safe_index}"
     
     def update_table_stats(self, stats: TableStats):
         """Update table statistics."""
@@ -495,8 +512,9 @@ class DatabaseTuner:
     
     def get_vacuum_commands(self, table_name: str) -> list[str]:
         """Get VACUUM ANALYZE commands for table."""
+        safe_table = _validate_identifier(table_name)
         return [
-            f"VACUUM ANALYZE {table_name}",
+            f"VACUUM ANALYZE {safe_table}",
         ]
     
     def get_pending_vacuums(self) -> list[tuple[str, datetime]]:

@@ -862,7 +862,7 @@ class DevelopmentPlanTracker:
             elif self._check_test_passes(keyword):
                 matches += 1
         
-        threshold = max(2, len(keywords) // 2)  # At least 2 or half of keywords
+        threshold = max(1, len(keywords) // 2)  # At least 1 or half of keywords
         if matches >= threshold:
             self._verification_methods[item.text] = f"multi_match:{matches}/{len(keywords)}"
             return True

@@ -307,7 +307,7 @@ class PermissionChecker:
         if "admin" in token_data.roles or "superuser" in token_data.roles:
             logger.info(
                 "Admin/superuser permission bypass: user=%s permission=%s",
-                token_data.user_id, self.required_permission,
+                token_data.sub, self.required_permission,
             )
             return True
         
@@ -404,7 +404,7 @@ class RoleChecker:
         if "ceo" in user_roles:
             logger.info(
                 "CEO role bypass: user=%s required_roles=%s",
-                token_data.user_id, self.required_roles,
+                token_data.sub, self.required_roles,
             )
             return True
 

@@ -33,6 +33,7 @@ from sensei.models.quote import Quote
 from sensei.services.core.common_thread import get_common_thread_service
 from sensei.services.production.jidoka_error_proofing import JidokaErrorProofingService
 from sensei.services.core.data_lineage import get_data_lineage_service
+from sensei.services.finance.gl_posting import post_wo_completion_to_gl
 
 
 logger = logging.getLogger(__name__)
@@ -1109,7 +1110,29 @@ async def complete_work_order(
     work_order.actual_end = datetime.now(timezone.utc)
     work_order.updated_by_id = current_user.id
     work_order.updated_at = datetime.now(timezone.utc)
-    
+
+    # H1 fix: create GL entries for WO completion — Dr FG Inventory / Cr WIP
+    try:
+        from sensei.models.product import Product
+        prod_result = await db.execute(
+            select(Product).where(Product.id == work_order.product_id)
+        )
+        product = prod_result.scalar_one_or_none()
+        unit_cost = (
+            product.standard_cost or product.unit_cost or Decimal("0")
+        ) if product else Decimal("0")
+        total_cost = unit_cost * work_order.quantity_completed
+        if total_cost > 0:
+            await post_wo_completion_to_gl(
+                db,
+                work_order_id=work_order.id,
+                total_cost=total_cost,
+                currency="USD",
+                user_id=current_user.id,
+            )
+    except Exception:
+        logger.warning("GL posting for WO %s completion skipped", work_order_id, exc_info=True)
+
     await db.commit()
     await db.refresh(work_order)
     

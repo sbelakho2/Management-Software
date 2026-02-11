@@ -132,7 +132,7 @@ class KnowledgeDocument:
     summary: str
     content: str
     keywords: list[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     version: str = "1.0"
     related_a3_fields: list[str] = field(default_factory=list)
 
@@ -146,7 +146,7 @@ class KnowledgeLink:
     a3_field: str  # e.g., "root_cause", "countermeasure", "problem_statement"
     document_ids: list[str]
     relevance_score: float  # 0-1
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -165,8 +165,8 @@ class StandardWork:
     safety_notes: list[str] = field(default_factory=list)
     quality_checks: list[str] = field(default_factory=list)
     status: StandardWorkStatus = StandardWorkStatus.DRAFT
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     source_a3_id: str | None = None
 
 
@@ -1044,7 +1044,7 @@ class AsyncStandardWorkEvolutionEngine:
         except (ValueError, AttributeError):
             standard.version = "1.1"
             
-        standard.updated_at = datetime.now()
+        standard.updated_at = datetime.now(timezone.utc)
         # reasoning often contains the source A3
         if "A3" in record.reasoning:
             standard.source_a3_id = record.reasoning.split("A3 ")[1].split(" ")[0]
@@ -1139,7 +1139,7 @@ class AsyncStandardWorkEvolutionEngine:
                     current_baseline=baseline,
                     performer_result=performer.overall_score,
                     improvement_potential=improvement,
-                    suggested_at=datetime.now(),
+                    suggested_at=datetime.now(timezone.utc),
                     target_standard_id=target_std,
                 )
                 suggestions.append(suggestion)
@@ -1196,8 +1196,8 @@ class StandardWorkEvolutionEngine(AsyncStandardWorkEvolutionEngine):
             safety_notes=safety_notes or [],
             quality_checks=quality_checks or [],
             status=StandardWorkStatus.DRAFT,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         self.standards[standard_id] = standard
         return standard

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-from sensei.api.deps import require_role
+from sensei.api.deps import require_role, RoleChecker
 from sensei.models.user import RoleType
 from sensei.services.core.backup_scheduler import (
     BackupSchedulerService,
@@ -130,7 +130,7 @@ async def get_scheduler_service() -> BackupSchedulerService:
 @router.get(
     "/schedules",
     response_model=List[ScheduleResponse],
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="List all backup schedules",
 )
 async def list_schedules(
@@ -162,7 +162,7 @@ async def list_schedules(
     "/schedules",
     response_model=ScheduleResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Create a new backup schedule",
 )
 async def create_schedule(
@@ -213,7 +213,7 @@ async def create_schedule(
 @router.get(
     "/schedules/{schedule_id}",
     response_model=ScheduleResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Get schedule details",
 )
 async def get_schedule(
@@ -249,7 +249,7 @@ async def get_schedule(
 @router.put(
     "/schedules/{schedule_id}",
     response_model=ScheduleResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Update a backup schedule",
 )
 async def update_schedule(
@@ -308,7 +308,7 @@ async def update_schedule(
 @router.delete(
     "/schedules/{schedule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Delete a backup schedule",
 )
 async def delete_schedule(
@@ -328,7 +328,7 @@ async def delete_schedule(
 @router.post(
     "/schedules/{schedule_id}/enable",
     response_model=ScheduleResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Enable a backup schedule",
 )
 async def enable_schedule(
@@ -366,7 +366,7 @@ async def enable_schedule(
 @router.post(
     "/schedules/{schedule_id}/disable",
     response_model=ScheduleResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Disable a backup schedule",
 )
 async def disable_schedule(
@@ -404,7 +404,7 @@ async def disable_schedule(
 @router.post(
     "/schedules/{schedule_id}/force",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Force immediate backup",
 )
 async def force_backup(
@@ -434,7 +434,7 @@ async def force_backup(
 @router.get(
     "/schedules/{schedule_id}/history",
     response_model=List[ExecutionResponse],
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Get schedule execution history",
 )
 async def get_schedule_history(
@@ -470,7 +470,7 @@ async def get_schedule_history(
 @router.get(
     "/rpo",
     response_model=RPOComplianceResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Get RPO compliance status",
 )
 async def get_rpo_compliance(
@@ -484,7 +484,7 @@ async def get_rpo_compliance(
 @router.get(
     "/rto",
     response_model=RTOComplianceResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Get RTO compliance status",
 )
 async def get_rto_compliance(
@@ -498,7 +498,7 @@ async def get_rto_compliance(
 @router.get(
     "/readiness",
     response_model=ReadinessResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))],
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))],
     summary="Get disaster recovery readiness",
 )
 async def get_disaster_recovery_readiness(

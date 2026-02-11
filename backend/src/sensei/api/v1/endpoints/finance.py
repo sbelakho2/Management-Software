@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Any, List
+from typing import Any, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,10 @@ from sensei.api import deps
 from sensei.api.schemas import APIResponse
 from sensei.core.config import settings
 from sensei.core.database import get_db_session
-from sensei.models.finance import GLAccount, JournalEntry, JournalLine, AccountingPeriod, CurrencySetting, FXRate
+from sensei.models.finance import (
+    GLAccount, JournalEntry, JournalLine, AccountingPeriod,
+    CurrencySetting, FXRate, Currency, PaymentTerm, BankAccount, BankTransaction,
+)
 from sensei.models.user import User
 from sensei.services.finance.currency_settings import CurrencySettingsService
 from sensei.services.finance.cost_rollup_service import CostRollupService
@@ -97,6 +100,79 @@ class TaxTransactionSchema(BaseModel):
     currency: str
     status: str = "pending"
 
+
+# --- Schemas for currencies, payment terms, bank accounts, bank transactions ---
+
+class CurrencySchema(BaseModel):
+    code: str
+    name: str
+    symbol: str | None = None
+    decimal_places: int = 2
+    is_active: bool = True
+
+
+class CurrencyUpdateSchema(BaseModel):
+    name: str | None = None
+    symbol: str | None = None
+    decimal_places: int | None = None
+    is_active: bool | None = None
+
+
+class PaymentTermSchema(BaseModel):
+    code: str
+    name: str
+    days_due: int = 30
+    discount_percent: float = 0
+    discount_days: int = 0
+    description: str | None = None
+    is_active: bool = True
+
+
+class PaymentTermUpdateSchema(BaseModel):
+    name: str | None = None
+    days_due: int | None = None
+    discount_percent: float | None = None
+    discount_days: int | None = None
+    description: str | None = None
+    is_active: bool | None = None
+
+
+class BankAccountSchema(BaseModel):
+    account_name: str
+    account_number: str
+    bank_name: str
+    bank_code: str | None = None
+    iban: str | None = None
+    currency: str = "USD"
+    account_type: str = "checking"
+    site_id: UUID | None = None
+    gl_account_id: UUID | None = None
+    is_active: bool = True
+
+
+class BankAccountUpdateSchema(BaseModel):
+    account_name: str | None = None
+    bank_name: str | None = None
+    bank_code: str | None = None
+    iban: str | None = None
+    currency: str | None = None
+    account_type: str | None = None
+    is_active: bool | None = None
+
+
+class BankTransactionSchema(BaseModel):
+    bank_account_id: UUID
+    transaction_date: date
+    value_date: date | None = None
+    transaction_type: str
+    reference: str | None = None
+    description: str
+    amount: float
+    currency: str = "USD"
+    status: str = "posted"
+    source_type: str | None = None
+    source_id: UUID | None = None
+
 @router.get("/accounts", response_model=List[dict])
 async def list_gl_accounts(
     db: AsyncSession = Depends(get_db_session),
@@ -126,7 +202,7 @@ async def create_gl_account(
 
 @router.get("/trial-balance", response_model=List[dict])
 async def get_trial_balance(
-    as_of: date = Query(default_factory=date.today),
+    as_of: date = Query(default_factory=lambda: datetime.now(timezone.utc).date()),
     db: AsyncSession = Depends(get_db_session),
     current_user: Any = Depends(deps.get_current_active_user)
 ):
@@ -402,7 +478,7 @@ async def get_finance_dashboard_stats(
     returns zero/empty-derived metrics.
     """
 
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     month_start = today.replace(day=1)
     prev_month_end = month_start.fromordinal(month_start.toordinal() - 1)
     prev_month_start = prev_month_end.replace(day=1)
@@ -544,7 +620,7 @@ async def get_revenue_by_product(
 
     Uses revenue GL accounts as a proxy when product-level sales data isn't available.
     """
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     month_start = today.replace(day=1)
 
     result = await db.execute(
@@ -584,7 +660,7 @@ async def get_expense_breakdown(
 
     Uses expense GL accounts as categories when a richer taxonomy isn't configured.
     """
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     month_start = today.replace(day=1)
 
     result = await db.execute(
@@ -676,3 +752,288 @@ async def get_pending_approvals(
         )
 
     return approvals
+
+
+# =============================================================================
+# Currency CRUD (C1 fix — frontend calls these endpoints)
+# =============================================================================
+
+
+@router.get("/currencies", response_model=List[dict])
+async def list_currencies(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """List all currencies."""
+    result = await db.execute(select(Currency).order_by(Currency.code))
+    return [c.to_dict() for c in result.scalars().all()]
+
+
+@router.post("/currencies", response_model=dict, status_code=201)
+async def create_currency(
+    payload: CurrencySchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Create a new currency."""
+    currency = Currency(
+        code=payload.code.upper(),
+        name=payload.name,
+        symbol=payload.symbol,
+        decimal_places=payload.decimal_places,
+        is_active=payload.is_active,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    db.add(currency)
+    await db.commit()
+    await db.refresh(currency)
+    return currency.to_dict()
+
+
+@router.patch("/currencies/{currency_id}", response_model=dict)
+async def update_currency(
+    currency_id: UUID,
+    payload: CurrencyUpdateSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Update an existing currency."""
+    result = await db.execute(select(Currency).where(Currency.id == currency_id))
+    currency = result.scalar_one_or_none()
+    if not currency:
+        raise HTTPException(status_code=404, detail="Currency not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(currency, field, value)
+    currency.updated_by_id = getattr(current_user, "id", None)
+    await db.commit()
+    await db.refresh(currency)
+    return currency.to_dict()
+
+
+# =============================================================================
+# Payment Term CRUD
+# =============================================================================
+
+
+@router.get("/payment-terms", response_model=List[dict])
+async def list_payment_terms(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """List all payment terms."""
+    result = await db.execute(select(PaymentTerm).order_by(PaymentTerm.code))
+    return [pt.to_dict() for pt in result.scalars().all()]
+
+
+@router.post("/payment-terms", response_model=dict, status_code=201)
+async def create_payment_term(
+    payload: PaymentTermSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Create a new payment term."""
+    pt = PaymentTerm(
+        code=payload.code,
+        name=payload.name,
+        days_due=payload.days_due,
+        discount_percent=Decimal(str(payload.discount_percent)),
+        discount_days=payload.discount_days,
+        description=payload.description,
+        is_active=payload.is_active,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    db.add(pt)
+    await db.commit()
+    await db.refresh(pt)
+    return pt.to_dict()
+
+
+@router.patch("/payment-terms/{term_id}", response_model=dict)
+async def update_payment_term(
+    term_id: UUID,
+    payload: PaymentTermUpdateSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Update an existing payment term."""
+    result = await db.execute(select(PaymentTerm).where(PaymentTerm.id == term_id))
+    pt = result.scalar_one_or_none()
+    if not pt:
+        raise HTTPException(status_code=404, detail="Payment term not found")
+    update_data = payload.model_dump(exclude_unset=True)
+    if "discount_percent" in update_data:
+        update_data["discount_percent"] = Decimal(str(update_data["discount_percent"]))
+    for field, value in update_data.items():
+        setattr(pt, field, value)
+    pt.updated_by_id = getattr(current_user, "id", None)
+    await db.commit()
+    await db.refresh(pt)
+    return pt.to_dict()
+
+
+# =============================================================================
+# Bank Account CRUD
+# =============================================================================
+
+
+@router.get("/bank-accounts", response_model=List[dict])
+async def list_bank_accounts(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """List all bank accounts."""
+    result = await db.execute(
+        select(BankAccount).order_by(BankAccount.account_name)
+    )
+    return [ba.to_dict() for ba in result.scalars().all()]
+
+
+@router.post("/bank-accounts", response_model=dict, status_code=201)
+async def create_bank_account(
+    payload: BankAccountSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Create a new bank account."""
+    ba = BankAccount(
+        account_name=payload.account_name,
+        account_number=payload.account_number,
+        bank_name=payload.bank_name,
+        bank_code=payload.bank_code,
+        iban=payload.iban,
+        currency=payload.currency,
+        account_type=payload.account_type,
+        site_id=payload.site_id,
+        gl_account_id=payload.gl_account_id,
+        is_active=payload.is_active,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    db.add(ba)
+    await db.commit()
+    await db.refresh(ba)
+    return ba.to_dict()
+
+
+@router.patch("/bank-accounts/{account_id}", response_model=dict)
+async def update_bank_account(
+    account_id: UUID,
+    payload: BankAccountUpdateSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Update an existing bank account."""
+    result = await db.execute(select(BankAccount).where(BankAccount.id == account_id))
+    ba = result.scalar_one_or_none()
+    if not ba:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(ba, field, value)
+    ba.updated_by_id = getattr(current_user, "id", None)
+    await db.commit()
+    await db.refresh(ba)
+    return ba.to_dict()
+
+
+# =============================================================================
+# Bank Transaction CRUD + Reconcile
+# =============================================================================
+
+
+@router.get("/bank-transactions", response_model=List[dict])
+async def list_bank_transactions(
+    bank_account_id: UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """List bank transactions, optionally filtered by bank account."""
+    stmt = select(BankTransaction).order_by(BankTransaction.transaction_date.desc())
+    if bank_account_id:
+        stmt = stmt.where(BankTransaction.bank_account_id == bank_account_id)
+    result = await db.execute(stmt.limit(500))
+    return [bt.to_dict() for bt in result.scalars().all()]
+
+
+@router.post("/bank-transactions", response_model=dict, status_code=201)
+async def create_bank_transaction(
+    payload: BankTransactionSchema,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Record a new bank transaction."""
+    # Verify bank account exists
+    ba_result = await db.execute(select(BankAccount).where(BankAccount.id == payload.bank_account_id))
+    ba = ba_result.scalar_one_or_none()
+    if not ba:
+        raise HTTPException(status_code=404, detail="Bank account not found")
+
+    bt = BankTransaction(
+        bank_account_id=payload.bank_account_id,
+        transaction_date=payload.transaction_date,
+        value_date=payload.value_date,
+        transaction_type=payload.transaction_type,
+        reference=payload.reference,
+        description=payload.description,
+        amount=Decimal(str(payload.amount)),
+        currency=payload.currency,
+        status=payload.status,
+        source_type=payload.source_type,
+        source_id=payload.source_id,
+        created_by_id=getattr(current_user, "id", None),
+        updated_by_id=getattr(current_user, "id", None),
+        owner_id=getattr(current_user, "id", None),
+    )
+    db.add(bt)
+
+    # Update bank account running balance
+    ba.current_balance += Decimal(str(payload.amount))
+    bt.running_balance = ba.current_balance
+
+    await db.commit()
+    await db.refresh(bt)
+    
+    # Best-effort: bind common thread lineage
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        await ct.bind(
+            db,
+            bank_transaction_id=str(bt.id),
+            created_by_id=getattr(current_user, "id", None),
+            source="bank_transaction_create",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.debug("Failed to capture bank_transaction common-thread")
+    
+    return bt.to_dict()
+
+
+@router.post("/bank-transactions/{transaction_id}/reconcile", response_model=dict)
+async def reconcile_bank_transaction(
+    transaction_id: UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Mark a bank transaction as reconciled."""
+    result = await db.execute(select(BankTransaction).where(BankTransaction.id == transaction_id))
+    bt = result.scalar_one_or_none()
+    if not bt:
+        raise HTTPException(status_code=404, detail="Bank transaction not found")
+    if bt.status == "reconciled":
+        raise HTTPException(status_code=409, detail="Transaction is already reconciled")
+
+    bt.status = "reconciled"
+    bt.reconciled_at = datetime.now(timezone.utc)
+    bt.reconciled_by_id = getattr(current_user, "id", None)
+    bt.updated_by_id = getattr(current_user, "id", None)
+
+    await db.commit()
+    await db.refresh(bt)
+    return bt.to_dict()

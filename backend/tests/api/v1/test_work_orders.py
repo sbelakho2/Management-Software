@@ -103,7 +103,7 @@ def sample_work_order(mock_user):
     wo.id = 1
     wo.work_order_number = "WO-2024-0001"
     wo.external_reference = "PO-12345"
-    wo.product_id = 10
+    wo.product_id = uuid4()
     wo.quantity_ordered = Decimal("100")
     wo.quantity_completed = Decimal("50")
     wo.quantity_scrapped = Decimal("5")
@@ -465,7 +465,7 @@ class TestCreateWorkOrder:
         
         data = WorkOrderCreate(
             work_order_number="WO-2024-0001",
-            product_id=10,
+            product_id=uuid4(),
             quantity_ordered=Decimal("100"),
             priority="high",
         )
@@ -491,7 +491,7 @@ class TestCreateWorkOrder:
         
         data = WorkOrderCreate(
             work_order_number="WO-2024-0001",
-            product_id=10,
+            product_id=uuid4(),
             quantity_ordered=Decimal("100"),
         )
         
@@ -1311,7 +1311,7 @@ class TestWorkOrderSchemaValidation:
         """Test valid work order create schema."""
         data = WorkOrderCreate(
             work_order_number="WO-2024-0001",
-            product_id=10,
+            product_id=uuid4(),
             quantity_ordered=Decimal("100"),
             priority="high",
         )
@@ -1323,7 +1323,7 @@ class TestWorkOrderSchemaValidation:
         with pytest.raises(PydanticValidationError):
             WorkOrderCreate(
                 work_order_number="WO-2024-0001",
-                product_id=10,
+                product_id=uuid4(),
                 quantity_ordered=Decimal("100"),
                 priority="invalid",
             )
@@ -1333,7 +1333,7 @@ class TestWorkOrderSchemaValidation:
         with pytest.raises(PydanticValidationError):
             WorkOrderCreate(
                 work_order_number="WO-2024-0001",
-                product_id=10,
+                product_id=uuid4(),
                 quantity_ordered=Decimal("100"),
                 status="invalid",
             )
@@ -1343,7 +1343,7 @@ class TestWorkOrderSchemaValidation:
         with pytest.raises(PydanticValidationError):
             WorkOrderCreate(
                 work_order_number="WO-2024-0001",
-                product_id=10,
+                product_id=uuid4(),
                 quantity_ordered=Decimal("-10"),
             )
 

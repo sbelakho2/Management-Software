@@ -120,7 +120,11 @@ class InventoryLevelResponse(BaseModel):
 
 def format_time_ago(dt: datetime) -> str:
     """Convert datetime to human-readable 'X ago' format."""
-    now = datetime.utcnow()
+    from datetime import timezone as tz
+    now = datetime.now(tz.utc).replace(tzinfo=None)  # naive UTC
+    # Ensure dt is also naive for comparison
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
     diff = now - dt
     
     if diff.days > 0:
@@ -149,13 +153,14 @@ async def get_warehouse_stats(db: DBSession, current_user: CurrentUser) -> Any:
         select(func.count(func.distinct(InventoryLevel.product_id)))
     ) or 0
     
-    # Low stock items (where on_hand < 20% of typical reorder level, simplified)
-    # In real scenario, you'd compare against product.reorder_point
+    # Low stock items (where on_hand < product.reorder_point, or < 50 if not set)
     low_stock = await db.scalar(
-        select(func.count(InventoryLevel.id)).where(
+        select(func.count(InventoryLevel.id))
+        .join(Product, InventoryLevel.product_id == Product.id)
+        .where(
             and_(
                 InventoryLevel.quantity_on_hand > 0,
-                InventoryLevel.quantity_on_hand < 50  # Threshold
+                InventoryLevel.quantity_on_hand < func.coalesce(Product.reorder_point, 50),
             )
         )
     ) or 0
@@ -260,7 +265,7 @@ async def get_low_stock_items(
         .where(
             and_(
                 InventoryLevel.quantity_on_hand > 0,
-                InventoryLevel.quantity_on_hand < 50  # Simple threshold
+                InventoryLevel.quantity_on_hand < func.coalesce(Product.reorder_point, 50),
             )
         )
         .order_by(InventoryLevel.quantity_on_hand.asc())
@@ -270,12 +275,13 @@ async def get_low_stock_items(
     
     low_stock_items = []
     for level, product in items:
+        reorder = float(product.reorder_point) if product.reorder_point else 50.0
         low_stock_items.append(LowStockItemResponse(
             id=str(level.id),
             name=product.name if product else 'Unknown',
             current=float(level.quantity_on_hand),
-            reorder=50.0,  # Default reorder point
-            unit=product.unit_of_measure if hasattr(product, 'unit_of_measure') and product.unit_of_measure else 'pcs'
+            reorder=reorder,
+            unit=product.unit_of_measure.value if hasattr(product, 'unit_of_measure') and product.unit_of_measure else 'pcs'
         ))
     
     return low_stock_items

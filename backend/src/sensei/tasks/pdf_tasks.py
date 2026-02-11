@@ -48,9 +48,8 @@ def _update_progress(
 ):
     """Update task progress in Redis."""
     try:
-        from sensei.core.redis import get_redis_client
+        from sensei.core.redis import redis_client
         
-        redis = get_redis_client()
         data = {
             "status": status,
             "progress": progress,
@@ -62,9 +61,9 @@ def _update_progress(
         if error:
             data["error"] = error
         
-        redis.hset(_get_progress_key(task_id), mapping=data)
+        redis_client.hset(_get_progress_key(task_id), mapping=data)
         # Expire progress after 24 hours
-        redis.expire(_get_progress_key(task_id), 86400)
+        redis_client.expire(_get_progress_key(task_id), 86400)
     except Exception as e:
         logger.warning(f"Failed to update progress: {e}")
 
@@ -72,10 +71,9 @@ def _update_progress(
 def get_pdf_generation_progress(task_id: str) -> Dict[str, Any]:
     """Get current progress for a PDF generation task."""
     try:
-        from sensei.core.redis import get_redis_client
+        from sensei.core.redis import redis_client
         
-        redis = get_redis_client()
-        data = redis.hgetall(_get_progress_key(task_id))
+        data = redis_client.hgetall(_get_progress_key(task_id))
         
         if not data:
             return {"status": "unknown", "progress": 0, "message": "Task not found"}

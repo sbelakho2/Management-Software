@@ -32,7 +32,13 @@ from sensei.models.accounts_payable import (
     POLine, PRLine, GoodsReceipt, ReceiptLine, SupplierInvoiceLine
 )
 from sensei.models.account import Account
+from sensei.models.inventory import (
+    InventoryLevel, Location, StockMove, ValuationLayer,
+)
+from sensei.models.product import Product
+from sensei.models.quality import InspectionPlan, InspectionRecord, InspectionType, InspectionResult
 from sensei.services.core.common_thread import get_common_thread_service
+from sensei.services.finance.gl_posting import post_grn_to_gl
 
 # Purchasing/AP is cross-functional (purchasing + supply chain + logistics + finance oversight).
 # CEO/admin are handled centrally by RoleChecker.
@@ -198,17 +204,42 @@ class MatchingResult(BaseModel):
 
 
 async def _generate_pr_number(db: AsyncSession) -> str:
-    """Generate next PR number."""
-    result = await db.execute(select(func.count(PurchaseRequisition.id)))
-    count = result.scalar() or 0
-    return f"PR-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+    """Generate next PR number using MAX to avoid race-condition duplicates."""
+    from sqlalchemy import text
+    year = datetime.now(timezone.utc).year
+    prefix = f"PR-{year}-"
+    result = await db.execute(
+        select(func.max(PurchaseRequisition.pr_number))
+        .where(PurchaseRequisition.pr_number.like(f"{prefix}%"))
+    )
+    last = result.scalar()
+    if last:
+        try:
+            seq = int(last.split("-")[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:05d}"
 
 
 async def _generate_po_number(db: AsyncSession) -> str:
-    """Generate next PO number."""
-    result = await db.execute(select(func.count(PurchaseOrder.id)))
-    count = result.scalar() or 0
-    return f"PO-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+    """Generate next PO number using MAX to avoid race-condition duplicates."""
+    year = datetime.now(timezone.utc).year
+    prefix = f"PO-{year}-"
+    result = await db.execute(
+        select(func.max(PurchaseOrder.po_number))
+        .where(PurchaseOrder.po_number.like(f"{prefix}%"))
+    )
+    last = result.scalar()
+    if last:
+        try:
+            seq = int(last.split("-")[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:05d}"
 
 
 def _calc_total(lines: List[Any]) -> Decimal:
@@ -710,9 +741,193 @@ async def create_goods_receipt(
         )
         db.add(grn_line)
     
+    # ---- Inventory integration: create StockMoves + update InventoryLevel ----
+    # Find or create a supplier-type and internal-type location for stock moves
+    supplier_loc_result = await db.execute(
+        select(Location).where(Location.location_type == "supplier").limit(1)
+    )
+    supplier_loc = supplier_loc_result.scalar_one_or_none()
+    if not supplier_loc:
+        # Auto-create a virtual supplier location
+        # Find any warehouse to attach it to
+        wh_result = await db.execute(select(Location.warehouse_id).limit(1))
+        wh_id = wh_result.scalar()
+        if not wh_id:
+            from sensei.models.inventory import Warehouse
+            default_wh = Warehouse(
+                name="Main Warehouse", code="MAIN",
+                created_by_id=current_user.id, updated_by_id=current_user.id,
+                owner_id=current_user.id,
+            )
+            db.add(default_wh)
+            await db.flush()
+            wh_id = default_wh.id
+        supplier_loc = Location(
+            warehouse_id=wh_id, name="Suppliers (Virtual)",
+            location_type="supplier",
+            created_by_id=current_user.id, updated_by_id=current_user.id,
+            owner_id=current_user.id,
+        )
+        db.add(supplier_loc)
+        await db.flush()
+
+    internal_loc_result = await db.execute(
+        select(Location).where(Location.location_type.in_(["internal", "inventory"])).limit(1)
+    )
+    internal_loc = internal_loc_result.scalar_one_or_none()
+    if not internal_loc:
+        internal_loc = Location(
+            warehouse_id=supplier_loc.warehouse_id, name="Receiving",
+            location_type="internal",
+            created_by_id=current_user.id, updated_by_id=current_user.id,
+            owner_id=current_user.id,
+        )
+        db.add(internal_loc)
+        await db.flush()
+
+    for line in payload.lines:
+        # Resolve product by SKU (match to PO lines)
+        product_result = await db.execute(
+            select(Product).where(
+                (Product.sku == line.sku) | (Product.part_number == line.sku)
+            ).limit(1)
+        )
+        product = product_result.scalar_one_or_none()
+        if not product:
+            logger.warning("Product not found for SKU %s, skipping inventory update", line.sku)
+            continue
+
+        # Find unit cost from PO line
+        matching_po_line = next(
+            (pl for pl in po.lines if pl.sku == line.sku), None
+        )
+        unit_cost = matching_po_line.unit_price if matching_po_line else (
+            product.unit_cost or product.standard_cost or Decimal("0")
+        )
+
+        # Create StockMove
+        move = StockMove(
+            product_id=product.id,
+            source_location_id=supplier_loc.id,
+            destination_location_id=internal_loc.id,
+            quantity=line.quantity_received,
+            status="done",
+            reference=po.po_number,
+            created_by_id=current_user.id,
+            updated_by_id=current_user.id,
+            owner_id=current_user.id,
+        )
+        db.add(move)
+        await db.flush()
+
+        # Create ValuationLayer
+        val = ValuationLayer(
+            stock_move_id=move.id,
+            product_id=product.id,
+            quantity=line.quantity_received,
+            unit_cost=unit_cost,
+            value=line.quantity_received * unit_cost,
+        )
+        db.add(val)
+
+        # Upsert InventoryLevel at destination
+        inv_lvl_result = await db.execute(
+            select(InventoryLevel).where(and_(
+                InventoryLevel.product_id == product.id,
+                InventoryLevel.location_id == internal_loc.id,
+            ))
+        )
+        inv_lvl = inv_lvl_result.scalar_one_or_none()
+        if inv_lvl:
+            inv_lvl.quantity_on_hand += line.quantity_received
+        else:
+            inv_lvl = InventoryLevel(
+                product_id=product.id,
+                location_id=internal_loc.id,
+                quantity_on_hand=line.quantity_received,
+                quantity_reserved=Decimal("0"),
+                created_by_id=current_user.id,
+                updated_by_id=current_user.id,
+                owner_id=current_user.id,
+            )
+            db.add(inv_lvl)
+
+    # ---- C3: Incoming inspection trigger ----
+    # For each received product, check if an active INCOMING InspectionPlan exists.
+    # If so, auto-create an InspectionRecord in PENDING status so QC knows to inspect.
+    for line in payload.lines:
+        product_result2 = await db.execute(
+            select(Product).where(
+                (Product.sku == line.sku) | (Product.part_number == line.sku)
+            ).limit(1)
+        )
+        prod = product_result2.scalar_one_or_none()
+        if not prod:
+            continue
+        plan_result = await db.execute(
+            select(InspectionPlan).where(and_(
+                InspectionPlan.product_id == prod.id,
+                InspectionPlan.inspection_type == InspectionType.INCOMING,
+                InspectionPlan.is_active == True,  # noqa: E712
+            )).limit(1)
+        )
+        plan = plan_result.scalar_one_or_none()
+        if plan:
+            record = InspectionRecord(
+                inspection_plan_id=plan.id,
+                lot_number=grn.reference or po.po_number,
+                sample_size=int(line.quantity_received),
+                inspected_by_id=current_user.id,
+                overall_result=InspectionResult.PENDING,
+                measurements_json=[],
+                defects_found=0,
+                notes=f"Auto-created from GRN for PO {po.po_number}, SKU {line.sku}",
+            )
+            db.add(record)
+
     # Update PO status based on receipt completeness
-    po.status = "partially_received"  # Could calculate if fully received
-    
+    total_ordered = sum(l.quantity for l in po.lines)
+    # Load all receipts for this PO to calculate total received
+    all_receipts_result = await db.execute(
+        select(GoodsReceipt)
+        .where(GoodsReceipt.po_id == po.id)
+        .options(selectinload(GoodsReceipt.lines))
+    )
+    all_receipts = all_receipts_result.scalars().all()
+    total_received = sum(
+        rl.quantity_received for gr in all_receipts for rl in gr.lines
+    )
+    if total_received >= total_ordered:
+        po.status = "received"
+    else:
+        po.status = "partially_received"
+
+    # ---- H1 fix: create GL journal entry for goods receipt ----
+    # Dr Inventory / Cr GRN Accrual for the total value of received goods
+    grn_total_value = Decimal("0")
+    for line in payload.lines:
+        prod_r = await db.execute(
+            select(Product).where(
+                (Product.sku == line.sku) | (Product.part_number == line.sku)
+            ).limit(1)
+        )
+        prod = prod_r.scalar_one_or_none()
+        po_line_match = next((pl for pl in po.lines if pl.sku == line.sku), None)
+        unit_cost = (
+            po_line_match.unit_price if po_line_match
+            else (prod.unit_cost if prod and hasattr(prod, 'unit_cost') and prod.unit_cost else Decimal("0"))
+        )
+        grn_total_value += line.quantity_received * unit_cost
+
+    grn_currency = po.currency if hasattr(po, "currency") and po.currency else "USD"
+    await post_grn_to_gl(
+        db,
+        grn_reference=grn.reference or po.po_number,
+        total_value=grn_total_value,
+        currency=grn_currency,
+        user_id=current_user.id,
+    )
+
     await db.commit()
     await db.refresh(grn)
     
@@ -872,30 +1087,50 @@ async def three_way_match(
     
     # Calculate totals
     po_total = _calc_total(po.lines)
-    grn_qty = sum(l.quantity_received for l in grn.lines)
     inv_total = _calc_total(invoice.lines)
-    
-    discrepancies = []
-    
-    # Check quantity match (simplified)
-    po_qty = sum(l.quantity for l in po.lines)
-    if grn_qty != po_qty:
-        discrepancies.append(f"Quantity mismatch: PO={po_qty}, GRN={grn_qty}")
-    
-    # Check price match
+
+    # GRN value: match received quantities against PO line unit prices
+    grn_value = Decimal("0")
+    po_line_map = {pl.sku: pl for pl in po.lines}
+    for rl in grn.lines:
+        po_line = po_line_map.get(rl.sku)
+        if po_line:
+            grn_value += rl.quantity_received * po_line.unit_price
+        # else: unmatched SKU — flagged below
+
+    discrepancies: List[str] = []
+
+    # Check quantity match per SKU
+    po_qty_map = {pl.sku: pl.quantity for pl in po.lines}
+    grn_qty_map: dict[str, Decimal] = {}
+    for rl in grn.lines:
+        grn_qty_map[rl.sku] = grn_qty_map.get(rl.sku, Decimal("0")) + rl.quantity_received
+    all_skus = set(po_qty_map.keys()) | set(grn_qty_map.keys())
+    for sku in sorted(all_skus):
+        oq = po_qty_map.get(sku, Decimal("0"))
+        rq = grn_qty_map.get(sku, Decimal("0"))
+        if oq != rq:
+            discrepancies.append(f"Qty mismatch [{sku}]: PO={oq}, GRN={rq}")
+
+    # Check price match (PO vs Invoice)
     variance = abs(po_total - inv_total)
-    tolerance = po_total * Decimal("0.01")  # 1% tolerance
+    tolerance = po_total * Decimal("0.01") if po_total else Decimal("0")  # 1% tolerance
     if variance > tolerance:
         discrepancies.append(f"Price variance: PO={po_total}, Invoice={inv_total}")
-    
+
+    # Check GRN value vs Invoice value
+    grn_inv_variance = abs(grn_value - inv_total)
+    if grn_inv_variance > tolerance:
+        discrepancies.append(f"GRN vs Invoice variance: GRN={grn_value}, Invoice={inv_total}")
+
     matched = len(discrepancies) == 0
-    
+
     return build_response(MatchingResult(
         po_id=po_id,
         grn_id=grn_id,
         invoice_id=invoice_id,
         po_total=po_total,
-        grn_total=grn_qty,  # This should be value, simplified
+        grn_total=grn_value,
         invoice_total=inv_total,
         variance=variance,
         matched=matched,

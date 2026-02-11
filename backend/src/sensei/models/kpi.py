@@ -18,6 +18,7 @@ from sqlalchemy import (
     Date,
     Enum,
     Float,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -145,6 +146,7 @@ class KPIValueRow(Base, TimestampMixin):
 
     kpi_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
+        ForeignKey("kpi_definitions.id"),
         nullable=False,
         index=True,
     )

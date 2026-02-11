@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
-from math import sqrt
 from typing import Optional
 from uuid import UUID
 
@@ -25,6 +24,20 @@ _D2_CONSTANTS = {
     2: Decimal("1.128"),
     3: Decimal("1.693"),
     4: Decimal("2.059"),
+}
+
+# d₂* constants (AIAG MSA 4th edition, Appendix C)
+# Used for K₂ (operator count) and K₃ (parts count)
+_D2_STAR_CONSTANTS = {
+    2: Decimal("1.414"),
+    3: Decimal("1.912"),
+    4: Decimal("2.239"),
+    5: Decimal("2.481"),
+    6: Decimal("2.672"),
+    7: Decimal("2.830"),
+    8: Decimal("2.963"),
+    9: Decimal("3.078"),
+    10: Decimal("3.179"),
 }
 
 
@@ -101,36 +114,35 @@ class MSAService:
         d2 = _D2_CONSTANTS.get(study.trials_count, Decimal("1.128"))
         ev = rbar / d2 if d2 != 0 else Decimal("0")
 
-        # AV (reproducibility) - std dev of operator means
-        op_means = []
-        for values in by_operator.values():
-            if values:
-                op_means.append(sum(values) / Decimal(len(values)))
+        # AV (reproducibility) — AIAG MSA 4th edition range method
+        op_means = [
+            sum(v) / Decimal(len(v)) for v in by_operator.values() if v
+        ]
         if len(op_means) > 1:
-            mean_op = sum(op_means) / Decimal(len(op_means))
-            op_var = sum((m - mean_op) ** 2 for m in op_means) / Decimal(len(op_means) - 1)
-            op_std = op_var.sqrt()
+            x_diff = max(op_means) - min(op_means)
+            d2_star_ops = _D2_STAR_CONSTANTS.get(
+                study.operators_count, Decimal("1.414")
+            )
+            k2 = Decimal("1") / d2_star_ops
+            n_r = Decimal(study.parts_count * study.trials_count)
+            av_squared = (x_diff * k2) ** 2 - (ev ** 2) / n_r
+            av = av_squared.sqrt() if av_squared > 0 else Decimal("0")
         else:
-            op_std = Decimal("0")
+            av = Decimal("0")
 
-        # AIAG MSA 4th edition: AV² = (x̄_diff * K₂)² − (EV² / (n * r))
-        # Simplified range method: AV² = σ²_operator * n * r − EV² / (n * r)
-        n_r = Decimal(study.parts_count * study.trials_count)
-        av_squared = (op_std ** 2) * n_r - (ev ** 2) / n_r
-        av = av_squared.sqrt() if av_squared > 0 else Decimal("0")
-
-        # PV (part variation)
-        part_means = []
-        for values in by_part.values():
-            if values:
-                part_means.append(sum(values) / Decimal(len(values)))
+        # PV (part variation) — AIAG MSA 4th edition range method
+        part_means = [
+            sum(v) / Decimal(len(v)) for v in by_part.values() if v
+        ]
         if len(part_means) > 1:
-            mean_part = sum(part_means) / Decimal(len(part_means))
-            part_var = sum((m - mean_part) ** 2 for m in part_means) / Decimal(len(part_means) - 1)
-            part_std = part_var.sqrt()
+            rp = max(part_means) - min(part_means)
+            d2_star_parts = _D2_STAR_CONSTANTS.get(
+                study.parts_count, Decimal("3.179")
+            )
+            k3 = Decimal("1") / d2_star_parts
+            pv = rp * k3
         else:
-            part_std = Decimal("0")
-        pv = part_std * Decimal(sqrt(study.operators_count * study.trials_count))
+            pv = Decimal("0")
 
         grr = (ev**2 + av**2).sqrt() if (ev or av) else Decimal("0")
         tv = (grr**2 + pv**2).sqrt() if (grr or pv) else Decimal("0")

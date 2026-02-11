@@ -27,7 +27,7 @@ from sensei.models.task import Task, TaskStatus
 from sensei.models.opportunity import Opportunity, OpportunityStage
 from sensei.models.accounts_receivable import CustomerInvoice, Shipment
 from sensei.models.accounts_payable import PurchaseOrder
-from sensei.models.andon import AndonEvent
+from sensei.models.andon import AndonEvent, AndonStatus
 from sensei.models.inventory import InventoryLevel
 from sensei.models.user import User, UserStatus
 from sensei.services.core.role_insights_config import InsightCategory
@@ -163,7 +163,7 @@ async def generate_insights(db: AsyncSession) -> list[dict[str, Any]]:
     active_andons = int(
         (await db.execute(
             select(func.count()).select_from(AndonEvent).where(
-                AndonEvent.status.in_(["open", "acknowledged", "escalated"])
+                AndonEvent.status.in_([AndonStatus.OPEN, AndonStatus.ACKNOWLEDGED, AndonStatus.ESCALATED])
             )
         )).scalar() or 0
     )
@@ -270,21 +270,24 @@ async def generate_insights(db: AsyncSession) -> list[dict[str, Any]]:
     outstanding_invoices = int(
         (await db.execute(
             select(func.count()).select_from(CustomerInvoice).where(
-                CustomerInvoice.status.in_(["draft", "sent", "overdue", "partial"])
+                CustomerInvoice.status.in_(["issued"])
             )
         )).scalar() or 0
     )
     overdue_invoices = int(
         (await db.execute(
             select(func.count()).select_from(CustomerInvoice).where(
-                CustomerInvoice.status == "overdue"
+                and_(
+                    CustomerInvoice.status == "issued",
+                    CustomerInvoice.due_date < now,
+                )
             )
         )).scalar() or 0
     )
     open_pos = int(
         (await db.execute(
             select(func.count()).select_from(PurchaseOrder).where(
-                PurchaseOrder.status.in_(["draft", "submitted", "approved", "ordered", "partial"])
+                PurchaseOrder.status.in_(["draft", "approved", "sent", "partially_received"])
             )
         )).scalar() or 0
     )
@@ -325,7 +328,7 @@ async def generate_insights(db: AsyncSession) -> list[dict[str, Any]]:
     pending_shipments = int(
         (await db.execute(
             select(func.count()).select_from(Shipment).where(
-                Shipment.status.in_(["pending", "processing", "packed", "ready"])
+                Shipment.status.in_(["pending", "picked", "packed"])
             )
         )).scalar() or 0
     )

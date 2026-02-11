@@ -72,13 +72,18 @@ class PersistentAccountingLedgerService:
         self.db.add(entry)
         await self.db.flush()
 
+        # M8 fix: batch-resolve all account_codes in one query instead of N+1
+        account_codes = [ld["account_code"] for ld in lines]
+        acc_result = await self.db.execute(
+            select(GLAccount).where(GLAccount.account_code.in_(account_codes))
+        )
+        code_to_account = {a.account_code: a for a in acc_result.scalars().all()}
+
         for line_data in lines:
-            # line_data should have account_code, debit, credit, currency
-            acc_result = await self.db.execute(
-                select(GLAccount).where(GLAccount.account_code == line_data["account_code"])
-            )
-            account = acc_result.scalar_one()
-            
+            account = code_to_account.get(line_data["account_code"])
+            if account is None:
+                raise ValueError(f"GL Account not found: {line_data['account_code']}")
+
             line = JournalLine(
                 entry_id=entry.id,
                 account_id=account.id,
@@ -107,18 +112,24 @@ class PersistentAccountingLedgerService:
         await self.db.flush()
 
     async def get_trial_balance(self, as_of: date) -> List[dict]:
-        # This is a bit complex for a quick implementation but essential
+        # H4 fix: use outerjoin so accounts with zero posted lines still appear
         result = await self.db.execute(
             select(
                 GLAccount.account_code,
                 GLAccount.account_name,
-                func.sum(JournalLine.debit).label("total_debit"),
-                func.sum(JournalLine.credit).label("total_credit")
+                func.coalesce(func.sum(JournalLine.debit), Decimal("0")).label("total_debit"),
+                func.coalesce(func.sum(JournalLine.credit), Decimal("0")).label("total_credit")
             )
-            .join(JournalLine, GLAccount.id == JournalLine.account_id)
-            .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
-            .where(JournalEntry.entry_date <= as_of)
-            .where(JournalEntry.status == "posted")
+            .outerjoin(
+                JournalLine,
+                GLAccount.id == JournalLine.account_id,
+            )
+            .outerjoin(
+                JournalEntry,
+                (JournalLine.entry_id == JournalEntry.id)
+                & (JournalEntry.entry_date <= as_of)
+                & (JournalEntry.status == "posted"),
+            )
             .group_by(GLAccount.account_code, GLAccount.account_name)
         )
         

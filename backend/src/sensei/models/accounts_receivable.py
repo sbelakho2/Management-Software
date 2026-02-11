@@ -193,7 +193,7 @@ class Shipment(Base, TimestampMixin, AuditMixin):
     sales_order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("sales_orders.id"), nullable=True, index=True)
     account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
     
-    ship_from_warehouse_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    ship_from_warehouse_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("inventory_warehouses.id"), nullable=True)
     ship_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     expected_delivery: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     actual_delivery: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

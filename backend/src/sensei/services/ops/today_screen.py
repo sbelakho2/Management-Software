@@ -1621,7 +1621,7 @@ class AsyncTodayScreenService:
                 await redis_client.set(cache_key, now.isoformat(), ex=3600)
         
         # Get greeting based on time of day
-        hour = datetime.now().hour
+        hour = datetime.now(timezone.utc).hour
         if hour < 12:
             greeting = f"Good morning, {user_name.split()[0]}"
         elif hour < 17:

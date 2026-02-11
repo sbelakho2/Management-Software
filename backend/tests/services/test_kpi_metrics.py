@@ -84,9 +84,9 @@ class TestEnums:
     
     def test_kpi_status_values(self):
         """Test KPIStatus enum values."""
-        assert KPIStatus.ON_TARGET.value == "green"
-        assert KPIStatus.WITHIN_TOLERANCE.value == "yellow"
-        assert KPIStatus.OFF_TARGET.value == "red"
+        assert KPIStatus.GREEN.value == "green"
+        assert KPIStatus.YELLOW.value == "yellow"
+        assert KPIStatus.RED.value == "red"
         assert KPIStatus.CRITICAL.value == "critical"
         assert KPIStatus.NO_DATA.value == "no_data"
     
@@ -308,7 +308,7 @@ class TestKPIValues:
         assert result.id == "val-1"
         assert result.value == 87.5
         # Status should be calculated
-        assert result.status in [KPIStatus.ON_TARGET, KPIStatus.WITHIN_TOLERANCE]
+        assert result.status in [KPIStatus.GREEN, KPIStatus.YELLOW]
     
     def test_record_value_with_dimensions(self, service):
         """Test recording a value with dimensions."""
@@ -428,7 +428,7 @@ class TestStatusCalculation:
         )
         
         result = service.record_value(value)
-        assert result.status == KPIStatus.ON_TARGET
+        assert result.status == KPIStatus.GREEN
     
     def test_status_within_tolerance_higher_is_better(self, service):
         """Test within-tolerance status."""
@@ -441,7 +441,7 @@ class TestStatusCalculation:
         )
         
         result = service.record_value(value)
-        assert result.status == KPIStatus.WITHIN_TOLERANCE
+        assert result.status == KPIStatus.YELLOW
     
     def test_status_off_target(self, service):
         """Test off-target status."""
@@ -454,7 +454,7 @@ class TestStatusCalculation:
         )
         
         result = service.record_value(value)
-        assert result.status == KPIStatus.OFF_TARGET
+        assert result.status == KPIStatus.RED
     
     def test_status_critical(self, service):
         """Test critical status."""
@@ -479,7 +479,7 @@ class TestStatusCalculation:
         )
         
         result = service.record_value(value)
-        assert result.status == KPIStatus.ON_TARGET
+        assert result.status == KPIStatus.GREEN
     
     def test_status_lower_is_better_critical(self, service):
         """Test critical for lower-is-better KPI."""

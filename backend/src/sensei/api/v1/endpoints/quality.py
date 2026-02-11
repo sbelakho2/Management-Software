@@ -51,6 +51,7 @@ from sensei.models.quality import (
     CAPAActionType,
     CAPAPriority,
     CAPASourceType,
+    CAPAStateHistory,
     CAPAStatus,
     CAPAType,
     EffectivenessStatus,
@@ -332,7 +333,7 @@ class CustomerSurveyOut(BaseModel):
 class FAIInspectionCreate(BaseModel):
     inspection_number: str = Field(..., min_length=1, max_length=50)
     product_id: Optional[UUID] = None
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     part_number: str = Field(..., min_length=1, max_length=100)
     revision: Optional[str] = None
     drawing_number: Optional[str] = None
@@ -377,7 +378,7 @@ class FAIInspectionResponse(BaseModel):
     id: UUID
     inspection_number: str
     product_id: Optional[UUID] = None
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     part_number: str
     revision: Optional[str] = None
     drawing_number: Optional[str] = None
@@ -398,7 +399,7 @@ class FAIInspectionResponse(BaseModel):
 
 class SelfInspectionCreate(BaseModel):
     inspection_number: str = Field(..., min_length=1, max_length=50)
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     product_id: Optional[UUID] = None
     operator_id: Optional[UUID] = None
     notes: Optional[str] = None
@@ -432,7 +433,7 @@ class SelfInspectionCheckResponse(BaseModel):
 class SelfInspectionResponse(BaseModel):
     id: UUID
     inspection_number: str
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     product_id: Optional[UUID] = None
     operator_id: UUID
     status: str
@@ -477,7 +478,7 @@ class LabTestMethodResponse(BaseModel):
 class LabSampleCreate(BaseModel):
     sample_number: str = Field(..., min_length=1, max_length=50)
     product_id: Optional[UUID] = None
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     lot_number: Optional[str] = None
     collected_at: Optional[datetime] = None
     collected_by_id: Optional[UUID] = None
@@ -488,7 +489,7 @@ class LabSampleResponse(BaseModel):
     id: UUID
     sample_number: str
     product_id: Optional[UUID] = None
-    work_order_id: Optional[UUID] = None
+    work_order_id: Optional[int] = None
     lot_number: Optional[str] = None
     collected_at: datetime
     collected_by_id: Optional[UUID] = None
@@ -597,7 +598,7 @@ class TraceabilityMatrixCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     status: Optional[str] = Field(default="active")
-    product_id: Optional[int] = None
+    product_id: Optional[UUID] = None
     work_order_id: Optional[int] = None
     lot_number: Optional[str] = Field(None, max_length=100)
     batch_id: Optional[str] = Field(None, max_length=100)
@@ -610,7 +611,7 @@ class TraceabilityMatrixResponse(BaseModel):
     name: str
     description: Optional[str] = None
     status: str
-    product_id: Optional[int] = None
+    product_id: Optional[UUID] = None
     work_order_id: Optional[int] = None
     lot_number: Optional[str] = None
     batch_id: Optional[str] = None
@@ -784,7 +785,7 @@ class NonConformanceBase(BaseModel):
     source: NCSource
     severity: NCSeverity = NCSeverity.MINOR
 
-    product_id: Optional[int] = None
+    product_id: Optional[UUID] = None
     work_order_id: Optional[int] = None
     station_id: Optional[int] = None
     lot_number: Optional[str] = Field(None, max_length=100)
@@ -828,6 +829,8 @@ class NonConformanceBase(BaseModel):
 
     supplier_name: Optional[str] = Field(None, max_length=255)
     supplier_po_number: Optional[str] = Field(None, max_length=100)
+    supplier_id: Optional[UUID] = None
+    purchase_order_id: Optional[UUID] = None
 
     @field_validator("nc_type", mode="before")
     @classmethod
@@ -869,7 +872,7 @@ class NonConformanceUpdate(BaseModel):
     source: Optional[NCSource] = None
     severity: Optional[NCSeverity] = None
 
-    product_id: Optional[int] = None
+    product_id: Optional[UUID] = None
     work_order_id: Optional[int] = None
     station_id: Optional[int] = None
     lot_number: Optional[str] = Field(None, max_length=100)
@@ -919,6 +922,8 @@ class NonConformanceUpdate(BaseModel):
 
     supplier_name: Optional[str] = Field(None, max_length=255)
     supplier_po_number: Optional[str] = Field(None, max_length=100)
+    supplier_id: Optional[UUID] = None
+    purchase_order_id: Optional[UUID] = None
 
     @field_validator("nc_type", mode="before")
     @classmethod
@@ -1009,7 +1014,7 @@ class NonConformanceResponse(BaseModel):
     severity: str
     status: str
 
-    product_id: Optional[int] = None
+    product_id: Optional[UUID] = None
     work_order_id: Optional[int] = None
     station_id: Optional[int] = None
     lot_number: Optional[str] = None
@@ -1058,6 +1063,8 @@ class NonConformanceResponse(BaseModel):
 
     supplier_name: Optional[str] = None
     supplier_po_number: Optional[str] = None
+    supplier_id: Optional[UUID] = None
+    purchase_order_id: Optional[UUID] = None
 
     created_at: datetime
     updated_at: datetime
@@ -1119,6 +1126,8 @@ def nc_to_response(nc: NonConformance) -> NonConformanceResponse:
         capa_id=nc.capa_id,
         supplier_name=nc.supplier_name,
         supplier_po_number=nc.supplier_po_number,
+        supplier_id=nc.supplier_id,
+        purchase_order_id=nc.purchase_order_id,
         created_at=nc.created_at,
         updated_at=nc.updated_at,
         deleted_at=nc.deleted_at,
@@ -1740,7 +1749,7 @@ async def list_non_conformances(
     severity: Optional[str] = Query(default=None),
     nc_type: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
-    product_id: Optional[int] = Query(default=None),
+    product_id: Optional[UUID] = Query(default=None),
     work_order_id: Optional[int] = Query(default=None),
     station_id: Optional[int] = Query(default=None),
     search: Optional[str] = Query(default=None),
@@ -1837,7 +1846,7 @@ async def create_non_conformance(
         root_cause_description=data.root_cause_description,
         detected_by_id=getattr(current_user, "id", None),
         detected_at=now_utc(),
-        status=data.status,
+        status=NCStatus.OPEN,
         investigator_id=data.investigator_id,
         investigation_due_date=data.investigation_due_date,
         investigation_notes=data.investigation_notes,
@@ -1857,6 +1866,8 @@ async def create_non_conformance(
         capa_id=data.capa_id,
         supplier_name=data.supplier_name,
         supplier_po_number=data.supplier_po_number,
+        supplier_id=data.supplier_id,
+        purchase_order_id=data.purchase_order_id,
         created_by_id=getattr(current_user, "id", None),
         updated_by_id=getattr(current_user, "id", None),
     )
@@ -2418,7 +2429,7 @@ async def get_capa_stats(
             if capa.due_date and capa.due_date < date.today():
                 stats.overdue_count += 1
                 
-        if capa.verification_status == VerificationStatus.VERIFIED:
+        if capa.verification_status in (VerificationStatus.VERIFIED, VerificationStatus.PASSED):
             verified_count += 1
 
     if stats.total > 0:
@@ -2451,10 +2462,16 @@ async def get_capa(
 
 # Valid CAPA status transitions — enforce workflow discipline
 _CAPA_STATUS_TRANSITIONS: dict[CAPAStatus, set[CAPAStatus]] = {
-    CAPAStatus.OPEN: {CAPAStatus.IN_PROGRESS},
-    CAPAStatus.IN_PROGRESS: {CAPAStatus.VERIFICATION},
-    CAPAStatus.VERIFICATION: {CAPAStatus.EFFECTIVENESS_CHECK, CAPAStatus.IN_PROGRESS},
-    CAPAStatus.EFFECTIVENESS_CHECK: {CAPAStatus.CLOSED, CAPAStatus.IN_PROGRESS},
+    CAPAStatus.OPEN: {CAPAStatus.IN_PROGRESS, CAPAStatus.INVESTIGATING, CAPAStatus.ON_HOLD},
+    CAPAStatus.INVESTIGATING: {CAPAStatus.IMPLEMENTING, CAPAStatus.IN_PROGRESS, CAPAStatus.ON_HOLD},
+    CAPAStatus.IN_PROGRESS: {CAPAStatus.VERIFICATION, CAPAStatus.VERIFYING, CAPAStatus.ON_HOLD},
+    CAPAStatus.IMPLEMENTING: {CAPAStatus.VERIFYING, CAPAStatus.VERIFICATION, CAPAStatus.ON_HOLD},
+    CAPAStatus.VERIFICATION: {CAPAStatus.EFFECTIVENESS_CHECK, CAPAStatus.IN_PROGRESS, CAPAStatus.IMPLEMENTING},
+    CAPAStatus.VERIFYING: {CAPAStatus.EFFECTIVENESS_CHECK, CAPAStatus.IMPLEMENTING, CAPAStatus.IN_PROGRESS},
+    CAPAStatus.EFFECTIVENESS_CHECK: {CAPAStatus.EFFECTIVE, CAPAStatus.INEFFECTIVE, CAPAStatus.CLOSED},
+    CAPAStatus.EFFECTIVE: {CAPAStatus.CLOSED},
+    CAPAStatus.INEFFECTIVE: {CAPAStatus.INVESTIGATING, CAPAStatus.IN_PROGRESS, CAPAStatus.IMPLEMENTING},
+    CAPAStatus.ON_HOLD: {CAPAStatus.OPEN, CAPAStatus.INVESTIGATING, CAPAStatus.IN_PROGRESS, CAPAStatus.IMPLEMENTING},
     CAPAStatus.CLOSED: set(),  # Terminal state — no transitions allowed
 }
 
@@ -2547,6 +2564,36 @@ async def restore_capa(
     return build_updated_response(data=capa_to_response(capa), resource_name="CAPA")
 
 
+def _record_capa_state_change(
+    db,
+    capa: CAPA,
+    from_status: CAPAStatus,
+    to_status: CAPAStatus,
+    user_id,
+    reason: str | None = None,
+) -> None:
+    """Create a CAPAStateHistory record for ISO/AS audit trail."""
+    history = CAPAStateHistory(
+        capa_id=capa.id,
+        from_status=from_status,
+        to_status=to_status,
+        changed_by_id=user_id,
+        reason=reason,
+    )
+    db.add(history)
+
+
+def _enforce_capa_transition(capa: CAPA, target: CAPAStatus) -> None:
+    """Raise BadRequestError if the transition is not allowed."""
+    allowed = _CAPA_STATUS_TRANSITIONS.get(capa.status, set())
+    if target not in allowed:
+        allowed_names = ", ".join(s.value for s in allowed) if allowed else "none (terminal state)"
+        raise BadRequestError(
+            f"Cannot transition CAPA from '{capa.status.value}' to '{target.value}'. "
+            f"Allowed transitions: {allowed_names}."
+        )
+
+
 @router.post("/capas/{capa_id}/start", response_model=APIResponse[CAPAResponse])
 async def start_capa(
     capa_id: int,
@@ -2558,9 +2605,14 @@ async def start_capa(
     if not capa:
         raise NotFoundError("CAPA", str(capa_id))
 
-    capa.status = CAPAStatus.IN_PROGRESS
+    target = CAPAStatus.IN_PROGRESS
+    _enforce_capa_transition(capa, target)
+    old_status = capa.status
+
+    capa.status = target
     capa.updated_by_id = getattr(current_user, "id", None)
     capa.updated_at = now_utc()
+    _record_capa_state_change(db, capa, old_status, target, getattr(current_user, "id", None), reason="CAPA started")
 
     await db.commit()
     await db.refresh(capa)
@@ -2578,9 +2630,19 @@ async def submit_capa_for_verification(
     if not capa:
         raise NotFoundError("CAPA", str(capa_id))
 
-    capa.status = CAPAStatus.VERIFICATION
+    target = CAPAStatus.VERIFYING
+    _enforce_capa_transition(capa, target)
+
+    if not capa.can_verify:
+        raise BadRequestError(
+            "Cannot submit for verification: all corrective actions must be completed first."
+        )
+
+    old_status = capa.status
+    capa.status = target
     capa.updated_by_id = getattr(current_user, "id", None)
     capa.updated_at = now_utc()
+    _record_capa_state_change(db, capa, old_status, target, getattr(current_user, "id", None), reason="Submitted for verification")
 
     await db.commit()
     await db.refresh(capa)
@@ -2599,13 +2661,20 @@ async def verify_capa(
     if not capa:
         raise NotFoundError("CAPA", str(capa_id))
 
-    capa.verification_status = VerificationStatus.VERIFIED
+    if capa.status not in (CAPAStatus.VERIFICATION, CAPAStatus.VERIFYING):
+        raise BadRequestError(
+            f"CAPA must be in 'verification' or 'verifying' status to verify, currently '{capa.status.value}'."
+        )
+
+    old_status = capa.status
+    capa.verification_status = VerificationStatus.PASSED
     capa.verified_by_id = getattr(current_user, "id", None)
     capa.verified_at = now_utc()
     capa.verification_evidence = data.verification_evidence
     capa.status = CAPAStatus.EFFECTIVENESS_CHECK
     capa.updated_by_id = getattr(current_user, "id", None)
     capa.updated_at = now_utc()
+    _record_capa_state_change(db, capa, old_status, CAPAStatus.EFFECTIVENESS_CHECK, getattr(current_user, "id", None), reason="Verification passed")
 
     await db.commit()
     await db.refresh(capa)
@@ -2624,10 +2693,17 @@ async def reject_capa_verification(
     if not capa:
         raise NotFoundError("CAPA", str(capa_id))
 
-    capa.verification_status = VerificationStatus.REJECTED
-    capa.status = CAPAStatus.IN_PROGRESS
+    if capa.status not in (CAPAStatus.VERIFICATION, CAPAStatus.VERIFYING):
+        raise BadRequestError(
+            f"CAPA must be in 'verification' or 'verifying' status to reject, currently '{capa.status.value}'."
+        )
+
+    old_status = capa.status
+    capa.verification_status = VerificationStatus.FAILED
+    capa.status = CAPAStatus.IMPLEMENTING
     capa.updated_by_id = getattr(current_user, "id", None)
     capa.updated_at = now_utc()
+    _record_capa_state_change(db, capa, old_status, CAPAStatus.IMPLEMENTING, getattr(current_user, "id", None), reason=data.reason)
 
     await db.commit()
     await db.refresh(capa)
@@ -2646,12 +2722,21 @@ async def close_capa_endpoint(
     if not capa:
         raise NotFoundError("CAPA", str(capa_id))
 
+    if not capa.can_close:
+        raise BadRequestError(
+            "Cannot close CAPA: verification must be PASSED and effectiveness must be EFFECTIVE or PARTIALLY_EFFECTIVE."
+        )
+
+    _enforce_capa_transition(capa, CAPAStatus.CLOSED)
+    old_status = capa.status
+
     capa.status = CAPAStatus.CLOSED
     capa.effectiveness_evidence = data.effectiveness_review
     capa.closed_at = now_utc()
     capa.closed_by_id = getattr(current_user, "id", None)
     capa.updated_by_id = getattr(current_user, "id", None)
     capa.updated_at = now_utc()
+    _record_capa_state_change(db, capa, old_status, CAPAStatus.CLOSED, getattr(current_user, "id", None), reason="CAPA closed")
 
     await db.commit()
     await db.refresh(capa)
@@ -2800,22 +2885,31 @@ async def update_capa_action(
     return build_updated_response(data=_capa_action_to_response(action), resource_name="CAPA action")
 
 
-@router.delete("/capas/{capa_id}/actions/{action_id}", response_model=APIResponse[None])
+@router.delete("/capas/{capa_id}/actions/{action_id}", response_model=APIResponse[CAPAActionResponse])
 async def delete_capa_action(
     capa_id: int,
     action_id: int,
     db: DBSession,
     current_user: CurrentUser,
-) -> APIResponse[None]:
+) -> APIResponse[CAPAActionResponse]:
     query = select(CAPAAction).where(CAPAAction.id == action_id, CAPAAction.capa_id == capa_id)
     action = (await db.execute(query)).scalar_one_or_none()
     if not action:
         raise NotFoundError("CAPA action", str(action_id))
 
-    await db.delete(action)
-    await db.commit()
+    if action.status in (CAPAActionStatus.COMPLETED, CAPAActionStatus.CANCELLED):
+        raise BadRequestError(
+            f"Cannot cancel CAPA action in '{action.status.value}' status."
+        )
 
-    return build_deleted_response(resource_name="CAPA action")
+    action.status = CAPAActionStatus.CANCELLED
+    action.updated_by_id = getattr(current_user, "id", None)
+    action.updated_at = now_utc()
+
+    await db.commit()
+    await db.refresh(action)
+
+    return build_updated_response(data=_capa_action_to_response(action), resource_name="CAPA action")
 
 
 @router.post("/capas/{capa_id}/actions/{action_id}/complete", response_model=APIResponse[CAPAActionResponse])
@@ -3464,14 +3558,10 @@ async def delete_inspection(
     db: DBSession,
     current_user: CurrentUser,
 ) -> APIResponse[None]:
-    record = (await db.execute(select(InspectionRecord).where(InspectionRecord.id == record_id))).scalar_one_or_none()
-    if not record:
-        raise NotFoundError("Inspection record", str(record_id))
-
-    await db.delete(record)
-    await db.commit()
-
-    return build_deleted_response(resource_name="Inspection record")
+    raise BadRequestError(
+        "Inspection records cannot be deleted per ISO 9001 record retention requirements. "
+        "Records must be retained for traceability and audit purposes."
+    )
 
 # =============================================================================
 # Advanced QMS Endpoints

@@ -440,6 +440,9 @@ class TestSemanticSearchService:
         async_session.add(chunk)
         await async_session.commit()
         
+        # Populate ORM relationship so search_with_context can resolve it
+        chunk.document = document
+        
         # Mock query embedding
         embedding_service.model.encode.return_value = np.array([0.8, 0.2] * 192)
         

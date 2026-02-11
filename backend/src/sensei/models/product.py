@@ -123,6 +123,14 @@ class Product(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
         Numeric(6, 2), nullable=True
     )
 
+    # Inventory planning
+    reorder_point: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4), nullable=True,
+    )  # Trigger replenishment when on-hand falls below this
+    safety_stock: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 4), nullable=True,
+    )  # Minimum buffer stock
+
     # Status
     status: Mapped[ProductStatus] = mapped_column(
         Enum(ProductStatus),

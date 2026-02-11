@@ -8,7 +8,7 @@ maintenance, and safety metrics into a unified view.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -144,7 +144,7 @@ class Priority:
     owner_name: str | None = None
     is_user_selected: bool = False
     rank: int = 0
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -164,7 +164,7 @@ class Risk:
     mitigation: str | None = None
     due_date: date | None = None
     status: str = "open"
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     @property
     def risk_score(self) -> int:
@@ -189,7 +189,7 @@ class Commitment:
     is_completed: bool = False
     is_overdue: bool = False
     is_auto_generated: bool = False
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -201,7 +201,7 @@ class Abnormality:
     abnormality_type: AbnormalityType
     entity_type: str
     entity_id: UUID
-    detected_at: datetime = field(default_factory=datetime.now)
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     days_stale: int = 0
     description: str | None = None
     severity: PriorityLevel = PriorityLevel.MEDIUM
@@ -509,7 +509,7 @@ class TodayScreenData:
     # Shop Floor / MES data
     shop_floor_summary: ShopFloorSummary | None = None
     
-    generated_at: datetime = field(default_factory=datetime.now)
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     cache_valid_until: datetime | None = None
 
     @property

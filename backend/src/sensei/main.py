@@ -147,6 +147,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("All service dependencies connected")
     
+    # Wire domain event subscriptions so cross-module events are handled.
+    try:
+        from sensei.services.domain_events import register_standard_subscriptions
+        register_standard_subscriptions()
+    except Exception as e:
+        logger.warning("Domain event wiring failed (non-fatal)", error=str(e))
+    
     # Warm up the connection pool: pre-create connections so the first
     # batch of requests doesn't suffer pool-creation latency.
     try:

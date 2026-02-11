@@ -418,6 +418,8 @@ class TestKnowledgePackIngestionService:
             content_hash="test123",
             tags=["tps"],
         )
+        # Simulate DB flush assigning a PK (process_document requires non-None id)
+        document.id = 1
         
         service = KnowledgePackIngestionService()
         chunks = service.process_document(document)
@@ -447,6 +449,8 @@ class TestKnowledgePackIngestionService:
             content_hash="test123",
             tags=[],
         )
+        # Simulate DB flush assigning a PK (process_document requires non-None id)
+        document.id = 1
         
         service = KnowledgePackIngestionService()
         chunks = service.process_document(document)
@@ -516,6 +520,9 @@ class TestIntegration:
         
         assert document is not None
         assert "success" in message.lower()
+        
+        # Simulate DB flush assigning a PK (process_document requires non-None id)
+        document.id = 1
         
         # Process
         chunks = service.process_document(document)

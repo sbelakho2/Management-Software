@@ -33,6 +33,7 @@ from sensei.models.accounts_receivable import (
 )
 from sensei.models.quote import Quote, QuoteLineItem, QuoteStatus
 from sensei.models.account import Account
+from sensei.services.finance.gl_posting import post_invoice_to_gl, post_payment_to_gl
 
 # Sales module is cross-functional (sales + quoting + AR visibility).
 # CEO/admin are handled centrally by RoleChecker.
@@ -354,6 +355,24 @@ async def create_sales_order(
     
     await db.commit()
     
+    # Best-effort: bind common thread lineage
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs: dict = {
+            "sales_order_id": str(so.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "sales_order_create",
+        }
+        if getattr(payload, "source_quote_id", None):
+            bind_kwargs["quote_id"] = str(payload.source_quote_id)
+        await ct.bind(db, **bind_kwargs)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Failed to capture sales_order common-thread")
+    
     result = await db.execute(
         select(SalesOrder)
         .where(SalesOrder.id == so.id)
@@ -601,7 +620,19 @@ async def create_customer_invoice(
             unit_price=line.unit_price,
         )
         db.add(inv_line)
-    
+
+    await db.flush()
+
+    # H1 fix: post invoice to GL — Dr A/R / Cr Revenue
+    inv_total = sum(l.quantity * l.unit_price for l in payload.lines)
+    await post_invoice_to_gl(
+        db,
+        invoice_number=invoice_number,
+        total_amount=Decimal(str(inv_total)),
+        currency=payload.currency,
+        user_id=current_user.id,
+    )
+
     await db.commit()
     
     result = await db.execute(
@@ -745,7 +776,37 @@ async def create_payment_receipt(
                 amount=Decimal(str(alloc["amount"])),
             )
             db.add(allocation)
-    
+
+        # C3 fix: check each allocated invoice — if fully paid, mark as "paid"
+        await db.flush()
+        invoice_ids = list({alloc["invoice_id"] for alloc in payload.invoice_allocations})
+        for inv_id in invoice_ids:
+            inv_result = await db.execute(
+                select(CustomerInvoice)
+                .where(CustomerInvoice.id == inv_id)
+                .options(selectinload(CustomerInvoice.lines))
+            )
+            invoice = inv_result.scalar_one_or_none()
+            if not invoice or invoice.status == "paid":
+                continue
+            invoice_total = sum(l.quantity * l.unit_price for l in invoice.lines)
+            alloc_result = await db.execute(
+                select(func.coalesce(func.sum(PaymentAllocation.amount), 0))
+                .where(PaymentAllocation.invoice_id == inv_id)
+            )
+            total_allocated = Decimal(str(alloc_result.scalar_one()))
+            if total_allocated >= invoice_total:
+                invoice.status = "paid"
+
+    # H1 fix: post payment to GL — Dr Cash / Cr A/R
+    await post_payment_to_gl(
+        db,
+        payment_reference=receipt.reference or str(receipt.id),
+        amount=payload.amount,
+        currency=payload.currency,
+        user_id=current_user.id,
+    )
+
     await db.commit()
     
     result = await db.execute(

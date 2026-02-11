@@ -10,7 +10,7 @@ import operator
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Union
 from uuid import uuid4
@@ -378,7 +378,7 @@ class KPIValue:
     dimensions: dict[str, str] = field(default_factory=dict)
     
     # Metadata
-    calculated_at: datetime = field(default_factory=datetime.now)
+    calculated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     sample_size: int = 0
     confidence: float = 1.0
 
@@ -429,7 +429,7 @@ class KPIDashboard:
     # Metadata
     owner_id: str = ""
     is_public: bool = False
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -620,32 +620,32 @@ class KPIService(PersistentServiceMixin):
         
         if definition.direction == KPIDirection.HIGHER_IS_BETTER:
             if value >= target:
-                return KPIStatus.ON_TARGET
+                return KPIStatus.GREEN
             elif value >= target * (1 - warning_pct):
-                return KPIStatus.WITHIN_TOLERANCE
+                return KPIStatus.YELLOW
             elif value >= target * (1 - critical_pct):
-                return KPIStatus.OFF_TARGET
+                return KPIStatus.RED
             else:
                 return KPIStatus.CRITICAL
         
         elif definition.direction == KPIDirection.LOWER_IS_BETTER:
             if value <= target:
-                return KPIStatus.ON_TARGET
+                return KPIStatus.GREEN
             elif value <= target * (1 + warning_pct):
-                return KPIStatus.WITHIN_TOLERANCE
+                return KPIStatus.YELLOW
             elif value <= target * (1 + critical_pct):
-                return KPIStatus.OFF_TARGET
+                return KPIStatus.RED
             else:
                 return KPIStatus.CRITICAL
         
         else:  # TARGET_IS_BEST
             deviation = abs(value - target) / target if target != 0 else abs(value)
             if deviation <= warning_pct:
-                return KPIStatus.ON_TARGET
+                return KPIStatus.GREEN
             elif deviation <= critical_pct:
-                return KPIStatus.WITHIN_TOLERANCE
+                return KPIStatus.YELLOW
             elif deviation <= critical_pct * 1.5:
-                return KPIStatus.OFF_TARGET
+                return KPIStatus.RED
             else:
                 return KPIStatus.CRITICAL
     
@@ -674,7 +674,7 @@ class KPIService(PersistentServiceMixin):
         Returns:
             Calculation result with value or error
         """
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         definition = self._definitions.get(kpi_id)
         if not definition:
@@ -713,7 +713,7 @@ class KPIService(PersistentServiceMixin):
             else:
                 # No calculation method available - this is a configuration error
                 # In production, KPIs must have either a data source, formula, or custom calculator
-                calc_time = (datetime.now() - start_time).total_seconds() * 1000
+                calc_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
                 return KPICalculationResult(
                     kpi_id=kpi_id,
                     success=False,
@@ -726,7 +726,7 @@ class KPIService(PersistentServiceMixin):
                 id=str(uuid4()),
                 kpi_id=kpi_id,
                 value=value,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 period_start=start_date,
                 period_end=end_date,
                 dimensions=dimensions or {},
@@ -736,7 +736,7 @@ class KPIService(PersistentServiceMixin):
             # Record the value
             self.record_value(kpi_value)
             
-            calc_time = (datetime.now() - start_time).total_seconds() * 1000
+            calc_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
             
             return KPICalculationResult(
                 kpi_id=kpi_id,
@@ -746,7 +746,7 @@ class KPIService(PersistentServiceMixin):
             )
         
         except Exception as e:
-            calc_time = (datetime.now() - start_time).total_seconds() * 1000
+            calc_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
             return KPICalculationResult(
                 kpi_id=kpi_id,
                 success=False,

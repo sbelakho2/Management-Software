@@ -1,6 +1,6 @@
 """Add service persistence tables
 
-Revision ID: 20260126_150000_service_persistence
+Revision ID: 20260126_150000_svc_persist
 Revises: 20260117_000000_c2d3e4f5a6b7_add_fk_indexes
 Create Date: 2026-01-26 15:00:00.000000
 
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '20260126_150000_service_persistence'
+revision = '20260126_150000_svc_persist'
 down_revision = 'c2d3e4f5a6b7'
 branch_labels = None
 depends_on = None

@@ -10,19 +10,37 @@ Tests all API endpoints for:
 """
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from sensei.main import app
+from sensei.api.deps import get_token_data
+from sensei.core.security import TokenData
 from sensei.services.core.disaster_recovery_drill import reset_dr_drill_service
+
+
+def _mock_admin_token() -> TokenData:
+    """Return a fake admin TokenData so router-level auth is satisfied."""
+    return TokenData(
+        sub=str(uuid4()),
+        type="access",
+        exp=datetime.now(timezone.utc) + timedelta(hours=1),
+        iat=datetime.now(timezone.utc),
+        jti=str(uuid4()),
+        roles=["admin"],
+        permissions=[],
+    )
 
 
 @pytest.fixture
 def client():
-    """Create a test client."""
+    """Create a test client with admin auth overridden."""
     reset_dr_drill_service()
+    app.dependency_overrides[get_token_data] = _mock_admin_token
     yield TestClient(app)
+    app.dependency_overrides.pop(get_token_data, None)
     reset_dr_drill_service()
 
 

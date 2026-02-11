@@ -867,7 +867,7 @@ class FiveWhysAssistant:
         matches = sum(
             1
             for kw in keywords
-            if re.search(rf"\b{re.escape(kw)}\b", text)
+            if re.search(rf"\b{re.escape(kw)}", text)
         )
         return matches / len(keywords)
     

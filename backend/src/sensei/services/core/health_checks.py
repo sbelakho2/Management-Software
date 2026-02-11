@@ -528,7 +528,7 @@ class HealthCheckService:
         tasks = []
 
         if self.db_session_factory:
-            tasks.append(self.check_database_health())
+            tasks.append(asyncio.to_thread(self.check_database_health))
 
         if self.redis_client:
             tasks.append(self.check_redis_health())

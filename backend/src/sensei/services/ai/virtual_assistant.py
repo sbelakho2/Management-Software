@@ -395,7 +395,7 @@ class CriticalPathCalculator:
                 return 0.0  # cycle guard
             visited.add(node)
             es = 0.0
-            for pred in self._dependencies.get(node, []):
+            for pred in self._dependency_graph.get(node, []):
                 pred_ef = _forward(pred)
                 if pred_ef > es:
                     es = pred_ef
@@ -419,7 +419,7 @@ class CriticalPathCalculator:
 
         # Build successors map
         successors: dict[str, list[str]] = {k: [] for k in self._durations}
-        for item_id, deps in self._dependencies.items():
+        for item_id, deps in self._dependency_graph.items():
             for dep in deps:
                 if dep in successors:
                     successors[dep].append(item_id)
@@ -794,18 +794,18 @@ class CalendarEntityExtractor:
     # Patterns for entity extraction
     PATTERNS = {
         EntityCategory.RFQ: [
-            r"RFQ[#\-\s]*(\d+)",
+            r"rfq[#\-\s]*(\d+)",
             r"request\s+for\s+quote[#\-\s]*(\d+)",
             r"rfq\s*#?\s*(\d+)",
         ],
         EntityCategory.ORDER: [
-            r"(?:PO|order)[#\-\s]*(\d+)",
+            r"(?:po|order)[#\-\s]*(\d+)",
             r"purchase\s+order[#\-\s]*(\d+)",
-            r"SO[#\-\s]*(\d+)",
+            r"so[#\-\s]*(\d+)",
         ],
         EntityCategory.PROJECT: [
             r"project[:\s]+([A-Za-z0-9\-_]+)",
-            r"(?:PRJ|PROJ)[#\-\s]*(\d+)",
+            r"(?:prj|proj)[#\-\s]*(\d+)",
         ],
         EntityCategory.CUSTOMER: [
             r"(?:customer|client)[:\s]+([A-Za-z0-9\s]+?)(?:\s*[-,\.\n]|$)",

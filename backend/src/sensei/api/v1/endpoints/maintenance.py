@@ -562,6 +562,25 @@ async def create_field_return(
     )
     await db.commit()
     await db.refresh(field_return)
+    
+    # Best-effort: record reasoning trace for lineage
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        await ct.record_reasoning(
+            db,
+            entity_type="field_return",
+            entity_id=str(field_return.id),
+            reasoning_id=None,
+            created_by_id=current_user.sub,
+            source="field_return_create",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Failed to capture field_return common-thread")
+    
     return field_return.to_dict()
 
 

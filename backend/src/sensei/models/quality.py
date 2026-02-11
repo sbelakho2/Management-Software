@@ -38,6 +38,8 @@ if TYPE_CHECKING:
     from sensei.models.a3 import A3
     from sensei.models.standard_work import StandardWork
     from sensei.models.attachment import Attachment
+    from sensei.models.account import Account
+    from sensei.models.accounts_payable import PurchaseOrder
 
 
 class NCType(enum.Enum):
@@ -371,6 +373,13 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     # Supplier info (for supplier NCs)
     supplier_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     supplier_po_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # FK references for relational integrity (supplier_name/po_number kept for display/backward compat)
+    supplier_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True, index=True,
+    )
+    purchase_order_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_orders.id"), nullable=True, index=True,
+    )
 
     # Relationships
     product: Mapped[Optional["Product"]] = relationship(
@@ -399,6 +408,12 @@ class NonConformance(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
     capa: Mapped[Optional["CAPA"]] = relationship(
         "CAPA", foreign_keys=[capa_id]
+    )
+    supplier: Mapped[Optional["Account"]] = relationship(
+        "Account", foreign_keys=[supplier_id]
+    )
+    purchase_order: Mapped[Optional["PurchaseOrder"]] = relationship(
+        "PurchaseOrder", foreign_keys=[purchase_order_id]
     )
 
     __table_args__ = (
@@ -821,7 +836,7 @@ class InspectionPlan(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     checkpoints_json: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
-        default=[],
+        default=list,
     )
     """
     Checkpoints structure:
@@ -912,7 +927,7 @@ class InspectionRecord(Base, TimestampMixin, AuditMixin):
     measurements_json: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
-        default=[],
+        default=list,
     )
     """
     Measurements structure:

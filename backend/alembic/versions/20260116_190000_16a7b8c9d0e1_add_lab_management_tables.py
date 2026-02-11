@@ -44,8 +44,8 @@ def upgrade() -> None:
     op.create_table(
         "qms_lab_samples",
         sa.Column("sample_number", sa.String(length=50), nullable=False),
-        sa.Column("product_id", sa.UUID(), nullable=True),
-        sa.Column("work_order_id", sa.UUID(), nullable=True),
+        sa.Column("product_id", sa.Integer(), nullable=True),
+        sa.Column("work_order_id", sa.Integer(), nullable=True),
         sa.Column("lot_number", sa.String(length=100), nullable=True),
         sa.Column("collected_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("collected_by_id", sa.UUID(), nullable=True),

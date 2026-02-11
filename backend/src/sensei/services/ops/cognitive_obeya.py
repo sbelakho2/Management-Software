@@ -630,7 +630,7 @@ class PrescriptiveMetricAnalyzer:
             return []
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         if history and history[0].timestamp.tzinfo is None:
-            cutoff = datetime.now() - timedelta(days=days)
+            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         return [m for m in history if m.timestamp >= cutoff]
 
     def register_work_order(

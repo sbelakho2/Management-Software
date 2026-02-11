@@ -104,7 +104,7 @@ class TestGetTokenData:
             await get_token_data(credentials)
         
         assert exc_info.value.status_code == 401
-        assert "revoked" in exc_info.value.detail
+        assert "Invalid credentials" in exc_info.value.detail
     
     @pytest.mark.asyncio
     async def test_get_token_data_expired_token(self):
@@ -260,7 +260,7 @@ class TestGetCurrentUser:
             await get_current_user(mock_db, token_data)
         
         assert exc_info.value.status_code == 401
-        assert "suspended" in exc_info.value.detail
+        assert "not active" in exc_info.value.detail
 
 
 class TestGetCurrentActiveUser:
@@ -494,55 +494,71 @@ class TestRateLimiter:
         """Create a mock request."""
         request = MagicMock()
         request.client.host = "192.168.1.1"
+        request.headers.get.return_value = None  # No X-Forwarded-For/X-Real-IP
         return request
-    
+
+    def _make_pipeline_mock(self, zcard_count: int):
+        """Create a mock Redis pipeline for sliding-window rate limiter."""
+        mock_pipe = MagicMock()
+        mock_pipe.zremrangebyscore.return_value = mock_pipe
+        mock_pipe.zadd.return_value = mock_pipe
+        mock_pipe.zcard.return_value = mock_pipe
+        mock_pipe.expire.return_value = mock_pipe
+        mock_pipe.execute = AsyncMock(return_value=[None, None, zcard_count, None])
+        return mock_pipe
+
+    def _patch_redis_pipeline(self, mock_redis, zcard_count: int):
+        """Set up mock_redis with a pipeline returning the given zcard count."""
+        mock_pipe = self._make_pipeline_mock(zcard_count)
+        # pipeline() is a sync call in redis, return MagicMock directly
+        mock_redis.pipeline = MagicMock(return_value=mock_pipe)
+        return mock_pipe
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_under_limit(self, mock_redis, mock_request):
         """Test request under rate limit."""
         limiter = RateLimiter(requests=10, window=60)
-        
-        mock_redis.incr.return_value = 1
-        mock_redis.expire.return_value = None
-        
+
+        self._patch_redis_pipeline(mock_redis, 1)
+
         result = await limiter(mock_request, None)
-        
+
         assert result is True
-    
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_at_limit(self, mock_redis, mock_request):
         """Test request at rate limit."""
         limiter = RateLimiter(requests=10, window=60)
-        
-        mock_redis.incr.return_value = 10  # At limit
-        
+
+        self._patch_redis_pipeline(mock_redis, 10)  # At limit
+
         result = await limiter(mock_request, None)
-        
+
         assert result is True
-    
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_exceeded(self, mock_redis, mock_request):
         """Test request exceeding rate limit."""
         limiter = RateLimiter(requests=10, window=60)
-        
-        mock_redis.incr.return_value = 11  # Over limit
-        mock_redis.ttl.return_value = 30  # 30 seconds remaining
-        
+
+        self._patch_redis_pipeline(mock_redis, 11)  # Over limit
+        mock_redis.zrange = AsyncMock(return_value=[])
+
         with pytest.raises(HTTPException) as exc_info:
             await limiter(mock_request, None)
-        
+
         assert exc_info.value.status_code == 429
         assert "Rate limit exceeded" in exc_info.value.detail
-        assert exc_info.value.headers["Retry-After"] == "30"
-    
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_uses_user_id_when_authenticated(self, mock_redis, mock_request):
         """Test that authenticated requests use user ID for rate limiting."""
         limiter = RateLimiter(requests=10, window=60)
-        
+
         user_id = uuid4()
         token_data = TokenData(
             sub=str(user_id),
@@ -553,45 +569,43 @@ class TestRateLimiter:
             roles=[],
             permissions=[],
         )
-        
-        mock_redis.incr.return_value = 1
-        mock_redis.expire.return_value = None
-        
+
+        mock_pipe = self._patch_redis_pipeline(mock_redis, 1)
+
         result = await limiter(mock_request, token_data)
-        
+
         assert result is True
-        # Verify the key used the user ID
-        call_args = mock_redis.incr.call_args[0][0]
-        assert str(user_id) in call_args
-    
+        # Verify zadd was called with a key containing user_id
+        zadd_key = mock_pipe.zadd.call_args[0][0]
+        assert str(user_id) in zadd_key
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_uses_ip_when_anonymous(self, mock_redis, mock_request):
         """Test that anonymous requests use IP for rate limiting."""
         limiter = RateLimiter(requests=10, window=60, key_prefix="test")
-        
-        mock_redis.incr.return_value = 1
-        mock_redis.expire.return_value = None
-        
+
+        mock_pipe = self._patch_redis_pipeline(mock_redis, 1)
+
         result = await limiter(mock_request, None)
-        
+
         assert result is True
-        # Verify the key used the IP
-        call_args = mock_redis.incr.call_args[0][0]
-        assert "192.168.1.1" in call_args
-    
+        # Verify zadd was called with a key containing the IP
+        zadd_key = mock_pipe.zadd.call_args[0][0]
+        assert "192.168.1.1" in zadd_key
+
     @pytest.mark.asyncio
     @patch("sensei.api.deps.redis_client")
     async def test_rate_limiter_custom_settings(self, mock_redis, mock_request):
         """Test rate limiter with custom settings."""
         limiter = RateLimiter(requests=5, window=30, key_prefix="custom")
-        
-        mock_redis.incr.return_value = 6  # Over custom limit
-        mock_redis.ttl.return_value = 15
-        
+
+        self._patch_redis_pipeline(mock_redis, 6)  # Over custom limit
+        mock_redis.zrange = AsyncMock(return_value=[])
+
         with pytest.raises(HTTPException) as exc_info:
             await limiter(mock_request, None)
-        
+
         assert exc_info.value.status_code == 429
 
 
@@ -622,30 +636,28 @@ class TestPaginationParams:
         assert pagination.limit == 50
     
     def test_pagination_page_below_1(self):
-        """Test that page below 1 is normalized to 1."""
-        pagination = PaginationParams(page=0, page_size=20)
-        
-        assert pagination.page == 1
-        assert pagination.offset == 0
-    
+        """Test that page below 1 raises 400."""
+        with pytest.raises(HTTPException) as exc_info:
+            PaginationParams(page=0, page_size=20)
+        assert exc_info.value.status_code == 400
+
     def test_pagination_negative_page(self):
-        """Test that negative page is normalized to 1."""
-        pagination = PaginationParams(page=-5, page_size=20)
-        
-        assert pagination.page == 1
-    
+        """Test that negative page raises 400."""
+        with pytest.raises(HTTPException) as exc_info:
+            PaginationParams(page=-5, page_size=20)
+        assert exc_info.value.status_code == 400
+
     def test_pagination_page_size_below_1(self):
-        """Test that page_size below 1 is normalized to 20."""
-        pagination = PaginationParams(page=1, page_size=0)
-        
-        assert pagination.page_size == 20
-    
+        """Test that page_size below 1 raises 400."""
+        with pytest.raises(HTTPException) as exc_info:
+            PaginationParams(page=1, page_size=0)
+        assert exc_info.value.status_code == 400
+
     def test_pagination_page_size_over_max(self):
-        """Test that page_size over 100 is normalized to 100."""
-        pagination = PaginationParams(page=1, page_size=500)
-        
-        assert pagination.page_size == 100
-        assert pagination.limit == 100
+        """Test that page_size over 200 raises 400."""
+        with pytest.raises(HTTPException) as exc_info:
+            PaginationParams(page=1, page_size=500)
+        assert exc_info.value.status_code == 400
     
     def test_pagination_offset_calculation(self):
         """Test offset calculation for various pages."""

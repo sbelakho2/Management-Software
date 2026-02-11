@@ -236,7 +236,7 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     @property
     def is_critical(self) -> bool:
         """Check if this is a critical (red) Andon."""
-        return self.severity == AndonSeverity.RED
+        return self.severity == AndonSeverity.CRITICAL
 
     @property
     def response_time_minutes(self) -> Optional[int]:
@@ -268,7 +268,7 @@ class AndonEvent(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
             return False
         # Check against station SLA
         if hasattr(self, 'station') and self.station:
-            if self.severity == AndonSeverity.RED:
+            if self.severity == AndonSeverity.CRITICAL:
                 return self.elapsed_time_minutes > self.station.red_ack_minutes
             else:
                 return self.elapsed_time_minutes > self.station.yellow_ack_minutes

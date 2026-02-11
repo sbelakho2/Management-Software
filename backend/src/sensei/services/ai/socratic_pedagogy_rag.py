@@ -39,7 +39,9 @@ def score_learning_unit(query: str, unit: object) -> float:
         return 0.0
     unit_tokens = _tokenize(" ".join(fields))
     overlap = len(q_tokens & unit_tokens)
-    score = overlap / max(1, len(q_tokens))
+    raw = overlap / max(1, len(q_tokens))
+    # Dampen so perfect overlap stays below 1.0
+    score = raw * (len(q_tokens) / (len(q_tokens) + 1))
     return max(0.0, min(1.0, score))
 
 
@@ -75,7 +77,7 @@ def rank_learning_units(
         ]
         unit_vecs = embedder.embed_texts(unit_texts)
         ranked = [
-            RankedLearningUnit(unit=u, score=_cosine_similarity(query_vec, vec))
+            RankedLearningUnit(unit=u, score=sum(a * b for a, b in zip(query_vec, vec)))
             for u, vec in zip(units_list, unit_vecs)
         ]
         ranked.sort(key=lambda r: r.score, reverse=True)

@@ -101,7 +101,7 @@ class TestEnvironmentDetection:
     def test_is_production_true(self):
         """Test is_production returns True for production environment."""
         env = {
-            "SECRET_KEY": "a" * 32,
+            "SECRET_KEY": "7f3a9b2c4d5e6f8a1b0c3d2e5f4a8b9c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a",
             "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/db",
             "DATABASE_URL_SYNC": "postgresql://user:pass@localhost/db",
             "ENVIRONMENT": "production",

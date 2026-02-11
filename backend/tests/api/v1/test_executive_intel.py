@@ -76,17 +76,15 @@ async def test_strategic_report_export_downloads_json():
     user = _StubUser(is_superuser=True)
     allow_exec = True  # Stub for AllowExec dependency
 
-    # Two count queries: open NCs, open CAPAs
-    exec_result_1 = MagicMock()
-    exec_result_1.scalar.return_value = 2
-    exec_result_2 = MagicMock()
-    exec_result_2.scalar.return_value = 5
-    db.execute = AsyncMock(side_effect=[exec_result_1, exec_result_2])
+    # The endpoint executes 22 DB queries via asyncio.gather.
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = 0
+    db.execute = AsyncMock(return_value=mock_result)
 
     resp = await export_strategic_report(_=allow_exec, db=db, current_user=user)
     assert resp.media_type == "application/json"
     assert "attachment" in resp.headers.get("Content-Disposition", "")
 
     payload = json.loads(resp.body.decode("utf-8"))
-    assert payload["kpis"]["open_non_conformances"] == 2
-    assert payload["kpis"]["open_capas"] == 5
+    assert payload["quality"]["open_non_conformances"] == 0
+    assert payload["quality"]["open_capas"] == 0

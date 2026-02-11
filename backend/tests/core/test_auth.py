@@ -636,9 +636,15 @@ class TestAuthServiceUnit:
         assert token is None
     
     @pytest.mark.asyncio
+    @patch("sensei.core.auth.validate_password_strength")
     @patch("sensei.core.auth.redis_client")
-    async def test_reset_password_success(self, mock_redis, auth_service, mock_db, sample_user):
+    async def test_reset_password_success(self, mock_redis, mock_validate, auth_service, mock_db, sample_user):
         """Test successful password reset."""
+        from sensei.core.security import PasswordStrengthResult
+        mock_validate.return_value = PasswordStrengthResult(
+            is_strong=True, score=90, is_breached=False, breach_count=0,
+            issues=[], suggestions=[],
+        )
         reset_token = "valid-reset-token"
         
         mock_redis.get.return_value = str(sample_user.id)
@@ -827,9 +833,15 @@ class TestAuthFlows:
         assert result is True
     
     @pytest.mark.asyncio
+    @patch("sensei.core.auth.validate_password_strength")
     @patch("sensei.core.auth.redis_client")
-    async def test_password_reset_flow(self, mock_redis, auth_service, mock_db):
+    async def test_password_reset_flow(self, mock_redis, mock_validate, auth_service, mock_db):
         """Test complete password reset flow."""
+        from sensei.core.security import PasswordStrengthResult
+        mock_validate.return_value = PasswordStrengthResult(
+            is_strong=True, score=90, is_breached=False, breach_count=0,
+            issues=[], suggestions=[],
+        )
         user = MagicMock(spec=User)
         user.id = uuid4()
         user.email = "reset@example.com"

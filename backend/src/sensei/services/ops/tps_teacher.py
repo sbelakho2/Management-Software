@@ -138,7 +138,7 @@ class KataSession:
     experiments: list[dict[str, Any]]
     learnings: list[str]
     coach: str | None = None
-    started_at: datetime = field(default_factory=datetime.now)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -288,7 +288,7 @@ class AsyncPDCACoachingEngine:
             metrics={},
         )
         db.add(record)
-        await db.commit()
+        await db.flush()
         await db.refresh(record)
         
         return PDCACycle(
@@ -392,7 +392,7 @@ class AsyncPDCACoachingEngine:
         new_artifacts[phase_key].append(artifact)
         record.artifacts = new_artifacts
         
-        await db.commit()
+        await db.flush()
         return True
     
     async def advance_phase(
@@ -419,7 +419,7 @@ class AsyncPDCACoachingEngine:
             new_phase_statuses[next_phase.value] = PhaseGateStatus.IN_PROGRESS.value
             
         record.phase_statuses = new_phase_statuses
-        await db.commit()
+        await db.flush()
         await db.refresh(record)
         
         return await self.get_cycle(db, cycle_id)
@@ -489,7 +489,7 @@ class AsyncImprovementKataAssistant:
     }
     
     def __init__(self):
-        self.sessions: dict[str, KataSession] = {}  # In-memory cache for compatibility
+        pass  # No in-memory cache — all state is in the database
     
     async def start_session(
         self,
@@ -515,7 +515,7 @@ class AsyncImprovementKataAssistant:
             coach_id=coach,
         )
         db.add(record)
-        await db.commit()
+        await db.flush()
         await db.refresh(record)
         
         return self._record_to_session(record)
@@ -567,63 +567,89 @@ class AsyncImprovementKataAssistant:
         
         return prompts
     
-    def record_obstacle(
+    async def record_obstacle(
         self,
+        db: AsyncSession,
         session_id: str,
         obstacle: str,
     ) -> bool:
         """Record an obstacle discovered during Kata."""
-        session = self.sessions.get(session_id)
-        if not session:
+        result = await db.execute(
+            select(KataSessionRecord).where(KataSessionRecord.id == session_id)
+        )
+        record = result.scalar_one_or_none()
+        if not record:
             return False
-        
-        session.obstacles.append(obstacle)
+
+        obstacles = list(record.obstacles or [])
+        obstacles.append(obstacle)
+        record.obstacles = obstacles
+        await db.flush()
         return True
     
-    def record_experiment(
+    async def record_experiment(
         self,
+        db: AsyncSession,
         session_id: str,
         description: str,
         expected_result: str,
         actual_result: str | None = None,
     ) -> bool:
         """Record a Kata experiment."""
-        session = self.sessions.get(session_id)
-        if not session:
+        result = await db.execute(
+            select(KataSessionRecord).where(KataSessionRecord.id == session_id)
+        )
+        record = result.scalar_one_or_none()
+        if not record:
             return False
-        
-        session.experiments.append({
+
+        experiments = list(record.experiments or [])
+        experiments.append({
             "description": description,
             "expected_result": expected_result,
             "actual_result": actual_result,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
+        record.experiments = experiments
+        await db.flush()
         return True
     
-    def set_target_condition(
+    async def set_target_condition(
         self,
+        db: AsyncSession,
         session_id: str,
         target_condition: str,
     ) -> bool:
         """Set the target condition."""
-        session = self.sessions.get(session_id)
-        if not session:
+        result = await db.execute(
+            select(KataSessionRecord).where(KataSessionRecord.id == session_id)
+        )
+        record = result.scalar_one_or_none()
+        if not record:
             return False
-        
-        session.target_condition = target_condition
+
+        record.target_condition = target_condition
+        await db.flush()
         return True
     
-    def record_learning(
+    async def record_learning(
         self,
+        db: AsyncSession,
         session_id: str,
         learning: str,
     ) -> bool:
         """Record a learning from reflection."""
-        session = self.sessions.get(session_id)
-        if not session:
+        result = await db.execute(
+            select(KataSessionRecord).where(KataSessionRecord.id == session_id)
+        )
+        record = result.scalar_one_or_none()
+        if not record:
             return False
-        
-        session.learnings.append(learning)
+
+        learnings = list(record.learnings or [])
+        learnings.append(learning)
+        record.learnings = learnings
+        await db.flush()
         return True
     
     async def update_session(
@@ -635,7 +661,7 @@ class AsyncImprovementKataAssistant:
         """Update an existing Kata session."""
         stmt = sql_update(KataSessionRecord).where(KataSessionRecord.id == session_id).values(**updates)
         await db.execute(stmt)
-        await db.commit()
+        await db.flush()
         return await self.get_session(db, session_id)
 
     async def advance_step(
@@ -848,7 +874,7 @@ class AsyncMudaDetectionEngine:
             suggested_countermeasure=countermeasure,
         )
         db.add(record)
-        await db.commit()
+        await db.flush()
         await db.refresh(record)
         
         return self._record_to_detection(record)
@@ -958,7 +984,7 @@ class AsyncJidokaMentor:
         # Generate Jidoka response
         await self._generate_jidoka_response(db, record)
         
-        await db.commit()
+        await db.flush()
         await db.refresh(record)
         
         return self._record_to_event(record)
@@ -1028,7 +1054,7 @@ class AsyncJidokaMentor:
         if record:
             record.responded_at = datetime.now(timezone.utc)
             record.responder = responder
-            await db.commit()
+            await db.flush()
             await db.refresh(record)
             return self._record_to_event(record)
         return None
@@ -1047,7 +1073,7 @@ class AsyncJidokaMentor:
             record.resolved_at = datetime.now(timezone.utc)
             record.root_cause = root_cause
             record.countermeasure = countermeasure
-            await db.commit()
+            await db.flush()
             await db.refresh(record)
             return self._record_to_event(record)
         return None
@@ -1161,7 +1187,7 @@ class KataGamificationService:
             # Create default stats if not exists
             stats = UserTPSStats(user_id=user_id, xp=0, achievements=[], belt_level="White Belt")
             db.add(stats)
-            await db.commit()
+            await db.flush()
             await db.refresh(stats)
         
         xp = stats.xp
@@ -1216,7 +1242,7 @@ class KataGamificationService:
             elif xp >= 500: stats.belt_level = "Green Belt"
             elif xp >= 200: stats.belt_level = "Yellow Belt"
             
-            await db.commit()
+            await db.flush()
             await db.refresh(stats)
             
         return await self._get_user_status_async(db, user_id)

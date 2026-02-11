@@ -10,12 +10,14 @@ Key features:
 - Link all related Andon events to A3
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +129,7 @@ class EscalationResult:
     analysis_window_end: datetime | None = None
 
 
-class AndonA3EscalationService:
+class AndonA3EscalationService(PersistentServiceMixin):
     """
     Service for auto-escalating recurring Andon events to A3.
     
@@ -136,10 +138,16 @@ class AndonA3EscalationService:
     - Apply threshold rules
     - Generate A3 templates
     - Track escalation history
+    
+    Thresholds are persisted via PersistentServiceMixin so
+    configuration survives restarts.
     """
+    
+    SERVICE_NAME = "andon_a3_escalation"
     
     def __init__(self):
         """Initialize the service with default thresholds."""
+        super().__init__()
         self._thresholds = RecurrenceThresholds()
     
     def get_thresholds(self) -> RecurrenceThresholds:
@@ -173,6 +181,24 @@ class AndonA3EscalationService:
             self._thresholds.downtime_threshold_minutes = downtime_threshold_minutes
         if cost_threshold is not None:
             self._thresholds.cost_threshold = cost_threshold
+        
+        # Best-effort persist thresholds to DB
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.save_state(
+                "default", "thresholds", asdict(self._thresholds)
+            ))
+        except RuntimeError:
+            pass
+        
+        return self._thresholds
+    
+    async def load_thresholds_from_db(self) -> RecurrenceThresholds:
+        """Load previously persisted thresholds (call on startup)."""
+        data = await self.load_state("default", "thresholds")
+        if data:
+            self._thresholds = RecurrenceThresholds(**data)
         return self._thresholds
     
     def detect_recurrence_patterns(

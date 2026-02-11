@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
-from sensei.api.deps import CurrentUser, require_role
+from sensei.api.deps import CurrentUser, require_role, RoleChecker
 from sensei.api.utils import APIResponse, build_response
 from sensei.core.config import settings
 from sensei.services.core.edge_ai import (
@@ -17,7 +17,7 @@ from sensei.services.core.edge_ai import (
     SensorReading,
 )
 
-router = APIRouter(dependencies=[Depends(require_role("admin", "ops", "engineer"))])
+router = APIRouter(dependencies=[Depends(RoleChecker(["admin", "ops", "engineer"]))])
 
 # Singleton orchestrator
 _orchestrator = EdgeOrchestrator(machine_id="system_core")

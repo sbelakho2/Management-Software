@@ -49,7 +49,7 @@ from sensei.models.product import (
 def sample_product():
     """Create a sample product for testing."""
     product = Product(
-        id=1,
+        id=uuid4(),
         name="Widget Assembly",
         part_number="WGT-001",
         revision="A",
@@ -157,7 +157,7 @@ class TestProductToResponse:
     def test_product_to_response_minimal(self):
         """Test converting minimal product to response."""
         product = Product(
-            id=2,
+            id=uuid4(),
             name="Basic Part",
             part_number="BAS-001",
             revision="A",
@@ -241,7 +241,7 @@ class TestListProducts:
         # Mock database response
         mock_products = [
             Product(
-                id=i,
+                id=uuid4(),
                 name=f"Product {i}",
                 part_number=f"PRD-{i:03d}",
                 revision="A",
@@ -282,7 +282,7 @@ class TestListProducts:
         
         mock_products = [
             Product(
-                id=1,
+                id=uuid4(),
                 name="Widget Assembly",
                 part_number="WGT-001",
                 revision="A",
@@ -322,7 +322,7 @@ class TestListProducts:
         
         mock_products = [
             Product(
-                id=1,
+                id=uuid4(),
                 name="Widget A",
                 part_number="WGT-A",
                 revision="A",
@@ -362,7 +362,7 @@ class TestListProducts:
         
         mock_products = [
             Product(
-                id=1,
+                id=uuid4(),
                 name="Prototype",
                 part_number="PRO-001",
                 revision="A",
@@ -401,7 +401,7 @@ class TestListProducts:
         
         mock_products = [
             Product(
-                id=i,
+                id=uuid4(),
                 name=f"Product {i}",
                 part_number=f"PRD-{i:03d}",
                 revision="A",
@@ -468,7 +468,7 @@ class TestCreateProduct:
         
         # Mock refresh to set required fields on the product
         async def mock_refresh(obj, *args, **kwargs):
-            obj.id = 1
+            obj.id = uuid4()
             obj.status = ProductStatus.ACTIVE
             obj.created_at = datetime.now(timezone.utc)
             obj.updated_at = datetime.now(timezone.utc)
@@ -701,7 +701,7 @@ class TestCreateNewRevision:
         
         # Mock refresh to set required fields on the new product
         async def mock_refresh(obj, *args, **kwargs):
-            obj.id = 2
+            obj.id = uuid4()
             obj.created_at = datetime.now(timezone.utc)
             obj.updated_at = datetime.now(timezone.utc)
             obj.bom_items = []

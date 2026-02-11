@@ -27,6 +27,7 @@ from sensei.core.database import get_db_session
 from sensei.models.mrp import BOMComponent, MRPDemand, MRPSuggestion, MRPRun
 from sensei.models.accounts_payable import PurchaseRequisition, PRLine
 from sensei.models.product import Product
+from sensei.models.work_order import WorkOrder, WorkOrderStatus, WorkOrderPriority
 from sensei.services.production.mps_service import MPSService
 from sensei.services.production.persistent_mrp import PersistentMRPService
 from sensei.services.core.common_thread import get_common_thread_service
@@ -221,6 +222,23 @@ class PRConversionResult(BaseModel):
     converted_at: datetime
 
 
+class SuggestionToWOSchema(BaseModel):
+    """Convert approved 'build' MRP suggestions to Work Orders."""
+    suggestion_ids: List[UUID] = Field(..., min_length=1)
+    priority: str = "normal"  # low, normal, high, urgent, critical
+    notes: Optional[str] = None
+
+
+class WOConversionResult(BaseModel):
+    """Result of MRP to Work Order conversion."""
+    work_order_ids: List[int]
+    work_order_numbers: List[str]
+    count: int
+    total_quantity: Decimal
+    suggestion_ids: List[UUID]
+    converted_at: datetime
+
+
 async def _generate_pr_number(db: AsyncSession) -> str:
     """Generate next PR number."""
     result = await db.execute(select(func.count(PurchaseRequisition.id)))
@@ -391,6 +409,116 @@ async def convert_suggestions_to_pr(
         requisition_id=pr.id,
         pr_number=pr.pr_number,
         line_count=len(suggestions),
+        total_quantity=total_qty,
+        suggestion_ids=[s.id for s in suggestions],
+        converted_at=now_utc(),
+    ))
+
+
+async def _generate_wo_number(db: AsyncSession) -> str:
+    """Generate next work order number from MAX existing."""
+    year = datetime.now(timezone.utc).year
+    prefix = f"WO-{year}-"
+    result = await db.execute(
+        select(func.max(WorkOrder.work_order_number)).where(
+            WorkOrder.work_order_number.like(f"{prefix}%")
+        )
+    )
+    last = result.scalar()
+    if last:
+        try:
+            seq = int(last.replace(prefix, "")) + 1
+        except ValueError:
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:05d}"
+
+
+@router.post("/suggestions/convert-to-wo", response_model=APIResponse[WOConversionResult])
+async def convert_suggestions_to_wo(
+    payload: SuggestionToWOSchema,
+    db: DBSession,
+    current_user: CurrentUser,
+):
+    """
+    Convert approved MRP 'build' suggestions to Work Orders.
+
+    Each suggestion becomes a separate Work Order for the production floor.
+    Only 'build' type suggestions that are approved can be converted.
+    """
+    # Fetch approved 'build' suggestions
+    result = await db.execute(
+        select(MRPSuggestion).options(
+            selectinload(MRPSuggestion.product)
+        ).where(and_(
+            MRPSuggestion.id.in_(payload.suggestion_ids),
+            MRPSuggestion.status == "approved",
+            MRPSuggestion.requirement_type == "build",
+        ))
+    )
+    suggestions = list(result.scalars().all())
+
+    if not suggestions:
+        raise NotFoundError("No approved 'build' suggestions found with the provided IDs")
+
+    if len(suggestions) != len(payload.suggestion_ids):
+        raise ConflictError(
+            f"Found {len(suggestions)} approved build suggestions, "
+            f"but {len(payload.suggestion_ids)} IDs provided. "
+            "Ensure all suggestions are approved and of type 'build'."
+        )
+
+    # Map priority string to enum
+    priority_map = {p.value: p for p in WorkOrderPriority}
+    wo_priority = priority_map.get(payload.priority, WorkOrderPriority.NORMAL)
+
+    work_orders: list[WorkOrder] = []
+    total_qty = Decimal("0")
+
+    for suggestion in suggestions:
+        wo_number = await _generate_wo_number(db)
+        wo = WorkOrder(
+            work_order_number=wo_number,
+            product_id=suggestion.product_id,
+            quantity_ordered=suggestion.quantity,
+            priority=wo_priority,
+            status=WorkOrderStatus.DRAFT,
+            notes=payload.notes or f"Auto-generated from MRP suggestion. Lead time: {suggestion.lead_time_days} days.",
+            external_reference=f"MRP-{suggestion.id}",
+        )
+        if suggestion.needed_date:
+            wo.scheduled_end = datetime.combine(
+                suggestion.needed_date, datetime.min.time()
+            ).replace(tzinfo=timezone.utc)
+
+        db.add(wo)
+        await db.flush()
+        work_orders.append(wo)
+        total_qty += suggestion.quantity
+
+        # Mark suggestion as released
+        suggestion.status = "released"
+
+    # Bind lineage for the created work orders
+    try:
+        ct = get_common_thread_service()
+        for wo in work_orders:
+            await ct.bind(
+                db,
+                work_order_id=wo.id,
+                created_by_id=current_user.id,
+                source="mrp_build_conversion",
+            )
+    except Exception:
+        logger.debug("common_thread bind skipped for WO conversion", exc_info=True)
+
+    await db.commit()
+
+    return build_created_response(WOConversionResult(
+        work_order_ids=[wo.id for wo in work_orders],
+        work_order_numbers=[wo.work_order_number for wo in work_orders],
+        count=len(work_orders),
         total_quantity=total_qty,
         suggestion_ids=[s.id for s in suggestions],
         converted_at=now_utc(),

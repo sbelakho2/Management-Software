@@ -22,8 +22,8 @@ def upgrade() -> None:
     op.create_table(
         "qms_self_inspections",
         sa.Column("inspection_number", sa.String(length=50), nullable=False),
-        sa.Column("work_order_id", sa.UUID(), nullable=True),
-        sa.Column("product_id", sa.UUID(), nullable=True),
+        sa.Column("work_order_id", sa.Integer(), nullable=True),
+        sa.Column("product_id", sa.Integer(), nullable=True),
         sa.Column("operator_id", sa.UUID(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),

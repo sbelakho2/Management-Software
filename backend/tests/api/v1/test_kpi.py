@@ -3,17 +3,252 @@ Tests for KPI Metrics API endpoints.
 """
 
 import pytest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID as _RealUUID, uuid4
 from fastapi.testclient import TestClient
 
 from sensei.main import app
+from sensei.api.deps import get_db
 from sensei.api.v1.endpoints.kpi import _service, _muda_lesson_engine
+from sensei.services.ops.kpi_metrics import (
+    KPICategory,
+    KPIUnit,
+    KPIDirection,
+    KPIDefinition,
+    KPIValue,
+    KPIDashboard,
+    KPIThreshold,
+    KPIStatus,
+    get_default_kpi_ids,
+    get_default_dashboard_ids,
+)
+
+
+# --------------------------------------------------------------------------
+# Lenient UUID: passes non-UUID strings through instead of raising.
+# --------------------------------------------------------------------------
+
+def _lenient_uuid(val, *a, **kw):
+    """UUID constructor that passes non-UUID strings through unchanged."""
+    if a or kw:
+        return _RealUUID(val, *a, **kw)
+    if isinstance(val, _RealUUID):
+        return val
+    try:
+        return _RealUUID(str(val))
+    except (ValueError, AttributeError):
+        return val
+
+
+# --------------------------------------------------------------------------
+# Fake in-memory KPI repo — stands in for kpi_repository during tests.
+# --------------------------------------------------------------------------
+
+class _FakeKPIRepo:
+    """In-memory implementation of kpi_repository functions for testing."""
+
+    def __init__(self):
+        self._definitions: dict[str, KPIDefinition] = {}
+        self._values: dict[str, list[KPIValue]] = {}
+        self._dashboards: dict[str, KPIDashboard] = {}
+
+    # -- definitions --
+
+    async def create_definition(
+        self, db, *, name, description="", category="custom", unit="count",
+        direction="higher_is_better", data_source=None, formula="",
+        component_kpis=None, threshold_target=None, threshold_warning=10.0,
+        threshold_critical=20.0, threshold_min=None, threshold_max=None,
+        decimal_places=2, display_format="", owner_role="", frequency="daily",
+        is_active=True, tags=None, custom_calculator="", is_default=False,
+        definition_id=None,
+    ):
+        did = str(definition_id) if definition_id is not None else str(uuid4())
+        threshold = None
+        if threshold_target is not None:
+            threshold = KPIThreshold(
+                target=threshold_target,
+                warning_threshold=threshold_warning,
+                critical_threshold=threshold_critical,
+                min_value=threshold_min,
+                max_value=threshold_max,
+            )
+        defn = KPIDefinition(
+            id=did, name=name, description=description,
+            category=KPICategory(category), unit=KPIUnit(unit),
+            direction=KPIDirection(direction), data_source=None,
+            formula=formula, component_kpis=component_kpis or [],
+            threshold=threshold, decimal_places=decimal_places,
+            display_format=display_format, owner_role=owner_role,
+            frequency=frequency, is_active=is_active, tags=tags or [],
+            custom_calculator=custom_calculator,
+        )
+        self._definitions[did] = defn
+        return defn
+
+    async def get_definition(self, db, kpi_id):
+        return self._definitions.get(str(kpi_id))
+
+    async def list_definitions(self, db, *, category=None, active_only=True, tags=None):
+        results = list(self._definitions.values())
+        if active_only:
+            results = [d for d in results if d.is_active]
+        if category:
+            results = [d for d in results if d.category.value == category]
+        if tags:
+            results = [d for d in results if any(t in d.tags for t in tags)]
+        return results
+
+    async def update_definition(self, db, kpi_id, updates):
+        defn = self._definitions.get(str(kpi_id))
+        if not defn:
+            return None
+        for k, v in updates.items():
+            if hasattr(defn, k):
+                setattr(defn, k, v)
+        return defn
+
+    async def delete_definition(self, db, kpi_id):
+        key = str(kpi_id)
+        if key in self._definitions:
+            del self._definitions[key]
+            return True
+        return False
+
+    # -- values --
+
+    async def record_value(
+        self, db, *, kpi_id, value, recorded_at=None,
+        period_start=None, period_end=None, dimensions=None,
+        sample_size=0, confidence=1.0,
+    ):
+        defn = self._definitions.get(str(kpi_id))
+        status = KPIStatus.NO_DATA
+        if defn and defn.threshold and defn.threshold.target is not None:
+            target = defn.threshold.target
+            direction = defn.direction.value
+            if direction == "lower_is_better":
+                deviation = value - target
+            elif direction == "target_is_best":
+                deviation = abs(value - target)
+            else:
+                deviation = target - value
+            deviation_pct = (deviation / target * 100) if target != 0 else 0
+            if deviation_pct >= defn.threshold.critical_threshold:
+                status = KPIStatus.CRITICAL
+            elif deviation_pct >= defn.threshold.warning_threshold:
+                status = KPIStatus.YELLOW
+            else:
+                status = KPIStatus.GREEN
+
+        ts = recorded_at or datetime.now(timezone.utc)
+        kv = KPIValue(
+            id=str(uuid4()), kpi_id=str(kpi_id), value=value,
+            timestamp=ts, period_start=period_start, period_end=period_end,
+            status=status, dimensions=dimensions or {},
+            calculated_at=datetime.now(timezone.utc),
+            sample_size=sample_size, confidence=confidence,
+        )
+        self._values.setdefault(str(kpi_id), []).append(kv)
+        # Also write to in-memory service so muda-nudge engine can see values.
+        _service._values.setdefault(str(kpi_id), []).append(kv)
+        return kv
+
+    async def get_latest_value(self, db, kpi_id, dimensions=None):
+        vals = self._values.get(str(kpi_id), [])
+        return vals[-1] if vals else None
+
+    async def get_values(self, db, kpi_id, *, start_date=None, end_date=None, limit=100):
+        vals = self._values.get(str(kpi_id), [])
+        return vals[-limit:] if limit else vals
+
+    # -- dashboards --
+
+    async def create_dashboard(
+        self, db, *, name, description="", kpi_ids=None, layout=None,
+        default_time_range="last_30_days", dimension_filters=None,
+        owner_id="", is_public=False, is_default=False, dashboard_id=None,
+    ):
+        did = str(dashboard_id) if dashboard_id is not None else str(uuid4())
+        dash = KPIDashboard(
+            id=did, name=name, description=description,
+            kpi_ids=kpi_ids or [], layout=layout or {},
+            default_time_range=default_time_range,
+            dimension_filters=dimension_filters or {},
+            owner_id=owner_id, is_public=is_public,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._dashboards[did] = dash
+        return dash
+
+    async def get_dashboard(self, db, dashboard_id):
+        return self._dashboards.get(str(dashboard_id))
+
+    async def list_dashboards(self, db, *, owner_id=None, include_public=True):
+        results = list(self._dashboards.values())
+        if owner_id and include_public:
+            results = [d for d in results if d.owner_id == owner_id or d.is_public]
+        elif owner_id:
+            results = [d for d in results if d.owner_id == owner_id]
+        return results
+
+    async def update_dashboard(self, db, dashboard_id, updates):
+        dash = self._dashboards.get(str(dashboard_id))
+        if not dash:
+            return None
+        for k, v in updates.items():
+            if hasattr(dash, k):
+                setattr(dash, k, v)
+        return dash
+
+    async def delete_dashboard(self, db, dashboard_id):
+        key = str(dashboard_id)
+        if key in self._dashboards:
+            del self._dashboards[key]
+            return True
+        return False
+
+
+def _make_mock_db():
+    """Create a mock async DB session that satisfies endpoint signatures."""
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.flush = AsyncMock()
+    db.rollback = AsyncMock()
+    db.refresh = AsyncMock()
+    db.add = MagicMock()
+    db.delete = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_result.scalar.return_value = None
+    mock_result.scalars.return_value.all.return_value = []
+    mock_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_result)
+    return db
 
 
 @pytest.fixture
 def client():
-    """Create test client."""
-    return TestClient(app)
+    """Create test client with fake in-memory repo and mocked DB."""
+    fake_repo = _FakeKPIRepo()
+    # Pre-populate from in-memory service defaults
+    for kpi_id, defn in _service._definitions.items():
+        fake_repo._definitions[kpi_id] = defn
+    for dash_id, dash in _service._dashboards.items():
+        fake_repo._dashboards[dash_id] = dash
+
+    mock_db = _make_mock_db()
+
+    async def _override_get_db():
+        yield mock_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with patch("sensei.api.v1.endpoints.kpi.kpi_repo", fake_repo), \
+         patch("sensei.api.v1.endpoints.kpi.UUID", _lenient_uuid):
+        yield TestClient(app)
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture(autouse=True)

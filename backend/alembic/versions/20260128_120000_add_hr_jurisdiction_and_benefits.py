@@ -1,7 +1,7 @@
 """Add HR jurisdiction column and North Africa benefits tables.
 
 Revision ID: add_hr_jurisdiction
-Revises: 20260126_150000_service_persistence
+Revises: 20260126_150000_svc_persist
 Create Date: 2026-01-28 12:00:00.000000
 
 This migration:
@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = "add_hr_jurisdiction"
-down_revision = "20260126_150000_service_persistence"
+down_revision = "20260126_150000_svc_persist"
 branch_labels = None
 depends_on = None
 

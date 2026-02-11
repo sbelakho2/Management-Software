@@ -27,7 +27,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-001",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Dimension out of spec",
             reported_by_id=1,
@@ -37,7 +37,7 @@ class TestAndonEventModel:
 
         assert event.event_number == "AND-001"
         assert event.andon_type == AndonType.QUALITY
-        assert event.severity == AndonSeverity.YELLOW
+        assert event.severity == AndonSeverity.HIGH
         assert event.status == AndonStatus.OPEN
         assert event.escalation_level == EscalationLevel.NONE
 
@@ -46,7 +46,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-002",
             andon_type=AndonType.EQUIPMENT,
-            severity=AndonSeverity.RED,
+            severity=AndonSeverity.CRITICAL,
             station_id=1,
             product_id=5,
             work_order_id=10,
@@ -62,7 +62,7 @@ class TestAndonEventModel:
         )
 
         assert event.andon_type == AndonType.EQUIPMENT
-        assert event.severity == AndonSeverity.RED
+        assert event.severity == AndonSeverity.CRITICAL
         assert event.symptom == "Machine stopped"
         assert event.affected_quantity == 50
         assert event.downtime_minutes == 30
@@ -75,7 +75,7 @@ class TestAndonEventModel:
             event = AndonEvent(
                 event_number=f"AND-{atype.value}",
                 andon_type=atype,
-                severity=AndonSeverity.YELLOW,
+                severity=AndonSeverity.HIGH,
                 station_id=1,
                 symptom=f"Test {atype.value}",
                 reported_by_id=1,
@@ -101,7 +101,7 @@ class TestAndonEventModel:
             event = AndonEvent(
                 event_number=f"AND-{status.value}",
                 andon_type=AndonType.QUALITY,
-                severity=AndonSeverity.YELLOW,
+                severity=AndonSeverity.HIGH,
                 station_id=1,
                 symptom=f"Test {status.value}",
                 reported_by_id=1,
@@ -114,7 +114,7 @@ class TestAndonEventModel:
         event_open = AndonEvent(
             event_number="AND-OPEN",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Open event",
             reported_by_id=1,
@@ -124,7 +124,7 @@ class TestAndonEventModel:
         event_resolved = AndonEvent(
             event_number="AND-RESOLVED",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Resolved event",
             reported_by_id=1,
@@ -139,7 +139,7 @@ class TestAndonEventModel:
         event_red = AndonEvent(
             event_number="AND-RED",
             andon_type=AndonType.SAFETY,
-            severity=AndonSeverity.RED,
+            severity=AndonSeverity.CRITICAL,
             station_id=1,
             symptom="Critical event",
             reported_by_id=1,
@@ -148,7 +148,7 @@ class TestAndonEventModel:
         event_yellow = AndonEvent(
             event_number="AND-YELLOW",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Warning event",
             reported_by_id=1,
@@ -165,7 +165,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-RESP",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test response time",
             reported_by_id=1,
@@ -182,7 +182,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-NOACK",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Not acknowledged",
             reported_by_id=1,
@@ -199,7 +199,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-RES",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test resolution time",
             reported_by_id=1,
@@ -219,7 +219,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-ELAPSED",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test elapsed time",
             reported_by_id=1,
@@ -234,7 +234,7 @@ class TestAndonEventModel:
         event = AndonEvent(
             event_number="AND-TEST",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test",
             reported_by_id=1,
@@ -427,7 +427,7 @@ class TestAndonEventRelationships:
         event = AndonEvent(
             event_number="AND-001",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test",
             reported_by_id=1,
@@ -453,7 +453,7 @@ class TestAndonValidation:
         event = AndonEvent(
             event_number="AND-001",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test",
             reported_by_id=1,
@@ -466,7 +466,7 @@ class TestAndonValidation:
         event = AndonEvent(
             event_number="AND-001",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Test",
             reported_by_id=1,
@@ -483,7 +483,7 @@ class TestAndonEdgeCases:
         event = AndonEvent(
             event_number="AND-MIN",
             andon_type=AndonType.QUALITY,
-            severity=AndonSeverity.YELLOW,
+            severity=AndonSeverity.HIGH,
             station_id=1,
             symptom="Minimal event",
             reported_by_id=1,
@@ -501,13 +501,13 @@ class TestAndonEdgeCases:
         event = AndonEvent(
             event_number="AND-BLUE",
             andon_type=AndonType.MATERIAL,
-            severity=AndonSeverity.BLUE,
+            severity=AndonSeverity.LOW,
             station_id=1,
             symptom="Material needed",
             reported_by_id=1,
         )
 
-        assert event.severity == AndonSeverity.BLUE
+        assert event.severity == AndonSeverity.LOW
         assert event.is_critical is False
 
     def test_andon_full_lifecycle(self):
@@ -519,7 +519,7 @@ class TestAndonEdgeCases:
         event = AndonEvent(
             event_number="AND-LIFECYCLE",
             andon_type=AndonType.EQUIPMENT,
-            severity=AndonSeverity.RED,
+            severity=AndonSeverity.CRITICAL,
             station_id=1,
             symptom="Machine breakdown",
             description="Motor failure on spindle",

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sensei.api.exceptions import ConflictError, NotFoundError
+from sensei.api.exceptions import BadRequestError, ConflictError, NotFoundError
 from sensei.api.v1.endpoints.quality import (
     CAPAActionCreate,
     CAPAActionUpdate,
@@ -440,10 +440,18 @@ async def test_capa_crud_actions_and_lists():
     resp = await complete_capa_action(10, 5, completion_evidence="done", db=db, current_user=current_user)
     assert resp.data.status == "completed"
 
-    # Delete action
+    # Delete (cancel) action – action was already completed above, so
+    # our guard should reject with BadRequestError.
+    db.execute.return_value = make_result(scalar_one_or_none=action)
+    with pytest.raises(BadRequestError):
+        await delete_capa_action(10, 5, db, current_user)
+
+    # Reset action status to OPEN so we can test a successful cancel.
+    action.status = CAPAActionStatus.OPEN
     db.execute.return_value = make_result(scalar_one_or_none=action)
     resp = await delete_capa_action(10, 5, db, current_user)
     assert resp.success is True
+    assert resp.data.status == "cancelled"
 
     # List CAPAs with filters
     capa.actions = []
@@ -663,10 +671,10 @@ async def test_inspection_plans_and_records_crud_and_list_filters():
 
     db.execute.side_effect = None
 
-    # Delete record
+    # Delete record – now blocked by ISO 9001 compliance
     db.execute.return_value = make_result(scalar_one_or_none=record)
-    resp = await delete_inspection(501, db, current_user)
-    assert resp.success is True
+    with pytest.raises(BadRequestError):
+        await delete_inspection(501, db, current_user)
 
 
 @pytest.mark.asyncio

@@ -27,7 +27,7 @@ from sensei.services.core.disaster_recovery_drill import (
 )
 
 
-from sensei.api.deps import require_role
+from sensei.api.deps import RoleChecker
 
 
 def _deny_production() -> None:
@@ -35,7 +35,7 @@ def _deny_production() -> None:
         raise HTTPException(status_code=404, detail="Not found")
 
 
-router = APIRouter(dependencies=[Depends(_deny_production), Depends(require_role("admin"))])
+router = APIRouter(dependencies=[Depends(_deny_production), Depends(RoleChecker(["admin"]))])
 
 
 # ===== Request/Response Models =====

@@ -356,7 +356,7 @@ class FirstArticleInspection(Base, TimestampMixin, AuditMixin):
 
     inspection_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     product_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
-    work_order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("work_orders.id"), nullable=True, index=True)
+    work_order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("work_orders.id"), nullable=True, index=True)
     part_number: Mapped[str] = mapped_column(String(100), nullable=False)
     revision: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     drawing_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -402,7 +402,7 @@ class SelfInspection(Base, TimestampMixin, AuditMixin):
     __tablename__ = "qms_self_inspections"
 
     inspection_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
-    work_order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("work_orders.id"), nullable=True, index=True)
+    work_order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("work_orders.id"), nullable=True, index=True)
     product_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
     operator_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="in_progress", nullable=False)
@@ -460,7 +460,7 @@ class LabSample(Base, TimestampMixin, AuditMixin):
 
     sample_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     product_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
-    work_order_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("work_orders.id"), nullable=True, index=True)
+    work_order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("work_orders.id"), nullable=True, index=True)
     lot_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     collected_by_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)

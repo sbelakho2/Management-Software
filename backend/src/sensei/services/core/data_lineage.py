@@ -12,7 +12,6 @@ The service is safe to call from endpoints as a best-effort enrichment.
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -132,29 +131,29 @@ class DataLineageService:
         edges: list[LineageEdge] = []
 
         visited: set[tuple[str, str]] = set()
-        q: deque[tuple[LineageNode, int]] = deque([(root, 0)])
+        frontier: set[tuple[str, str]] = {(root.entity_type, root.entity_id)}
 
-        while q:
-            node, depth = q.popleft()
-            key = (node.entity_type, node.entity_id)
-            if key in visited:
-                continue
-            visited.add(key)
+        for _depth in range(max_depth):
+            if not frontier:
+                break
 
-            if depth >= max_depth:
-                continue
-
-            result = await db.execute(
-                select(DataLineageLink).where(
-                    or_(
-                        (DataLineageLink.source_entity_type == node.entity_type)
-                        & (DataLineageLink.source_entity_id == node.entity_id),
-                        (DataLineageLink.target_entity_type == node.entity_type)
-                        & (DataLineageLink.target_entity_id == node.entity_id),
-                    )
+            # Batch-fetch all links for the current frontier in ONE query
+            conditions = [
+                or_(
+                    (DataLineageLink.source_entity_type == et)
+                    & (DataLineageLink.source_entity_id == eid),
+                    (DataLineageLink.target_entity_type == et)
+                    & (DataLineageLink.target_entity_id == eid),
                 )
+                for et, eid in frontier
+            ]
+            result = await db.execute(
+                select(DataLineageLink).where(or_(*conditions))
             )
             links = result.scalars().all()
+
+            visited.update(frontier)
+            next_frontier: set[tuple[str, str]] = set()
 
             for link in links:
                 src = LineageNode(link.source_entity_type, link.source_entity_id)
@@ -164,11 +163,12 @@ class DataLineageService:
                 nodes.setdefault((dst.entity_type, dst.entity_id), dst)
                 edges.append(LineageEdge(source=src, target=dst, relationship_type=link.relationship_type))
 
-                # Undirected traversal for neighborhood discovery.
-                other = dst if (src.entity_type, src.entity_id) == key else src
-                other_key = (other.entity_type, other.entity_id)
-                if other_key not in visited:
-                    q.append((other, depth + 1))
+                for n in (src, dst):
+                    key = (n.entity_type, n.entity_id)
+                    if key not in visited:
+                        next_frontier.add(key)
+
+            frontier = next_frontier
 
         return LineageGraph(nodes=list(nodes.values()), edges=edges)
 

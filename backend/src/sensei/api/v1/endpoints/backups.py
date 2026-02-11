@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_current_active_user, get_db, require_role
+from sensei.api.deps import get_current_active_user, get_db, require_role, RoleChecker
 from sensei.models.user import User, RoleType
 from sensei.services.core.database_backup import (
     BackupMetadata,
@@ -140,7 +140,7 @@ def get_backup_service(db: AsyncSession = Depends(get_db)) -> DatabaseBackupServ
     "/backups",
     response_model=BackupResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def create_backup(
     request: CreateBackupRequest,
@@ -186,7 +186,7 @@ async def create_backup(
 @router.get(
     "/backups",
     response_model=List[BackupResponse],
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def list_backups(
     skip: int = 0,
@@ -227,7 +227,7 @@ async def list_backups(
 @router.get(
     "/backups/{backup_id}",
     response_model=BackupResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def get_backup(
     backup_id: str,
@@ -265,7 +265,7 @@ async def get_backup(
 @router.post(
     "/backups/{backup_id}/test-restore",
     response_model=RestoreTestResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def test_restore(
     backup_id: str,
@@ -308,7 +308,7 @@ async def test_restore(
 @router.post(
     "/backups/{backup_id}/restore",
     response_model=RestoreTestResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def restore_backup(
     backup_id: str,
@@ -356,7 +356,7 @@ async def restore_backup(
 @router.get(
     "/backups/status/summary",
     response_model=BackupSummaryResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def get_backup_summary(
     service: DatabaseBackupService = Depends(get_backup_service),
@@ -378,7 +378,7 @@ async def get_backup_summary(
 @router.get(
     "/backups/status/rpo",
     response_model=RPOStatusResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def get_rpo_status(
     service: DatabaseBackupService = Depends(get_backup_service),
@@ -397,7 +397,7 @@ async def get_rpo_status(
 @router.get(
     "/backups/status/rto",
     response_model=RTOStatusResponse,
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def get_rto_status(
     service: DatabaseBackupService = Depends(get_backup_service),
@@ -415,7 +415,7 @@ async def get_rto_status(
 
 @router.post(
     "/backups/maintenance/retention",
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def apply_retention_policy(
     request: RetentionPolicyRequest,
@@ -448,7 +448,7 @@ async def apply_retention_policy(
 @router.get(
     "/backups/tests/history",
     response_model=List[RestoreTestResponse],
-    dependencies=[Depends(require_role(RoleType.ADMIN))]
+    dependencies=[Depends(RoleChecker([RoleType.ADMIN]))]
 )
 async def list_restore_tests(
     skip: int = 0,

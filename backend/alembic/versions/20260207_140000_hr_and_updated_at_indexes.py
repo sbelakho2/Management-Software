@@ -13,6 +13,7 @@ Revises: 20260207_130000
 Create Date: 2026-02-07
 """
 from alembic import op
+import sqlalchemy as sa
 
 
 # revision identifiers
@@ -23,11 +24,25 @@ depends_on = None
 
 
 def _safe_create_index(name: str, table: str, columns: list, **kwargs) -> None:
-    """Create an index if it does not already exist."""
+    """Create an index inside a savepoint so failures don't abort the transaction."""
+    conn = op.get_bind()
     try:
+        conn.execute(sa.text("SAVEPOINT _idx"))
         op.create_index(name, table, columns, **kwargs)
+        conn.execute(sa.text("RELEASE SAVEPOINT _idx"))
     except Exception:
-        pass  # Index already exists
+        conn.execute(sa.text("ROLLBACK TO SAVEPOINT _idx"))
+
+
+def _safe_drop_index(name: str, table: str) -> None:
+    """Drop an index inside a savepoint so failures don't abort the transaction."""
+    conn = op.get_bind()
+    try:
+        conn.execute(sa.text("SAVEPOINT _idx"))
+        op.drop_index(name, table)
+        conn.execute(sa.text("RELEASE SAVEPOINT _idx"))
+    except Exception:
+        conn.execute(sa.text("ROLLBACK TO SAVEPOINT _idx"))
 
 
 def upgrade() -> None:

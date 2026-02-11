@@ -104,7 +104,7 @@ def _parse_enum(enum_cls: Any, value: Any, field_name: str):
 class AndonEventBase(BaseModel):
     event_number: str = Field(..., min_length=1, max_length=50)
     andon_type: AndonType
-    severity: AndonSeverity = AndonSeverity.YELLOW
+    severity: AndonSeverity = AndonSeverity.HIGH
     station_id: int = Field(..., gt=0)
     product_id: Optional[int] = Field(default=None, gt=0)
     work_order_id: Optional[int] = Field(default=None, gt=0)
@@ -1182,7 +1182,7 @@ async def get_dashboard_stats(
         select(func.count())
         .select_from(AndonEvent)
         .where(AndonEvent.status.in_(open_statuses))
-        .where(AndonEvent.severity == AndonSeverity.RED)
+        .where(AndonEvent.severity == AndonSeverity.CRITICAL)
         .where(AndonEvent.deleted_at.is_(None))
     )).scalar() or 0
 
@@ -1190,7 +1190,7 @@ async def get_dashboard_stats(
         select(func.count())
         .select_from(AndonEvent)
         .where(AndonEvent.status.in_(open_statuses))
-        .where(AndonEvent.severity == AndonSeverity.YELLOW)
+        .where(AndonEvent.severity == AndonSeverity.HIGH)
         .where(AndonEvent.deleted_at.is_(None))
     )).scalar() or 0
 
@@ -1198,7 +1198,7 @@ async def get_dashboard_stats(
         select(func.count())
         .select_from(AndonEvent)
         .where(AndonEvent.status.in_(open_statuses))
-        .where(AndonEvent.severity == AndonSeverity.BLUE)
+        .where(AndonEvent.severity == AndonSeverity.LOW)
         .where(AndonEvent.deleted_at.is_(None))
     )).scalar() or 0
 

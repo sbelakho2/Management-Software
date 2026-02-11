@@ -453,7 +453,7 @@ class RiskHeatmapGenerator:
                     probability=0.3,
                     affected_sites=supplier.get("sites", []),
                     mitigation_status="pending",
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                 )
                 detected.append(risk)
                 self.risks.append(risk)
@@ -470,7 +470,7 @@ class RiskHeatmapGenerator:
                     probability=0.5,
                     affected_sites=supplier.get("sites", []),
                     mitigation_status="monitoring",
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                 )
                 detected.append(risk)
                 self.risks.append(risk)
@@ -489,7 +489,7 @@ class RiskHeatmapGenerator:
             total_critical=sum(1 for r in self.risks if r.level == RiskLevel.CRITICAL),
             total_high=sum(1 for r in self.risks if r.level == RiskLevel.HIGH),
             category_counts=dict(category_counts),
-            generated_at=datetime.now(),
+            generated_at=datetime.now(timezone.utc),
         )
     
     def get_risks_by_category(self, category: RiskCategory) -> list[RiskItem]:
@@ -551,7 +551,7 @@ class BrainHealthDashboard:
     def take_snapshot(self) -> None:
         """Take a snapshot of current status."""
         snapshot = {name: status.status for name, status in self.component_status.items()}
-        self._status_history.append((datetime.now(), snapshot))
+        self._status_history.append((datetime.now(timezone.utc), snapshot))
 
 
 class LearningProgressionAnalytics:
@@ -641,8 +641,14 @@ class MaintenanceAuditLog:
     
     def get_action_summary(self, days: int = 7) -> dict[str, Any]:
         """Get summary of actions over specified days."""
-        cutoff = datetime.now() - timedelta(days=days)
-        recent = [e for e in self.entries if e.timestamp >= cutoff]
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        recent = []
+        for e in self.entries:
+            ts = e.timestamp
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cutoff:
+                recent.append(e)
         
         by_type: dict[str, int] = defaultdict(int)
         by_trigger: dict[str, int] = defaultdict(int)
@@ -865,7 +871,7 @@ class StrategicBriefingGenerator:
         briefing = StrategicBriefing(
             briefing_id=f"brief_{int(time.time())}",
             title="Weekly Strategic Briefing",
-            period=datetime.now().strftime("%Y-W%W"),
+            period=datetime.now(timezone.utc).strftime("%Y-W%W"),
             executive_summary=executive_summary,
             key_highlights=[
                 f"Average margin: {kpis.get('margin', 0) * 100:.1f}%",
@@ -874,7 +880,7 @@ class StrategicBriefingGenerator:
             ],
             recommendations=recommendations,
             kpi_summary=kpis,
-            generated_at=datetime.now(),
+            generated_at=datetime.now(timezone.utc),
         )
         
         self.briefings.append(briefing)
@@ -1174,7 +1180,7 @@ class CEOSuperView:
             features_enabled=features,
             access_scope=f"full_{persona.value}_access",
             session_id=f"overlay_{int(time.time())}",
-            started_at=datetime.now(),
+            started_at=datetime.now(timezone.utc),
             actions_logged=0,
         )
         
@@ -1214,7 +1220,7 @@ class CEOSuperView:
             "user_id": self.ceo_user_id,
             "action": action,
             "details": details,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "overlay_active": self.active_overlay is not None,
         })
         
@@ -1274,7 +1280,7 @@ class EmployeeIntelligenceAnalytics:
                     severity=RiskLevel.MEDIUM if abs(analytics.cycle_time_trend) < 0.25 else RiskLevel.HIGH,
                     indicators=[f"Cycle time {abs(analytics.cycle_time_trend) * 100:.1f}% {direction}"],
                     recommendation="Review workload and provide coaching if needed",
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                 )
                 alerts.append(alert)
                 self.talent_alerts.append(alert)
@@ -1288,7 +1294,7 @@ class EmployeeIntelligenceAnalytics:
                     severity=RiskLevel.HIGH,
                     indicators=[f"Error rate increased {analytics.error_rate_trend * 100:.1f}%"],
                     recommendation="Provide just-in-time training",
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                 )
                 alerts.append(alert)
                 self.talent_alerts.append(alert)
@@ -1319,7 +1325,7 @@ class EmployeeIntelligenceAnalytics:
                     severity=RiskLevel.HIGH,
                     indicators=burnout_indicators,
                     recommendation="Consider workload review and wellness check-in",
-                    detected_at=datetime.now(),
+                    detected_at=datetime.now(timezone.utc),
                 )
                 alerts.append(alert)
                 self.talent_alerts.append(alert)

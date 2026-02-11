@@ -189,11 +189,11 @@ class TestCorrectionVerification:
 
     def test_exact_match(self):
         svc = self._make_service()
-        correction = svc.add_correction(
+        correction = svc.apply_correction(
             role="admin",
             original_output="The part is good",
             corrected_output="The part requires rework due to surface defects",
-            reason="Quality issue missed",
+            context="Quality issue missed",
         )
         applied, msg = svc.verify_correction_applied(
             "admin",
@@ -204,11 +204,11 @@ class TestCorrectionVerification:
 
     def test_no_match(self):
         svc = self._make_service()
-        correction = svc.add_correction(
+        correction = svc.apply_correction(
             role="admin",
             original_output="The part is good",
             corrected_output="The part requires rework due to surface defects",
-            reason="Quality issue missed",
+            context="Quality issue missed",
         )
         applied, msg = svc.verify_correction_applied(
             "admin",
@@ -220,11 +220,11 @@ class TestCorrectionVerification:
     def test_partial_word_match_insufficient(self):
         """Bag-of-words alone would match this; bigram overlap should catch it."""
         svc = self._make_service()
-        correction = svc.add_correction(
+        correction = svc.apply_correction(
             role="admin",
             original_output="x",
             corrected_output="The inspection found critical surface defects on part A",
-            reason="test",
+            context="test",
         )
         # Rearranged words — same unigrams but very different meaning
         applied, msg = svc.verify_correction_applied(
@@ -244,18 +244,49 @@ class TestCorrectionVerification:
 class TestSelfImprovingRAG:
     """Smoke tests for the self-improving RAG system."""
 
-    def test_add_and_search_chunk(self):
-        from sensei.services.ai.self_improving_rag import SelfImprovingRAG
-        rag = SelfImprovingRAG()
-        rag.add_chunk("doc1", "Quality inspection procedures for ISO 9001", {"source": "manual"})
-        results = rag.search("quality ISO")
-        assert len(results) >= 0  # may be empty with fake embeddings
+    def _make_service(self):
+        from sensei.services.ai.self_improving_rag import (
+            SelfImprovingRAGService,
+            InMemoryVectorStore,
+            ChunkUtilityTracker,
+            IncrementalIndexManager,
+            ThrottleManager,
+            ReindexScheduler,
+            SimpleDocumentProcessor,
+        )
+        vs = InMemoryVectorStore()
+        ut = ChunkUtilityTracker()
+        im = IncrementalIndexManager(vector_store=vs)
+        th = ThrottleManager()
+        sc = ReindexScheduler(throttle=th)
+        pr = SimpleDocumentProcessor()
+        return SelfImprovingRAGService(
+            vector_store=vs,
+            utility_tracker=ut,
+            index_manager=im,
+            throttle=th,
+            scheduler=sc,
+            processor=pr,
+        )
 
-    def test_feedback_recording(self):
-        from sensei.services.ai.self_improving_rag import SelfImprovingRAG
-        rag = SelfImprovingRAG()
-        rag.add_chunk("doc1", "Test content", {})
-        rag.record_feedback("doc1", "search-1", True, "Relevant result")
+    @pytest.mark.asyncio
+    async def test_add_and_search_chunk(self):
+        svc = self._make_service()
+        count = await svc.index_document("doc1", b"Quality inspection procedures for ISO 9001")
+        assert count >= 0
+        # query requires an embedding vector; just verify the call doesn't crash
+        results = await svc.query([0.0] * 16, top_k=3)
+        assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_feedback_recording(self):
+        svc = self._make_service()
+        await svc.index_document("doc1", b"Test content")
+        await svc.log_query_result(
+            query_id="search-1",
+            retrieved_chunks=["doc1_0"],
+            chunks_in_answer=["doc1_0"],
+        )
         # Should not raise
 
 
@@ -271,7 +302,9 @@ class TestModelQualityBenchmark:
         bench = ModelQualityBenchmark("test")
         y_true = [1, 1, 0, 0, 1, 0]
         y_pred = [1, 1, 0, 0, 1, 0]
-        metrics = bench.compute_metrics(y_true, y_pred)
+        for t, p in zip(y_true, y_pred):
+            bench.add(p, t)
+        metrics = bench.compute_metrics()
         assert metrics["accuracy"] == 1.0
         assert metrics["precision"] == 1.0
         assert metrics["recall"] == 1.0
@@ -281,5 +314,7 @@ class TestModelQualityBenchmark:
         bench = ModelQualityBenchmark("test")
         y_true = [1, 1, 1]
         y_pred = [0, 0, 0]
-        metrics = bench.compute_metrics(y_true, y_pred)
+        for t, p in zip(y_true, y_pred):
+            bench.add(p, t)
+        metrics = bench.compute_metrics()
         assert metrics["recall"] == 0.0

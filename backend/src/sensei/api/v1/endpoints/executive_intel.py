@@ -646,7 +646,7 @@ async def export_strategic_report(
     pending_ship_stmt = select(func.count()).select_from(Shipment).where(
         Shipment.status.in_(["pending", "processing", "packed", "ready"])
     )
-    inventory_stmt = select(func.coalesce(func.sum(InventoryLevel.qty_on_hand), 0))
+    inventory_stmt = select(func.coalesce(func.sum(InventoryLevel.quantity_on_hand), 0))
 
     # ── HR KPIs ──────────────────────────────────────────────
     active_users_stmt = select(func.count()).select_from(User).where(

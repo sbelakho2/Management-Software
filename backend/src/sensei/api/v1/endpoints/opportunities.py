@@ -546,6 +546,22 @@ async def create_opportunity(
     await db.commit()
     await db.refresh(opp)
     
+    # Best-effort: bind common thread lineage
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        await ct.bind(
+            db,
+            opportunity_id=str(opp.id),
+            created_by_id=getattr(current_user, "id", None),
+            source="opportunity_create",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Failed to capture opportunity common-thread")
+    
     return build_created_response(
         data=opportunity_to_response(opp),
         resource_name="Opportunity",

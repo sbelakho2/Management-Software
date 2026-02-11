@@ -55,8 +55,11 @@ async def mock_get_current_user():
 async def test_analytics_rbac_admin(app):
     app.dependency_overrides[deps.get_token_data] = mock_get_token_data_admin
     app.dependency_overrides[deps.get_current_user] = mock_get_current_user
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = 0
+    mock_result.scalars.return_value.all.return_value = []
     mock_db = MagicMock()
-    mock_db.execute = AsyncMock(return_value=MagicMock())
+    mock_db.execute = AsyncMock(return_value=mock_result)
     app.dependency_overrides[deps.get_db] = lambda: mock_db
     mock_warehouse = MagicMock()
     mock_warehouse.get_exported_records = AsyncMock(return_value=[])

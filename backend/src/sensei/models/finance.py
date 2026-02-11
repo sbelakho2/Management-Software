@@ -2,6 +2,7 @@
 Finance and Accounting models.
 """
 
+import enum
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
@@ -11,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     Date,
     ForeignKey,
+    Integer as SAInteger,
     Numeric,
     String,
     Text,
@@ -22,9 +24,22 @@ from sqlalchemy.dialects import postgresql
 
 from sensei.models.base import Base, TimestampMixin, AuditMixin
 
+
+class AccountingPeriodStatus(str, enum.Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class JournalEntryStatus(str, enum.Enum):
+    DRAFT = "draft"
+    APPROVED = "approved"
+    POSTED = "posted"
+    REVERSED = "reversed"
+
 if TYPE_CHECKING:
     from sensei.models.user import User
     from sensei.models.site import Site
+    from sensei.models.product import Product
 
 
 class GLAccount(Base, TimestampMixin, AuditMixin):
@@ -69,7 +84,7 @@ class AccountingPeriod(Base, TimestampMixin, AuditMixin):
     period_key: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="open", nullable=False) # open, closed
+    status: Mapped[str] = mapped_column(String(20), default=AccountingPeriodStatus.OPEN.value, nullable=False)  # open, closed
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_by_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
@@ -85,7 +100,7 @@ class JournalEntry(Base, TimestampMixin, AuditMixin):
     reference: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     entry_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False) # draft, approved, posted, reversed
+    status: Mapped[str] = mapped_column(String(20), default=JournalEntryStatus.DRAFT.value, nullable=False)  # draft, approved, posted, reversed
     
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -156,12 +171,15 @@ class StandardCostRecord(Base, TimestampMixin, AuditMixin):
     __tablename__ = "standard_costs"
 
     sku: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    product_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     material_unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     labor_unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     overhead_unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     total_unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+
+    product: Mapped[Optional["Product"]] = relationship("Product", foreign_keys=[product_id])
 
     __table_args__ = (
         UniqueConstraint("sku", "effective_date", name="uq_standard_cost_sku_date"),
@@ -174,7 +192,7 @@ class WorkOrderCostRollup(Base, TimestampMixin, AuditMixin):
     """
     __tablename__ = "work_order_cost_rollups"
 
-    work_order_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    work_order_id: Mapped[int] = mapped_column(SAInteger, ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True)
     finished_sku: Mapped[str] = mapped_column(String(100), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     planned_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
@@ -292,7 +310,7 @@ class BankAccount(Base, TimestampMixin, AuditMixin):
     bank_name: Mapped[str] = mapped_column(String(255), nullable=False)
     bank_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # e.g., SWIFT/BIC
     iban: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), default="TND", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     account_type: Mapped[str] = mapped_column(String(50), default="checking", nullable=False)  # checking, savings, cash
     
     site_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"), nullable=True)
@@ -325,7 +343,7 @@ class BankTransaction(Base, TimestampMixin, AuditMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), default="TND", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     running_balance: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), nullable=True)
     
     status: Mapped[str] = mapped_column(String(20), default="posted", nullable=False)  # pending, posted, reconciled, voided
@@ -340,4 +358,4 @@ class BankTransaction(Base, TimestampMixin, AuditMixin):
     legacy_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     
     bank_account: Mapped["BankAccount"] = relationship("BankAccount", back_populates="transactions")
-    reconciled_by: Mapped[Optional["User"]] = relationship("User")
+    reconciled_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reconciled_by_id])

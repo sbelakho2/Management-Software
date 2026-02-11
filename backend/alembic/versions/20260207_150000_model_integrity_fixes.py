@@ -21,25 +21,42 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table_name: str) -> bool:
+    """Check if a table exists using raw SQL (works with async drivers)."""
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables"
+            "  WHERE table_schema = 'public' AND table_name = :tbl"
+            ")"
+        ),
+        {"tbl": table_name},
+    )
+    return result.scalar() or False
+
+
 def upgrade() -> None:
     # ── #174  DateTime → DateTime(timezone=True) ────────────────────────
     # production: shift_handover_notes.acknowledged_at
-    op.alter_column(
-        "shift_handover_notes",
-        "acknowledged_at",
-        type_=sa.DateTime(timezone=True),
-        existing_type=sa.DateTime(),
-        existing_nullable=True,
-    )
+    if _table_exists("shift_handover_notes"):
+        op.alter_column(
+            "shift_handover_notes",
+            "acknowledged_at",
+            type_=sa.DateTime(timezone=True),
+            existing_type=sa.DateTime(),
+            existing_nullable=True,
+        )
 
     # production: global_pulses.expires_at
-    op.alter_column(
-        "global_pulses",
-        "expires_at",
-        type_=sa.DateTime(timezone=True),
-        existing_type=sa.DateTime(),
-        existing_nullable=True,
-    )
+    if _table_exists("global_pulses"):
+        op.alter_column(
+            "global_pulses",
+            "expires_at",
+            type_=sa.DateTime(timezone=True),
+            existing_type=sa.DateTime(),
+            existing_nullable=True,
+        )
 
     # work_order: work_orders.held_at
     op.alter_column(
@@ -158,6 +175,8 @@ def downgrade() -> None:
         ("global_pulses", "expires_at"),
         ("shift_handover_notes", "acknowledged_at"),
     ]:
+        if not _table_exists(table):
+            continue
         op.alter_column(
             table,
             column,

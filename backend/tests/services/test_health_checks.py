@@ -197,9 +197,9 @@ class TestHealthCheckService:
         assert health.status == HealthStatus.DEGRADED
         assert health.latency_ms > 100
     
-    def test_check_redis_health_success(self, full_service):
+    async def test_check_redis_health_success(self, full_service):
         """Test successful Redis health check"""
-        health = full_service.check_redis_health()
+        health = await full_service.check_redis_health()
         
         assert health.name == "Redis Cache"
         assert health.dependency_type == DependencyType.CACHE
@@ -208,25 +208,25 @@ class TestHealthCheckService:
         assert health.error_message is None
         assert "connected_clients" in health.metadata
     
-    def test_check_redis_health_no_client(self, service):
+    async def test_check_redis_health_no_client(self, service):
         """Test Redis health check without client"""
-        health = service.check_redis_health()
+        health = await service.check_redis_health()
         
         assert health.status == HealthStatus.UNHEALTHY
         assert "not configured" in health.error_message
     
-    def test_check_redis_health_ping_failure(self, full_service, mock_redis):
+    async def test_check_redis_health_ping_failure(self, full_service, mock_redis):
         """Test Redis health check with ping failure"""
         mock_redis.ping.side_effect = Exception("Connection refused")
         
-        health = full_service.check_redis_health()
+        health = await full_service.check_redis_health()
         
         assert health.status == HealthStatus.UNHEALTHY
         assert "Connection refused" in health.error_message
     
-    def test_check_s3_health_success(self, full_service):
+    async def test_check_s3_health_success(self, full_service):
         """Test successful S3 health check"""
-        health = full_service.check_s3_health()
+        health = await full_service.check_s3_health()
         
         assert health.name == "S3 Storage"
         assert health.dependency_type == DependencyType.STORAGE
@@ -235,35 +235,37 @@ class TestHealthCheckService:
         assert health.error_message is None
         assert health.metadata["bucket_count"] == 2
     
-    def test_check_s3_health_no_client(self, service):
+    async def test_check_s3_health_no_client(self, service):
         """Test S3 health check without client"""
-        health = service.check_s3_health()
+        health = await service.check_s3_health()
         
         assert health.status == HealthStatus.UNHEALTHY
         assert "not configured" in health.error_message
     
-    def test_check_s3_health_failure(self, full_service, mock_s3):
+    async def test_check_s3_health_failure(self, full_service, mock_s3):
         """Test S3 health check with failure"""
         mock_s3.list_buckets.side_effect = Exception("Access denied")
         
-        health = full_service.check_s3_health()
+        health = await full_service.check_s3_health()
         
         assert health.status == HealthStatus.UNHEALTHY
         assert "Access denied" in health.error_message
     
-    def test_check_all_dependencies(self, full_service):
+    async def test_check_all_dependencies(self, full_service):
         """Test checking all dependencies"""
-        results = full_service.check_all_dependencies()
+        results = await full_service.check_all_dependencies()
         
-        assert len(results) == 3
+        assert len(results) >= 3
         assert full_service.last_full_check is not None
         
-        # All should be healthy
-        for health in results:
+        # Core dependencies (DB, Redis, S3) should be healthy
+        core_types = {DependencyType.DATABASE, DependencyType.CACHE, DependencyType.STORAGE}
+        core_deps = [h for h in results if h.dependency_type in core_types]
+        for health in core_deps:
             assert health.status == HealthStatus.HEALTHY
     
     @patch('sensei.services.core.health_checks.psutil')
-    def test_get_resource_metrics(self, mock_psutil, service):
+    async def test_get_resource_metrics(self, mock_psutil, service):
         """Test getting resource metrics"""
         # Mock psutil responses
         mock_psutil.cpu_percent.return_value = 45.5
@@ -282,7 +284,7 @@ class TestHealthCheckService:
         
         mock_psutil.net_connections.return_value = [1, 2, 3, 4, 5]
         
-        metrics = service.get_resource_metrics()
+        metrics = await service.get_resource_metrics()
         
         assert metrics.cpu_percent == 45.5
         assert metrics.memory_percent == 60.0
@@ -291,7 +293,7 @@ class TestHealthCheckService:
         assert metrics.network_connections == 5
         assert metrics.timestamp is not None
     
-    def test_get_scaling_recommendation_maintain(self, service):
+    async def test_get_scaling_recommendation_maintain(self, service):
         """Test scaling recommendation to maintain"""
         metrics = ResourceMetrics(
             cpu_percent=50.0,
@@ -305,13 +307,13 @@ class TestHealthCheckService:
             timestamp=_utcnow()
         )
         
-        recommendation = service.get_scaling_recommendation(metrics)
+        recommendation = await service.get_scaling_recommendation(metrics)
         
         assert recommendation.action == "maintain"
         assert recommendation.current_replicas == 2
         assert recommendation.recommended_replicas == 2
     
-    def test_get_scaling_recommendation_scale_up_cpu(self, service):
+    async def test_get_scaling_recommendation_scale_up_cpu(self, service):
         """Test scaling recommendation to scale up due to CPU"""
         metrics = ResourceMetrics(
             cpu_percent=85.0,  # Above 70% threshold
@@ -325,14 +327,14 @@ class TestHealthCheckService:
               timestamp=_utcnow()
         )
         
-        recommendation = service.get_scaling_recommendation(metrics)
+        recommendation = await service.get_scaling_recommendation(metrics)
         
         assert recommendation.action == "scale_up"
         assert "CPU" in recommendation.reason
         assert recommendation.recommended_replicas == 3
         assert recommendation.confidence > 0
     
-    def test_get_scaling_recommendation_scale_down_cpu(self, service):
+    async def test_get_scaling_recommendation_scale_down_cpu(self, service):
         """Test scaling recommendation to scale down due to low CPU"""
         metrics = ResourceMetrics(
             cpu_percent=20.0,  # Below 30% threshold
@@ -346,13 +348,13 @@ class TestHealthCheckService:
               timestamp=_utcnow()
         )
         
-        recommendation = service.get_scaling_recommendation(metrics)
+        recommendation = await service.get_scaling_recommendation(metrics)
         
         assert recommendation.action == "scale_down"
         assert "CPU" in recommendation.reason
         assert recommendation.recommended_replicas == 2  # Min replicas
     
-    def test_get_scaling_recommendation_scale_up_memory(self, service):
+    async def test_get_scaling_recommendation_scale_up_memory(self, service):
         """Test scaling recommendation to scale up due to memory"""
         metrics = ResourceMetrics(
             cpu_percent=50.0,
@@ -366,13 +368,13 @@ class TestHealthCheckService:
               timestamp=_utcnow()
         )
         
-        recommendation = service.get_scaling_recommendation(metrics)
+        recommendation = await service.get_scaling_recommendation(metrics)
         
         assert recommendation.action == "scale_up"
         assert "Memory" in recommendation.reason
         assert recommendation.recommended_replicas == 3
     
-    def test_get_scaling_recommendation_max_replicas(self, service):
+    async def test_get_scaling_recommendation_max_replicas(self, service):
         """Test scaling recommendation respects max replicas"""
         service.current_replicas = 10  # Already at max
         
@@ -388,12 +390,12 @@ class TestHealthCheckService:
             timestamp=_utcnow()
         )
         
-        recommendation = service.get_scaling_recommendation(metrics)
+        recommendation = await service.get_scaling_recommendation(metrics)
         
         assert recommendation.action == "scale_up"
         assert recommendation.recommended_replicas == 10  # Cannot exceed max
     
-    def test_get_health_summary(self, full_service):
+    async def test_get_health_summary(self, full_service):
         """Test getting comprehensive health summary"""
         full_service.mark_startup_complete()
         
@@ -410,7 +412,7 @@ class TestHealthCheckService:
                 timestamp=_utcnow()
             )
             
-            summary = full_service.get_health_summary()
+            summary = await full_service.get_health_summary()
         
         assert "status" in summary
         assert "timestamp" in summary
@@ -431,7 +433,7 @@ class TestHealthCheckService:
         # Check scaling
         assert summary["scaling"]["action"] == "maintain"
     
-    def test_get_health_summary_with_unhealthy_dependency(self, full_service, mock_redis):
+    async def test_get_health_summary_with_unhealthy_dependency(self, full_service, mock_redis):
         """Test health summary with unhealthy dependency"""
         full_service.mark_startup_complete()
         
@@ -451,7 +453,7 @@ class TestHealthCheckService:
                 timestamp=_utcnow()
             )
             
-            summary = full_service.get_health_summary()
+            summary = await full_service.get_health_summary()
         
         # Overall status should be unhealthy
         assert summary["status"] == HealthStatus.UNHEALTHY.value

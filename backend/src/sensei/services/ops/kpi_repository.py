@@ -425,6 +425,6 @@ async def seed_default_definitions(db: AsyncSession) -> int:
         await create_definition(db, is_default=True, **kpi)
         created += 1
 
-    await db.commit()
+    await db.flush()
     logger.info("Seeded %d default KPI definitions", created)
     return created

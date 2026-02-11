@@ -245,19 +245,16 @@ class TestGetPaginated:
     async def test_get_paginated_basic(self, repository, mock_db):
         """Test basic pagination."""
         entities = [MagicMock() for _ in range(10)]
-        
-        # Mock count query
-        count_result = MagicMock()
-        count_result.scalar.return_value = 35
-        
-        # Mock data query
-        data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = entities
-        
-        mock_db.execute.side_effect = [count_result, data_result]
-        
+        total_count = 35
+
+        # Single query with window function: result.all() returns [(entity, total), ...]
+        rows = [(e, total_count) for e in entities]
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+        mock_db.execute.return_value = mock_result
+
         result, total = await repository.get_paginated(page=1, page_size=10)
-        
+
         assert len(result) == 10
         assert total == 35
     
@@ -265,17 +262,15 @@ class TestGetPaginated:
     async def test_get_paginated_with_offset(self, repository, mock_db):
         """Test pagination with offset."""
         entities = [MagicMock() for _ in range(10)]
-        
-        count_result = MagicMock()
-        count_result.scalar.return_value = 35
-        
-        data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = entities
-        
-        mock_db.execute.side_effect = [count_result, data_result]
-        
+        total_count = 35
+
+        rows = [(e, total_count) for e in entities]
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+        mock_db.execute.return_value = mock_result
+
         result, total = await repository.get_paginated(page=2, page_size=10)
-        
+
         assert len(result) == 10
         assert total == 35
     
@@ -283,25 +278,23 @@ class TestGetPaginated:
     async def test_get_paginated_with_filters(self, repository, mock_db):
         """Test pagination with filters."""
         entities = [MagicMock() for _ in range(5)]
-        
-        count_result = MagicMock()
-        count_result.scalar.return_value = 5
-        
-        data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = entities
-        
-        mock_db.execute.side_effect = [count_result, data_result]
-        
+        total_count = 5
+
+        rows = [(e, total_count) for e in entities]
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+        mock_db.execute.return_value = mock_result
+
         filters = [
             FilterOperator(field="status", operator="eq", value="active"),
         ]
-        
+
         result, total = await repository.get_paginated(
             page=1,
             page_size=10,
             filters=filters,
         )
-        
+
         assert len(result) == 5
         assert total == 5
     
@@ -309,48 +302,44 @@ class TestGetPaginated:
     async def test_get_paginated_with_sort(self, repository, mock_db):
         """Test pagination with sorting."""
         entities = [MagicMock() for _ in range(10)]
-        
-        count_result = MagicMock()
-        count_result.scalar.return_value = 10
-        
-        data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = entities
-        
-        mock_db.execute.side_effect = [count_result, data_result]
-        
+        total_count = 10
+
+        rows = [(e, total_count) for e in entities]
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+        mock_db.execute.return_value = mock_result
+
         sort = [
             SortOrder(field="name", direction="asc"),
             SortOrder(field="created_at", direction="desc"),
         ]
-        
+
         result, total = await repository.get_paginated(
             page=1,
             page_size=10,
             sort=sort,
         )
-        
+
         assert len(result) == 10
     
     @pytest.mark.asyncio
     async def test_get_paginated_with_search(self, repository, mock_db):
         """Test pagination with search."""
         entities = [MagicMock() for _ in range(3)]
-        
-        count_result = MagicMock()
-        count_result.scalar.return_value = 3
-        
-        data_result = MagicMock()
-        data_result.scalars.return_value.all.return_value = entities
-        
-        mock_db.execute.side_effect = [count_result, data_result]
-        
+        total_count = 3
+
+        rows = [(e, total_count) for e in entities]
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+        mock_db.execute.return_value = mock_result
+
         result, total = await repository.get_paginated(
             page=1,
             page_size=10,
             search="test",
             search_fields=["name", "email"],
         )
-        
+
         assert len(result) == 3
 
 
@@ -488,15 +477,20 @@ class TestCreateMany:
             {"name": "Entity 2"},
             {"name": "Entity 3"},
         ]
-        
-        async def refresh_side_effect(entity):
-            entity.id = uuid4()
-            entity.created_at = datetime.now(timezone.utc)
-        
-        mock_db.refresh.side_effect = refresh_side_effect
-        
+
+        # Mock begin_nested() as an async context manager
+        mock_db.begin_nested = MagicMock(
+            return_value=AsyncMock(__aenter__=AsyncMock(), __aexit__=AsyncMock())
+        )
+
+        # After commit, create_many does a bulk re-query by PKs
+        created_entities = [MagicMock(id=uuid4()) for _ in range(3)]
+        requery_result = MagicMock()
+        requery_result.scalars.return_value.all.return_value = created_entities
+        mock_db.execute.return_value = requery_result
+
         result = await repository.create_many(items)
-        
+
         assert len(result) == 3
         assert mock_db.add.call_count == 3
         mock_db.commit.assert_called_once()
@@ -681,22 +675,18 @@ class TestDeleteMany:
     
     @pytest.mark.asyncio
     async def test_delete_many(self, repository, mock_db):
-        """Test deleting multiple entities."""
-        entities = [
-            MagicMock(id=uuid4(), deleted_at=None, deleted_by=None),
-            MagicMock(id=uuid4(), deleted_at=None, deleted_by=None),
-        ]
+        """Test deleting multiple entities (bulk UPDATE)."""
+        ids = [uuid4(), uuid4()]
+
+        # Bulk UPDATE returns a result with rowcount
         mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = entities
+        mock_result.rowcount = 2
         mock_db.execute.return_value = mock_result
-        
-        ids = [e.id for e in entities]
+
         result = await repository.delete_many(ids)
-        
+
         assert result == 2
-        # Check all were soft-deleted
-        for entity in entities:
-            assert entity.deleted_at is not None
+        mock_db.commit.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_delete_many_empty(self, repository, mock_db):
@@ -811,11 +801,11 @@ class TestFilterBuilder:
         assert condition is not None
     
     def test_invalid_field(self, repository):
-        """Test filter with non-existent field returns None."""
+        """Test filter with non-existent field raises ValueError."""
         filter_op = FilterOperator(field="nonexistent", operator="eq", value="test")
-        condition = repository._build_filter_condition(filter_op)
-        
-        assert condition is None
+
+        with pytest.raises(ValueError, match="Invalid filter field"):
+            repository._build_filter_condition(filter_op)
     
     def test_invalid_operator(self, repository):
         """Test filter with invalid operator returns None."""

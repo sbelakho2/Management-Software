@@ -43,6 +43,36 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 logger = logging.getLogger(__name__)
 
+import re
+
+_SAFE_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate that *name* is a safe SQL identifier (column / table).
+
+    Only allows ``[a-zA-Z_][a-zA-Z0-9_]*``.  Raises ``ValueError`` for
+    anything else, preventing SQL injection through f-string interpolation.
+    """
+    if not _SAFE_IDENTIFIER_RE.match(name):
+        raise ValueError(f"Unsafe SQL identifier rejected: {name!r}")
+    return name
+
+
+def _validate_order_by(clause: str) -> str:
+    """Validate an ORDER BY clause like ``'created_at DESC'``.
+
+    Allows one or more ``column [ASC|DESC]`` segments separated by commas.
+    """
+    for part in clause.split(","):
+        tokens = part.strip().split()
+        if not tokens or len(tokens) > 2:
+            raise ValueError(f"Unsafe ORDER BY clause rejected: {clause!r}")
+        _validate_identifier(tokens[0])
+        if len(tokens) == 2 and tokens[1].upper() not in ("ASC", "DESC"):
+            raise ValueError(f"Unsafe ORDER BY direction rejected: {tokens[1]!r}")
+    return clause
+
 
 class PersistentServiceMixin:
     """Mixin that adds PostgreSQL persistence to any in-memory service.
@@ -271,6 +301,8 @@ class DedicatedTableRepository:
         self, tenant_id: UUID, data: dict
     ) -> Optional[str]:
         """Insert a row and return the generated UUID."""
+        for k in data.keys():
+            _validate_identifier(k)
         columns = ["tenant_id"] + list(data.keys())
         placeholders = [":tenant_id"] + [f":{k}" for k in data.keys()]
         try:
@@ -295,6 +327,8 @@ class DedicatedTableRepository:
         self, row_id: UUID, data: dict
     ) -> bool:
         """Update a row by ID."""
+        for k in data.keys():
+            _validate_identifier(k)
         set_clause = ", ".join(f"{k} = :{k}" for k in data.keys())
         try:
             async with await self._get_session() as session:
@@ -358,11 +392,13 @@ class DedicatedTableRepository:
         filters: Optional[dict] = None,
     ) -> list[dict]:
         """List rows for a tenant with pagination and optional filters."""
+        _validate_order_by(order_by)
         where_clauses = ["tenant_id = :tenant_id", "(deleted_at IS NULL OR deleted_at > NOW())"]
         params: dict = {"tenant_id": str(tenant_id), "limit": limit, "offset": offset}
 
         if filters:
             for i, (col, val) in enumerate(filters.items()):
+                _validate_identifier(col)
                 param_name = f"filter_{i}"
                 where_clauses.append(f"{col} = :{param_name}")
                 params[param_name] = val
@@ -395,6 +431,7 @@ class DedicatedTableRepository:
 
         if filters:
             for i, (col, val) in enumerate(filters.items()):
+                _validate_identifier(col)
                 param_name = f"filter_{i}"
                 where_clauses.append(f"{col} = :{param_name}")
                 params[param_name] = val

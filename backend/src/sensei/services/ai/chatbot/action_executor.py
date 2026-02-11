@@ -194,18 +194,18 @@ class ActionExecutor:
         try:
             result = await handler(intent, context)
             logger.info(
-                "Action executed",
-                action_type=action_type.value,
-                status=result.status.value,
-                user_id=str(context.user.user_id),
+                "Action executed action_type=%s status=%s user_id=%s",
+                action_type.value,
+                result.status.value,
+                str(context.user.user_id),
             )
             return result
         except PermissionError as e:
             logger.warning(
-                "Action unauthorized",
-                action_type=action_type.value,
-                user_id=str(context.user.user_id),
-                error=str(e),
+                "Action unauthorized action_type=%s user_id=%s error=%s",
+                action_type.value,
+                str(context.user.user_id),
+                str(e),
             )
             return ActionResult(
                 action_type=action_type,
@@ -214,10 +214,10 @@ class ActionExecutor:
             )
         except Exception as e:
             logger.error(
-                "Action failed",
-                action_type=action_type.value,
-                user_id=str(context.user.user_id),
-                error=str(e),
+                "Action failed action_type=%s user_id=%s error=%s",
+                action_type.value,
+                str(context.user.user_id),
+                str(e),
                 exc_info=True,
             )
             return ActionResult(

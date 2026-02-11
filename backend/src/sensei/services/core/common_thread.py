@@ -93,9 +93,11 @@ class CommonThreadService:
         )
         db.add(tr)
         try:
-            await db.flush()
+            async with db.begin_nested():
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
+            # Duplicate trace — safely ignored via savepoint rollback
+            pass
 
     async def bind(
         self,
@@ -114,6 +116,9 @@ class CommonThreadService:
         andon_event_id: Any | None = None,
         capa_id: Any | None = None,
         opportunity_id: Any | None = None,
+        journal_entry_id: Any | None = None,
+        bank_transaction_id: Any | None = None,
+        payment_id: Any | None = None,
         created_by_id: Any | None = None,
         reasoning_id: str | None = None,
         source: str | None = None,
@@ -124,6 +129,7 @@ class CommonThreadService:
         Opportunity -> RFQ -> Quote -> SalesOrder -> WorkOrder -> NC -> Shipment -> Invoice
         Plus cross-links: NC -> CAPA, Andon -> CAPA, Quote -> Opportunity, PO -> WorkOrder.
         Supply chain links: PO -> GoodsReceipt -> InventoryMove.
+        Finance links: Invoice -> JournalEntry, Payment -> JournalEntry, BankTransaction -> JournalEntry.
         """
 
         def _id(x: Any | None) -> str | None:
@@ -339,6 +345,78 @@ class CommonThreadService:
                 metadata={"source": source or "common_thread"},
             )
 
+        # ---- Finance links (M9 fix) ----
+
+        # Invoice -> Journal Entry (GL posting)
+        if invoice_id is not None and journal_entry_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="invoice",
+                source_entity_id=_id(invoice_id),
+                relationship_type="posted_to_gl",
+                target_entity_type="journal_entry",
+                target_entity_id=_id(journal_entry_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Payment -> Journal Entry (cash receipt GL posting)
+        if payment_id is not None and journal_entry_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="payment",
+                source_entity_id=_id(payment_id),
+                relationship_type="posted_to_gl",
+                target_entity_type="journal_entry",
+                target_entity_id=_id(journal_entry_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Bank Transaction -> Journal Entry
+        if bank_transaction_id is not None and journal_entry_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="bank_transaction",
+                source_entity_id=_id(bank_transaction_id),
+                relationship_type="recorded_in_gl",
+                target_entity_type="journal_entry",
+                target_entity_id=_id(journal_entry_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Goods Receipt -> Journal Entry (inventory accrual)
+        if goods_receipt_id is not None and journal_entry_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="goods_receipt",
+                source_entity_id=_id(goods_receipt_id),
+                relationship_type="posted_to_gl",
+                target_entity_type="journal_entry",
+                target_entity_id=_id(journal_entry_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
+        # Work Order -> Journal Entry (cost relief)
+        if work_order_id is not None and journal_entry_id is not None:
+            await self._lineage.link(
+                db,
+                source_entity_type="work_order",
+                source_entity_id=_id(work_order_id),
+                relationship_type="posted_to_gl",
+                target_entity_type="journal_entry",
+                target_entity_id=_id(journal_entry_id),
+                created_by_id=created_by_id,
+                reasoning_id=reasoning_id,
+                metadata={"source": source or "common_thread"},
+            )
+
         # Reasoning trace stamping
         if reasoning_id:
             for et, eid in (
@@ -355,6 +433,9 @@ class CommonThreadService:
                 ("inventory_move", inventory_move_id),
                 ("shipment", shipment_id),
                 ("invoice", invoice_id),
+                ("journal_entry", journal_entry_id),
+                ("bank_transaction", bank_transaction_id),
+                ("payment", payment_id),
             ):
                 if eid is not None:
                     await self.record_reasoning(
@@ -583,8 +664,12 @@ class CommonThreadService:
             return {}
 
         entity_types = sorted({k[0] for k in keys})
+        entity_ids = sorted({k[1] for k in keys})
         result = await db.execute(
-            select(ReasoningTrace).where(ReasoningTrace.entity_type.in_(entity_types))
+            select(ReasoningTrace).where(
+                ReasoningTrace.entity_type.in_(entity_types),
+                ReasoningTrace.entity_id.in_(entity_ids),
+            )
         )
         traces = result.scalars().all()
 

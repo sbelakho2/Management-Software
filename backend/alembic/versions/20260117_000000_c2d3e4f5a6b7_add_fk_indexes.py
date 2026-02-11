@@ -6,6 +6,7 @@ Create Date: 2026-01-17 00:00:00
 """
 
 from alembic import op
+import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "c2d3e4f5a6b7"
@@ -100,7 +101,18 @@ INDEXES = [
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
     for table, column in INDEXES:
+        # Check that both table and column exist before creating the index
+        exists = conn.execute(
+            sa.text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :tbl AND column_name = :col"
+            ),
+            {"tbl": table, "col": column},
+        ).fetchone()
+        if exists is None:
+            continue
         index_name = f"ix_{table}_{column}"
         op.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})")
 

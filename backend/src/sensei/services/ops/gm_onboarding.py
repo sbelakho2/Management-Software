@@ -5,12 +5,14 @@ Provides Day-1 onboarding functionality for new GM users,
 including setup wizards, progress tracking, and guided tours.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 from typing import Any, Callable, Optional
 from uuid import uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +158,7 @@ class GMFirstAction:
     estimated_minutes: int = 5
 
 
-class GMOnboardingService:
+class GMOnboardingService(PersistentServiceMixin):
     """
     Manages GM onboarding process.
     
@@ -166,13 +168,108 @@ class GMOnboardingService:
     - Dashboard tour
     - Key metrics introduction
     - First action recommendations
+    
+    State is persisted via PersistentServiceMixin so progress
+    survives restarts.
     """
     
+    SERVICE_NAME = "gm_onboarding"
+    
     def __init__(self):
+        super().__init__()
         self._user_progress: dict[str, OnboardingProgress] = {}
         self._step_templates: list[OnboardingStep] = self._create_step_templates()
         self._tour_spots: list[GMDashboardTourSpot] = self._create_tour_spots()
         self._listeners: list[Callable[[OnboardingProgress], None]] = []
+    
+    # ── Persistence helpers ──────────────────────────────────────────
+    
+    def _progress_to_dict(self, progress: OnboardingProgress) -> dict:
+        """Serialize OnboardingProgress to a JSON-safe dict."""
+        steps = []
+        for s in progress.steps:
+            steps.append({
+                "id": s.id,
+                "step_type": s.step_type.value,
+                "title": s.title,
+                "description": s.description,
+                "order": s.order,
+                "required": s.required,
+                "status": s.status.value,
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "time_spent_seconds": s.time_spent_seconds,
+                "data": s.data,
+            })
+        return {
+            "user_id": progress.user_id,
+            "user_name": progress.user_name,
+            "role": progress.role,
+            "status": progress.status.value,
+            "steps": steps,
+            "started_at": progress.started_at.isoformat() if progress.started_at else None,
+            "completed_at": progress.completed_at.isoformat() if progress.completed_at else None,
+            "last_activity": progress.last_activity.isoformat() if progress.last_activity else None,
+            "completion_percentage": progress.completion_percentage,
+            "estimated_remaining_minutes": progress.estimated_remaining_minutes,
+        }
+    
+    def _dict_to_progress(self, data: dict) -> OnboardingProgress:
+        """Deserialize a dict back into OnboardingProgress."""
+        steps = []
+        for sd in data.get("steps", []):
+            steps.append(OnboardingStep(
+                id=sd["id"],
+                step_type=OnboardingStepType(sd["step_type"]),
+                title=sd["title"],
+                description=sd["description"],
+                order=sd["order"],
+                required=sd.get("required", True),
+                status=OnboardingStatus(sd.get("status", "not_started")),
+                started_at=datetime.fromisoformat(sd["started_at"]) if sd.get("started_at") else None,
+                completed_at=datetime.fromisoformat(sd["completed_at"]) if sd.get("completed_at") else None,
+                time_spent_seconds=sd.get("time_spent_seconds", 0),
+                data=sd.get("data", {}),
+            ))
+        return OnboardingProgress(
+            user_id=data["user_id"],
+            user_name=data["user_name"],
+            role=data.get("role", "gm"),
+            status=OnboardingStatus(data.get("status", "not_started")),
+            steps=steps,
+            started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
+            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            last_activity=datetime.fromisoformat(data["last_activity"]) if data.get("last_activity") else None,
+            completion_percentage=data.get("completion_percentage", 0.0),
+            estimated_remaining_minutes=data.get("estimated_remaining_minutes", 0),
+        )
+    
+    async def _persist_progress(self, user_id: str) -> None:
+        """Persist a user's onboarding progress to DB."""
+        progress = self._user_progress.get(user_id)
+        if progress:
+            await self.save_state("default", user_id, self._progress_to_dict(progress))
+    
+    async def _load_progress(self, user_id: str) -> Optional[OnboardingProgress]:
+        """Load a user's onboarding progress from DB into cache."""
+        if user_id in self._user_progress:
+            return self._user_progress[user_id]
+        data = await self.load_state("default", user_id)
+        if data:
+            progress = self._dict_to_progress(data)
+            self._user_progress[user_id] = progress
+            return progress
+        return None
+    
+    def _fire_persist(self, user_id: str) -> None:
+        """Best-effort persist from sync code running inside an async handler."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._persist_progress(user_id))
+        except RuntimeError:
+            # No running loop (e.g. tests) — skip persistence
+            pass
     
     def _create_step_templates(self) -> list[OnboardingStep]:
         """Create default onboarding step templates."""
@@ -363,12 +460,17 @@ class GMOnboardingService:
         
         self._user_progress[user_id] = progress
         self._notify_listeners(progress)
+        self._fire_persist(user_id)
         
         return progress
     
     def get_progress(self, user_id: str) -> Optional[OnboardingProgress]:
-        """Get onboarding progress for a user."""
+        """Get onboarding progress for a user (in-memory cache only)."""
         return self._user_progress.get(user_id)
+    
+    async def get_progress_async(self, user_id: str) -> Optional[OnboardingProgress]:
+        """Get onboarding progress for a user, loading from DB if needed."""
+        return await self._load_progress(user_id)
     
     def start_step(self, user_id: str, step_id: str) -> Optional[OnboardingStep]:
         """Start a specific onboarding step."""
@@ -384,6 +486,7 @@ class GMOnboardingService:
                 progress.last_activity = datetime.now(timezone.utc)
                 self._update_completion(progress)
                 self._notify_listeners(progress)
+                self._fire_persist(user_id)
                 
                 return step
         return None
@@ -425,6 +528,7 @@ class GMOnboardingService:
                     progress.completed_at = now
                 
                 self._notify_listeners(progress)
+                self._fire_persist(user_id)
                 return step
         return None
     
@@ -445,6 +549,7 @@ class GMOnboardingService:
                 progress.last_activity = datetime.now(timezone.utc)
                 self._update_completion(progress)
                 self._notify_listeners(progress)
+                self._fire_persist(user_id)
                 
                 return step
         return None
@@ -658,6 +763,7 @@ class GMOnboardingService:
             
             progress.last_activity = datetime.now(timezone.utc)
             self._notify_listeners(progress)
+            self._fire_persist(user_id)
         
         # Return the action with updated status
         actions = self.get_first_actions(user_id)
@@ -741,6 +847,13 @@ class GMOnboardingService:
         """Reset onboarding for a user (for testing/re-onboarding)."""
         if user_id in self._user_progress:
             del self._user_progress[user_id]
+            # Best-effort delete from DB
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.delete_state("default", user_id))
+            except RuntimeError:
+                pass
             return True
         return False
     

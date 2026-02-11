@@ -19,6 +19,12 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class NudgeCategory(str, Enum):
     """Categories for nudge tips."""
@@ -142,16 +148,22 @@ class NudgeStats:
     follow_rate: float = 0.0
 
 
-class SenseiNudgesService:
+class SenseiNudgesService(PersistentServiceMixin):
     """
     Service for generating context-aware tips and nudges.
 
     Analyzes form data in real-time to provide helpful suggestions,
     warnings, and best practice recommendations.
+    
+    State is persisted via PersistentServiceMixin so rules, feedback,
+    and dismissals survive restarts.
     """
+
+    SERVICE_NAME = "sensei_nudges"
 
     def __init__(self) -> None:
         """Initialize the Sensei Nudges service."""
+        super().__init__()
         self._rules: dict[UUID, NudgeRule] = {}
         self._nudges: dict[UUID, Nudge] = {}
         self._feedback: dict[UUID, list[NudgeFeedback]] = {}
@@ -159,6 +171,90 @@ class SenseiNudgesService:
         self._historical_patterns: dict[str, list[dict[str, Any]]] = {}
 
         self._setup_default_rules()
+    
+    # ── Persistence helpers ──────────────────────────────────────────
+    
+    def _fire_persist_rules(self) -> None:
+        """Best-effort persist custom rules to DB."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            rules_data = {
+                str(rid): {
+                    "id": str(r.id),
+                    "name": r.name,
+                    "description": r.description,
+                    "form_context": r.form_context.value,
+                    "category": r.category.value,
+                    "severity": r.severity.value,
+                    "trigger": r.trigger.value,
+                    "conditions": r.conditions,
+                    "message_template": r.message_template,
+                    "action_text": r.action_text,
+                    "action_url": r.action_url,
+                    "is_active": r.is_active,
+                    "priority": r.priority,
+                }
+                for rid, r in self._rules.items()
+            }
+            loop.create_task(self.save_state("default", "rules", rules_data))
+        except RuntimeError:
+            pass
+    
+    def _fire_persist_feedback(self, nudge_id: UUID) -> None:
+        """Best-effort persist feedback for a nudge."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            fb_list = [
+                {
+                    "id": str(fb.id),
+                    "nudge_id": str(fb.nudge_id),
+                    "user_id": str(fb.user_id),
+                    "feedback_type": fb.feedback_type,
+                    "comment": fb.comment,
+                    "created_at": fb.created_at.isoformat() if fb.created_at else None,
+                }
+                for fb in self._feedback.get(nudge_id, [])
+            ]
+            loop.create_task(self.save_state("default", f"feedback_{nudge_id}", fb_list))
+        except RuntimeError:
+            pass
+    
+    def _fire_persist_dismissals(self, user_id: UUID) -> None:
+        """Best-effort persist dismissals for a user."""
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            dismissed = list(str(rid) for rid in self._user_dismissals.get(user_id, set()))
+            loop.create_task(self.save_state("default", f"dismissals_{user_id}", dismissed))
+        except RuntimeError:
+            pass
+    
+    async def hydrate_rules_from_db(self) -> None:
+        """Load persisted rules on startup."""
+        data = await self.load_state("default", "rules")
+        if data and isinstance(data, dict):
+            for rid_str, rd in data.items():
+                try:
+                    rule = NudgeRule(
+                        id=UUID(rd["id"]),
+                        name=rd["name"],
+                        description=rd["description"],
+                        form_context=FormContext(rd["form_context"]),
+                        category=NudgeCategory(rd["category"]),
+                        severity=NudgeSeverity(rd["severity"]),
+                        trigger=NudgeTrigger(rd["trigger"]),
+                        conditions=rd["conditions"],
+                        message_template=rd["message_template"],
+                        action_text=rd.get("action_text"),
+                        action_url=rd.get("action_url"),
+                        is_active=rd.get("is_active", True),
+                        priority=rd.get("priority", 50),
+                    )
+                    self._rules[rule.id] = rule
+                except Exception:
+                    logger.warning("Failed to deserialize nudge rule %s", rid_str)
 
     def _setup_default_rules(self) -> None:
         """Set up default nudge rules."""
@@ -415,6 +511,7 @@ class SenseiNudgesService:
             priority=priority,
         )
         self._rules[rule.id] = rule
+        self._fire_persist_rules()
         return rule
 
     def get_rule(self, rule_id: UUID) -> NudgeRule | None:
@@ -455,12 +552,14 @@ class SenseiNudgesService:
             if hasattr(rule, key):
                 setattr(rule, key, value)
 
+        self._fire_persist_rules()
         return rule
 
     def delete_rule(self, rule_id: UUID) -> bool:
         """Delete a rule."""
         if rule_id in self._rules:
             del self._rules[rule_id]
+            self._fire_persist_rules()
             return True
         return False
 
@@ -672,6 +771,7 @@ class SenseiNudgesService:
             if user_id not in self._user_dismissals:
                 self._user_dismissals[user_id] = set()
             self._user_dismissals[user_id].add(nudge.rule_id)
+            self._fire_persist_dismissals(user_id)
 
         return nudge
 
@@ -720,6 +820,7 @@ class SenseiNudgesService:
             self._feedback[nudge_id] = []
         self._feedback[nudge_id].append(feedback)
 
+        self._fire_persist_feedback(nudge_id)
         return feedback
 
     def get_feedback(self, nudge_id: UUID) -> list[NudgeFeedback]:
@@ -956,4 +1057,5 @@ class SenseiNudgesService:
             self._rules[rule.id] = rule
             imported += 1
 
+        self._fire_persist_rules()
         return imported
