@@ -63,6 +63,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatDate, generateId } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 import { useQuoteStore } from '@/stores/quote';
 
 // Types
@@ -539,6 +540,7 @@ function NewQuotePageRefinedContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { saveQuote, submitQuote, isLoading: isSaving } = useQuoteStore();
   
   const rfqId = searchParams.get('rfq');
@@ -711,13 +713,13 @@ function NewQuotePageRefinedContent() {
       if (asDraft) {
         await saveQuote(formData);
         toast({
-          title: 'Quote saved as draft',
+          title: t('pages.quotes.toast.savedDraft'),
           description: formData.quoteNumber || 'Draft saved successfully',
         });
       } else {
         await submitQuote(formData);
         toast({
-          title: 'Quote submitted for approval',
+          title: t('pages.quotes.toast.submitted'),
           description: formData.quoteNumber || 'Quote submitted successfully',
         });
         router.push('/quotes');
@@ -725,8 +727,8 @@ function NewQuotePageRefinedContent() {
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error saving quote',
-        description: 'Please try again.',
+        title: t('pages.quotes.toast.saveFailed'),
+        description: t('pages.quotes.toast.tryAgain'),
       });
     }
   };
@@ -753,7 +755,7 @@ function NewQuotePageRefinedContent() {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-heading font-bold tracking-tight ">New Quote</h1>
+              <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.quotes.new.newQuote')}</h1>
               {formData.quoteNumber && (
                 <Badge variant="outline" className="text-sm">
                   {formData.quoteNumber} v{formData.version}
@@ -806,7 +808,7 @@ function NewQuotePageRefinedContent() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Line Items</CardTitle>
+                <CardTitle>{t('pages.quotes.new.lineItems')}</CardTitle>
                 <CardDescription>Add products and pricing</CardDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -835,8 +837,8 @@ function NewQuotePageRefinedContent() {
               {formData.lineItems.length === 0 ? (
                 <div className="text-center py-12 border-2 border-dashed rounded-lg">
                   <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-medium">No line items</h3>
-                  <p className="text-muted-foreground">Add items to your quote</p>
+                  <h3 className="mt-4 text-lg font-medium">{t('pages.quotes.new.noLineItems')}</h3>
+                  <p className="text-muted-foreground">{t('pages.quotes.new.addItemsToQuote')}</p>
                   <Button className="mt-4" onClick={handleAddLineItem}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add First Item
@@ -852,11 +854,11 @@ function NewQuotePageRefinedContent() {
                         <th className="py-2 px-2 text-left font-medium">Description</th>
                         <th className="py-2 px-2 text-right font-medium">Qty</th>
                         <th className="py-2 px-2 text-left font-medium">UoM</th>
-                        <th className="py-2 px-2 text-right font-medium">Unit Price</th>
+                        <th className="py-2 px-2 text-right font-medium">{t('pages.quotes.new.unitPrice')}</th>
                         <th className="py-2 px-2 text-right font-medium">Extended</th>
                         {showDetailedCosting && (
                           <>
-                            <th className="py-2 px-2 text-right font-medium">Total Cost</th>
+                            <th className="py-2 px-2 text-right font-medium">{t('pages.quotes.new.totalCost')}</th>
                             <th className="py-2 px-2 text-right font-medium">Margin</th>
                           </>
                         )}
@@ -887,7 +889,7 @@ function NewQuotePageRefinedContent() {
               <CardHeader>
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="w-full justify-between p-0 hover:bg-transparent">
-                    <CardTitle>Internal Costing Analysis</CardTitle>
+                    <CardTitle>{t('pages.quotes.new.internalCostingAnalysis')}</CardTitle>
                     {showInternalCosting ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                   </Button>
                 </CollapsibleTrigger>
@@ -896,15 +898,15 @@ function NewQuotePageRefinedContent() {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-muted/50 rounded-lg">
-                      <p className="text-sm text-muted-foreground">Total Revenue</p>
+                      <p className="text-sm text-muted-foreground">{t('pages.quotes.new.totalRevenue')}</p>
                       <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(calculations.total)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
-                      <p className="text-sm text-muted-foreground">Total Cost</p>
+                      <p className="text-sm text-muted-foreground">{t('pages.quotes.new.totalCost')}</p>
                       <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(calculations.totalCost)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
-                      <p className="text-sm text-muted-foreground">Gross Profit</p>
+                      <p className="text-sm text-muted-foreground">{t('pages.quotes.new.grossProfit')}</p>
                       <p className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(calculations.total - calculations.totalCost)}</p>
                     </div>
                     <div className="p-4 bg-muted/50 rounded-lg">
@@ -973,7 +975,7 @@ function NewQuotePageRefinedContent() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>Valid Until</Label>
+                <Label>{t('pages.quotes.new.validUntil')}</Label>
                 <Input
                   type="date"
                   value={formData.validUntil}
@@ -1022,7 +1024,7 @@ function NewQuotePageRefinedContent() {
                 )}
 
                 <div className="flex items-center gap-2">
-                  <Label className="w-20">Tax Rate</Label>
+                  <Label className="w-20">{t('pages.quotes.new.taxRate')}</Label>
                   <div className="relative flex-1">
                     <Input
                       type="number"
@@ -1056,7 +1058,7 @@ function NewQuotePageRefinedContent() {
           {/* Quick Actions */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Quick Actions</CardTitle>
+              <CardTitle className="text-sm">{t('pages.quotes.new.quickActions')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <Button variant="outline" className="w-full justify-start" size="sm">
@@ -1080,7 +1082,7 @@ function NewQuotePageRefinedContent() {
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Submit Quote for Approval</DialogTitle>
+            <DialogTitle>{t('pages.quotes.new.submitForApproval')}</DialogTitle>
             <DialogDescription>
               This quote will be sent to your manager for approval before it can be sent to the customer.
             </DialogDescription>

@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Plus, Flag, Calendar, CheckCircle2, Circle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface MilestonesListProps {
   projectId: string;
@@ -18,6 +19,7 @@ interface MilestonesListProps {
 
 export function MilestonesList({ projectId }: MilestonesListProps) {
   const { milestones, fetchMilestones, createMilestone, updateMilestone, deleteMilestone } = useProjectManagementStore();
+  const { t } = useI18n();
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -73,40 +75,40 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-heading font-bold tracking-tight ">Milestones</h2>
-          <p className="text-muted-foreground">Key project events and deadlines.</p>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.projectManagement.detail.milestones')}</h2>
+          <p className="text-muted-foreground">{t('pages.projectManagement.milestones.subtitle')}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="pm-create-milestone">
-              <Plus className="mr-2 h-4 w-4" /> New Milestone
+              <Plus className="mr-2 h-4 w-4" /> {t('pages.projectManagement.milestones.newMilestone')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Milestone</DialogTitle>
+              <DialogTitle>{t('pages.projectManagement.milestones.createNewMilestone')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Name</label>
+                <label className="text-sm font-medium">{t('pages.projectManagement.milestones.name')}</label>
                 <Input 
-                  placeholder="Phase 1 Complete" 
+                  placeholder={t('pages.projectManagement.milestones.namePlaceholder')} 
                   value={name} 
                   onChange={(e) => setName(e.target.value)}
                   data-testid="pm-milestone-name"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Description</label>
+                <label className="text-sm font-medium">{t('pages.projectManagement.milestones.description')}</label>
                 <Input 
-                  placeholder="Details..." 
+                  placeholder={t('pages.projectManagement.milestones.detailsPlaceholder')} 
                   value={description} 
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Due Date</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.milestones.dueDate')}</label>
                   <Input 
                     type="date"
                     value={dueDate} 
@@ -115,26 +117,26 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Type</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.milestones.type')}</label>
                   <Select value={milestoneType} onValueChange={setMilestoneType}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="deadline">Deadline</SelectItem>
-                      <SelectItem value="release">Release</SelectItem>
-                      <SelectItem value="phase_gate">Phase Gate</SelectItem>
-                      <SelectItem value="sprint">Sprint</SelectItem>
-                      <SelectItem value="audit">Audit</SelectItem>
+                      <SelectItem value="deadline">{t('pages.projectManagement.milestones.types.deadline')}</SelectItem>
+                      <SelectItem value="release">{t('pages.projectManagement.milestones.types.release')}</SelectItem>
+                      <SelectItem value="phase_gate">{t('pages.projectManagement.milestones.types.phaseGate')}</SelectItem>
+                      <SelectItem value="sprint">{t('pages.projectManagement.milestones.types.sprint')}</SelectItem>
+                      <SelectItem value="audit">{t('pages.projectManagement.milestones.types.audit')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t('common.cancel')}</Button>
               <Button onClick={handleCreateMilestone} disabled={isSubmitting} data-testid="pm-milestone-submit">
-                {isSubmitting ? 'Creating...' : 'Create Milestone'}
+                {isSubmitting ? t('pages.projectManagement.milestones.creating') : t('pages.projectManagement.milestones.createMilestone')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -152,7 +154,7 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
 
         {closedMilestones.length > 0 && (
           <>
-            <h3 className="text-lg font-semibold mt-8">Completed Milestones</h3>
+            <h3 className="text-lg font-semibold mt-8">{t('pages.projectManagement.milestones.completedMilestones')}</h3>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 opacity-70">
               {closedMilestones.map(m => (
                 <MilestoneCard key={m.id} milestone={m} onToggle={() => handleToggleClosed(m)} />
@@ -164,8 +166,8 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
         {projectMilestones.length === 0 && (
           <div className="text-center py-12 border-2 border-dashed rounded-lg">
             <Flag className="mx-auto h-12 w-12 text-muted-foreground opacity-20" />
-            <h3 className="mt-4 text-lg font-medium">No milestones defined</h3>
-            <p className="text-muted-foreground">Add key dates to track your project progress.</p>
+            <h3 className="mt-4 text-lg font-medium">{t('pages.projectManagement.milestones.noMilestonesDefined')}</h3>
+            <p className="text-muted-foreground">{t('pages.projectManagement.milestones.addKeyDates')}</p>
           </div>
         )}
       </div>
@@ -174,6 +176,7 @@ export function MilestonesList({ projectId }: MilestonesListProps) {
 }
 
 function MilestoneCard({ milestone, onToggle }: { milestone: ProjectMilestone, onToggle: () => void }) {
+  const { t } = useI18n();
   const progress = milestone.total_items > 0 ? (milestone.closed_items / milestone.total_items) * 100 : 0;
   const isOverdue = !milestone.is_closed && new Date(milestone.due_date) < new Date();
 
@@ -195,7 +198,7 @@ function MilestoneCard({ milestone, onToggle }: { milestone: ProjectMilestone, o
           <Calendar className="h-4 w-4" />
           <span className={isOverdue ? 'text-destructive font-semibold' : ''}>
             {format(new Date(milestone.due_date), 'PPP')}
-            {isOverdue && ' (Overdue)'}
+            {isOverdue && ` (${t('pages.projectManagement.milestones.overdue')})`}
           </span>
         </div>
         

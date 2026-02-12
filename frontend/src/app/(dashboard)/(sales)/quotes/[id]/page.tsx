@@ -50,6 +50,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatDate, formatDateTime, getInitials } from '@/lib/utils';
 import { useI18n } from '@/contexts/i18n-context';
 import { useToast } from '@/hooks/use-toast';
+import { quoteApi } from '@/api/rfq';
+import { accountApi } from '@/api/accounts';
 
 interface QuoteLineItem {
   id: string;
@@ -107,51 +109,18 @@ interface Quote {
   versions: QuoteVersion[];
 }
 
-const mockQuote: Quote = {
-  id: '1',
-  quoteNumber: 'Q-2024-0112',
-  rfqId: 'rfq-1',
-  rfqNumber: 'RFQ-2024-0089',
-  status: 'sent',
-  version: 2,
-  customer: {
-    id: 'cust-1',
-    name: 'Aerospace Dynamics Inc.',
-    contact: {
-      name: 'Michael Roberts',
-      email: 'mroberts@aerospacedynamics.com',
-      phone: '+1 (555) 234-5678',
-    },
-  },
-  lineItems: [
-    { id: '1', partNumber: 'AER-001', description: 'Precision bracket - Type A', quantity: 200, unitOfMeasure: 'pcs', unitPrice: 245.00, extendedPrice: 49000, leadTimeDays: 21 },
-    { id: '2', partNumber: 'AER-002', description: 'Precision bracket - Type B', quantity: 200, unitOfMeasure: 'pcs', unitPrice: 285.00, extendedPrice: 57000, leadTimeDays: 21 },
-    { id: '3', partNumber: 'AER-003', description: 'Mounting plate assembly', quantity: 100, unitOfMeasure: 'pcs', unitPrice: 185.00, extendedPrice: 18500, leadTimeDays: 14 },
-  ],
-  subtotal: 124500,
-  discount: 0,
-  tax: 0,
-  total: 124500,
-  margin: 28.5,
-  validUntil: '2024-02-15',
-  termsAndConditions: `1. Payment Terms: Net 30 days from invoice date
-2. Validity: This quote is valid for 30 days from the date of issue
-3. Delivery: FOB Destination, freight prepaid
-4. Lead Time: As specified per line item
-5. Warranty: Standard 12-month warranty on all parts`,
-  notes: 'Customer requested expedited shipping if possible.',
-  createdAt: '2024-01-10T09:30:00Z',
-  createdBy: { name: 'Sarah Chen' },
-  approvedBy: {
-    name: 'David Wilson',
-    approvedAt: '2024-01-11T14:20:00Z',
-  },
-  sentAt: '2024-01-12T10:00:00Z',
-  versions: [
-    { version: 1, createdAt: '2024-01-10T09:30:00Z', createdBy: 'Sarah Chen', changes: 'Initial version' },
-    { version: 2, createdAt: '2024-01-11T11:45:00Z', createdBy: 'Sarah Chen', changes: 'Updated pricing per customer feedback' },
-  ],
-};
+/** Map backend status to the limited UI status set. */
+function mapQuoteStatus(s: string): Quote['status'] {
+  const v = s?.toLowerCase() ?? '';
+  if (v === 'draft') return 'draft';
+  if (v === 'pending_approval' || v === 'submitted') return 'pending_approval';
+  if (v === 'approved') return 'approved';
+  if (v === 'sent') return 'sent';
+  if (v === 'accepted' || v === 'won') return 'accepted';
+  if (v === 'rejected' || v === 'lost' || v === 'customer_rejected') return 'rejected';
+  if (v === 'expired') return 'expired';
+  return 'draft';
+}
 
 const statusConfig: Record<Quote['status'], { labelKey: string; variant: 'default' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline'; icon: typeof Clock }> = {
   draft: { labelKey: 'pages.quotes.status.draft', variant: 'secondary', icon: FileText },
@@ -196,18 +165,130 @@ export default function QuoteDetailPage() {
   const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setQuote(mockQuote);
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
+    const quoteId = params.id as string;
+    if (!quoteId) return;
+
+    let cancelled = false;
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const raw = await quoteApi.get(quoteId) as any;
+        if (cancelled) return;
+
+        // Fetch customer name if we have a customer_id
+        let customerName = raw.customer_name ?? raw.account_name ?? '';
+        const customerId = raw.customer_id ?? raw.account_id ?? '';
+        if (!customerName && customerId) {
+          try {
+            const acct = await accountApi.get(String(customerId)) as any;
+            customerName = acct.name ?? '';
+          } catch { /* ignore – we'll show blank */ }
+        }
+
+        // Map line items from API shape
+        const lineItems: QuoteLineItem[] = (raw.line_items ?? []).map((li: any) => ({
+          id: String(li.id),
+          partNumber: li.part_number ?? '',
+          description: li.description ?? '',
+          quantity: li.quantity ?? 0,
+          unitOfMeasure: li.unit_of_measure ?? 'pcs',
+          unitPrice: li.unit_price ?? 0,
+          extendedPrice: (li.quantity ?? 0) * (li.unit_price ?? 0),
+          leadTimeDays: li.lead_time_days ?? 0,
+        }));
+
+        const subtotal = raw.subtotal ?? lineItems.reduce((s: number, li: QuoteLineItem) => s + li.extendedPrice, 0);
+        const discount = raw.discount_amount ?? raw.discount ?? 0;
+        const tax = raw.tax_amount ?? raw.tax ?? 0;
+        const total = raw.total ?? (subtotal - discount + tax);
+
+        // Compute margin if cost info available
+        const totalCost = (raw.line_items ?? []).reduce((s: number, li: any) => s + ((li.cost ?? 0) * (li.quantity ?? 0)), 0);
+        const margin = total > 0 && totalCost > 0 ? ((total - totalCost) / total) * 100 : raw.margin ?? 0;
+
+        setQuote({
+          id: String(raw.id),
+          quoteNumber: raw.quote_number ?? `Q-${String(raw.id).slice(0, 8)}`,
+          rfqId: String(raw.rfq_id ?? ''),
+          rfqNumber: raw.rfq_number ?? '',
+          status: mapQuoteStatus(raw.status),
+          version: raw.version ?? raw.revision ?? 1,
+          customer: {
+            id: String(customerId),
+            name: customerName,
+            contact: {
+              name: raw.contact_name ?? '',
+              email: raw.contact_email ?? '',
+              phone: raw.contact_phone ?? '',
+            },
+          },
+          lineItems,
+          subtotal,
+          discount,
+          tax,
+          total,
+          margin,
+          validUntil: raw.valid_until ?? raw.expiry_date ?? '',
+          termsAndConditions: raw.terms_and_conditions ?? '',
+          notes: raw.notes ?? raw.internal_notes ?? '',
+          createdAt: raw.created_at ?? '',
+          createdBy: {
+            name: raw.created_by_name ?? raw.created_by ?? '',
+            avatar: undefined,
+          },
+          approvedBy: raw.approved_by_name ? {
+            name: raw.approved_by_name,
+            approvedAt: raw.approved_at ?? '',
+          } : undefined,
+          sentAt: raw.sent_at ?? undefined,
+          versions: [], // populated from versions endpoint if needed
+        });
+      } catch (err) {
+        console.error('Failed to load quote:', err);
+        if (!cancelled) setQuote(null);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
   }, [params.id]);
 
   const handleAction = async (action: string) => {
-    toast({
-      title: `Quote ${action}`,
-      description: `Quote ${mockQuote.quoteNumber} has been ${action}`,
-    });
+    if (!quote) return;
+    try {
+      switch (action) {
+        case 'approve':
+          if (quote.status === 'draft') {
+            await quoteApi.submitForApproval(quote.id);
+          } else {
+            await quoteApi.approve(quote.id);
+          }
+          break;
+        case 'reject':
+          await quoteApi.reject(quote.id, actionReason || 'Rejected');
+          break;
+        case 'won':
+          await quoteApi.accept(quote.id);
+          break;
+        case 'lost':
+          await quoteApi.customerReject(quote.id, actionReason || undefined);
+          break;
+      }
+      toast({
+        title: `Quote ${action}`,
+        description: `Quote ${quote.quoteNumber} has been ${action}`,
+      });
+      // Refresh the quote data
+      const updated = await quoteApi.get(quote.id) as any;
+      setQuote((prev) => prev ? { ...prev, status: mapQuoteStatus(updated.status) } : prev);
+    } catch (err: any) {
+      toast({
+        title: 'Error',
+        description: err?.message || `Failed to ${action} quote`,
+        variant: 'destructive' as any,
+      });
+    }
     setShowActionDialog(null);
     setActionReason('');
   };

@@ -10,6 +10,7 @@ import { OfflineBanner } from '@/components/ui/error-experience';
 import type { OfflineStatus } from '@/components/ui/error-experience';
 import type { UserRole } from '@/types';
 import { getUnauthorizedRedirectForRoles, hasPageAccess } from '@/lib/page-access';
+import { useI18n } from '@/contexts/i18n-context';
 
 /** Hook to track online/offline state (#354, #443) */
 function useOnlineStatus(): OfflineStatus {
@@ -37,6 +38,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const { isAuthenticated, isLoading, loadUser } = useAuthStore();
   const { user } = useAuthStore();
   const router = useRouter();
@@ -87,7 +89,7 @@ export default function DashboardLayout({
         <div className="relative">
           <div className="h-20 w-20 bg-rams-module flex items-center justify-center border border-rams-line">
             <div className="h-10 w-10 bg-rams-orange text-black flex items-center justify-center font-mono font-black text-2xl border border-black/10">
-              S
+              {t('layout.brandMark')}
             </div>
           </div>
           <div className="absolute -inset-4 border border-rams-orange/20 animate-pulse" />
@@ -95,7 +97,7 @@ export default function DashboardLayout({
         
         <div className="space-y-4 text-center animate-in fade-in duration-500">
           <h2 className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-foreground/60">
-            SYSTEM_INITIALIZATION...
+            {t('layout.systemInitialization')}
           </h2>
           <div className="flex items-center justify-center gap-1">
             <div className="h-1 w-4 bg-rams-orange animate-pulse" />
@@ -105,7 +107,7 @@ export default function DashboardLayout({
         </div>
 
         <div className="fixed bottom-8 text-[9px] font-mono text-muted-foreground/40 uppercase tracking-widest">
-          PROTOCOL: SENSEI_OS_V3 // BOOT_SEQUENCE
+          {t('layout.bootProtocol')}
         </div>
       </div>
     );

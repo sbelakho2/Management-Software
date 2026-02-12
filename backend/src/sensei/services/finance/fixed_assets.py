@@ -5,7 +5,7 @@ Implements Development Plan Section 22.5:
 - Depreciation schedules (monthly) with optional GL postings
 - Asset events (transfer, impairment, disposal) with audit trail
 
-This module is pure-Python and in-memory with strict RBAC.
+State is persisted via the service_state table for DB-backed continuity.
 """
 
 from __future__ import annotations
@@ -40,6 +40,210 @@ def _norm_currency(c: str) -> str:
     if len(cc) != 3 or not cc.isalpha():
         raise ValueError("Invalid currency")
     return cc
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "occurred_at": event.occurred_at.isoformat(),
+        "actor_id": event.actor_id,
+        "action": event.action,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "correlation_id": event.correlation_id,
+        "metadata": event.metadata,
+    }
+
+
+def _decode_audit_event(data: dict[str, Any]) -> "AuditEvent":
+    return AuditEvent(
+        id=UUID(data["id"]),
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        actor_id=data["actor_id"],
+        action=data["action"],
+        entity_type=data["entity_type"],
+        entity_id=data["entity_id"],
+        correlation_id=data.get("correlation_id", ""),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_asset(asset: "FixedAsset") -> dict[str, Any]:
+    return {
+        "id": str(asset.id),
+        "asset_tag": asset.asset_tag,
+        "name": asset.name,
+        "currency": asset.currency,
+        "capitalization_date": asset.capitalization_date.isoformat(),
+        "in_service_date": asset.in_service_date.isoformat(),
+        "acquisition_cost": _encode_decimal(asset.acquisition_cost),
+        "residual_value": _encode_decimal(asset.residual_value),
+        "useful_life_months": asset.useful_life_months,
+        "method": asset.method.value,
+        "source_system": asset.source_system,
+        "source_asset_id": asset.source_asset_id,
+        "status": asset.status.value,
+        "disposed_at": _encode_datetime(asset.disposed_at),
+        "disposed_by": asset.disposed_by,
+        "location": asset.location,
+        "cost_center": asset.cost_center,
+        "accumulated_depreciation": _encode_decimal(asset.accumulated_depreciation),
+        "impairment_loss_total": _encode_decimal(asset.impairment_loss_total),
+        "metadata": asset.metadata,
+    }
+
+
+def _decode_asset(data: dict[str, Any]) -> "FixedAsset":
+    return FixedAsset(
+        id=UUID(data["id"]),
+        asset_tag=data.get("asset_tag", ""),
+        name=data.get("name", ""),
+        currency=data.get("currency", ""),
+        capitalization_date=date.fromisoformat(data["capitalization_date"]),
+        in_service_date=date.fromisoformat(data["in_service_date"]),
+        acquisition_cost=Decimal(data.get("acquisition_cost", "0")),
+        residual_value=Decimal(data.get("residual_value", "0")),
+        useful_life_months=int(data.get("useful_life_months", 0)),
+        method=DepreciationMethod(data.get("method", DepreciationMethod.STRAIGHT_LINE.value)),
+        source_system=data.get("source_system"),
+        source_asset_id=data.get("source_asset_id"),
+        status=FixedAssetStatus(data.get("status", FixedAssetStatus.IN_SERVICE.value)),
+        disposed_at=_decode_datetime(data.get("disposed_at")),
+        disposed_by=data.get("disposed_by"),
+        location=data.get("location"),
+        cost_center=data.get("cost_center"),
+        accumulated_depreciation=Decimal(data.get("accumulated_depreciation", "0")),
+        impairment_loss_total=Decimal(data.get("impairment_loss_total", "0")),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_depreciation_posting(posting: "DepreciationPosting") -> dict[str, Any]:
+    return {
+        "id": str(posting.id),
+        "asset_id": str(posting.asset_id),
+        "period_key": posting.period_key,
+        "amount": _encode_decimal(posting.amount),
+        "posted_at": posting.posted_at.isoformat(),
+        "posted_by": posting.posted_by,
+        "journal_entry_id": str(posting.journal_entry_id) if posting.journal_entry_id else None,
+    }
+
+
+def _decode_depreciation_posting(data: dict[str, Any]) -> "DepreciationPosting":
+    journal_entry_id = data.get("journal_entry_id")
+    return DepreciationPosting(
+        id=UUID(data["id"]),
+        asset_id=UUID(data["asset_id"]),
+        period_key=data.get("period_key", ""),
+        amount=Decimal(data.get("amount", "0")),
+        posted_at=datetime.fromisoformat(data["posted_at"]),
+        posted_by=data.get("posted_by", ""),
+        journal_entry_id=UUID(journal_entry_id) if journal_entry_id else None,
+    )
+
+
+def _encode_asset_event(event: "AssetEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "asset_id": str(event.asset_id),
+        "event_type": event.event_type.value,
+        "occurred_at": event.occurred_at.isoformat(),
+        "actor_id": event.actor_id,
+        "correlation_id": event.correlation_id,
+        "amount": _encode_decimal(event.amount),
+        "details": event.details,
+    }
+
+
+def _decode_asset_event(data: dict[str, Any]) -> "AssetEvent":
+    return AssetEvent(
+        id=UUID(data["id"]),
+        asset_id=UUID(data["asset_id"]),
+        event_type=AssetEventType(data.get("event_type", AssetEventType.CAPITALIZED.value)),
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        actor_id=data.get("actor_id", ""),
+        correlation_id=data.get("correlation_id", ""),
+        amount=_decode_decimal(data.get("amount")),
+        details=data.get("details", {}) or {},
+    )
+
+
+def _encode_config(cfg: "FixedAssetsConfig") -> dict[str, Any]:
+    return {
+        "base_currency": cfg.base_currency,
+        "fixed_asset_account_code": cfg.fixed_asset_account_code,
+        "accumulated_depr_account_code": cfg.accumulated_depr_account_code,
+        "depreciation_expense_account_code": cfg.depreciation_expense_account_code,
+        "asset_clearing_account_code": cfg.asset_clearing_account_code,
+        "impairment_loss_account_code": cfg.impairment_loss_account_code,
+        "disposal_gain_loss_account_code": cfg.disposal_gain_loss_account_code,
+        "cash_account_code": cfg.cash_account_code,
+    }
+
+
+def _decode_config(data: dict[str, Any], fallback: "FixedAssetsConfig") -> "FixedAssetsConfig":
+    return FixedAssetsConfig(
+        base_currency=data.get("base_currency", fallback.base_currency),
+        fixed_asset_account_code=data.get(
+            "fixed_asset_account_code", fallback.fixed_asset_account_code
+        ),
+        accumulated_depr_account_code=data.get(
+            "accumulated_depr_account_code", fallback.accumulated_depr_account_code
+        ),
+        depreciation_expense_account_code=data.get(
+            "depreciation_expense_account_code", fallback.depreciation_expense_account_code
+        ),
+        asset_clearing_account_code=data.get(
+            "asset_clearing_account_code", fallback.asset_clearing_account_code
+        ),
+        impairment_loss_account_code=data.get(
+            "impairment_loss_account_code", fallback.impairment_loss_account_code
+        ),
+        disposal_gain_loss_account_code=data.get(
+            "disposal_gain_loss_account_code", fallback.disposal_gain_loss_account_code
+        ),
+        cash_account_code=data.get("cash_account_code", fallback.cash_account_code),
+    )
 
 
 # ---------------------- RBAC Role Sets ----------------------
@@ -231,6 +435,101 @@ class FixedAssetsService(PersistentServiceMixin):
         self._depr_postings: dict[tuple[UUID, str], DepreciationPosting] = {}
         self._audit: list[AuditEvent] = []
         self._events: list[AssetEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        cfg_data = await self.load_state(_DEFAULT_TENANT_ID, "config") or {}
+        assets_data = await self.load_state(_DEFAULT_TENANT_ID, "assets") or {}
+        postings_data = await self.load_state(_DEFAULT_TENANT_ID, "depr_postings") or {}
+        events_data = await self.load_state(_DEFAULT_TENANT_ID, "events") or []
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        if cfg_data:
+            self._cfg = _decode_config(cfg_data, self._cfg)
+
+        self._assets_by_id = {UUID(aid): _decode_asset(a) for aid, a in assets_data.items()}
+        self._assets_by_tag = {asset.asset_tag: asset.id for asset in self._assets_by_id.values()}
+        self._depr_postings = {
+            (p.asset_id, p.period_key): p for p in (_decode_depreciation_posting(item) for item in postings_data)
+        }
+        self._events = [_decode_asset_event(e) for e in events_data]
+        self._audit = [_decode_audit_event(a) for a in audit_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        cfg_data = _encode_config(self._cfg)
+        assets_data = {str(aid): _encode_asset(a) for aid, a in self._assets_by_id.items()}
+        postings_data = [_encode_depreciation_posting(p) for p in self._depr_postings.values()]
+        events_data = [_encode_asset_event(e) for e in self._events]
+        audit_data = [_encode_audit_event(a) for a in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "config", cfg_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "assets", assets_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "depr_postings", postings_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "events", events_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def get_asset_async(self, *, actor_roles: Iterable[str], asset_id: UUID) -> FixedAsset | None:
+        await self._ensure_loaded()
+        return self.get_asset(actor_roles=actor_roles, asset_id=asset_id)
+
+    async def list_assets_async(self, *, actor_roles: Iterable[str], include_disposed: bool = False) -> list[FixedAsset]:
+        await self._ensure_loaded()
+        return self.list_assets(actor_roles=actor_roles, include_disposed=include_disposed)
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
+
+    async def list_asset_events_async(self, *, actor_roles: Iterable[str], asset_id: UUID | None = None) -> list[AssetEvent]:
+        await self._ensure_loaded()
+        return self.list_asset_events(actor_roles=actor_roles, asset_id=asset_id)
+
+    async def get_depreciation_postings_async(self, *, actor_roles: Iterable[str], asset_id: UUID) -> list[DepreciationPosting]:
+        await self._ensure_loaded()
+        return self.get_depreciation_postings(actor_roles=actor_roles, asset_id=asset_id)
+
+    async def capitalize_from_source_async(self, **kwargs: Any) -> FixedAsset:
+        await self._ensure_loaded()
+        asset = self.capitalize_from_source(**kwargs)
+        await self.persist_all()
+        return asset
+
+    async def compute_monthly_depreciation_async(self, *, actor_roles: Iterable[str], asset_id: UUID) -> Decimal:
+        await self._ensure_loaded()
+        return self.compute_monthly_depreciation(actor_roles=actor_roles, asset_id=asset_id)
+
+    async def post_monthly_depreciation_async(self, **kwargs: Any) -> DepreciationPosting:
+        await self._ensure_loaded()
+        posting = self.post_monthly_depreciation(**kwargs)
+        await self.persist_all()
+        return posting
+
+    async def transfer_asset_async(self, **kwargs: Any) -> FixedAsset:
+        await self._ensure_loaded()
+        asset = self.transfer_asset(**kwargs)
+        await self.persist_all()
+        return asset
+
+    async def impair_asset_async(self, **kwargs: Any) -> FixedAsset:
+        await self._ensure_loaded()
+        asset = self.impair_asset(**kwargs)
+        await self.persist_all()
+        return asset
+
+    async def dispose_asset_async(self, **kwargs: Any) -> DisposalResult:
+        await self._ensure_loaded()
+        result = self.dispose_asset(**kwargs)
+        await self.persist_all()
+        return result
 
     # ------------------------------------------------------------------
     # Queries

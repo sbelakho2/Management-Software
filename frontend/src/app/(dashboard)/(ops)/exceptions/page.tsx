@@ -180,7 +180,7 @@ export default function ExceptionsPage() {
           <div className="h-1 w-4 bg-rams-orange animate-pulse [animation-delay:150ms]" />
           <div className="h-1 w-4 bg-rams-orange animate-pulse [animation-delay:300ms]" />
         </div>
-        <p className="text-[9px] font-mono text-muted-foreground/40 uppercase tracking-widest pt-4">Synchronizing operational exceptions</p>
+        <p className="text-[9px] font-mono text-muted-foreground/40 uppercase tracking-widest pt-4">{t('pages.exceptions.synchronizing')}</p>
       </div>
     </div>
   );
@@ -193,10 +193,10 @@ export default function ExceptionsPage() {
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
         <div className="space-y-1">
           <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-            {t('pages.exceptions.title') || 'Anomalous Node Registry'}
+            {t('pages.exceptions.title')}
           </h1>
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
-            <span>{t('pages.exceptions.subtitle') || 'Exception tracking and escalation protocol'}</span>
+            <span>{t('pages.exceptions.subtitle')}</span>
             <span className="opacity-30">|</span>
             <span>STATION: OPS-EXCEPTION-01</span>
           </p>
@@ -204,11 +204,11 @@ export default function ExceptionsPage() {
         <div className="flex items-center gap-3">
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={handleRefresh} disabled={isLoading}>
             <RefreshCw className={cn("h-3.5 w-3.5 mr-2", isLoading && "animate-spin")} />
-            {t('pages.exceptions.syncIntel') || 'Sync Intel'}
+            {t('pages.exceptions.syncIntel')}
           </Button>
           <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-2" />
-            {t('pages.exceptions.exportProtocol') || 'Export Protocol'}
+            {t('pages.exceptions.exportProtocol')}
           </Button>
         </div>
       </div>
@@ -216,22 +216,22 @@ export default function ExceptionsPage() {
       {/* Stats Grid (Industrial Modules) */}
       <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
         <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.criticalOpenNodes') || 'Critical Open Nodes'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.criticalOpenNodes')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{stats.critical_count}</div>
           <p className="text-[9px] font-mono font-bold text-rams-red uppercase tracking-widest mt-2">{stats.total_open} TOTAL_OPEN</p>
         </div>
         <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.overdueProtocols') || 'Overdue Protocols'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.overdueProtocols')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{stats.overdue_count}</div>
           <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">SLA_VARIANCE_DETECTED</p>
         </div>
         <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.escalatedNodes') || 'Escalated Nodes'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.escalatedNodes')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">{stats.escalated_count}</div>
           <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">MGMT_SYNC_REQUIRED</p>
         </div>
         <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group">
-          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.meanResolution') || 'Mean Resolution'}</p>
+          <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.exceptions.meanResolution')}</p>
           <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{Math.floor(stats.avg_resolution_time_minutes / 60)}h {stats.avg_resolution_time_minutes % 60}m</div>
           <p className="text-[9px] font-mono font-bold text-rams-green uppercase tracking-widest mt-2">{stats.resolved_today} RESOLVED_TODAY</p>
         </div>
@@ -379,7 +379,7 @@ export default function ExceptionsPage() {
             <CardHeader className="bg-rams-red/10 border-b border-rams-red/20">
               <CardTitle className="text-xs font-black uppercase tracking-[0.2em] text-rams-red flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4" />
-                {t('pages.exceptions.highUrgencyDeviations') || 'High Urgency Deviations'}
+                {t('pages.exceptions.highUrgencyDeviations')}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -415,7 +415,7 @@ export default function ExceptionsPage() {
                 {exceptionsList.filter(e => e.severity === 'critical' || e.severity === 'high').length === 0 && (
                   <div className="py-24 text-center">
                     <CheckCircle2 className="h-12 w-12 text-rams-green/20 mx-auto mb-4" />
-                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">Zero high-urgency nodes identified</p>
+                    <p className="text-[11px] font-black uppercase tracking-tight text-foreground/60">{t('pages.exceptions.zeroHighUrgency')}</p>
                   </div>
                 )}
               </div>

@@ -139,47 +139,47 @@ export default function BankingPage() {
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-              Banking
+              {t('pages.finance.banking.title')}
             </h1>
             <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">
-              Manage bank accounts and transactions
+              {t('pages.finance.banking.subtitle')}
             </p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" size="sm" onClick={() => fetchBankAccounts()} disabled={loading}>
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Dialog open={showAddAccountDialog} onOpenChange={setShowAddAccountDialog}>
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Account
+                  {t('pages.finance.banking.addAccount')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Add Bank Account</DialogTitle>
+                  <DialogTitle>{t('pages.finance.banking.addBankAccount')}</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label>Account Name</Label>
+                    <Label>{t('pages.finance.banking.accountName')}</Label>
                     <Input
                       value={newAccount.account_name}
                       onChange={(e) => setNewAccount((prev) => ({ ...prev, account_name: e.target.value }))}
-                      placeholder="Main Operating Account"
+                      placeholder={t('pages.finance.banking.accountNamePlaceholder')}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label>Account Number</Label>
+                      <Label>{t('pages.finance.banking.accountNumber')}</Label>
                       <Input
                         value={newAccount.account_number}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, account_number: e.target.value }))}
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label>IBAN</Label>
+                      <Label>{t('pages.finance.banking.iban')}</Label>
                       <Input
                         value={newAccount.iban}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, iban: e.target.value }))}
@@ -188,14 +188,14 @@ export default function BankingPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label>Bank Name</Label>
+                      <Label>{t('pages.finance.banking.bankName')}</Label>
                       <Input
                         value={newAccount.bank_name}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, bank_name: e.target.value }))}
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label>Bank Code (SWIFT/BIC)</Label>
+                      <Label>{t('pages.finance.banking.bankCode')}</Label>
                       <Input
                         value={newAccount.bank_code}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, bank_code: e.target.value }))}
@@ -204,37 +204,37 @@ export default function BankingPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label>Currency</Label>
+                      <Label>{t('pages.finance.banking.currency')}</Label>
                       <select
                         className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={newAccount.currency}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, currency: e.target.value }))}
                       >
-                        <option value="TND">TND - Tunisian Dinar</option>
-                        <option value="USD">USD - US Dollar</option>
-                        <option value="EUR">EUR - Euro</option>
-                        <option value="EGP">EGP - Egyptian Pound</option>
+                        <option value="TND">{t('pages.finance.banking.currencyTND')}</option>
+                        <option value="USD">{t('pages.finance.banking.currencyUSD')}</option>
+                        <option value="EUR">{t('pages.finance.banking.currencyEUR')}</option>
+                        <option value="EGP">{t('pages.finance.banking.currencyEGP')}</option>
                       </select>
                     </div>
                     <div className="grid gap-2">
-                      <Label>Account Type</Label>
+                      <Label>{t('pages.finance.banking.accountType')}</Label>
                       <select
                         className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={newAccount.account_type}
                         onChange={(e) => setNewAccount((prev) => ({ ...prev, account_type: e.target.value as any }))}
                       >
-                        <option value="checking">Checking</option>
-                        <option value="savings">Savings</option>
-                        <option value="cash">Cash</option>
+                        <option value="checking">{t('pages.finance.banking.checking')}</option>
+                        <option value="savings">{t('pages.finance.banking.savings')}</option>
+                        <option value="cash">{t('pages.finance.banking.cash')}</option>
                       </select>
                     </div>
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowAddAccountDialog(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => setShowAddAccountDialog(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleCreateAccount} disabled={loading}>
                     {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Create Account
+                    {t('pages.finance.banking.createAccount')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -248,7 +248,7 @@ export default function BankingPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-mono uppercase tracking-widest text-rams-muted mb-1">
-                  Total Balance (All Accounts)
+                  {t('pages.finance.banking.totalBalance')}
                 </p>
                 <p className="text-3xl font-bold">
                   {totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} TND
@@ -266,7 +266,7 @@ export default function BankingPage() {
           {/* Accounts List */}
           <div className="lg:col-span-1 space-y-4">
             <h2 className="text-sm font-mono uppercase tracking-widest text-rams-muted">
-              Bank Accounts ({bankAccounts.length})
+              {t('pages.finance.banking.bankAccounts')} ({bankAccounts.length})
             </h2>
             {loading && bankAccounts.length === 0 ? (
               <div className="flex items-center justify-center py-12">
@@ -276,10 +276,10 @@ export default function BankingPage() {
               <Card className="rounded-rams-sm border-rams-line bg-rams-module">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Building2 className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">No bank accounts</p>
+                  <p className="text-muted-foreground">{t('pages.finance.banking.noBankAccounts')}</p>
                   <Button size="sm" className="mt-4" onClick={() => setShowAddAccountDialog(true)}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Add First Account
+                    {t('pages.finance.banking.addFirstAccount')}
                   </Button>
                 </CardContent>
               </Card>
@@ -323,24 +323,24 @@ export default function BankingPage() {
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-mono uppercase tracking-widest text-rams-muted">
-                Transactions
+                {t('pages.finance.banking.transactions')}
               </h2>
               {selectedAccountId && (
                 <Dialog open={showAddTransactionDialog} onOpenChange={setShowAddTransactionDialog}>
                   <DialogTrigger asChild>
                     <Button size="sm" variant="outline">
                       <Plus className="h-4 w-4 mr-2" />
-                      Add Transaction
+                      {t('pages.finance.banking.addTransaction')}
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Add Transaction</DialogTitle>
+                      <DialogTitle>{t('pages.finance.banking.addTransaction')}</DialogTitle>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                          <Label>Date</Label>
+                          <Label>{t('pages.finance.banking.date')}</Label>
                           <Input
                             type="date"
                             value={newTransaction.transaction_date}
@@ -348,31 +348,31 @@ export default function BankingPage() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Type</Label>
+                          <Label>{t('pages.finance.banking.type')}</Label>
                           <select
                             className="rounded-md border border-input bg-background px-3 py-2 text-sm"
                             value={newTransaction.transaction_type}
                             onChange={(e) => setNewTransaction((prev) => ({ ...prev, transaction_type: e.target.value as BankTransactionType }))}
                           >
-                            <option value="deposit">Deposit</option>
-                            <option value="withdrawal">Withdrawal</option>
-                            <option value="transfer">Transfer</option>
-                            <option value="fee">Fee</option>
-                            <option value="interest">Interest</option>
+                            <option value="deposit">{t('pages.finance.banking.deposit')}</option>
+                            <option value="withdrawal">{t('pages.finance.banking.withdrawal')}</option>
+                            <option value="transfer">{t('pages.finance.banking.transfer')}</option>
+                            <option value="fee">{t('pages.finance.banking.fee')}</option>
+                            <option value="interest">{t('pages.finance.banking.interest')}</option>
                           </select>
                         </div>
                       </div>
                       <div className="grid gap-2">
-                        <Label>Description</Label>
+                        <Label>{t('pages.finance.banking.description')}</Label>
                         <Input
                           value={newTransaction.description}
                           onChange={(e) => setNewTransaction((prev) => ({ ...prev, description: e.target.value }))}
-                          placeholder="Payment for invoice #123"
+                          placeholder={t('pages.finance.banking.descriptionPlaceholder')}
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                          <Label>Amount</Label>
+                          <Label>{t('pages.finance.banking.amount')}</Label>
                           <Input
                             type="number"
                             step="0.01"
@@ -382,20 +382,20 @@ export default function BankingPage() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Reference</Label>
+                          <Label>{t('pages.finance.banking.reference')}</Label>
                           <Input
                             value={newTransaction.reference}
                             onChange={(e) => setNewTransaction((prev) => ({ ...prev, reference: e.target.value }))}
-                            placeholder="INV-001"
+                            placeholder={t('pages.finance.banking.referencePlaceholder')}
                           />
                         </div>
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowAddTransactionDialog(false)}>Cancel</Button>
+                      <Button variant="outline" onClick={() => setShowAddTransactionDialog(false)}>{t('common.cancel')}</Button>
                       <Button onClick={handleCreateTransaction} disabled={loading}>
                         {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        Add Transaction
+                        {t('pages.finance.banking.addTransaction')}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -407,7 +407,7 @@ export default function BankingPage() {
               <Card className="rounded-rams-sm border-rams-line bg-rams-module">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <CreditCard className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">Select an account to view transactions</p>
+                  <p className="text-muted-foreground">{t('pages.finance.banking.selectAccount')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -416,7 +416,7 @@ export default function BankingPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search transactions..."
+                    placeholder={t('pages.finance.banking.searchTransactions')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10"
@@ -432,7 +432,7 @@ export default function BankingPage() {
                   <Card className="rounded-rams-sm border-rams-line bg-rams-module">
                     <CardContent className="flex flex-col items-center justify-center py-12">
                       <CreditCard className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                      <p className="text-muted-foreground">No transactions found</p>
+                      <p className="text-muted-foreground">{t('pages.finance.banking.noTransactions')}</p>
                     </CardContent>
                   </Card>
                 ) : (
@@ -477,7 +477,7 @@ export default function BankingPage() {
                                   variant="ghost"
                                   onClick={() => reconcileBankTransaction(tx.id)}
                                 >
-                                  Reconcile
+                                  {t('pages.finance.banking.reconcile')}
                                 </Button>
                               )}
                             </div>

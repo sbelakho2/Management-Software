@@ -9,8 +9,9 @@ Handles secure, tokenized links for suppliers to upload quotes directly:
 """
 
 import hashlib
+import json
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional, Any
@@ -20,7 +21,7 @@ from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 class TokenType(str, Enum):
@@ -285,6 +286,9 @@ class SupplierPortalTokenService(PersistentServiceMixin):
 
     SERVICE_NAME = "supplier_portal"
     
+    # Default tenant for single-tenant deployments
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
     def __init__(
         self,
         base_url: str = "https://supplier.example.com/portal",
@@ -301,8 +305,180 @@ class SupplierPortalTokenService(PersistentServiceMixin):
         self._access_logs: dict[UUID, TokenAccessLog] = {}
         self._notifications: dict[UUID, NotificationRecord] = {}
         self._supplier_contacts: dict[UUID, SupplierContact] = {}
-    
-    # Token Generation
+
+    # ----------------------------------------------------------------
+    # Persistence helpers — serialise dataclasses to/from JSON-safe dicts
+    # ----------------------------------------------------------------
+
+    def _serialise_token(self, token: PortalToken) -> dict[str, Any]:
+        """Convert a PortalToken to a JSON-serialisable dict."""
+        d: dict[str, Any] = {}
+        for k, v in token.__dict__.items():
+            if isinstance(v, UUID):
+                d[k] = str(v)
+            elif isinstance(v, datetime):
+                d[k] = v.isoformat()
+            elif isinstance(v, (TokenType, TokenStatus, AccessLevel)):
+                d[k] = v.value
+            elif isinstance(v, TokenConfig):
+                d[k] = {
+                    "default_expiry_days": v.default_expiry_days,
+                    "max_uses": v.max_uses,
+                    "max_file_size_mb": v.max_file_size_mb,
+                    "allowed_file_types": [ft.value for ft in v.allowed_file_types],
+                    "require_email_verification": v.require_email_verification,
+                    "auto_notify_on_submission": v.auto_notify_on_submission,
+                    "allow_partial_submission": v.allow_partial_submission,
+                    "max_files_per_submission": v.max_files_per_submission,
+                }
+            elif isinstance(v, list):
+                d[k] = v  # list[str] for ip_restrictions / allowed_domains
+            else:
+                d[k] = v
+        return d
+
+    def _serialise_submission(self, sub: PortalSubmission) -> dict[str, Any]:
+        """Convert a PortalSubmission to a JSON-serialisable dict."""
+        d: dict[str, Any] = {}
+        for k, v in sub.__dict__.items():
+            if k == "files":
+                d[k] = [self._serialise_file(f) for f in v]
+            elif isinstance(v, UUID):
+                d[k] = str(v)
+            elif isinstance(v, datetime):
+                d[k] = v.isoformat()
+            elif isinstance(v, (SubmissionStatus, TokenType)):
+                d[k] = v.value
+            else:
+                d[k] = v
+        return d
+
+    def _serialise_file(self, uf: UploadedFile) -> dict[str, Any]:
+        d: dict[str, Any] = {}
+        for k, v in uf.__dict__.items():
+            if isinstance(v, UUID):
+                d[k] = str(v)
+            elif isinstance(v, datetime):
+                d[k] = v.isoformat()
+            elif isinstance(v, FileType):
+                d[k] = v.value
+            else:
+                d[k] = v
+        return d
+
+    async def _persist_tokens(self) -> None:
+        """Best-effort persist all tokens to the service_state table."""
+        data = {str(tid): self._serialise_token(t) for tid, t in self._tokens.items()}
+        await self.save_state(self._DEFAULT_TENANT_ID, "tokens", data)
+
+    async def _persist_submissions(self) -> None:
+        """Best-effort persist all submissions to the service_state table."""
+        data = {str(sid): self._serialise_submission(s) for sid, s in self._submissions.items()}
+        await self.save_state(self._DEFAULT_TENANT_ID, "submissions", data)
+
+    async def _persist_contacts(self) -> None:
+        """Best-effort persist supplier contacts."""
+        data = {}
+        for cid, c in self._supplier_contacts.items():
+            data[str(cid)] = {
+                "id": str(c.id),
+                "supplier_id": str(c.supplier_id),
+                "supplier_name": c.supplier_name,
+                "contact_name": c.contact_name,
+                "contact_email": c.contact_email,
+                "contact_phone": c.contact_phone,
+                "company_name": c.company_name,
+                "is_primary": c.is_primary,
+            }
+        await self.save_state(self._DEFAULT_TENANT_ID, "supplier_contacts", data)
+
+    async def persist_all(self) -> None:
+        """Persist all in-memory state to the database.
+
+        Call after mutations to ensure data survives restarts.
+        Failures are logged but not raised (best-effort).
+        """
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        try:
+            await self._persist_tokens()
+        except Exception:
+            _logger.warning("Failed to persist tokens", exc_info=True)
+        try:
+            await self._persist_submissions()
+        except Exception:
+            _logger.warning("Failed to persist submissions", exc_info=True)
+        try:
+            await self._persist_contacts()
+        except Exception:
+            _logger.warning("Failed to persist contacts", exc_info=True)
+
+    async def load_from_db(self) -> None:
+        """Load persisted state from DB into in-memory dicts on startup.
+
+        Silently degrades to empty state if the DB is unavailable.
+        """
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+
+        # Tokens
+        try:
+            tokens_data = await self.load_state(self._DEFAULT_TENANT_ID, "tokens")
+            if tokens_data and isinstance(tokens_data, dict):
+                for _tid_s, td in tokens_data.items():
+                    try:
+                        tid = UUID(td["id"])
+                        token = PortalToken(
+                            id=tid,
+                            token_value=td["token_value"],
+                            token_hash=td["token_hash"],
+                            token_type=TokenType(td["token_type"]),
+                            status=TokenStatus(td["status"]),
+                            access_level=AccessLevel(td["access_level"]),
+                            rfq_id=UUID(td["rfq_id"]) if td.get("rfq_id") else None,
+                            quote_id=UUID(td["quote_id"]) if td.get("quote_id") else None,
+                            supplier_id=UUID(td["supplier_id"]),
+                            supplier_contact_id=UUID(td["supplier_contact_id"]) if td.get("supplier_contact_id") else None,
+                            purpose_description=td.get("purpose_description", ""),
+                            created_by=UUID(td["created_by"]),
+                            created_at=datetime.fromisoformat(td["created_at"]),
+                            expires_at=datetime.fromisoformat(td["expires_at"]),
+                            use_count=td.get("use_count", 0),
+                            max_uses=td.get("max_uses"),
+                            last_used_at=datetime.fromisoformat(td["last_used_at"]) if td.get("last_used_at") else None,
+                            first_used_at=datetime.fromisoformat(td["first_used_at"]) if td.get("first_used_at") else None,
+                            ip_restrictions=td.get("ip_restrictions"),
+                            allowed_domains=td.get("allowed_domains"),
+                            require_email_match=td.get("require_email_match", True),
+                        )
+                        self._tokens[tid] = token
+                        self._token_by_hash[token.token_hash] = tid
+                    except Exception:
+                        _logger.debug("Skipping malformed token entry %s", _tid_s, exc_info=True)
+        except Exception:
+            _logger.warning("Failed to restore tokens from DB", exc_info=True)
+
+        # Contacts
+        try:
+            contacts_data = await self.load_state(self._DEFAULT_TENANT_ID, "supplier_contacts")
+            if contacts_data and isinstance(contacts_data, dict):
+                for _cid_s, cd in contacts_data.items():
+                    try:
+                        cid = UUID(cd["id"])
+                        self._supplier_contacts[cid] = SupplierContact(
+                            id=cid,
+                            supplier_id=UUID(cd["supplier_id"]),
+                            supplier_name=cd["supplier_name"],
+                            contact_name=cd["contact_name"],
+                            contact_email=cd["contact_email"],
+                            contact_phone=cd.get("contact_phone"),
+                            company_name=cd.get("company_name"),
+                            is_primary=cd.get("is_primary", False),
+                        )
+                    except Exception:
+                        _logger.debug("Skipping malformed contact entry %s", _cid_s, exc_info=True)
+        except Exception:
+            _logger.warning("Failed to restore contacts from DB", exc_info=True)
     
     def _generate_secure_token(self, length: int = 32) -> str:
         """Generate a cryptographically secure random token."""

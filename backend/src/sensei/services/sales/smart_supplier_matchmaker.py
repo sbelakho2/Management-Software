@@ -1040,7 +1040,10 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
     """
 
     SERVICE_NAME = "supplier_matchmaker"
-    
+
+    # Default tenant for single-tenant deployments
+    _DEFAULT_TENANT_ID = __import__("uuid").UUID("00000000-0000-0000-0000-000000000000")
+
     def __init__(self):
         """Initialize matchmaker."""
         self._suppliers: dict[str, Supplier] = {}
@@ -1083,6 +1086,104 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
     def get_supplier(self, supplier_id: str) -> Supplier | None:
         """Get supplier by ID."""
         return self._suppliers.get(supplier_id)
+
+    # ----------------------------------------------------------------
+    # DB persistence via PersistentServiceMixin
+    # ----------------------------------------------------------------
+
+    def _serialise_supplier(self, s: Supplier) -> dict[str, Any]:
+        """Convert Supplier to JSON-safe dict."""
+        return {
+            "supplier_id": s.supplier_id,
+            "name": s.name,
+            "tier": s.tier.value,
+            "capabilities": [
+                {"name": c.name, "category": c.category, "proficiency": c.proficiency,
+                 "keywords": c.keywords, "years_experience": c.years_experience}
+                for c in s.capabilities
+            ],
+            "performance": {
+                "quality_score": s.performance.quality_score,
+                "delivery_score": s.performance.delivery_score,
+                "price_score": s.performance.price_score,
+                "responsiveness_score": s.performance.responsiveness_score,
+                "total_orders": s.performance.total_orders,
+                "defect_rate": s.performance.defect_rate,
+                "on_time_rate": s.performance.on_time_rate,
+            },
+            "certifications": s.certifications,
+            "location": s.location,
+            "region": s.region,
+            "minimum_order_value": s.minimum_order_value,
+            "maximum_capacity_units": s.maximum_capacity_units,
+            "lead_time_days": s.lead_time_days,
+            "active": s.active,
+            "metadata": s.metadata,
+        }
+
+    async def persist_all(self) -> None:
+        """Persist supplier catalogue to the service_state table."""
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        try:
+            data = {sid: self._serialise_supplier(s) for sid, s in self._suppliers.items()}
+            await self.save_state(self._DEFAULT_TENANT_ID, "suppliers", data)
+        except Exception:
+            _logger.warning("Failed to persist supplier catalogue", exc_info=True)
+
+    async def load_from_db(self) -> None:
+        """Load persisted supplier catalogue from DB on startup."""
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        try:
+            data = await self.load_state(self._DEFAULT_TENANT_ID, "suppliers")
+            if data and isinstance(data, dict):
+                for sid, sd in data.items():
+                    try:
+                        caps = [
+                            Capability(
+                                name=c["name"], category=c.get("category", ""),
+                                proficiency=c.get("proficiency", 0.5),
+                                keywords=c.get("keywords", []),
+                                years_experience=c.get("years_experience", 0),
+                            )
+                            for c in sd.get("capabilities", [])
+                        ]
+                        perf_d = sd.get("performance", {})
+                        perf = PerformanceMetrics(
+                            quality_score=perf_d.get("quality_score", 0.0),
+                            delivery_score=perf_d.get("delivery_score", 0.0),
+                            price_score=perf_d.get("price_score", 0.0),
+                            responsiveness_score=perf_d.get("responsiveness_score", 0.0),
+                            total_orders=perf_d.get("total_orders", 0),
+                            defect_rate=perf_d.get("defect_rate", 0.0),
+                            on_time_rate=perf_d.get("on_time_rate", 0.0),
+                        )
+                        supplier = Supplier(
+                            supplier_id=sd["supplier_id"],
+                            name=sd["name"],
+                            tier=SupplierTier(sd.get("tier", "approved")),
+                            capabilities=caps,
+                            performance=perf,
+                            certifications=sd.get("certifications", []),
+                            location=sd.get("location", ""),
+                            region=sd.get("region", ""),
+                            minimum_order_value=sd.get("minimum_order_value", 0.0),
+                            maximum_capacity_units=sd.get("maximum_capacity_units", 10000),
+                            lead_time_days=sd.get("lead_time_days", 14),
+                            active=sd.get("active", True),
+                            metadata=sd.get("metadata", {}),
+                        )
+                        self._suppliers[sid] = supplier
+                        for cap in supplier.capabilities:
+                            self._capability_graph.add_capability(cap)
+                    except Exception:
+                        _logger.debug("Skipping malformed supplier entry %s", sid, exc_info=True)
+                # Re-index semantic matcher
+                if self._suppliers:
+                    self._semantic_matcher.index_capabilities(list(self._suppliers.values()))
+        except Exception:
+            _logger.warning("Failed to restore suppliers from DB", exc_info=True)
     
     def _score_supplier(
         self,

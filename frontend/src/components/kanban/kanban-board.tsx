@@ -12,6 +12,7 @@ import {
 } from '@/stores/kanban-store';
 import type { RFQ, RFQStatus, Priority } from '@/types';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 // ============================================================================
@@ -76,6 +77,7 @@ function KanbanColumnComponent({
   onCardMove,
   isDragTarget,
 }: KanbanColumnProps) {
+  const { t } = useI18n();
   const {
     getFilteredCards,
     getColumnWipStatus,
@@ -165,7 +167,7 @@ function KanbanColumnComponent({
         {cards.length === 0 && (
           <div className="flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
             <p className="text-sm text-gray-400 dark:text-gray-500">
-              No items
+              {t('components.kanban.noItems')}
             </p>
           </div>
         )}
@@ -428,6 +430,7 @@ export function KanbanToolbar({
   onViewChange,
   currentView = 'kanban',
 }: KanbanToolbarProps) {
+  const { t } = useI18n();
   const { searchQuery, setSearchQuery, config, setConfig, clearFilters } = useKanbanStore();
   const [localSearch, setLocalSearch] = React.useState(searchQuery);
 
@@ -447,7 +450,7 @@ export function KanbanToolbar({
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder="Search RFQs..."
+            placeholder={t('components.kanban.searchPlaceholder')}
             className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-4 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
           />
         </div>
@@ -461,7 +464,7 @@ export function KanbanToolbar({
           className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
         >
           <FilterIcon className="h-4 w-4" />
-          Filters
+          {t('components.kanban.filters')}
         </button>
 
         {/* Clear filters */}
@@ -469,7 +472,7 @@ export function KanbanToolbar({
           onClick={clearFilters}
           className="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
         >
-          Clear
+          {t('components.kanban.clear')}
         </button>
 
         {/* View toggle */}
@@ -482,8 +485,8 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            aria-label="Kanban view"
-            title="Kanban view"
+            aria-label={t('components.kanban.kanbanView')}
+            title={t('components.kanban.kanbanView')}
             aria-pressed={currentView === 'kanban'}
           >
             <KanbanIcon className="h-4 w-4" aria-hidden="true" />
@@ -496,8 +499,8 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            aria-label="List view"
-            title="List view"
+            aria-label={t('components.kanban.listView')}
+            title={t('components.kanban.listView')}
             aria-pressed={currentView === 'list'}
           >
             <ListIcon className="h-4 w-4" aria-hidden="true" />
@@ -510,8 +513,8 @@ export function KanbanToolbar({
                 ? 'bg-blue-600 text-white'
                 : 'bg-white text-gray-700 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200'
             )}
-            aria-label="Calendar view"
-            title="Calendar view"
+            aria-label={t('components.kanban.calendarView')}
+            title={t('components.kanban.calendarView')}
             aria-pressed={currentView === 'calendar'}
           >
             <CalendarIcon className="h-4 w-4" aria-hidden="true" />
@@ -525,8 +528,8 @@ export function KanbanToolbar({
               setConfig({ compactMode: !config.compactMode })
             }
             className="rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            aria-label={config.compactMode ? 'Expand cards' : 'Compact cards'}
-            title={config.compactMode ? 'Expand cards' : 'Compact cards'}
+            aria-label={config.compactMode ? t('components.kanban.expandCards') : t('components.kanban.compactCards')}
+            title={config.compactMode ? t('components.kanban.expandCards') : t('components.kanban.compactCards')}
             aria-pressed={config.compactMode}
           >
             <SettingsIcon className="h-4 w-4" aria-hidden="true" />
@@ -638,6 +641,7 @@ function SettingsIcon({ className }: { className?: string }) {
 // ============================================================================
 
 export function KanbanMetrics() {
+  const { t } = useI18n();
   const { config, getColumnWipStatus, getFilteredCards } = useKanbanStore();
 
   const metrics = config.columns.map((column) => {
@@ -660,13 +664,13 @@ export function KanbanMetrics() {
   return (
     <div className="flex items-center gap-6 border-b border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
       <div className="text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Total: </span>
+        <span className="text-gray-500 dark:text-gray-400">{t('components.kanban.total')}</span>
         <span className="font-medium text-gray-900 dark:text-white">
-          {totalCards} RFQs
+          {totalCards} {t('components.kanban.rfqs')}
         </span>
       </div>
       <div className="text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Pipeline Value: </span>
+        <span className="text-gray-500 dark:text-gray-400">{t('components.kanban.pipelineValue')}</span>
         <span className="font-medium text-gray-900 dark:text-white">
           {formatCurrency(totalValue)}
         </span>

@@ -138,23 +138,23 @@ export default function TaxCompliancePage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.code') || 'Code'}</label>
-                <Input value={jurisdictionForm.code} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, code: e.target.value }))} placeholder="CA-BC" />
+                <Input value={jurisdictionForm.code} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, code: e.target.value }))} placeholder={t('pages.finance.tax.codePlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.name') || 'Name'}</label>
-                <Input value={jurisdictionForm.name} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="British Columbia" />
+                <Input value={jurisdictionForm.name} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, name: e.target.value }))} placeholder={t('pages.finance.tax.namePlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.country') || 'Country'}</label>
-                <Input value={jurisdictionForm.country} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, country: e.target.value }))} placeholder="Canada" />
+                <Input value={jurisdictionForm.country} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, country: e.target.value }))} placeholder={t('pages.finance.tax.countryPlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.region') || 'Region'}</label>
-                <Input value={jurisdictionForm.region} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, region: e.target.value }))} placeholder="BC" />
+                <Input value={jurisdictionForm.region} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, region: e.target.value }))} placeholder={t('pages.finance.tax.regionPlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('common.status') || 'Status'}</label>
-                <Input value={jurisdictionForm.status} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, status: e.target.value }))} placeholder="active" />
+                <Input value={jurisdictionForm.status} onChange={(e) => setJurisdictionForm((prev) => ({ ...prev, status: e.target.value }))} placeholder={t('pages.finance.tax.activePlaceholder')} />
               </div>
             </div>
             <Button onClick={handleCreateJurisdiction} disabled={loading} className="w-full">
@@ -171,11 +171,11 @@ export default function TaxCompliancePage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.jurisdictionId') || 'Jurisdiction ID'}</label>
-                <Input value={rateForm.jurisdictionId} onChange={(e) => setRateForm((prev) => ({ ...prev, jurisdictionId: e.target.value }))} placeholder="UUID" />
+                <Input value={rateForm.jurisdictionId} onChange={(e) => setRateForm((prev) => ({ ...prev, jurisdictionId: e.target.value }))} placeholder={t('pages.finance.tax.uuidPlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.taxType') || 'Tax Type'}</label>
-                <Input value={rateForm.taxType} onChange={(e) => setRateForm((prev) => ({ ...prev, taxType: e.target.value }))} placeholder="vat" />
+                <Input value={rateForm.taxType} onChange={(e) => setRateForm((prev) => ({ ...prev, taxType: e.target.value }))} placeholder={t('pages.finance.tax.taxTypePlaceholder')} />
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.rate') || 'Rate'}</label>
@@ -187,7 +187,7 @@ export default function TaxCompliancePage() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">{t('common.status') || 'Status'}</label>
-                <Input value={rateForm.status} onChange={(e) => setRateForm((prev) => ({ ...prev, status: e.target.value }))} placeholder="active" />
+                <Input value={rateForm.status} onChange={(e) => setRateForm((prev) => ({ ...prev, status: e.target.value }))} placeholder={t('pages.finance.tax.activePlaceholder')} />
               </div>
             </div>
             <Button onClick={handleCreateRate} disabled={loading} className="w-full">
@@ -273,19 +273,19 @@ export default function TaxCompliancePage() {
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.jurisdictionId') || 'Jurisdiction ID'}</label>
-              <Input value={transactionForm.jurisdictionId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, jurisdictionId: e.target.value }))} placeholder="UUID" />
+              <Input value={transactionForm.jurisdictionId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, jurisdictionId: e.target.value }))} placeholder={t('pages.finance.tax.uuidPlaceholder')} />
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.taxRateId') || 'Tax Rate ID'}</label>
-              <Input value={transactionForm.taxRateId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, taxRateId: e.target.value }))} placeholder="UUID" />
+              <Input value={transactionForm.taxRateId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, taxRateId: e.target.value }))} placeholder={t('pages.finance.tax.uuidPlaceholder')} />
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.referenceType') || 'Reference Type'}</label>
-              <Input value={transactionForm.referenceType} onChange={(e) => setTransactionForm((prev) => ({ ...prev, referenceType: e.target.value }))} placeholder="sale" />
+              <Input value={transactionForm.referenceType} onChange={(e) => setTransactionForm((prev) => ({ ...prev, referenceType: e.target.value }))} placeholder={t('pages.finance.tax.referenceTypePlaceholder')} />
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.referenceId') || 'Reference ID'}</label>
-              <Input value={transactionForm.referenceId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, referenceId: e.target.value }))} placeholder="SO-1001" />
+              <Input value={transactionForm.referenceId} onChange={(e) => setTransactionForm((prev) => ({ ...prev, referenceId: e.target.value }))} placeholder={t('pages.finance.tax.referenceIdPlaceholder')} />
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.taxableAmount') || 'Taxable Amount'}</label>
@@ -297,11 +297,11 @@ export default function TaxCompliancePage() {
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('pages.finance.tax.currency') || 'Currency'}</label>
-              <Input value={transactionForm.currency} onChange={(e) => setTransactionForm((prev) => ({ ...prev, currency: e.target.value.toUpperCase() }))} placeholder="USD" />
+              <Input value={transactionForm.currency} onChange={(e) => setTransactionForm((prev) => ({ ...prev, currency: e.target.value.toUpperCase() }))} placeholder={t('pages.finance.tax.currencyPlaceholder')} />
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground">{t('common.status') || 'Status'}</label>
-              <Input value={transactionForm.status} onChange={(e) => setTransactionForm((prev) => ({ ...prev, status: e.target.value }))} placeholder="pending" />
+              <Input value={transactionForm.status} onChange={(e) => setTransactionForm((prev) => ({ ...prev, status: e.target.value }))} placeholder={t('pages.finance.tax.pendingPlaceholder')} />
             </div>
           </div>
           <Button onClick={handleCreateTransaction} disabled={loading} className="w-full">

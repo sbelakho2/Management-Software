@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Construction } from 'lucide-react';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface ComingSoonProps {
   title: string;
@@ -12,9 +13,10 @@ interface ComingSoonProps {
 
 export function ComingSoon({ 
   title, 
-  description = "This feature is currently under development and will be available soon.", 
+  description, 
   backHref = "/today" 
 }: ComingSoonProps) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center justify-center min-h-[400px] p-6">
       <Card className="w-full max-w-md text-center">
@@ -25,11 +27,11 @@ export function ComingSoon({
             </div>
           </div>
           <CardTitle className="text-2xl">{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
+          <CardDescription>{description ?? t('components.comingSoon.defaultMessage')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Link href={backHref}>
-            <Button>Go Back</Button>
+            <Button>{t('components.comingSoon.goBack')}</Button>
           </Link>
         </CardContent>
       </Card>

@@ -32,6 +32,8 @@
     "reset": "Reset",
     "noData": "No data available",
     "noResults": "No results found",
+    "source": "Source",
+    "notes": "Notes",
     "unread": "Unread",
     "add": "Add",
     "remove": "Remove",
@@ -44,7 +46,8 @@
       "fct": "FCT"
     },
     "actions": {
-      "analyze": "Analyze"
+      "analyze": "Analyze",
+      "_value": "الإجراءات"
     },
     "disciplines": {
       "ee": {
@@ -173,11 +176,20 @@
       "syncing": "Syncing",
       "processing": "Processing",
       "complete": "Complete",
-      "error": "Error"
+      "completed": "Completed",
+      "picked": "Picked",
+      "packed": "Packed",
+      "shipped": "Shipped",
+      "delivered": "Delivered",
+      "inProgress": "In Progress",
+      "pending": "Pending",
+      "error": "Error",
+      "_value": "Status"
     },
     "date": "Date",
     "time": "Time",
     "name": "Name",
+    "user": "User",
     "description": "Description",
     "type": "Type",
     "category": "Category",
@@ -205,6 +217,8 @@
     "download": "Download",
     "upload": "Upload",
     "print": "Print",
+    "protocol": "Protocol",
+    "cat": "CAT",
     "copy": "Copy",
     "paste": "Paste",
     "duplicate": "Duplicate",
@@ -418,6 +432,17 @@
     "menu": "Menu",
     "home": "Home"
   },
+  "layout": {
+    "brandMark": "S",
+    "systemInitialization": "SYSTEM_INITIALIZATION...",
+    "bootProtocol": "PROTOCOL: SENSEI_OS_V3 // BOOT_SEQUENCE",
+    "systemMetadata": {
+      "station": "STATION: {station}",
+      "osVer": "OS_VER: {version}",
+      "integrity": "INTEGRITY: {state}",
+      "latency": "LATENCY: {latency}"
+    }
+  },
   "emailDrafting": {
     "title": "AI Email Composer",
     "aria": {
@@ -591,6 +616,12 @@
   "settings": {
     "title": "Settings",
     "general": "General",
+    "shell": {
+      "toastTitle": "Settings Synchronized",
+      "toastDescription": "Target {title} parameters updated in registry.",
+      "synchronizing": "SYNCHRONIZING...",
+      "saveConfiguration": "SAVE_CONFIGURATION"
+    },
     "profile": {
       "title": "Profile",
       "subtitle": "Personal Identity & Organizational Role",
@@ -634,7 +665,9 @@
         "operations": "Operations",
         "finance": "Finance",
         "humanResources": "Human Resources",
-        "it": "IT"
+        "it": "IT",
+        "management": "الإدارة",
+        "warehouse": "المستودع"
       },
       "toast": {
         "updated": {
@@ -660,7 +693,8 @@
       "credentialRotationDesc": "Periodic update of access keys is recommended",
       "currentPassword": "Current Password",
       "newPassword": "New Intelligence Key",
-      "primaryEmail": "Primary Email Protocol"
+      "primaryEmail": "Primary Email Protocol",
+      "changePasswordDesc": "أدخل كلمة المرور الحالية وكلمة المرور الجديدة"
     },
     "security": {
       "title": "Security",
@@ -1445,6 +1479,7 @@
     "networkError": "Network error. Please check your connection.",
     "sessionExpired": "Your session has expired. Please log in again.",
     "permissionDenied": "You don't have permission to perform this action.",
+    "boundaryFallback": "Something went wrong. Please refresh or try again.",
     "notFound": "The requested resource was not found.",
     "serverError": "An unexpected error occurred. Please try again.",
     "validationError": "Please check your input and try again.",
@@ -1716,7 +1751,19 @@
           "rootCauseCountermeasures": "Root Cause Countermeasures",
           "subtitle": "Subtitle",
           "targetHorizon": "Target Horizon",
-          "title": "Title"
+          "title": "Title",
+          "source": {
+            "ncr": "تابع لـ NCR",
+            "audit": "تدقيق",
+            "customer": "عميل",
+            "preventive": "وقائي"
+          },
+          "priority": {
+            "low": "منخفض",
+            "medium": "متوسط",
+            "high": "مرتفع",
+            "critical": "حرج"
+          }
         },
         "detail": {
           "addNode": "Add Node",
@@ -1992,7 +2039,8 @@
         "overview": "OVERVIEW",
         "mlInsights": "ML_INSIGHTS",
         "trends": "PREDICTIVE_TRENDS",
-        "models": "MODEL_HEALTH"
+        "models": "MODEL_HEALTH",
+        "systemHealth": "صحة النظام"
       },
       "mlInsights": {
         "title": "ML Intelligence Insights",
@@ -2073,7 +2121,8 @@
         "f1Score": "F1 Score",
         "neuralCompute": "Neural Compute Stream",
         "warming": "Warming up distributed ML compute clusters..."
-      }
+      },
+      "statusOptimal": "OPTIMAL"
     },
     "auditor": {
       "title": "Audit Intelligence",
@@ -2140,8 +2189,13 @@
         "overview": "Overview",
         "finance": "Finance",
         "operations": "Operations",
-        "strategist": "AI Strategist"
+        "strategist": "AI Strategist",
+        "northStar": "NORTH_STAR",
+        "sqdcp": "SQDCP",
+        "senseiAi": "SENSEI_AI",
+        "riskPrediction": "RISK_PREDICTION"
       },
+      "loading": "Loading...",
       "aggregatingMetrics": "Aggregating Metrics",
       "allSystemsNominal": "All Systems Nominal",
       "anomaliesDetected": "Anomalies Detected",
@@ -2154,7 +2208,14 @@
         "openResolutions": "Open Resolutions",
         "operationalUptime": "Operational Uptime",
         "optimalState": "Optimal State",
-        "revenueMtd": "Revenue Mtd"
+        "revenueMtd": "Revenue Mtd",
+        "qualityScore": "Quality Score",
+        "deliveryScore": "Delivery Score",
+        "costEfficiency": "Cost Efficiency",
+        "workforce": "Workforce",
+        "overallScore": "Overall Score",
+        "belowTarget": "Below Target",
+        "awaitingData": "Awaiting Data"
       },
       "monitoringActive": "Monitoring Active",
       "nl2sql": {
@@ -2199,6 +2260,19 @@
         "priorityAlpha": "Priority Alpha",
         "priorityBeta": "Priority Beta",
         "title": "Title"
+      },
+      "ops": {
+        "activeUsers": "Active Users",
+        "openWorkOrders": "Open Work Orders",
+        "productionEfficiency": "Production Efficiency",
+        "pendingApprovals": "Pending Approvals"
+      },
+      "sqdcp": {
+        "safety": "Safety",
+        "quality": "Quality",
+        "delivery": "Delivery",
+        "cost": "Cost",
+        "people": "People"
       }
     },
     "finance": {
@@ -2213,7 +2287,10 @@
       "sections": {
         "overview": "Financial Overview",
         "accountsReceivable": "Accounts Receivable",
-        "budgetAnalysis": "Budget Analysis"
+        "budgetAnalysis": "Budget Analysis",
+        "delete": "Eliminar nodo",
+        "edit": "Editar parámetros",
+        "view": "Ver especificación"
       },
       "tabs": {
         "overview": "Overview",
@@ -2277,7 +2354,10 @@
         "reportingCurrency": "Reporting Currency",
         "saveRate": "Save Rate",
         "saveSettings": "Save Settings",
-        "to": "To"
+        "to": "To",
+        "allowedCurrenciesPlaceholder": "USD, EUR, GBP",
+        "fromPlaceholder": "USD",
+        "toPlaceholder": "EUR"
       },
       "ledger": {
         "title": "General Ledger Intelligence",
@@ -2330,7 +2410,18 @@
         "taxTransactions": "Tax Transactions",
         "taxType": "Tax Type",
         "transactionLedger": "Transaction Ledger",
-        "type": "Type"
+        "type": "Type",
+        "codePlaceholder": "CA-BC",
+        "namePlaceholder": "British Columbia",
+        "countryPlaceholder": "Canada",
+        "regionPlaceholder": "BC",
+        "activePlaceholder": "active",
+        "uuidPlaceholder": "UUID",
+        "taxTypePlaceholder": "vat",
+        "referenceTypePlaceholder": "sale",
+        "referenceIdPlaceholder": "SO-1001",
+        "currencyPlaceholder": "USD",
+        "pendingPlaceholder": "pending"
       },
       "allSystemsNominal": "All Systems Nominal",
       "costDrivers": {
@@ -2358,7 +2449,74 @@
         "precisionComponents": "Precision Components",
         "title": "Title"
       },
-      "station": "Station"
+      "station": "Station",
+      "banking": {
+        "title": "Banking",
+        "subtitle": "Manage bank accounts and transactions",
+        "addAccount": "Add Account",
+        "addBankAccount": "Add Bank Account",
+        "accountName": "Account Name",
+        "accountNamePlaceholder": "Main Operating Account",
+        "accountNumber": "Account Number",
+        "iban": "IBAN",
+        "bankName": "Bank Name",
+        "bankCode": "Bank Code (SWIFT/BIC)",
+        "currency": "Currency",
+        "currencyTND": "TND - Tunisian Dinar",
+        "currencyUSD": "USD - US Dollar",
+        "currencyEUR": "EUR - Euro",
+        "currencyEGP": "EGP - Egyptian Pound",
+        "accountType": "Account Type",
+        "checking": "Checking",
+        "savings": "Savings",
+        "cash": "Cash",
+        "createAccount": "Create Account",
+        "totalBalance": "Total Balance (All Accounts)",
+        "bankAccounts": "Bank Accounts",
+        "noBankAccounts": "No bank accounts",
+        "addFirstAccount": "Add First Account",
+        "transactions": "Transactions",
+        "addTransaction": "Add Transaction",
+        "date": "Date",
+        "type": "Type",
+        "deposit": "Deposit",
+        "withdrawal": "Withdrawal",
+        "transfer": "Transfer",
+        "fee": "Fee",
+        "interest": "Interest",
+        "description": "Description",
+        "descriptionPlaceholder": "Payment for invoice #123",
+        "amount": "Amount",
+        "reference": "Reference",
+        "referencePlaceholder": "INV-001",
+        "selectAccount": "Select an account to view transactions",
+        "searchTransactions": "Search transactions...",
+        "noTransactions": "No transactions found",
+        "reconcile": "Reconcile"
+      },
+      "paymentTerms": {
+        "title": "Payment Terms",
+        "subtitle": "Configure payment terms for customers and suppliers",
+        "addPaymentTerm": "Add Payment Term",
+        "editPaymentTerm": "Edit Payment Term",
+        "code": "Code",
+        "codePlaceholder": "NET30",
+        "name": "Name",
+        "namePlaceholder": "Net 30 Days",
+        "daysDue": "Days Due",
+        "earlyDiscount": "Early Discount %",
+        "discountDays": "Discount Days",
+        "description": "Description",
+        "descriptionPlaceholder": "Payment terms description...",
+        "active": "Active",
+        "inactive": "Inactive",
+        "noPaymentTerms": "No payment terms configured",
+        "addFirstPaymentTerm": "Add First Payment Term",
+        "discount": "Discount",
+        "days": "Days",
+        "noEarlyDiscount": "No early payment discount",
+        "saveChanges": "Save Changes"
+      }
     },
     "hr": {
       "title": "People & Talent",
@@ -2398,7 +2556,53 @@
       "commitSync": "COMMIT_SYNC",
       "reviewAll": "REVIEW_ALL",
       "accessTrainingMatrix": "Access Training Matrix",
-      "nodes": "NODES"
+      "nodes": "NODES",
+      "unassignedRole": "Unassigned Role",
+      "noDepartment": "No Dept",
+      "remote": "Remote",
+      "unknownPosition": "Unknown Position",
+      "candidateDetails": "Candidate Details",
+      "searchPersonnel": "Search personnel...",
+      "searchJobs": "Search jobs...",
+      "toast": {
+        "employeeCreated": "Employee created successfully",
+        "employeeCreatedTitle": "Success",
+        "employeeTerminated": "Employee record terminated",
+        "jobCreated": "Job opening created",
+        "jobDeleted": "Job opening deleted",
+        "deletionFailed": "Failed to perform deletion",
+        "applicationSubmitted": "Application submitted",
+        "applicationMoved": "Application moved to {status}",
+        "updateStatusFailed": "Failed to update application status",
+        "leaveSubmitted": "Leave request submitted",
+        "leaveApproved": "Leave request approved",
+        "leaveApproveFailed": "Failed to approve leave request",
+        "leaveRejected": "Leave request rejected",
+        "leaveRejectFailed": "Failed to reject leave request"
+      },
+      "confirmTerminate": {
+        "title": "Terminate Employee Record",
+        "description": "Are you sure you want to terminate this employee record? This action cannot be undone."
+      },
+      "confirmDeleteJob": {
+        "title": "Delete Job Opening",
+        "description": "Are you sure you want to delete this job opening?"
+      },
+      "placeholders": {
+        "email": "john.doe@company.com",
+        "selectRegion": "Select region",
+        "selectStatus": "Select status",
+        "jobDescription": "Job description...",
+        "requiredSkills": "Required skills...",
+        "selectPosition": "Select position",
+        "firstName": "John",
+        "lastName": "Doe",
+        "personalEmail": "john.doe@email.com",
+        "portfolioUrl": "https://...",
+        "additionalNotes": "Additional notes...",
+        "selectEmployee": "Select employee",
+        "leaveReason": "Reason for leave..."
+      }
     },
     "it": {
       "title": "IT Command Center",
@@ -2627,6 +2831,7 @@
     },
     "warehouse": {
       "title": "Logistics & Inventory",
+      "loading": "Loading warehouse data...",
       "subtitle": "Monitor global stock levels, track material flow, and optimize warehouse operations",
       "station": "STATION: WAREHOUSE-01",
       "stats": {
@@ -2663,7 +2868,19 @@
       "status": {
         "itemsOutOfStock": "Items Out of Stock",
         "allStockNormal": "All Stock Levels Normal"
-      }
+      },
+      "searchDescription": "Search and manage all warehouse inventory",
+      "searchPlaceholder": "Search items…",
+      "itemName": "Item Name",
+      "onHand": "On Hand",
+      "managePO": "Manage purchase order receipts and incoming materials",
+      "poReference": "PO Reference",
+      "expectedDate": "Expected Date",
+      "inTransit": "In Transit",
+      "manageShipments": "Manage shipments and delivery logistics",
+      "shipDate": "Ship Date",
+      "activePickLists": "Active pick lists and order fulfillment",
+      "itemsPicked": "items picked"
     },
     "pipeline": {
       "title": "Sales Pipeline",
@@ -2869,7 +3086,8 @@
           "openRfqs": "Open RFQs",
           "totalRevenue": "Total Revenue",
           "totalRfqs": "Total RFQs",
-          "winRate": "Win Rate"
+          "winRate": "Win Rate",
+          "pipelineMagnitude": "Magnitud del embudo"
         },
         "viewAll": "View All",
         "viewAllRfqs": "View All RFQs",
@@ -2963,6 +3181,9 @@
       "viewModes": {
         "grid": "Grid",
         "table": "Table"
+      },
+      "toast": {
+        "deactivated": "Customer deactivated"
       }
     },
     "quotes": {
@@ -3098,7 +3319,23 @@
         "total": "Total",
         "totalCost": "Total Cost",
         "validUntil": "Valid Until",
-        "zeroPriceWarning": "Some line items have $0.00 unit price"
+        "zeroPriceWarning": "Some line items have $0.00 unit price",
+        "materialCost": "Material Cost",
+        "laborCost": "Labor Cost",
+        "overheadCost": "Overhead Cost",
+        "lineItemNotes": "Line Item Notes",
+        "noAssumptions": "No assumptions defined",
+        "newQuote": "New Quote",
+        "viewVersionHistory": "View Version History",
+        "addProductsPricing": "Add products and pricing",
+        "toggleCostBreakdown": "Toggle detailed cost breakdown",
+        "unitPrice": "Unit Price",
+        "internalCostingAnalysis": "Internal Costing Analysis",
+        "totalRevenue": "Total Revenue",
+        "grossProfit": "Gross Profit",
+        "quickActions": "Quick Actions",
+        "assumptionsVerified": "Assumptions Verified",
+        "warningsPresent": "Warnings Present"
       },
       "table": {
         "customerNode": "Customer Node",
@@ -3109,6 +3346,12 @@
         "totalValue": "Total Value",
         "validThru": "Valid Thru",
         "version": "Version"
+      },
+      "toast": {
+        "savedDraft": "Quote saved as draft",
+        "submitted": "Quote submitted for approval",
+        "saveFailed": "Error saving quote",
+        "tryAgain": "Please try again."
       }
     },
     "orders": {
@@ -3200,7 +3443,46 @@
         "submitted": "Submitted"
       },
       "unknownPartner": "Unknown Partner",
-      "due": "DUE"
+      "due": "DUE",
+      "noBid": "No Bid",
+      "statusNew": "New",
+      "statusReviewing": "Reviewing",
+      "statusQuoting": "Quoting",
+      "statusSubmitted": "Submitted",
+      "totalRfqs": "Total RFQs",
+      "avgResponseTime": "Avg Response Time",
+      "conversionRate": "Conversion Rate",
+      "dueDate": "Due Date",
+      "receivedDate": "Received Date",
+      "searchRfqs": "Search RFQs...",
+      "pipeline": "Pipeline",
+      "manageRfqs": "Manage your RFQs and opportunities",
+      "newRfq": "New RFQ",
+      "rfq": "RFQ",
+      "value": "Value",
+      "assignee": "Assignee",
+      "activity": "Activity",
+      "overdue": "Overdue",
+      "active": "active",
+      "estPipelineValue": "Est. pipeline value",
+      "timeToFirstResponse": "Time to first response",
+      "sortBy": "Sort by",
+      "view": "View",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "archive": "Archive",
+      "delete": "Delete",
+      "noRfqs": "No RFQs",
+      "selected": "selected",
+      "assign": "Assign",
+      "export": "Export",
+      "statusWon": "Won",
+      "statusLost": "Lost",
+      "statusCancelled": "Cancelled",
+      "priorityLow": "Low",
+      "priorityMedium": "Medium",
+      "priorityHigh": "High",
+      "priorityUrgent": "Urgent"
     },
     "production": {
       "title": "Execution Pulse",
@@ -3265,32 +3547,26 @@
         "ncrs": "NCRs",
         "capas": "CAPAs",
         "analytics": "Analytics",
-        "msa": "MSA",
-        "capability": "Capability",
+        "msa": "MSA / GRR",
+        "capability": "Cp / Cpk",
         "customer": "Customer",
-        "fai": "FAI",
+        "fai": "FAI / AS9102",
         "self": "Self Inspection",
-        "lab": "Lab",
-        "aql": "AQL",
+        "lab": "Lab Management",
+        "aql": "AQL Sampling",
         "traceability": "Traceability",
         "changePoint": "Change Point",
-        "managementReview": "Management Review"
+        "managementReview": "Management Review",
+        "selfInspection": "Self Inspection",
+        "labManagement": "Lab Management",
+        "aqlSampling": "AQL Sampling",
+        "customerSatisfaction": "Customer Satisfaction"
       },
       "inspections": {
         "title": "Inspection Intelligence",
         "subtitle": "Quality inspection tracking and reporting",
         "newInspection": "New Inspection",
         "searchPlaceholder": "Search inspections..."
-      },
-      "ncrs": {
-        "title": "Non-Conformance Reports",
-        "subtitle": "Defect tracking and root cause analysis",
-        "newNcr": "New NCR"
-      },
-      "capas": {
-        "title": "Corrective Actions",
-        "subtitle": "CAPA management and effectiveness tracking",
-        "newCapa": "New CAPA"
       },
       "status": {
         "passed": "Passed",
@@ -3305,7 +3581,14 @@
         "review": "Review",
         "investigate": "Investigate",
         "contain": "Contain",
-        "capa": "CAPA"
+        "capa": "CAPA",
+        "pass": "Pass",
+        "fail": "Fail",
+        "received": "Received",
+        "underReview": "Under Review",
+        "investigation": "Investigation",
+        "containment": "Containment",
+        "pending": "Pending"
       },
       "severity": {
         "major": "Major",
@@ -3319,7 +3602,18 @@
         "workOrder": "Work Order",
         "product": "Product",
         "scheduled": "Scheduled",
-        "inspector": "Inspector"
+        "inspector": "Inspector",
+        "complaint": "Complaint",
+        "rma": "RMA",
+        "fai": "FAI",
+        "part": "Part",
+        "revision": "Revision",
+        "chars": "Chars",
+        "checks": "Checks",
+        "method": "Method",
+        "standard": "Standard",
+        "unit": "Unit",
+        "specs": "Specs"
       },
       "actions": {
         "startInspection": "Start Inspection"
@@ -3351,7 +3645,8 @@
         "gauge": "Gauge",
         "design": "Design",
         "grrPercent": "GRR %",
-        "ndc": "NDC"
+        "ndc": "NDC",
+        "computeGRR": "Compute GRR"
       },
       "capability": {
         "createStudy": "Create Capability Study",
@@ -3382,7 +3677,250 @@
         "sampleLabelPlaceholder": "Optional label",
         "addMeasurementButton": "Add Measurement",
         "cpk": "Cpk",
-        "samples": "Samples"
+        "samples": "Samples",
+        "specs": "Specs",
+        "computeCpCpk": "Compute Cp/Cpk"
+      },
+      "errorLoading": "Error loading quality data",
+      "retry": "Retry",
+      "npsScore": "NPS Score",
+      "openComplaints": "Open Complaints",
+      "responses": "Responses",
+      "logComplaint": "Log Customer Complaint",
+      "createComplaint": "Create Complaint",
+      "createNPSSurvey": "Create NPS Survey",
+      "createSurvey": "Create Survey",
+      "addSurveyResponse": "Add Survey Response",
+      "addResponse": "Add Response",
+      "createFAI": "Create FAI",
+      "addCharacteristic": "Add Characteristic",
+      "startSelfInspection": "Start Self Inspection",
+      "startInspection": "Start Inspection",
+      "addCheck": "Add Self-Check",
+      "createLabMethod": "Create Lab Method",
+      "createMethod": "Create Method",
+      "registerLabSample": "Register Lab Sample",
+      "createSample": "Create Sample",
+      "recordTestRun": "Record Test Run",
+      "addTest": "Add Test",
+      "createAqlPlan": "Create AQL Sampling Plan",
+      "placeholder": {
+        "customerId": "Customer ID (optional)",
+        "rmaNumber": "RMA Number (optional)",
+        "complaintTitle": "Complaint title",
+        "surveyTitle": "Survey title",
+        "targetResponses": "Target responses",
+        "selectSurvey": "Select survey",
+        "respondentName": "Respondent name",
+        "respondentEmail": "Respondent email",
+        "npsScore": "NPS score (0-10)",
+        "comment": "Comment",
+        "inspectionNumber": "Inspection Number",
+        "partNumber": "Part Number",
+        "revision": "Revision",
+        "drawingNumber": "Drawing Number",
+        "productId": "Product ID",
+        "workOrderId": "Work Order ID",
+        "notes": "Notes",
+        "selectFAI": "Select FAI",
+        "characteristicNumber": "Characteristic #",
+        "requirement": "Requirement",
+        "nominal": "Nominal",
+        "tolerance": "Tolerance",
+        "actual": "Actual",
+        "result": "Result",
+        "method": "Method",
+        "toolId": "Tool ID",
+        "selectInspection": "Select inspection",
+        "characteristic": "Characteristic",
+        "specification": "Specification",
+        "methodName": "Method name",
+        "standard": "Standard (ASTM/ISO)",
+        "unit": "Unit",
+        "lowerSpec": "Lower spec",
+        "upperSpec": "Upper spec",
+        "targetValue": "Target value",
+        "sampleNumber": "Sample number",
+        "lotNumber": "Lot number",
+        "selectSample": "Select sample",
+        "selectMethod": "Select method",
+        "resultValue": "Result value",
+        "optionalNotes": "Optional notes",
+        "selectStudy": "Select study"
+      },
+      "aria": {
+        "closeComplaint": "Close complaint",
+        "closeFAI": "Close FAI",
+        "closeSelfInspection": "Close self inspection"
+      },
+      "ncrs": {
+        "title": "Non-Conformance Reports",
+        "subtitle": "Defect tracking and root cause analysis",
+        "newNcr": "New NCR",
+        "searchPlaceholder": "Search NCRs...",
+        "allStatuses": "All statuses",
+        "statusOpen": "Open",
+        "statusInvestigating": "Investigating",
+        "statusPendingDisposition": "Pending Disposition",
+        "statusDispositioned": "Dispositioned",
+        "statusEscalated": "Escalated to CAPA",
+        "statusClosed": "Closed",
+        "allSeverities": "All severities",
+        "severityCritical": "Critical",
+        "severityMajor": "Major",
+        "severityMinor": "Minor",
+        "ncr": "NCR",
+        "title_column": "Title",
+        "severity": "Severity",
+        "source": "Source",
+        "affectedQty": "Affected Qty",
+        "created": "Created",
+        "createCAPA": "Create CAPA"
+      },
+      "capas": {
+        "title": "Corrective Actions",
+        "subtitle": "CAPA management and effectiveness tracking",
+        "newCapa": "New CAPA",
+        "searchPlaceholder": "Search CAPAs...",
+        "allStatuses": "All statuses",
+        "statusOpen": "Open",
+        "statusImplementing": "Implementing",
+        "statusVerifying": "Verifying",
+        "statusClosed": "Closed",
+        "allTypes": "All types",
+        "typeCorrective": "Corrective",
+        "typePreventive": "Preventive",
+        "capa": "CAPA",
+        "title_column": "Title",
+        "priority": "Priority",
+        "sourceNCR": "Source NCR",
+        "dueDate": "Due Date",
+        "priorityHigh": "High",
+        "priorityMedium": "Medium",
+        "overdue": "overdue"
+      },
+      "aql": {
+        "planCode": "Plan Code",
+        "planCodePlaceholder": "e.g., AQL-II-1.0-80-125",
+        "standard": "Standard",
+        "inspectionLevel": "Inspection Level",
+        "aqlLevel": "AQL Level",
+        "lotSizeMin": "Lot Size Min",
+        "lotSizeMax": "Lot Size Max",
+        "sampleSize": "Sample Size",
+        "acceptReject": "Accept / Reject",
+        "accept": "Accept",
+        "reject": "Reject",
+        "notes": "Notes",
+        "createPlan": "Create Plan",
+        "recordLotInspection": "Record Lot Inspection",
+        "plan": "Plan",
+        "selectPlan": "Select plan",
+        "lotNumber": "Lot Number",
+        "lotNumberPlaceholder": "LOT-2026-001",
+        "lotSize": "Lot Size",
+        "sampleSizeOptional": "Sample Size (optional)",
+        "defectCount": "Defect Count",
+        "recordInspection": "Record Inspection",
+        "samplingPlans": "Sampling Plans",
+        "aqlLabel": "AQL",
+        "lotRange": "Lot Range",
+        "sample": "Sample",
+        "noPlans": "No AQL plans yet.",
+        "lotInspections": "Lot Inspections",
+        "lot": "Lot",
+        "defects": "Defects",
+        "result": "Result",
+        "inspected": "Inspected",
+        "noInspections": "No inspections recorded."
+      },
+      "traceability": {
+        "createMatrix": "Create Traceability Matrix",
+        "matrixName": "Matrix Name",
+        "matrixNamePlaceholder": "e.g., AS9100 Req Matrix",
+        "description": "Description",
+        "descriptionPlaceholder": "Description",
+        "productId": "Product ID",
+        "productIdPlaceholder": "Product UUID",
+        "notes": "Notes",
+        "createMatrixButton": "Create Matrix",
+        "addLink": "Add Traceability Link",
+        "matrix": "Matrix",
+        "selectMatrix": "Select matrix",
+        "sourceType": "Source Type",
+        "sourceRef": "Source Ref",
+        "sourceRefPlaceholder": "Source reference",
+        "targetType": "Target Type",
+        "targetRef": "Target Ref",
+        "targetRefPlaceholder": "Target reference",
+        "addLinkButton": "Add Link",
+        "matrices": "Matrices",
+        "product": "Product",
+        "links": "Links",
+        "noMatrices": "No matrices yet.",
+        "traceabilityLinks": "Traceability Links",
+        "source": "Source",
+        "target": "Target",
+        "noLinks": "No links recorded."
+      },
+      "changePoint": {
+        "createStudy": "Create Change Point Study",
+        "studyName": "Study Name",
+        "studyNamePlaceholder": "Drill Press Drift",
+        "processName": "Process Name",
+        "processNamePlaceholder": "Drill Press",
+        "characteristic": "Characteristic",
+        "characteristicPlaceholder": "Hole Diameter",
+        "method": "Method",
+        "sensitivity": "Sensitivity",
+        "notes": "Notes",
+        "createStudyButton": "Create Study",
+        "addObservation": "Add Observation",
+        "study": "Study",
+        "value": "Value",
+        "sampleLabel": "Sample Label",
+        "sampleIdPlaceholder": "Sample ID",
+        "addObservationButton": "Add Observation",
+        "detectChangePoint": "Detect Change Point",
+        "studies": "Studies",
+        "process": "Process",
+        "noStudies": "No studies yet.",
+        "observations": "Observations",
+        "sample": "Sample",
+        "observed": "Observed",
+        "noObservations": "No observations.",
+        "detectedEvents": "Detected Events",
+        "index": "Index",
+        "magnitude": "Magnitude",
+        "confidence": "Confidence",
+        "detected": "Detected",
+        "noEvents": "No events detected."
+      },
+      "managementReview": {
+        "scheduleReview": "Schedule Management Review",
+        "title": "Title",
+        "titlePlaceholder": "Q2 Management Review",
+        "periodStart": "Period Start",
+        "periodEnd": "Period End",
+        "scheduledFor": "Scheduled For",
+        "attendees": "Attendees",
+        "attendeesPlaceholder": "CEO, Quality Lead",
+        "scheduleReviewButton": "Schedule Review",
+        "addActionItem": "Add Action Item",
+        "review": "Review",
+        "selectReview": "Select review",
+        "actionTitlePlaceholder": "Improve supplier audits",
+        "dueDate": "Due Date",
+        "assigneeId": "Assignee ID",
+        "userIdPlaceholder": "User ID",
+        "addActionItemButton": "Add Action Item",
+        "managementReviews": "Management Reviews",
+        "period": "Period",
+        "scheduled": "Scheduled",
+        "noReviews": "No reviews scheduled.",
+        "actionItems": "Action Items",
+        "due": "Due",
+        "noActions": "No action items recorded."
       }
     },
     "maintenance": {
@@ -3568,6 +4106,9 @@
         "active": "Active",
         "acknowledged": "Acknowledged",
         "resolved": "Resolved"
+      },
+      "toast": {
+        "settingsSaved": "Signal notification preferences have been updated."
       }
     },
     "purchase": {
@@ -3858,7 +4399,18 @@
       "syncIntel": "Sync Intel",
       "siloBottlenecks": "Silo Bottlenecks",
       "rebalanceOps": "Rebalance Ops",
-      "heijunkaTips": "Heijunka Tips"
+      "heijunkaTips": "Heijunka Tips",
+      "toast": {
+        "loadFailed": "Failed to load Obeya item data",
+        "itemDeleted": "Item deleted successfully",
+        "deleteFailed": "Failed to delete item",
+        "commentAdded": "Comment added",
+        "commentFailed": "Failed to add comment",
+        "statusUpdated": "Status Updated",
+        "statusFailed": "Failed to update status",
+        "created": "Obeya Board Created",
+        "createdDesc": "Your new digital obeya board has been successfully initialized."
+      }
     },
     "a3": {
       "title": "A3 Strategic Resolutions",
@@ -3912,7 +4464,17 @@
         "deleted": "A3 Report Deleted",
         "deletedDescription": "The A3 report has been successfully deleted.",
         "escalated": "A3 Escalated",
-        "escalatedDescription": "Report escalated to management for review."
+        "escalatedDescription": "Report escalated to management for review.",
+        "titleRequired": "Please enter a title for the A3 report.",
+        "created": "A3 Report Created",
+        "createdDesc": "The new A3 report has been successfully initialized.",
+        "createFailed": "Failed to create A3 report.",
+        "loadFailed": "Failed to load A3 details",
+        "export": "Export",
+        "exportDesc": "Starting PDF export...",
+        "updated": "A3 Report Updated",
+        "updatedDesc": "Changes have been saved successfully.",
+        "updateFailed": "Failed to update A3 report."
       },
       "table": {
         "identifier": "A3_IDENTIFIER",
@@ -3975,7 +4537,15 @@
         "deleted": "CTQ Protocol Deleted",
         "deletedDescription": "The CTQ protocol has been successfully deleted.",
         "retired": "CTQ Protocol Retired",
-        "retiredDescription": "The CTQ protocol has been archived."
+        "retiredDescription": "The CTQ protocol has been archived.",
+        "error": "Error",
+        "loadFailed": "Failed to load CTQ details",
+        "success": "Success",
+        "deleteFailed": "Failed to delete CTQ",
+        "measurementAdded": "Measurement added successfully",
+        "measurementFailed": "Failed to add measurement",
+        "exportStarted": "Export started",
+        "exportStartedDesc": "Your CTQ report is being generated"
       },
       "activeSync": "Active Sync",
       "adjustParameters": "Adjust Parameters",
@@ -3988,7 +4558,31 @@
       "meanPassRate": "Mean Pass Rate",
       "measuredToday": "Measured Today",
       "totalCTQNodes": "Total Ctq Nodes",
-      "zeroCTQProtocols": "Zero Ctq Protocols"
+      "zeroCTQProtocols": "Zero Ctq Protocols",
+      "detail": {
+        "specificationDetails": "Specification Details",
+        "qualityRequirements": "Quality characteristic requirements",
+        "nominalValue": "Nominal Value",
+        "upperTolerance": "Upper Tolerance",
+        "lowerTolerance": "Lower Tolerance",
+        "relatedRfq": "Related RFQ",
+        "partNumber": "Part Number",
+        "measurementInfo": "Measurement Information",
+        "howMeasured": "How this characteristic is measured",
+        "measurementMethod": "Measurement Method",
+        "samplingPlan": "Sampling Plan",
+        "checkStage": "Check Stage",
+        "evidenceRequired": "Evidence Required",
+        "lastUpdated": "Last Updated",
+        "measurementHistory": "Measurement History",
+        "recentResults": "Recent measurement results and trends",
+        "measuredBy": "Measured By",
+        "deleteCtq": "Delete CTQ",
+        "addMeasurement": "Add Measurement",
+        "measuredValue": "Measured Value",
+        "notMeasured": "Not Measured"
+      },
+      "measurementNotesPlaceholder": "Add any relevant notes about this measurement"
     },
     "exceptions": {
       "title": "Exception Management",
@@ -4037,7 +4631,9 @@
       "highUrgencyDeviations": "High Urgency Deviations",
       "meanResolution": "Mean Resolution",
       "overdueProtocols": "Overdue Protocols",
-      "syncIntel": "Sync Intel"
+      "syncIntel": "Sync Intel",
+      "synchronizing": "Synchronizing operational exceptions",
+      "zeroHighUrgency": "Zero high-urgency nodes identified"
     },
     "ops": {
       "title": "Operations Overview",
@@ -4124,6 +4720,158 @@
       "errors": {
         "loadingProject": "Error loading project",
         "nameRequired": "Project name required"
+      },
+      "toast": {
+        "settingsSaved": "Settings saved",
+        "settingsSavedDesc": "Project settings have been updated.",
+        "saveFailed": "Failed to save",
+        "saveFailedDesc": "There was an error saving your changes."
+      },
+      "kanban": {
+        "columns": {
+          "new": "New",
+          "ready": "Ready",
+          "inProgress": "In Progress",
+          "readyForTest": "Ready for Test",
+          "done": "Done"
+        }
+      },
+      "milestones": {
+        "namePlaceholder": "Phase 1 Complete",
+        "detailsPlaceholder": "Details...",
+        "subtitle": "Key project events and deadlines.",
+        "newMilestone": "New Milestone",
+        "createNewMilestone": "Create New Milestone",
+        "name": "Name",
+        "description": "Description",
+        "dueDate": "Due Date",
+        "type": "Type",
+        "types": {
+          "deadline": "Deadline",
+          "release": "Release",
+          "phaseGate": "Phase Gate",
+          "sprint": "Sprint",
+          "audit": "Audit"
+        },
+        "creating": "Creating...",
+        "createMilestone": "Create Milestone",
+        "completedMilestones": "Completed Milestones",
+        "noMilestonesDefined": "No milestones defined",
+        "addKeyDates": "Add key dates to track your project progress.",
+        "overdue": "Overdue"
+      },
+      "wiki": {
+        "searchPlaceholder": "Search...",
+        "titlePlaceholder": "Page Title",
+        "pages": "Pages",
+        "noPagesFound": "No pages found.",
+        "contentPlaceholder": "Write page content here (Markdown supported)...",
+        "lastUpdated": "Last updated",
+        "version": "Version",
+        "noPageSelected": "No page selected",
+        "selectAPage": "Select a page from the sidebar or create a new one.",
+        "createFirstPage": "Create First Page"
+      },
+      "issues": {
+        "searchPlaceholder": "Search issues...",
+        "newIssue": "New Issue",
+        "noIssuesFound": "No issues found.",
+        "createNewIssue": "Create New Issue",
+        "createDescription": "Report a bug, improvement, or other tracked item.",
+        "subject": "Subject",
+        "subjectPlaceholder": "Brief summary of the issue",
+        "description": "Description",
+        "descriptionPlaceholder": "Steps to reproduce, expected vs actual behavior...",
+        "addDescription": "Add a description...",
+        "type": "Type",
+        "types": {
+          "bug": "Bug",
+          "improvement": "Improvement",
+          "task": "Task",
+          "question": "Question",
+          "incident": "Incident",
+          "ncr": "NCR",
+          "safety": "Safety"
+        },
+        "severity": "Severity",
+        "severities": {
+          "wishlist": "Wishlist",
+          "minor": "Minor",
+          "normal": "Normal",
+          "important": "Important",
+          "critical": "Critical"
+        },
+        "creating": "Creating...",
+        "createIssue": "Create Issue",
+        "status": "Status",
+        "statuses": {
+          "new": "New",
+          "inProgress": "In Progress",
+          "readyForTest": "Ready for Test",
+          "closed": "Closed",
+          "rejected": "Rejected",
+          "postponed": "Postponed"
+        },
+        "comments": "Comments",
+        "addComment": "Add a comment..."
+      },
+      "sprints": {
+        "subtitle": "Manage your iterative delivery cycles.",
+        "newSprint": "New Sprint",
+        "createNewSprint": "Create New Sprint",
+        "sprintName": "Sprint Name",
+        "startDate": "Start Date",
+        "endDate": "End Date",
+        "creating": "Creating...",
+        "createSprint": "Create Sprint",
+        "activeSprint": "Active Sprint",
+        "plannedSprints": "Planned Sprints",
+        "completedSprints": "Completed Sprints",
+        "noSprintsFound": "No sprints found. Create one to get started.",
+        "statusPlanned": "Planned",
+        "statusActive": "Active",
+        "statusCompleted": "Completed",
+        "statusCancelled": "Cancelled",
+        "daysRemaining": "days remaining",
+        "progress": "Progress",
+        "stories": "stories"
+      },
+      "epics": {
+        "subtitle": "High-level initiatives breaking down into user stories.",
+        "newEpic": "New Epic",
+        "createNewEpic": "Create New Epic",
+        "subjectPlaceholder": "Epic Subject",
+        "descriptionPlaceholder": "Description",
+        "creating": "Creating...",
+        "createEpic": "Create Epic",
+        "progress": "Progress",
+        "stories": "stories",
+        "noEpicsFound": "No epics found. Create one to get started."
+      },
+      "activity": {
+        "loading": "Loading activity...",
+        "title": "Activity Timeline",
+        "noRecentActivity": "No recent activity"
+      },
+      "dashboard": {
+        "overallProgress": "Overall Progress",
+        "storiesDone": "{completed} of {total} stories done",
+        "storyPoints": "Story Points",
+        "velocityTracking": "Velocity Tracking Enabled",
+        "activeSprint": "Active Sprint",
+        "noActiveSprint": "No active sprint",
+        "openIssues": "Open Issues",
+        "highPriority": "high priority",
+        "workDistribution": "Work Distribution",
+        "workDistributionDesc": "Stories by workflow status",
+        "issueSeverity": "Issue Severity",
+        "issueSeverityDesc": "Risk profile of reported issues",
+        "projectContext": "Project Context",
+        "projectContextDesc": "Links to other Sensei OS modules",
+        "owner": "Owner",
+        "adminUser": "Admin User",
+        "projectType": "Project Type",
+        "timeline": "Timeline"
       }
     },
     "mrp": {
@@ -4317,6 +5065,11 @@
         "title": "Document Templates",
         "description": "Manage document templates",
         "initializeTemplate": "Initialize Template"
+      },
+      "import": {
+        "conflictResolution": "Conflict Resolution",
+        "skipExisting": "Skip Existing",
+        "updateExisting": "Update Existing"
       }
     },
     "ctqDetail": {
@@ -4357,6 +5110,13 @@
       "strategicContext": "Strategic Context",
       "strategicContextPlaceholder": "Strategic Context Placeholder",
       "title": "Title"
+    },
+    "quotingHelper": {
+      "noQuoteFound": "No Quote Found",
+      "toast": {
+        "handoffSuccess": "NPI Handoff Successful",
+        "handoffFailed": "Handoff Failed"
+      }
     }
   },
   "a3": {
@@ -4366,7 +5126,9 @@
         "countermeasures": "Countermeasures",
         "subtitle": "Subtitle",
         "timeline": "Timeline",
-        "title": "Title"
+        "title": "Title",
+        "greeting": "أهلاً، {name}!‏",
+        "greetingFallback": "صديق"
       },
       "notFound": "Not Found",
       "protocolVelocity": {
@@ -4403,7 +5165,10 @@
       },
       "status": "Status",
       "subtitle": "Subtitle",
-      "title": "Title"
+      "title": "Title",
+      "drafts": {
+        "snippet": "{مقتطف}…‏"
+      }
     },
     "empty": {
       "subtitle": "Subtitle",
@@ -4476,7 +5241,166 @@
       "pendingApprovals": "Pending Approvals",
       "queueGates": "Queue Gates",
       "thresholdExceptions": "Threshold Exceptions",
-      "totalNodes": "Total Nodes"
+      "totalNodes": "Total Nodes",
+      "emailDrafting": {
+        "title": "KI-E-Mail-Assistent",
+        "aria": {
+          "selectPurpose": "Zweck auswählen",
+          "toneGroup": "Ton auswählen",
+          "selectLanguage": "Sprache auswählen",
+          "recipientEmail": "Empfänger-E-Mail",
+          "recipientName": "Empfängername",
+          "addKeyPoint": "Kernaussage hinzufügen",
+          "keyPointsList": "Liste der Kernaussagen",
+          "removeKeyPoint": "Entfernen: {point}",
+          "copyToClipboard": "In die Zwischenablage kopieren",
+          "editSubject": "Betreff bearbeiten",
+          "close": "Schließen",
+          "draftsList": "E-Mail-Entwürfe"
+        },
+        "placeholders": {
+          "selectPurpose": "Zweck auswählen...",
+          "recipientEmail": "recipient@example.com",
+          "recipientNameOptional": "Name (optional)",
+          "keyPoint": "Kernaussage hinzufügen",
+          "senderName": "z. B. Alex Morgan",
+          "senderEmail": "z. B. alex@sensei.com",
+          "senderTitle": "z. B. Account Manager",
+          "companyName": "z. B. Sensei GmbH",
+          "threadEntityType": "Thread-Entität auswählen...",
+          "threadEntityId": "Entitäts-ID eingeben...",
+          "referenceNumber": "z. B. RFQ-2024-001",
+          "subjectHint": "z. B. Preisupdate für Q2"
+        },
+        "purpose": {
+          "missingInfoRequest": "Anforderung fehlender Informationen",
+          "quoteFollowup": "Angebotsnachverfolgung",
+          "quoteSubmission": "Angebotseinreichung",
+          "supplierInquiry": "Lieferantenanfrage",
+          "meetingRequest": "Besprechungsanfrage",
+          "meetingConfirmation": "Besprechungsbestätigung",
+          "meetingReschedule": "Besprechung verschieben",
+          "issueNotification": "Fehlerbenachrichtigung",
+          "statusUpdate": "Statusaktualisierung",
+          "thankYou": "Danke",
+          "introduction": "Vorstellung",
+          "escalation": "Eskalation",
+          "apology": "Entschuldigung",
+          "custom": "Benutzerdefinierte E-Mail"
+        },
+        "tone": {
+          "formal": "Formell",
+          "professional": "Professionell",
+          "friendly": "Freundlich",
+          "urgent": "Dringend",
+          "apologetic": "Entschuldigend",
+          "appreciative": "Wertschätzend",
+          "concise": "Kompakt"
+        },
+        "language": {
+          "english": "Englisch",
+          "french": "Französisch",
+          "german": "Deutsch",
+          "spanish": "Spanisch",
+          "italian": "Italienisch",
+          "portuguese": "Portugiesisch",
+          "japanese": "Japanisch",
+          "chinese": "Chinesisch",
+          "korean": "Koreanisch",
+          "arabic": "Arabisch"
+        },
+        "actions": {
+          "add": "Hinzufügen",
+          "apply": "Anwenden",
+          "edit": "Bearbeiten",
+          "generating": "Wird erstellt...",
+          "generateDraft": "Entwurf erstellen",
+          "regenerate": "Neu erstellen",
+          "send": "Senden"
+        },
+        "preview": {
+          "title": "Entwurfsvorschau",
+          "subjectLabel": "Betreff",
+          "confidence": "Konfidenz: {score}",
+          "generatedIn": "Erstellt in {time}"
+        },
+        "units": {
+          "milliseconds": "ms",
+          "seconds": "s"
+        },
+        "compliance": {
+          "none": "Keine Compliance-Probleme erkannt",
+          "title": "Compliance-Probleme ({count})"
+        },
+        "suggestions": {
+          "title": "Vorschläge ({count})"
+        },
+        "alternatives": {
+          "title": "Alternative Betreffzeilen:"
+        },
+        "thread": {
+          "entityType": {
+            "rfq": "Anfrage (RFQ)",
+            "quote": "Angebot",
+            "workOrder": "Arbeitsauftrag",
+            "opportunity": "Verkaufschance",
+            "nonConformance": "Nichtkonformität",
+            "shipment": "Sendung",
+            "invoice": "Rechnung"
+          },
+          "loadFailed": "Thread-Verlauf konnte nicht geladen werden",
+          "helper": "Verbinden Sie diesen Entwurf mit einem Thread, damit der gemeinsame Daten-Thread erhalten bleibt.",
+          "loading": "Thread-Verlauf wird geladen...",
+          "traceTitle": "Thread-Verlauf",
+          "traceStats": "Verlauf: {nodes} Knoten / {edges} Kanten",
+          "reasoningId": "Begründungs-ID: {id}"
+        },
+        "defaults": {
+          "senderName": "Sensei Operator",
+          "senderEmail": "operator@sensei.com",
+          "companyName": "Sensei"
+        },
+        "sections": {
+          "recipient": "Empfänger",
+          "purpose": "Zweck",
+          "sender": "Absender",
+          "threadContext": "Thread-Kontext",
+          "tone": "Ton",
+          "language": "Sprache",
+          "keyPoints": "Kernaussagen"
+        },
+        "fields": {
+          "senderName": "Absendername",
+          "senderEmail": "Absender-E-Mail",
+          "senderTitle": "Absendertitel",
+          "companyName": "Firmenname",
+          "threadEntityType": "Thread-Entitätstyp",
+          "threadEntityId": "Thread-Entitäts-ID",
+          "referenceNumberOptional": "Referenznummer (optional)",
+          "subjectHintOptional": "Betreffhinweis (optional)"
+        },
+        "status": {
+          "generating": "Wird erstellt...",
+          "ready": "Bereit zur Prüfung",
+          "reviewed": "Geprüft",
+          "approved": "Genehmigt",
+          "sent": "Gesendet",
+          "discarded": "Verworfen",
+          "failed": "Fehlgeschlagen"
+        },
+        "notifications": {
+          "copied": "In die Zwischenablage kopiert!"
+        },
+        "empty": {
+          "title": "Noch kein Entwurf",
+          "description": "Erstellen Sie einen Entwurf, um Vorschau und Compliance-Prüfungen zu sehen.",
+          "list": "Noch keine Entwürfe"
+        },
+        "validation": {
+          "emailRequired": "E-Mail ist erforderlich",
+          "emailInvalid": "Ungültiges E-Mail-Format"
+        }
+      }
     },
     "statuses": {
       "approved": "Approved",
@@ -4492,7 +5416,15 @@
       "protocolType": "Protocol Type",
       "resolutionTitle": "Resolution Title",
       "statusNode": "Status Node",
-      "targetHorizon": "Target Horizon"
+      "targetHorizon": "Target Horizon",
+      "biometricSync": "Biometrische Synchronisierung",
+      "biometricSyncDesc": "Face ID oder Fingerabdruckverschlüsselung zum Entsperren verwenden",
+      "description": "Mobile App-Synchronisierung und biometrische Autorisierungsebenen verwalten",
+      "offlineIntelligence": "Offline-Intelligenz",
+      "offlineIntelligenceDesc": "Operative Knoten für Umgebungen mit hoher Latenz zwischenspeichern",
+      "telemetryPush": "Telemetrie-Push-Signale",
+      "telemetryPushDesc": "Echtzeit-Organisationsalarme auf mobilen Geräten empfangen",
+      "title": "Mobiler Operativ-Knoten"
     },
     "types": {
       "problemSolving": "Problem Solving",
@@ -4646,7 +5578,68 @@
     "tabs": {
       "workOrders": "Work Orders",
       "scheduling": "Scheduling"
-    }
+    },
+    "emptyState": {
+      "description": "الوصف",
+      "title": "العنوان"
+    },
+    "filters": {
+      "allNodes": "كل العقد",
+      "allStatus": "كل الحالات",
+      "statusState": "الحالة",
+      "workCenter": "مركز العمل"
+    },
+    "initializeWO": "تهيئة أمر العمل",
+    "new": {
+      "createFailed": "إنشاء فشل",
+      "establishOrder": "إنشاء أمر",
+      "fillRequired": "املأ الحقول المطلوبة",
+      "magnitude": "الحجم",
+      "operationalParameters": "المعلمات التشغيلية",
+      "priorityLayer": "طبقة الأولوية",
+      "subtitle": "العنوان الفرعي",
+      "targetProduct": "المنتج المستهدف",
+      "temporalHorizon": "الأفق الزمني",
+      "title": "العنوان",
+      "validationError": "خطأ في التحقق",
+      "workOrderCreated": "أمر العمل تم الإنشاء",
+      "workOrderIdentity": "معرف أمر العمل",
+      "notesLabel": "ملاحظات ومعلومات الإنتاج",
+      "priorities": {
+        "low": "سرعة منخفضة (LOW_VELOCITY)‏",
+        "normal": "عقدة قياسية (STANDARD_NODE)‏",
+        "high": "أولوية عالية (HIGH_PRIORITY)‏",
+        "urgent": "تصعيد عاجل (URGENT_ESCALATION)‏",
+        "critical": "حد حرج (CRITICAL_THRESHOLD)‏"
+      }
+    },
+    "searchPlaceholder": "عبارة البحث",
+    "stats": {
+      "executionPulse": "نبض التنفيذ",
+      "operationalVelocity": "السرعة التشغيلية",
+      "overdueHorizon": "أفق الاستحقاق المتأخر",
+      "suspendedNodes": "العقد المعلقة"
+    },
+    "status": {
+      "cancelled": "ملغى",
+      "closed": "مغلق",
+      "completed": "مكتمل",
+      "inProgress": "قيد التنفيذ",
+      "onHold": "معلق",
+      "planned": "مخطط",
+      "released": "مفرج عنه"
+    },
+    "table": {
+      "dueHorizon": "أفق الاستحقاق",
+      "exProgress": "تقدم التنفيذ",
+      "operator": "المشغل",
+      "orderId": "معرف الطلب",
+      "priorityLevel": "مستوى الأولوية",
+      "productNode": "منتج عقدة",
+      "statusState": "الحالة",
+      "workCenter": "مركز العمل"
+    },
+    "workCenter": "مركز العمل"
   },
   "quality": {
     "title": "Quality",
@@ -4711,7 +5704,75 @@
       "labTesting": "Lab Testing",
       "aql": "AQL Sampling",
       "traceability": "Traceability",
-      "changePoint": "Change Point"
+      "changePoint": "Change Point",
+      "anomalies": "الشذوذات",
+      "customerSatisfaction": "رضا العملاء",
+      "protocols": "البروتوكولات",
+      "syncGates": "بوابات المزامنة"
+    },
+    "analytics": {
+      "_value": "التحليلات",
+      "activeAnomalies": "شذوذات نشطة",
+      "adjustParameters": "تعديل المعلمات",
+      "awaitingDisposition": "بانتظار التصرف",
+      "exportIntel": "تصدير الاستخبارات",
+      "firstPassYield": "عائد المرور الأول",
+      "ignoreRisk": "تجاهل المخاطر",
+      "implementationPhase": "مرحلة التنفيذ",
+      "inspectionGateOutcomes": "نتائج بوابة الفحص",
+      "meanInspectionPulse": "متوسط نبض الفحص",
+      "ncrRootCause": "السبب الجذري لعدم المطابقة",
+      "predictiveIntelligence": "الاستخبارات التنبؤية",
+      "resolutionProtocols": "بروتوكولات المعالجة",
+      "strategicWindow": "النافذة الاستراتيجية",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان",
+      "velocityGain": "مكاسب السرعة",
+      "vsLastCycle": "مقارنة بالدورة السابقة"
+    },
+    "newCAPA": "إجراء تصحيحي جديد",
+    "newInspection": "فحص جديد",
+    "newNCR": "تقرير عدم مطابقة جديد",
+    "newProtocol": "بروتوكول جديد",
+    "stats": {
+      "activeSyncGates": "بوابات المزامنة النشطة",
+      "firstPassVelocity": "سرعة المرور الأول",
+      "globalAnomalies": "الشذوذات العالمية",
+      "resolutionProtocols": "بروتوكولات المعالجة"
+    },
+    "grr": {
+      "analysisResults": "GRR Analysis Results",
+      "gauge": "Gauge: {name}",
+      "totalGageRR": "Total Gage R&R",
+      "excellent": "Excellent",
+      "acceptable": "Acceptable",
+      "unacceptable": "Unacceptable",
+      "msgExcellent": "Measurement system is acceptable",
+      "msgAcceptable": "May be acceptable depending on application",
+      "msgUnacceptable": "Measurement system needs improvement",
+      "variationBreakdown": "Variation Breakdown",
+      "variationTooltip": "Shows the contribution of each source to total variation. Lower EV+AV (GRR) means better measurement system.",
+      "equipmentVariation": "Equipment Variation (EV): {value}%",
+      "repeatability": "Repeatability",
+      "appraiserVariation": "Appraiser Variation (AV): {value}%",
+      "reproducibility": "Reproducibility",
+      "partVariationPct": "Part Variation (PV): {value}%",
+      "actualPartVariation": "Actual part-to-part variation",
+      "legendEV": "EV (Repeatability)",
+      "legendAV": "AV (Reproducibility)",
+      "legendPV": "PV (Part Variation)",
+      "repeatabilityEV": "Repeatability (EV)",
+      "reproducibilityAV": "Reproducibility (AV)",
+      "partVariation": "Part Variation (PV)",
+      "totalVariation": "Total Variation (TV)",
+      "ndcTitle": "Number of Distinct Categories (NDC)",
+      "ndcAcceptable": "≥ 5 (Acceptable)",
+      "ndcNeedsImprovement": "< 5 (Needs Improvement)",
+      "ndcDescription": "NDC represents how many distinct part categories the measurement system can reliably distinguish. AIAG recommends a minimum of 5 distinct categories.",
+      "aiagGuidelines": "AIAG MSA Guidelines:",
+      "aiagExcellent": "< 10% GRR: Measurement system is acceptable",
+      "aiagAcceptable": "10-30% GRR: May be acceptable based on application importance",
+      "aiagUnacceptable": "> 30% GRR: Measurement system needs improvement"
     }
   },
   "Reconnecting": {
@@ -4748,14 +5809,69 @@
       "inProgress": "In Progress",
       "completed": "Completed",
       "expired": "Expired",
-      "expiryDate": "Expiry Date"
+      "expiryDate": "Expiry Date",
+      "detail": {
+        "awardedTo": "ممنوح إلى",
+        "certificateOfAchievement": "شهادة إنجاز",
+        "downloadCertificate": "تنزيل الشهادة",
+        "expiresOn": "تاريخ الانتهاء",
+        "finalScore": "النتيجة النهائية",
+        "issueDate": "تاريخ الإصدار",
+        "scopeOfCertification": "نطاق الشهادة",
+        "title": "العنوان"
+      },
+      "new": {
+        "certificationDetails": "تفاصيل الشهادة",
+        "certificationTitle": "عنوان الشهادة",
+        "defaultIssuer": "الجهة الافتراضية",
+        "expiryDate": "تاريخ الانتهاء",
+        "finalScore": "النتيجة النهائية",
+        "issueDate": "تاريخ الإصدار",
+        "issuingAuthority": "الجهة المانحة",
+        "registerCertification": "تسجيل الشهادة",
+        "scorePlaceholder": "أدخل الدرجة",
+        "subtitle": "العنوان الفرعي",
+        "teamMember": "عضو الفريق",
+        "teamMemberPlaceholder": "اختر عضو الفريق",
+        "title": "العنوان",
+        "toast": {
+          "success": {
+            "description": "الوصف",
+            "title": "العنوان"
+          }
+        }
+      }
     },
     "programs": {
       "title": "Training Programs",
       "addProgram": "Add Program",
       "name": "Program Name",
       "duration": "Duration",
-      "participants": "Participants"
+      "participants": "Participants",
+      "detail": {
+        "continueLearning": "متابعة التعلم",
+        "curriculum": "المنهج",
+        "details": "التفاصيل",
+        "programDescription": "وصف البرنامج"
+      },
+      "new": {
+        "category": "الفئة",
+        "createProgram": "إنشاء برنامج",
+        "durationPlaceholder": "مدة البرنامج",
+        "estimatedDuration": "المدة التقديرية",
+        "instructor": "المدرّس",
+        "programDetails": "تفاصيل البرنامج",
+        "programTitle": "عنوان البرنامج",
+        "skillLevel": "مستوى المهارة",
+        "subtitle": "العنوان الفرعي",
+        "title": "العنوان",
+        "toast": {
+          "success": {
+            "description": "الوصف",
+            "title": "العنوان"
+          }
+        }
+      }
     },
     "records": {
       "title": "Training Records",
@@ -4768,6 +5884,44 @@
       "certifications": "Certifications",
       "programs": "Programs",
       "records": "Records"
+    },
+    "enroll": {
+      "configureParams": "تكوين المعلمات",
+      "establishEnrollment": "إعداد التسجيل",
+      "initiateEnrollment": "بدء التسجيل",
+      "rationalOptimization": "تحسين عقلاني",
+      "reasonPlaceholder": "سبب التسجيل",
+      "selectProgram": "اختر البرنامج",
+      "strategicProgramNode": "عقدة البرنامج الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان",
+      "toast": {
+        "success": {
+          "description": "الوصف",
+          "title": "العنوان"
+        }
+      }
+    },
+    "enrollEmployee": "تسجيل موظف",
+    "initializeActivity": "تهيئة النشاط",
+    "matrix": {
+      "competencyMatrix": "مصفوفة الكفاءات",
+      "departmentNode": "قسم عقدة",
+      "exportMatrix": "تصدير المصفوفة",
+      "operativeNode": "عقدة العامل",
+      "searchPlaceholder": "عبارة البحث",
+      "strategicAvg": "المتوسط الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "title": "العنوان"
+    },
+    "newCertification": "شهادة جديدة",
+    "newTrainingProgram": "برنامج تدريبي جديد",
+    "skillsMatrix": "مصفوفة المهارات",
+    "stats": {
+      "activeSkillNodes": "عقد مهارات نشطة",
+      "operationalProtocols": "البروتوكولات التشغيلية",
+      "synchronizationPulse": "نبض المزامنة",
+      "thresholdAlerts": "تنبيهات العتبة"
     }
   },
   "components": {
@@ -4777,7 +5931,382 @@
         "qualityAlert": "Quality Alert",
         "safetyAlert": "Safety Alert",
         "maintenanceRequired": "Maintenance Required"
+      },
+      "processing": "Processing...",
+      "commandReceived": "Command received",
+      "errorOccurred": "Error occurred",
+      "voiceDisabled": "Voice commands disabled"
+    },
+    "errorState": {
+      "connectionError": "Connection Error",
+      "connectionErrorDesc": "Unable to reach the server. Please check your connection and try again.",
+      "serverError": "Server Error",
+      "serverErrorDesc": "Something went wrong on our end. Please try again later.",
+      "noData": "No Data",
+      "noDataDesc": "No records found matching your criteria.",
+      "accessDenied": "Access Denied",
+      "accessDeniedDesc": "You don't have permission to access this resource.",
+      "notFound": "Not Found",
+      "notFoundDesc": "The requested resource could not be found.",
+      "error": "Error",
+      "errorDesc": "An unexpected error occurred.",
+      "tryAgain": "Try Again"
+    },
+    "pageGuard": {
+      "accessRestricted": "Access Restricted",
+      "noPermission": "You don't have permission to access this page.",
+      "returnToDashboard": "Return to Dashboard"
+    },
+    "comingSoon": {
+      "defaultMessage": "This feature is currently under development and will be available soon.",
+      "goBack": "Go Back"
+    },
+    "table": {
+      "noData": "No data",
+      "rowsPerPage": "Rows per page:"
+    },
+    "commandPalette": {
+      "placeholder": "Type a command or search...",
+      "noCommandsFound": "No commands found",
+      "tryDifferentSearch": "Try a different search term",
+      "toToggle": "to toggle",
+      "ariaLabel": "Command palette",
+      "searchAriaLabel": "Command search"
+    },
+    "scanner": {
+      "scanComplete": "Scan Complete",
+      "cameraNotActive": "Camera not active",
+      "switchCamera": "Switch Camera",
+      "captureFrame": "Capture Frame",
+      "stopScanner": "Stop Scanner",
+      "scannerNotSupported": "Scanner Not Supported",
+      "browserNotSupported": "Your browser doesn't support the Barcode Detection API. Try using Chrome or Edge.",
+      "cameraAccessDenied": "Camera Access Denied",
+      "allowCameraAccess": "Please allow camera access in your browser settings to use the barcode scanner.",
+      "tryAgain": "Try Again",
+      "scanAnother": "Scan Another",
+      "startScanner": "Start Scanner",
+      "switch": "Switch",
+      "capture": "Capture",
+      "stop": "Stop",
+      "lastScanned": "Last Scanned",
+      "format": "Format",
+      "scanBarcode": "Scan Barcode",
+      "pointCamera": "Point your camera at a barcode or QR code to scan it.",
+      "scan": "Scan"
+    },
+    "andon": {
+      "unknownWorkCenter": "Unknown Work Center",
+      "noActiveAlerts": "No active alerts",
+      "refresh": "Refresh",
+      "toggleFullscreen": "Toggle fullscreen",
+      "ackBy": "Ack by {name}",
+      "triggeredBy": "Triggered by {name}",
+      "allSystemsNormal": "All systems operating normally"
+    },
+    "kanban": {
+      "unknownCustomer": "Unknown Customer",
+      "pipelineValue": "Pipeline Value: ",
+      "kanbanView": "Kanban view",
+      "listView": "List view",
+      "calendarView": "Calendar view",
+      "searchPlaceholder": "Search RFQs...",
+      "filters": "Filters",
+      "clear": "Clear",
+      "expandCards": "Expand cards",
+      "compactCards": "Compact cards",
+      "noItems": "No items in this column",
+      "total": "Total: ",
+      "rfqs": "RFQs"
+    },
+    "quickActions": {
+      "confirmAction": "Confirm Action"
+    },
+    "correction": {
+      "submissionFailed": "Correction submission failed",
+      "rejectionFailed": "Rejection submission failed"
+    },
+    "sync": {
+      "removeOperation": "Remove operation"
+    },
+    "pdfPreview": {
+      "immutableVersion": "Immutable version",
+      "pdfPreview": "PDF Preview",
+      "versionHistory": "Version History",
+      "metadata": "Metadata",
+      "closeEscape": "Close (Escape)",
+      "previousPage": "Previous Page",
+      "nextPage": "Next Page",
+      "zoomOut": "Zoom Out",
+      "zoomIn": "Zoom In",
+      "rotate": "Rotate",
+      "fullscreen": "Fullscreen",
+      "download": "Download",
+      "print": "Print",
+      "currentlyViewing": "Currently viewing",
+      "loadingPdf": "Loading PDF...",
+      "documentInfo": "Document Info",
+      "createdBy": "Created By",
+      "failedToLoad": "Failed to load PDF",
+      "currentVersion": "Current Version",
+      "currentPage": "Current page",
+      "navigate": "Navigate",
+      "close": "Close",
+      "retry": "Retry",
+      "byAuthor": "by",
+      "titleLabel": "Title",
+      "typeLabel": "Type",
+      "descriptionLabel": "Description",
+      "entityLabel": "Entity",
+      "versionLabel": "Version",
+      "createdLabel": "Created",
+      "sizeLabel": "Size",
+      "pagesLabel": "Pages",
+      "hashLabel": "Hash",
+      "metadataHeading": "Metadata",
+      "page": "Page",
+      "of": "of",
+      "rotated": "Rotated"
+    },
+    "security": {
+      "noPermission": "You don't have permission to view this data",
+      "allActions": "All Actions"
+    },
+    "spatialUi": {
+      "factoryFloorMap": "Factory floor map",
+      "closePanel": "Close panel",
+      "closePathView": "Close path view",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "resetView": "Reset view",
+      "selectCellDetails": "Select a cell to view details",
+      "currentJob": "Current Job:",
+      "changeStatus": "Change Status:",
+      "orderPath": "Order Path:",
+      "processTime": "Process Time",
+      "wasteRatio": "Waste Ratio",
+      "pathSteps": "Path Steps:",
+      "warRoom": {
+        "kpi": "Key Performance Indicators",
+        "salesPipeline": "Sales Pipeline",
+        "productionStatus": "Production Status",
+        "qualityMetrics": "Quality Metrics",
+        "activeAlerts": "Active Alerts",
+        "todaysTimeline": "Today's Timeline"
       }
+    },
+    "session": {
+      "notifications": "Notifications",
+      "dismissNotification": "Dismiss notification"
+    },
+    "onboarding": {
+      "productTour": "Product tour",
+      "closeTour": "Close tour",
+      "helpPanel": "Help panel",
+      "closeHelpPanel": "Close help panel",
+      "dismissSuggestion": "Dismiss suggestion",
+      "toggleAssistant": "Toggle Sensei assistant",
+      "dismiss": "Dismiss",
+      "searchHelp": "Search help"
+    },
+    "error": {
+      "somethingWentWrong": "Something went wrong",
+      "technicalDifficulties": "We're experiencing technical difficulties. Our team has been notified.",
+      "dismissError": "Dismiss error",
+      "dismissBtn": "Dismiss",
+      "readOnlyMode": "Read-only mode",
+      "resolveConflicts": "Resolve Conflicts",
+      "yourChanges": "Your changes",
+      "serverVersion": "Server version",
+      "pageNotFound": "Page Not Found",
+      "pageNotFoundMessage": "The page you're looking for doesn't exist or has been moved."
+    },
+    "emptyState": {
+      "noResultsFound": "No results found",
+      "noItemsYet": "No items yet",
+      "noRfqsInQueue": "No RFQs in queue",
+      "noQuotesCreated": "No quotes created",
+      "noActiveJobs": "No active jobs",
+      "defaultTitle": "No items found",
+      "rfq": {
+        "title": "No RFQs Yet",
+        "description": "Request for Quotations will appear here once created.",
+        "action": "Create RFQ",
+        "hint": "RFQs help you manage customer requests and generate quotes."
+      },
+      "quote": {
+        "title": "No Quotes Yet",
+        "description": "Quotes will appear here once created.",
+        "action": "Create Quote",
+        "hint": "Create quotes from RFQs to send pricing to customers."
+      },
+      "workOrder": {
+        "title": "No Work Orders Yet",
+        "description": "Work orders will appear here once created.",
+        "action": "Create Work Order",
+        "hint": "Work orders track manufacturing jobs through production."
+      },
+      "account": {
+        "title": "No Accounts Yet",
+        "description": "Customer and supplier accounts will appear here.",
+        "action": "Add Account",
+        "hint": "Accounts represent your customers, suppliers, and partners."
+      },
+      "product": {
+        "title": "No Products Yet",
+        "description": "Products will appear here once added to the catalog.",
+        "action": "Add Product",
+        "hint": "Products define the items you manufacture or sell."
+      },
+      "contact": {
+        "title": "No Contacts Yet",
+        "description": "Contacts will appear here once added.",
+        "action": "Add Contact",
+        "hint": "Contacts are people associated with your accounts."
+      },
+      "andon": {
+        "title": "No Active Alerts",
+        "description": "All systems are operating normally. Alerts will appear here when triggered.",
+        "action": "View History",
+        "hint": "Andon alerts notify you of production issues that need attention."
+      },
+      "a3": {
+        "title": "No A3 Reports Yet",
+        "description": "A3 problem-solving reports will appear here once created.",
+        "action": "Create A3 Report",
+        "hint": "A3 reports help structure problem-solving using lean methodology."
+      },
+      "training": {
+        "title": "No Training Records Yet",
+        "description": "Training programs and records will appear here.",
+        "action": "Add Training",
+        "hint": "Track employee training, certifications, and skill development."
+      },
+      "workCenter": {
+        "title": "No Work Centers Yet",
+        "description": "Work centers will appear here once configured.",
+        "action": "Add Work Center",
+        "hint": "Work centers represent manufacturing stations in your facility."
+      },
+      "search": {
+        "noResultsFor": "No results for",
+        "yourSearch": "your search",
+        "adjustSearch": "Try adjusting your search terms or filters.",
+        "hint": "You can search by name, ID, or other attributes."
+      },
+      "filter": {
+        "title": "No Matching Results",
+        "description": "No items match the current filters.",
+        "action": "Clear Filters",
+        "hint": "Try adjusting or clearing filters to see more results."
+      },
+      "error": {
+        "title": "Something Went Wrong",
+        "description": "An error occurred while loading data. Please try again.",
+        "action": "Retry"
+      },
+      "notFound": {
+        "title": "Page Not Found",
+        "description": "The page you're looking for doesn't exist or has been moved.",
+        "goBack": "Go Back",
+        "goHome": "Go Home"
+      },
+      "task": {
+        "title": "All Tasks Complete",
+        "description": "No pending tasks. New tasks will appear here when assigned.",
+        "action": "Create Task",
+        "hint": "Tasks help you track and manage work items."
+      },
+      "exception": {
+        "title": "No Exceptions",
+        "description": "No exceptions have been reported. Exceptions will appear here when logged.",
+        "action": "Report Exception",
+        "hint": "Exceptions track anomalies and deviations in processes."
+      },
+      "obeya": {
+        "title": "No Obeya Rooms Yet",
+        "description": "Obeya rooms will appear here once created.",
+        "action": "Create Obeya Room",
+        "hint": "Obeya rooms provide a visual management space for projects."
+      },
+      "project": {
+        "title": "No Projects Yet",
+        "description": "Projects will appear here once created.",
+        "action": "Create Project",
+        "hint": "Projects help organize and track work across teams."
+      },
+      "maintenance": {
+        "title": "No Maintenance Scheduled",
+        "description": "No maintenance tasks are scheduled. Tasks will appear here when planned.",
+        "action": "Schedule Maintenance",
+        "hint": "Preventive maintenance helps keep equipment running smoothly."
+      }
+    },
+    "printExport": {
+      "cancelExport": "Cancel export",
+      "close": "Close",
+      "qrCode": "QR Code",
+      "dataMatrix": "Data Matrix",
+      "document": "Document",
+      "printed": "Printed",
+      "print": "Print",
+      "printing": "Printing...",
+      "downloadAsPdf": "Download as PDF",
+      "downloadAsExcel": "Download as Excel",
+      "downloadAsCsv": "Download as CSV",
+      "printLabel": "Print Label",
+      "export": "Export",
+      "preparingDocument": "Preparing document...",
+      "generatingFormat": "Generating {format}...",
+      "downloading": "Downloading...",
+      "downloadComplete": "Download complete",
+      "exportFailed": "Export failed",
+      "unknownError": "Unknown error",
+      "printLabels": "Print Labels",
+      "labelSize": "Label Size",
+      "sizeInches": "{size} inches",
+      "quantity": "Quantity",
+      "barcodeValue": "Barcode Value",
+      "enterBarcodeValue": "Enter barcode value",
+      "barcodeType": "Barcode Type",
+      "code128": "Code 128",
+      "preview": "Preview",
+      "cancel": "Cancel",
+      "printCountLabels": "Print {count} Label(s)",
+      "labelPreview": "Label preview {size}",
+      "barcodeAriaLabel": "Barcode: {barcode}"
+    },
+    "designSystem": {
+      "openAuditPanel": "Open design system audit panel",
+      "auditPanelTitle": "Design System Audit Panel",
+      "closeAuditPanel": "Close audit panel",
+      "horizontalScale": "Horizontal Scale",
+      "verticalScale": "Vertical Scale",
+      "fontSizes": "Font Sizes",
+      "fontWeights": "Font Weights",
+      "designSystemAudit": "Design System Audit"
+    },
+    "ganttChart": {
+      "noTasks": "No tasks to visualize in Gantt",
+      "taskName": "Task Name"
+    },
+    "dataVisualization": {
+      "noData": "No data"
+    },
+    "timeline": {
+      "noActivity": "No activity yet"
+    },
+    "virtualTable": {
+      "noData": "No data available"
+    },
+    "sidebar": {
+      "senseiHome": "Sensei OS home",
+      "toggleDarkMode": "Toggle dark mode",
+      "administration": "Administration"
+    },
+    "mobileNav": {
+      "navigation": "Mobile navigation",
+      "openMenu": "Open menu"
     }
   },
   "hr": {
@@ -4923,5 +6452,117 @@
       "placeholder": "Ask a question about your data...",
       "execute": "Execute Query"
     }
+  },
+  "products": {
+    "allStock": "كل المخزون",
+    "detail": {
+      "addComponent": "إضافة مكوّن",
+      "adjustDialog": {
+        "apply": "تطبيق",
+        "title": "العنوان"
+      },
+      "adjustInventory": "تعديل المخزون",
+      "analyzeIntel": "تحليل الاستخبارات",
+      "authorize": "تفويض",
+      "backToProducts": "رجوع إلى المنتجات",
+      "billOfMaterials": "قائمة المواد",
+      "bomDescription": "قائمة المواد الوصف",
+      "cloneNode": "استنساخ عقدة",
+      "contextualIntelligence": "الاستخبارات السياقية",
+      "deauthorize": "إلغاء التفويض",
+      "fiscalParameters": "المعلمات المالية",
+      "magnitudePulse": "نبض الحجم",
+      "nodeSpecifications": "مواصفات العقدة",
+      "nodeTelemetry": "قياس العقدة",
+      "notFound": "غير موجود",
+      "refineMasterData": "تنقيح البيانات الرئيسية",
+      "stats": {
+        "fiscalMargin": "الهامش المالي",
+        "marketValuation": "قيمة السوق",
+        "nodeMagnitude": "حجم العقدة",
+        "totalCycles": "إجمالي الدورات",
+        "winProbability": "احتمال الفوز"
+      },
+      "temporalVelocity": "السرعة الزمنية",
+      "viewAllCycles": "عرض كل الدورات",
+      "viewLogs": "عرض السجلات"
+    },
+    "edit": {
+      "basicInformation": "المعلومات الأساسية",
+      "category": "الفئة",
+      "description": "الوصف",
+      "leadTime": "وقت التسليم",
+      "partNumber": "رقم الجزء",
+      "productName": "اسم المنتج",
+      "productUpdated": "منتج تم التحديث",
+      "reorderPoint": "حد إعادة الطلب",
+      "saveChanges": "حفظ التغييرات",
+      "status": "الحالة",
+      "statusInventory": "الحالة المخزون",
+      "title": "العنوان",
+      "unitOfMeasure": "وحدة القياس",
+      "updateFailed": "تحديث فشل"
+    },
+    "emptyState": {
+      "description": "الوصف",
+      "title": "العنوان"
+    },
+    "exportIntel": "تصدير الاستخبارات",
+    "import": "استيراد",
+    "initializeNode": "تهيئة عقدة",
+    "lowStock": "منخفضة المخزون",
+    "new": {
+      "basicIdentification": "التعريف الأساسي",
+      "detailedContext": "السياق التفصيلي",
+      "establishNode": "إنشاء عقدة",
+      "failedToEstablish": "فشل الإنشاء",
+      "nodeSynchronized": "تمت مزامنة العقدة",
+      "partNodeIdentity": "معرف عقدة الجزء",
+      "providePartAndName": "يرجى إدخال الجزء والاسم",
+      "requiredParams": "المعلمات المطلوبة",
+      "strategicName": "الاسم الاستراتيجي",
+      "subtitle": "العنوان الفرعي",
+      "supplyDynamics": "ديناميكيات التوريد",
+      "syncFailed": "مزامنة فشل",
+      "taxonomyCategory": "فئة التصنيف",
+      "temporalLead": "المهلة الزمنية",
+      "title": "العنوان",
+      "unitProtocol": "وحدة بروتوكول"
+    },
+    "outOfStock": "غير متوفر",
+    "stats": {
+      "activeInventoryNodes": "عقد مخزون نشطة",
+      "aggregatedRevenue": "الإيرادات المجمعة",
+      "meanMarginKPI": "متوسط مؤشر أداء الهامش",
+      "stockAbnormalities": "شذوذات المخزون"
+    },
+    "status": {
+      "discontinued": "متوقف"
+    },
+    "stockLevel": "مستوى المخزون",
+    "table": {
+      "inventory": "المخزون",
+      "leadTime": "وقت التسليم",
+      "listPrice": "سعر القائمة",
+      "margin": "الهامش",
+      "product": "منتج",
+      "standardCost": "التكلفة المعيارية",
+      "totalSold": "إجمالي المبيعات"
+    },
+    "viewAnalytics": "عرض التحليلات",
+    "viewBom": "عرض قائمة المواد"
+  },
+  "rtl": {
+    "inputPlaceholder": "اكتب هنا...‏",
+    "searchPlaceholder": "ابحث هنا...‏",
+    "selectPlaceholder": "اختر...‏"
+  },
+  "tour": {
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "closeTour": "Close tour",
+    "productTour": "Product tour",
+    "stepOf": "{current} of {total}"
   }
 }

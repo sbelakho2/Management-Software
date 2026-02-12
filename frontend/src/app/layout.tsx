@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { SystemMetadataBar } from '@/components/system-metadata-bar';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -64,16 +65,7 @@ export default function RootLayout({
         <div className="fixed inset-0 border-[8px] border-rams-chassis pointer-events-none z-[100] hidden md:block" aria-hidden="true" />
 
         {/* System Metadata Bar (Bottom) */}
-        <div className="fixed bottom-0 left-0 right-0 h-8 bg-rams-chassis z-[100] border-t border-rams-line px-6 hidden md:flex items-center justify-between text-[10px] font-mono opacity-60 uppercase tracking-widest pointer-events-none">
-          <div className="flex gap-6">
-            <span>STATION: SENSEI-ALPHA-01</span>
-            <span>OS_VER: 3.0.0-RAMS</span>
-          </div>
-          <div className="flex gap-6">
-            <span>INTEGRITY: OPTIMAL</span>
-            <span>LATENCY: 14MS</span>
-          </div>
-        </div>
+        <SystemMetadataBar />
         
         <Providers>{children}</Providers>
       </body>

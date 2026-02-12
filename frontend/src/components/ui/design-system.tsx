@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useMemo, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // DESIGN TOKEN CONSTANTS
@@ -577,6 +578,7 @@ export interface TokenDocumentationProps {
 }
 
 export function TokenDocumentation({ category, className = '' }: TokenDocumentationProps) {
+  const { t } = useI18n();
   const renderColors = () => (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
       {(Object.keys(COLOR_TOKENS) as ColorToken[]).map((token) => (
@@ -588,11 +590,11 @@ export function TokenDocumentation({ category, className = '' }: TokenDocumentat
   const renderSpacing = () => (
     <div className="space-y-8">
       <div>
-        <h4 className="text-sm font-medium mb-4">Horizontal Scale</h4>
+        <h4 className="text-sm font-medium mb-4">{t('components.designSystem.horizontalScale')}</h4>
         <SpacingScale direction="horizontal" />
       </div>
       <div>
-        <h4 className="text-sm font-medium mb-4">Vertical Scale</h4>
+        <h4 className="text-sm font-medium mb-4">{t('components.designSystem.verticalScale')}</h4>
         <SpacingScale direction="vertical" />
       </div>
     </div>
@@ -601,11 +603,11 @@ export function TokenDocumentation({ category, className = '' }: TokenDocumentat
   const renderTypography = () => (
     <div className="space-y-8">
       <div>
-        <h4 className="text-sm font-medium mb-4">Font Sizes</h4>
+        <h4 className="text-sm font-medium mb-4">{t('components.designSystem.fontSizes')}</h4>
         <TypographyScale />
       </div>
       <div>
-        <h4 className="text-sm font-medium mb-4">Font Weights</h4>
+        <h4 className="text-sm font-medium mb-4">{t('components.designSystem.fontWeights')}</h4>
         <div className="flex flex-wrap gap-4">
           {(Object.entries(TYPOGRAPHY_TOKENS.fontWeight) as [FontWeightToken, string][]).map(
             ([weight, value]) => (
@@ -811,6 +813,7 @@ export interface DesignAuditPanelProps {
 }
 
 export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
+  const { t } = useI18n();
   const [report, setReport] = useState<TokenAuditReport | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -830,7 +833,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
       <button
         onClick={() => setIsOpen(true)}
         className={`fixed bottom-4 right-4 z-50 px-4 py-2 bg-primary text-primary-foreground rounded-lg shadow-lg hover:opacity-90 transition-opacity ${className}`}
-        aria-label="Open design system audit panel"
+        aria-label={t('components.designSystem.openAuditPanel')}
       >
         🎨 Audit
       </button>
@@ -841,14 +844,14 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
     <div
       className={`fixed bottom-4 right-4 z-50 w-96 max-h-[80vh] bg-card border border-border rounded-lg shadow-xl overflow-hidden ${className}`}
       role="dialog"
-      aria-label="Design System Audit Panel"
+      aria-label={t('components.designSystem.auditPanelTitle')}
     >
       <div className="flex items-center justify-between p-4 border-b border-border">
-        <h2 className="text-lg font-semibold">Design System Audit</h2>
+        <h2 className="text-lg font-semibold">{t('components.designSystem.designSystemAudit')}</h2>
         <button
           onClick={() => setIsOpen(false)}
           className="p-1 hover:bg-muted rounded"
-          aria-label="Close audit panel"
+          aria-label={t('components.designSystem.closeAuditPanel')}
         >
           ✕
         </button>
@@ -874,7 +877,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
 
             {report.missingTokens.length > 0 && (
               <div className="p-3 bg-destructive/10 rounded">
-                <h4 className="text-sm font-medium text-destructive mb-2">Missing Tokens</h4>
+                <h4 className="text-sm font-medium text-destructive mb-2">{t('components.designSystem.missingTokens')}</h4>
                 <ul className="text-xs space-y-1">
                   {report.missingTokens.map((token) => (
                     <li key={token} className="text-muted-foreground">
@@ -886,7 +889,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
             )}
 
             <div>
-              <h4 className="text-sm font-medium mb-2">Token Status</h4>
+              <h4 className="text-sm font-medium mb-2">{t('components.designSystem.tokenStatus')}</h4>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {report.results.map((result) => (
                   <div
@@ -903,7 +906,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
             </div>
           </div>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">Loading audit...</div>
+          <div className="text-center py-8 text-muted-foreground">{t('components.designSystem.loadingAudit')}</div>
         )}
       </div>
 
@@ -912,7 +915,7 @@ export function DesignAuditPanel({ className = '' }: DesignAuditPanelProps) {
           onClick={runAudit}
           className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity"
         >
-          Re-run Audit
+          {t('components.designSystem.reRunAudit')}
         </button>
       </div>
     </div>

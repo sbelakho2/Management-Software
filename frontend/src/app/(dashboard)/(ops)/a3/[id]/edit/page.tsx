@@ -41,10 +41,10 @@ export default function EditA3Page() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      toast({ title: 'A3 Report Updated', description: 'Changes have been saved successfully.' });
+      toast({ title: t('pages.a3.toast.updated'), description: t('pages.a3.toast.updatedDesc') });
       router.push(`/a3/${params.id}`);
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to update A3 report.', variant: 'destructive' });
+      toast({ title: 'Error', description: t('pages.a3.toast.updateFailed'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }

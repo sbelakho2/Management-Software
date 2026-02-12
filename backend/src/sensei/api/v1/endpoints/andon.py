@@ -495,6 +495,27 @@ async def create_andon_event(
     await db.commit()
     await db.refresh(event)
 
+    # ---- Single Data Thread: bind Andon into lineage ----
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs: dict = {
+            "andon_event_id": str(event.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "andon_event_create",
+        }
+        if data.work_order_id:
+            bind_kwargs["work_order_id"] = str(data.work_order_id)
+        await ct.bind(db, **bind_kwargs)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("common_thread bind skipped for andon %s", event.id)
+
     return build_created_response(AndonEventResponse.from_model(event))
 
 

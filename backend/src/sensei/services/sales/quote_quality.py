@@ -12,11 +12,21 @@ Validates quotes before release to customers by checking:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 from uuid import UUID
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """Return *dt* as a timezone-aware UTC datetime.
+
+    If *dt* is naive it is assumed to already represent UTC.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class CheckSeverity(str, Enum):
@@ -228,7 +238,7 @@ class QuoteQualityService:
         result = QualityCheckResult(
             quote_id=quote.id,
             quote_number=quote.quote_number,
-            checked_at=datetime.now(),
+            checked_at=datetime.now(timezone.utc),
             checks=[],
         )
         
@@ -427,7 +437,7 @@ class QuoteQualityService:
     
     def _check_validity(self, quote: QuoteData, result: QualityCheckResult) -> None:
         """Check validity period."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         
         # Check valid_from is set
         has_valid_from = quote.valid_from is not None
@@ -459,7 +469,7 @@ class QuoteQualityService:
         
         if quote.valid_until:
             # Check not already expired
-            is_expired = quote.valid_until < now
+            is_expired = _ensure_utc(quote.valid_until) < now
             check = QualityCheckItem(
                 check_id="not_expired",
                 name="Quote Not Expired",
@@ -474,7 +484,7 @@ class QuoteQualityService:
             result.add_check(check)
             
             # Check minimum validity period
-            days_valid = (quote.valid_until - now).days
+            days_valid = (_ensure_utc(quote.valid_until) - now).days
             min_days = self.config.min_validity_days
             too_short = days_valid < min_days
             check = QualityCheckItem(
@@ -616,7 +626,7 @@ class QuoteQualityService:
             result.add_check(check)
             return
         
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         buffer_days = self.config.supplier_quote_validity_buffer_days
         
         expired_quotes = []
@@ -631,16 +641,17 @@ class QuoteQualityService:
             # Parse valid_until if it's a string
             if isinstance(valid_until, str):
                 try:
-                    valid_until = datetime.fromisoformat(valid_until.replace("Z", "+00:00")).replace(tzinfo=None)
+                    valid_until = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
                 except ValueError:
                     valid_until = None
             
             if status == "pending" or status == "requested":
                 pending_quotes.append(supplier_name)
             elif valid_until:
-                if valid_until < now:
+                vu = _ensure_utc(valid_until)
+                if vu < now:
                     expired_quotes.append(supplier_name)
-                elif valid_until < now + timedelta(days=buffer_days):
+                elif vu < now + timedelta(days=buffer_days):
                     expiring_soon.append(supplier_name)
         
         # Expired supplier quotes

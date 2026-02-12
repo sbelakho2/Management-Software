@@ -433,7 +433,7 @@ async def submit_leave_request(
 
     # Wire into common thread lineage
     try:
-        await get_common_thread_service().bind_hr_lineage(
+        await get_common_thread_service().bind_hr(
             db,
             employee_id=profile.id,
             leave_request_id=leave_request.id,
@@ -442,7 +442,10 @@ async def submit_leave_request(
         )
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.exception("Failed to capture leave request lineage")
     
     return SelfServiceLeaveResponse(
@@ -808,7 +811,7 @@ async def clock_in_out(
 
     # Wire into common thread lineage
     try:
-        await get_common_thread_service().bind_hr_lineage(
+        await get_common_thread_service().bind_hr(
             db,
             employee_id=profile.id,
             timecard_id=event.id,
@@ -817,7 +820,10 @@ async def clock_in_out(
         )
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.exception("Failed to capture time clock lineage")
     
     return {

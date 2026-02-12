@@ -306,7 +306,10 @@ class TimeSeriesDecomposer:
         r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
         
         # Determine direction
-        if abs(slope) < 0.001:
+        # Low R² with meaningful slope → data is volatile (noisy, no clear trend)
+        if r_squared < 0.15 and abs(slope) >= 0.001:
+            direction = TrendDirection.VOLATILE
+        elif abs(slope) < 0.001:
             direction = TrendDirection.STABLE
         elif slope > 0:
             direction = TrendDirection.INCREASING
@@ -920,23 +923,29 @@ class PredictiveUtilityEngine:
         self,
         target_utilization: float = 0.75,
         buffer_percentage: float = 0.15,
+        max_history_per_resource: int = 10_000,
     ):
         """Initialize engine."""
         self._forecaster = ResourceForecaster()
         self._demand_forecaster = DemandForecaster()
         self._planner = CapacityPlanner(target_utilization, buffer_percentage)
         self._simulator = WhatIfSimulator(self._forecaster)
+        self._max_history = max_history_per_resource
         
-        # Store historical data
+        # Store historical data (bounded per resource)
         self._resource_history: dict[str, list[ResourceData]] = {}
         self._forecasts: dict[str, ResourceForecast] = {}
     
     def add_data(self, data: ResourceData):
-        """Add historical data point."""
+        """Add historical data point (evicts oldest when limit reached)."""
         if data.resource_id not in self._resource_history:
             self._resource_history[data.resource_id] = []
         
-        self._resource_history[data.resource_id].append(data)
+        hist = self._resource_history[data.resource_id]
+        hist.append(data)
+        # Evict oldest entries when exceeding limit
+        if len(hist) > self._max_history:
+            self._resource_history[data.resource_id] = hist[-self._max_history:]
     
     def add_data_batch(self, data: list[ResourceData]):
         """Add multiple data points."""

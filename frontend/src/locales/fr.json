@@ -121,7 +121,166 @@
       "pendingApprovals": "Approbations en attente",
       "queueGates": "Portes en file",
       "thresholdExceptions": "Exceptions de seuil",
-      "totalNodes": "Total des nœuds"
+      "totalNodes": "Total des nœuds",
+      "emailDrafting": {
+        "title": "Assistant E-mail IA",
+        "aria": {
+          "selectPurpose": "Sélectionner objectif",
+          "toneGroup": "Sélectionner le ton",
+          "selectLanguage": "Sélectionner la langue",
+          "recipientEmail": "Email du destinataire",
+          "recipientName": "Nom du destinataire",
+          "addKeyPoint": "Ajouter un point clé",
+          "keyPointsList": "Liste des points clés",
+          "removeKeyPoint": "Supprimer : {point}",
+          "copyToClipboard": "Copier dans le presse-papiers",
+          "editSubject": "Modifier l'objet",
+          "close": "Fermer",
+          "draftsList": "Brouillons d'emails"
+        },
+        "placeholders": {
+          "selectPurpose": "Sélectionner l'objectif...",
+          "recipientEmail": "destinataire@exemple.com",
+          "recipientNameOptional": "Nom (facultatif)",
+          "keyPoint": "Ajouter un point clé",
+          "senderName": "ex : Alex Morgan",
+          "senderEmail": "ex : alex@sensei.com",
+          "senderTitle": "ex : Responsable de Compte",
+          "companyName": "ex : Sensei SAS",
+          "threadEntityType": "Sélectionner l'entité du fil...",
+          "threadEntityId": "Saisir l'ID de l'entité...",
+          "referenceNumber": "ex : RFQ-2024-001",
+          "subjectHint": "ex : Mise à jour des prix pour T2"
+        },
+        "purpose": {
+          "missingInfoRequest": "Demande d'informations manquantes",
+          "quoteFollowup": "Suivi de devis",
+          "quoteSubmission": "Soumission de devis",
+          "supplierInquiry": "Demande fournisseur",
+          "meetingRequest": "Demande de réunion",
+          "meetingConfirmation": "Confirmation de réunion",
+          "meetingReschedule": "Reprogrammation de réunion",
+          "issueNotification": "Notification de problème",
+          "statusUpdate": "Mise à jour du statut",
+          "thankYou": "Merci",
+          "introduction": "Introduction",
+          "escalation": "Escalade",
+          "apology": "Excuses",
+          "custom": "Email personnalisé"
+        },
+        "tone": {
+          "formal": "Formel",
+          "professional": "Professionnel",
+          "friendly": "Amical",
+          "urgent": "Urgent",
+          "apologetic": "D'excuse",
+          "appreciative": "Appréciatif",
+          "concise": "Concis"
+        },
+        "language": {
+          "english": "Anglais",
+          "french": "Français",
+          "german": "Allemand",
+          "spanish": "Espagnol",
+          "italian": "Italien",
+          "portuguese": "Portugais",
+          "japanese": "Japonais",
+          "chinese": "Chinois",
+          "korean": "Coréen",
+          "arabic": "Arabe"
+        },
+        "actions": {
+          "add": "Ajouter",
+          "apply": "Appliquer",
+          "edit": "Modifier",
+          "generating": "En cours de génération...",
+          "generateDraft": "Générer un brouillon",
+          "regenerate": "Regénérer",
+          "send": "Envoyer"
+        },
+        "preview": {
+          "title": "Aperçu du brouillon",
+          "subjectLabel": "Objet",
+          "confidence": "Confiance : {score}",
+          "generatedIn": "Généré en {time}"
+        },
+        "units": {
+          "milliseconds": "ms",
+          "seconds": "s"
+        },
+        "compliance": {
+          "none": "Aucun problème de conformité détecté",
+          "title": "Problèmes de conformité ({count})"
+        },
+        "suggestions": {
+          "title": "Suggestions ({count})"
+        },
+        "alternatives": {
+          "title": "Objets alternatifs :"
+        },
+        "thread": {
+          "entityType": {
+            "rfq": "Demande de prix (RFQ)",
+            "quote": "Devis",
+            "workOrder": "Ordre de travail",
+            "opportunity": "Opportunité",
+            "nonConformance": "Non-conformité",
+            "shipment": "Expédition",
+            "invoice": "Facture"
+          },
+          "loadFailed": "Échec du chargement de l'historique du fil",
+          "helper": "Connectez ce brouillon à un fil pour conserver le fil de données.",
+          "loading": "Chargement de l'historique du fil...",
+          "traceTitle": "Historique du fil",
+          "traceStats": "Historique : {nodes} nœuds / {edges} arêtes",
+          "reasoningId": "ID de raisonnement : {id}"
+        },
+        "defaults": {
+          "senderName": "Opérateur Sensei",
+          "senderEmail": "operateur@sensei.com",
+          "companyName": "Sensei"
+        },
+        "sections": {
+          "recipient": "Destinataire",
+          "purpose": "Objectif",
+          "sender": "Expéditeur",
+          "threadContext": "Contexte du fil",
+          "tone": "Ton",
+          "language": "Langue",
+          "keyPoints": "Points clés"
+        },
+        "fields": {
+          "senderName": "Nom de l'expéditeur",
+          "senderEmail": "Email de l'expéditeur",
+          "senderTitle": "Titre de l'expéditeur",
+          "companyName": "Nom de l'entreprise",
+          "threadEntityType": "Type d'entité du fil",
+          "threadEntityId": "ID d'entité du fil",
+          "referenceNumberOptional": "Numéro de référence (facultatif)",
+          "subjectHintOptional": "Indice d'objet (facultatif)"
+        },
+        "status": {
+          "generating": "En cours de génération...",
+          "ready": "Prêt pour examen",
+          "reviewed": "Examiné",
+          "approved": "Approuvé",
+          "sent": "Envoyé",
+          "discarded": "Rejeté",
+          "failed": "Échec"
+        },
+        "notifications": {
+          "copied": "Copié dans le presse-papiers !"
+        },
+        "empty": {
+          "title": "Pas encore de brouillon",
+          "description": "Créez un brouillon pour voir l'aperçu et les vérifications de conformité.",
+          "list": "Pas encore de brouillons"
+        },
+        "validation": {
+          "emailRequired": "L'email est obligatoire",
+          "emailInvalid": "Format d'email invalide"
+        }
+      }
     },
     "statuses": {
       "approved": "Approuvé",
@@ -137,7 +296,15 @@
       "protocolType": "Type de protocole",
       "resolutionTitle": "Titre de résolution",
       "statusNode": "Nœud de statut",
-      "targetHorizon": "Horizon cible"
+      "targetHorizon": "Horizon cible",
+      "biometricSync": "Synchronisation biométrique",
+      "biometricSyncDesc": "Utiliser Face ID ou le chiffrement par empreinte digitale pour déverrouiller",
+      "description": "Gérer la synchronisation mobile et les niveaux d'autorisation biométrique",
+      "offlineIntelligence": "Intelligence hors ligne",
+      "offlineIntelligenceDesc": "Modèles prédictifs embarqués pour les environnements à faible latence",
+      "telemetryPush": "Signaux push de télémétrie",
+      "telemetryPushDesc": "Recevoir des alertes organisationnelles en temps réel",
+      "title": "Nœud opérationnel mobile"
     },
     "types": {
       "problemSolving": "Résolution de problèmes",
@@ -429,7 +596,7 @@
         "healthy": "Sain",
         "grossMargin": "Marge brute",
         "targetMargin": "Marge cible",
-        "variance": "Variance",
+        "variance": "Écart",
         "aiMatch": "Match de similarité IA: {percent}% avec {job}",
         "historicalAssumptions": "Assomptions historiques extraites",
         "quantityLadder": "Échelle de quantités",
@@ -437,7 +604,7 @@
       },
       "packet": {
         "backToWorkbench": "Retour au workbench",
-        "sla": "SLA: {date}",
+        "sla": "SLA : {date}",
         "noDeadline": "AUCUNE ÉCHÉANCE",
         "packetNotFound": "Packet non trouvé ou magasin non initialisé. Veuillez retourner au workbench.",
         "genericDiscipline": "Formulaire de discipline générique pour {discipline}",
@@ -571,14 +738,14 @@
       "urgent": "Urgente"
     },
     "priorityLayer": "Niveau de priorité",
-    "private": "Private",
+    "private": "Privé",
     "projectCreated": "Projet Créé",
     "public": "Public",
     "published": "Publié",
     "qty": "Qty",
     "quality": "Qualité",
     "quantity": "Quantité",
-    "received": "Received",
+    "received": "Reçu",
     "refresh": "Actualiser",
     "reject": "Rejeter",
     "rejected": "Rejeté",
@@ -607,7 +774,14 @@
       "minorIssuesDetected": "Problèmes mineurs détectés",
       "processing": "Traitement...",
       "syncing": "Synchronisation...",
-      "systemOffline": "Système hors ligne"
+      "systemOffline": "Système hors ligne",
+      "completed": "Terminé",
+      "picked": "Prélevé",
+      "packed": "Emballé",
+      "shipped": "Expédié",
+      "delivered": "Livré",
+      "inProgress": "En cours",
+      "pending": "En attente"
     },
     "submit": "Soumettre",
     "subtotal": "Sous-total",
@@ -638,10 +812,14 @@
     "yes": "Oui",
     "tests": {
       "aoi": "AOI",
-      "xray": "X-Ray",
+      "xray": "Rayons X",
       "ict": "ICT",
       "fct": "FCT"
-    }
+    },
+    "source": "Source",
+    "protocol": "Protocole",
+    "cat": "CAT",
+    "user": "Utilisateur"
   },
   "confirmations": {
     "archiveDescription": "{item} sera déplacé vers les archives.",
@@ -669,7 +847,8 @@
     "timeout": "La requête a expiré. Veuillez réessayer.",
     "unauthorized": "Vous devez être connecté pour effectuer cette action.",
     "unknown": "Une erreur inconnue s'est produite.",
-    "validationError": "Veuillez vérifier vos données et réessayer."
+    "validationError": "Veuillez vérifier vos données et réessayer.",
+    "boundaryFallback": "Une erreur s'est produite. Veuillez actualiser ou réessayer."
   },
   "forms": {
     "addMore": "Ajouter plus",
@@ -734,7 +913,7 @@
     },
     "maintenance": {
       "assets": "Équipements",
-      "corrective": "Corrective",
+      "corrective": "Correctif",
       "mtbf": "MTBF",
       "mttr": "MTTR",
       "parts": "Pièces détachées",
@@ -770,31 +949,31 @@
           "maintenance": "Maintenance",
           "completed": "TERMINÉ"
         },
-        "aggregationPulse": "Aggregation Pulse",
-        "escalateAnomaly": "Escalate Anomaly",
-        "executionVelocity": "Execution Velocity",
-        "exportSpec": "Export Spec",
-        "gateVerified": "Gate Verified",
-        "initiateExecution": "Initiate Execution",
-        "node": "Node",
-        "scrapDeviation": "Scrap Deviation",
-        "suspendProtocol": "Suspend Protocol",
+        "aggregationPulse": "Impulsion d'agrégation",
+        "escalateAnomaly": "Escalader anomalie",
+        "executionVelocity": "Vitesse d'exécution",
+        "exportSpec": "Exporter spécification",
+        "gateVerified": "Porte vérifiée",
+        "initiateExecution": "Initier exécution",
+        "node": "Nœud",
+        "scrapDeviation": "Écart de rebut",
+        "suspendProtocol": "Suspendre protocole",
         "tabs": {
           "bom": "Bom",
-          "history": "History",
-          "operations": "Operations",
-          "quality": "Quality"
+          "history": "Historique",
+          "operations": "Opérations",
+          "quality": "Qualité"
         },
-        "targetMagnitude": "Target Magnitude",
-        "unknownProduct": "Unknown Product",
-        "viewHistory": "View History",
-        "loadingBom": "Retrieving Bill of Materials protocol nodes...",
-        "temporalSchedule": "Temporal Schedule",
-        "startHorizon": "Start Horizon",
-        "targetTerminal": "Target Terminal",
-        "standardLeadTime": "Standard Lead Time",
-        "days": "DAYS",
-        "station": "STATION"
+        "targetMagnitude": "Magnitude cible",
+        "unknownProduct": "Produit inconnu",
+        "viewHistory": "Voir historique",
+        "loadingBom": "Récupération des nœuds du protocole de nomenclature...",
+        "temporalSchedule": "Calendrier temporel",
+        "startHorizon": "Horizon de début",
+        "targetTerminal": "Terminal cible",
+        "standardLeadTime": "Délai standard",
+        "days": "JOURS",
+        "station": "Station"
       }
     },
     "purchase": {
@@ -833,28 +1012,28 @@
             "high": "Haute",
             "critical": "Critique"
           },
-          "capaCreated": "Capa Created",
-          "createFailed": "Create Failed",
-          "initiatedSuccess": "Initiated Success"
+          "capaCreated": "CAPA Créée",
+          "createFailed": "Échec de création",
+          "initiatedSuccess": "Initié avec succès"
         },
         "detail": {
-          "addNode": "Add Node",
-          "commitAction": "Commit Action",
-          "countermeasureNodes": "Countermeasure Nodes",
-          "exportProtocol": "Export Protocol",
-          "implementationMagnitude": "Implementation Magnitude",
-          "problemStatement": "Problem Statement",
-          "refineCapa": "Refine Capa",
-          "rootCauseAnalysis": "Root Cause Analysis",
-          "subtitle": "Subtitle",
-          "syncPulse": "Sync Pulse",
+          "addNode": "Ajouter nœud",
+          "commitAction": "Valider action",
+          "countermeasureNodes": "Nœuds de contre-mesure",
+          "exportProtocol": "Exporter protocole",
+          "implementationMagnitude": "Magnitude de mise en œuvre",
+          "problemStatement": "Énoncé du problème",
+          "refineCapa": "Affiner CAPA",
+          "rootCauseAnalysis": "Analyse cause racine",
+          "subtitle": "Sous-titre",
+          "syncPulse": "Impulsion de synchro",
           "tabs": {
-            "actionProtocol": "Action Protocol",
-            "effectivenessSync": "Effectiveness Sync",
-            "relatedAnomalies": "Related Anomalies"
+            "actionProtocol": "Protocole d'action",
+            "effectivenessSync": "Synchro d'efficacité",
+            "relatedAnomalies": "Anomalies liées"
           },
-          "terminateNode": "Terminate Node",
-          "verifyEffectiveness": "Verify Effectiveness"
+          "terminateNode": "Terminer nœud",
+          "verifyEffectiveness": "Vérifier efficacité"
         }
       },
       "certifications": "Certifications",
@@ -878,36 +1057,36 @@
             "major": "Majeure",
             "critical": "Critique"
           },
-          "validationError": "Validation Error",
-          "titleDescRequired": "Title and Description are required.",
-          "ncrCreated": "NCR Created",
-          "recordedSuccess": "NCR has been successfully recorded.",
-          "createFailed": "Failed to create NCR",
+          "validationError": "Erreur de validation",
+          "titleDescRequired": "Le titre et la description sont requis.",
+          "ncrCreated": "NCR Créée",
+          "recordedSuccess": "NCR enregistrée avec succès.",
+          "createFailed": "Échec de création NCR",
           "placeholders": {
-            "title": "e.g., Dimensional deviation in bracket holes",
-            "location": "e.g., Assembly Line 2",
-            "partNumber": "PART_NUMBER",
-            "woNumber": "WO_NUMBER",
-            "description": "Provide detailed evidence regarding the discrepancy protocol..."
+            "title": "ex: Écart dimensionnel dans les trous du support",
+            "location": "ex: Ligne d'assemblage 2",
+            "partNumber": "NUMÉRO_PIÈCE",
+            "woNumber": "NUMÉRO_OF",
+            "description": "Fournir des preuves détaillées concernant le protocole de divergence..."
           }
         },
         "detail": {
-          "assignCapa": "Assign Capa",
-          "comment": "Comment",
-          "discrepancyIntelligence": "Discrepancy Intelligence",
-          "investigationProtocol": "Investigation Protocol",
-          "noDescription": "No Description",
-          "refineProtocol": "Refine Protocol",
-          "subjectiveData": "Subjective Data",
-          "subtitle": "Subtitle",
+          "assignCapa": "Assigner CAPA",
+          "comment": "Commentaire",
+          "discrepancyIntelligence": "Intelligence des divergences",
+          "investigationProtocol": "Protocole d'investigation",
+          "noDescription": "Pas de description",
+          "refineProtocol": "Affiner protocole",
+          "subjectiveData": "Données subjectives",
+          "subtitle": "Sous-titre",
           "tabs": {
             "disposition": "Disposition",
-            "eventLog": "Event Log",
-            "evidence": "Evidence",
-            "rootCause": "Root Cause"
+            "eventLog": "Journal des événements",
+            "evidence": "Preuve",
+            "rootCause": "Cause racine"
           },
-          "terminateNode": "Terminate Node",
-          "viewLogs": "View Logs"
+          "terminateNode": "Terminer nœud",
+          "viewLogs": "Voir journaux"
         }
       },
       "passRate": "Taux de réussite",
@@ -928,28 +1107,28 @@
             "final": "Final",
             "receiving": "RÉCEPTION"
           },
-          "inspectionStarted": "Inspection Started",
-          "initializedSuccess": "New inspection record has been initialized.",
-          "createFailed": "Failed to create inspection.",
-          "associatedWoSync": "Associated WO Sync",
-          "initialObservation": "Initial Observation Intel",
+          "inspectionStarted": "Inspection commencée",
+          "initializedSuccess": "Nouvel enregistrement d'inspection initialisé.",
+          "createFailed": "Échec de création d'inspection.",
+          "associatedWoSync": "Synchro OF associé",
+          "initialObservation": "Intel observation initiale",
           "placeholders": {
-            "protocolIdentity": "e.g., Final Inspection Protocol - BRK-2024",
-            "operatorIdentity": "OPERATIVE_IDENTITY",
-            "partNumber": "PART_NUMBER",
-            "woNumber": "WO_NUMBER",
-            "notes": "Incorporate initial findings and contextual data..."
+            "protocolIdentity": "ex: Protocole d'inspection final - BRK-2024",
+            "operatorIdentity": "IDENTITÉ_OPÉRATIF",
+            "partNumber": "NUMÉRO_PIÈCE",
+            "woNumber": "NUMÉRO_OF",
+            "notes": "Intégrer les constatations initiales et données contextuelles..."
           }
         },
         "detail": {
-          "assignmentTelemetry": "Assignment Telemetry",
-          "checklist": "Checklist",
-          "commitSync": "Commit Sync",
-          "inspectionIntelligence": "Inspection Intelligence",
-          "leadInspector": "Lead Inspector",
-          "printEvidence": "Print Evidence",
-          "resultsAnalytics": "Results Analytics",
-          "scheduledSync": "Scheduled Sync"
+          "assignmentTelemetry": "Télémesure d'assignation",
+          "checklist": "Liste de contrôle",
+          "commitSync": "Valider synchro",
+          "inspectionIntelligence": "Intelligence d'inspection",
+          "leadInspector": "Inspecteur principal",
+          "printEvidence": "Imprimer preuve",
+          "resultsAnalytics": "Analytique des résultats",
+          "scheduledSync": "Synchro planifiée"
         }
       }
     },
@@ -988,25 +1167,25 @@
         "createError": "Échec de création",
         "placeholders": {
           "partNumber": "ex: PN-2024-001",
-          "nomenclature": "PRODUCT_NAME_STR",
-          "description": "Brief description of the product or component specifications...",
-          "uom": "ISO_CODE",
-          "unitCost": "0.00",
-          "minStock": "MIN_QTY",
-          "maxStock": "MAX_QTY",
-          "leadTime": "DAYS",
-          "location": "ZONE-BIN-SHELF",
-          "supplier": "SUPPLIER_ID"
+          "nomenclature": "NOM_PRODUIT_STR",
+          "description": "Brève description du produit ou spécifications des composants...",
+          "uom": "CODE_ISO",
+          "unitCost": "0,00",
+          "minStock": "QTE_MIN",
+          "maxStock": "QTE_MAX",
+          "leadTime": "JOURS",
+          "location": "ZONE-BAC-ÉTAGÈRE",
+          "supplier": "ID_FOURNISSEUR"
         },
         "abort": "Annuler",
         "synchronizing": "SYNCHRONISATION...",
         "commitData": "Valider",
-        "requiredParams": "Required Parameters Missing",
-        "providePartAndName": "Please provide at least a Part Number and Name for the node.",
-        "nodeSynchronized": "Node Synchronized",
-        "establishedSuccess": "{name} has been successfully established in the catalog.",
-        "syncFailed": "Synchronization Failed",
-        "failedToEstablish": "Failed to establish product node in the registry."
+        "requiredParams": "Paramètres requis manquants",
+        "providePartAndName": "Veuillez fournir au moins un numéro de pièce et un nom pour le nœud.",
+        "nodeSynchronized": "Nœud synchronisé",
+        "establishedSuccess": "{name} a été établi avec succès dans le catalogue.",
+        "syncFailed": "Échec synchronisation",
+        "failedToEstablish": "Échec de l'établissement du nœud produit dans le registre."
       },
       "detail": {
         "title": "Détail Produit",
@@ -1027,60 +1206,60 @@
         "updated": "MIS À JOUR",
         "revision": "RÉVISION"
       },
-      "title": "Product Catalog",
-      "subtitle": "Manage products, BOMs, and manufacturing routings",
-      "station": "PRODUCTS",
+      "title": "Catalogue Produits",
+      "subtitle": "Gérer les produits, nomenclatures et gammes de fabrication",
+      "station": "PRODUITS",
       "stats": {
-        "activeProducts": "Active Products",
-        "bomsDefined": "BOMs Defined",
-        "routingsActive": "Active Routings",
-        "avgLeadTime": "Avg. Lead Time",
-        "activeInventoryNodes": "Active Products",
-        "aggregatedRevenue": "Total Revenue",
-        "meanMarginKPI": "Average Margin",
-        "stockAbnormalities": "Low Stock Alerts"
+        "activeProducts": "Produits actifs",
+        "bomsDefined": "Nomenclatures définies",
+        "routingsActive": "Gammes actives",
+        "avgLeadTime": "Délai moyen",
+        "activeInventoryNodes": "Produits actifs",
+        "aggregatedRevenue": "Revenu total",
+        "meanMarginKPI": "Marge moyenne",
+        "stockAbnormalities": "Alertes stock bas"
       },
       "actions": {
-        "newProduct": "New Product"
+        "newProduct": "Nouveau produit"
       },
       "tabs": {
-        "products": "Products",
-        "boms": "BOMs",
-        "routings": "Routings"
+        "products": "Produits",
+        "boms": "Nomenclatures",
+        "routings": "Gammes"
       },
       "details": {
-        "overview": "Overview",
-        "specifications": "Specifications",
-        "bom": "Bill of Materials",
-        "routing": "Routing",
-        "inventory": "Inventory",
-        "history": "History"
+        "overview": "Aperçu",
+        "specifications": "Spécifications",
+        "bom": "Nomenclature",
+        "routing": "Gamme",
+        "inventory": "Inventaire",
+        "history": "Historique"
       },
       "status": {
-        "discontinued": "Discontinued"
+        "discontinued": "Discontinué"
       },
-      "viewBom": "View BOM",
-      "viewAnalytics": "View Analytics",
-      "stockLevel": "Stock Level",
-      "allStock": "All Stock",
-      "lowStock": "Low Stock",
-      "outOfStock": "Out of Stock",
+      "viewBom": "Voir Nomenclature",
+      "viewAnalytics": "Voir Analytique",
+      "stockLevel": "Niveau Stock",
+      "allStock": "Tout Stock",
+      "lowStock": "Stock Bas",
+      "outOfStock": "Rupture de Stock",
       "table": {
-        "product": "Product",
-        "standardCost": "Standard Cost",
-        "listPrice": "List Price",
-        "margin": "Margin",
-        "inventory": "Inventory",
-        "leadTime": "Lead Time",
-        "totalSold": "Total Sold"
+        "product": "Produit",
+        "standardCost": "Coût Standard",
+        "listPrice": "Prix Liste",
+        "margin": "Marge",
+        "inventory": "Inventaire",
+        "leadTime": "Délai",
+        "totalSold": "Total Vendu"
       },
       "emptyState": {
-        "description": "Start by adding your first product to the catalog.",
-        "title": "No products found"
+        "description": "Commencez par ajouter votre premier produit au catalogue.",
+        "title": "Aucun produit trouvé"
       },
-      "exportIntel": "Export Catalog",
-      "import": "Import",
-      "initializeNode": "Create Product"
+      "exportIntel": "Exporter Catalogue",
+      "import": "Importer",
+      "initializeNode": "Créer Produit"
     }
   },
   "navigation": {
@@ -1203,7 +1382,17 @@
         "deleted": "Rapport A3 supprimé",
         "deletedDescription": "Le rapport A3 a été supprimé avec succès.",
         "escalated": "A3 escaladé",
-        "escalatedDescription": "Le rapport a été escaladé à la direction pour révision."
+        "escalatedDescription": "Le rapport a été escaladé à la direction pour révision.",
+        "titleRequired": "Veuillez entrer un titre pour le rapport A3.",
+        "created": "Rapport A3 créé",
+        "createdDesc": "Le nouveau rapport A3 a été initialisé avec succès.",
+        "createFailed": "Échec création rapport A3.",
+        "loadFailed": "Échec chargement détails A3",
+        "export": "Exporter",
+        "exportDesc": "Démarrage export PDF...",
+        "updated": "Rapport A3 mis à jour",
+        "updatedDesc": "Modifications enregistrées avec succès.",
+        "updateFailed": "Échec mise à jour rapport A3."
       }
     },
     "admin": {
@@ -1355,7 +1544,12 @@
         "initializeTemplate": "Initialiser le modèle",
         "title": "Modèles de documents"
       },
-      "title": "Administration"
+      "title": "Administration",
+      "import": {
+        "conflictResolution": "Résolution Conflit",
+        "skipExisting": "Ignorer Existant",
+        "updateExisting": "Mettre à jour Existant"
+      }
     },
     "analytics": {
       "alpha": "Alpha",
@@ -1463,7 +1657,8 @@
         "protocol": "Protocole",
         "temporalModel": "Modèle : TEMPORAL-CONV-04",
         "training": "Sensei IA entraîne des modèles de projection temporelle..."
-      }
+      },
+      "statusOptimal": "OPTIMAL"
     },
     "andon": {
       "actions": {
@@ -1491,7 +1686,10 @@
         "live": "En direct",
         "settings": "Paramètres"
       },
-      "title": "Intelligence Andon"
+      "title": "Intelligence Andon",
+      "toast": {
+        "settingsSaved": "Préférences de notification de signal mises à jour."
+      }
     },
     "auditor": {
       "actions": {
@@ -1596,10 +1794,42 @@
         "deleted": "Protocole CTQ supprimé",
         "deletedDescription": "Le protocole CTQ a été supprimé avec succès.",
         "retired": "Protocole CTQ retiré",
-        "retiredDescription": "Le protocole CTQ a été archivé."
+        "retiredDescription": "Le protocole CTQ a été archivé.",
+        "error": "Erreur",
+        "loadFailed": "Échec chargement détails CTQ",
+        "success": "Succès",
+        "deleteFailed": "Échec suppression CTQ",
+        "measurementAdded": "Mesure ajoutée avec succès",
+        "measurementFailed": "Échec ajout mesure",
+        "exportStarted": "Export démarré",
+        "exportStartedDesc": "Votre rapport CTQ est en cours de génération"
       },
       "totalCTQNodes": "Total des nœuds CTQ",
-      "zeroCTQProtocols": "Aucun protocole CTQ trouvé"
+      "zeroCTQProtocols": "Aucun protocole CTQ trouvé",
+      "detail": {
+        "specificationDetails": "Détails Spécification",
+        "qualityRequirements": "Exigences caractéristiques qualité",
+        "nominalValue": "Valeur Nominale",
+        "upperTolerance": "Tolérance Supérieure",
+        "lowerTolerance": "Tolérance Inférieure",
+        "relatedRfq": "RFQ Lié",
+        "partNumber": "Numéro Pièce",
+        "measurementInfo": "Info Mesure",
+        "howMeasured": "Comment cette caractéristique est mesurée",
+        "measurementMethod": "Méthode Mesure",
+        "samplingPlan": "Plan Échantillonnage",
+        "checkStage": "Étape Contrôle",
+        "evidenceRequired": "Preuve Requise",
+        "lastUpdated": "Dernière MAJ",
+        "measurementHistory": "Historique Mesures",
+        "recentResults": "Résultats de mesure récents et tendances",
+        "measuredBy": "Mesuré Par",
+        "deleteCtq": "Supprimer CTQ",
+        "addMeasurement": "Ajouter Mesure",
+        "measuredValue": "Valeur Mesurée",
+        "notMeasured": "Non Mesuré"
+      },
+      "measurementNotesPlaceholder": "Ajouter notes pertinentes sur cette mesure"
     },
     "ctqDetail": {
       "backToCTQs": "Retour aux CTQ",
@@ -1651,7 +1881,8 @@
           "openRfqs": "RFQ ouvertes",
           "totalRevenue": "Total Chiffre d'affaires",
           "totalRfqs": "Total RFQ",
-          "winRate": "Taux de réussite"
+          "winRate": "Taux de réussite",
+          "pipelineMagnitude": "Magnitude du pipeline"
         },
         "viewAll": "Voir tout",
         "viewAllRfqs": "Voir toutes les RFQ",
@@ -1772,7 +2003,10 @@
       "title": "Intelligence client",
       "viewModes": {
         "grid": "Grille",
-        "table": "Table"
+        "table": "Tableau"
+      },
+      "toast": {
+        "deactivated": "Client désactivé"
       }
     },
     "exceptions": {
@@ -1822,7 +2056,9 @@
         "quality": "Qualité",
         "safety": "Sécurité"
       },
-      "title": "Gestion des exceptions"
+      "title": "Gestion des exceptions",
+      "synchronizing": "Synchronisation exceptions opérationnelles",
+      "zeroHighUrgency": "Zéro nœuds haute urgence identifiés"
     },
     "executive": {
       "aggregatingMetrics": "Agrégation des métriques",
@@ -1837,7 +2073,14 @@
         "openResolutions": "Résolutions ouvertes",
         "operationalUptime": "Disponibilité opérationnelle",
         "optimalState": "État optimal",
-        "revenueMtd": "Chiffre d'affaires MTD"
+        "revenueMtd": "Chiffre d'affaires MTD",
+        "qualityScore": "Score Qualité",
+        "deliveryScore": "Score Livraison",
+        "costEfficiency": "Efficacité Coût",
+        "workforce": "Main d'œuvre",
+        "overallScore": "Score Global",
+        "belowTarget": "Sous la cible",
+        "awaitingData": "En attente de données"
       },
       "monitoringActive": "Surveillance active",
       "nl2sql": {
@@ -1899,9 +2142,27 @@
         "finance": "Finance",
         "operations": "Opérations",
         "overview": "Vue d'ensemble",
-        "strategist": "Stratège IA"
+        "strategist": "Stratège IA",
+        "northStar": "ÉTOILE_NORD",
+        "sqdcp": "SQDCP",
+        "senseiAi": "SENSEI_AI",
+        "riskPrediction": "PRÉDICTION_RISQUE"
       },
-      "title": "Centre de commande exécutif"
+      "title": "Centre de commande exécutif",
+      "loading": "Chargement...",
+      "ops": {
+        "activeUsers": "Utilisateurs Actifs",
+        "openWorkOrders": "OF Ouverts",
+        "productionEfficiency": "Efficacité Production",
+        "pendingApprovals": "Approbations En Attente"
+      },
+      "sqdcp": {
+        "safety": "Sécurité",
+        "quality": "Qualité",
+        "delivery": "Livraison",
+        "cost": "Coût",
+        "people": "Personnel"
+      }
     },
     "finance": {
       "allSystemsNominal": "Tous les systèmes au nominal",
@@ -1940,7 +2201,7 @@
         "subtitle": "Analyse du coût de revient et optimisation des marges",
         "title": "Intelligence des coûts",
         "totalUnit": "Total unitaire",
-        "variance": "Variance",
+        "variance": "Écart",
         "varianceAnalysis": "Analyse des écarts",
         "varianceLabor": "Écart main-d'œuvre",
         "varianceMaterial": "Écart matière",
@@ -1984,7 +2245,7 @@
       "ledger": {
         "accountName": "Nom du compte",
         "addAccount": "Ajouter un compte",
-        "balance": "Balance",
+        "balance": "Solde",
         "code": "Code",
         "journalEntries": "Écritures comptables",
         "loadingAccounts": "Chargement des comptes",
@@ -2006,7 +2267,10 @@
       "sections": {
         "accountsReceivable": "Comptes clients",
         "budgetAnalysis": "Analyse budgétaire",
-        "overview": "Vue d'ensemble financière"
+        "overview": "Vue d'ensemble financière",
+        "delete": "Supprimer le nœud",
+        "edit": "Modifier les paramètres",
+        "view": "Voir la spécification"
       },
       "station": "Station",
       "stats": {
@@ -2054,7 +2318,7 @@
         "taxReports": "Rapports fiscaux",
         "taxTransactions": "Transactions taxées",
         "taxType": "Type de taxe",
-        "taxable": "Taxable",
+        "taxable": "Imposable",
         "taxableAmount": "Montant taxable",
         "title": "Intelligence fiscale",
         "transactionLedger": "Grand livre des transactions",
@@ -2100,7 +2364,53 @@
       "thisCycle": "Ce cycle",
       "thresholdBreaches": "Dépassements de seuil",
       "title": "Personnes et talents",
-      "trainingMatrix": "Matrice de formation"
+      "trainingMatrix": "Matrice de formation",
+      "unassignedRole": "Rôle non assigné",
+      "noDepartment": "Aucun Dép.",
+      "remote": "Télétravail",
+      "unknownPosition": "Poste inconnu",
+      "candidateDetails": "Détails candidat",
+      "searchPersonnel": "Rechercher personnel...",
+      "searchJobs": "Rechercher emplois...",
+      "toast": {
+        "employeeCreated": "Employé créé avec succès",
+        "employeeCreatedTitle": "Succès",
+        "employeeTerminated": "Dossier employé terminé",
+        "jobCreated": "Offre d'emploi créée",
+        "jobDeleted": "Offre d'emploi supprimée",
+        "deletionFailed": "Échec de suppression",
+        "applicationSubmitted": "Candidature soumise",
+        "applicationMoved": "Candidature déplacée vers {status}",
+        "updateStatusFailed": "Échec mise à jour statut",
+        "leaveSubmitted": "Demande de congé soumise",
+        "leaveApproved": "Demande de congé approuvée",
+        "leaveApproveFailed": "Échec approbation congé",
+        "leaveRejected": "Demande de congé rejetée",
+        "leaveRejectFailed": "Échec rejet congé"
+      },
+      "confirmTerminate": {
+        "title": "Terminer dossier employé",
+        "description": "Êtes-vous sûr de vouloir terminer ce dossier employé ? Cette action est irréversible."
+      },
+      "confirmDeleteJob": {
+        "title": "Supprimer offre d'emploi",
+        "description": "Êtes-vous sûr de vouloir supprimer cette offre d'emploi ?"
+      },
+      "placeholders": {
+        "email": "jean.dupont@entreprise.com",
+        "selectRegion": "Sélectionner région",
+        "selectStatus": "Sélectionner statut",
+        "jobDescription": "Description du poste...",
+        "requiredSkills": "Compétences requises...",
+        "selectPosition": "Sélectionner poste",
+        "firstName": "Jean",
+        "lastName": "Doe",
+        "personalEmail": "jean.dupont@email.com",
+        "portfolioUrl": "https://...",
+        "additionalNotes": "Notes additionnelles...",
+        "selectEmployee": "Sélectionner employé",
+        "leaveReason": "Motif du congé..."
+      }
     },
     "it": {
       "active": "Actif",
@@ -2176,7 +2486,7 @@
       "loadingTools": "Chargement des outils",
       "loadingWarranties": "Chargement des garanties",
       "loadingWorkOrders": "Chargement des ordres de travail",
-      "lotoProcedures": "Loto Procedures",
+      "lotoProcedures": "Procédures Loto",
       "maintenanceBudget": "Budget de maintenance",
       "mobile": {
         "activeLOTO": "LOTO actif",
@@ -2242,7 +2552,7 @@
         "returnNumber": "Numéro de retour",
         "tool": "Outil",
         "toolNumber": "Numéro d'outil",
-        "variance": "Variance",
+        "variance": "Écart",
         "woNumber": "Numéro OT"
       },
       "tabs": {
@@ -2330,7 +2640,18 @@
         "senseiAi": "Sensei IA",
         "sqdcpDetail": "Détail SQDCP"
       },
-      "title": "Obeya cognitif"
+      "title": "Obeya cognitif",
+      "toast": {
+        "loadFailed": "Échec chargement données Obeya",
+        "itemDeleted": "Article supprimé avec succès",
+        "deleteFailed": "Échec suppression article",
+        "commentAdded": "Commentaire ajouté",
+        "commentFailed": "Échec ajout commentaire",
+        "statusUpdated": "Statut mis à jour",
+        "statusFailed": "Échec mise à jour statut",
+        "created": "Tableau Obeya créé",
+        "createdDesc": "Votre nouveau tableau obeya numérique a été initialisé avec succès."
+      }
     },
     "obeyaDetail": {
       "backToObeya": "Retour à Obeya",
@@ -2483,8 +2804,8 @@
         "rfqNumber": "Numéro RFQ",
         "statusState": "Statut",
         "thresholdDate": "Échéance",
-        "triageScore": "Triage Score",
-        "completeness": "Completeness"
+        "triageScore": "Score de triage",
+        "completeness": "Complétude"
       },
       "emptyState": {
         "title": "Aucun appel d'offres trouvé",
@@ -2654,7 +2975,7 @@
         "velocityOptimal": "Vélocité stratégique optimale"
       },
       "noDescription": "Aucune description fournie.",
-      "portfolio": "Portfolio",
+      "portfolio": "Portefeuille",
       "search": {
         "placeholder": "Rechercher des initiatives..."
       },
@@ -2687,6 +3008,29 @@
       "views": {
         "list": "Liste",
         "portfolio": "Portefeuille"
+      },
+      "toast": {
+        "settingsSaved": "Paramètres enregistrés",
+        "settingsSavedDesc": "Paramètres projet mis à jour.",
+        "saveFailed": "Échec enregistrement",
+        "saveFailedDesc": "Erreur lors de l'enregistrement de vos modifications."
+      },
+      "kanban": {
+        "columns": {
+          "new": "New",
+          "ready": "Prêt",
+          "inProgress": "En Cours",
+          "readyForTest": "Prêt pour Test",
+          "done": "Fait"
+        }
+      },
+      "milestones": {
+        "namePlaceholder": "Phase 1 Terminée",
+        "detailsPlaceholder": "Détails..."
+      },
+      "wiki": {
+        "searchPlaceholder": "Rechercher...",
+        "titlePlaceholder": "Titre Page"
       }
     },
     "purchase": {
@@ -2872,7 +3216,7 @@
         "gauge": "Jauge",
         "gaugeId": "ID de jauge",
         "gaugeIdPlaceholder": "UUID de jauge",
-        "grrPercent": "GRR %",
+        "grrPercent": "% R&R",
         "measuredValue": "Valeur mesurée",
         "ndc": "NDC",
         "notes": "Notes",
@@ -3061,7 +3405,23 @@
         "total": "Total",
         "totalCost": "Coût total",
         "validUntil": "Valable jusqu'au",
-        "zeroPriceWarning": "Avertissement de prix à zéro"
+        "zeroPriceWarning": "Avertissement de prix à zéro",
+        "materialCost": "Coût Matériel",
+        "laborCost": "Coût Main d'œuvre",
+        "overheadCost": "Frais Généraux",
+        "lineItemNotes": "Notes de ligne",
+        "noAssumptions": "Aucune hypothèse définie",
+        "newQuote": "Nouveau Devis",
+        "viewVersionHistory": "Voir Historique Versions",
+        "addProductsPricing": "Ajouter produits et prix",
+        "toggleCostBreakdown": "Basculer détail coûts",
+        "unitPrice": "Prix Unitaire",
+        "internalCostingAnalysis": "Analyse Coûts Interne",
+        "totalRevenue": "Revenu Total",
+        "grossProfit": "Marge Brute",
+        "quickActions": "Actions Rapides",
+        "assumptionsVerified": "Hypothèses Vérifiées",
+        "warningsPresent": "Avertissements Présents"
       },
       "rfqNumber": "Numéro de RFQ",
       "searchPlaceholder": "Rechercher...",
@@ -3092,7 +3452,13 @@
         "validThru": "Valable jusqu'au",
         "version": "Version"
       },
-      "title": "Intelligence des devis"
+      "title": "Intelligence des devis",
+      "toast": {
+        "savedDraft": "Devis enregistré comme brouillon",
+        "submitted": "Devis soumis pour approbation",
+        "saveFailed": "Erreur enregistrement devis",
+        "tryAgain": "Veuillez réessayer."
+      }
     },
     "sales": {
       "allPriority": "Toutes les priorités",
@@ -3138,7 +3504,18 @@
       "title": "Centre de commande ventes",
       "totalValue": "Valeur totale",
       "unassigned": "Non assigné",
-      "unknownPartner": "Partenaire inconnu"
+      "unknownPartner": "Partenaire inconnu",
+      "noBid": "Pas d'offre",
+      "statusNew": "New",
+      "statusReviewing": "En revu",
+      "statusQuoting": "En devis",
+      "statusSubmitted": "Soumis",
+      "totalRfqs": "Total des RFQ",
+      "avgResponseTime": "Temps réponse moy.",
+      "conversionRate": "Taux conversion",
+      "dueDate": "Date d'échéance",
+      "receivedDate": "Date réception",
+      "searchRfqs": "Rechercher RFQs..."
     },
     "settings": {
       "account": {
@@ -3266,7 +3643,7 @@
       "subtitle": "Simulation des perturbations mondiales et tests de résistance aux risques",
       "syncPulse": "Synchroniser la pulsation",
       "tabs": {
-        "disruptions": "Disruptions",
+        "disruptions": "Perturbations",
         "networkMap": "Carte du réseau",
         "overview": "Vue d'ensemble",
         "riskAnalysis": "Analyse des risques",
@@ -3537,7 +3914,27 @@
       "trends": {
         "thisCycle": "+124 ce cycle"
       },
-      "viewAllLowStock": "Voir tous les articles en stock faible"
+      "viewAllLowStock": "Voir tous les articles en stock faible",
+      "loading": "Chargement données entrepôt...",
+      "searchDescription": "Rechercher et gérer tout l'inventaire entrepôt",
+      "searchPlaceholder": "Rechercher articles...",
+      "itemName": "Nom d'article",
+      "onHand": "En main",
+      "managePO": "Gérer réceptions de commandes et matériaux entrants",
+      "poReference": "Réf. PO",
+      "expectedDate": "Date prévue",
+      "inTransit": "En transit",
+      "manageShipments": "Gérer expéditions et logistique de livraison",
+      "shipDate": "Date expédition",
+      "activePickLists": "Listes de prélèvement actives et exécution des commandes",
+      "itemsPicked": "articles prélevés"
+    },
+    "quotingHelper": {
+      "noQuoteFound": "Aucun Devis Trouvé",
+      "toast": {
+        "handoffSuccess": "Transfert NPI Réussi",
+        "handoffFailed": "Échec Transfert"
+      }
     }
   },
   "production": {
@@ -3604,28 +4001,28 @@
     "workCenter": "Poste de travail",
     "title": "Production",
     "workOrders": {
-      "title": "Work Orders",
-      "addWorkOrder": "Create Work Order",
-      "woNumber": "WO Number",
-      "product": "Product",
-      "quantity": "Quantity",
-      "status": "Status",
-      "planned": "Planned",
-      "released": "Released",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "priority": "Priority",
-      "startDate": "Start Date",
-      "dueDate": "Due Date"
+      "title": "Ordres de travail",
+      "addWorkOrder": "Créer un ordre de travail",
+      "woNumber": "N° OT",
+      "product": "Produit",
+      "quantity": "Quantité",
+      "status": "Statut",
+      "planned": "Prévu",
+      "released": "Lancé",
+      "inProgress": "En cours",
+      "completed": "Terminé",
+      "priority": "Priorité",
+      "startDate": "Date de début",
+      "dueDate": "Date d'échéance"
     },
     "scheduling": {
-      "title": "Scheduling",
-      "gantt": "Gantt Chart",
-      "calendar": "Calendar"
+      "title": "Planification",
+      "gantt": "Diagramme de Gantt",
+      "calendar": "Calendrier"
     },
     "tabs": {
-      "workOrders": "Work Orders",
-      "scheduling": "Scheduling"
+      "workOrders": "Ordres de travail",
+      "scheduling": "Planification"
     }
   },
   "quality": {
@@ -3665,67 +4062,101 @@
       "protocols": "Protocoles",
       "syncGates": "Portes de synchronisation",
       "inspections": "Inspections",
-      "ncrs": "NCRs",
-      "capas": "CAPAs",
+      "ncrs": "RNC",
+      "capas": "CAPA",
       "msa": "MSA",
-      "capability": "Capability",
-      "complaints": "Complaints",
-      "surveys": "Surveys",
+      "capability": "Capacité",
+      "complaints": "Plaintes",
+      "surveys": "Enquêtes",
       "fai": "FAI",
-      "selfInspection": "Self Inspection",
-      "labTesting": "Lab Testing",
-      "aql": "AQL Sampling",
-      "traceability": "Traceability",
-      "changePoint": "Change Point"
+      "selfInspection": "Auto-inspection",
+      "labTesting": "Tests en laboratoire",
+      "aql": "Échantillonnage AQL",
+      "traceability": "Traçabilité",
+      "changePoint": "Point de changement"
     },
-    "title": "Quality",
+    "title": "Qualité",
     "inspections": {
       "title": "Inspections",
-      "addInspection": "New Inspection",
-      "workOrder": "Work Order",
-      "product": "Product",
+      "addInspection": "Nouvelle inspection",
+      "workOrder": "Ordre de travail",
+      "product": "Produit",
       "type": "Type",
-      "date": "Inspection Date",
-      "status": "Status",
-      "passed": "Passed",
-      "failed": "Failed",
-      "pending": "Pending",
-      "quantityInspected": "Qty Inspected",
-      "quantityPassed": "Qty Passed",
-      "quantityFailed": "Qty Failed",
-      "searchPlaceholder": "Search inspections..."
+      "date": "Date d'inspection",
+      "status": "Statut",
+      "passed": "Accepté",
+      "failed": "Échoué",
+      "pending": "En attente",
+      "quantityInspected": "Qté inspectée",
+      "quantityPassed": "Qté acceptée",
+      "quantityFailed": "Qté rejetée",
+      "searchPlaceholder": "Rechercher des inspections..."
     },
     "ncrs": {
-      "title": "Non-Conformance Reports",
-      "addNCR": "Create NCR",
-      "severity": "Severity",
-      "critical": "Critical",
-      "major": "Major",
-      "minor": "Minor",
-      "rootCause": "Root Cause",
-      "containmentAction": "Containment Action"
+      "title": "Rapports de non-conformité",
+      "addNCR": "Créer une RNC",
+      "severity": "Sévérité",
+      "critical": "Critique",
+      "major": "Majeur",
+      "minor": "Mineur",
+      "rootCause": "Cause racine",
+      "containmentAction": "Action de confinement"
     },
     "capas": {
       "title": "CAPA",
-      "addCAPA": "Create CAPA",
-      "correctiveAction": "Corrective Action",
-      "preventiveAction": "Preventive Action",
-      "effectiveness": "Effectiveness"
+      "addCAPA": "Créer une CAPA",
+      "correctiveAction": "Action corrective",
+      "preventiveAction": "Action préventive",
+      "effectiveness": "Efficacité"
     },
     "msa": {
-      "title": "MSA Studies",
+      "title": "Études MSA",
       "gageRR": "Gage R&R",
-      "compute": "Compute GRR",
-      "repeatability": "Repeatability",
-      "reproducibility": "Reproducibility"
+      "compute": "Calculer GRR",
+      "repeatability": "Répétabilité",
+      "reproducibility": "Reproductibilité"
     },
     "capability": {
-      "title": "Process Capability",
-      "compute": "Compute Cp/Cpk",
+      "title": "Capacité du processus",
+      "compute": "Calculer Cp/Cpk",
       "cpk": "Cpk",
       "cp": "Cp",
       "pp": "Pp",
       "ppk": "Ppk"
+    },
+    "grr": {
+      "analysisResults": "Résultats de l'analyse GRR",
+      "gauge": "Jauge : {name}",
+      "totalGageRR": "Total Gage R&R",
+      "excellent": "Excellent",
+      "acceptable": "Acceptable",
+      "unacceptable": "Inacceptable",
+      "msgExcellent": "Le système de mesure est acceptable",
+      "msgAcceptable": "Peut être acceptable selon l'importance de l'application",
+      "msgUnacceptable": "Le système de mesure doit être amélioré",
+      "variationBreakdown": "Répartition de la variation",
+      "variationTooltip": "Montre la contribution de chaque source à la variation totale. Un GRR (EV+AV) plus faible signifie un meilleur système de mesure.",
+      "equipmentVariation": "Variation de l'équipement (EV) : {value}%",
+      "repeatability": "Répétabilité",
+      "appraiserVariation": "Variation de l'opérateur (AV) : {value}%",
+      "reproducibility": "Reproductibilité",
+      "partVariationPct": "Variation des pièces (PV) : {value}%",
+      "actualPartVariation": "Variation réelle pièce à pièce",
+      "legendEV": "EV (Répétabilité)",
+      "legendAV": "AV (Reproductibilité)",
+      "legendPV": "PV (Variation des pièces)",
+      "repeatabilityEV": "Répétabilité (EV)",
+      "reproducibilityAV": "Reproductibilité (AV)",
+      "partVariation": "Variation des pièces (PV)",
+      "totalVariation": "Variation totale (TV)",
+      "ndcTitle": "Nombre de catégories distinctes (NDC)",
+      "ndcAcceptable": "≥ 5 (Acceptable)",
+      "ndcNeedsImprovement": "< 5 (Nécessite une amélioration)",
+      "ndcDescription": "Le NDC représente le nombre de catégories de pièces distinctes que le système de mesure peut distinguer de manière fiable.",
+      "aiagGuidelines": "Directives AIAG MSA :",
+      "aiagExcellent": "< 10% GRR : Le système de mesure est acceptable",
+      "aiagAcceptable": "10-30% GRR : Peut être acceptable selon l'importance de l'application",
+      "aiagUnacceptable": "> 30% GRR : Le système de mesure doit être amélioré"
     }
   },
   "emailDrafting": {
@@ -3887,7 +4318,7 @@
       "emailInvalid": "Format d'e-mail invalide"
     },
     "drafts": {
-      "snippet": "{snippet}…"
+      "snippet": "{snippet}..."
     }
   },
   "quickActions": {
@@ -3945,11 +4376,11 @@
       "density": "Densité d'affichage",
       "fontSize": "Taille de police",
       "fontSizeLarge": "Grande",
-      "fontSizeLargeDesc": "18px base",
+      "fontSizeLargeDesc": "Base 18px",
       "fontSizeMedium": "Moyenne",
       "fontSizeMediumDesc": "16px base (par défaut)",
       "fontSizeSmall": "Petite",
-      "fontSizeSmallDesc": "14px base",
+      "fontSizeSmallDesc": "Base 14px",
       "lightMode": "Mode clair",
       "lightModeDesc": "Fond clair avec texte sombre",
       "livePreview": "Aperçu en direct",
@@ -3967,8 +4398,8 @@
       "themeMode": "Mode du thème",
       "title": "Apparence",
       "preview": {
-        "title": "Intelligence Module 04",
-        "subtitle": "Live operational stream synchronized",
+        "title": "Module Intelligence 04",
+        "subtitle": "Flux opérationnel en direct synchronisé",
         "primaryAction": "Exécuter la commande",
         "secondaryAction": "Voir les renseignements",
         "tertiaryAction": "Terminer"
@@ -4042,8 +4473,8 @@
         "dispatchIdentity": "Commande Sensei OS",
         "relayReplyTo": "no-reply@sensei-manuf.com"
       },
-      "smtpStatus": "SMTP_RELAY: SYNCHRONIZED",
-      "smtpDetails": "Host: mail.sensei-infra.com // Port: 587 (TLS)"
+      "smtpStatus": "RELAIS_SMTP : SYNCHRONISÉ",
+      "smtpDetails": "Hôte : mail.sensei-infra.com // Port : 587 (TLS)"
     },
     "general": "Général",
     "integrations": {
@@ -4172,7 +4603,7 @@
         "allRoles": "Tous les rôles"
       },
       "table": {
-        "insightHeader": "Insight"
+        "insightHeader": "Aperçu"
       },
       "tooltip": {
         "level": "Niveau : {level}",
@@ -4191,7 +4622,7 @@
           "timestamp": "Horodatage",
           "action": "Action",
           "role": "Rôle",
-          "insight": "Insight",
+          "insight": "Aperçu",
           "performedBy": "Effectué par",
           "reason": "Motif"
         },
@@ -4752,7 +5183,13 @@
       }
     },
     "title": "Paramètres",
-    "webhooks": "Webhooks"
+    "webhooks": "Webhooks",
+    "shell": {
+      "toastTitle": "Paramètres synchronisés",
+      "toastDescription": "Paramètres cibles {title} mis à jour dans le registre.",
+      "synchronizing": "SYNCHRONISATION...",
+      "saveConfiguration": "ENREGISTRER_CONFIGURATION"
+    }
   },
   "tables": {
     "ascending": "Croissant",
@@ -4831,13 +5268,13 @@
         }
       },
       "title": "Certifications",
-      "name": "Certification Name",
-      "status": "Status",
-      "enrolled": "Enrolled",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "expired": "Expired",
-      "expiryDate": "Expiry Date"
+      "name": "Nom de la certification",
+      "status": "Statut",
+      "enrolled": "Inscrit",
+      "inProgress": "En cours",
+      "completed": "Terminé",
+      "expired": "Expiré",
+      "expiryDate": "Date d'expiration"
     },
     "enroll": {
       "configureParams": "Configurer les paramètres",
@@ -4895,10 +5332,10 @@
           }
         }
       },
-      "title": "Training Programs",
-      "addProgram": "Add Program",
-      "name": "Program Name",
-      "duration": "Duration",
+      "title": "Programmes de formation",
+      "addProgram": "Ajouter un programme",
+      "name": "Nom du programme",
+      "duration": "Durée",
       "participants": "Participants"
     },
     "skillsMatrix": "Matrice de compétences",
@@ -4913,12 +5350,12 @@
       "programs": "Programmes",
       "records": "Enregistrements"
     },
-    "title": "Training",
+    "title": "Formation",
     "records": {
-      "title": "Training Records",
-      "employee": "Employee",
-      "course": "Course",
-      "completedDate": "Completed Date",
+      "title": "Dossiers de formation",
+      "employee": "Employé",
+      "course": "Cours",
+      "completedDate": "Date de fin",
       "score": "Score"
     }
   },
@@ -4984,155 +5421,462 @@
   "components": {
     "factoryFloor": {
       "machineStatus": {
-        "productionIssue": "Production Issue",
-        "qualityAlert": "Quality Alert",
-        "safetyAlert": "Safety Alert",
-        "maintenanceRequired": "Maintenance Required"
+        "productionIssue": "Problème de production",
+        "qualityAlert": "Alerte qualité",
+        "safetyAlert": "Alerte sécurité",
+        "maintenanceRequired": "Maintenance requise"
+      },
+      "processing": "Traitement en cours...",
+      "commandReceived": "Commande reçue",
+      "errorOccurred": "Une erreur est survenue",
+      "voiceDisabled": "Commandes vocales désactivées"
+    },
+    "errorState": {
+      "connectionError": "Erreur de connexion",
+      "connectionErrorDesc": "Impossible de joindre le serveur. Veuillez vérifier votre connexion.",
+      "serverError": "Erreur serveur",
+      "serverErrorDesc": "Quelque chose s'est mal passé de notre côté.",
+      "noData": "Aucune donnée",
+      "noDataDesc": "Aucun enregistrement trouvé.",
+      "accessDenied": "Accès refusé",
+      "accessDeniedDesc": "Vous n'avez pas la permission d'accéder à cette ressource.",
+      "notFound": "Non trouvé",
+      "notFoundDesc": "La ressource demandée est introuvable.",
+      "error": "Erreur",
+      "errorDesc": "Une erreur inattendue est survenue.",
+      "tryAgain": "Réessayer"
+    },
+    "pageGuard": {
+      "accessRestricted": "Accès restreint",
+      "noPermission": "Vous n'avez pas la permission d'accéder à cette page.",
+      "returnToDashboard": "Retour au tableau de bord"
+    },
+    "comingSoon": {
+      "defaultMessage": "Fonctionnalité en cours de développement, disponible bientôt.",
+      "goBack": "Retour"
+    },
+    "table": {
+      "noData": "Aucune donnée",
+      "rowsPerPage": "Lignes par page :"
+    },
+    "commandPalette": {
+      "noCommandsFound": "Aucune commande trouvée",
+      "tryDifferentSearch": "Essayez un autre terme de recherche",
+      "toToggle": "pour basculer"
+    },
+    "scanner": {
+      "scanComplete": "Scan terminé",
+      "cameraNotActive": "Caméra non active",
+      "switchCamera": "Changer de caméra",
+      "captureFrame": "Capturer l'image",
+      "stopScanner": "Arrêter le scanner"
+    },
+    "andon": {
+      "unknownWorkCenter": "Poste de travail inconnu",
+      "noActiveAlerts": "Aucune alerte active",
+      "refresh": "Actualiser",
+      "toggleFullscreen": "Plein écran",
+      "ackBy": "Ack par {name}",
+      "triggeredBy": "Déclenché par {name}",
+      "allSystemsNormal": "Systèmes nominaux"
+    },
+    "kanban": {
+      "unknownCustomer": "Client inconnu",
+      "pipelineValue": "Valeur du pipeline : ",
+      "kanbanView": "Vue Kanban",
+      "listView": "Vue liste",
+      "calendarView": "Vue calendrier"
+    },
+    "quickActions": {
+      "confirmAction": "Confirmer l'action"
+    },
+    "correction": {
+      "submissionFailed": "Échec de la correction",
+      "rejectionFailed": "Échec du rejet"
+    },
+    "sync": {
+      "removeOperation": "Supprimer l'opération"
+    },
+    "pdfPreview": {
+      "immutableVersion": "Version immuable",
+      "pdfPreview": "Aperçu PDF",
+      "versionHistory": "Historique des versions",
+      "metadata": "Métadonnées",
+      "closeEscape": "Fermer (Échap)",
+      "previousPage": "Page précédente",
+      "nextPage": "Page suivante",
+      "zoomOut": "Zoom arrière",
+      "zoomIn": "Zoom avant",
+      "rotate": "Faire pivoter",
+      "fullscreen": "Plein écran",
+      "download": "Télécharger",
+      "print": "Imprimer",
+      "currentlyViewing": "Visualisation de",
+      "loadingPdf": "Chargement du PDF...",
+      "documentInfo": "Infos document",
+      "createdBy": "Créé par"
+    },
+    "security": {
+      "noPermission": "Vous n'avez pas la permission de voir ces données",
+      "allActions": "Toutes les actions"
+    },
+    "spatialUi": {
+      "factoryFloorMap": "Plan de l'usine",
+      "closePanel": "Fermer le panneau",
+      "closePathView": "Fermer la vue du chemin",
+      "zoomOut": "Zoom arrière",
+      "zoomIn": "Zoom avant",
+      "resetView": "Réinitialiser la vue",
+      "selectCellDetails": "Sélectionner une cellule pour les détails",
+      "currentJob": "Travail actuel :",
+      "changeStatus": "Changer le statut :",
+      "orderPath": "Chemin de commande :",
+      "processTime": "Temps de traitement",
+      "wasteRatio": "Ratio de gaspillage",
+      "pathSteps": "Étapes du chemin :",
+      "warRoom": {
+        "kpi": "Indicateurs clés de performance",
+        "salesPipeline": "Pipeline des ventes",
+        "productionStatus": "Statut de production",
+        "qualityMetrics": "Métriques de qualité",
+        "activeAlerts": "Alertes actives",
+        "todaysTimeline": "Chronologie du jour"
       }
+    },
+    "session": {
+      "notifications": "Notifications",
+      "dismissNotification": "Ignorer"
+    },
+    "onboarding": {
+      "productTour": "Visite du produit",
+      "closeTour": "Fermer la visite",
+      "helpPanel": "Panneau d'aide",
+      "closeHelpPanel": "Fermer",
+      "dismissSuggestion": "Ignorer la suggestion",
+      "toggleAssistant": "Assistant Sensei",
+      "dismiss": "Ignorer",
+      "searchHelp": "Rechercher de l'aide"
+    },
+    "error": {
+      "somethingWentWrong": "Une erreur est survenue",
+      "dismissError": "Ignorer l'erreur",
+      "dismissBtn": "Ignorer",
+      "readOnlyMode": "Mode lecture seule",
+      "resolveConflicts": "Résoudre les conflits",
+      "yourChanges": "Vos modifications",
+      "serverVersion": "Version du serveur"
+    },
+    "emptyState": {
+      "noResultsFound": "Aucun résultat trouvé",
+      "noItemsYet": "Aucun élément pour le moment",
+      "noRfqsInQueue": "Aucun RFQ en attente",
+      "noQuotesCreated": "Aucun devis créé",
+      "noActiveJobs": "Aucun travail actif"
+    },
+    "printExport": {
+      "cancelExport": "Annuler l'exportation",
+      "close": "Fermer",
+      "qrCode": "Code QR",
+      "dataMatrix": "Data Matrix"
+    },
+    "designSystem": {
+      "openAuditPanel": "Panneau d'audit Design System",
+      "auditPanelTitle": "Panneau d'audit Design System",
+      "closeAuditPanel": "Fermer le panneau",
+      "horizontalScale": "Échelle horizontale",
+      "verticalScale": "Échelle verticale",
+      "fontSizes": "Tailles de police",
+      "fontWeights": "Poids de police",
+      "designSystemAudit": "Audit du Design System"
+    },
+    "ganttChart": {
+      "noTasks": "Aucune tâche à visualiser",
+      "taskName": "Nom de la tâche"
+    },
+    "dataVisualization": {
+      "noData": "Aucune donnée"
+    },
+    "timeline": {
+      "noActivity": "Aucune activité"
+    },
+    "virtualTable": {
+      "noData": "Aucune donnée disponible"
+    },
+    "sidebar": {
+      "senseiHome": "Accueil Sensei OS",
+      "toggleDarkMode": "Mode sombre",
+      "administration": "Administration"
+    },
+    "mobileNav": {
+      "navigation": "Navigation mobile",
+      "openMenu": "Ouvrir le menu"
     }
   },
   "hr": {
-    "title": "Human Resources",
+    "title": "Ressources Humaines",
     "employees": {
-      "title": "Employees",
-      "addEmployee": "Add Employee",
-      "editEmployee": "Edit Employee",
-      "firstName": "First Name",
-      "lastName": "Last Name",
+      "title": "Employés",
+      "addEmployee": "Ajouter un employé",
+      "editEmployee": "Modifier l'employé",
+      "firstName": "Prénom",
+      "lastName": "Nom de famille",
       "email": "Email",
-      "department": "Department",
-      "position": "Position",
-      "status": "Status",
-      "active": "Active",
-      "inactive": "Inactive",
-      "onLeave": "On Leave",
-      "hireDate": "Hire Date",
-      "searchPlaceholder": "Search employees...",
-      "noEmployees": "No employees found",
-      "createSuccess": "Employee created successfully",
-      "updateSuccess": "Employee updated successfully",
-      "deleteSuccess": "Employee removed successfully",
-      "deleteConfirm": "Are you sure you want to delete this employee?",
-      "requiredField": "This field is required",
-      "invalidEmail": "Please enter a valid email address"
+      "department": "Département",
+      "position": "Poste",
+      "status": "Statut",
+      "active": "Actif",
+      "inactive": "Inactif",
+      "onLeave": "En congé",
+      "hireDate": "Date d'embauche",
+      "searchPlaceholder": "Rechercher des employés...",
+      "noEmployees": "Aucun employé trouvé",
+      "createSuccess": "Employé créé avec succès",
+      "updateSuccess": "Employé mis à jour avec succès",
+      "deleteSuccess": "Employé supprimé avec succès",
+      "deleteConfirm": "Supprimer cet employé ?",
+      "requiredField": "Ce champ est obligatoire",
+      "invalidEmail": "Adresse e-mail valide requise"
     },
     "jobOpenings": {
-      "title": "Job Openings",
-      "addOpening": "Add Job Opening",
-      "jobTitle": "Job Title",
-      "department": "Department",
-      "location": "Location",
-      "type": "Employment Type",
-      "status": "Status",
-      "open": "Open",
-      "closed": "Closed",
-      "filled": "Filled",
-      "postedDate": "Posted Date",
-      "closingDate": "Closing Date",
-      "applications": "Applications",
-      "noOpenings": "No job openings"
+      "title": "Offres d'emploi",
+      "addOpening": "Ajouter une offre",
+      "jobTitle": "Intitulé du poste",
+      "department": "Département",
+      "location": "Emplacement",
+      "type": "Type d'emploi",
+      "status": "Statut",
+      "open": "Ouvert",
+      "closed": "Fermé",
+      "filled": "Pourvu",
+      "postedDate": "Date de publication",
+      "closingDate": "Date de clôture",
+      "applications": "Candidatures",
+      "noOpenings": "Aucune offre d'emploi"
     },
     "leaveRequests": {
-      "title": "Leave Requests",
-      "addRequest": "New Leave Request",
-      "employee": "Employee",
-      "leaveType": "Leave Type",
-      "startDate": "Start Date",
-      "endDate": "End Date",
-      "status": "Status",
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected",
-      "reason": "Reason",
-      "noRequests": "No leave requests",
-      "approve": "Approve",
-      "reject": "Reject"
+      "title": "Demandes de congé",
+      "addRequest": "Nouvelle demande de congé",
+      "employee": "Employé",
+      "leaveType": "Type de congé",
+      "startDate": "Date de début",
+      "endDate": "Date de fin",
+      "status": "Statut",
+      "pending": "En attente",
+      "approved": "Approuvé",
+      "rejected": "Rejeté",
+      "reason": "Motif",
+      "noRequests": "Aucune demande de congé",
+      "approve": "Approuver",
+      "reject": "Rejeter"
     },
     "applicationsPipeline": {
-      "title": "Applications Pipeline",
-      "applied": "Applied",
-      "screening": "Screening",
-      "interview": "Interview",
-      "offered": "Offered",
-      "hired": "Hired"
+      "title": "Pipeline des candidatures",
+      "applied": "Candidature reçue",
+      "screening": "Sélection",
+      "interview": "Entretien",
+      "offered": "Offre faite",
+      "hired": "Embauché"
     },
     "tabs": {
-      "employees": "Employees",
-      "jobOpenings": "Job Openings",
-      "leaveRequests": "Leave Requests",
-      "applicationsPipeline": "Applications Pipeline"
+      "employees": "Employés",
+      "jobOpenings": "Offres d'emploi",
+      "leaveRequests": "Demandes de congé",
+      "applicationsPipeline": "Pipeline des candidatures"
     },
     "toasts": {
-      "employeeCreated": "Employee created successfully",
-      "employeeUpdated": "Employee updated successfully",
-      "leaveApproved": "Leave request approved",
-      "leaveRejected": "Leave request rejected",
-      "openingCreated": "Job opening created"
+      "employeeCreated": "Employé créé avec succès",
+      "employeeUpdated": "Employé mis à jour",
+      "leaveApproved": "Demande de congé approuvée",
+      "leaveRejected": "Demande de congé rejetée",
+      "openingCreated": "Offre d'emploi créée"
     }
   },
   "maintenance": {
     "title": "Maintenance",
     "assets": {
-      "title": "Assets",
-      "addAsset": "Add Asset",
-      "name": "Asset Name",
-      "serialNumber": "Serial Number",
-      "location": "Location",
-      "status": "Status",
-      "operational": "Operational",
-      "needsRepair": "Needs Repair",
-      "outOfService": "Out of Service",
-      "searchPlaceholder": "Search assets..."
+      "title": "Actifs",
+      "addAsset": "Ajouter un actif",
+      "name": "Nom de l'actif",
+      "serialNumber": "Numéro de série",
+      "location": "Emplacement",
+      "status": "Statut",
+      "operational": "Opérationnel",
+      "needsRepair": "Nécessite réparation",
+      "outOfService": "Hors service",
+      "searchPlaceholder": "Rechercher des actifs..."
     },
     "workOrders": {
-      "title": "Work Orders",
-      "addWorkOrder": "Create Work Order",
-      "title_field": "Title",
-      "priority": "Priority",
-      "status": "Status",
-      "assignee": "Assignee",
-      "dueDate": "Due Date",
-      "open": "Open",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "cancelled": "Cancelled"
+      "title": "Ordres de travail",
+      "addWorkOrder": "Créer un ordre de travail",
+      "title_field": "Titre",
+      "priority": "Priorité",
+      "status": "Statut",
+      "assignee": "Assigné à",
+      "dueDate": "Date d'échéance",
+      "open": "Ouvert",
+      "inProgress": "En cours",
+      "completed": "Terminé",
+      "cancelled": "Annulé"
     },
     "preventiveMaintenance": {
-      "title": "Preventive Maintenance",
-      "schedule": "Schedule",
-      "frequency": "Frequency",
-      "lastCompleted": "Last Completed",
-      "nextDue": "Next Due"
+      "title": "Maintenance préventive",
+      "schedule": "Calendrier",
+      "frequency": "Fréquence",
+      "lastCompleted": "Dernier achèvement",
+      "nextDue": "Prochaine échéance"
     },
     "tabs": {
-      "assets": "Assets",
-      "workOrders": "Work Orders",
-      "pmSchedules": "PM Schedules",
-      "tools": "Tools",
-      "warranties": "Warranties",
+      "assets": "Actifs",
+      "workOrders": "Ordres de travail",
+      "pmSchedules": "Calendriers MP",
+      "tools": "Outils",
+      "warranties": "Garanties",
       "loto": "LOTO",
-      "fieldReturns": "Field Returns",
+      "fieldReturns": "Retours terrain",
       "budgets": "Budgets"
     }
   },
   "executive": {
-    "title": "Executive Dashboard",
-    "kpis": "Key Performance Indicators",
-    "northStar": "North Star",
-    "riskDashboard": "Risk Dashboard",
+    "title": "Tableau de bord exécutif",
+    "kpis": "Indicateurs clés de performance",
+    "northStar": "Étoile du Nord",
+    "riskDashboard": "Tableau de bord des risques",
     "strategicDirectives": {
-      "title": "Strategic Directives",
-      "addDirective": "Add Directive",
-      "status": "Status",
-      "progress": "Progress",
-      "active": "Active",
-      "completed": "Completed",
-      "onHold": "On Hold"
+      "title": "Directives stratégiques",
+      "addDirective": "Ajouter une directive",
+      "status": "Statut",
+      "progress": "Progrès",
+      "active": "Actif",
+      "completed": "Terminé",
+      "onHold": "En attente"
     },
     "nl2sql": {
-      "title": "Natural Language Query",
-      "placeholder": "Ask a question about your data...",
-      "execute": "Execute Query"
+      "title": "Requête en langage naturel",
+      "placeholder": "Posez une question sur vos données...",
+      "execute": "Exécuter la requête"
     }
+  },
+  "products": {
+    "allStock": "Tout le stock",
+    "detail": {
+      "addComponent": "Ajouter un composant",
+      "adjustDialog": {
+        "apply": "Appliquer",
+        "title": "Titre"
+      },
+      "adjustInventory": "Ajuster l'inventaire",
+      "analyzeIntel": "Analyser les renseignements",
+      "authorize": "Autoriser",
+      "backToProducts": "Retour aux produits",
+      "billOfMaterials": "Nomenclature (BOM)",
+      "bomDescription": "Description de la nomenclature",
+      "cloneNode": "Cloner le nœud",
+      "contextualIntelligence": "Intelligence contextuelle",
+      "deauthorize": "Révoquer",
+      "fiscalParameters": "Paramètres fiscaux",
+      "magnitudePulse": "Impulsion de magnitude",
+      "nodeSpecifications": "Spécifications du nœud",
+      "nodeTelemetry": "Télémesure du nœud",
+      "notFound": "Non trouvé",
+      "refineMasterData": "Affiner les données de base",
+      "stats": {
+        "fiscalMargin": "Marge fiscale",
+        "marketValuation": "Valorisation du marché",
+        "nodeMagnitude": "Magnitude du nœud",
+        "totalCycles": "Cycles totaux",
+        "winProbability": "Probabilité de gain"
+      },
+      "temporalVelocity": "Vélocité temporelle",
+      "viewAllCycles": "Voir tous les cycles",
+      "viewLogs": "Voir les journaux"
+    },
+    "edit": {
+      "basicInformation": "Informations de base",
+      "category": "Catégorie",
+      "description": "Description",
+      "leadTime": "Délai de livraison",
+      "partNumber": "Numéro de pièce",
+      "productName": "Nom du produit",
+      "productUpdated": "Produit mis à jour",
+      "reorderPoint": "Point de commande",
+      "saveChanges": "Enregistrer les modifications",
+      "status": "Statut",
+      "statusInventory": "Statut de l'inventaire",
+      "title": "Titre",
+      "unitOfMeasure": "Unité de mesure",
+      "updateFailed": "Échec de la mise à jour"
+    },
+    "emptyState": {
+      "description": "Description",
+      "title": "Titre"
+    },
+    "exportIntel": "Exporter les renseignements",
+    "import": "Importer",
+    "initializeNode": "Initialiser le nœud",
+    "lowStock": "Stock faible",
+    "new": {
+      "basicIdentification": "Identification de base",
+      "detailedContext": "Contexte détaillé",
+      "establishNode": "Établir le nœud",
+      "failedToEstablish": "Échec de l'établissement",
+      "nodeSynchronized": "Nœud synchronisé",
+      "partNodeIdentity": "Identité du nœud de pièce",
+      "providePartAndName": "Veuillez fournir la pièce et le nom",
+      "requiredParams": "Paramètres requis",
+      "strategicName": "Nom stratégique",
+      "subtitle": "Sous-titre",
+      "supplyDynamics": "Dynamique d'approvisionnement",
+      "syncFailed": "Échec de la synchronisation",
+      "taxonomyCategory": "Catégorie de taxonomie",
+      "temporalLead": "Délai temporel",
+      "title": "Titre",
+      "unitProtocol": "Protocole unitaire"
+    },
+    "outOfStock": "Rupture de stock",
+    "stats": {
+      "activeInventoryNodes": "Nœuds d'inventaire actifs",
+      "aggregatedRevenue": "Revenus agrégés",
+      "meanMarginKPI": "KPI de marge moyenne",
+      "stockAbnormalities": "Anomalies de stock"
+    },
+    "status": {
+      "discontinued": "Abandonné"
+    },
+    "stockLevel": "Niveau de stock",
+    "table": {
+      "inventory": "Inventaire",
+      "leadTime": "Délai",
+      "listPrice": "Prix catalogue",
+      "margin": "Marge",
+      "product": "Produit",
+      "standardCost": "Coût standard",
+      "totalSold": "Total vendu"
+    },
+    "viewAnalytics": "Voir l'analyse",
+    "viewBom": "Voir la nomenclature"
+  },
+  "rtl": {
+    "inputPlaceholder": "Tapez ici...",
+    "searchPlaceholder": "Cherchez ici...",
+    "selectPlaceholder": "Sélectionnez..."
+  },
+  "layout": {
+    "brandMark": "S",
+    "systemInitialization": "INITIALISATION_SYSTÈME...",
+    "bootProtocol": "PROTOCOLE : SENSEI_OS_V3 // SÉQUENCE_DÉMARRAGE",
+    "systemMetadata": {
+      "station": "STATION : {station}",
+      "osVer": "VER_OS : {version}",
+      "integrity": "INTÉGRITÉ : {state}",
+      "latency": "LATENCE : {latency}"
+    }
+  },
+  "tour": {
+    "back": "Retour",
+    "next": "Suivant",
+    "finish": "Finir",
+    "closeTour": "Fermer la visite",
+    "productTour": "Visite du produit",
+    "stepOf": "{current} sur {total}"
   }
 }

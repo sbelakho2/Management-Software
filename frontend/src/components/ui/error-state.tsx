@@ -13,6 +13,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { AlertCircle, RefreshCw, WifiOff, ServerCrash, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/contexts/i18n-context";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -42,37 +43,37 @@ interface EmptyStateProps {
 
 const VARIANT_CONFIG: Record<
   ErrorVariant,
-  { icon: React.ReactNode; title: string; message: string }
+  { icon: React.ReactNode; titleKey: string; messageKey: string }
 > = {
   network: {
     icon: <WifiOff className="h-10 w-10 text-muted-foreground" />,
-    title: "Connection Error",
-    message: "Unable to reach the server. Please check your connection and try again.",
+    titleKey: "components.errorState.connectionError",
+    messageKey: "components.errorState.connectionErrorDesc",
   },
   server: {
     icon: <ServerCrash className="h-10 w-10 text-destructive/60" />,
-    title: "Server Error",
-    message: "Something went wrong on our end. Our team has been notified.",
+    titleKey: "components.errorState.serverError",
+    messageKey: "components.errorState.serverErrorDesc",
   },
   empty: {
     icon: <FileWarning className="h-10 w-10 text-muted-foreground" />,
-    title: "No Data",
-    message: "No records found. Create a new entry to get started.",
+    titleKey: "components.errorState.noData",
+    messageKey: "components.errorState.noDataDesc",
   },
   permission: {
     icon: <AlertCircle className="h-10 w-10 text-amber-500/60" />,
-    title: "Access Denied",
-    message: "You don't have permission to view this content.",
+    titleKey: "components.errorState.accessDenied",
+    messageKey: "components.errorState.accessDeniedDesc",
   },
   "not-found": {
     icon: <FileWarning className="h-10 w-10 text-muted-foreground" />,
-    title: "Not Found",
-    message: "The requested resource could not be found.",
+    titleKey: "components.errorState.notFound",
+    messageKey: "components.errorState.notFoundDesc",
   },
   generic: {
     icon: <AlertCircle className="h-10 w-10 text-destructive/60" />,
-    title: "Error",
-    message: "An unexpected error occurred. Please try again.",
+    titleKey: "components.errorState.error",
+    messageKey: "components.errorState.errorDesc",
   },
 };
 
@@ -96,12 +97,16 @@ export function ErrorState({
   title,
   message,
   onRetry,
-  retryLabel = "Try Again",
+  retryLabel,
   className,
   compact = false,
   children,
 }: ErrorStateProps) {
+  const { t } = useI18n();
   const config = VARIANT_CONFIG[variant];
+  const resolvedTitle = title || t(config.titleKey);
+  const resolvedMessage = message || t(config.messageKey);
+  const resolvedRetryLabel = retryLabel || t('components.errorState.tryAgain');
 
   if (compact) {
     return (
@@ -114,7 +119,7 @@ export function ErrorState({
       >
         <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
         <p className="text-sm text-muted-foreground">
-          {message || config.message}
+          {resolvedMessage}
         </p>
         {onRetry && (
           <Button
@@ -124,7 +129,7 @@ export function ErrorState({
             className="ml-auto shrink-0"
           >
             <RefreshCw className="h-3 w-3 mr-1" />
-            {retryLabel}
+            {resolvedRetryLabel}
           </Button>
         )}
       </div>
@@ -140,9 +145,9 @@ export function ErrorState({
       role="alert"
     >
       {config.icon}
-      <h3 className="mt-4 text-lg font-semibold">{title || config.title}</h3>
+      <h3 className="mt-4 text-lg font-semibold">{resolvedTitle}</h3>
       <p className="mt-2 text-sm text-muted-foreground max-w-md">
-        {message || config.message}
+        {resolvedMessage}
       </p>
       {onRetry && (
         <Button
@@ -151,7 +156,7 @@ export function ErrorState({
           className="mt-4"
         >
           <RefreshCw className="h-4 w-4 mr-2" />
-          {retryLabel}
+          {resolvedRetryLabel}
         </Button>
       )}
       {children}
@@ -177,12 +182,15 @@ export function ErrorState({
  */
 export function EmptyState({
   icon,
-  title = "No Data",
-  message = "No records found.",
+  title,
+  message,
   action,
   className,
   compact = false,
 }: EmptyStateProps) {
+  const { t } = useI18n();
+  const resolvedTitle = title || t('components.errorState.noData');
+  const resolvedMessage = message || t('components.errorState.noDataDesc');
   if (compact) {
     return (
       <div
@@ -192,7 +200,7 @@ export function EmptyState({
         )}
       >
         {icon || <FileWarning className="h-5 w-5 shrink-0" />}
-        <p className="text-sm">{message}</p>
+        <p className="text-sm">{resolvedMessage}</p>
         {action}
       </div>
     );
@@ -206,8 +214,8 @@ export function EmptyState({
       )}
     >
       {icon || <FileWarning className="h-10 w-10 text-muted-foreground" />}
-      <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-      <p className="mt-2 text-sm text-muted-foreground max-w-md">{message}</p>
+      <h3 className="mt-4 text-lg font-semibold">{resolvedTitle}</h3>
+      <p className="mt-2 text-sm text-muted-foreground max-w-md">{resolvedMessage}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

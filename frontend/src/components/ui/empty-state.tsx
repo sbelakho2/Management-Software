@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { Button, ButtonProps } from './button';
 import {
   FileText,
@@ -130,7 +131,7 @@ const getSizeStyles = (size: 'sm' | 'md' | 'lg') => {
 export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
   (
     {
-      title = 'No items found',
+      title,
       description,
       icon,
       variant = 'default',
@@ -146,6 +147,8 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
     },
     ref
   ) => {
+    const { t } = useI18n();
+    const resolvedTitle = title ?? t('components.emptyState.defaultTitle');
     const sizeStyles = getSizeStyles(size);
     const variantStyles = getVariantStyles(variant);
     const displayIcon = icon || getVariantIcon(variant);
@@ -182,7 +185,7 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
       <div
         ref={ref}
         role="status"
-        aria-label={title}
+        aria-label={resolvedTitle}
         className={cn(
           'flex flex-col items-center justify-center',
           sizeStyles.container,
@@ -207,7 +210,7 @@ export const EmptyState = React.forwardRef<HTMLDivElement, EmptyStateProps>(
 
         {/* Text Content */}
         <div className="space-y-1">
-          <h3 className={cn(sizeStyles.title, 'text-foreground')}>{title}</h3>
+          <h3 className={cn(sizeStyles.title, 'text-foreground')}>{resolvedTitle}</h3>
           {description && (
             <p className={cn(sizeStyles.description, 'text-muted-foreground max-w-md')}>
               {description}
@@ -246,429 +249,486 @@ interface EntityEmptyStateProps extends Omit<EmptyStateProps, 'icon' | 'title' |
 
 // RFQ Empty State
 export const RFQEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No RFQs found',
-  description = "You haven't received any requests for quote yet. RFQs will appear here when customers submit inquiries.",
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<FileText className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.rfq.title')}
+    description={description ?? t('components.emptyState.rfq.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create First RFQ',
+        label: t('components.emptyState.rfq.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="RFQs track customer inquiries from initial request through quoting."
+    hint={t('components.emptyState.rfq.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Quote Empty State
 export const QuoteEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No quotes found',
-  description = 'Start by converting an RFQ to a quote or creating a new quote directly.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<ClipboardList className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.quote.title')}
+    description={description ?? t('components.emptyState.quote.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create Quote',
+        label: t('components.emptyState.quote.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Quotes define pricing and terms for customer orders."
+    hint={t('components.emptyState.quote.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Work Order Empty State
 export const WorkOrderEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No work orders found',
-  description = 'Work orders are created from approved quotes to track production.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Factory className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.workOrder.title')}
+    description={description ?? t('components.emptyState.workOrder.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create Work Order',
+        label: t('components.emptyState.workOrder.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Work orders track manufacturing progress from start to completion."
+    hint={t('components.emptyState.workOrder.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Account Empty State
 export const AccountEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No accounts found',
-  description = 'Add your first customer or vendor account to get started.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Building2 className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.account.title')}
+    description={description ?? t('components.emptyState.account.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Add Account',
+        label: t('components.emptyState.account.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Accounts represent companies you do business with."
+    hint={t('components.emptyState.account.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Product Empty State
 export const ProductEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No products found',
-  description = 'Add products to your catalog to include them in quotes and work orders.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Package className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.product.title')}
+    description={description ?? t('components.emptyState.product.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Add Product',
+        label: t('components.emptyState.product.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Products define what you manufacture and sell."
+    hint={t('components.emptyState.product.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Contact Empty State
 export const ContactEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No contacts found',
-  description = 'Add contacts to link them with accounts and track communications.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Users className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.contact.title')}
+    description={description ?? t('components.emptyState.contact.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Add Contact',
+        label: t('components.emptyState.contact.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Contacts are people at customer and vendor organizations."
+    hint={t('components.emptyState.contact.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Andon Empty State
 export const AndonEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No andon events',
-  description = 'No production issues have been reported. Great job keeping things running smoothly!',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<ShieldAlert className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.andon.title')}
+    description={description ?? t('components.emptyState.andon.description')}
     variant="success"
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Report Issue',
+        label: t('components.emptyState.andon.action'),
         onClick: onCreateClick,
         href: createHref,
         variant: 'outline',
       } : undefined
     }
-    hint="Andon events help track and resolve production issues quickly."
+    hint={t('components.emptyState.andon.hint')}
     {...props}
   />
-);
+  );
+};
 
 // A3 Empty State
 export const A3EmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No A3 reports found',
-  description = 'A3 reports help solve problems systematically. Create one to document an improvement initiative.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<PenTool className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.a3.title')}
+    description={description ?? t('components.emptyState.a3.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create A3 Report',
+        label: t('components.emptyState.a3.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="A3 is a structured problem-solving methodology."
+    hint={t('components.emptyState.a3.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Training Empty State
 export const TrainingEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No training records found',
-  description = 'Track employee training and certifications to ensure team readiness.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<BookOpen className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.training.title')}
+    description={description ?? t('components.emptyState.training.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Add Training Record',
+        label: t('components.emptyState.training.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Training records ensure compliance and track skill development."
+    hint={t('components.emptyState.training.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Work Center Empty State
 export const WorkCenterEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No work centers found',
-  description = 'Define work centers to organize your production floor.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Wrench className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.workCenter.title')}
+    description={description ?? t('components.emptyState.workCenter.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Add Work Center',
+        label: t('components.emptyState.workCenter.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Work centers represent areas where production activities occur."
+    hint={t('components.emptyState.workCenter.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Search Results Empty State
 export const SearchEmptyState: React.FC<
   Omit<EmptyStateProps, 'variant'> & { searchQuery?: string }
-> = ({ searchQuery, title, description, ...props }) => (
+> = ({ searchQuery, title, description, ...props }) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     variant="search"
-    title={title || `No results for "${searchQuery || 'your search'}"`}
-    description={description || 'Try adjusting your search terms or filters.'}
-    hint="Tip: Use broader search terms or remove filters to find more results."
+    title={title || `${t('components.emptyState.search.noResultsFor')} "${searchQuery || t('components.emptyState.search.yourSearch')}"`}
+    description={description || t('components.emptyState.search.adjustSearch')}
+    hint={t('components.emptyState.search.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Filter Empty State
 export const FilterEmptyState: React.FC<
   Omit<EmptyStateProps, 'variant'> & { onClearFilters?: () => void }
-> = ({ onClearFilters, title, description, ...props }) => (
+> = ({ onClearFilters, title, description, ...props }) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     variant="filtered"
-    title={title || 'No matches with current filters'}
-    description={description || 'Adjust or clear your filters to see more results.'}
+    title={title || t('components.emptyState.filter.title')}
+    description={description || t('components.emptyState.filter.description')}
     primaryAction={
-      onClearFilters ? { label: 'Clear Filters', onClick: onClearFilters, variant: 'outline' } : undefined
+      onClearFilters ? { label: t('components.emptyState.filter.action'), onClick: onClearFilters, variant: 'outline' } : undefined
     }
-    hint="Your current filter combination has no matching items."
+    hint={t('components.emptyState.filter.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Error Empty State
 export const ErrorEmptyState: React.FC<
   Omit<EmptyStateProps, 'variant'> & { onRetry?: () => void }
-> = ({ onRetry, title, description, ...props }) => (
+> = ({ onRetry, title, description, ...props }) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     variant="error"
-    title={title || 'Something went wrong'}
-    description={description || 'We encountered an error loading this content. Please try again.'}
+    title={title || t('components.emptyState.error.title')}
+    description={description || t('components.emptyState.error.description')}
     primaryAction={
-      onRetry ? { label: 'Retry', onClick: onRetry } : undefined
+      onRetry ? { label: t('components.emptyState.error.action'), onClick: onRetry } : undefined
     }
     {...props}
   />
-);
+  );
+};
 
 // 404 Empty State
 export const NotFoundEmptyState: React.FC<
   EntityEmptyStateProps & { backHref?: string; onBackClick?: () => void }
-> = ({ backHref, onBackClick, title, description, ...props }) => (
+> = ({ backHref, onBackClick, title, description, ...props }) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     variant="error"
     icon={<Search className="h-12 w-12" />}
-    title={title || 'Page not found'}
-    description={description || "The page you're looking for doesn't exist or has been moved."}
+    title={title || t('components.emptyState.notFound.title')}
+    description={description || t('components.emptyState.notFound.description')}
     primaryAction={
-      (backHref || onBackClick) ? { label: 'Go Back', href: backHref, onClick: onBackClick } : undefined
+      (backHref || onBackClick) ? { label: t('components.emptyState.notFound.goBack'), href: backHref, onClick: onBackClick } : undefined
     }
-    secondaryAction={{ label: 'Go Home', href: '/' }}
+    secondaryAction={{ label: t('components.emptyState.notFound.goHome'), href: '/' }}
     {...props}
   />
-);
+  );
+};
 
 // Task Empty State
 export const TaskEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No tasks found',
-  description = 'You\'re all caught up! Tasks assigned to you will appear here.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<ClipboardList className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.task.title')}
+    description={description ?? t('components.emptyState.task.description')}
     variant="success"
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create Task',
+        label: t('components.emptyState.task.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Tasks help you track work items and deadlines."
+    hint={t('components.emptyState.task.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Exception Empty State  
 export const ExceptionEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No exceptions reported',
-  description = 'No quality or process exceptions at this time. Keep up the good work!',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<AlertCircle className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.exception.title')}
+    description={description ?? t('components.emptyState.exception.description')}
     variant="success"
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Report Exception',
+        label: t('components.emptyState.exception.action'),
         onClick: onCreateClick,
         href: createHref,
         variant: 'outline',
       } : undefined
     }
-    hint="Exceptions track quality issues and process deviations for resolution."
+    hint={t('components.emptyState.exception.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Obeya Empty State
 export const ObeyaEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No obeya rooms configured',
-  description = 'Set up an obeya room to visualize key metrics and drive team alignment.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Building2 className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.obeya.title')}
+    description={description ?? t('components.emptyState.obeya.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create Obeya Room',
+        label: t('components.emptyState.obeya.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Obeya (big room) is a visual management space for project alignment."
+    hint={t('components.emptyState.obeya.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Project Empty State
 export const ProjectEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No projects found',
-  description = 'Create a project to organize and track related work items.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<FileText className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.project.title')}
+    description={description ?? t('components.emptyState.project.description')}
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Create Project',
+        label: t('components.emptyState.project.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Projects group related tasks and deliverables together."
+    hint={t('components.emptyState.project.hint')}
     {...props}
   />
-);
+  );
+};
 
 // Maintenance Empty State
 export const MaintenanceEmptyState: React.FC<EntityEmptyStateProps> = ({
-  title = 'No maintenance tasks scheduled',
-  description = 'Schedule preventive maintenance to keep equipment running smoothly.',
+  title,
+  description,
   onCreateClick,
   createHref,
   ...props
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <EmptyState
     icon={<Wrench className="h-12 w-12" />}
-    title={title}
-    description={description}
+    title={title ?? t('components.emptyState.maintenance.title')}
+    description={description ?? t('components.emptyState.maintenance.description')}
     variant="success"
     primaryAction={
       (onCreateClick || createHref) ? {
-        label: 'Schedule Maintenance',
+        label: t('components.emptyState.maintenance.action'),
         onClick: onCreateClick,
         href: createHref,
       } : undefined
     }
-    hint="Regular maintenance prevents unexpected downtime."
+    hint={t('components.emptyState.maintenance.hint')}
     {...props}
   />
-);
+  );
+};
 
 export default EmptyState;

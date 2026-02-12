@@ -174,7 +174,7 @@ export default function ObeyaItemDetailPage() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to load Obeya item data',
+        description: t('pages.obeya.toast.loadFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -188,13 +188,13 @@ export default function ObeyaItemDetailPage() {
       await deleteItem(id as string);
       toast({
         title: 'Success',
-        description: 'Item deleted successfully',
+        description: t('pages.obeya.toast.itemDeleted'),
       });
       router.push('/obeya');
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to delete item',
+        description: t('pages.obeya.toast.deleteFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -214,12 +214,12 @@ export default function ObeyaItemDetailPage() {
       setShowCommentDialog(false);
       toast({
         title: 'Success',
-        description: 'Comment added',
+        description: t('pages.obeya.toast.commentAdded'),
       });
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to add comment',
+        description: t('pages.obeya.toast.commentFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -232,7 +232,7 @@ export default function ObeyaItemDetailPage() {
       const updatedItem = await updateItem(id as string, { status: newStatus });
       setItem(updatedItem as any);
       toast({
-        title: 'Status Updated',
+        title: t('pages.obeya.toast.statusUpdated'),
         description: `Item status changed to ${newStatus}`,
       });
       // Refresh comments to show status change if tracked
@@ -241,7 +241,7 @@ export default function ObeyaItemDetailPage() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to update status',
+        description: t('pages.obeya.toast.statusFailed'),
         variant: 'destructive',
       });
     }

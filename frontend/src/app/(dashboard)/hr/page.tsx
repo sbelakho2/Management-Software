@@ -332,7 +332,7 @@ export default function HRDashboard() {
     setIsSubmitting(true);
     try {
       await createEmployee(newEmployee);
-      toast({ title: "Success", description: "Employee created successfully" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.employeeCreated') });
       setShowAddDialog(false);
       setNewEmployee({ first_name: '', last_name: '', email: '', department: '', job_title: '', jurisdiction: 'TN', status: 'active' });
     } catch (error: any) {
@@ -347,8 +347,8 @@ export default function HRDashboard() {
       isOpen: true,
       type: 'employee',
       id,
-      title: 'Terminate Employee Record',
-      description: 'Are you sure you want to remove this employee record? This action cannot be undone and will revoke all system access.'
+      title: t('pages.hr.confirmTerminate.title'),
+      description: t('pages.hr.confirmTerminate.description')
     });
   };
 
@@ -361,7 +361,7 @@ export default function HRDashboard() {
     setIsSubmitting(true);
     try {
       await createJobOpening(newJob);
-      toast({ title: "Success", description: "Job opening created" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.jobCreated') });
       setShowJobDialog(false);
       setNewJob({ title: '', department: '', description: '', requirements: '', location: '', employment_type: 'full_time', status: 'open' });
     } catch (error: any) {
@@ -376,8 +376,8 @@ export default function HRDashboard() {
       isOpen: true,
       type: 'job',
       id,
-      title: 'Delete Job Opening',
-      description: 'Are you sure you want to delete this job opening? Associated applications will not be deleted but will be unlinked.'
+      title: t('pages.hr.confirmDeleteJob.title'),
+      description: t('pages.hr.confirmDeleteJob.description')
     });
   };
 
@@ -390,7 +390,7 @@ export default function HRDashboard() {
     setIsSubmitting(true);
     try {
       await createApplication(newApplication);
-      toast({ title: "Success", description: "Application submitted" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.applicationSubmitted') });
       setShowApplicationDialog(false);
       setNewApplication({ job_opening_id: '', first_name: '', last_name: '', email: '', phone: '', resume_url: '', cover_letter: '', status: 'received' });
     } catch (error: any) {
@@ -403,13 +403,13 @@ export default function HRDashboard() {
   const handleUpdateApplicationStatus = async (id: string, status: ApplicationStatus) => {
     try {
       await updateApplicationStatus(id, status);
-      toast({ title: "Success", description: `Application moved to ${status}` });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.applicationMoved', { status }) });
       if (selectedApplication?.id === id) {
         setSelectedApplication({ ...selectedApplication, status });
       }
     } catch (error) {
       // Inline error not applicable here as it's a direct action, toast is fine for this one or persistent alert
-      toast({ title: "Error", description: "Failed to update application status", variant: "destructive" });
+      toast({ title: t('pages.hr.toast.errorTitle'), description: t('pages.hr.toast.updateStatusFailed'), variant: "destructive" });
     }
   };
 
@@ -422,7 +422,7 @@ export default function HRDashboard() {
     setIsSubmitting(true);
     try {
       await createLeaveRequest(newLeaveRequest);
-      toast({ title: "Success", description: "Leave request submitted" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.leaveSubmitted') });
       setShowLeaveDialog(false);
       setNewLeaveRequest({ employee_id: '', leave_type: 'pto', start_date: '', end_date: '', reason: '', status: 'pending' });
     } catch (error: any) {
@@ -435,18 +435,18 @@ export default function HRDashboard() {
   const handleApproveLeave = async (id: string) => {
     try {
       await approveLeaveRequest(id);
-      toast({ title: "Success", description: "Leave request approved" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.leaveApproved') });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to approve leave request", variant: "destructive" });
+      toast({ title: t('pages.hr.toast.errorTitle'), description: t('pages.hr.toast.leaveApproveFailed'), variant: "destructive" });
     }
   };
 
   const handleRejectLeave = async (id: string) => {
     try {
       await rejectLeaveRequest(id);
-      toast({ title: "Success", description: "Leave request rejected" });
+      toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.leaveRejected') });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to reject leave request", variant: "destructive" });
+      toast({ title: t('pages.hr.toast.errorTitle'), description: t('pages.hr.toast.leaveRejectFailed'), variant: "destructive" });
     }
   };
 
@@ -454,14 +454,14 @@ export default function HRDashboard() {
     try {
       if (deleteConfirmation.type === 'employee') {
         await deleteEmployee(deleteConfirmation.id);
-        toast({ title: "Success", description: "Employee record terminated" });
+        toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.employeeTerminated') });
       } else if (deleteConfirmation.type === 'job') {
         await deleteJobOpening(deleteConfirmation.id);
-        toast({ title: "Success", description: "Job opening deleted" });
+        toast({ title: t('pages.hr.toast.employeeCreatedTitle'), description: t('pages.hr.toast.jobDeleted') });
       }
       setDeleteConfirmation(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
-      toast({ title: "Error", description: "Failed to perform deletion", variant: "destructive" });
+      toast({ title: t('pages.hr.toast.errorTitle'), description: t('pages.hr.toast.deletionFailed'), variant: "destructive" });
     }
   };
 
@@ -732,7 +732,7 @@ export default function HRDashboard() {
                   <div className="relative flex-1 max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="Search personnel..."
+                      placeholder={t('pages.hr.searchPersonnel')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9 h-9 bg-rams-module border-rams-line rounded-rams-sm text-xs font-mono focus-visible:ring-rams-orange"
@@ -791,16 +791,16 @@ export default function HRDashboard() {
                         </div>
                         <div className="space-y-0.5 mb-3">
                           <h3 className="font-sans font-black text-xs uppercase tracking-tight truncate">{emp.first_name} {emp.last_name}</h3>
-                          <p className="text-[10px] text-muted-foreground font-mono truncate">{emp.job_title || 'Unassigned Role'}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono truncate">{emp.job_title || t('pages.hr.unassignedRole')}</p>
                         </div>
                         <div className="grid gap-1.5 text-[9px] text-muted-foreground font-mono">
                           <div className="flex items-center gap-2">
                             <Briefcase className="h-2.5 w-2.5 opacity-50 shrink-0" />
-                            <span className="uppercase tracking-wider truncate">{emp.department || 'No Dept'}</span>
+                            <span className="uppercase tracking-wider truncate">{emp.department || t('pages.hr.noDept')}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <MapPin className="h-2.5 w-2.5 opacity-50 shrink-0" />
-                            <span className="uppercase tracking-wider truncate">{emp.site_id || 'Remote'} ({emp.jurisdiction})</span>
+                            <span className="uppercase tracking-wider truncate">{emp.site_id || t('pages.hr.remote')} ({emp.jurisdiction})</span>
                           </div>
                           {emp.email && (
                             <div className="flex items-center gap-2">
@@ -838,7 +838,7 @@ export default function HRDashboard() {
                       <div className="relative max-w-xs">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
-                          placeholder="Search jobs..."
+                          placeholder={t('pages.hr.searchJobs')}
                           value={jobSearchTerm}
                           onChange={(e) => setJobSearchTerm(e.target.value)}
                           className="pl-9 h-9 bg-rams-module border-rams-line rounded-rams-sm w-56 text-xs font-mono"
@@ -979,7 +979,7 @@ export default function HRDashboard() {
                                   className="rounded-rams-sm border-rams-line bg-rams-panel hover:border-rams-orange/50 focus-visible:border-rams-orange focus-visible:ring-2 focus-visible:ring-rams-orange/40 focus-visible:outline-none transition-colors cursor-pointer"
                                   tabIndex={0}
                                   role="button"
-                                  aria-label={`${app.first_name} ${app.last_name} — ${job?.title || 'Unknown Position'} — ${stage}`}
+                                  aria-label={`${app.first_name} ${app.last_name} — ${job?.title || t('pages.hr.unknownPosition')} — ${stage}`}
                                   onClick={() => {
                                     setSelectedApplication(app);
                                     setShowApplicationDetailDialog(true);
@@ -994,7 +994,7 @@ export default function HRDashboard() {
                                 >
                                   <CardContent className="p-3">
                                     <p className="font-sans font-bold text-xs truncate">{app.first_name} {app.last_name}</p>
-                                    <p className="text-[9px] text-muted-foreground font-mono truncate mt-0.5">{job?.title || 'Unknown Position'}</p>
+                                    <p className="text-[9px] text-muted-foreground font-mono truncate mt-0.5">{job?.title || t('pages.hr.unknownPosition')}</p>
                                     {app.rating && (
                                       <div className="flex items-center gap-0.5 mt-2">
                                         {[1,2,3,4,5].map(i => (
@@ -1162,7 +1162,7 @@ export default function HRDashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address *</Label>
-                <Input id="email" type="email" placeholder="john.doe@company.com" value={newEmployee.email} onChange={(e) => setNewEmployee(prev => ({ ...prev, email: e.target.value }))} className={fieldErrors.email ? 'border-red-500' : ''} />
+                <Input id="email" type="email" placeholder={t('pages.hr.placeholders.email')} value={newEmployee.email} onChange={(e) => setNewEmployee(prev => ({ ...prev, email: e.target.value }))} className={fieldErrors.email ? 'border-red-500' : ''} />
                 {fieldErrors.email && <p className="text-[10px] text-red-500 font-mono">{fieldErrors.email}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1179,7 +1179,7 @@ export default function HRDashboard() {
                 <div className="space-y-2">
                   <Label htmlFor="jurisdiction">Jurisdiction</Label>
                   <Select value={newEmployee.jurisdiction} onValueChange={(val) => setNewEmployee(prev => ({ ...prev, jurisdiction: val }))}>
-                    <SelectTrigger id="jurisdiction"><SelectValue placeholder="Select region" /></SelectTrigger>
+                    <SelectTrigger id="jurisdiction"><SelectValue placeholder={t('pages.hr.placeholders.selectRegion')} /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="TN">Tunisia (TN)</SelectItem>
                       <SelectItem value="MA">Morocco (MA)</SelectItem>
@@ -1192,7 +1192,7 @@ export default function HRDashboard() {
                 <div className="space-y-2">
                   <Label htmlFor="status">Initial Status</Label>
                   <Select value={newEmployee.status} onValueChange={(val) => setNewEmployee(prev => ({ ...prev, status: val as any }))}>
-                    <SelectTrigger id="status"><SelectValue placeholder="Select status" /></SelectTrigger>
+                    <SelectTrigger id="status"><SelectValue placeholder={t('pages.hr.placeholders.selectStatus')} /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="onboarding">Onboarding</SelectItem>
@@ -1266,11 +1266,11 @@ export default function HRDashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea placeholder="Job description..." value={newJob.description} onChange={(e) => setNewJob(prev => ({ ...prev, description: e.target.value }))} rows={3} />
+                <Textarea placeholder={t('pages.hr.placeholders.jobDescription')} value={newJob.description} onChange={(e) => setNewJob(prev => ({ ...prev, description: e.target.value }))} rows={3} />
               </div>
               <div className="space-y-2">
                 <Label>Requirements</Label>
-                <Textarea placeholder="Required skills and qualifications..." value={newJob.requirements} onChange={(e) => setNewJob(prev => ({ ...prev, requirements: e.target.value }))} rows={3} />
+                <Textarea placeholder={t('pages.hr.placeholders.requiredSkills')} value={newJob.requirements} onChange={(e) => setNewJob(prev => ({ ...prev, requirements: e.target.value }))} rows={3} />
               </div>
             </div>
             <DialogFooter>
@@ -1301,7 +1301,7 @@ export default function HRDashboard() {
               <div className="space-y-2">
                 <Label>Position *</Label>
                 <Select value={newApplication.job_opening_id} onValueChange={(val) => setNewApplication(prev => ({ ...prev, job_opening_id: val }))}>
-                  <SelectTrigger><SelectValue placeholder="Select position" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('pages.hr.placeholders.selectPosition')} /></SelectTrigger>
                   <SelectContent>
                     {jobOpenings.filter(j => j.status === 'open').map(job => (
                       <SelectItem key={job.id} value={job.id}>{job.title} - {job.department}</SelectItem>
@@ -1312,16 +1312,16 @@ export default function HRDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>First Name *</Label>
-                  <Input placeholder="John" value={newApplication.first_name} onChange={(e) => setNewApplication(prev => ({ ...prev, first_name: e.target.value }))} />
+                  <Input placeholder={t('pages.hr.placeholders.firstName')} value={newApplication.first_name} onChange={(e) => setNewApplication(prev => ({ ...prev, first_name: e.target.value }))} />
                 </div>
                 <div className="space-y-2">
                   <Label>Last Name *</Label>
-                  <Input placeholder="Doe" value={newApplication.last_name} onChange={(e) => setNewApplication(prev => ({ ...prev, last_name: e.target.value }))} />
+                  <Input placeholder={t('pages.hr.placeholders.lastName')} value={newApplication.last_name} onChange={(e) => setNewApplication(prev => ({ ...prev, last_name: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Email *</Label>
-                <Input type="email" placeholder="john.doe@email.com" value={newApplication.email} onChange={(e) => setNewApplication(prev => ({ ...prev, email: e.target.value }))} />
+                <Input type="email" placeholder={t('pages.hr.placeholders.personalEmail')} value={newApplication.email} onChange={(e) => setNewApplication(prev => ({ ...prev, email: e.target.value }))} />
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
@@ -1329,11 +1329,11 @@ export default function HRDashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Resume URL</Label>
-                <Input placeholder="https://..." value={newApplication.resume_url} onChange={(e) => setNewApplication(prev => ({ ...prev, resume_url: e.target.value }))} />
+                <Input placeholder={t('pages.hr.placeholders.portfolioUrl')} value={newApplication.resume_url} onChange={(e) => setNewApplication(prev => ({ ...prev, resume_url: e.target.value }))} />
               </div>
               <div className="space-y-2">
                 <Label>Cover Letter / Notes</Label>
-                <Textarea placeholder="Additional notes..." value={newApplication.cover_letter} onChange={(e) => setNewApplication(prev => ({ ...prev, cover_letter: e.target.value }))} rows={3} />
+                <Textarea placeholder={t('pages.hr.placeholders.additionalNotes')} value={newApplication.cover_letter} onChange={(e) => setNewApplication(prev => ({ ...prev, cover_letter: e.target.value }))} rows={3} />
               </div>
             </div>
             <DialogFooter>
@@ -1354,7 +1354,7 @@ export default function HRDashboard() {
                 {selectedApplication?.first_name} {selectedApplication?.last_name}
               </DialogTitle>
               <DialogDescription className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                {jobOpenings.find(j => j.id === selectedApplication?.job_opening_id)?.title || 'Candidate Details'}
+                {jobOpenings.find(j => j.id === selectedApplication?.job_opening_id)?.title || t('pages.hr.candidateDetails')}
               </DialogDescription>
             </DialogHeader>
             {selectedApplication && (
@@ -1430,7 +1430,7 @@ export default function HRDashboard() {
               <div className="space-y-2">
                 <Label>Employee *</Label>
                 <Select value={newLeaveRequest.employee_id} onValueChange={(val) => setNewLeaveRequest(prev => ({ ...prev, employee_id: val }))}>
-                  <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('pages.hr.placeholders.selectEmployee')} /></SelectTrigger>
                   <SelectContent>
                     {employees.filter(e => e.status === 'active').map(emp => (
                       <SelectItem key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</SelectItem>
@@ -1463,7 +1463,7 @@ export default function HRDashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Reason</Label>
-                <Textarea placeholder="Reason for leave..." value={newLeaveRequest.reason} onChange={(e) => setNewLeaveRequest(prev => ({ ...prev, reason: e.target.value }))} rows={3} />
+                <Textarea placeholder={t('pages.hr.placeholders.leaveReason')} value={newLeaveRequest.reason} onChange={(e) => setNewLeaveRequest(prev => ({ ...prev, reason: e.target.value }))} rows={3} />
               </div>
             </div>
             <DialogFooter>

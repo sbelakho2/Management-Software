@@ -1009,7 +1009,10 @@ async def create_bank_transaction(
         )
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.debug("Failed to capture bank_transaction common-thread")
     
     return bt.to_dict()

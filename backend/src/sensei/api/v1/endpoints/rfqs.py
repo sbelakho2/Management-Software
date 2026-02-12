@@ -777,10 +777,22 @@ async def create_rfq(
     await db.commit()
     await db.refresh(rfq)
 
-    # Best-effort: stamp reasoning id (do not block RFQ creation).
+    # Best-effort: bind Opportunity → RFQ lineage + stamp reasoning id.
     try:
+        ct = get_common_thread_service()
+        bind_kwargs: dict = {
+            "rfq_id": str(rfq.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "rfq_create",
+        }
+        if getattr(rfq, "opportunity_id", None):
+            bind_kwargs["opportunity_id"] = str(rfq.opportunity_id)
         if x_reasoning_id:
-            await get_common_thread_service().record_reasoning(
+            bind_kwargs["reasoning_id"] = x_reasoning_id
+        await ct.bind(db, **bind_kwargs)
+
+        if x_reasoning_id:
+            await ct.record_reasoning(
                 db,
                 entity_type="rfq",
                 entity_id=str(rfq.id),
@@ -788,9 +800,12 @@ async def create_rfq(
                 created_by_id=getattr(current_user, "id", None),
                 source="rfq_create",
             )
-            await db.commit()
+        await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.exception("Failed to stamp RFQ reasoning id")
     
     return build_created_response(

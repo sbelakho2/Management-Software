@@ -10,6 +10,7 @@ import {
 } from '@/stores/command-palette-store';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // Icons
@@ -295,6 +296,7 @@ export interface CommandPaletteProps {
 
 export function CommandPalette({ className }: CommandPaletteProps) {
   const router = useRouter();
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   
@@ -484,7 +486,7 @@ export function CommandPalette({ className }: CommandPaletteProps) {
         )}
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t('components.commandPalette.ariaLabel')}
       >
         {/* Search Input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
@@ -497,12 +499,12 @@ export function CommandPalette({ className }: CommandPaletteProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or search..."
+            placeholder={t('components.commandPalette.placeholder')}
             className={cn(
               'flex-1 bg-transparent text-foreground placeholder:text-muted-foreground',
               'focus:outline-none text-base'
             )}
-            aria-label="Command search"
+            aria-label={t('components.commandPalette.searchAriaLabel')}
             aria-autocomplete="list"
             aria-controls="command-list"
             aria-activedescendant={
@@ -534,8 +536,8 @@ export function CommandPalette({ className }: CommandPaletteProps) {
         >
           {filteredCommands.length === 0 ? (
             <div className="px-4 py-8 text-center text-muted-foreground">
-              <p className="text-sm">No commands found</p>
-              <p className="text-xs mt-1">Try a different search term</p>
+              <p className="text-sm">{t('components.commandPalette.noCommandsFound')}</p>
+              <p className="text-xs mt-1">{t('components.commandPalette.tryDifferentSearch')}</p>
             </div>
           ) : (
             <>
@@ -570,7 +572,7 @@ export function CommandPalette({ className }: CommandPaletteProps) {
           <div className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">⌘</kbd>
             <kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">K</kbd>
-            <span className="ml-1">to toggle</span>
+            <span className="ml-1">{t('components.commandPalette.toToggle')}</span>
           </div>
         </div>
         

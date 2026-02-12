@@ -297,7 +297,7 @@ export default function AnalyticsPage() {
                                 {insight.model_name.toUpperCase()}
                               </div>
                               <span className="opacity-30">|</span>
-                              <span>CAT: {insight.category.toUpperCase()}</span>
+                              <span>{t('common.cat')}: {insight.category.toUpperCase()}</span>
                             </div>
                             {insight.action_items && (
                               <div className="mt-4 p-4 bg-rams-panel border border-rams-line">
@@ -415,7 +415,7 @@ export default function AnalyticsPage() {
                             <h3 className="font-sans font-black text-lg uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{insight.title}</h3>
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" size="sm" className="text-rams-orange border-rams-orange/20">{insight.type.toUpperCase()}</Badge>
-                              <span className="text-[9px] font-mono font-black text-muted-foreground/30 uppercase tracking-widest">Protocol: INSIGHT_{insight.id.substring(0, 4)}</span>
+                              <span className="text-[9px] font-mono font-black text-muted-foreground/30 uppercase tracking-widest">{t('common.protocol')}: INSIGHT_{insight.id.substring(0, 4)}</span>
                             </div>
                           </div>
                           <Badge variant={insight.impact === 'high' ? 'destructive' : 'default'} size="lg">

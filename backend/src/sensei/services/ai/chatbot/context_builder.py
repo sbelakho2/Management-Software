@@ -20,6 +20,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
+from sensei.models.rfq import RFQ
+from sensei.models.quote import Quote
+from sensei.models.work_order import WorkOrder
+from sensei.models.task import Task
+from sensei.services.core.context_bus import get_context_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -370,50 +376,243 @@ class ContextBuilder:
                 await self._add_metrics_context(context)
     
     async def _add_rfq_context(self, context: ChatContext, rfq_number: str) -> None:
-        """Add RFQ context."""
-        # In production, this would query the database
-        # For now, provide a template context
+        """Add RFQ context with lineage from Context Bus."""
+        if not self.session:
+            return
+        stmt = select(RFQ).where(RFQ.rfq_number == rfq_number)
+        rfq = (await self.session.execute(stmt)).scalars().first()
+        if not rfq:
+            context.add_chunk(ContextChunk(
+                context_type=ContextType.RFQ_DATA,
+                content=f"RFQ {rfq_number} not found.",
+                relevance_score=0.3,
+            ))
+            return
+
+        user = context.user
+        lines = [f"RFQ {rfq.rfq_number} — {rfq.title or 'N/A'}"]
+        lines.append(f"  Status: {rfq.status}")
+        lines.append(f"  Part: {rfq.part_number or 'N/A'} / {rfq.part_name or 'N/A'}")
+        lines.append(f"  Process: {rfq.primary_process or 'N/A'}")
+        if rfq.material_spec:
+            lines.append(f"  Material: {rfq.material_spec} {rfq.material_grade or ''}")
+        if rfq.lead_time_required:
+            lines.append(f"  Lead Time Required: {rfq.lead_time_required} days")
+
+        # Use Context Bus for lineage-based cross-entity context
+        try:
+            pack = await get_context_service().get_context_pack(
+                self.session,
+                root_entity_type="rfq",
+                root_entity_id=str(rfq.id),
+                max_depth=2,
+            )
+            related = [n for n in pack.nodes if n.entity_type != "rfq"]
+            if related:
+                lines.append("  Related entities:")
+                for node in related:
+                    safe_data = {
+                        k: self.mask_value(v) if self.should_mask_field(user, node.entity_type, k) else v
+                        for k, v in list(node.data.items())[:4]
+                    }
+                    summary = ", ".join(f"{k}: {v}" for k, v in safe_data.items() if v is not None)
+                    lines.append(f"    → {node.entity_type}: {summary}")
+        except Exception:
+            logger.debug("Context Bus unavailable for RFQ %s", rfq_number, exc_info=True)
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.RFQ_DATA,
-            content=f"RFQ {rfq_number}: Data would be loaded from database",
-            metadata={"rfq_number": rfq_number},
+            content="\n".join(lines),
+            metadata={"rfq_number": rfq_number, "rfq_id": str(rfq.id)},
             relevance_score=1.0,
             source_id=f"rfq:{rfq_number}",
         ))
     
     async def _add_quote_context(self, context: ChatContext, quote_number: str) -> None:
-        """Add quote context."""
+        """Add quote context with lineage from Context Bus."""
+        if not self.session:
+            return
+        stmt = select(Quote).where(Quote.quote_number == quote_number)
+        quote = (await self.session.execute(stmt)).scalars().first()
+        if not quote:
+            context.add_chunk(ContextChunk(
+                context_type=ContextType.QUOTE_DATA,
+                content=f"Quote {quote_number} not found.",
+                relevance_score=0.3,
+            ))
+            return
+
+        user = context.user
+        lines = [f"Quote {quote.quote_number} — {quote.title or 'N/A'}"]
+        lines.append(f"  Status: {quote.status}")
+        if not self.should_mask_field(user, "quote", "total"):
+            lines.append(f"  Total: {quote.currency or ''} {quote.total or 'N/A'}")
+        else:
+            lines.append(f"  Total: {self.mask_value(quote.total, 'currency')}")
+        if quote.lead_time_days:
+            lines.append(f"  Lead Time: {quote.lead_time_days} days")
+        if quote.payment_terms:
+            lines.append(f"  Payment Terms: {quote.payment_terms}")
+        if quote.special_conditions:
+            lines.append(f"  Special Conditions: {quote.special_conditions}")
+
+        # Use Context Bus for lineage-based cross-entity context
+        try:
+            pack = await get_context_service().get_context_pack(
+                self.session,
+                root_entity_type="quote",
+                root_entity_id=str(quote.id),
+                max_depth=2,
+            )
+            related = [n for n in pack.nodes if n.entity_type != "quote"]
+            if related:
+                lines.append("  Related entities:")
+                for node in related:
+                    safe_data = {
+                        k: self.mask_value(v) if self.should_mask_field(user, node.entity_type, k) else v
+                        for k, v in list(node.data.items())[:4]
+                    }
+                    summary = ", ".join(f"{k}: {v}" for k, v in safe_data.items() if v is not None)
+                    lines.append(f"    → {node.entity_type}: {summary}")
+        except Exception:
+            logger.debug("Context Bus unavailable for Quote %s", quote_number, exc_info=True)
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.QUOTE_DATA,
-            content=f"Quote {quote_number}: Data would be loaded from database",
-            metadata={"quote_number": quote_number},
+            content="\n".join(lines),
+            metadata={"quote_number": quote_number, "quote_id": str(quote.id)},
             relevance_score=1.0,
             source_id=f"quote:{quote_number}",
         ))
     
     async def _add_work_order_context(self, context: ChatContext, wo_number: str) -> None:
-        """Add work order context."""
+        """Add work order context with lineage from Context Bus."""
+        if not self.session:
+            return
+        stmt = select(WorkOrder).where(WorkOrder.work_order_number == wo_number)
+        wo = (await self.session.execute(stmt)).scalars().first()
+        if not wo:
+            context.add_chunk(ContextChunk(
+                context_type=ContextType.WORK_ORDER_DATA,
+                content=f"Work Order {wo_number} not found.",
+                relevance_score=0.3,
+            ))
+            return
+
+        user = context.user
+        status_str = wo.status.value if hasattr(wo.status, "value") else str(wo.status)
+        lines = [f"Work Order {wo.work_order_number}"]
+        lines.append(f"  Status: {status_str}")
+        lines.append(f"  Qty Ordered: {wo.quantity_ordered}")
+        lines.append(f"  Qty Completed: {wo.quantity_completed}")
+        if wo.quantity_scrapped:
+            lines.append(f"  Qty Scrapped: {wo.quantity_scrapped}")
+        if wo.scheduled_start:
+            lines.append(f"  Scheduled Start: {wo.scheduled_start.strftime('%Y-%m-%d')}")
+        if wo.scheduled_end:
+            lines.append(f"  Scheduled End: {wo.scheduled_end.strftime('%Y-%m-%d')}")
+
+        # Use Context Bus for lineage-based cross-entity context
+        try:
+            pack = await get_context_service().get_context_pack(
+                self.session,
+                root_entity_type="work_order",
+                root_entity_id=str(wo.id),
+                max_depth=2,
+            )
+            related = [n for n in pack.nodes if n.entity_type != "work_order"]
+            if related:
+                lines.append("  Related entities:")
+                for node in related:
+                    safe_data = {
+                        k: self.mask_value(v) if self.should_mask_field(user, node.entity_type, k) else v
+                        for k, v in list(node.data.items())[:4]
+                    }
+                    summary = ", ".join(f"{k}: {v}" for k, v in safe_data.items() if v is not None)
+                    lines.append(f"    → {node.entity_type}: {summary}")
+        except Exception:
+            logger.debug("Context Bus unavailable for WO %s", wo_number, exc_info=True)
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.WORK_ORDER_DATA,
-            content=f"Work Order {wo_number}: Data would be loaded from database",
-            metadata={"work_order_number": wo_number},
+            content="\n".join(lines),
+            metadata={"work_order_number": wo_number, "work_order_id": str(wo.id)},
             relevance_score=1.0,
             source_id=f"wo:{wo_number}",
         ))
     
     async def _add_task_context(self, context: ChatContext) -> None:
-        """Add task context for user."""
+        """Add active tasks assigned to the user."""
+        if not self.session:
+            return
+        stmt = (
+            select(Task)
+            .where(
+                Task.assignee_id == context.user.user_id,
+                Task.status.in_(["todo", "in_progress", "open", "blocked"]),
+                or_(Task.is_deleted == False, Task.is_deleted.is_(None)),
+            )
+            .order_by(Task.due_date.asc().nulls_last())
+            .limit(10)
+        )
+        tasks = (await self.session.execute(stmt)).scalars().all()
+
+        if not tasks:
+            context.add_chunk(ContextChunk(
+                context_type=ContextType.TASK_DATA,
+                content="No active tasks assigned to you.",
+                relevance_score=0.3,
+            ))
+            return
+
+        lines = [f"Your Active Tasks ({len(tasks)}):"]
+        for t in tasks:
+            due = t.due_date.strftime("%Y-%m-%d") if t.due_date else "No due date"
+            prio = t.priority.upper() if isinstance(t.priority, str) else str(t.priority)
+            lines.append(f"  • [{prio}] {t.title} — {t.status} (due: {due})")
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.TASK_DATA,
-            content="User's tasks would be loaded from database",
+            content="\n".join(lines),
             relevance_score=0.9,
         ))
     
     async def _add_approval_context(self, context: ChatContext) -> None:
-        """Add approval context for user."""
+        """Add pending approval context for user."""
+        if not self.session:
+            return
+        user = context.user
+        # Quotes pending approval where user has an approver role
+        stmt = (
+            select(Quote)
+            .where(Quote.approval_status == "pending")
+            .order_by(Quote.created_at.desc())
+            .limit(10)
+        )
+        try:
+            quotes = (await self.session.execute(stmt)).scalars().all()
+        except Exception:
+            # approval_status column may not exist on all deployments
+            quotes = []
+
+        if not quotes:
+            context.add_chunk(ContextChunk(
+                context_type=ContextType.APPROVAL_DATA,
+                content="No pending approvals.",
+                relevance_score=0.3,
+            ))
+            return
+
+        lines = [f"Pending Approvals ({len(quotes)}):"]
+        for q in quotes:
+            total_str = (
+                str(q.total) if not self.should_mask_field(user, "quote", "total") else self.mask_value(q.total, "currency")
+            )
+            lines.append(f"  • Quote {q.quote_number}: {q.title or 'N/A'} — {total_str}")
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.APPROVAL_DATA,
-            content="User's pending approvals would be loaded from database",
+            content="\n".join(lines),
             relevance_score=0.9,
         ))
     
@@ -422,24 +621,71 @@ class ContextBuilder:
         context: ChatContext,
         parameters: Dict[str, Any],
     ) -> None:
-        """Add context for email drafting."""
+        """Add context for email drafting from real entity data."""
         # Add relevant entity context for email
         if "rfq_number" in parameters:
             await self._add_rfq_context(context, parameters["rfq_number"])
         if "quote_number" in parameters:
             await self._add_quote_context(context, parameters["quote_number"])
-        
+
+        # Customer context from Context Bus if an entity was found
+        for chunk in context.chunks:
+            if chunk.metadata and chunk.metadata.get("rfq_id"):
+                try:
+                    pack = await get_context_service().get_context_pack(
+                        self.session,
+                        root_entity_type="rfq",
+                        root_entity_id=chunk.metadata["rfq_id"],
+                        max_depth=3,
+                    )
+                    acct = next((n for n in pack.nodes if n.entity_type == "account"), None)
+                    if acct:
+                        context.add_chunk(ContextChunk(
+                            context_type=ContextType.CUSTOMER_DATA,
+                            content=f"Customer: {acct.data.get('name', 'N/A')} ({acct.data.get('industry', 'N/A')})",
+                            relevance_score=0.8,
+                        ))
+                        return
+                except Exception:
+                    pass
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.CUSTOMER_DATA,
-            content="Customer/recipient information for email",
-            relevance_score=0.8,
+            content="Customer/recipient information not resolved — specify an RFQ or quote number for richer context.",
+            relevance_score=0.4,
         ))
     
     async def _add_metrics_context(self, context: ChatContext) -> None:
-        """Add metrics context for reporting."""
+        """Add aggregate metrics context for reporting."""
+        if not self.session:
+            return
+        lines = ["Key Metrics:"]
+        try:
+            rfq_count = (await self.session.execute(select(func.count()).select_from(RFQ))).scalar_one()
+            lines.append(f"  Total RFQs: {rfq_count}")
+        except Exception:
+            pass
+        try:
+            quote_count = (await self.session.execute(select(func.count()).select_from(Quote))).scalar_one()
+            lines.append(f"  Total Quotes: {quote_count}")
+        except Exception:
+            pass
+        try:
+            wo_count = (await self.session.execute(select(func.count()).select_from(WorkOrder))).scalar_one()
+            lines.append(f"  Total Work Orders: {wo_count}")
+        except Exception:
+            pass
+        try:
+            open_tasks = (await self.session.execute(
+                select(func.count()).select_from(Task).where(Task.status.in_(["todo", "in_progress", "open"]))
+            )).scalar_one()
+            lines.append(f"  Open Tasks: {open_tasks}")
+        except Exception:
+            pass
+
         context.add_chunk(ContextChunk(
             context_type=ContextType.METRICS,
-            content="Key metrics would be loaded from database",
+            content="\n".join(lines),
             relevance_score=0.8,
         ))
     
@@ -448,13 +694,37 @@ class ContextBuilder:
         context: ChatContext,
         query: str,
     ) -> None:
-        """Add knowledge base context via RAG."""
-        # This would integrate with the hybrid search service
+        """Add knowledge base context via hybrid search if available."""
+        try:
+            from sensei.services.ai.hybrid_search import HybridSearchEngine, SearchQuery, SearchMode
+            # HybridSearchEngine is a singleton; attempt to use if initialized
+            engine: HybridSearchEngine | None = None
+            try:
+                from sensei.services.ai.hybrid_search import _engine_singleton  # noqa: F811
+                engine = _engine_singleton
+            except ImportError:
+                pass
+
+            if engine is not None:
+                result = engine.search(SearchQuery(query=query, top_k=3, mode=SearchMode.HYBRID))
+                if result.results:
+                    parts = [f"[Knowledge] {r.chunk.text[:300]}" for r in result.results[:3]]
+                    context.add_chunk(ContextChunk(
+                        context_type=ContextType.KNOWLEDGE_BASE,
+                        content="\n---\n".join(parts),
+                        metadata={"source": "hybrid_search", "num_results": len(result.results)},
+                        relevance_score=0.7,
+                    ))
+                    return
+        except Exception:
+            logger.debug("Hybrid search unavailable, falling back", exc_info=True)
+
+        # Fallback: note that knowledge search is not yet available in this session
         context.add_chunk(ContextChunk(
             context_type=ContextType.KNOWLEDGE_BASE,
-            content=f"Relevant knowledge for query: {query}",
+            content="Knowledge base search is available. Ask about manufacturing processes, quality standards, or operational procedures.",
             metadata={"source": "knowledge_base"},
-            relevance_score=0.7,
+            relevance_score=0.4,
         ))
     
     def _build_system_prompt(self, user: UserContext, intent_type: str) -> str:

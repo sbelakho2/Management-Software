@@ -17,6 +17,7 @@ import {
   Trash2,
   Edit3
 } from 'lucide-react';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface ProjectActivityTimelineProps {
   projectId: string;
@@ -34,25 +35,26 @@ const getActivityIcon = (type: string) => {
 
 export function ProjectActivityTimeline({ projectId }: ProjectActivityTimelineProps) {
   const { activities, fetchActivities, isLoading } = useProjectManagementStore();
+  const { t } = useI18n();
 
   React.useEffect(() => {
     fetchActivities(projectId);
   }, [projectId, fetchActivities]);
 
   if (isLoading && activities.length === 0) {
-    return <div className="p-8 text-center text-muted-foreground">Loading activity...</div>;
+    return <div className="p-8 text-center text-muted-foreground">{t('pages.projectManagement.activity.loading')}</div>;
   }
 
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="text-lg">Activity Timeline</CardTitle>
+        <CardTitle className="text-lg">{t('pages.projectManagement.activity.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[600px] pr-4">
           <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
             {activities.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">No recent activity</div>
+              <div className="text-center py-12 text-muted-foreground">{t('pages.projectManagement.activity.noRecentActivity')}</div>
             ) : (
               activities.map((activity) => (
                 <div key={activity.id} className="relative flex items-start gap-4 ml-2">

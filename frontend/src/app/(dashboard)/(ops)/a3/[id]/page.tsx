@@ -56,7 +56,7 @@ export default function A3DetailsPage() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to load A3 details',
+        description: t('pages.a3.toast.loadFailed'),
         variant: 'destructive',
       });
     }
@@ -99,7 +99,7 @@ export default function A3DetailsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-orange/5" onClick={() => toast({ title: 'Export', description: 'Starting PDF export...' })}>
+          <Button variant="outline" size="lg" className="rounded-rams-sm border-rams-line hover:bg-rams-orange/5" onClick={() => toast({ title: t('pages.a3.toast.export'), description: t('pages.a3.toast.exportDesc') })}>
             <Download className="h-4 w-4 mr-2" />
             {t('a3.detail.exportProtocol') || 'Export Protocol'}
           </Button>

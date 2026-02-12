@@ -36,7 +36,7 @@ export default function NewA3Page() {
     if (!title) {
       toast({
         title: 'Error',
-        description: 'Please enter a title for the A3 report.',
+        description: t('pages.a3.toast.titleRequired'),
         variant: 'destructive',
       });
       return;
@@ -51,14 +51,14 @@ export default function NewA3Page() {
         a3_type: 'problem_solving'
       });
       toast({
-        title: 'A3 Report Created',
-        description: 'The new A3 report has been successfully initialized.',
+        title: t('pages.a3.toast.created'),
+        description: t('pages.a3.toast.createdDesc'),
       });
       router.push('/a3');
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to create A3 report. Please try again.',
+        description: t('pages.a3.toast.createFailed'),
         variant: 'destructive',
       });
     } finally {

@@ -7,7 +7,7 @@ Implements Development Plan Section 22.2:
 - A/R aging + dunning + disputes
 - Customer credit controls
 
-This module is pure-Python and in-memory, matching existing service patterns.
+State is persisted via the service_state table for DB-backed continuity.
 Optionally integrates with `AccountingLedgerService` to post GL journal entries.
 """
 
@@ -36,6 +36,319 @@ def _q2(v: Decimal) -> Decimal:
 
 def _norm_roles(roles: Iterable[str]) -> set[str]:
     return {r.strip().lower() for r in roles if r and r.strip()}
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_uuid(value: UUID | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_uuid(value: str | None) -> UUID | None:
+    if value is None:
+        return None
+    return UUID(value)
+
+
+def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "occurred_at": event.occurred_at.isoformat(),
+        "actor_id": event.actor_id,
+        "action": event.action,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "correlation_id": event.correlation_id,
+        "metadata": event.metadata,
+    }
+
+
+def _decode_audit_event(data: dict[str, Any]) -> "AuditEvent":
+    return AuditEvent(
+        id=UUID(data["id"]),
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        actor_id=data["actor_id"],
+        action=data["action"],
+        entity_type=data["entity_type"],
+        entity_id=data["entity_id"],
+        correlation_id=data.get("correlation_id", ""),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_credit_profile(profile: "CustomerCreditProfile") -> dict[str, Any]:
+    return {
+        "account_id": profile.account_id,
+        "credit_limit": _encode_decimal(profile.credit_limit),
+        "currency": profile.currency,
+        "is_on_credit_hold": profile.is_on_credit_hold,
+        "hold_reason": profile.hold_reason,
+        "updated_at": profile.updated_at.isoformat(),
+    }
+
+
+def _decode_credit_profile(data: dict[str, Any]) -> "CustomerCreditProfile":
+    return CustomerCreditProfile(
+        account_id=data.get("account_id", ""),
+        credit_limit=Decimal(data.get("credit_limit", "0")),
+        currency=data.get("currency", ""),
+        is_on_credit_hold=bool(data.get("is_on_credit_hold", False)),
+        hold_reason=data.get("hold_reason"),
+        updated_at=datetime.fromisoformat(data["updated_at"])
+        if data.get("updated_at")
+        else _now(),
+    )
+
+
+def _encode_sales_order_line(line: "SalesOrderLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "description": line.description,
+        "quantity": _encode_decimal(line.quantity),
+        "unit_price": _encode_decimal(line.unit_price),
+    }
+
+
+def _decode_sales_order_line(data: dict[str, Any]) -> "SalesOrderLine":
+    return SalesOrderLine(
+        sku=data.get("sku", ""),
+        description=data.get("description", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_price=Decimal(data.get("unit_price", "0")),
+    )
+
+
+def _encode_sales_order(order: "SalesOrder") -> dict[str, Any]:
+    return {
+        "id": str(order.id),
+        "so_number": order.so_number,
+        "account_id": order.account_id,
+        "currency": order.currency,
+        "created_at": order.created_at.isoformat(),
+        "created_by": order.created_by,
+        "status": order.status.value,
+        "approved_at": _encode_datetime(order.approved_at),
+        "approved_by": order.approved_by,
+        "released_at": _encode_datetime(order.released_at),
+        "released_by": order.released_by,
+        "source_quote_id": order.source_quote_id,
+        "source_quote_version": order.source_quote_version,
+        "payment_terms_days": order.payment_terms_days,
+        "lines": [_encode_sales_order_line(line) for line in order.lines],
+        "metadata": order.metadata,
+    }
+
+
+def _decode_sales_order(data: dict[str, Any]) -> "SalesOrder":
+    return SalesOrder(
+        id=UUID(data["id"]),
+        so_number=data.get("so_number", ""),
+        account_id=data.get("account_id", ""),
+        currency=data.get("currency", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        status=SalesOrderStatus(data.get("status", SalesOrderStatus.DRAFT.value)),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        approved_by=data.get("approved_by"),
+        released_at=_decode_datetime(data.get("released_at")),
+        released_by=data.get("released_by"),
+        source_quote_id=data.get("source_quote_id"),
+        source_quote_version=data.get("source_quote_version"),
+        payment_terms_days=int(data.get("payment_terms_days", 30)),
+        lines=[_decode_sales_order_line(line) for line in data.get("lines", [])],
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_invoice_line(line: "InvoiceLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "description": line.description,
+        "quantity": _encode_decimal(line.quantity),
+        "unit_price": _encode_decimal(line.unit_price),
+    }
+
+
+def _decode_invoice_line(data: dict[str, Any]) -> "InvoiceLine":
+    return InvoiceLine(
+        sku=data.get("sku", ""),
+        description=data.get("description", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_price=Decimal(data.get("unit_price", "0")),
+    )
+
+
+def _encode_invoice(inv: "Invoice") -> dict[str, Any]:
+    return {
+        "id": str(inv.id),
+        "invoice_number": inv.invoice_number,
+        "account_id": inv.account_id,
+        "currency": inv.currency,
+        "issued_at": inv.issued_at.isoformat(),
+        "issued_by": inv.issued_by,
+        "due_date": inv.due_date.isoformat(),
+        "status": inv.status.value,
+        "sales_order_id": _encode_uuid(inv.sales_order_id),
+        "memo": inv.memo,
+        "is_credit_memo": inv.is_credit_memo,
+        "lines": [_encode_invoice_line(line) for line in inv.lines],
+        "disputed": inv.disputed,
+    }
+
+
+def _decode_invoice(data: dict[str, Any]) -> "Invoice":
+    return Invoice(
+        id=UUID(data["id"]),
+        invoice_number=data.get("invoice_number", ""),
+        account_id=data.get("account_id", ""),
+        currency=data.get("currency", ""),
+        issued_at=datetime.fromisoformat(data["issued_at"]),
+        issued_by=data.get("issued_by", ""),
+        due_date=date.fromisoformat(data["due_date"]),
+        status=InvoiceStatus(data.get("status", InvoiceStatus.ISSUED.value)),
+        sales_order_id=_decode_uuid(data.get("sales_order_id")),
+        memo=data.get("memo"),
+        is_credit_memo=bool(data.get("is_credit_memo", False)),
+        lines=[_decode_invoice_line(line) for line in data.get("lines", [])],
+        disputed=bool(data.get("disputed", False)),
+    )
+
+
+def _encode_payment_allocation(alloc: "PaymentAllocation") -> dict[str, Any]:
+    return {
+        "invoice_id": str(alloc.invoice_id),
+        "amount": _encode_decimal(alloc.amount),
+    }
+
+
+def _decode_payment_allocation(data: dict[str, Any]) -> "PaymentAllocation":
+    return PaymentAllocation(
+        invoice_id=UUID(data["invoice_id"]),
+        amount=Decimal(data.get("amount", "0")),
+    )
+
+
+def _encode_payment_receipt(receipt: "PaymentReceipt") -> dict[str, Any]:
+    return {
+        "id": str(receipt.id),
+        "account_id": receipt.account_id,
+        "received_at": receipt.received_at.isoformat(),
+        "received_by": receipt.received_by,
+        "currency": receipt.currency,
+        "amount": _encode_decimal(receipt.amount),
+        "status": receipt.status.value,
+        "allocations": [_encode_payment_allocation(a) for a in receipt.allocations],
+        "reference": receipt.reference,
+        "notes": receipt.notes,
+    }
+
+
+def _decode_payment_receipt(data: dict[str, Any]) -> "PaymentReceipt":
+    return PaymentReceipt(
+        id=UUID(data["id"]),
+        account_id=data.get("account_id", ""),
+        received_at=datetime.fromisoformat(data["received_at"]),
+        received_by=data.get("received_by", ""),
+        currency=data.get("currency", ""),
+        amount=Decimal(data.get("amount", "0")),
+        status=PaymentStatus(data.get("status", PaymentStatus.POSTED.value)),
+        allocations=[_decode_payment_allocation(a) for a in data.get("allocations", [])],
+        reference=data.get("reference"),
+        notes=data.get("notes"),
+    )
+
+
+def _encode_invoice_dispute(dispute: "InvoiceDispute") -> dict[str, Any]:
+    return {
+        "id": str(dispute.id),
+        "invoice_id": str(dispute.invoice_id),
+        "opened_at": dispute.opened_at.isoformat(),
+        "opened_by": dispute.opened_by,
+        "reason": dispute.reason,
+        "status": dispute.status.value,
+        "resolved_at": _encode_datetime(dispute.resolved_at),
+        "resolved_by": dispute.resolved_by,
+        "resolution": dispute.resolution,
+    }
+
+
+def _decode_invoice_dispute(data: dict[str, Any]) -> "InvoiceDispute":
+    return InvoiceDispute(
+        id=UUID(data["id"]),
+        invoice_id=UUID(data["invoice_id"]),
+        opened_at=datetime.fromisoformat(data["opened_at"]),
+        opened_by=data.get("opened_by", ""),
+        reason=data.get("reason", ""),
+        status=DisputeStatus(data.get("status", DisputeStatus.OPEN.value)),
+        resolved_at=_decode_datetime(data.get("resolved_at")),
+        resolved_by=data.get("resolved_by"),
+        resolution=data.get("resolution"),
+    )
+
+
+def _encode_config(cfg: "ARConfig") -> dict[str, Any]:
+    return {
+        "base_currency": cfg.base_currency,
+        "invoice_prefix": cfg.invoice_prefix,
+        "sales_order_prefix": cfg.sales_order_prefix,
+        "next_invoice_seq": cfg.next_invoice_seq,
+        "next_so_seq": cfg.next_so_seq,
+        "ar_account_code": cfg.ar_account_code,
+        "revenue_account_code": cfg.revenue_account_code,
+        "cash_account_code": cfg.cash_account_code,
+    }
+
+
+def _decode_config(data: dict[str, Any], fallback: "ARConfig") -> "ARConfig":
+    return ARConfig(
+        base_currency=data.get("base_currency", fallback.base_currency),
+        invoice_prefix=data.get("invoice_prefix", fallback.invoice_prefix),
+        sales_order_prefix=data.get("sales_order_prefix", fallback.sales_order_prefix),
+        next_invoice_seq=int(data.get("next_invoice_seq", fallback.next_invoice_seq)),
+        next_so_seq=int(data.get("next_so_seq", fallback.next_so_seq)),
+        ar_account_code=data.get("ar_account_code", fallback.ar_account_code),
+        revenue_account_code=data.get("revenue_account_code", fallback.revenue_account_code),
+        cash_account_code=data.get("cash_account_code", fallback.cash_account_code),
+    )
 
 
 _AR_READ_ROLES: set[str] = {
@@ -301,6 +614,138 @@ class AccountsReceivableService(PersistentServiceMixin):
         self._disputes: dict[UUID, InvoiceDispute] = {}
 
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        cfg_data = await self.load_state(_DEFAULT_TENANT_ID, "config") or {}
+        sales_orders_data = await self.load_state(_DEFAULT_TENANT_ID, "sales_orders") or {}
+        invoices_data = await self.load_state(_DEFAULT_TENANT_ID, "invoices") or {}
+        payments_data = await self.load_state(_DEFAULT_TENANT_ID, "payments") or {}
+        credit_data = await self.load_state(_DEFAULT_TENANT_ID, "credit") or {}
+        disputes_data = await self.load_state(_DEFAULT_TENANT_ID, "disputes") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        if cfg_data:
+            self._cfg = _decode_config(cfg_data, self._cfg)
+
+        self._sales_orders = {UUID(sid): _decode_sales_order(s) for sid, s in sales_orders_data.items()}
+        self._invoices = {UUID(iid): _decode_invoice(i) for iid, i in invoices_data.items()}
+        self._payments = {UUID(pid): _decode_payment_receipt(p) for pid, p in payments_data.items()}
+        self._credit = {cid: _decode_credit_profile(c) for cid, c in credit_data.items()}
+        self._disputes = {UUID(did): _decode_invoice_dispute(d) for did, d in disputes_data.items()}
+        self._audit = [_decode_audit_event(a) for a in audit_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        cfg_data = _encode_config(self._cfg)
+        sales_orders_data = {str(sid): _encode_sales_order(so) for sid, so in self._sales_orders.items()}
+        invoices_data = {str(iid): _encode_invoice(inv) for iid, inv in self._invoices.items()}
+        payments_data = {str(pid): _encode_payment_receipt(p) for pid, p in self._payments.items()}
+        credit_data = {cid: _encode_credit_profile(c) for cid, c in self._credit.items()}
+        disputes_data = {str(did): _encode_invoice_dispute(d) for did, d in self._disputes.items()}
+        audit_data = [_encode_audit_event(a) for a in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "config", cfg_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "sales_orders", sales_orders_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "invoices", invoices_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "payments", payments_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "credit", credit_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "disputes", disputes_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
+
+    async def set_credit_profile_async(self, **kwargs: Any) -> CustomerCreditProfile:
+        await self._ensure_loaded()
+        profile = self.set_credit_profile(**kwargs)
+        await self.persist_all()
+        return profile
+
+    async def get_credit_profile_async(self, *, actor_roles: Iterable[str], account_id: str) -> CustomerCreditProfile | None:
+        await self._ensure_loaded()
+        return self.get_credit_profile(actor_roles=actor_roles, account_id=account_id)
+
+    async def create_sales_order_from_quote_async(self, **kwargs: Any) -> SalesOrder:
+        await self._ensure_loaded()
+        so = self.create_sales_order_from_quote(**kwargs)
+        await self.persist_all()
+        return so
+
+    async def approve_sales_order_async(self, **kwargs: Any) -> SalesOrder:
+        await self._ensure_loaded()
+        so = self.approve_sales_order(**kwargs)
+        await self.persist_all()
+        return so
+
+    async def release_sales_order_async(self, **kwargs: Any) -> SalesOrder:
+        await self._ensure_loaded()
+        so = self.release_sales_order(**kwargs)
+        await self.persist_all()
+        return so
+
+    async def get_sales_order_async(self, *, actor_roles: Iterable[str], sales_order_id: UUID) -> SalesOrder | None:
+        await self._ensure_loaded()
+        return self.get_sales_order(actor_roles=actor_roles, sales_order_id=sales_order_id)
+
+    async def create_invoice_from_sales_order_async(self, **kwargs: Any) -> Invoice:
+        await self._ensure_loaded()
+        inv = self.create_invoice_from_sales_order(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def create_credit_memo_async(self, **kwargs: Any) -> Invoice:
+        await self._ensure_loaded()
+        inv = self.create_credit_memo(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def get_invoice_async(self, *, actor_roles: Iterable[str], invoice_id: UUID) -> Invoice | None:
+        await self._ensure_loaded()
+        return self.get_invoice(actor_roles=actor_roles, invoice_id=invoice_id)
+
+    async def list_invoices_async(self, *, actor_roles: Iterable[str], account_id: str | None = None) -> list[Invoice]:
+        await self._ensure_loaded()
+        return self.list_invoices(actor_roles=actor_roles, account_id=account_id)
+
+    async def open_dispute_async(self, **kwargs: Any) -> InvoiceDispute:
+        await self._ensure_loaded()
+        dispute = self.open_dispute(**kwargs)
+        await self.persist_all()
+        return dispute
+
+    async def resolve_dispute_async(self, **kwargs: Any) -> InvoiceDispute:
+        await self._ensure_loaded()
+        dispute = self.resolve_dispute(**kwargs)
+        await self.persist_all()
+        return dispute
+
+    async def record_payment_async(self, **kwargs: Any) -> PaymentReceipt:
+        await self._ensure_loaded()
+        payment = self.record_payment(**kwargs)
+        await self.persist_all()
+        return payment
+
+    async def invoice_balance_async(self, *, actor_roles: Iterable[str], invoice_id: UUID) -> Decimal:
+        await self._ensure_loaded()
+        return self.invoice_balance(actor_roles=actor_roles, invoice_id=invoice_id)
+
+    async def ar_aging_async(self, *, actor_roles: Iterable[str], as_of: date, account_id: str | None = None) -> dict[str, Decimal]:
+        await self._ensure_loaded()
+        return self.ar_aging(actor_roles=actor_roles, as_of=as_of, account_id=account_id)
+
+    async def dunning_actions_async(self, *, actor_roles: Iterable[str], as_of: date, account_id: str) -> list[DunningAction]:
+        await self._ensure_loaded()
+        return self.dunning_actions(actor_roles=actor_roles, as_of=as_of, account_id=account_id)
 
     # ------------------------------------------------------------------
     # Audit

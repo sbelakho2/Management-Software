@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     from sensei.models.andon import AndonEvent
     from sensei.models.kanban import KanbanCard
     from sensei.models.quality import NonConformance, InspectionRecord
+    from sensei.models.account import Account
+    from sensei.models.quote import Quote
+    from sensei.models.rfq import RFQ
+    from sensei.models.accounts_receivable import SalesOrder
 
 
 class WorkOrderStatus(enum.Enum):
@@ -101,6 +105,24 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     external_reference: Mapped[Optional[str]] = mapped_column(
         String(100), nullable=True
     )  # Customer PO, etc.
+
+    # CRM linkage — hard FK bridge from sales to production
+    quote_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    sales_order_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sales_orders.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    rfq_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rfqs.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    account_id: Mapped[Optional[PyUUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     # Product reference
     product_id: Mapped[PyUUID] = mapped_column(
@@ -188,6 +210,19 @@ class WorkOrder(Base, TimestampMixin, AuditMixin, SoftDeleteMixin):
     )
     held_by: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[held_by_id]
+    )
+    # CRM relationships — hard FK bridge
+    quote: Mapped[Optional["Quote"]] = relationship(
+        "Quote", foreign_keys=[quote_id], lazy="select"
+    )
+    sales_order: Mapped[Optional["SalesOrder"]] = relationship(
+        "SalesOrder", foreign_keys=[sales_order_id], lazy="select"
+    )
+    rfq: Mapped[Optional["RFQ"]] = relationship(
+        "RFQ", foreign_keys=[rfq_id], lazy="select"
+    )
+    account: Mapped[Optional["Account"]] = relationship(
+        "Account", foreign_keys=[account_id], lazy="select"
     )
     operations: Mapped[list["WorkOrderOperation"]] = relationship(
         "WorkOrderOperation",

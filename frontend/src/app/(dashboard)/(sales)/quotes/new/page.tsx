@@ -307,8 +307,8 @@ function NewQuotePageContent() {
     } catch {
       toast({
         variant: 'destructive',
-        title: 'Error saving quote',
-        description: 'Please try again.',
+        title: t('pages.quotes.toast.saveFailed'),
+        description: t('pages.quotes.toast.tryAgain'),
       });
     } finally {
       setIsSaving(false);

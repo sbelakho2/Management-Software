@@ -22,6 +22,7 @@ import React, {
   useState,
 } from 'react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -104,6 +105,7 @@ export function ActionableError({
   actions,
   className,
 }: ActionableErrorProps) {
+  const { t } = useI18n();
   const severityStyles = {
     info: 'bg-blue-50 border-blue-200 text-blue-800',
     warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
@@ -160,7 +162,7 @@ export function ActionableError({
           <button
             onClick={onDismiss}
             className="flex-shrink-0 p-1 hover:bg-black/10 rounded"
-            aria-label="Dismiss error"
+            aria-label={t('components.error.dismissError')}
           >
             ✕
           </button>
@@ -252,6 +254,7 @@ export function ServerErrorPage({
   onGoHome?: () => void;
   className?: string;
 }) {
+  const { t } = useI18n();
   const errorMessage = error instanceof Error ? error.message : error;
 
   return (
@@ -265,9 +268,9 @@ export function ServerErrorPage({
       <div className="text-6xl mb-4" aria-hidden="true">
         ⚙️
       </div>
-      <h1 className="text-2xl font-bold mb-2">Something went wrong</h1>
+      <h1 className="text-2xl font-bold mb-2">{t('components.error.somethingWentWrong')}</h1>
       <p className="text-muted-foreground max-w-md mb-6">
-        We're experiencing technical difficulties. Our team has been notified.
+        {t('components.error.technicalDifficulties')}
       </p>
       
       {errorMessage && (
@@ -467,6 +470,7 @@ export function OfflineBanner({
   onRetry,
   className,
 }: OfflineBannerProps) {
+  const { t } = useI18n();
   if (status === 'online') return null;
 
   const isReconnecting = status === 'reconnecting';
@@ -521,7 +525,7 @@ export function OfflineBanner({
           <button
             onClick={onDismiss}
             className="p-1 hover:bg-current/10 rounded"
-            aria-label="Dismiss"
+            aria-label={t('components.error.dismissBtn')}
           >
             ✕
           </button>
@@ -541,6 +545,7 @@ export function ReadOnlyIndicator({
   reason?: string;
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -548,7 +553,7 @@ export function ReadOnlyIndicator({
         className
       )}
       role="status"
-      aria-label="Read-only mode"
+      aria-label={t('components.error.readOnlyMode')}
     >
       <span aria-hidden="true">🔒</span>
       <span>{reason}</span>
@@ -616,6 +621,7 @@ export function ConflictResolution({
   onCancel,
   className,
 }: ConflictResolutionProps) {
+  const { t } = useI18n();
   const [resolutions, setResolutions] = useState<
     Record<string, { strategy: ConflictStrategy; value: string }>
   >({});
@@ -641,7 +647,7 @@ export function ConflictResolution({
   return (
     <div className={cn('rounded-lg border bg-card p-4 space-y-4', className)}>
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-lg">Resolve Conflicts</h3>
+        <h3 className="font-semibold text-lg">{t('components.error.resolveConflicts')}</h3>
         <div className="flex gap-2">
           <button
             onClick={() => handleResolveAll('keep-local')}
@@ -680,7 +686,7 @@ export function ConflictResolution({
                       : 'hover:bg-muted'
                   )}
                 >
-                  <div className="text-xs text-muted-foreground mb-1">Your changes</div>
+                  <div className="text-xs text-muted-foreground mb-1">{t('components.error.yourChanges')}</div>
                   <div className="font-mono text-xs truncate">{conflict.localValue}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {conflict.localTimestamp.toLocaleString()}
@@ -696,7 +702,7 @@ export function ConflictResolution({
                       : 'hover:bg-muted'
                   )}
                 >
-                  <div className="text-xs text-muted-foreground mb-1">Server version</div>
+                  <div className="text-xs text-muted-foreground mb-1">{t('components.error.serverVersion')}</div>
                   <div className="font-mono text-xs truncate">{conflict.serverValue}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {conflict.serverTimestamp.toLocaleString()}
@@ -999,8 +1005,8 @@ export function createActionableMessage(
  * 404 Not Found page with navigation options
  */
 export function NotFoundPage({
-  title = 'Page not found',
-  message = "The page you're looking for doesn't exist or has been moved.",
+  title,
+  message,
   onGoBack,
   onGoHome,
   onSearch,
@@ -1013,6 +1019,9 @@ export function NotFoundPage({
   onSearch?: () => void;
   className?: string;
 }) {
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t('components.error.pageNotFound');
+  const resolvedMessage = message ?? t('components.error.pageNotFoundMessage');
   return (
     <div
       className={cn(
@@ -1023,8 +1032,8 @@ export function NotFoundPage({
       <div className="text-8xl mb-4 text-muted-foreground" aria-hidden="true">
         404
       </div>
-      <h1 className="text-2xl font-bold mb-2">{title}</h1>
-      <p className="text-muted-foreground max-w-md mb-6">{message}</p>
+      <h1 className="text-2xl font-bold mb-2">{resolvedTitle}</h1>
+      <p className="text-muted-foreground max-w-md mb-6">{resolvedMessage}</p>
       
       <div className="flex flex-wrap gap-3 justify-center">
         {onGoBack && (

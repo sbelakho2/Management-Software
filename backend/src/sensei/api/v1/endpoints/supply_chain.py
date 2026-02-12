@@ -101,7 +101,8 @@ async def get_risk_analysis(
         weighted.append((prob * sev, s))
 
     weighted.sort(key=lambda t: t[0], reverse=True)
-    global_risk_index = sum(w for w, _ in weighted)
+    # Normalise: weighted average of (probability × severity) across scenarios.
+    global_risk_index = sum(w for w, _ in weighted) / len(weighted)
     # Clamp to [0, 1] for UI friendliness.
     global_risk_index = max(0.0, min(1.0, float(global_risk_index)))
 

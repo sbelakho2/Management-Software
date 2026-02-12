@@ -112,7 +112,7 @@ export default function CurrencySettingsPage() {
                 <Input
                   value={settingsForm.allowedCurrencies}
                   onChange={(e) => setSettingsForm((prev) => ({ ...prev, allowedCurrencies: e.target.value.toUpperCase() }))}
-                  placeholder="USD, EUR, GBP"
+                  placeholder={t('pages.finance.currency.allowedCurrenciesPlaceholder')}
                 />
               </div>
               <div>
@@ -169,7 +169,7 @@ export default function CurrencySettingsPage() {
                 <Input
                   value={rateForm.fromCurrency}
                   onChange={(e) => setRateForm((prev) => ({ ...prev, fromCurrency: e.target.value.toUpperCase() }))}
-                  placeholder="USD"
+                  placeholder={t('pages.finance.currency.fromPlaceholder')}
                 />
               </div>
               <div>
@@ -177,7 +177,7 @@ export default function CurrencySettingsPage() {
                 <Input
                   value={rateForm.toCurrency}
                   onChange={(e) => setRateForm((prev) => ({ ...prev, toCurrency: e.target.value.toUpperCase() }))}
-                  placeholder="EUR"
+                  placeholder={t('pages.finance.currency.toPlaceholder')}
                 />
               </div>
             </div>

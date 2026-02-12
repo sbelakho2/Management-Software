@@ -198,17 +198,45 @@ class QuoteConversionResult(BaseModel):
 
 
 async def _generate_so_number(db: AsyncSession) -> str:
-    """Generate next SO number."""
-    result = await db.execute(select(func.count(SalesOrder.id)))
-    count = result.scalar() or 0
-    return f"SO-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+    """Generate next SO number using advisory lock for concurrency safety."""
+    from sqlalchemy import text
+    year = datetime.now(timezone.utc).year
+    prefix = f"SO-{year}-"
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    result = await db.execute(
+        select(func.max(SalesOrder.so_number))
+        .where(SalesOrder.so_number.like(f"{prefix}%"))
+    )
+    last = result.scalar()
+    if last:
+        try:
+            seq = int(last.split("-")[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:05d}"
 
 
 async def _generate_invoice_number(db: AsyncSession) -> str:
-    """Generate next Invoice number."""
-    result = await db.execute(select(func.count(CustomerInvoice.id)))
-    count = result.scalar() or 0
-    return f"INV-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+    """Generate next Invoice number using advisory lock for concurrency safety."""
+    from sqlalchemy import text
+    year = datetime.now(timezone.utc).year
+    prefix = f"INV-{year}-"
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    result = await db.execute(
+        select(func.max(CustomerInvoice.invoice_number))
+        .where(CustomerInvoice.invoice_number.like(f"{prefix}%"))
+    )
+    last = result.scalar()
+    if last:
+        try:
+            seq = int(last.split("-")[-1]) + 1
+        except (ValueError, IndexError):
+            seq = 1
+    else:
+        seq = 1
+    return f"{prefix}{seq:05d}"
 
 
 def _calc_total(lines: List[Any]) -> Decimal:
@@ -369,7 +397,10 @@ async def create_sales_order(
         await ct.bind(db, **bind_kwargs)
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         import logging as _logging
         _logging.getLogger(__name__).debug("Failed to capture sales_order common-thread")
     
@@ -536,6 +567,29 @@ async def convert_quote_to_order(
     
     await db.commit()
     
+    # Best-effort: bind Quote → Sales Order lineage
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs: dict = {
+            "sales_order_id": str(so.id),
+            "quote_id": str(quote.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "convert_quote_to_order",
+        }
+        # Also bind RFQ if quote has one
+        if getattr(quote, "rfq_id", None):
+            bind_kwargs["rfq_id"] = str(quote.rfq_id)
+        await ct.bind(db, **bind_kwargs)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Failed to capture convert_quote common-thread")
+    
     return build_created_response(QuoteConversionResult(
         sales_order_id=so.id,
         so_number=so.so_number,
@@ -625,7 +679,7 @@ async def create_customer_invoice(
 
     # H1 fix: post invoice to GL — Dr A/R / Cr Revenue
     inv_total = sum(l.quantity * l.unit_price for l in payload.lines)
-    await post_invoice_to_gl(
+    je = await post_invoice_to_gl(
         db,
         invoice_number=invoice_number,
         total_amount=Decimal(str(inv_total)),
@@ -634,6 +688,29 @@ async def create_customer_invoice(
     )
 
     await db.commit()
+
+    # ---- Single Data Thread: bind Invoice + GL lineage ----
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs: dict = {
+            "invoice_id": str(invoice.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "customer_invoice_create",
+        }
+        if payload.sales_order_id:
+            bind_kwargs["sales_order_id"] = str(payload.sales_order_id)
+        if je is not None:
+            bind_kwargs["journal_entry_id"] = str(je.id)
+        await ct.bind(db, **bind_kwargs)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("common_thread bind skipped for invoice %s", invoice.id)
     
     result = await db.execute(
         select(CustomerInvoice)
@@ -697,7 +774,39 @@ async def create_invoice_from_sales_order(
         )
         db.add(inv_line)
     
+    # Post invoice to GL
+    inv_total = sum(sl.quantity * sl.unit_price for sl in so.lines)
+    je = await post_invoice_to_gl(
+        db,
+        invoice_number=invoice_number,
+        total_amount=Decimal(str(inv_total)),
+        currency=so.currency,
+        user_id=current_user.id,
+    )
+
     await db.commit()
+    
+    # ---- Single Data Thread: bind SO → Invoice + GL lineage ----
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs_so_inv: dict = {
+            "sales_order_id": str(so.id),
+            "invoice_id": str(invoice.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "invoice_from_sales_order",
+        }
+        if je is not None:
+            bind_kwargs_so_inv["journal_entry_id"] = str(je.id)
+        await ct.bind(db, **bind_kwargs_so_inv)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("common_thread bind skipped for SO→Invoice %s→%s", so.id, invoice.id)
     
     inv_result = await db.execute(
         select(CustomerInvoice)
@@ -799,7 +908,7 @@ async def create_payment_receipt(
                 invoice.status = "paid"
 
     # H1 fix: post payment to GL — Dr Cash / Cr A/R
-    await post_payment_to_gl(
+    je = await post_payment_to_gl(
         db,
         payment_reference=receipt.reference or str(receipt.id),
         amount=payload.amount,
@@ -808,6 +917,27 @@ async def create_payment_receipt(
     )
 
     await db.commit()
+
+    # ---- Single Data Thread: bind Payment + GL lineage ----
+    try:
+        from sensei.services.core.common_thread import get_common_thread_service
+        ct = get_common_thread_service()
+        bind_kwargs_pmt: dict = {
+            "payment_id": str(receipt.id),
+            "created_by_id": getattr(current_user, "id", None),
+            "source": "payment_receipt_create",
+        }
+        if je is not None:
+            bind_kwargs_pmt["journal_entry_id"] = str(je.id)
+        await ct.bind(db, **bind_kwargs_pmt)
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("common_thread bind skipped for payment %s", receipt.id)
     
     result = await db.execute(
         select(PaymentReceipt)

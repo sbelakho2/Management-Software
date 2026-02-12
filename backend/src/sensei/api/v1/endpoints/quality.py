@@ -2183,6 +2183,25 @@ async def create_capa_from_nc_endpoint(
     await db.commit()
     await db.refresh(capa)
 
+    # ---- Single Data Thread: bind NC → CAPA lineage ----
+    try:
+        await get_common_thread_service().bind(
+            db,
+            non_conformance_id=str(nc.id),
+            capa_id=str(capa.id),
+            work_order_id=str(nc.work_order_id) if getattr(nc, "work_order_id", None) else None,
+            created_by_id=getattr(current_user, "id", None),
+            source="create_capa_from_nc",
+        )
+        await db.commit()
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        import logging as _logging
+        _logging.getLogger(__name__).debug("common_thread bind skipped for NC→CAPA %s→%s", nc.id, capa.id)
+
     return build_created_response(data=capa_to_response(capa), resource_name="CAPA")
 
 

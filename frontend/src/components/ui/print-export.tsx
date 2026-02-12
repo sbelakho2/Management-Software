@@ -19,6 +19,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -264,6 +265,7 @@ export function PrintableDocument({
   forceBlackWhite = false,
   className = '',
 }: PrintableDocumentProps) {
+  const { t } = useI18n();
   return (
     <div
       className={`
@@ -332,9 +334,9 @@ export function PrintableDocument({
       {showHeader && (
         <header className="print-header hidden print:block mb-4 pb-2 border-b border-gray-300">
           <div className="flex justify-between items-center">
-            <h1 className="text-xl font-bold">{title || 'Document'}</h1>
+            <h1 className="text-xl font-bold">{title || t('components.printExport.document')}</h1>
             <span className="text-sm text-gray-500">
-              Printed: {new Date().toLocaleDateString()}
+              {t('components.printExport.printed')}: {new Date().toLocaleDateString()}
             </span>
           </div>
         </header>
@@ -368,12 +370,14 @@ export interface PrintButtonProps {
  * Print trigger button
  */
 export function PrintButton({
-  label = 'Print',
+  label,
   variant = 'secondary',
   size = 'md',
   className = '',
 }: PrintButtonProps) {
+  const { t } = useI18n();
   const { isPrinting, startPrint } = usePrint();
+  const resolvedLabel = label ?? t('components.printExport.print');
 
   const variantClasses = {
     primary: 'bg-blue-600 text-white hover:bg-blue-700',
@@ -400,10 +404,10 @@ export function PrintButton({
         ${isPrinting ? 'opacity-50 cursor-not-allowed' : ''}
         ${className}
       `}
-      aria-label={isPrinting ? 'Printing...' : label}
+      aria-label={isPrinting ? t('components.printExport.printing') : resolvedLabel}
     >
       <span aria-hidden="true">🖨️</span>
-      <span>{isPrinting ? 'Printing...' : label}</span>
+      <span>{isPrinting ? t('components.printExport.printing') : resolvedLabel}</span>
     </button>
   );
 }
@@ -426,6 +430,7 @@ export function ExportProgressIndicator({
   onCancel,
   className = '',
 }: ExportProgressIndicatorProps) {
+  const { t } = useI18n();
   if (progress.state === EXPORT_STATE.IDLE || progress.state === EXPORT_STATE.COMPLETE) {
     return null;
   }
@@ -464,7 +469,7 @@ export function ExportProgressIndicator({
             type="button"
             onClick={onCancel}
             className="text-gray-400 hover:text-gray-600"
-            aria-label="Cancel export"
+            aria-label={t('components.printExport.cancelExport')}
           >
             ✕
           </button>
@@ -515,6 +520,7 @@ export function ExportButton({
   onExport,
   className = '',
 }: ExportButtonProps) {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [progress, setProgress] = useState<ExportProgress>({
     state: EXPORT_STATE.IDLE,
@@ -523,11 +529,11 @@ export function ExportButton({
   });
 
   const formatLabels: Record<ExportFormatType, { label: string; icon: string }> = {
-    [EXPORT_FORMAT.PDF]: { label: 'Download as PDF', icon: '📄' },
-    [EXPORT_FORMAT.EXCEL]: { label: 'Download as Excel', icon: '📊' },
-    [EXPORT_FORMAT.CSV]: { label: 'Download as CSV', icon: '📋' },
-    [EXPORT_FORMAT.PRINT]: { label: 'Print', icon: '🖨️' },
-    [EXPORT_FORMAT.LABEL]: { label: 'Print Label', icon: '🏷️' },
+    [EXPORT_FORMAT.PDF]: { label: t('components.printExport.downloadAsPdf'), icon: '📄' },
+    [EXPORT_FORMAT.EXCEL]: { label: t('components.printExport.downloadAsExcel'), icon: '📊' },
+    [EXPORT_FORMAT.CSV]: { label: t('components.printExport.downloadAsCsv'), icon: '📋' },
+    [EXPORT_FORMAT.PRINT]: { label: t('components.printExport.print'), icon: '🖨️' },
+    [EXPORT_FORMAT.LABEL]: { label: t('components.printExport.printLabel'), icon: '🏷️' },
   };
 
   const handleExport = async (format: ExportFormatType) => {
@@ -543,14 +549,14 @@ export function ExportButton({
       setProgress({
         state: EXPORT_STATE.PREPARING,
         progress: 10,
-        message: 'Preparing document...',
+        message: t('components.printExport.preparingDocument'),
         filename,
       });
 
       setProgress({
         state: EXPORT_STATE.GENERATING,
         progress: 50,
-        message: `Generating ${format.toUpperCase()}...`,
+        message: t('components.printExport.generatingFormat', { format: format.toUpperCase() }),
         filename,
       });
 
@@ -559,7 +565,7 @@ export function ExportButton({
       setProgress({
         state: EXPORT_STATE.DOWNLOADING,
         progress: 90,
-        message: 'Downloading...',
+        message: t('components.printExport.downloading'),
         filename,
       });
 
@@ -569,7 +575,7 @@ export function ExportButton({
       setProgress({
         state: EXPORT_STATE.COMPLETE,
         progress: 100,
-        message: 'Download complete',
+        message: t('components.printExport.downloadComplete'),
         filename,
       });
 
@@ -581,9 +587,9 @@ export function ExportButton({
       setProgress({
         state: EXPORT_STATE.ERROR,
         progress: 0,
-        message: 'Export failed',
+        message: t('components.printExport.exportFailed'),
         filename,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : t('components.printExport.unknownError'),
       });
 
       setTimeout(() => {
@@ -603,7 +609,7 @@ export function ExportButton({
           aria-haspopup="true"
         >
           <span aria-hidden="true">📥</span>
-          Export
+          {t('components.printExport.export')}
           <span aria-hidden="true">▾</span>
         </button>
 
@@ -649,6 +655,7 @@ export interface LabelPreviewProps {
  * Preview component for label printing
  */
 export function LabelPreview({ config, className = '' }: LabelPreviewProps) {
+  const { t } = useI18n();
   const size = LABEL_SIZE[config.size];
   const scale = 96; // 96 DPI for preview
 
@@ -660,7 +667,7 @@ export function LabelPreview({ config, className = '' }: LabelPreviewProps) {
         height: size.height * scale,
       }}
       role="img"
-      aria-label={`Label preview ${config.size}`}
+      aria-label={t('components.printExport.labelPreview', { size: config.size })}
     >
       <div className="p-2 h-full flex flex-col">
         {/* Barcode area */}
@@ -668,7 +675,7 @@ export function LabelPreview({ config, className = '' }: LabelPreviewProps) {
           <div className="flex-shrink-0 flex justify-center py-2 border-b border-gray-200 mb-2">
             <div
               className="bg-gray-900 text-white text-xs px-2 py-1 font-mono"
-              aria-label={`Barcode: ${config.barcode}`}
+              aria-label={t('components.printExport.barcodeAriaLabel', { barcode: config.barcode })}
             >
               {config.barcodeType === 'QR' ? (
                 <span className="text-lg">▦</span>
@@ -725,6 +732,7 @@ export function LabelPrinterDialog({
   initialConfig,
   className = '',
 }: LabelPrinterDialogProps) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<LabelConfig>({
     size: '4x6',
     quantity: 1,
@@ -761,13 +769,13 @@ export function LabelPrinterDialog({
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 id="label-dialog-title" className="text-lg font-bold">
-            Print Labels
+            {t('components.printExport.printLabels')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
-            aria-label="Close"
+            aria-label={t('components.printExport.close')}
           >
             ✕
           </button>
@@ -778,7 +786,7 @@ export function LabelPrinterDialog({
           <div className="space-y-4">
             <div>
               <label htmlFor="label-size" className="block text-sm font-medium text-gray-700 mb-1">
-                Label Size
+                {t('components.printExport.labelSize')}
               </label>
               <select
                 id="label-size"
@@ -790,7 +798,7 @@ export function LabelPrinterDialog({
               >
                 {Object.keys(LABEL_SIZE).map((size) => (
                   <option key={size} value={size}>
-                    {size} inches
+                    {t('components.printExport.sizeInches', { size })}
                   </option>
                 ))}
               </select>
@@ -798,7 +806,7 @@ export function LabelPrinterDialog({
 
             <div>
               <label htmlFor="label-quantity" className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity
+                {t('components.printExport.quantity')}
               </label>
               <input
                 id="label-quantity"
@@ -815,21 +823,21 @@ export function LabelPrinterDialog({
 
             <div>
               <label htmlFor="label-barcode" className="block text-sm font-medium text-gray-700 mb-1">
-                Barcode Value
+                {t('components.printExport.barcodeValue')}
               </label>
               <input
                 id="label-barcode"
                 type="text"
                 value={config.barcode || ''}
                 onChange={(e) => setConfig({ ...config, barcode: e.target.value })}
-                placeholder="Enter barcode value"
+                placeholder={t('components.printExport.enterBarcodeValue')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
 
             <div>
               <label htmlFor="barcode-type" className="block text-sm font-medium text-gray-700 mb-1">
-                Barcode Type
+                {t('components.printExport.barcodeType')}
               </label>
               <select
                 id="barcode-type"
@@ -842,16 +850,16 @@ export function LabelPrinterDialog({
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
-                <option value="CODE128">Code 128</option>
-                <option value="QR">QR Code</option>
-                <option value="DATAMATRIX">Data Matrix</option>
+                <option value="CODE128">{t('components.printExport.code128')}</option>
+                <option value="QR">{t('components.printExport.qrCode')}</option>
+                <option value="DATAMATRIX">{t('components.printExport.dataMatrix')}</option>
               </select>
             </div>
           </div>
 
           {/* Preview */}
           <div className="flex flex-col items-center">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Preview</h3>
+            <h3 className="text-sm font-medium text-gray-700 mb-2">{t('components.printExport.preview')}</h3>
             <LabelPreview config={config} />
           </div>
         </div>
@@ -862,7 +870,7 @@ export function LabelPrinterDialog({
             onClick={onClose}
             className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
           >
-            Cancel
+            {t('components.printExport.cancel')}
           </button>
           <button
             type="button"
@@ -870,7 +878,7 @@ export function LabelPrinterDialog({
             disabled={isPrinting}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {isPrinting ? 'Printing...' : `Print ${config.quantity} Label${config.quantity > 1 ? 's' : ''}`}
+            {isPrinting ? t('components.printExport.printing') : t('components.printExport.printCountLabels', { count: String(config.quantity) })}
           </button>
         </div>
       </div>
@@ -934,6 +942,7 @@ export function PrintableTable({
  * Hook for document export functionality
  */
 export function useExport() {
+  const { t } = useI18n();
   const [progress, setProgress] = useState<ExportProgress>({
     state: EXPORT_STATE.IDLE,
     progress: 0,
@@ -955,14 +964,14 @@ export function useExport() {
         setProgress({
           state: EXPORT_STATE.PREPARING,
           progress: 10,
-          message: 'Preparing document...',
+          message: t('components.printExport.preparingDocument'),
           filename,
         });
 
         setProgress({
           state: EXPORT_STATE.GENERATING,
           progress: 40,
-          message: `Generating ${config.format.toUpperCase()}...`,
+          message: t('components.printExport.generatingFormat', { format: config.format.toUpperCase() }),
           filename,
         });
 
@@ -971,7 +980,7 @@ export function useExport() {
         setProgress({
           state: EXPORT_STATE.DOWNLOADING,
           progress: 80,
-          message: 'Downloading...',
+          message: t('components.printExport.downloading'),
           filename,
         });
 
@@ -988,7 +997,7 @@ export function useExport() {
         setProgress({
           state: EXPORT_STATE.COMPLETE,
           progress: 100,
-          message: 'Download complete',
+          message: t('components.printExport.downloadComplete'),
           filename,
         });
 
@@ -999,13 +1008,13 @@ export function useExport() {
         setProgress({
           state: EXPORT_STATE.ERROR,
           progress: 0,
-          message: 'Export failed',
+          message: t('components.printExport.exportFailed'),
           filename,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: error instanceof Error ? error.message : t('components.printExport.unknownError'),
         });
       }
     },
-    []
+    [t]
   );
 
   const reset = useCallback(() => {

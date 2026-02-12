@@ -84,6 +84,7 @@ class WorkOrderCreate(BaseModel):
     work_order_number: str = Field(..., min_length=1, max_length=50)
     external_reference: Optional[str] = Field(None, max_length=100)
     quote_id: Optional[UUID] = None
+    sales_order_id: Optional[UUID] = None
     product_id: UUID
     quantity_ordered: Decimal = Field(..., gt=0)
     priority: Optional[str] = Field(None)
@@ -607,6 +608,8 @@ async def create_work_order(
         batch_id=data.batch_id,
         notes=data.notes,
         production_notes=data.production_notes,
+        quote_id=data.quote_id,
+        sales_order_id=data.sales_order_id,
         created_by_id=current_user.id,
         updated_by_id=current_user.id,
     )
@@ -625,18 +628,20 @@ async def create_work_order(
             reasoning_id=x_reasoning_id,
         )
 
-        # Optional: bind to Quote (and implicitly RFQ if quote has rfq_id)
-        if data.quote_id is not None:
+        # Optional: bind to Quote (and implicitly RFQ if quote has rfq_id) + Sales Order
+        if data.quote_id is not None or data.sales_order_id is not None:
             rfq_id: str | None = None
-            q = await db.get(Quote, data.quote_id)
-            if q is not None and q.rfq_id is not None:
-                rfq_id = str(q.rfq_id)
+            if data.quote_id is not None:
+                q = await db.get(Quote, data.quote_id)
+                if q is not None and q.rfq_id is not None:
+                    rfq_id = str(q.rfq_id)
 
             await get_common_thread_service().bind(
                 db,
                 rfq_id=rfq_id,
-                quote_id=str(data.quote_id),
+                quote_id=str(data.quote_id) if data.quote_id else None,
                 work_order_id=str(work_order.id),
+                sales_order_id=str(data.sales_order_id) if data.sales_order_id else None,
                 created_by_id=getattr(current_user, "id", None),
                 reasoning_id=x_reasoning_id,
                 source="work_order_create",
@@ -654,7 +659,10 @@ async def create_work_order(
 
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         logger.exception("Failed to capture work order lineage/common-thread")
     
     # Initialize operations list for response

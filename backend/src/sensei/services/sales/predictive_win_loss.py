@@ -1004,13 +1004,18 @@ class PredictiveWinLossEngine(PersistentServiceMixin):
         self._shap_explainer = SHAPExplainer(self.model.predict, random_seed=random_seed)
         self._lime_explainer = LIMEExplainer(self.model.predict, random_seed=random_seed)
         
-        # Data storage
+        # Data storage (bounded to prevent OOM)
         self._historical_data: list[HistoricalRFQ] = []
         self._prediction_history: list[tuple[float, bool]] = []
+        self._max_historical_data: int = 50_000
+        self._max_prediction_history: int = 10_000
     
     def add_historical_data(self, data: list[HistoricalRFQ], async_train: bool = True) -> None:
         """Add historical RFQ data for training."""
         self._historical_data.extend(data)
+        # Evict oldest entries when exceeding limit
+        if len(self._historical_data) > self._max_historical_data:
+            self._historical_data = self._historical_data[-self._max_historical_data:]
         
         # Update feature statistics
         self.feature_engineer.compute_feature_stats(self._historical_data)
@@ -1035,6 +1040,9 @@ class PredictiveWinLossEngine(PersistentServiceMixin):
     def record_outcome(self, prediction: float, actual_outcome: bool) -> None:
         """Record actual outcome for a previous prediction."""
         self._prediction_history.append((prediction, actual_outcome))
+        # Evict oldest when exceeding limit
+        if len(self._prediction_history) > self._max_prediction_history:
+            self._prediction_history = self._prediction_history[-self._max_prediction_history:]
     
     def predict(
         self,

@@ -7,8 +7,7 @@ Implements Development Plan Section 22.3:
 - 3-Way Match: PO ↔ goods receipt ↔ supplier invoice
 - Payments: payment run preparation/approval/execution tracking (optionally to GL)
 
-Pure-Python and in-memory, consistent with existing service patterns.
-Persistence + APIs are planned later in 22.10.
+State is persisted via the service_state table for DB-backed continuity.
 """
 
 from __future__ import annotations
@@ -44,6 +43,397 @@ def _norm_currency(c: str) -> str:
     if len(cc) != 3 or not cc.isalpha():
         raise ValueError("Invalid currency")
     return cc
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_uuid(value: UUID | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_uuid(value: str | None) -> UUID | None:
+    if value is None:
+        return None
+    return UUID(value)
+
+
+def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "occurred_at": event.occurred_at.isoformat(),
+        "actor_id": event.actor_id,
+        "action": event.action,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "correlation_id": event.correlation_id,
+        "metadata": event.metadata,
+    }
+
+
+def _decode_audit_event(data: dict[str, Any]) -> "AuditEvent":
+    return AuditEvent(
+        id=UUID(data["id"]),
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        actor_id=data["actor_id"],
+        action=data["action"],
+        entity_type=data["entity_type"],
+        entity_id=data["entity_id"],
+        correlation_id=data.get("correlation_id", ""),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_pr_line(line: "PRLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "description": line.description,
+        "quantity": _encode_decimal(line.quantity),
+        "unit_price": _encode_decimal(line.unit_price),
+    }
+
+
+def _decode_pr_line(data: dict[str, Any]) -> "PRLine":
+    return PRLine(
+        sku=data.get("sku", ""),
+        description=data.get("description", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_price=Decimal(data.get("unit_price", "0")),
+    )
+
+
+def _encode_po_line(line: "POLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "description": line.description,
+        "quantity": _encode_decimal(line.quantity),
+        "unit_price": _encode_decimal(line.unit_price),
+    }
+
+
+def _decode_po_line(data: dict[str, Any]) -> "POLine":
+    return POLine(
+        sku=data.get("sku", ""),
+        description=data.get("description", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_price=Decimal(data.get("unit_price", "0")),
+    )
+
+
+def _encode_receipt_line(line: "ReceiptLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "quantity_received": _encode_decimal(line.quantity_received),
+    }
+
+
+def _decode_receipt_line(data: dict[str, Any]) -> "ReceiptLine":
+    return ReceiptLine(
+        sku=data.get("sku", ""),
+        quantity_received=Decimal(data.get("quantity_received", "0")),
+    )
+
+
+def _encode_supplier_invoice_line(line: "SupplierInvoiceLine") -> dict[str, Any]:
+    return {
+        "sku": line.sku,
+        "description": line.description,
+        "quantity": _encode_decimal(line.quantity),
+        "unit_price": _encode_decimal(line.unit_price),
+    }
+
+
+def _decode_supplier_invoice_line(data: dict[str, Any]) -> "SupplierInvoiceLine":
+    return SupplierInvoiceLine(
+        sku=data.get("sku", ""),
+        description=data.get("description", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_price=Decimal(data.get("unit_price", "0")),
+    )
+
+
+def _encode_requisition(req: "PurchaseRequisition") -> dict[str, Any]:
+    return {
+        "id": str(req.id),
+        "pr_number": req.pr_number,
+        "requested_by": req.requested_by,
+        "created_at": req.created_at.isoformat(),
+        "currency": req.currency,
+        "supplier_id": req.supplier_id,
+        "cost_center": req.cost_center,
+        "status": req.status.value,
+        "submitted_at": _encode_datetime(req.submitted_at),
+        "submitted_by": req.submitted_by,
+        "approved_at": _encode_datetime(req.approved_at),
+        "approved_by": req.approved_by,
+        "rejected_at": _encode_datetime(req.rejected_at),
+        "rejected_by": req.rejected_by,
+        "rejection_reason": req.rejection_reason,
+        "lines": [_encode_pr_line(line) for line in req.lines],
+        "metadata": req.metadata,
+    }
+
+
+def _decode_requisition(data: dict[str, Any]) -> "PurchaseRequisition":
+    return PurchaseRequisition(
+        id=UUID(data["id"]),
+        pr_number=data.get("pr_number", ""),
+        requested_by=data.get("requested_by", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        currency=data.get("currency", ""),
+        supplier_id=data.get("supplier_id"),
+        cost_center=data.get("cost_center"),
+        status=PRStatus(data.get("status", PRStatus.DRAFT.value)),
+        submitted_at=_decode_datetime(data.get("submitted_at")),
+        submitted_by=data.get("submitted_by"),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        approved_by=data.get("approved_by"),
+        rejected_at=_decode_datetime(data.get("rejected_at")),
+        rejected_by=data.get("rejected_by"),
+        rejection_reason=data.get("rejection_reason"),
+        lines=[_decode_pr_line(line) for line in data.get("lines", [])],
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_purchase_order(po: "PurchaseOrder") -> dict[str, Any]:
+    return {
+        "id": str(po.id),
+        "po_number": po.po_number,
+        "supplier_id": po.supplier_id,
+        "created_at": po.created_at.isoformat(),
+        "created_by": po.created_by,
+        "currency": po.currency,
+        "status": po.status.value,
+        "source_pr_id": _encode_uuid(po.source_pr_id),
+        "cost_center": po.cost_center,
+        "approved_at": _encode_datetime(po.approved_at),
+        "approved_by": po.approved_by,
+        "sent_at": _encode_datetime(po.sent_at),
+        "sent_by": po.sent_by,
+        "lines": [_encode_po_line(line) for line in po.lines],
+        "metadata": po.metadata,
+    }
+
+
+def _decode_purchase_order(data: dict[str, Any]) -> "PurchaseOrder":
+    return PurchaseOrder(
+        id=UUID(data["id"]),
+        po_number=data.get("po_number", ""),
+        supplier_id=data.get("supplier_id", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        currency=data.get("currency", ""),
+        status=POStatus(data.get("status", POStatus.DRAFT.value)),
+        source_pr_id=_decode_uuid(data.get("source_pr_id")),
+        cost_center=data.get("cost_center"),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        approved_by=data.get("approved_by"),
+        sent_at=_decode_datetime(data.get("sent_at")),
+        sent_by=data.get("sent_by"),
+        lines=[_decode_po_line(line) for line in data.get("lines", [])],
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_goods_receipt(gr: "GoodsReceipt") -> dict[str, Any]:
+    return {
+        "id": str(gr.id),
+        "po_id": str(gr.po_id),
+        "received_at": gr.received_at.isoformat(),
+        "received_by": gr.received_by,
+        "lines": [_encode_receipt_line(line) for line in gr.lines],
+        "reference": gr.reference,
+    }
+
+
+def _decode_goods_receipt(data: dict[str, Any]) -> "GoodsReceipt":
+    return GoodsReceipt(
+        id=UUID(data["id"]),
+        po_id=UUID(data["po_id"]),
+        received_at=datetime.fromisoformat(data["received_at"]),
+        received_by=data.get("received_by", ""),
+        lines=[_decode_receipt_line(line) for line in data.get("lines", [])],
+        reference=data.get("reference"),
+    )
+
+
+def _encode_supplier_invoice(inv: "SupplierInvoice") -> dict[str, Any]:
+    return {
+        "id": str(inv.id),
+        "supplier_invoice_number": inv.supplier_invoice_number,
+        "supplier_id": inv.supplier_id,
+        "invoice_date": inv.invoice_date.isoformat(),
+        "due_date": inv.due_date.isoformat(),
+        "currency": inv.currency,
+        "created_at": inv.created_at.isoformat(),
+        "created_by": inv.created_by,
+        "status": inv.status.value,
+        "po_id": _encode_uuid(inv.po_id),
+        "memo": inv.memo,
+        "approved_at": _encode_datetime(inv.approved_at),
+        "approved_by": inv.approved_by,
+        "posted_at": _encode_datetime(inv.posted_at),
+        "posted_by": inv.posted_by,
+        "paid_at": _encode_datetime(inv.paid_at),
+        "paid_by": inv.paid_by,
+        "lines": [_encode_supplier_invoice_line(line) for line in inv.lines],
+        "metadata": inv.metadata,
+    }
+
+
+def _decode_supplier_invoice(data: dict[str, Any]) -> "SupplierInvoice":
+    return SupplierInvoice(
+        id=UUID(data["id"]),
+        supplier_invoice_number=data.get("supplier_invoice_number", ""),
+        supplier_id=data.get("supplier_id", ""),
+        invoice_date=date.fromisoformat(data["invoice_date"]),
+        due_date=date.fromisoformat(data["due_date"]),
+        currency=data.get("currency", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        status=InvoiceStatus(data.get("status", InvoiceStatus.DRAFT.value)),
+        po_id=_decode_uuid(data.get("po_id")),
+        memo=data.get("memo"),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        approved_by=data.get("approved_by"),
+        posted_at=_decode_datetime(data.get("posted_at")),
+        posted_by=data.get("posted_by"),
+        paid_at=_decode_datetime(data.get("paid_at")),
+        paid_by=data.get("paid_by"),
+        lines=[_decode_supplier_invoice_line(line) for line in data.get("lines", [])],
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_payment(payment: "Payment") -> dict[str, Any]:
+    return {
+        "id": str(payment.id),
+        "supplier_id": payment.supplier_id,
+        "amount": _encode_decimal(payment.amount),
+        "currency": payment.currency,
+        "executed_at": payment.executed_at.isoformat(),
+        "reference": payment.reference,
+        "invoice_ids": [str(iid) for iid in payment.invoice_ids],
+    }
+
+
+def _decode_payment(data: dict[str, Any]) -> "Payment":
+    return Payment(
+        id=UUID(data["id"]),
+        supplier_id=data.get("supplier_id", ""),
+        amount=Decimal(data.get("amount", "0")),
+        currency=data.get("currency", ""),
+        executed_at=datetime.fromisoformat(data["executed_at"]),
+        reference=data.get("reference"),
+        invoice_ids=[UUID(iid) for iid in data.get("invoice_ids", [])],
+    )
+
+
+def _encode_payment_run(payrun: "PaymentRun") -> dict[str, Any]:
+    return {
+        "id": str(payrun.id),
+        "run_number": payrun.run_number,
+        "created_at": payrun.created_at.isoformat(),
+        "created_by": payrun.created_by,
+        "currency": payrun.currency,
+        "status": payrun.status.value,
+        "invoice_ids": [str(iid) for iid in payrun.invoice_ids],
+        "approved_at": _encode_datetime(payrun.approved_at),
+        "approved_by": payrun.approved_by,
+        "executed_at": _encode_datetime(payrun.executed_at),
+        "executed_by": payrun.executed_by,
+        "payments": [_encode_payment(p) for p in payrun.payments],
+    }
+
+
+def _decode_payment_run(data: dict[str, Any]) -> "PaymentRun":
+    return PaymentRun(
+        id=UUID(data["id"]),
+        run_number=data.get("run_number", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        currency=data.get("currency", ""),
+        status=PaymentRunStatus(data.get("status", PaymentRunStatus.DRAFT.value)),
+        invoice_ids=[UUID(iid) for iid in data.get("invoice_ids", [])],
+        approved_at=_decode_datetime(data.get("approved_at")),
+        approved_by=data.get("approved_by"),
+        executed_at=_decode_datetime(data.get("executed_at")),
+        executed_by=data.get("executed_by"),
+        payments=[_decode_payment(p) for p in data.get("payments", [])],
+    )
+
+
+def _encode_config(cfg: "APConfig") -> dict[str, Any]:
+    return {
+        "base_currency": cfg.base_currency,
+        "pr_prefix": cfg.pr_prefix,
+        "po_prefix": cfg.po_prefix,
+        "payrun_prefix": cfg.payrun_prefix,
+        "next_pr_seq": cfg.next_pr_seq,
+        "next_po_seq": cfg.next_po_seq,
+        "next_payrun_seq": cfg.next_payrun_seq,
+        "cash_account_code": cfg.cash_account_code,
+        "ap_account_code": cfg.ap_account_code,
+        "expense_account_code": cfg.expense_account_code,
+        "qty_tolerance_pct": _encode_decimal(cfg.qty_tolerance_pct),
+        "price_tolerance_pct": _encode_decimal(cfg.price_tolerance_pct),
+    }
+
+
+def _decode_config(data: dict[str, Any], fallback: "APConfig") -> "APConfig":
+    return APConfig(
+        base_currency=data.get("base_currency", fallback.base_currency),
+        pr_prefix=data.get("pr_prefix", fallback.pr_prefix),
+        po_prefix=data.get("po_prefix", fallback.po_prefix),
+        payrun_prefix=data.get("payrun_prefix", fallback.payrun_prefix),
+        next_pr_seq=int(data.get("next_pr_seq", fallback.next_pr_seq)),
+        next_po_seq=int(data.get("next_po_seq", fallback.next_po_seq)),
+        next_payrun_seq=int(data.get("next_payrun_seq", fallback.next_payrun_seq)),
+        cash_account_code=data.get("cash_account_code", fallback.cash_account_code),
+        ap_account_code=data.get("ap_account_code", fallback.ap_account_code),
+        expense_account_code=data.get("expense_account_code", fallback.expense_account_code),
+        qty_tolerance_pct=Decimal(data.get("qty_tolerance_pct", str(fallback.qty_tolerance_pct))),
+        price_tolerance_pct=Decimal(data.get("price_tolerance_pct", str(fallback.price_tolerance_pct))),
+    )
 
 
 _AP_READ_ROLES: set[str] = {
@@ -359,6 +749,172 @@ class AccountsPayableService(PersistentServiceMixin):
         self._payruns: dict[UUID, PaymentRun] = {}
 
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        cfg_data = await self.load_state(_DEFAULT_TENANT_ID, "config") or {}
+        prs_data = await self.load_state(_DEFAULT_TENANT_ID, "prs") or {}
+        pos_data = await self.load_state(_DEFAULT_TENANT_ID, "pos") or {}
+        receipts_data = await self.load_state(_DEFAULT_TENANT_ID, "receipts") or {}
+        invoices_data = await self.load_state(_DEFAULT_TENANT_ID, "invoices") or {}
+        payruns_data = await self.load_state(_DEFAULT_TENANT_ID, "payruns") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        if cfg_data:
+            self._cfg = _decode_config(cfg_data, self._cfg)
+
+        self._prs = {UUID(pid): _decode_requisition(p) for pid, p in prs_data.items()}
+        self._pos = {UUID(pid): _decode_purchase_order(p) for pid, p in pos_data.items()}
+        self._receipts = {UUID(rid): _decode_goods_receipt(r) for rid, r in receipts_data.items()}
+        self._invoices = {UUID(iid): _decode_supplier_invoice(i) for iid, i in invoices_data.items()}
+        self._payruns = {UUID(pid): _decode_payment_run(p) for pid, p in payruns_data.items()}
+        self._audit = [_decode_audit_event(a) for a in audit_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        cfg_data = _encode_config(self._cfg)
+        prs_data = {str(pid): _encode_requisition(pr) for pid, pr in self._prs.items()}
+        pos_data = {str(pid): _encode_purchase_order(po) for pid, po in self._pos.items()}
+        receipts_data = {str(rid): _encode_goods_receipt(gr) for rid, gr in self._receipts.items()}
+        invoices_data = {str(iid): _encode_supplier_invoice(inv) for iid, inv in self._invoices.items()}
+        payruns_data = {str(pid): _encode_payment_run(pr) for pid, pr in self._payruns.items()}
+        audit_data = [_encode_audit_event(a) for a in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "config", cfg_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "prs", prs_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "pos", pos_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "receipts", receipts_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "invoices", invoices_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "payruns", payruns_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
+
+    async def create_requisition_async(self, **kwargs: Any) -> PurchaseRequisition:
+        await self._ensure_loaded()
+        pr = self.create_requisition(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def submit_requisition_async(self, **kwargs: Any) -> PurchaseRequisition:
+        await self._ensure_loaded()
+        pr = self.submit_requisition(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def approve_requisition_async(self, **kwargs: Any) -> PurchaseRequisition:
+        await self._ensure_loaded()
+        pr = self.approve_requisition(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def reject_requisition_async(self, **kwargs: Any) -> PurchaseRequisition:
+        await self._ensure_loaded()
+        pr = self.reject_requisition(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def get_requisition_async(self, *, actor_roles: Iterable[str], pr_id: UUID) -> PurchaseRequisition | None:
+        await self._ensure_loaded()
+        return self.get_requisition(actor_roles=actor_roles, pr_id=pr_id)
+
+    async def create_po_from_requisition_async(self, **kwargs: Any) -> PurchaseOrder:
+        await self._ensure_loaded()
+        po = self.create_po_from_requisition(**kwargs)
+        await self.persist_all()
+        return po
+
+    async def approve_po_async(self, **kwargs: Any) -> PurchaseOrder:
+        await self._ensure_loaded()
+        po = self.approve_po(**kwargs)
+        await self.persist_all()
+        return po
+
+    async def send_po_async(self, **kwargs: Any) -> PurchaseOrder:
+        await self._ensure_loaded()
+        po = self.send_po(**kwargs)
+        await self.persist_all()
+        return po
+
+    async def receive_goods_async(self, **kwargs: Any) -> GoodsReceipt:
+        await self._ensure_loaded()
+        gr = self.receive_goods(**kwargs)
+        await self.persist_all()
+        return gr
+
+    async def close_po_async(self, **kwargs: Any) -> PurchaseOrder:
+        await self._ensure_loaded()
+        po = self.close_po(**kwargs)
+        await self.persist_all()
+        return po
+
+    async def get_po_async(self, *, actor_roles: Iterable[str], po_id: UUID) -> PurchaseOrder | None:
+        await self._ensure_loaded()
+        return self.get_po(actor_roles=actor_roles, po_id=po_id)
+
+    async def create_supplier_invoice_async(self, **kwargs: Any) -> SupplierInvoice:
+        await self._ensure_loaded()
+        inv = self.create_supplier_invoice(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def submit_supplier_invoice_async(self, **kwargs: Any) -> SupplierInvoice:
+        await self._ensure_loaded()
+        inv = self.submit_supplier_invoice(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def three_way_match_async(self, *, actor_roles: Iterable[str], invoice_id: UUID) -> ThreeWayMatchResult:
+        await self._ensure_loaded()
+        return self.three_way_match(actor_roles=actor_roles, invoice_id=invoice_id)
+
+    async def approve_supplier_invoice_async(self, **kwargs: Any) -> SupplierInvoice:
+        await self._ensure_loaded()
+        inv = self.approve_supplier_invoice(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def post_supplier_invoice_async(self, **kwargs: Any) -> SupplierInvoice:
+        await self._ensure_loaded()
+        inv = self.post_supplier_invoice(**kwargs)
+        await self.persist_all()
+        return inv
+
+    async def get_supplier_invoice_async(self, *, actor_roles: Iterable[str], invoice_id: UUID) -> SupplierInvoice | None:
+        await self._ensure_loaded()
+        return self.get_supplier_invoice(actor_roles=actor_roles, invoice_id=invoice_id)
+
+    async def create_payment_run_async(self, **kwargs: Any) -> PaymentRun:
+        await self._ensure_loaded()
+        pr = self.create_payment_run(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def approve_payment_run_async(self, **kwargs: Any) -> PaymentRun:
+        await self._ensure_loaded()
+        pr = self.approve_payment_run(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def execute_payment_run_async(self, **kwargs: Any) -> PaymentRun:
+        await self._ensure_loaded()
+        pr = self.execute_payment_run(**kwargs)
+        await self.persist_all()
+        return pr
+
+    async def get_payment_run_async(self, *, actor_roles: Iterable[str], payrun_id: UUID) -> PaymentRun | None:
+        await self._ensure_loaded()
+        return self.get_payment_run(actor_roles=actor_roles, payrun_id=payrun_id)
 
     # ------------------------------------------------------------------
     # Audit

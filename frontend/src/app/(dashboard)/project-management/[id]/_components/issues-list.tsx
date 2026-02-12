@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent } from '@/components/ui/card';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface IssuesListProps {
   projectId: string;
@@ -42,6 +43,7 @@ export function IssuesList({ projectId }: IssuesListProps) {
     commentsByIssueId, fetchIssueComments, createIssueComment,
     selectedProject
   } = useProjectManagementStore();
+  const { t } = useI18n();
   
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedIssue, setSelectedIssue] = React.useState<Issue | null>(null);
@@ -127,19 +129,19 @@ export function IssuesList({ projectId }: IssuesListProps) {
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Issues</h2>
+        <h2 className="text-xl font-bold">{t('pages.projectManagement.detail.issues')}</h2>
         <div className="flex items-center space-x-2">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
-              placeholder="Search issues..." 
+              placeholder={t('pages.projectManagement.issues.searchPlaceholder')} 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 w-[250px]" 
             />
           </div>
           <Button onClick={() => { setViewMode('create'); setIsSheetOpen(true); }}>
-            <Plus className="mr-2 h-4 w-4" /> New Issue
+            <Plus className="mr-2 h-4 w-4" /> {t('pages.projectManagement.issues.newIssue')}
           </Button>
         </div>
       </div>
@@ -148,7 +150,7 @@ export function IssuesList({ projectId }: IssuesListProps) {
         <div className="space-y-2 pr-4">
           {filteredIssues.length === 0 && (
             <div className="text-center py-10 border-2 border-dashed rounded-lg text-muted-foreground">
-              No issues found.
+              {t('pages.projectManagement.issues.noIssuesFound')}
             </div>
           )}
           {filteredIssues.map(issue => (
@@ -185,22 +187,22 @@ export function IssuesList({ projectId }: IssuesListProps) {
           {viewMode === 'create' && (
             <>
               <SheetHeader>
-                <SheetTitle>Create New Issue</SheetTitle>
-                <SheetDescription>Report a bug, improvement, or other tracked item.</SheetDescription>
+                <SheetTitle>{t('pages.projectManagement.issues.createNewIssue')}</SheetTitle>
+                <SheetDescription>{t('pages.projectManagement.issues.createDescription')}</SheetDescription>
               </SheetHeader>
               <div className="mt-6 space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Subject *</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.issues.subject')} *</label>
                   <Input 
-                    placeholder="Brief summary of the issue"
+                    placeholder={t('pages.projectManagement.issues.subjectPlaceholder')}
                     value={newIssueSubject}
                     onChange={(e) => setNewIssueSubject(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Description</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.issues.description')}</label>
                   <Textarea 
-                    placeholder="Steps to reproduce, expected vs actual behavior..."
+                    placeholder={t('pages.projectManagement.issues.descriptionPlaceholder')}
                     value={newIssueDescription}
                     onChange={(e) => setNewIssueDescription(e.target.value)}
                     rows={4}
@@ -208,42 +210,42 @@ export function IssuesList({ projectId }: IssuesListProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Type</label>
+                    <label className="text-sm font-medium">{t('pages.projectManagement.issues.type')}</label>
                     <Select value={newIssueType} onValueChange={(v) => setNewIssueType(v as IssueType)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="bug">Bug</SelectItem>
-                        <SelectItem value="improvement">Improvement</SelectItem>
-                        <SelectItem value="task">Task</SelectItem>
-                        <SelectItem value="question">Question</SelectItem>
-                        <SelectItem value="incident">Incident</SelectItem>
-                        <SelectItem value="ncr">NCR</SelectItem>
-                        <SelectItem value="safety">Safety</SelectItem>
+                        <SelectItem value="bug">{t('pages.projectManagement.issues.types.bug')}</SelectItem>
+                        <SelectItem value="improvement">{t('pages.projectManagement.issues.types.improvement')}</SelectItem>
+                        <SelectItem value="task">{t('pages.projectManagement.issues.types.task')}</SelectItem>
+                        <SelectItem value="question">{t('pages.projectManagement.issues.types.question')}</SelectItem>
+                        <SelectItem value="incident">{t('pages.projectManagement.issues.types.incident')}</SelectItem>
+                        <SelectItem value="ncr">{t('pages.projectManagement.issues.types.ncr')}</SelectItem>
+                        <SelectItem value="safety">{t('pages.projectManagement.issues.types.safety')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Severity</label>
+                    <label className="text-sm font-medium">{t('pages.projectManagement.issues.severity')}</label>
                     <Select value={newIssueSeverity} onValueChange={(v) => setNewIssueSeverity(v as IssueSeverity)}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="wishlist">Wishlist</SelectItem>
-                        <SelectItem value="minor">Minor</SelectItem>
-                        <SelectItem value="normal">Normal</SelectItem>
-                        <SelectItem value="important">Important</SelectItem>
-                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="wishlist">{t('pages.projectManagement.issues.severities.wishlist')}</SelectItem>
+                        <SelectItem value="minor">{t('pages.projectManagement.issues.severities.minor')}</SelectItem>
+                        <SelectItem value="normal">{t('pages.projectManagement.issues.severities.normal')}</SelectItem>
+                        <SelectItem value="important">{t('pages.projectManagement.issues.severities.important')}</SelectItem>
+                        <SelectItem value="critical">{t('pages.projectManagement.issues.severities.critical')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setIsSheetOpen(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => setIsSheetOpen(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleCreateIssue} disabled={isSubmitting}>
-                    {isSubmitting ? 'Creating...' : 'Create Issue'}
+                    {isSubmitting ? t('pages.projectManagement.issues.creating') : t('pages.projectManagement.issues.createIssue')}
                   </Button>
                 </div>
               </div>
@@ -263,7 +265,7 @@ export function IssuesList({ projectId }: IssuesListProps) {
               <div className="mt-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Status</label>
+                    <label className="text-sm font-medium">{t('pages.projectManagement.issues.status')}</label>
                     <Select 
                       defaultValue={selectedIssue.status} 
                       onValueChange={(v) => handleUpdateIssue({ status: v as IssueStatus })}
@@ -272,17 +274,17 @@ export function IssuesList({ projectId }: IssuesListProps) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="new">New</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="ready_for_test">Ready for Test</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
-                        <SelectItem value="rejected">Rejected</SelectItem>
-                        <SelectItem value="postponed">Postponed</SelectItem>
+                        <SelectItem value="new">{t('pages.projectManagement.issues.statuses.new')}</SelectItem>
+                        <SelectItem value="in_progress">{t('pages.projectManagement.issues.statuses.inProgress')}</SelectItem>
+                        <SelectItem value="ready_for_test">{t('pages.projectManagement.issues.statuses.readyForTest')}</SelectItem>
+                        <SelectItem value="closed">{t('pages.projectManagement.issues.statuses.closed')}</SelectItem>
+                        <SelectItem value="rejected">{t('pages.projectManagement.issues.statuses.rejected')}</SelectItem>
+                        <SelectItem value="postponed">{t('pages.projectManagement.issues.statuses.postponed')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Severity</label>
+                    <label className="text-sm font-medium">{t('pages.projectManagement.issues.severity')}</label>
                     <Select 
                       defaultValue={selectedIssue.severity}
                       onValueChange={(v) => handleUpdateIssue({ severity: v as IssueSeverity })}
@@ -291,20 +293,20 @@ export function IssuesList({ projectId }: IssuesListProps) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="wishlist">Wishlist</SelectItem>
-                        <SelectItem value="minor">Minor</SelectItem>
-                        <SelectItem value="normal">Normal</SelectItem>
-                        <SelectItem value="important">Important</SelectItem>
-                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="wishlist">{t('pages.projectManagement.issues.severities.wishlist')}</SelectItem>
+                        <SelectItem value="minor">{t('pages.projectManagement.issues.severities.minor')}</SelectItem>
+                        <SelectItem value="normal">{t('pages.projectManagement.issues.severities.normal')}</SelectItem>
+                        <SelectItem value="important">{t('pages.projectManagement.issues.severities.important')}</SelectItem>
+                        <SelectItem value="critical">{t('pages.projectManagement.issues.severities.critical')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Description</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.issues.description')}</label>
                   <Textarea 
-                    placeholder="Add a description..."
+                    placeholder={t('pages.projectManagement.issues.addDescription')}
                     defaultValue={selectedIssue.description ?? ''}
                     onBlur={(e) => handleUpdateIssue({ description: e.target.value })}
                     rows={4}
@@ -316,7 +318,7 @@ export function IssuesList({ projectId }: IssuesListProps) {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4" />
-                    <h3 className="font-medium">Comments</h3>
+                    <h3 className="font-medium">{t('pages.projectManagement.issues.comments')}</h3>
                     <Badge variant="secondary">{currentComments.length}</Badge>
                   </div>
                   
@@ -332,7 +334,7 @@ export function IssuesList({ projectId }: IssuesListProps) {
                     
                     <div className="flex items-start gap-2">
                       <Textarea 
-                        placeholder="Add a comment..."
+                        placeholder={t('pages.projectManagement.issues.addComment')}
                         value={newCommentContent}
                         onChange={(e) => setNewCommentContent(e.target.value)}
                         rows={2}

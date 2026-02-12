@@ -19,12 +19,11 @@ export default function OfflinePage() {
           
           <div className="space-y-3">
             <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-              Connection Lost
+              {t('pages.offline.title')}
             </h1>
             
             <p className="text-[11px] font-mono font-bold text-muted-foreground uppercase tracking-widest">
-              The Sensei OS intelligence link has been interrupted. 
-              Some core features are currently unavailable.
+              {t('pages.offline.description')}
             </p>
           </div>
 
@@ -35,7 +34,7 @@ export default function OfflinePage() {
               size="default"
             >
               <RefreshCw className="mr-2 h-3.5 w-3.5" />
-              Re-establish Link
+              {t('pages.offline.reconnect')}
             </Button>
             
             <Button
@@ -46,31 +45,31 @@ export default function OfflinePage() {
             >
               <Link href="/">
                 <Home className="mr-2 h-3.5 w-3.5" />
-                Return to Base
+                {t('pages.offline.returnHome')}
               </Link>
             </Button>
           </div>
 
           <div className="p-5 bg-rams-panel/20 border border-rams-line text-left">
-            <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-rams-orange mb-3">Offline Capabilities</h2>
+            <h2 className="text-[9px] font-black uppercase tracking-[0.2em] text-rams-orange mb-3">{t('pages.offline.capabilitiesTitle')}</h2>
             <ul className="text-[10px] font-mono font-bold text-muted-foreground/60 space-y-2 uppercase tracking-widest">
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 bg-rams-green" />
-                Cached intelligence data
+                {t('pages.offline.cachedData')}
               </li>
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 bg-rams-green" />
-                Previously synchronized pages
+                {t('pages.offline.syncedPages')}
               </li>
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 bg-rams-green" />
-                Draft synchronization on reconnect
+                {t('pages.offline.draftSync')}
               </li>
             </ul>
           </div>
 
           <p className="text-[9px] uppercase tracking-[0.3em] font-black text-muted-foreground/30 pt-4">
-            Sensei OS • Precision Continuity
+            {t('pages.offline.branding')}
           </p>
         </div>
       </main>

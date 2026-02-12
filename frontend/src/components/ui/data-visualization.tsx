@@ -21,6 +21,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // CONSTANTS
@@ -415,6 +416,7 @@ export function Sparkline({
   className = '',
   ariaLabel = 'Trend chart',
 }: SparklineProps) {
+  const { t } = useI18n();
   if (data.length === 0) {
     return (
       <div
@@ -423,7 +425,7 @@ export function Sparkline({
         role="img"
         aria-label={ariaLabel}
       >
-        <span className="text-[8px] font-bold uppercase tracking-widest">No data</span>
+        <span className="text-[8px] font-bold uppercase tracking-widest">{t('components.dataVisualization.noData')}</span>
       </div>
     );
   }

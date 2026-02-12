@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays, addDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { useI18n } from '@/contexts/i18n-context';
 
 export interface GanttTask {
   id: string;
@@ -21,7 +22,8 @@ export interface GanttChartProps {
 }
 
 export function GanttChart({ tasks, className }: GanttChartProps) {
-  if (!tasks.length) return <div className="text-center py-10 text-muted-foreground border rounded-lg">No tasks to visualize in Gantt</div>;
+  const { t } = useI18n();
+  if (!tasks.length) return <div className="text-center py-10 text-muted-foreground border rounded-lg">{t('components.ganttChart.noTasks')}</div>;
 
   // Calculate timeline range
   const minDate = new Date(Math.min(...tasks.map(t => t.start.getTime())));
@@ -46,7 +48,7 @@ export function GanttChart({ tasks, className }: GanttChartProps) {
         <div style={{ width: totalWidth, height: totalHeight }} className="relative font-sans text-xs">
         {/* Header - Days */}
         <div className="flex sticky top-0 z-20 bg-muted/50 border-b h-[40px]">
-          <div style={{ width: labelWidth }} className="flex-shrink-0 border-r p-2 font-bold flex items-center">Task Name</div>
+          <div style={{ width: labelWidth }} className="flex-shrink-0 border-r p-2 font-bold flex items-center">{t('components.ganttChart.taskName')}</div>
           <div className="flex">
             {Array.from({ length: totalDays }).map((_, i) => {
               const date = addDays(startDate, i);

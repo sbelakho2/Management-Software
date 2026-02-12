@@ -60,6 +60,7 @@ import {
   type ActionVariant,
   formatEntityType,
 } from '@/stores/quick-actions-store';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // Icon Mapping
@@ -173,6 +174,7 @@ interface OverflowMenuProps {
 }
 
 function OverflowMenu({ actions, onActionClick, executingActionId }: OverflowMenuProps) {
+  const { t } = useI18n();
   if (actions.length === 0) {
     return null;
   }
@@ -180,7 +182,7 @@ function OverflowMenu({ actions, onActionClick, executingActionId }: OverflowMen
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="More actions">
+        <Button variant="ghost" size="icon" aria-label={t('components.quickActions.moreActions')}>
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -268,6 +270,7 @@ export function QuickActionsBar({
     getSecondaryActions,
     getOverflowActions,
   } = useQuickActionsStore();
+  const { t } = useI18n();
   
   // Use prop context if provided, otherwise use store context
   const context = contextProp || storeContext;
@@ -409,7 +412,7 @@ export function QuickActionsBar({
             variant="ghost"
             size="icon-sm"
             onClick={() => useQuickActionsStore.getState().setBarVisible(false)}
-            aria-label="Close quick actions"
+            aria-label={t('components.quickActions.closeQuickActions')}
             className="ml-2"
           >
             <X className="h-4 w-4" />
@@ -421,7 +424,7 @@ export function QuickActionsBar({
       <AlertDialog open={confirmation.isOpen} onOpenChange={(open) => !open && hideConfirmation()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Action</AlertDialogTitle>
+            <AlertDialogTitle>{t('components.quickActions.confirmAction')}</AlertDialogTitle>
             <AlertDialogDescription>{confirmation.message}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

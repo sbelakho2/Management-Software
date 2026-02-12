@@ -4,7 +4,7 @@ Warehouse/Inventory API Endpoints.
 Provides endpoints for warehouse dashboard, inventory stats, stock movements, and low stock alerts.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, List, Optional
 from uuid import UUID
@@ -105,7 +105,7 @@ class LocationResponse(BaseModel):
 
 class InventoryLevelResponse(BaseModel):
     id: str
-    product_id: int
+    product_id: str
     product_name: str
     location_id: str
     location_name: str
@@ -120,11 +120,10 @@ class InventoryLevelResponse(BaseModel):
 
 def format_time_ago(dt: datetime) -> str:
     """Convert datetime to human-readable 'X ago' format."""
-    from datetime import timezone as tz
-    now = datetime.now(tz.utc).replace(tzinfo=None)  # naive UTC
-    # Ensure dt is also naive for comparison
-    if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
+    # Ensure dt is timezone-aware for comparison
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     diff = now - dt
     
     if diff.days > 0:
@@ -378,7 +377,7 @@ async def get_inventory_levels(
     db: DBSession,
     current_user: CurrentUser,
     location_id: Optional[UUID] = None,
-    product_id: Optional[int] = None,
+    product_id: Optional[UUID] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500)
 ) -> Any:
@@ -402,7 +401,7 @@ async def get_inventory_levels(
     for level, product, location in rows:
         items.append({
             "id": str(level.id),
-            "product_id": level.product_id,
+            "product_id": str(level.product_id),
             "product_name": product.name if product else 'Unknown',
             "location_id": str(level.location_id),
             "location_name": location.name if location else 'Unknown',
@@ -428,8 +427,8 @@ async def sync_inventory(
             "success": True,
             "message": "Inventory synchronization completed",
             "stats": stats,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        logger.error(f"Sync failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Synchronization failed: {str(e)}")
+        logger.error("Sync failed: %s", e)
+        raise HTTPException(status_code=500, detail="Synchronization failed. Check server logs for details.")

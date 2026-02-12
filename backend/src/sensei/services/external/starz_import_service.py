@@ -2353,20 +2353,163 @@ class StarzErpImportService:
             await self.sensei_session.commit()
     
     async def _import_wms_transactions(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("WMS transactions imported via WMS module")
-    
+        """Import WMS transactions as StockMove records."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            txns = (await starz_session.execute(select(StarzWmsTransaction))).scalars().all()
+            result.total_source = len(txns)
+
+            for t in txns:
+                try:
+                    # Resolve FKs
+                    product_id = self._get_cached_id("article", None)  # look up by item_sku
+                    # Try to find product by SKU
+                    if t.item_sku:
+                        prod = await self.sensei_session.scalar(
+                            select(Product).where(Product.part_number == t.item_sku)
+                        )
+                        if prod:
+                            product_id = prod.id
+
+                    if not product_id:
+                        result.skipped += 1
+                        continue
+
+                    from_loc = self._get_cached_id("location", t.from_location_id)
+                    to_loc = self._get_cached_id("location", t.to_location_id)
+
+                    if not from_loc or not to_loc:
+                        result.skipped += 1
+                        continue
+
+                    move = StockMove(
+                        product_id=product_id,
+                        source_location_id=from_loc,
+                        destination_location_id=to_loc,
+                        quantity=Decimal(str(t.quantity)),
+                        status="done",
+                        reference=f"STARZ-WMS-{t.id}",
+                        lpn_id=self._get_cached_id("lpn", t.lpn_id),
+                    )
+                    self.sensei_session.add(move)
+                    await self.sensei_session.flush()
+                    self._cache_id("wms_txn", t.id, move.id)
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"WMS Txn {t.id}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_inventory_counts(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Inventory counts imported via WMS module")
+        """Import inventory counts, updating InventoryLevel records."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            counts = (await starz_session.execute(select(StarzInventoryCount))).scalars().all()
+            result.total_source = len(counts)
+
+            for c in counts:
+                try:
+                    # Resolve product by SKU
+                    product_id = None
+                    if c.item_sku:
+                        prod = await self.sensei_session.scalar(
+                            select(Product).where(Product.part_number == c.item_sku)
+                        )
+                        if prod:
+                            product_id = prod.id
+
+                    if not product_id:
+                        result.skipped += 1
+                        continue
+
+                    location_id = self._get_cached_id("location", c.location_id)
+                    if not location_id:
+                        # Fall back to warehouse default location
+                        wh_id = self._get_cached_id("warehouse", c.warehouse_id)
+                        if wh_id:
+                            loc = await self.sensei_session.scalar(
+                                select(StockLocation).where(StockLocation.warehouse_id == wh_id).limit(1)
+                            )
+                            if loc:
+                                location_id = loc.id
+
+                    if not location_id:
+                        result.skipped += 1
+                        continue
+
+                    # Upsert inventory level
+                    existing = await self.sensei_session.scalar(
+                        select(InventoryLevel).where(
+                            InventoryLevel.product_id == product_id,
+                            InventoryLevel.location_id == location_id,
+                        )
+                    )
+
+                    if existing:
+                        if c.counted_quantity is not None:
+                            existing.quantity_on_hand = Decimal(str(c.counted_quantity))
+                            existing.last_counted_at = c.counted_date or c.scheduled_date
+                        result.updated += 1
+                    else:
+                        level = InventoryLevel(
+                            product_id=product_id,
+                            location_id=location_id,
+                            quantity_on_hand=Decimal(str(c.counted_quantity or c.system_quantity or 0)),
+                            last_counted_at=c.counted_date or c.scheduled_date,
+                        )
+                        self.sensei_session.add(level)
+                        result.imported += 1
+
+                    await self.sensei_session.flush()
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"InvCount {c.id}: {e}")
+
+            await self.sensei_session.commit()
     
     # =========================================================================
     # Purchasing Importers
     # =========================================================================
     
     async def _import_price_requests(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Price requests imported via Purchasing module")
+        """Import supplier price requests as PurchaseRequisitions."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            reqs = (await starz_session.execute(select(StarzSupplierPriceRequest))).scalars().all()
+            result.total_source = len(reqs)
+
+            for r in reqs:
+                try:
+                    pr_number = f"PR-{r.reference}"
+                    existing = await self.sensei_session.scalar(
+                        select(PurchaseRequisition).where(PurchaseRequisition.pr_number == pr_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("price_request", r.id, existing.id)
+                        continue
+
+                    supplier_id = self._get_cached_id("supplier", r.supplier_id)
+                    pr = PurchaseRequisition(
+                        pr_number=pr_number,
+                        requested_by_id=None,  # Legacy import — no user mapping
+                        supplier_id=supplier_id,
+                        currency="MAD",
+                        status=r.status or "draft",
+                    )
+                    self.sensei_session.add(pr)
+                    await self.sensei_session.flush()
+                    self._cache_id("price_request", r.id, pr.id)
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"PriceReq {r.reference}: {e}")
+
+            await self.sensei_session.commit()
     
     async def _import_purchase_orders(self, result: ImportResult) -> None:
         """Import purchase orders."""
@@ -2429,57 +2572,646 @@ class StarzErpImportService:
             await self.sensei_session.commit()
     
     async def _import_po_receipts(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("PO receipts imported via Purchasing module")
-    
+        """Import PO receipts as GoodsReceipt + ReceiptLine records."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            receipts = (await starz_session.execute(select(StarzPOReceipt))).scalars().all()
+            result.total_source = len(receipts)
+
+            for r in receipts:
+                try:
+                    po_id = self._get_cached_id("po", r.po_id)
+                    if not po_id:
+                        result.skipped += 1
+                        continue
+
+                    existing = await self.sensei_session.scalar(
+                        select(GoodsReceipt).where(GoodsReceipt.reference == r.receipt_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("po_receipt", r.id, existing.id)
+                        continue
+
+                    receipt = GoodsReceipt(
+                        po_id=po_id,
+                        received_at=datetime.combine(r.receipt_date, datetime.min.time()) if r.receipt_date else datetime.utcnow(),
+                        received_by_id=None,  # Legacy import
+                        reference=r.receipt_number,
+                    )
+                    self.sensei_session.add(receipt)
+                    await self.sensei_session.flush()
+                    self._cache_id("po_receipt", r.id, receipt.id)
+
+                    # Import line items
+                    items = (await starz_session.execute(
+                        select(StarzPOReceiptItem).where(StarzPOReceiptItem.receipt_id == r.id)
+                    )).scalars().all()
+
+                    for item in items:
+                        article_id = self._get_cached_id("article", item.article_id)
+                        # Resolve SKU from product if available
+                        sku = f"STARZ-{item.article_id}"
+                        if article_id:
+                            prod = await self.sensei_session.scalar(
+                                select(Product).where(Product.id == article_id)
+                            )
+                            if prod:
+                                sku = prod.part_number
+
+                        line = ReceiptLine(
+                            receipt_id=receipt.id,
+                            sku=sku,
+                            quantity_received=Decimal(str(item.quantity)),
+                        )
+                        self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"POReceipt {r.receipt_number}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_consumable_requests(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Consumable requests imported via Purchasing module")
-    
+        """Import consumable requests as PurchaseRequisitions with PRLines."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            reqs = (await starz_session.execute(select(StarzConsumableRequest))).scalars().all()
+            result.total_source = len(reqs)
+
+            for r in reqs:
+                try:
+                    pr_number = f"CR-{r.request_number}"
+                    existing = await self.sensei_session.scalar(
+                        select(PurchaseRequisition).where(PurchaseRequisition.pr_number == pr_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("consumable_req", r.id, existing.id)
+                        continue
+
+                    pr = PurchaseRequisition(
+                        pr_number=pr_number,
+                        requested_by_id=None,  # Legacy import
+                        currency="MAD",
+                        status=r.status or "draft",
+                        cost_center=r.department,
+                    )
+                    self.sensei_session.add(pr)
+                    await self.sensei_session.flush()
+                    self._cache_id("consumable_req", r.id, pr.id)
+
+                    # Import line items
+                    items = (await starz_session.execute(
+                        select(StarzConsumableRequestItem).where(
+                            StarzConsumableRequestItem.request_id == r.id
+                        )
+                    )).scalars().all()
+
+                    for item in items:
+                        sku = f"STARZ-{item.article_id}" if item.article_id else "MISC"
+                        if item.article_id:
+                            article_id = self._get_cached_id("article", item.article_id)
+                            if article_id:
+                                prod = await self.sensei_session.scalar(
+                                    select(Product).where(Product.id == article_id)
+                                )
+                                if prod:
+                                    sku = prod.part_number
+
+                        line = PRLine(
+                            pr_id=pr.id,
+                            sku=sku,
+                            description=item.description or sku,
+                            quantity=Decimal(str(item.quantity)),
+                            unit_price=Decimal(str(item.estimated_price or 0)),
+                        )
+                        self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"ConsumableReq {r.request_number}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_supplier_invoices(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Supplier invoices imported via Finance module")
+        """Import supplier invoices into SupplierInvoice model."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            invoices = (await starz_session.execute(select(StarzSupplierInvoice))).scalars().all()
+            result.total_source = len(invoices)
+
+            for inv in invoices:
+                try:
+                    existing = await self.sensei_session.scalar(
+                        select(SupplierInvoice).where(
+                            SupplierInvoice.supplier_invoice_number == inv.invoice_number
+                        )
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("supplier_invoice", inv.id, existing.id)
+                        continue
+
+                    supplier_id = self._get_cached_id("supplier", inv.supplier_id)
+                    if not supplier_id:
+                        result.skipped += 1
+                        continue
+
+                    po_id = self._get_cached_id("po", inv.po_id) if inv.po_id else None
+
+                    # Map status
+                    status_map = {"pending": "draft", "approved": "approved", "paid": "paid"}
+                    status = status_map.get(inv.status, "draft")
+
+                    si = SupplierInvoice(
+                        supplier_invoice_number=inv.invoice_number,
+                        supplier_id=supplier_id,
+                        invoice_date=inv.invoice_date,
+                        due_date=inv.due_date,
+                        currency=inv.currency or "MAD",
+                        status=status,
+                        po_id=po_id,
+                        memo=inv.notes,
+                        paid_at=datetime.combine(inv.paid_at, datetime.min.time()) if inv.paid_at else None,
+                    )
+                    self.sensei_session.add(si)
+                    await self.sensei_session.flush()
+                    self._cache_id("supplier_invoice", inv.id, si.id)
+
+                    # Create a single summary line item
+                    line = SupplierInvoiceLine(
+                        invoice_id=si.id,
+                        sku="LEGACY-TOTAL",
+                        description=f"Legacy invoice total — {inv.invoice_number}",
+                        quantity=Decimal("1"),
+                        unit_price=Decimal(str(inv.total_amount or 0)),
+                    )
+                    self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"SupplierInv {inv.invoice_number}: {e}")
+
+            await self.sensei_session.commit()
     
     # =========================================================================
     # Sales Importers
     # =========================================================================
     
     async def _import_quotations(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Quotations imported via Sales module")
-    
+        """Import quotations as SalesOrders with SalesOrderLines."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            quotes = (await starz_session.execute(select(StarzQuotation))).scalars().all()
+            result.total_source = len(quotes)
+
+            for q in quotes:
+                try:
+                    so_number = f"SO-{q.quote_number}"
+                    existing = await self.sensei_session.scalar(
+                        select(SalesOrder).where(SalesOrder.so_number == so_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("quotation", q.id, existing.id)
+                        continue
+
+                    account_id = self._get_cached_id("customer", q.customer_id)
+                    if not account_id:
+                        result.skipped += 1
+                        continue
+
+                    # Map status
+                    status_map = {"draft": "draft", "sent": "draft", "accepted": "approved", "rejected": "cancelled"}
+                    status = status_map.get(q.status, "draft")
+
+                    so = SalesOrder(
+                        so_number=so_number,
+                        account_id=account_id,
+                        currency=q.currency or "MAD",
+                        status=status,
+                    )
+                    self.sensei_session.add(so)
+                    await self.sensei_session.flush()
+                    self._cache_id("quotation", q.id, so.id)
+
+                    # Import line items
+                    items = (await starz_session.execute(
+                        select(StarzQuotationItem).where(StarzQuotationItem.quotation_id == q.id)
+                    )).scalars().all()
+
+                    for item in items:
+                        sku = f"STARZ-{item.article_id}" if item.article_id else "MISC"
+                        if item.article_id:
+                            article_id = self._get_cached_id("article", item.article_id)
+                            if article_id:
+                                prod = await self.sensei_session.scalar(
+                                    select(Product).where(Product.id == article_id)
+                                )
+                                if prod:
+                                    sku = prod.part_number
+
+                        line = SalesOrderLine(
+                            so_id=so.id,
+                            sku=sku,
+                            description=item.description or sku,
+                            quantity=Decimal(str(item.quantity)),
+                            unit_price=Decimal(str(item.unit_price)),
+                        )
+                        self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"Quotation {q.quote_number}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_customer_invoices(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Customer invoices imported via Finance module")
+        """Import customer invoices into CustomerInvoice model."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            invoices = (await starz_session.execute(select(StarzCustomerInvoice))).scalars().all()
+            result.total_source = len(invoices)
+
+            for inv in invoices:
+                try:
+                    existing = await self.sensei_session.scalar(
+                        select(CustomerInvoice).where(
+                            CustomerInvoice.invoice_number == inv.invoice_number
+                        )
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("customer_invoice", inv.id, existing.id)
+                        continue
+
+                    account_id = self._get_cached_id("customer", inv.customer_id)
+                    if not account_id:
+                        result.skipped += 1
+                        continue
+
+                    # Map status
+                    status_map = {"draft": "draft", "sent": "issued", "paid": "paid", "overdue": "overdue"}
+                    status = status_map.get(inv.status, "issued")
+
+                    ci = CustomerInvoice(
+                        invoice_number=inv.invoice_number,
+                        account_id=account_id,
+                        currency=inv.currency or "MAD",
+                        issued_at=datetime.combine(inv.invoice_date, datetime.min.time()),
+                        due_date=inv.due_date,
+                        status=status,
+                        memo=inv.notes,
+                    )
+                    self.sensei_session.add(ci)
+                    await self.sensei_session.flush()
+                    self._cache_id("customer_invoice", inv.id, ci.id)
+
+                    # Create a single summary line item
+                    line = CustomerInvoiceLine(
+                        invoice_id=ci.id,
+                        sku="LEGACY-TOTAL",
+                        description=f"Legacy invoice total — {inv.invoice_number}",
+                        quantity=Decimal("1"),
+                        unit_price=Decimal(str(inv.total_amount or 0)),
+                    )
+                    self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"CustInv {inv.invoice_number}: {e}")
+
+            await self.sensei_session.commit()
     
     # =========================================================================
     # Shipping Importers
     # =========================================================================
     
     async def _import_shipments(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Shipments imported via Shipping module")
-    
+        """Import shipments into Shipment + ShipmentLine models."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            shipments = (await starz_session.execute(select(StarzShipment))).scalars().all()
+            result.total_source = len(shipments)
+
+            for s in shipments:
+                try:
+                    existing = await self.sensei_session.scalar(
+                        select(Shipment).where(Shipment.shipment_number == s.shipment_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("shipment", s.id, existing.id)
+                        continue
+
+                    account_id = self._get_cached_id("customer", s.customer_id)
+                    if not account_id:
+                        result.skipped += 1
+                        continue
+
+                    warehouse_id = self._get_cached_id("warehouse", s.warehouse_id) if s.warehouse_id else None
+
+                    shipment = Shipment(
+                        shipment_number=s.shipment_number,
+                        account_id=account_id,
+                        ship_from_warehouse_id=warehouse_id,
+                        ship_date=s.ship_date,
+                        carrier=s.carrier,
+                        tracking_number=s.tracking_number,
+                        ship_to_name=s.ship_to_address or "N/A",
+                        ship_to_address=s.ship_to_address or "N/A",
+                        status=s.status or "pending",
+                        notes=s.notes,
+                        legacy_id=str(s.id),
+                    )
+                    self.sensei_session.add(shipment)
+                    await self.sensei_session.flush()
+                    self._cache_id("shipment", s.id, shipment.id)
+
+                    # Import line items
+                    items = (await starz_session.execute(
+                        select(StarzShipmentItem).where(StarzShipmentItem.shipment_id == s.id)
+                    )).scalars().all()
+
+                    for item in items:
+                        article_id = self._get_cached_id("article", item.article_id)
+                        sku = f"STARZ-{item.article_id}"
+                        if article_id:
+                            prod = await self.sensei_session.scalar(
+                                select(Product).where(Product.id == article_id)
+                            )
+                            if prod:
+                                sku = prod.part_number
+
+                        line = ShipmentLine(
+                            shipment_id=shipment.id,
+                            sku=sku,
+                            quantity_shipped=Decimal(str(item.quantity)),
+                            lot_number=item.lot_number,
+                            legacy_id=str(item.id),
+                        )
+                        self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"Shipment {s.shipment_number}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_pick_lists(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Pick lists imported via WMS module")
+        """Import pick lists into PickList + PickListLine models."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            picks = (await starz_session.execute(select(StarzPickList))).scalars().all()
+            result.total_source = len(picks)
+
+            for p in picks:
+                try:
+                    existing = await self.sensei_session.scalar(
+                        select(PickList).where(PickList.pick_number == p.pick_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("pick_list", p.id, existing.id)
+                        continue
+
+                    warehouse_id = self._get_cached_id("warehouse", p.warehouse_id)
+                    if not warehouse_id:
+                        result.skipped += 1
+                        continue
+
+                    shipment_id = self._get_cached_id("shipment", p.shipment_id) if p.shipment_id else None
+
+                    pick = PickList(
+                        pick_number=p.pick_number,
+                        warehouse_id=warehouse_id,
+                        source_type="shipment" if shipment_id else "manual",
+                        source_id=shipment_id or uuid4(),
+                        status=p.status or "pending",
+                        started_at=p.started_at,
+                        completed_at=p.completed_at,
+                        legacy_id=str(p.id),
+                    )
+                    self.sensei_session.add(pick)
+                    await self.sensei_session.flush()
+                    self._cache_id("pick_list", p.id, pick.id)
+
+                    # Import line items
+                    items = (await starz_session.execute(
+                        select(StarzPickListItem).where(StarzPickListItem.pick_list_id == p.id)
+                    )).scalars().all()
+
+                    for item in items:
+                        article_id = self._get_cached_id("article", item.article_id)
+                        sku = f"STARZ-{item.article_id}"
+                        if article_id:
+                            prod = await self.sensei_session.scalar(
+                                select(Product).where(Product.id == article_id)
+                            )
+                            if prod:
+                                sku = prod.part_number
+
+                        from_loc = self._get_cached_id("location", item.from_location_id)
+                        if not from_loc:
+                            continue  # Skip line — no location
+
+                        line = PickListLine(
+                            pick_list_id=pick.id,
+                            sku=sku,
+                            source_location_id=from_loc,
+                            quantity_requested=Decimal(str(item.quantity)),
+                            quantity_picked=Decimal(str(item.picked_qty or 0)),
+                            picked_at=item.picked_at,
+                            status="picked" if item.picked_qty and item.picked_qty >= item.quantity else "pending",
+                            legacy_id=str(item.id),
+                        )
+                        self.sensei_session.add(line)
+
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"PickList {p.pick_number}: {e}")
+
+            await self.sensei_session.commit()
     
     # =========================================================================
     # Finance Importers
     # =========================================================================
     
     async def _import_payments(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Payments imported via Finance module")
-    
+        """Import payments — outgoing → Payment (AP), incoming → PaymentReceipt (AR)."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            payments = (await starz_session.execute(select(StarzPayment))).scalars().all()
+            result.total_source = len(payments)
+
+            for p in payments:
+                try:
+                    is_incoming = (p.payment_type or "").lower() in ("incoming", "receipt", "customer")
+
+                    if is_incoming:
+                        # Import as PaymentReceipt (Accounts Receivable)
+                        account_id = self._get_cached_id("customer", p.customer_id) if p.customer_id else None
+                        if not account_id:
+                            result.skipped += 1
+                            continue
+
+                        existing = await self.sensei_session.scalar(
+                            select(PaymentReceipt).where(PaymentReceipt.reference == p.payment_number)
+                        )
+                        if existing:
+                            result.skipped += 1
+                            continue
+
+                        receipt = PaymentReceipt(
+                            account_id=account_id,
+                            received_at=datetime.combine(p.payment_date, datetime.min.time()),
+                            received_by_id=None,  # Legacy import
+                            currency=p.currency or "MAD",
+                            amount=Decimal(str(p.amount)),
+                            reference=p.payment_number,
+                            notes=p.notes,
+                        )
+                        self.sensei_session.add(receipt)
+                        result.imported += 1
+                    else:
+                        # Import as Payment (Accounts Payable)
+                        supplier_id = self._get_cached_id("supplier", p.supplier_id) if p.supplier_id else None
+                        if not supplier_id:
+                            result.skipped += 1
+                            continue
+
+                        existing = await self.sensei_session.scalar(
+                            select(Payment).where(Payment.reference == p.payment_number)
+                        )
+                        if existing:
+                            result.skipped += 1
+                            continue
+
+                        payment = Payment(
+                            payment_run_id=None,  # Legacy import — no payment run
+                            supplier_id=supplier_id,
+                            amount=Decimal(str(p.amount)),
+                            currency=p.currency or "MAD",
+                            executed_at=datetime.combine(p.payment_date, datetime.min.time()),
+                            reference=p.payment_number,
+                        )
+                        self.sensei_session.add(payment)
+                        result.imported += 1
+
+                    await self.sensei_session.flush()
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"Payment {p.payment_number}: {e}")
+
+            await self.sensei_session.commit()
+
     async def _import_bank_transactions(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Bank transactions imported via Finance module")
+        """Import bank transactions into BankTransaction model."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            txns = (await starz_session.execute(select(StarzBankTransaction))).scalars().all()
+            result.total_source = len(txns)
+
+            for t in txns:
+                try:
+                    bank_account_id = self._get_cached_id("bank_account", t.account_id)
+                    if not bank_account_id:
+                        result.skipped += 1
+                        continue
+
+                    legacy_id = f"STARZ-BT-{t.id}"
+                    existing = await self.sensei_session.scalar(
+                        select(BankTransaction).where(BankTransaction.legacy_id == legacy_id)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        continue
+
+                    bt = BankTransaction(
+                        bank_account_id=bank_account_id,
+                        transaction_date=t.transaction_date,
+                        transaction_type=t.transaction_type or "transfer",
+                        reference=t.reference,
+                        description=t.description or f"Legacy transaction {t.id}",
+                        amount=Decimal(str(t.amount)),
+                        currency="MAD",
+                        status="reconciled" if t.reconciled else "posted",
+                        reconciled_at=t.reconciled_at,
+                        legacy_id=legacy_id,
+                    )
+                    self.sensei_session.add(bt)
+                    await self.sensei_session.flush()
+                    self._cache_id("bank_txn", t.id, bt.id)
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"BankTxn {t.id}: {e}")
+
+            await self.sensei_session.commit()
     
     # =========================================================================
     # Quality Importers
     # =========================================================================
     
     async def _import_scrap_records(self, result: ImportResult) -> None:
-        result.skipped = 0
-        logger.info("Scrap records imported via Quality module")
+        """Import scrap records as NonConformance records."""
+        starz_factory = await self._get_starz_session()
+        async with starz_factory() as starz_session:
+            scraps = (await starz_session.execute(select(StarzScrapRecord))).scalars().all()
+            result.total_source = len(scraps)
+
+            for s in scraps:
+                try:
+                    nc_number = f"NC-SCRAP-{s.id}"
+                    existing = await self.sensei_session.scalar(
+                        select(NonConformance).where(NonConformance.nc_number == nc_number)
+                    )
+                    if existing:
+                        result.skipped += 1
+                        self._cache_id("scrap", s.id, existing.id)
+                        continue
+
+                    product_id = self._get_cached_id("article", s.article_id) if s.article_id else None
+
+                    nc = NonConformance(
+                        nc_number=nc_number,
+                        nc_type="process",       # Scrap is a process NC
+                        source="production",     # Scrap originates from production
+                        severity="minor",
+                        product_id=product_id,
+                        quantity_affected=int(s.quantity) if s.quantity else 1,
+                        title=f"Scrap — {s.reason_code or 'Unknown'}",
+                        description=s.reason_description or s.notes or f"Legacy scrap record #{s.id}",
+                        detected_by_id=None,     # Legacy import — no user mapping
+                        detected_at=datetime.combine(s.scrap_date, datetime.min.time()) if s.scrap_date else datetime.utcnow(),
+                        status="closed",         # Historical records are closed
+                        disposition="scrap",
+                        disposition_notes=s.notes,
+                    )
+                    self.sensei_session.add(nc)
+                    await self.sensei_session.flush()
+                    self._cache_id("scrap", s.id, nc.id)
+                    result.imported += 1
+
+                except Exception as e:
+                    result.failed += 1
+                    result.errors.append(f"Scrap {s.id}: {e}")
+
+            await self.sensei_session.commit()

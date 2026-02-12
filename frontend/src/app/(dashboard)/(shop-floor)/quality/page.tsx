@@ -463,16 +463,16 @@ function MSATab() {
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+            <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.notes') || 'Notes'}</label>
             <Input
               value={studyForm.notes}
               onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
-              placeholder="Optional notes"
+              placeholder={t('pages.quality.msa.optionalNotes') || 'Optional notes'}
             />
           </div>
           <div className="flex justify-end">
             <Button onClick={handleCreateStudy} disabled={loading}>
-              Create Study
+              {t('pages.quality.msa.createStudyButton') || 'Create Study'}
             </Button>
           </div>
         </CardContent>
@@ -480,18 +480,18 @@ function MSATab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Add Measurement</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.msa.addMeasurement') || 'Add Measurement'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Study</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.msa.study') || 'Study'}</label>
               <Select
                 value={measurementForm.studyId}
                 onValueChange={(value) => setMeasurementForm((prev) => ({ ...prev, studyId: value }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select study" />
+                  <SelectValue placeholder={t('pages.quality.msa.selectStudy') || 'Select study'} />
                 </SelectTrigger>
                 <SelectContent>
                   {msaStudies.map((study) => (
@@ -586,7 +586,7 @@ function MSATab() {
                           size="icon-sm"
                           onClick={() => computeMsaStudy(study.id)}
                           disabled={loading}
-                          aria-label="Compute GRR"
+                          aria-label={t('pages.quality.msa.computeGRR') || 'Compute GRR'}
                         >
                           <Ruler className="h-4 w-4" />
                         </Button>
@@ -743,16 +743,16 @@ function CapabilityTab() {
             </div>
           </div>
           <div>
-            <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+            <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.notes') || 'Notes'}</label>
             <Input
               value={studyForm.notes}
               onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
-              placeholder="Optional notes"
+              placeholder={t('pages.quality.capability.optionalNotes') || 'Optional notes'}
             />
           </div>
           <div className="flex justify-end">
             <Button onClick={handleCreateStudy} disabled={loading}>
-              Create Study
+              {t('pages.quality.capability.createStudyButton') || 'Create Study'}
             </Button>
           </div>
         </CardContent>
@@ -760,18 +760,18 @@ function CapabilityTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Add Measurement</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.capability.addMeasurement') || 'Add Measurement'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Study</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.studyLabel') || 'Study'}</label>
               <Select
                 value={measurementForm.studyId}
                 onValueChange={(value) => setMeasurementForm((prev) => ({ ...prev, studyId: value }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select study" />
+                  <SelectValue placeholder={t('pages.quality.capability.selectStudy') || 'Select study'} />
                 </SelectTrigger>
                 <SelectContent>
                   {capabilityStudies.map((study) => (
@@ -783,26 +783,26 @@ function CapabilityTab() {
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Measured Value</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.measuredValue') || 'Measured Value'}</label>
               <Input
                 type="number"
                 value={measurementForm.measuredValue}
                 onChange={(e) => setMeasurementForm((prev) => ({ ...prev, measuredValue: e.target.value }))}
-                placeholder="Measurement"
+                placeholder={t('pages.quality.capability.measurementPlaceholder') || 'Measurement'}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Sample Label</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.capability.sampleLabel') || 'Sample Label'}</label>
               <Input
                 value={measurementForm.sampleLabel}
                 onChange={(e) => setMeasurementForm((prev) => ({ ...prev, sampleLabel: e.target.value }))}
-                placeholder="Optional label"
+                placeholder={t('pages.quality.capability.sampleLabelPlaceholder') || 'Optional label'}
               />
             </div>
           </div>
           <div className="flex justify-end">
             <Button variant="outline" onClick={handleAddMeasurement} disabled={loading}>
-              Add Measurement
+              {t('pages.quality.capability.addMeasurementButton') || 'Add Measurement'}
             </Button>
           </div>
         </CardContent>
@@ -814,13 +814,13 @@ function CapabilityTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Study</th>
-                  <th className="py-3 px-4 text-left font-medium">Process</th>
-                  <th className="py-3 px-4 text-left font-medium">Characteristic</th>
-                  <th className="py-3 px-4 text-left font-medium">Specs</th>
-                  <th className="py-3 px-4 text-left font-medium">Cp</th>
-                  <th className="py-3 px-4 text-left font-medium">Cpk</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capability.studyLabel') || 'Study'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capability.process') || 'Process'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capability.characteristic') || 'Characteristic'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capability.specs') || 'Specs'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('quality.capability.cp') || 'Cp'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capability.cpk') || 'Cpk'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -846,7 +846,7 @@ function CapabilityTab() {
                           size="icon-sm"
                           onClick={() => computeCapabilityStudy(study.id)}
                           disabled={loading}
-                          aria-label="Compute Cp/Cpk"
+                          aria-label={t('pages.quality.capability.computeCpCpk') || 'Compute Cp/Cpk'}
                         >
                           <Gauge className="h-4 w-4" />
                         </Button>
@@ -954,7 +954,7 @@ function CustomerSatisfactionTab() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-2">NPS Score</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-2">{t('pages.quality.npsScore') || 'NPS Score'}</p>
                 <p className="text-3xl font-mono font-bold tabular-nums">{stats ? stats.nps_score : '—'}</p>
               </div>
               <div className="p-3 bg-rams-panel border border-rams-line text-rams-steel">
@@ -967,7 +967,7 @@ function CustomerSatisfactionTab() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-2">Open Complaints</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-orange/60 mb-2">{t('pages.quality.openComplaints') || 'Open Complaints'}</p>
                 <p className="text-3xl font-mono font-bold tabular-nums">{complaintStats ? complaintStats.open : '—'}</p>
               </div>
               <div className="p-3 bg-rams-orange/10 border border-rams-orange/20 text-rams-orange">
@@ -980,7 +980,7 @@ function CustomerSatisfactionTab() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-2">Responses</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-rams-green/60 mb-2">{t('pages.quality.responses') || 'Responses'}</p>
                 <p className="text-3xl font-mono font-bold tabular-nums">{stats ? stats.total_responses : '—'}</p>
               </div>
               <div className="p-3 bg-rams-green/10 border border-rams-green/20 text-rams-green">
@@ -993,22 +993,22 @@ function CustomerSatisfactionTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Log Customer Complaint</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.logComplaint') || 'Log Customer Complaint'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Input
-              placeholder="Customer ID (optional)"
+              placeholder={t('pages.quality.placeholder.customerId') || 'Customer ID (optional)'}
               value={complaintForm.customerId}
               onChange={(e) => setComplaintForm((prev) => ({ ...prev, customerId: e.target.value }))}
             />
             <Input
-              placeholder="RMA Number (optional)"
+              placeholder={t('pages.quality.placeholder.rmaNumber') || 'RMA Number (optional)'}
               value={complaintForm.rmaNumber}
               onChange={(e) => setComplaintForm((prev) => ({ ...prev, rmaNumber: e.target.value }))}
             />
             <Input
-              placeholder="Complaint title"
+              placeholder={t('pages.quality.placeholder.complaintTitle') || 'Complaint title'}
               value={complaintForm.title}
               onChange={(e) => setComplaintForm((prev) => ({ ...prev, title: e.target.value }))}
             />
@@ -1017,24 +1017,24 @@ function CustomerSatisfactionTab() {
               onValueChange={(value) => setComplaintForm((prev) => ({ ...prev, status: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t('common.status') || 'Status'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="received">Received</SelectItem>
-                <SelectItem value="under_review">Under Review</SelectItem>
-                <SelectItem value="investigation">Investigation</SelectItem>
-                <SelectItem value="containment">Containment</SelectItem>
-                <SelectItem value="capa">CAPA</SelectItem>
+                <SelectItem value="received">{t('pages.quality.status.received') || 'Received'}</SelectItem>
+                <SelectItem value="under_review">{t('pages.quality.status.underReview') || 'Under Review'}</SelectItem>
+                <SelectItem value="investigation">{t('pages.quality.status.investigation') || 'Investigation'}</SelectItem>
+                <SelectItem value="containment">{t('pages.quality.status.containment') || 'Containment'}</SelectItem>
+                <SelectItem value="capa">{t('pages.quality.status.capa') || 'CAPA'}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <Input
-            placeholder="Description"
+            placeholder={t('common.description') || 'Description'}
             value={complaintForm.description}
             onChange={(e) => setComplaintForm((prev) => ({ ...prev, description: e.target.value }))}
           />
           <div className="flex justify-end">
-            <Button onClick={handleCreateComplaint} disabled={loading}>Create Complaint</Button>
+            <Button onClick={handleCreateComplaint} disabled={loading}>{t('pages.quality.createComplaint') || 'Create Complaint'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -1045,10 +1045,10 @@ function CustomerSatisfactionTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Complaint</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Received</th>
-                  <th className="py-3 px-4 text-left font-medium">RMA</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.complaint') || 'Complaint'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.status.received') || 'Received'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.rma') || 'RMA'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -1071,7 +1071,7 @@ function CustomerSatisfactionTab() {
                           size="icon-sm"
                           onClick={() => closeCustomerComplaint(complaint.id)}
                           disabled={loading || complaint.status === 'closed'}
-                          aria-label="Close complaint"
+                          aria-label={t('pages.quality.aria.closeComplaint') || 'Close complaint'}
                         >
                           <CheckCircle className="h-4 w-4" />
                         </Button>
@@ -1087,36 +1087,36 @@ function CustomerSatisfactionTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Create NPS Survey</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.createNPSSurvey') || 'Create NPS Survey'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Input
-              placeholder="Survey title"
+              placeholder={t('pages.quality.placeholder.surveyTitle') || 'Survey title'}
               value={surveyForm.title}
               onChange={(e) => setSurveyForm((prev) => ({ ...prev, title: e.target.value }))}
             />
             <Input
-              placeholder="Target responses"
+              placeholder={t('pages.quality.placeholder.targetResponses') || 'Target responses'}
               type="number"
               value={surveyForm.targetResponses}
               onChange={(e) => setSurveyForm((prev) => ({ ...prev, targetResponses: e.target.value }))}
             />
           </div>
           <Input
-            placeholder="Description"
+            placeholder={t('common.description') || 'Description'}
             value={surveyForm.description}
             onChange={(e) => setSurveyForm((prev) => ({ ...prev, description: e.target.value }))}
           />
           <div className="flex justify-end">
-            <Button onClick={handleCreateSurvey} disabled={loading}>Create Survey</Button>
+            <Button onClick={handleCreateSurvey} disabled={loading}>{t('pages.quality.createSurvey') || 'Create Survey'}</Button>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Add Survey Response</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.addSurveyResponse') || 'Add Survey Response'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1125,7 +1125,7 @@ function CustomerSatisfactionTab() {
               onValueChange={(value) => setResponseForm((prev) => ({ ...prev, surveyId: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select survey" />
+                <SelectValue placeholder={t('pages.quality.placeholder.selectSurvey') || 'Select survey'} />
               </SelectTrigger>
               <SelectContent>
                 {customerSurveys.map((survey) => (
@@ -1136,12 +1136,12 @@ function CustomerSatisfactionTab() {
               </SelectContent>
             </Select>
             <Input
-              placeholder="Respondent name"
+              placeholder={t('pages.quality.placeholder.respondentName') || 'Respondent name'}
               value={responseForm.respondentName}
               onChange={(e) => setResponseForm((prev) => ({ ...prev, respondentName: e.target.value }))}
             />
             <Input
-              placeholder="Respondent email"
+              placeholder={t('pages.quality.placeholder.respondentEmail') || 'Respondent email'}
               value={responseForm.respondentEmail}
               onChange={(e) => setResponseForm((prev) => ({ ...prev, respondentEmail: e.target.value }))}
             />
@@ -1149,18 +1149,18 @@ function CustomerSatisfactionTab() {
               type="number"
               min={0}
               max={10}
-              placeholder="NPS score (0-10)"
+              placeholder={t('pages.quality.placeholder.npsScore') || 'NPS score (0-10)'}
               value={responseForm.npsScore}
               onChange={(e) => setResponseForm((prev) => ({ ...prev, npsScore: e.target.value }))}
             />
             <Input
-              placeholder="Comment"
+              placeholder={t('pages.quality.placeholder.comment') || 'Comment'}
               value={responseForm.comment}
               onChange={(e) => setResponseForm((prev) => ({ ...prev, comment: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={handleAddResponse} disabled={loading}>Add Response</Button>
+            <Button variant="outline" onClick={handleAddResponse} disabled={loading}>{t('pages.quality.addResponse') || 'Add Response'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -1259,55 +1259,55 @@ function FAITab() {
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Create FAI (AS9102)</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.createFAI') || 'Create FAI (AS9102)'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Input
-              placeholder="Inspection Number"
+              placeholder={t('pages.quality.placeholder.inspectionNumber') || 'Inspection Number'}
               value={inspectionForm.inspectionNumber}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, inspectionNumber: e.target.value }))}
             />
             <Input
-              placeholder="Part Number"
+              placeholder={t('pages.quality.placeholder.partNumber') || 'Part Number'}
               value={inspectionForm.partNumber}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, partNumber: e.target.value }))}
             />
             <Input
-              placeholder="Revision"
+              placeholder={t('pages.quality.placeholder.revision') || 'Revision'}
               value={inspectionForm.revision}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, revision: e.target.value }))}
             />
             <Input
-              placeholder="Drawing Number"
+              placeholder={t('pages.quality.placeholder.drawingNumber') || 'Drawing Number'}
               value={inspectionForm.drawingNumber}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, drawingNumber: e.target.value }))}
             />
             <Input
-              placeholder="Product ID"
+              placeholder={t('pages.quality.placeholder.productId') || 'Product ID'}
               value={inspectionForm.productId}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, productId: e.target.value }))}
             />
             <Input
-              placeholder="Work Order ID"
+              placeholder={t('pages.quality.placeholder.workOrderId') || 'Work Order ID'}
               value={inspectionForm.workOrderId}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
             />
           </div>
           <Input
-            placeholder="Notes"
+            placeholder={t('pages.quality.placeholder.notes') || 'Notes'}
             value={inspectionForm.notes}
             onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
           />
           <div className="flex justify-end">
-            <Button onClick={handleCreateInspection} disabled={loading}>Create FAI</Button>
+            <Button onClick={handleCreateInspection} disabled={loading}>{t('pages.quality.createFAI') || 'Create FAI'}</Button>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Add Characteristic</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.addCharacteristic') || 'Add Characteristic'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1316,7 +1316,7 @@ function FAITab() {
               onValueChange={(value) => setCharForm((prev) => ({ ...prev, inspectionId: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select FAI" />
+                <SelectValue placeholder={t('pages.quality.placeholder.selectFAI') || 'Select FAI'} />
               </SelectTrigger>
               <SelectContent>
                 {faiInspections.map((inspection) => (
@@ -1328,28 +1328,28 @@ function FAITab() {
             </Select>
             <Input
               type="number"
-              placeholder="Characteristic #"
+              placeholder={t('pages.quality.placeholder.characteristicNumber') || 'Characteristic #'}
               value={charForm.characteristicNumber}
               onChange={(e) => setCharForm((prev) => ({ ...prev, characteristicNumber: Number(e.target.value) }))}
             />
             <Input
-              placeholder="Requirement"
+              placeholder={t('pages.quality.placeholder.requirement') || 'Requirement'}
               value={charForm.requirement}
               onChange={(e) => setCharForm((prev) => ({ ...prev, requirement: e.target.value }))}
             />
             <Input
-              placeholder="Nominal"
+              placeholder={t('pages.quality.placeholder.nominal') || 'Nominal'}
               type="number"
               value={charForm.nominal}
               onChange={(e) => setCharForm((prev) => ({ ...prev, nominal: e.target.value }))}
             />
             <Input
-              placeholder="Tolerance"
+              placeholder={t('pages.quality.placeholder.tolerance') || 'Tolerance'}
               value={charForm.tolerance}
               onChange={(e) => setCharForm((prev) => ({ ...prev, tolerance: e.target.value }))}
             />
             <Input
-              placeholder="Actual"
+              placeholder={t('pages.quality.placeholder.actual') || 'Actual'}
               type="number"
               value={charForm.actual}
               onChange={(e) => setCharForm((prev) => ({ ...prev, actual: e.target.value }))}
@@ -1359,27 +1359,27 @@ function FAITab() {
               onValueChange={(value) => setCharForm((prev) => ({ ...prev, result: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Result" />
+                <SelectValue placeholder={t('pages.quality.placeholder.result') || 'Result'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="pass">Pass</SelectItem>
-                <SelectItem value="fail">Fail</SelectItem>
+                <SelectItem value="pending">{t('common.pending') || 'Pending'}</SelectItem>
+                <SelectItem value="pass">{t('pages.quality.status.pass') || 'Pass'}</SelectItem>
+                <SelectItem value="fail">{t('pages.quality.status.fail') || 'Fail'}</SelectItem>
               </SelectContent>
             </Select>
             <Input
-              placeholder="Method"
+              placeholder={t('pages.quality.placeholder.method') || 'Method'}
               value={charForm.method}
               onChange={(e) => setCharForm((prev) => ({ ...prev, method: e.target.value }))}
             />
             <Input
-              placeholder="Tool ID"
+              placeholder={t('pages.quality.placeholder.toolId') || 'Tool ID'}
               value={charForm.toolId}
               onChange={(e) => setCharForm((prev) => ({ ...prev, toolId: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={handleAddCharacteristic} disabled={loading}>Add Characteristic</Button>
+            <Button variant="outline" onClick={handleAddCharacteristic} disabled={loading}>{t('pages.quality.addCharacteristic') || 'Add Characteristic'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -1390,11 +1390,11 @@ function FAITab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">FAI</th>
-                  <th className="py-3 px-4 text-left font-medium">Part</th>
-                  <th className="py-3 px-4 text-left font-medium">Revision</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Chars</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.fai') || 'FAI'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.part') || 'Part'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.revision') || 'Revision'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.chars') || 'Chars'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -1418,7 +1418,7 @@ function FAITab() {
                           size="icon-sm"
                           onClick={() => closeFAIInspection(inspection.id)}
                           disabled={loading || inspection.status === 'completed'}
-                          aria-label="Close FAI"
+                          aria-label={t('pages.quality.aria.closeFAI') || 'Close FAI'}
                         >
                           <CheckCircle className="h-4 w-4" />
                         </Button>
@@ -1503,40 +1503,40 @@ function SelfInspectionTab() {
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Start Self Inspection</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.startSelfInspection') || 'Start Self Inspection'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Input
-              placeholder="Inspection Number"
+              placeholder={t('pages.quality.placeholder.inspectionNumber') || 'Inspection Number'}
               value={inspectionForm.inspectionNumber}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, inspectionNumber: e.target.value }))}
             />
             <Input
-              placeholder="Work Order ID"
+              placeholder={t('pages.quality.placeholder.workOrderId') || 'Work Order ID'}
               value={inspectionForm.workOrderId}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
             />
             <Input
-              placeholder="Product ID"
+              placeholder={t('pages.quality.placeholder.productId') || 'Product ID'}
               value={inspectionForm.productId}
               onChange={(e) => setInspectionForm((prev) => ({ ...prev, productId: e.target.value }))}
             />
           </div>
           <Input
-            placeholder="Notes"
+            placeholder={t('pages.quality.placeholder.notes') || 'Notes'}
             value={inspectionForm.notes}
             onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
           />
           <div className="flex justify-end">
-            <Button onClick={handleCreateInspection} disabled={loading}>Start Inspection</Button>
+            <Button onClick={handleCreateInspection} disabled={loading}>{t('pages.quality.startInspection') || 'Start Inspection'}</Button>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Add Self-Check</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.addCheck') || 'Add Self-Check'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1545,7 +1545,7 @@ function SelfInspectionTab() {
               onValueChange={(value) => setCheckForm((prev) => ({ ...prev, inspectionId: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select inspection" />
+                <SelectValue placeholder={t('pages.quality.placeholder.selectInspection') || 'Select inspection'} />
               </SelectTrigger>
               <SelectContent>
                 {selfInspections.map((inspection) => (
@@ -1556,17 +1556,17 @@ function SelfInspectionTab() {
               </SelectContent>
             </Select>
             <Input
-              placeholder="Characteristic"
+              placeholder={t('pages.quality.placeholder.characteristic') || 'Characteristic'}
               value={checkForm.characteristic}
               onChange={(e) => setCheckForm((prev) => ({ ...prev, characteristic: e.target.value }))}
             />
             <Input
-              placeholder="Specification"
+              placeholder={t('pages.quality.placeholder.specification') || 'Specification'}
               value={checkForm.specification}
               onChange={(e) => setCheckForm((prev) => ({ ...prev, specification: e.target.value }))}
             />
             <Input
-              placeholder="Actual"
+              placeholder={t('pages.quality.placeholder.actual') || 'Actual'}
               value={checkForm.actualValue}
               onChange={(e) => setCheckForm((prev) => ({ ...prev, actualValue: e.target.value }))}
             />
@@ -1575,22 +1575,22 @@ function SelfInspectionTab() {
               onValueChange={(value) => setCheckForm((prev) => ({ ...prev, result: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Result" />
+                <SelectValue placeholder={t('pages.quality.placeholder.result') || 'Result'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="pass">Pass</SelectItem>
-                <SelectItem value="fail">Fail</SelectItem>
+                <SelectItem value="pending">{t('common.pending') || 'Pending'}</SelectItem>
+                <SelectItem value="pass">{t('pages.quality.status.pass') || 'Pass'}</SelectItem>
+                <SelectItem value="fail">{t('pages.quality.status.fail') || 'Fail'}</SelectItem>
               </SelectContent>
             </Select>
             <Input
-              placeholder="Notes"
+              placeholder={t('pages.quality.placeholder.notes') || 'Notes'}
               value={checkForm.notes}
               onChange={(e) => setCheckForm((prev) => ({ ...prev, notes: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={handleAddCheck} disabled={loading}>Add Check</Button>
+            <Button variant="outline" onClick={handleAddCheck} disabled={loading}>{t('pages.quality.addCheck') || 'Add Check'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -1601,9 +1601,9 @@ function SelfInspectionTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Inspection</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Checks</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.inspection') || 'Inspection'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.checks') || 'Checks'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -1623,7 +1623,7 @@ function SelfInspectionTab() {
                           size="icon-sm"
                           onClick={() => closeSelfInspection(inspection.id)}
                           disabled={loading || inspection.status === 'completed'}
-                          aria-label="Close self inspection"
+                          aria-label={t('pages.quality.aria.closeSelfInspection') || 'Close self inspection'}
                         >
                           <CheckCircle className="h-4 w-4" />
                         </Button>
@@ -1641,6 +1641,7 @@ function SelfInspectionTab() {
 }
 
 function LabManagementTab() {
+  const { t } = useI18n();
   const {
     labMethods,
     labSamples,
@@ -1724,86 +1725,86 @@ function LabManagementTab() {
     <div className="space-y-6">
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Create Lab Method</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.createLabMethod') || 'Create Lab Method'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Input
-              placeholder="Method name"
+              placeholder={t('pages.quality.placeholder.methodName') || 'Method name'}
               value={methodForm.name}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, name: e.target.value }))}
             />
             <Input
-              placeholder="Standard (ASTM/ISO)"
+              placeholder={t('pages.quality.placeholder.standard') || 'Standard (ASTM/ISO)'}
               value={methodForm.standard}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, standard: e.target.value }))}
             />
             <Input
-              placeholder="Unit"
+              placeholder={t('pages.quality.placeholder.unit') || 'Unit'}
               value={methodForm.unit}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, unit: e.target.value }))}
             />
             <Input
               type="number"
-              placeholder="Lower spec"
+              placeholder={t('pages.quality.placeholder.lowerSpec') || 'Lower spec'}
               value={methodForm.lowerSpec}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, lowerSpec: e.target.value }))}
             />
             <Input
               type="number"
-              placeholder="Upper spec"
+              placeholder={t('pages.quality.placeholder.upperSpec') || 'Upper spec'}
               value={methodForm.upperSpec}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, upperSpec: e.target.value }))}
             />
             <Input
               type="number"
-              placeholder="Target value"
+              placeholder={t('pages.quality.placeholder.targetValue') || 'Target value'}
               value={methodForm.targetValue}
               onChange={(e) => setMethodForm((prev) => ({ ...prev, targetValue: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button onClick={handleCreateMethod} disabled={loading}>Create Method</Button>
+            <Button onClick={handleCreateMethod} disabled={loading}>{t('pages.quality.createMethod') || 'Create Method'}</Button>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Register Lab Sample</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.registerLabSample') || 'Register Lab Sample'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Input
-              placeholder="Sample number"
+              placeholder={t('pages.quality.placeholder.sampleNumber') || 'Sample number'}
               value={sampleForm.sampleNumber}
               onChange={(e) => setSampleForm((prev) => ({ ...prev, sampleNumber: e.target.value }))}
             />
             <Input
-              placeholder="Product ID"
+              placeholder={t('pages.quality.placeholder.productId') || 'Product ID'}
               value={sampleForm.productId}
               onChange={(e) => setSampleForm((prev) => ({ ...prev, productId: e.target.value }))}
             />
             <Input
-              placeholder="Work Order ID"
+              placeholder={t('pages.quality.placeholder.workOrderId') || 'Work Order ID'}
               value={sampleForm.workOrderId}
               onChange={(e) => setSampleForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
             />
             <Input
-              placeholder="Lot number"
+              placeholder={t('pages.quality.placeholder.lotNumber') || 'Lot number'}
               value={sampleForm.lotNumber}
               onChange={(e) => setSampleForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={handleCreateSample} disabled={loading}>Create Sample</Button>
+            <Button variant="outline" onClick={handleCreateSample} disabled={loading}>{t('pages.quality.createSample') || 'Create Sample'}</Button>
           </div>
         </CardContent>
       </Card>
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Record Test Run</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.recordTestRun') || 'Record Test Run'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1812,7 +1813,7 @@ function LabManagementTab() {
               onValueChange={(value) => setTestForm((prev) => ({ ...prev, sampleId: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select sample" />
+                <SelectValue placeholder={t('pages.quality.placeholder.selectSample') || 'Select sample'} />
               </SelectTrigger>
               <SelectContent>
                 {labSamples.map((sample) => (
@@ -1827,7 +1828,7 @@ function LabManagementTab() {
               onValueChange={(value) => setTestForm((prev) => ({ ...prev, methodId: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select method" />
+                <SelectValue placeholder={t('pages.quality.placeholder.selectMethod') || 'Select method'} />
               </SelectTrigger>
               <SelectContent>
                 {labMethods.map((method) => (
@@ -1839,7 +1840,7 @@ function LabManagementTab() {
             </Select>
             <Input
               type="number"
-              placeholder="Result value"
+              placeholder={t('pages.quality.placeholder.resultValue') || 'Result value'}
               value={testForm.resultValue}
               onChange={(e) => setTestForm((prev) => ({ ...prev, resultValue: e.target.value }))}
             />
@@ -1848,22 +1849,22 @@ function LabManagementTab() {
               onValueChange={(value) => setTestForm((prev) => ({ ...prev, resultStatus: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t('common.status') || 'Status'} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="pass">Pass</SelectItem>
-                <SelectItem value="fail">Fail</SelectItem>
+                <SelectItem value="pending">{t('common.pending') || 'Pending'}</SelectItem>
+                <SelectItem value="pass">{t('pages.quality.status.pass') || 'Pass'}</SelectItem>
+                <SelectItem value="fail">{t('pages.quality.status.fail') || 'Fail'}</SelectItem>
               </SelectContent>
             </Select>
             <Input
-              placeholder="Notes"
+              placeholder={t('pages.quality.placeholder.notes') || 'Notes'}
               value={testForm.notes}
               onChange={(e) => setTestForm((prev) => ({ ...prev, notes: e.target.value }))}
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={handleAddTestRun} disabled={loading}>Add Test</Button>
+            <Button variant="outline" onClick={handleAddTestRun} disabled={loading}>{t('pages.quality.addTest') || 'Add Test'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -1874,10 +1875,10 @@ function LabManagementTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Method</th>
-                  <th className="py-3 px-4 text-left font-medium">Standard</th>
-                  <th className="py-3 px-4 text-left font-medium">Unit</th>
-                  <th className="py-3 px-4 text-left font-medium">Specs</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.method') || 'Method'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.standard') || 'Standard'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.unit') || 'Unit'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.specs') || 'Specs'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1901,6 +1902,7 @@ function LabManagementTab() {
 }
 
 function AQLSamplingTab() {
+  const { t } = useI18n();
   const {
     aqlPlans,
     aqlInspections,
@@ -2019,27 +2021,27 @@ function AQLSamplingTab() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Create AQL Sampling Plan</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.createAqlPlan') || 'Create AQL Sampling Plan'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Plan Code</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.planCode') || 'Plan Code'}</label>
                 <Input
                   value={planForm.planCode}
                   onChange={(e) => setPlanForm((prev) => ({ ...prev, planCode: e.target.value }))}
-                  placeholder="e.g., AQL-II-1.0-80-125"
+                  placeholder={t('pages.quality.aql.planCodePlaceholder') || 'e.g., AQL-II-1.0-80-125'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Standard</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.standard') || 'Standard'}</label>
                 <Input
                   value={planForm.standard}
                   onChange={(e) => setPlanForm((prev) => ({ ...prev, standard: e.target.value }))}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Inspection Level</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.inspectionLevel') || 'Inspection Level'}</label>
                 <Input
                   value={planForm.inspectionLevel}
                   onChange={(e) => setPlanForm((prev) => ({ ...prev, inspectionLevel: e.target.value }))}
@@ -2047,7 +2049,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">AQL Level</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.aqlLevel') || 'AQL Level'}</label>
                 <Input
                   value={planForm.aqlLevel}
                   onChange={(e) => setPlanForm((prev) => ({ ...prev, aqlLevel: e.target.value }))}
@@ -2055,7 +2057,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Lot Size Min</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.lotSizeMin') || 'Lot Size Min'}</label>
                 <Input
                   type="number"
                   value={planForm.lotSizeMin}
@@ -2063,7 +2065,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Lot Size Max</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.lotSizeMax') || 'Lot Size Max'}</label>
                 <Input
                   type="number"
                   value={planForm.lotSizeMax}
@@ -2071,7 +2073,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Sample Size</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.sampleSize') || 'Sample Size'}</label>
                 <Input
                   type="number"
                   value={planForm.sampleSize}
@@ -2079,51 +2081,51 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Accept / Reject</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.acceptReject') || 'Accept / Reject'}</label>
                 <div className="flex gap-2">
                   <Input
                     type="number"
                     value={planForm.acceptLimit}
                     onChange={(e) => setPlanForm((prev) => ({ ...prev, acceptLimit: e.target.value }))}
-                    placeholder="Accept"
+                    placeholder={t('pages.quality.aql.accept') || 'Accept'}
                   />
                   <Input
                     type="number"
                     value={planForm.rejectLimit}
                     onChange={(e) => setPlanForm((prev) => ({ ...prev, rejectLimit: e.target.value }))}
-                    placeholder="Reject"
+                    placeholder={t('pages.quality.aql.reject') || 'Reject'}
                   />
                 </div>
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.notes') || 'Notes'}</label>
               <Input
                 value={planForm.notes}
                 onChange={(e) => setPlanForm((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Optional notes"
+                placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
               />
             </div>
             <Button onClick={handleCreatePlan} disabled={loading} className="w-full">
-              Create Plan
+              {t('pages.quality.aql.createPlan') || 'Create Plan'}
             </Button>
           </CardContent>
         </Card>
 
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Record Lot Inspection</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.aql.recordLotInspection') || 'Record Lot Inspection'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Plan</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.plan') || 'Plan'}</label>
                 <Select
                   value={inspectionForm.planId}
                   onValueChange={(value) => setInspectionForm((prev) => ({ ...prev, planId: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select plan" />
+                    <SelectValue placeholder={t('pages.quality.aql.selectPlan') || 'Select plan'} />
                   </SelectTrigger>
                   <SelectContent>
                     {aqlPlans.map((plan) => (
@@ -2133,15 +2135,15 @@ function AQLSamplingTab() {
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Lot Number</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.lotNumber') || 'Lot Number'}</label>
                 <Input
                   value={inspectionForm.lotNumber}
                   onChange={(e) => setInspectionForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
-                  placeholder="LOT-2026-001"
+                  placeholder={t('pages.quality.aql.lotNumberPlaceholder') || 'LOT-2026-001'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Lot Size</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.lotSize') || 'Lot Size'}</label>
                 <Input
                   type="number"
                   value={inspectionForm.lotSize}
@@ -2149,7 +2151,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Sample Size (optional)</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.sampleSizeOptional') || 'Sample Size (optional)'}</label>
                 <Input
                   type="number"
                   value={inspectionForm.sampleSize}
@@ -2157,7 +2159,7 @@ function AQLSamplingTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Defect Count</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.defectCount') || 'Defect Count'}</label>
                 <Input
                   type="number"
                   value={inspectionForm.defectCount}
@@ -2166,15 +2168,15 @@ function AQLSamplingTab() {
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+              <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.aql.notes') || 'Notes'}</label>
               <Input
                 value={inspectionForm.notes}
                 onChange={(e) => setInspectionForm((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Optional notes"
+                placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
               />
             </div>
             <Button onClick={handleCreateInspection} disabled={loading || aqlPlans.length === 0} className="w-full">
-              Record Inspection
+              {t('pages.quality.aql.recordInspection') || 'Record Inspection'}
             </Button>
           </CardContent>
         </Card>
@@ -2182,24 +2184,24 @@ function AQLSamplingTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Sampling Plans</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.aql.samplingPlans') || 'Sampling Plans'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Plan</th>
-                  <th className="py-3 px-4 text-left font-medium">AQL</th>
-                  <th className="py-3 px-4 text-left font-medium">Lot Range</th>
-                  <th className="py-3 px-4 text-left font-medium">Sample</th>
-                  <th className="py-3 px-4 text-left font-medium">Accept/Reject</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.plan') || 'Plan'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.aqlLabel') || 'AQL'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.lotRange') || 'Lot Range'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.sample') || 'Sample'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.acceptReject') || 'Accept/Reject'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
                 {aqlPlans.length === 0 ? (
-                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No AQL plans yet.</td></tr>
+                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.quality.aql.noPlans') || 'No AQL plans yet.'}</td></tr>
                 ) : (
                   aqlPlans.map((plan) => (
                     <tr key={plan.id} className="border-b hover:bg-muted/50">
@@ -2222,24 +2224,24 @@ function AQLSamplingTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Lot Inspections</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.aql.lotInspections') || 'Lot Inspections'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Lot</th>
-                  <th className="py-3 px-4 text-left font-medium">Plan</th>
-                  <th className="py-3 px-4 text-left font-medium">Sample</th>
-                  <th className="py-3 px-4 text-left font-medium">Defects</th>
-                  <th className="py-3 px-4 text-left font-medium">Result</th>
-                  <th className="py-3 px-4 text-left font-medium">Inspected</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.lot') || 'Lot'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.plan') || 'Plan'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.sample') || 'Sample'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.defects') || 'Defects'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.result') || 'Result'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.aql.inspected') || 'Inspected'}</th>
                 </tr>
               </thead>
               <tbody>
                 {aqlInspections.length === 0 ? (
-                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No inspections recorded.</td></tr>
+                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t('pages.quality.aql.noInspections') || 'No inspections recorded.'}</td></tr>
                 ) : (
                   aqlInspections.map((inspection) => (
                     <tr key={inspection.id} className="border-b hover:bg-muted/50">
@@ -2270,6 +2272,7 @@ function AQLSamplingTab() {
 }
 
 function TraceabilityTab() {
+  const { t } = useI18n();
   const {
     traceabilityMatrices,
     traceabilityLinks,
@@ -2364,87 +2367,87 @@ function TraceabilityTab() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Create Traceability Matrix</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.traceability.createMatrix') || 'Create Traceability Matrix'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Name</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.name') || 'Name'}</label>
                 <Input
                   value={matrixForm.name}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., WO-1001 Trace"
+                  placeholder={t('pages.quality.traceability.namePlaceholder') || 'e.g., WO-1001 Trace'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Product ID</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.productId') || 'Product ID'}</label>
                 <Input
                   value={matrixForm.productId}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, productId: e.target.value }))}
-                  placeholder="Product ID"
+                  placeholder={t('pages.quality.placeholder.productId') || 'Product ID'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Work Order ID</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.workOrderId') || 'Work Order ID'}</label>
                 <Input
                   value={matrixForm.workOrderId}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, workOrderId: e.target.value }))}
-                  placeholder="Work Order ID"
+                  placeholder={t('pages.quality.placeholder.workOrderId') || 'Work Order ID'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Lot Number</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.lotNumber') || 'Lot Number'}</label>
                 <Input
                   value={matrixForm.lotNumber}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, lotNumber: e.target.value }))}
-                  placeholder="LOT-2026-0001"
+                  placeholder={t('pages.quality.traceability.lotPlaceholder') || 'LOT-2026-0001'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Batch ID</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.batchId') || 'Batch ID'}</label>
                 <Input
                   value={matrixForm.batchId}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, batchId: e.target.value }))}
-                  placeholder="BATCH-01"
+                  placeholder={t('pages.quality.traceability.batchPlaceholder') || 'BATCH-01'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">External Reference</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.externalReference') || 'External Reference'}</label>
                 <Input
                   value={matrixForm.externalReference}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, externalReference: e.target.value }))}
-                  placeholder="Customer PO / Shipment ID"
+                  placeholder={t('pages.quality.traceability.externalRefPlaceholder') || 'Customer PO / Shipment ID'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Description</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('common.description') || 'Description'}</label>
                 <Input
                   value={matrixForm.description}
                   onChange={(e) => setMatrixForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Optional description"
+                  placeholder={t('pages.quality.traceability.descriptionPlaceholder') || 'Optional description'}
                 />
               </div>
             </div>
             <Button onClick={handleCreateMatrix} disabled={loading} className="w-full">
-              Create Matrix
+              {t('pages.quality.traceability.createMatrixButton') || 'Create Matrix'}
             </Button>
           </CardContent>
         </Card>
 
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Add Traceability Link</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.traceability.addLink') || 'Add Traceability Link'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Matrix</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.matrix') || 'Matrix'}</label>
                 <Select
                   value={linkForm.matrixId}
                   onValueChange={(value) => setLinkForm((prev) => ({ ...prev, matrixId: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select matrix" />
+                    <SelectValue placeholder={t('pages.quality.traceability.selectMatrix') || 'Select matrix'} />
                   </SelectTrigger>
                   <SelectContent>
                     {traceabilityMatrices.map((matrix) => (
@@ -2454,40 +2457,40 @@ function TraceabilityTab() {
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Link Type</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.linkType') || 'Link Type'}</label>
                 <Input
                   value={linkForm.linkType}
                   onChange={(e) => setLinkForm((prev) => ({ ...prev, linkType: e.target.value }))}
-                  placeholder="inspection / ncr / capa"
+                  placeholder={t('pages.quality.traceability.linkTypePlaceholder') || 'inspection / ncr / capa'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Reference ID</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.referenceId') || 'Reference ID'}</label>
                 <Input
                   value={linkForm.referenceId}
                   onChange={(e) => setLinkForm((prev) => ({ ...prev, referenceId: e.target.value }))}
-                  placeholder="Record ID"
+                  placeholder={t('pages.quality.traceability.referenceIdPlaceholder') || 'Record ID'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Reference Table</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.referenceTable') || 'Reference Table'}</label>
                 <Input
                   value={linkForm.referenceTable}
                   onChange={(e) => setLinkForm((prev) => ({ ...prev, referenceTable: e.target.value }))}
-                  placeholder="quality_inspections"
+                  placeholder={t('pages.quality.traceability.referenceTablePlaceholder') || 'quality_inspections'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.traceability.notes') || 'Notes'}</label>
                 <Input
                   value={linkForm.notes}
                   onChange={(e) => setLinkForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Optional notes"
+                  placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
                 />
               </div>
             </div>
             <Button onClick={handleCreateLink} disabled={loading || traceabilityMatrices.length === 0} className="w-full">
-              Add Link
+              {t('pages.quality.traceability.addLinkButton') || 'Add Link'}
             </Button>
           </CardContent>
         </Card>
@@ -2495,23 +2498,23 @@ function TraceabilityTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Traceability Matrices</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.traceability.matrices') || 'Traceability Matrices'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Name</th>
-                  <th className="py-3 px-4 text-left font-medium">Lot</th>
-                  <th className="py-3 px-4 text-left font-medium">Product</th>
-                  <th className="py-3 px-4 text-left font-medium">Work Order</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.traceability.name') || 'Name'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.traceability.lot') || 'Lot'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.product') || 'Product'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.table.workOrder') || 'Work Order'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
                 {traceabilityMatrices.length === 0 ? (
-                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No traceability matrices yet.</td></tr>
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">{t('pages.quality.traceability.noMatrices') || 'No traceability matrices yet.'}</td></tr>
                 ) : (
                   traceabilityMatrices.map((matrix) => (
                     <tr key={matrix.id} className="border-b hover:bg-muted/50">
@@ -2533,22 +2536,22 @@ function TraceabilityTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Traceability Links</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.traceability.links') || 'Traceability Links'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Type</th>
-                  <th className="py-3 px-4 text-left font-medium">Reference</th>
-                  <th className="py-3 px-4 text-left font-medium">Table</th>
-                  <th className="py-3 px-4 text-left font-medium">Notes</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.traceability.reference') || 'Reference'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.traceability.table') || 'Table'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.traceability.notes') || 'Notes'}</th>
                 </tr>
               </thead>
               <tbody>
                 {traceabilityLinks.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No links for selected matrix.</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.quality.traceability.noLinks') || 'No links for selected matrix.'}</td></tr>
                 ) : (
                   traceabilityLinks.map((link) => (
                     <tr key={link.id} className="border-b hover:bg-muted/50">
@@ -2569,6 +2572,7 @@ function TraceabilityTab() {
 }
 
 function ChangePointTab() {
+  const { t } = useI18n();
   const {
     changePointStudies,
     changePointObservations,
@@ -2663,44 +2667,44 @@ function ChangePointTab() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Create Change Point Study</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.changePoint.createStudy') || 'Create Change Point Study'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Study Name</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.studyName') || 'Study Name'}</label>
                 <Input
                   value={studyForm.name}
                   onChange={(e) => setStudyForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g., Drill Press Drift"
+                  placeholder={t('pages.quality.changePoint.studyNamePlaceholder') || 'e.g., Drill Press Drift'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Process Name</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.processName') || 'Process Name'}</label>
                 <Input
                   value={studyForm.processName}
                   onChange={(e) => setStudyForm((prev) => ({ ...prev, processName: e.target.value }))}
-                  placeholder="Drill Press"
+                  placeholder={t('pages.quality.changePoint.processPlaceholder') || 'Drill Press'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Characteristic</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.characteristic') || 'Characteristic'}</label>
                 <Input
                   value={studyForm.characteristic}
                   onChange={(e) => setStudyForm((prev) => ({ ...prev, characteristic: e.target.value }))}
-                  placeholder="Hole Diameter"
+                  placeholder={t('pages.quality.changePoint.characteristicPlaceholder') || 'Hole Diameter'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Method</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.method') || 'Method'}</label>
                 <Input
                   value={studyForm.method}
                   onChange={(e) => setStudyForm((prev) => ({ ...prev, method: e.target.value }))}
-                  placeholder="mean_shift"
+                  placeholder={t('pages.quality.changePoint.methodPlaceholder') || 'mean_shift'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Sensitivity</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.sensitivity') || 'Sensitivity'}</label>
                 <Input
                   type="number"
                   value={studyForm.sensitivity}
@@ -2709,34 +2713,34 @@ function ChangePointTab() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.notes') || 'Notes'}</label>
                 <Input
                   value={studyForm.notes}
                   onChange={(e) => setStudyForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Optional notes"
+                  placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
                 />
               </div>
             </div>
             <Button onClick={handleCreateStudy} disabled={loading} className="w-full">
-              Create Study
+              {t('pages.quality.changePoint.createStudyButton') || 'Create Study'}
             </Button>
           </CardContent>
         </Card>
 
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Add Observation</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.changePoint.addObservation') || 'Add Observation'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Study</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.study') || 'Study'}</label>
                 <Select
                   value={observationForm.studyId}
                   onValueChange={(value) => setObservationForm((prev) => ({ ...prev, studyId: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select study" />
+                    <SelectValue placeholder={t('pages.quality.placeholder.selectStudy') || 'Select study'} />
                   </SelectTrigger>
                   <SelectContent>
                     {changePointStudies.map((study) => (
@@ -2746,7 +2750,7 @@ function ChangePointTab() {
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Value</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.value') || 'Value'}</label>
                 <Input
                   type="number"
                   value={observationForm.value}
@@ -2754,20 +2758,20 @@ function ChangePointTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Sample Label</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.changePoint.sampleLabel') || 'Sample Label'}</label>
                 <Input
                   value={observationForm.sampleLabel}
                   onChange={(e) => setObservationForm((prev) => ({ ...prev, sampleLabel: e.target.value }))}
-                  placeholder="Sample ID"
+                  placeholder={t('pages.quality.changePoint.sampleIdPlaceholder') || 'Sample ID'}
                 />
               </div>
             </div>
             <div className="flex gap-2">
               <Button onClick={handleAddObservation} disabled={loading || changePointStudies.length === 0} className="flex-1">
-                Add Observation
+                {t('pages.quality.changePoint.addObservationButton') || 'Add Observation'}
               </Button>
               <Button onClick={handleDetect} disabled={loading || !observationForm.studyId} variant="outline" className="flex-1">
-                Detect Change Point
+                {t('pages.quality.changePoint.detectChangePoint') || 'Detect Change Point'}
               </Button>
             </div>
           </CardContent>
@@ -2776,23 +2780,23 @@ function ChangePointTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Studies</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.changePoint.studies') || 'Studies'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Study</th>
-                  <th className="py-3 px-4 text-left font-medium">Process</th>
-                  <th className="py-3 px-4 text-left font-medium">Characteristic</th>
-                  <th className="py-3 px-4 text-left font-medium">Method</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.study') || 'Study'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.process') || 'Process'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.characteristic') || 'Characteristic'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.method') || 'Method'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                 </tr>
               </thead>
               <tbody>
                 {changePointStudies.length === 0 ? (
-                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No studies yet.</td></tr>
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">{t('pages.quality.changePoint.noStudies') || 'No studies yet.'}</td></tr>
                 ) : (
                   changePointStudies.map((study) => (
                     <tr key={study.id} className="border-b hover:bg-muted/50">
@@ -2815,21 +2819,21 @@ function ChangePointTab() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Observations</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.changePoint.observations') || 'Observations'}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="py-3 px-4 text-left font-medium">Value</th>
-                    <th className="py-3 px-4 text-left font-medium">Sample</th>
-                    <th className="py-3 px-4 text-left font-medium">Observed</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.value') || 'Value'}</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.sample') || 'Sample'}</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.observed') || 'Observed'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {changePointObservations.length === 0 ? (
-                    <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">No observations.</td></tr>
+                    <tr><td colSpan={3} className="py-8 text-center text-muted-foreground">{t('pages.quality.changePoint.noObservations') || 'No observations.'}</td></tr>
                   ) : (
                     changePointObservations.map((obs) => (
                       <tr key={obs.id} className="border-b hover:bg-muted/50">
@@ -2849,22 +2853,22 @@ function ChangePointTab() {
 
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Detected Events</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.changePoint.detectedEvents') || 'Detected Events'}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="py-3 px-4 text-left font-medium">Index</th>
-                    <th className="py-3 px-4 text-left font-medium">Magnitude</th>
-                    <th className="py-3 px-4 text-left font-medium">Confidence</th>
-                    <th className="py-3 px-4 text-left font-medium">Detected</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.index') || 'Index'}</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.magnitude') || 'Magnitude'}</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.confidence') || 'Confidence'}</th>
+                    <th className="py-3 px-4 text-left font-medium">{t('pages.quality.changePoint.detected') || 'Detected'}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {changePointEvents.length === 0 ? (
-                    <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No events detected.</td></tr>
+                    <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.quality.changePoint.noEvents') || 'No events detected.'}</td></tr>
                   ) : (
                     changePointEvents.map((event) => (
                       <tr key={event.id} className="border-b hover:bg-muted/50">
@@ -2888,6 +2892,7 @@ function ChangePointTab() {
 }
 
 function ManagementReviewTab() {
+  const { t } = useI18n();
   const {
     managementReviews,
     managementReviewActions,
@@ -2977,20 +2982,20 @@ function ManagementReviewTab() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Schedule Management Review</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.managementReview.scheduleReview') || 'Schedule Management Review'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.title') || 'Title'}</label>
                 <Input
                   value={reviewForm.title}
                   onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))}
-                  placeholder="Q2 Management Review"
+                  placeholder={t('pages.quality.managementReview.titlePlaceholder') || 'Q2 Management Review'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Period Start</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.periodStart') || 'Period Start'}</label>
                 <Input
                   type="date"
                   value={reviewForm.periodStart}
@@ -2998,7 +3003,7 @@ function ManagementReviewTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Period End</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.periodEnd') || 'Period End'}</label>
                 <Input
                   type="date"
                   value={reviewForm.periodEnd}
@@ -3006,7 +3011,7 @@ function ManagementReviewTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Scheduled For</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.scheduledFor') || 'Scheduled For'}</label>
                 <Input
                   type="date"
                   value={reviewForm.scheduledFor}
@@ -3014,42 +3019,42 @@ function ManagementReviewTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Attendees</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.attendees') || 'Attendees'}</label>
                 <Input
                   value={reviewForm.attendees}
                   onChange={(e) => setReviewForm((prev) => ({ ...prev, attendees: e.target.value }))}
-                  placeholder="CEO, Quality Lead"
+                  placeholder={t('pages.quality.managementReview.attendeesPlaceholder') || 'CEO, Quality Lead'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('common.notes') || 'Notes'}</label>
                 <Input
                   value={reviewForm.notes}
                   onChange={(e) => setReviewForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Optional notes"
+                  placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
                 />
               </div>
             </div>
             <Button onClick={handleCreateReview} disabled={loading} className="w-full">
-              Schedule Review
+              {t('pages.quality.managementReview.scheduleReviewButton') || 'Schedule Review'}
             </Button>
           </CardContent>
         </Card>
 
         <Card className="border-border/40 bg-card/40">
           <CardHeader>
-            <CardTitle className="text-base">Add Action Item</CardTitle>
+            <CardTitle className="text-base">{t('pages.quality.managementReview.addActionItem') || 'Add Action Item'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Review</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.review') || 'Review'}</label>
                 <Select
                   value={actionForm.reviewId}
                   onValueChange={(value) => setActionForm((prev) => ({ ...prev, reviewId: value }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select review" />
+                    <SelectValue placeholder={t('pages.quality.managementReview.selectReview') || 'Select review'} />
                   </SelectTrigger>
                   <SelectContent>
                     {managementReviews.map((review) => (
@@ -3059,15 +3064,15 @@ function ManagementReviewTab() {
                 </Select>
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.title') || 'Title'}</label>
                 <Input
                   value={actionForm.title}
                   onChange={(e) => setActionForm((prev) => ({ ...prev, title: e.target.value }))}
-                  placeholder="Improve supplier audits"
+                  placeholder={t('pages.quality.managementReview.actionTitlePlaceholder') || 'Improve supplier audits'}
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Due Date</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.dueDate') || 'Due Date'}</label>
                 <Input
                   type="date"
                   value={actionForm.dueDate}
@@ -3075,24 +3080,24 @@ function ManagementReviewTab() {
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-muted-foreground">Assignee ID</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('pages.quality.managementReview.assigneeId') || 'Assignee ID'}</label>
                 <Input
                   value={actionForm.assigneeId}
                   onChange={(e) => setActionForm((prev) => ({ ...prev, assigneeId: e.target.value }))}
-                  placeholder="User ID"
+                  placeholder={t('pages.quality.managementReview.userIdPlaceholder') || 'User ID'}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground">Notes</label>
+                <label className="text-xs font-semibold text-muted-foreground">{t('common.notes') || 'Notes'}</label>
                 <Input
                   value={actionForm.notes}
                   onChange={(e) => setActionForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Optional notes"
+                  placeholder={t('pages.quality.placeholder.optionalNotes') || 'Optional notes'}
                 />
               </div>
             </div>
             <Button onClick={handleAddAction} disabled={loading || managementReviews.length === 0} className="w-full">
-              Add Action Item
+              {t('pages.quality.managementReview.addActionItemButton') || 'Add Action Item'}
             </Button>
           </CardContent>
         </Card>
@@ -3100,23 +3105,23 @@ function ManagementReviewTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Management Reviews</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.managementReview.managementReviews') || 'Management Reviews'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Title</th>
-                  <th className="py-3 px-4 text-left font-medium">Period</th>
-                  <th className="py-3 px-4 text-left font-medium">Scheduled</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.title') || 'Title'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.period') || 'Period'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.scheduled') || 'Scheduled'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
                   <th className="py-3 px-4 text-left font-medium"></th>
                 </tr>
               </thead>
               <tbody>
                 {managementReviews.length === 0 ? (
-                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No reviews scheduled.</td></tr>
+                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">{t('pages.quality.managementReview.noReviews') || 'No reviews scheduled.'}</td></tr>
                 ) : (
                   managementReviews.map((review) => (
                     <tr key={review.id} className="border-b hover:bg-muted/50">
@@ -3135,7 +3140,7 @@ function ManagementReviewTab() {
                           onClick={() => closeManagementReview(review.id)}
                           disabled={loading || review.status === 'closed'}
                         >
-                          Close
+                          {t('common.close') || 'Close'}
                         </Button>
                       </td>
                     </tr>
@@ -3149,22 +3154,22 @@ function ManagementReviewTab() {
 
       <Card className="border-border/40 bg-card/40">
         <CardHeader>
-          <CardTitle className="text-base">Action Items</CardTitle>
+          <CardTitle className="text-base">{t('pages.quality.managementReview.actionItems') || 'Action Items'}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">Review</th>
-                  <th className="py-3 px-4 text-left font-medium">Title</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Due</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.review') || 'Review'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.title') || 'Title'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.managementReview.due') || 'Due'}</th>
                 </tr>
               </thead>
               <tbody>
                 {managementReviewActions.length === 0 ? (
-                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">No action items recorded.</td></tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">{t('pages.quality.managementReview.noActions') || 'No action items recorded.'}</td></tr>
                 ) : (
                   managementReviewActions.map((action) => (
                     <tr key={action.id} className="border-b hover:bg-muted/50">
@@ -3215,7 +3220,7 @@ function NCRsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search NCRs..."
+            placeholder={t('pages.quality.ncrs.searchPlaceholder') || 'Search NCRs...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -3225,27 +3230,27 @@ function NCRsTab() {
           <Filter className="h-4 w-4 text-muted-foreground" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder={t('common.status') || 'Status'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="under_investigation">Investigating</SelectItem>
-              <SelectItem value="pending_disposition">Pending Disposition</SelectItem>
-              <SelectItem value="dispositioned">Dispositioned</SelectItem>
-              <SelectItem value="escalated_to_capa">Escalated to CAPA</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
+              <SelectItem value="all">{t('pages.quality.ncrs.allStatuses') || 'All statuses'}</SelectItem>
+              <SelectItem value="open">{t('pages.quality.ncrs.statusOpen') || 'Open'}</SelectItem>
+              <SelectItem value="under_investigation">{t('pages.quality.ncrs.statusInvestigating') || 'Investigating'}</SelectItem>
+              <SelectItem value="pending_disposition">{t('pages.quality.ncrs.statusPendingDisposition') || 'Pending Disposition'}</SelectItem>
+              <SelectItem value="dispositioned">{t('pages.quality.ncrs.statusDispositioned') || 'Dispositioned'}</SelectItem>
+              <SelectItem value="escalated_to_capa">{t('pages.quality.ncrs.statusEscalated') || 'Escalated to CAPA'}</SelectItem>
+              <SelectItem value="closed">{t('pages.quality.ncrs.statusClosed') || 'Closed'}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={severityFilter} onValueChange={setSeverityFilter}>
             <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="Severity" />
+              <SelectValue placeholder={t('pages.quality.ncrs.severity') || 'Severity'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All severities</SelectItem>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="major">Major</SelectItem>
-              <SelectItem value="minor">Minor</SelectItem>
+              <SelectItem value="all">{t('pages.quality.ncrs.allSeverities') || 'All severities'}</SelectItem>
+              <SelectItem value="critical">{t('pages.quality.ncrs.severityCritical') || 'Critical'}</SelectItem>
+              <SelectItem value="major">{t('pages.quality.ncrs.severityMajor') || 'Major'}</SelectItem>
+              <SelectItem value="minor">{t('pages.quality.ncrs.severityMinor') || 'Minor'}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -3257,13 +3262,13 @@ function NCRsTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">NCR</th>
-                  <th className="py-3 px-4 text-left font-medium">Title</th>
-                  <th className="py-3 px-4 text-left font-medium">Severity</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Source</th>
-                  <th className="py-3 px-4 text-right font-medium">Affected Qty</th>
-                  <th className="py-3 px-4 text-left font-medium">Created</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.ncrs.ncr') || 'NCR'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.ncrs.title') || 'Title'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.ncrs.severity') || 'Severity'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.ncrs.source') || 'Source'}</th>
+                  <th className="py-3 px-4 text-right font-medium">{t('pages.quality.ncrs.affectedQty') || 'Affected Qty'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.ncrs.created') || 'Created'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -3301,11 +3306,11 @@ function NCRsTab() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem>
                               <Eye className="mr-2 h-4 w-4" />
-                              View
+                              {t('common.view') || 'View'}
                             </DropdownMenuItem>
                             <DropdownMenuItem>
                               <Shield className="mr-2 h-4 w-4" />
-                              Create CAPA
+                              {t('pages.quality.ncrs.createCAPA') || 'Create CAPA'}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -3352,7 +3357,7 @@ function CAPAsTab() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search CAPAs..."
+            placeholder={t('pages.quality.capas.searchPlaceholder') || 'Search CAPAs...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -3362,24 +3367,24 @@ function CAPAsTab() {
           <Filter className="h-4 w-4 text-muted-foreground" />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder={t('common.status') || 'Status'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="implementing">Implementing</SelectItem>
-              <SelectItem value="verifying">Verifying</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
+              <SelectItem value="all">{t('pages.quality.capas.allStatuses') || 'All statuses'}</SelectItem>
+              <SelectItem value="open">{t('pages.quality.capas.statusOpen') || 'Open'}</SelectItem>
+              <SelectItem value="implementing">{t('pages.quality.capas.statusImplementing') || 'Implementing'}</SelectItem>
+              <SelectItem value="verifying">{t('pages.quality.capas.statusVerifying') || 'Verifying'}</SelectItem>
+              <SelectItem value="closed">{t('pages.quality.capas.statusClosed') || 'Closed'}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="Type" />
+              <SelectValue placeholder={t('common.type') || 'Type'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              <SelectItem value="corrective">Corrective</SelectItem>
-              <SelectItem value="preventive">Preventive</SelectItem>
+              <SelectItem value="all">{t('pages.quality.capas.allTypes') || 'All types'}</SelectItem>
+              <SelectItem value="corrective">{t('pages.quality.capas.typeCorrective') || 'Corrective'}</SelectItem>
+              <SelectItem value="preventive">{t('pages.quality.capas.typePreventive') || 'Preventive'}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -3391,13 +3396,13 @@ function CAPAsTab() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="py-3 px-4 text-left font-medium">CAPA</th>
-                  <th className="py-3 px-4 text-left font-medium">Title</th>
-                  <th className="py-3 px-4 text-left font-medium">Type</th>
-                  <th className="py-3 px-4 text-left font-medium">Priority</th>
-                  <th className="py-3 px-4 text-left font-medium">Status</th>
-                  <th className="py-3 px-4 text-left font-medium">Source NCR</th>
-                  <th className="py-3 px-4 text-left font-medium">Due Date</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capas.capa') || 'CAPA'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capas.title') || 'Title'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.type') || 'Type'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capas.priority') || 'Priority'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('common.status') || 'Status'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capas.sourceNCR') || 'Source NCR'}</th>
+                  <th className="py-3 px-4 text-left font-medium">{t('pages.quality.capas.dueDate') || 'Due Date'}</th>
                   <th className="py-3 px-4 w-10"></th>
                 </tr>
               </thead>
@@ -3418,7 +3423,7 @@ function CAPAsTab() {
                       <td className="py-3 px-4">{capa.title}</td>
                       <td className="py-3 px-4 capitalize">{capa.type}</td>
                       <td className="py-3 px-4 capitalize">
-                        {capa.status === 'open' ? 'High' : 'Medium'}
+                        {capa.status === 'open' ? (t('pages.quality.capas.priorityHigh') || 'High') : (t('pages.quality.capas.priorityMedium') || 'Medium')}
                       </td>
                       <td className="py-3 px-4">
                         <Badge variant={statusCfg?.variant || 'secondary'}>{statusCfg?.labelKey ? t(statusCfg.labelKey) : capa.status}</Badge>
@@ -3426,7 +3431,7 @@ function CAPAsTab() {
                       <td className="py-3 px-4 text-muted-foreground">{capa.ncr_id?.substring(0, 8) || '—'}</td>
                       <td className={cn('py-3 px-4', isOverdue && 'text-danger font-medium')}>
                         {new Date(capa.due_date).toLocaleDateString()}
-                        {isOverdue && ' (overdue)'}
+                        {isOverdue && ` (${t('pages.quality.capas.overdue') || 'overdue'})`}
                       </td>
                       <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
@@ -3438,11 +3443,11 @@ function CAPAsTab() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem>
                               <Eye className="mr-2 h-4 w-4" />
-                              View
+                              {t('common.view') || 'View'}
                             </DropdownMenuItem>
                             <DropdownMenuItem>
                               <Edit className="mr-2 h-4 w-4" />
-                              Edit
+                              {t('common.edit') || 'Edit'}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -3482,12 +3487,12 @@ function QualityPageContent() {
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-destructive" />
             <div>
-              <p className="text-sm font-bold text-destructive">Error loading quality data</p>
+              <p className="text-sm font-bold text-destructive">{t('pages.quality.errorLoading') || 'Error loading quality data'}</p>
               <p className="text-xs text-muted-foreground">{error}</p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={() => { fetchInspections(); fetchNCRs(); fetchCAPAs(); }}>
-            Retry
+            {t('pages.quality.retry') || 'Retry'}
           </Button>
         </div>
       )}
@@ -3593,7 +3598,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <Ruler className="h-3.5 w-3.5" />
-                MSA / GRR
+                {t('pages.quality.tabs.msa') || 'MSA / GRR'}
               </div>
             </button>
             <button
@@ -3607,7 +3612,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <Gauge className="h-3.5 w-3.5" />
-                Cp / Cpk
+                {t('pages.quality.tabs.capability') || 'Cp / Cpk'}
               </div>
             </button>
             <button
@@ -3635,7 +3640,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FileCheck className="h-3.5 w-3.5" />
-                FAI / AS9102
+                {t('pages.quality.tabs.fai') || 'FAI / AS9102'}
               </div>
             </button>
             <button
@@ -3649,7 +3654,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <ClipboardList className="h-3.5 w-3.5" />
-                Self Inspection
+                {t('pages.quality.tabs.selfInspection') || 'Self Inspection'}
               </div>
             </button>
             <button
@@ -3663,7 +3668,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FlaskConical className="h-3.5 w-3.5" />
-                Lab Management
+                {t('pages.quality.tabs.labManagement') || 'Lab Management'}
               </div>
             </button>
             <button
@@ -3677,7 +3682,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5" />
-                AQL Sampling
+                {t('pages.quality.tabs.aqlSampling') || 'AQL Sampling'}
               </div>
             </button>
             <button
@@ -3691,7 +3696,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5" />
-                Traceability
+                {t('pages.quality.tabs.traceability') || 'Traceability'}
               </div>
             </button>
             <button
@@ -3705,7 +3710,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-3.5 w-3.5" />
-                Change Point
+                {t('pages.quality.tabs.changePoint') || 'Change Point'}
               </div>
             </button>
             <button
@@ -3719,7 +3724,7 @@ function QualityPageContent() {
             >
               <div className="flex items-center gap-2">
                 <FileText className="h-3.5 w-3.5" />
-                Management Review
+                {t('pages.quality.tabs.managementReview') || 'Management Review'}
               </div>
             </button>
           </div>

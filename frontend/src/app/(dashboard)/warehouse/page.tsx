@@ -88,7 +88,7 @@ export default function WarehouseDashboard() {
             onClick={() => { fetchStats(); fetchMovements(4); fetchLowStock(4); }}
             className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90"
           >
-            Retry
+            {t('pages.warehouse.retry')}
           </button>
         </div>
       </PageGuard>
@@ -99,7 +99,7 @@ export default function WarehouseDashboard() {
     return (
       <PageGuard requiredRoles={SUPPLY_CHAIN_ROLES}>
         <div className="flex items-center justify-center min-h-[50vh]">
-          <div className="animate-pulse text-muted-foreground text-sm">Loading warehouse data…</div>
+          <div className="animate-pulse text-muted-foreground text-sm">{t('pages.warehouse.loading')}</div>
         </div>
       </PageGuard>
     );
@@ -196,23 +196,23 @@ export default function WarehouseDashboard() {
         <TabsList>
           <TabsTrigger value="overview">
             <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
-            Overview
+            {t('pages.warehouse.tabs.overview')}
           </TabsTrigger>
           <TabsTrigger value="inventory">
             <Layers className="h-3.5 w-3.5 mr-1.5" />
-            Inventory
+            {t('pages.warehouse.tabs.inventory')}
           </TabsTrigger>
           <TabsTrigger value="receiving">
             <ArrowDownRight className="h-3.5 w-3.5 mr-1.5" />
-            Receiving
+            {t('pages.warehouse.tabs.receiving')}
           </TabsTrigger>
           <TabsTrigger value="shipping">
             <ArrowUpRight className="h-3.5 w-3.5 mr-1.5" />
-            Shipping
+            {t('pages.warehouse.tabs.shipping')}
           </TabsTrigger>
           <TabsTrigger value="pick-pack">
             <ScanLine className="h-3.5 w-3.5 mr-1.5" />
-            Pick & Pack
+            {t('pages.warehouse.tabs.pickPack')}
           </TabsTrigger>
         </TabsList>
 
@@ -316,22 +316,22 @@ export default function WarehouseDashboard() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Layers className="h-4 w-4" />
-                    Inventory Items
+                    {t('pages.warehouse.inventoryItems')}
                   </CardTitle>
-                  <CardDescription>Search and manage all warehouse inventory</CardDescription>
+                  <CardDescription>{t('pages.warehouse.searchDescription')}</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input placeholder="Search items…" className="pl-9 w-64 h-9" />
+                    <Input placeholder={t('pages.warehouse.searchPlaceholder')} className="pl-9 w-64 h-9" />
                   </div>
                   <Button variant="outline" size="sm">
                     <Filter className="h-3.5 w-3.5 mr-1.5" />
-                    Filter
+                    {t('pages.warehouse.filter')}
                   </Button>
                   <Button size="sm">
                     <Plus className="h-3.5 w-3.5 mr-1.5" />
-                    Add Item
+                    {t('pages.warehouse.addItem')}
                   </Button>
                 </div>
               </div>
@@ -341,13 +341,13 @@ export default function WarehouseDashboard() {
                 <table className="w-full text-sm" role="table">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">SKU</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Item Name</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Location</th>
-                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">On Hand</th>
-                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Reserved</th>
-                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Available</th>
-                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.sku')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.itemName')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.location')}</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.onHand')}</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.reserved')}</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.available')}</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.status.label')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -361,14 +361,14 @@ export default function WarehouseDashboard() {
                         <td className="p-3 text-right font-mono tabular-nums">{item.current}</td>
                         <td className="p-3 text-center">
                           <Badge variant={item.current < item.reorder ? 'destructive' : 'secondary'} className="text-[10px]">
-                            {item.current < item.reorder ? 'Low' : 'OK'}
+                            {item.current < item.reorder ? t('pages.warehouse.statusLow') : t('pages.warehouse.statusOk')}
                           </Badge>
                         </td>
                       </tr>
                     )) : (
                       <tr>
                         <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                          No inventory data available. Sync stock to populate.
+                          {t('pages.warehouse.noInventoryData')}
                         </td>
                       </tr>
                     )}
@@ -387,13 +387,13 @@ export default function WarehouseDashboard() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <ArrowDownRight className="h-4 w-4 text-rams-green" />
-                    Inbound Receiving
+                    {t('pages.warehouse.inboundReceiving')}
                   </CardTitle>
-                  <CardDescription>Manage purchase order receipts and goods-in</CardDescription>
+                  <CardDescription>{t('pages.warehouse.managePO')}</CardDescription>
                 </div>
                 <Button size="sm">
                   <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  New Receipt
+                  {t('pages.warehouse.newReceipt')}
                 </Button>
               </div>
             </CardHeader>
@@ -402,12 +402,12 @@ export default function WarehouseDashboard() {
                 <table className="w-full text-sm" role="table">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Receipt #</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">PO Reference</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Supplier</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Expected Date</th>
-                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Items</th>
-                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.receiptNumber')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.poReference')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.supplier')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.expectedDate')}</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.items')}</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.status.label')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -418,7 +418,7 @@ export default function WarehouseDashboard() {
                       <td className="p-3 text-muted-foreground">2026-02-10</td>
                       <td className="p-3 text-right font-mono tabular-nums">12</td>
                       <td className="p-3 text-center">
-                        <Badge variant="outline" className="text-[10px] border-rams-green/30 text-rams-green bg-rams-green/5">In Transit</Badge>
+                        <Badge variant="outline" className="text-[10px] border-rams-green/30 text-rams-green bg-rams-green/5">{t('pages.warehouse.inTransit')}</Badge>
                       </td>
                     </tr>
                     <tr className="border-b hover:bg-muted/30">
@@ -428,7 +428,7 @@ export default function WarehouseDashboard() {
                       <td className="p-3 text-muted-foreground">2026-02-12</td>
                       <td className="p-3 text-right font-mono tabular-nums">5</td>
                       <td className="p-3 text-center">
-                        <Badge variant="secondary" className="text-[10px]">Pending</Badge>
+                        <Badge variant="secondary" className="text-[10px]">{t('pages.warehouse.pending')}</Badge>
                       </td>
                     </tr>
                   </tbody>
@@ -446,13 +446,13 @@ export default function WarehouseDashboard() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <ArrowUpRight className="h-4 w-4 text-rams-steel" />
-                    Outbound Shipping
+                    {t('pages.warehouse.outboundShipping')}
                   </CardTitle>
-                  <CardDescription>Manage shipments, packing lists, and dispatches</CardDescription>
+                  <CardDescription>{t('pages.warehouse.manageShipments')}</CardDescription>
                 </div>
                 <Button size="sm">
                   <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  New Shipment
+                  {t('pages.warehouse.newShipment')}
                 </Button>
               </div>
             </CardHeader>
@@ -461,12 +461,12 @@ export default function WarehouseDashboard() {
                 <table className="w-full text-sm" role="table">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Shipment #</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Customer</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Carrier</th>
-                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">Ship Date</th>
-                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">Items</th>
-                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">Status</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.shipmentNumber')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.customer')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.carrier')}</th>
+                      <th className="text-left p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.shipDate')}</th>
+                      <th className="text-right p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.items')}</th>
+                      <th className="text-center p-3 font-mono text-xs uppercase tracking-wider">{t('pages.warehouse.status.label')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -477,7 +477,7 @@ export default function WarehouseDashboard() {
                       <td className="p-3 text-muted-foreground">2026-02-09</td>
                       <td className="p-3 text-right font-mono tabular-nums">8</td>
                       <td className="p-3 text-center">
-                        <Badge className="text-[10px] bg-rams-green/10 text-rams-green border-rams-green/20" variant="outline">Packed</Badge>
+                        <Badge className="text-[10px] bg-rams-green/10 text-rams-green border-rams-green/20" variant="outline">{t('pages.warehouse.packed')}</Badge>
                       </td>
                     </tr>
                     <tr className="border-b hover:bg-muted/30">
@@ -487,7 +487,7 @@ export default function WarehouseDashboard() {
                       <td className="p-3 text-muted-foreground">2026-02-11</td>
                       <td className="p-3 text-right font-mono tabular-nums">3</td>
                       <td className="p-3 text-center">
-                        <Badge variant="secondary" className="text-[10px]">Picking</Badge>
+                        <Badge variant="secondary" className="text-[10px]">{t('pages.warehouse.picking')}</Badge>
                       </td>
                     </tr>
                   </tbody>
@@ -505,18 +505,18 @@ export default function WarehouseDashboard() {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <ScanLine className="h-4 w-4" />
-                    Pick & Pack Queue
+                    {t('pages.warehouse.pickPackQueue')}
                   </CardTitle>
-                  <CardDescription>Active pick lists and packing tasks</CardDescription>
+                  <CardDescription>{t('pages.warehouse.activePickLists')}</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm">
                     <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
-                    Stock Transfer
+                    {t('pages.warehouse.stockTransfer')}
                   </Button>
                   <Button size="sm">
                     <ScanLine className="h-3.5 w-3.5 mr-1.5" />
-                    Scan Item
+                    {t('pages.warehouse.scanItem')}
                   </Button>
                 </div>
               </div>
@@ -549,7 +549,7 @@ export default function WarehouseDashboard() {
                     <div className="flex items-center gap-6">
                       <div className="text-right">
                         <p className="font-mono text-sm font-bold tabular-nums">{task.picked}/{task.items}</p>
-                        <p className="text-[9px] font-mono text-muted-foreground uppercase">items picked</p>
+                        <p className="text-[9px] font-mono text-muted-foreground uppercase">{t('pages.warehouse.itemsPicked')}</p>
                       </div>
                       <Progress
                         value={(task.picked / task.items) * 100}
@@ -559,7 +559,7 @@ export default function WarehouseDashboard() {
                         variant={task.picked === task.items ? 'default' : task.priority === 'high' ? 'destructive' : 'secondary'}
                         className="text-[10px]"
                       >
-                        {task.picked === task.items ? 'Ready to Pack' : task.priority === 'high' ? 'Urgent' : 'In Progress'}
+                        {task.picked === task.items ? t('pages.warehouse.readyToPack') : task.priority === 'high' ? t('pages.warehouse.urgent') : t('pages.warehouse.inProgress')}
                       </Badge>
                     </div>
                   </div>

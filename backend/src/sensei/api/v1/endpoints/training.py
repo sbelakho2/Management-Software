@@ -684,7 +684,10 @@ async def create_skill_requirement(
 
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     return build_created_response(
         data=SkillRequirementResponse.model_validate(requirement),
@@ -849,7 +852,10 @@ async def create_training(
 
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     response = TrainingResponse.model_validate(training)
     response.enrolled_count = training.enrolled_count
@@ -1198,7 +1204,7 @@ async def enroll_participant(
         )
 
         # Wire employee→training into common thread HR lineage
-        await get_common_thread_service().bind_hr_lineage(
+        await get_common_thread_service().bind_hr(
             db,
             employee_id=participant.user_id,
             training_record_id=participant.id,
@@ -1219,7 +1225,10 @@ async def enroll_participant(
 
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     status_msg = "enrolled" if enrollment_status == EnrollmentStatus.ENROLLED else "waitlisted"
     return build_response(
@@ -1460,7 +1469,10 @@ async def create_user_skill(
 
         await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified
@@ -1620,7 +1632,10 @@ async def certify_user_skill(
             )
             await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified
@@ -1673,7 +1688,10 @@ async def revoke_certification(
             )
             await db.commit()
     except Exception:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     response = UserSkillResponse.model_validate(user_skill)
     response.is_certified = user_skill.is_certified

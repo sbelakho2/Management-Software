@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Plus, Layers } from 'lucide-react';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface EpicsListProps {
   projectId: string;
@@ -17,6 +18,7 @@ interface EpicsListProps {
 
 export function EpicsList({ projectId }: EpicsListProps) {
   const { epics, createEpic, stories } = useProjectManagementStore();
+  const { t } = useI18n();
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -60,23 +62,23 @@ export function EpicsList({ projectId }: EpicsListProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-heading font-bold tracking-tight ">Epics</h2>
-          <p className="text-muted-foreground">High-level initiatives breaking down into user stories.</p>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.projectManagement.detail.epics')}</h2>
+          <p className="text-muted-foreground">{t('pages.projectManagement.epics.subtitle')}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="pm-create-epic">
-              <Plus className="mr-2 h-4 w-4" /> New Epic
+              <Plus className="mr-2 h-4 w-4" /> {t('pages.projectManagement.epics.newEpic')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Epic</DialogTitle>
+              <DialogTitle>{t('pages.projectManagement.epics.createNewEpic')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Input 
-                  placeholder="Epic Subject" 
+                  placeholder={t('pages.projectManagement.epics.subjectPlaceholder')} 
                   value={subject} 
                   onChange={(e) => setSubject(e.target.value)}
                   data-testid="pm-epic-subject"
@@ -84,7 +86,7 @@ export function EpicsList({ projectId }: EpicsListProps) {
               </div>
               <div className="space-y-2">
                 <Textarea 
-                  placeholder="Description" 
+                  placeholder={t('pages.projectManagement.epics.descriptionPlaceholder')} 
                   value={description} 
                   onChange={(e) => setDescription(e.target.value)}
                   data-testid="pm-epic-description"
@@ -92,9 +94,9 @@ export function EpicsList({ projectId }: EpicsListProps) {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t('common.cancel')}</Button>
               <Button onClick={handleCreateEpic} disabled={isSubmitting} data-testid="pm-epic-submit">
-                {isSubmitting ? 'Creating...' : 'Create Epic'}
+                {isSubmitting ? t('pages.projectManagement.epics.creating') : t('pages.projectManagement.epics.createEpic')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -115,11 +117,11 @@ export function EpicsList({ projectId }: EpicsListProps) {
                 </CardHeader>
                 <CardContent className="pb-2">
                     <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
-                        {epic.description || "No description provided."}
+                        {epic.description || t('pages.projectManagement.noDescription')}
                     </p>
                     <div className="mt-4 space-y-2">
                         <div className="flex justify-between text-xs text-muted-foreground">
-                            <span>Progress</span>
+                            <span>{t('pages.projectManagement.epics.progress')}</span>
                             <span>{progress}%</span>
                         </div>
                         <Progress value={progress} className="h-2" />
@@ -128,7 +130,7 @@ export function EpicsList({ projectId }: EpicsListProps) {
                 <CardFooter className="pt-2 text-xs text-muted-foreground flex justify-between">
                     <div className="flex items-center">
                         <Layers className="mr-1 h-3 w-3" />
-                        {stories.filter(s => s.epic_id === epic.id).length} stories
+                        {stories.filter(s => s.epic_id === epic.id).length} {t('pages.projectManagement.epics.stories')}
                     </div>
                 </CardFooter>
             </Card>
@@ -137,7 +139,7 @@ export function EpicsList({ projectId }: EpicsListProps) {
         {projectEpics.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg text-muted-foreground">
                 <Layers className="h-12 w-12 mb-4 opacity-20" />
-                <p>No epics found. Create one to get started.</p>
+                <p>{t('pages.projectManagement.epics.noEpicsFound')}</p>
             </div>
         )}
       </div>

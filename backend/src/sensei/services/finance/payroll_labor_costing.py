@@ -5,7 +5,7 @@ Implements the 21.7 development plan item:
 - Direct Labor Booking: operator station time linked to cost centers/work orders.
 - Overtime/Absence Approval: lightweight approval workflow with budget-impact metadata.
 
-This module is intentionally in-memory and pure-Python to match other service modules.
+State is persisted via the service_state table for DB-backed continuity.
 """
 
 from __future__ import annotations
@@ -22,6 +22,149 @@ from uuid import UUID, uuid4
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 logger = logging.getLogger(__name__)
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_attendance_event(event: "AttendanceEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "employee_id": event.employee_id,
+        "occurred_at": event.occurred_at.isoformat(),
+        "event_type": event.event_type.value,
+        "source": event.source,
+        "terminal_id": event.terminal_id,
+        "metadata": event.metadata,
+    }
+
+
+def _decode_attendance_event(data: dict[str, Any]) -> "AttendanceEvent":
+    return AttendanceEvent(
+        id=UUID(data["id"]),
+        employee_id=data["employee_id"],
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        event_type=AttendanceEventType(data["event_type"]),
+        source=data.get("source", "terminal_scan"),
+        terminal_id=data.get("terminal_id"),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_timecard(timecard: "Timecard") -> dict[str, Any]:
+    return {
+        "id": str(timecard.id),
+        "employee_id": timecard.employee_id,
+        "day": timecard.day.isoformat(),
+        "minutes_worked": timecard.minutes_worked,
+        "minutes_break": timecard.minutes_break,
+        "status": timecard.status.value,
+        "validated_at": _encode_datetime(timecard.validated_at),
+        "validated_by": timecard.validated_by,
+    }
+
+
+def _decode_timecard(data: dict[str, Any]) -> "Timecard":
+    return Timecard(
+        id=UUID(data["id"]),
+        employee_id=data["employee_id"],
+        day=date.fromisoformat(data["day"]),
+        minutes_worked=int(data.get("minutes_worked", 0)),
+        minutes_break=int(data.get("minutes_break", 0)),
+        status=TimecardStatus(data.get("status", TimecardStatus.DRAFT.value)),
+        validated_at=_decode_datetime(data.get("validated_at")),
+        validated_by=data.get("validated_by"),
+    )
+
+
+def _encode_variance(variance: "VarianceRequest") -> dict[str, Any]:
+    return {
+        "id": str(variance.id),
+        "employee_id": variance.employee_id,
+        "day": variance.day.isoformat(),
+        "variance_type": variance.variance_type.value,
+        "hours": variance.hours,
+        "code": variance.code,
+        "reason": variance.reason,
+        "requested_at": variance.requested_at.isoformat(),
+        "requested_by": variance.requested_by,
+        "status": variance.status.value,
+        "decided_at": _encode_datetime(variance.decided_at),
+        "decided_by": variance.decided_by,
+        "decision_note": variance.decision_note,
+    }
+
+
+def _decode_variance(data: dict[str, Any]) -> "VarianceRequest":
+    return VarianceRequest(
+        id=UUID(data["id"]),
+        employee_id=data["employee_id"],
+        day=date.fromisoformat(data["day"]),
+        variance_type=VarianceType(data["variance_type"]),
+        hours=float(data.get("hours", 0.0)),
+        code=data.get("code"),
+        reason=data.get("reason", ""),
+        requested_at=datetime.fromisoformat(data["requested_at"]),
+        requested_by=data.get("requested_by", ""),
+        status=VarianceStatus(data.get("status", VarianceStatus.PENDING.value)),
+        decided_at=_decode_datetime(data.get("decided_at")),
+        decided_by=data.get("decided_by"),
+        decision_note=data.get("decision_note"),
+    )
+
+
+def _encode_labor_booking(booking: "LaborBooking") -> dict[str, Any]:
+    return {
+        "id": str(booking.id),
+        "employee_id": booking.employee_id,
+        "station_id": booking.station_id,
+        "started_at": booking.started_at.isoformat(),
+        "ended_at": booking.ended_at.isoformat(),
+        "minutes": booking.minutes,
+        "cost_center": booking.cost_center,
+        "work_order_id": booking.work_order_id,
+        "operation_id": booking.operation_id,
+        "created_at": booking.created_at.isoformat(),
+    }
+
+
+def _decode_labor_booking(data: dict[str, Any]) -> "LaborBooking":
+    return LaborBooking(
+        id=UUID(data["id"]),
+        employee_id=data["employee_id"],
+        station_id=data["station_id"],
+        started_at=datetime.fromisoformat(data["started_at"]),
+        ended_at=datetime.fromisoformat(data["ended_at"]),
+        minutes=int(data.get("minutes", 0)),
+        cost_center=data.get("cost_center", ""),
+        work_order_id=data.get("work_order_id"),
+        operation_id=data.get("operation_id"),
+        created_at=datetime.fromisoformat(data["created_at"]),
+    )
 
 
 class AttendanceEventType(str, Enum):
@@ -154,6 +297,53 @@ class PayrollLaborCostingService(PersistentServiceMixin):
 
         # Optional outbound sync integration
         self._erp_service = erp_service
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        """Hydrate service state from the service_state table."""
+        if self._state_loaded:
+            return
+
+        events_data = await self.load_state(_DEFAULT_TENANT_ID, "events") or []
+        timecards_data = await self.load_state(_DEFAULT_TENANT_ID, "timecards") or {}
+        variances_data = await self.load_state(_DEFAULT_TENANT_ID, "variances") or {}
+        bookings_data = await self.load_state(_DEFAULT_TENANT_ID, "labor_bookings") or {}
+        station_costs = await self.load_state(_DEFAULT_TENANT_ID, "station_cost_centers") or {}
+        employee_rates = await self.load_state(_DEFAULT_TENANT_ID, "employee_rates") or {}
+
+        self._events = [_decode_attendance_event(e) for e in events_data]
+        self._timecards = {}
+        for key, tc in timecards_data.items():
+            employee_id, day_s = key.split("|", 1)
+            self._timecards[(employee_id, date.fromisoformat(day_s))] = _decode_timecard(tc)
+
+        self._variances = {UUID(vid): _decode_variance(v) for vid, v in variances_data.items()}
+        self._labor_bookings = {UUID(bid): _decode_labor_booking(b) for bid, b in bookings_data.items()}
+        self._station_cost_centers = {str(k): str(v) for k, v in station_costs.items()}
+        self._employee_hourly_rates = {str(k): float(v) for k, v in employee_rates.items()}
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        """Persist all service state to the service_state table."""
+        events_data = [_encode_attendance_event(e) for e in self._events]
+        timecards_data = {
+            f"{emp}|{day.isoformat()}": _encode_timecard(tc)
+            for (emp, day), tc in self._timecards.items()
+        }
+        variances_data = {str(vid): _encode_variance(v) for vid, v in self._variances.items()}
+        bookings_data = {str(bid): _encode_labor_booking(b) for bid, b in self._labor_bookings.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "events", events_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "timecards", timecards_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "variances", variances_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "labor_bookings", bookings_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "station_cost_centers", self._station_cost_centers)
+        await self.save_state(_DEFAULT_TENANT_ID, "employee_rates", self._employee_hourly_rates)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---------------------------------------------------------------------
     # Attendance capture + validation
@@ -576,3 +766,79 @@ class PayrollLaborCostingService(PersistentServiceMixin):
             labor_id = f"labor_{row['record_type']}_{row['employee_id']}_{row['date']}_{uuid4().hex[:8]}"
             sync_records.append(self._erp_service.sync_employee_labor(labor_id, row))
         return sync_records
+
+    # ---------------------------------------------------------------------
+    # Async DB-backed wrappers
+    # ---------------------------------------------------------------------
+
+    async def record_attendance_event_async(self, **kwargs: Any) -> AttendanceEvent:
+        await self._ensure_loaded()
+        event = self.record_attendance_event(**kwargs)
+        await self.persist_all()
+        return event
+
+    async def build_timecard_async(self, **kwargs: Any) -> Timecard:
+        await self._ensure_loaded()
+        timecard = self.build_timecard(**kwargs)
+        await self.persist_all()
+        return timecard
+
+    async def validate_timecard_async(self, **kwargs: Any) -> Timecard:
+        await self._ensure_loaded()
+        timecard = self.validate_timecard(**kwargs)
+        await self.persist_all()
+        return timecard
+
+    async def submit_overtime_request_async(self, **kwargs: Any) -> VarianceRequest:
+        await self._ensure_loaded()
+        variance = self.submit_overtime_request(**kwargs)
+        await self.persist_all()
+        return variance
+
+    async def submit_absence_request_async(self, **kwargs: Any) -> VarianceRequest:
+        await self._ensure_loaded()
+        variance = self.submit_absence_request(**kwargs)
+        await self.persist_all()
+        return variance
+
+    async def decide_variance_request_async(self, **kwargs: Any) -> VarianceRequest:
+        await self._ensure_loaded()
+        variance = self.decide_variance_request(**kwargs)
+        await self.persist_all()
+        return variance
+
+    async def list_variances_async(self, **kwargs: Any) -> list[VarianceRequest]:
+        await self._ensure_loaded()
+        return self.list_variances(**kwargs)
+
+    async def set_station_cost_center_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.set_station_cost_center(**kwargs)
+        await self.persist_all()
+
+    async def record_labor_booking_async(self, **kwargs: Any) -> LaborBooking:
+        await self._ensure_loaded()
+        booking = self.record_labor_booking(**kwargs)
+        await self.persist_all()
+        return booking
+
+    async def list_labor_bookings_async(self, **kwargs: Any) -> list[LaborBooking]:
+        await self._ensure_loaded()
+        return self.list_labor_bookings(**kwargs)
+
+    async def set_employee_hourly_rate_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.set_employee_hourly_rate(**kwargs)
+        await self.persist_all()
+
+    async def export_pay_period_rows_async(self, **kwargs: Any) -> list[dict[str, Any]]:
+        await self._ensure_loaded()
+        return self.export_pay_period_rows(**kwargs)
+
+    async def export_pay_period_csv_async(self, **kwargs: Any) -> str:
+        await self._ensure_loaded()
+        return self.export_pay_period_csv(**kwargs)
+
+    async def sync_pay_period_to_erp_async(self, **kwargs: Any) -> list[Any]:
+        await self._ensure_loaded()
+        return self.sync_pay_period_to_erp(**kwargs)

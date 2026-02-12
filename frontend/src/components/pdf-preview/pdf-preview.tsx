@@ -25,6 +25,7 @@ import {
   ZOOM_LEVELS,
 } from '@/stores/pdf-preview-store';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 // =============================================================================
@@ -163,6 +164,7 @@ interface VersionItemProps {
 }
 
 function VersionItem({ version, isSelected, onSelect }: VersionItemProps) {
+  const { t } = useI18n();
   const date = new Date(version.createdAt);
   
   return (
@@ -180,7 +182,7 @@ function VersionItem({ version, isSelected, onSelect }: VersionItemProps) {
           {formatVersionLabel(version)}
         </span>
         {version.isImmutable && (
-          <span className="text-primary" title="Immutable version">
+          <span className="text-primary" title={t('components.pdfPreview.immutableVersion')}>
             {Icons.lock}
           </span>
         )}
@@ -190,7 +192,7 @@ function VersionItem({ version, isSelected, onSelect }: VersionItemProps) {
         <span>{date.toLocaleDateString()} {date.toLocaleTimeString()}</span>
       </div>
       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-        <span>by {version.createdBy}</span>
+        <span>{t('components.pdfPreview.byAuthor')} {version.createdBy}</span>
         {version.fileSize && (
           <>
             <span>•</span>
@@ -201,7 +203,7 @@ function VersionItem({ version, isSelected, onSelect }: VersionItemProps) {
       {isSelected && (
         <div className="flex items-center gap-1 mt-2 text-xs text-primary">
           {Icons.checkCircle}
-          <span>Currently viewing</span>
+          <span>{t('components.pdfPreview.currentlyViewing')}</span>
         </div>
       )}
     </button>
@@ -241,10 +243,11 @@ interface LoadingOverlayProps {
 }
 
 function LoadingOverlay({ progress }: LoadingOverlayProps) {
+  const { t } = useI18n();
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm z-10">
       {Icons.loader}
-      <div className="mt-4 text-sm text-muted-foreground">Loading PDF...</div>
+      <div className="mt-4 text-sm text-muted-foreground">{t('components.pdfPreview.loadingPdf')}</div>
       {progress > 0 && (
         <div className="mt-2 w-48">
           <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -272,6 +275,7 @@ interface ErrorOverlayProps {
 }
 
 function ErrorOverlay({ error, onRetry }: ErrorOverlayProps) {
+  const { t } = useI18n();
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-10">
       <div className="text-destructive">
@@ -284,7 +288,7 @@ function ErrorOverlay({ error, onRetry }: ErrorOverlayProps) {
           onClick={onRetry}
           className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
         >
-          Retry
+          {t('components.pdfPreview.retry')}
         </button>
       )}
     </div>
@@ -304,6 +308,7 @@ interface PDFViewerProps {
 }
 
 function PDFViewer({ url, zoom, rotation, onLoad, onError }: PDFViewerProps) {
+  const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   // Build URL with viewer parameters
@@ -321,9 +326,9 @@ function PDFViewer({ url, zoom, rotation, onLoad, onError }: PDFViewerProps) {
         ref={iframeRef}
         src={viewerUrl}
         className="w-full h-full border-0"
-        title="PDF Preview"
+        title={t('components.pdfPreview.pdfPreview')}
         onLoad={onLoad}
-        onError={() => onError('Failed to load PDF')}
+        onError={() => onError(t('components.pdfPreview.failedToLoad'))}
       />
     </div>
   );
@@ -378,6 +383,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
   } = usePDFPreviewStore();
   
   const containerRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const [pageInput, setPageInput] = useState('');
   
   // Get current state
@@ -550,7 +556,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
         )}
         role="dialog"
         aria-modal="true"
-        aria-label="PDF Preview"
+        aria-label={t('components.pdfPreview.pdfPreview')}
       >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
@@ -568,14 +574,14 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
         <div className="flex items-center gap-2">
           <ToolbarButton
             onClick={toggleVersionHistory}
-            title="Version History"
+            title={t('components.pdfPreview.versionHistory')}
             active={showVersionHistory}
           >
             {Icons.clock}
           </ToolbarButton>
           <ToolbarButton
             onClick={toggleMetadata}
-            title="Metadata"
+            title={t('components.pdfPreview.metadata')}
             active={showMetadata}
           >
             {Icons.info}
@@ -583,7 +589,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
           <div className="w-px h-6 bg-border mx-2" />
           <ToolbarButton
             onClick={close}
-            title="Close (Escape)"
+            title={t('components.pdfPreview.closeEscape')}
           >
             {Icons.x}
           </ToolbarButton>
@@ -596,7 +602,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
         {showVersionHistory && (
           <div className="w-72 border-r border-border bg-muted/30 overflow-y-auto">
             <div className="p-4">
-              <h3 className="font-semibold mb-3">Version History</h3>
+              <h3 className="font-semibold mb-3">{t('components.pdfPreview.versionHistory')}</h3>
               <div className="space-y-2">
                 {document.versions.map((version) => (
                   <VersionItem
@@ -620,7 +626,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               <ToolbarButton
                 onClick={previousPage}
                 disabled={!canGoPrevious}
-                title="Previous Page (Left Arrow)"
+                title={t('components.pdfPreview.previousPage')}
               >
                 {Icons.chevronLeft}
               </ToolbarButton>
@@ -631,17 +637,17 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
                   value={pageInput}
                   onChange={handlePageInputChange}
                   className="w-12 px-2 py-1 text-center text-sm bg-background border border-border rounded"
-                  aria-label="Current page"
+                  aria-label={t('components.pdfPreview.currentPage')}
                 />
                 <span className="text-sm text-muted-foreground">
-                  of {totalPages || '?'}
+                  {t('components.pdfPreview.of')} {totalPages || '?'}
                 </span>
               </form>
               
               <ToolbarButton
                 onClick={nextPage}
                 disabled={!canGoNext}
-                title="Next Page (Right Arrow)"
+                title={t('components.pdfPreview.nextPage')}
               >
                 {Icons.chevronRight}
               </ToolbarButton>
@@ -652,7 +658,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               <ToolbarButton
                 onClick={zoomOut}
                 disabled={!canZoomOut}
-                title="Zoom Out (Cmd+-)"
+                title={t('components.pdfPreview.zoomOut')}
               >
                 {Icons.zoomOut}
               </ToolbarButton>
@@ -662,7 +668,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               <ToolbarButton
                 onClick={zoomIn}
                 disabled={!canZoomIn}
-                title="Zoom In (Cmd++)"
+                title={t('components.pdfPreview.zoomIn')}
               >
                 {Icons.zoomIn}
               </ToolbarButton>
@@ -671,14 +677,14 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               
               <ToolbarButton
                 onClick={rotateClockwise}
-                title="Rotate"
+                title={t('components.pdfPreview.rotate')}
               >
                 {Icons.rotateCw}
               </ToolbarButton>
               
               <ToolbarButton
                 onClick={toggleFullscreen}
-                title="Fullscreen (Cmd+F)"
+                title={t('components.pdfPreview.fullscreen')}
               >
                 {isFullscreen ? Icons.minimize : Icons.maximize}
               </ToolbarButton>
@@ -689,7 +695,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               <ToolbarButton
                 onClick={handleDownload}
                 disabled={isDownloading}
-                title="Download"
+                title={t('components.pdfPreview.download')}
               >
                 {Icons.download}
               </ToolbarButton>
@@ -697,7 +703,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
               <ToolbarButton
                 onClick={handlePrint}
                 disabled={isPrinting}
-                title="Print"
+                title={t('components.pdfPreview.print')}
               >
                 {Icons.printer}
               </ToolbarButton>
@@ -733,28 +739,28 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
         {showMetadata && (
           <div className="w-72 border-l border-border bg-muted/30 overflow-y-auto">
             <div className="p-4">
-              <h3 className="font-semibold mb-3">Document Info</h3>
+              <h3 className="font-semibold mb-3">{t('components.pdfPreview.documentInfo')}</h3>
               
               <div className="space-y-4">
                 <div>
-                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">Title</dt>
+                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">{t('components.pdfPreview.titleLabel')}</dt>
                   <dd className="mt-1 text-sm">{document.title}</dd>
                 </div>
                 
                 <div>
-                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">Type</dt>
+                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">{t('components.pdfPreview.typeLabel')}</dt>
                   <dd className="mt-1 text-sm">{getDocumentTypeLabel(document.type)}</dd>
                 </div>
                 
                 {document.description && (
                   <div>
-                    <dt className="text-xs text-muted-foreground uppercase tracking-wider">Description</dt>
+                    <dt className="text-xs text-muted-foreground uppercase tracking-wider">{t('components.pdfPreview.descriptionLabel')}</dt>
                     <dd className="mt-1 text-sm">{document.description}</dd>
                   </div>
                 )}
                 
                 <div>
-                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">Entity</dt>
+                  <dt className="text-xs text-muted-foreground uppercase tracking-wider">{t('components.pdfPreview.entityLabel')}</dt>
                   <dd className="mt-1 text-sm">
                     {document.entityType}: {document.entityId}
                   </dd>
@@ -764,35 +770,35 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
                   <>
                     <div className="border-t border-border pt-4 mt-4">
                       <h4 className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                        Current Version
-                      </h4>
+                      {t('components.pdfPreview.currentVersion')}
+                    </h4>
                       
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Version</span>
+                          <span className="text-muted-foreground">{t('components.pdfPreview.versionLabel')}</span>
                           <span>{formatVersionLabel(selectedVersion)}</span>
                         </div>
                         
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Created</span>
+                          <span className="text-muted-foreground">{t('components.pdfPreview.createdLabel')}</span>
                           <span>{new Date(selectedVersion.createdAt).toLocaleDateString()}</span>
                         </div>
                         
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Created By</span>
+                          <span className="text-muted-foreground">{t('components.pdfPreview.createdBy')}</span>
                           <span>{selectedVersion.createdBy}</span>
                         </div>
                         
                         {selectedVersion.fileSize && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Size</span>
+                            <span className="text-muted-foreground">{t('components.pdfPreview.sizeLabel')}</span>
                             <span>{formatFileSize(selectedVersion.fileSize)}</span>
                           </div>
                         )}
                         
                         {selectedVersion.pageCount && (
                           <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Pages</span>
+                            <span className="text-muted-foreground">{t('components.pdfPreview.pagesLabel')}</span>
                             <span>{selectedVersion.pageCount}</span>
                           </div>
                         )}
@@ -800,7 +806,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
                         {selectedVersion.isImmutable && (
                           <div className="flex items-center gap-2 text-sm text-primary mt-2">
                             {Icons.lock}
-                            <span>Immutable version</span>
+                            <span>{t('components.pdfPreview.immutableVersion')}</span>
                           </div>
                         )}
                       </div>
@@ -808,7 +814,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
                     
                     {selectedVersion.hash && (
                       <div>
-                        <dt className="text-xs text-muted-foreground uppercase tracking-wider">Hash</dt>
+                        <dt className="text-xs text-muted-foreground uppercase tracking-wider">{t('components.pdfPreview.hashLabel')}</dt>
                         <dd className="mt-1 text-xs font-mono break-all">{selectedVersion.hash}</dd>
                       </div>
                     )}
@@ -818,7 +824,7 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
                 {document.metadata && Object.keys(document.metadata).length > 0 && (
                   <div className="border-t border-border pt-4 mt-4">
                     <h4 className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                      Metadata
+                      {t('components.pdfPreview.metadataHeading')}
                     </h4>
                     <div className="space-y-2">
                       {Object.entries(document.metadata).map(([key, value]) => (
@@ -840,14 +846,14 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
       <div className="flex items-center justify-between px-4 py-2 border-t border-border bg-background text-xs text-muted-foreground">
         <div className="flex items-center gap-4">
           <span>
-            Page {currentPage} of {totalPages || '?'}
+            {t('components.pdfPreview.page')} {currentPage} {t('components.pdfPreview.of')} {totalPages || '?'}
           </span>
           <span>•</span>
           <span>{zoomPercentage}%</span>
           {rotation !== 0 && (
             <>
               <span>•</span>
-              <span>Rotated {rotation}°</span>
+              <span>{t('components.pdfPreview.rotated')} {rotation}°</span>
             </>
           )}
         </div>
@@ -856,11 +862,11 @@ export function PDFPreview({ className, onDownload, onPrint }: PDFPreviewProps) 
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">←</kbd>
             <kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">→</kbd>
-            <span className="ml-1">Navigate</span>
+            <span className="ml-1">{t('components.pdfPreview.navigate')}</span>
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-muted rounded border border-border">Esc</kbd>
-            <span className="ml-1">Close</span>
+            <span className="ml-1">{t('components.pdfPreview.close')}</span>
           </span>
         </div>
       </div>

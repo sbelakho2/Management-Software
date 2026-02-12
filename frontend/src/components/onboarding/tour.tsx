@@ -22,6 +22,7 @@ import {
   TourPositionType,
   TOUR_POSITION,
 } from './types';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // TOUR CONTEXT
@@ -206,6 +207,7 @@ function getTooltipStyle(
  */
 export function TourOverlay(): React.ReactElement | null {
   const { isActive, currentStep, steps, nextStep, prevStep, endTour } = useTour();
+  const { t } = useI18n();
   const [targetElement, setTargetElement] = useState<HTMLElement | null>(null);
 
   const step = steps[currentStep];
@@ -247,7 +249,7 @@ export function TourOverlay(): React.ReactElement | null {
     : undefined;
 
   return (
-    <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-label="Product tour">
+    <div className="fixed inset-0 z-[9999]" role="dialog" aria-modal="true" aria-label={t('tour.productTour')}>
       {/* Overlay with spotlight cutout */}
       <div
         className="absolute inset-0 bg-black/50"
@@ -280,7 +282,7 @@ export function TourOverlay(): React.ReactElement | null {
           <button
             type="button"
             onClick={endTour}
-            aria-label="Close tour"
+            aria-label={t('tour.closeTour')}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             ✕
@@ -301,7 +303,7 @@ export function TourOverlay(): React.ReactElement | null {
 
         <div className="flex justify-between items-center">
           <span className="text-sm text-gray-500">
-            {currentStep + 1} of {steps.length}
+            {t('tour.stepOf', { current: String(currentStep + 1), total: String(steps.length) })}
           </span>
           <div className="flex gap-2">
             <button
@@ -310,14 +312,14 @@ export function TourOverlay(): React.ReactElement | null {
               disabled={currentStep === 0}
               className="px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Back
+              {t('tour.back')}
             </button>
             <button
               type="button"
               onClick={nextStep}
               className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              {currentStep === steps.length - 1 ? 'Finish' : 'Next'}
+              {currentStep === steps.length - 1 ? t('tour.finish') : t('tour.next')}
             </button>
           </div>
         </div>

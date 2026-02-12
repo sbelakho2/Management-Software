@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface GRRResult {
   repeatability_ev: number;
@@ -34,13 +35,13 @@ const GRR_THRESHOLDS = {
 
 const NDC_THRESHOLD = 5; // Minimum 5 distinct categories per AIAG
 
-function getGRRStatus(grrPercent: number): { status: 'excellent' | 'acceptable' | 'unacceptable'; color: string; label: string } {
+function getGRRStatus(grrPercent: number): { status: 'excellent' | 'acceptable' | 'unacceptable'; color: string; labelKey: string; msgKey: string } {
   if (grrPercent < GRR_THRESHOLDS.EXCELLENT) {
-    return { status: 'excellent', color: 'text-green-600', label: 'Excellent' };
+    return { status: 'excellent', color: 'text-green-600', labelKey: 'quality.grr.excellent', msgKey: 'quality.grr.msgExcellent' };
   } else if (grrPercent < GRR_THRESHOLDS.ACCEPTABLE) {
-    return { status: 'acceptable', color: 'text-yellow-600', label: 'Acceptable' };
+    return { status: 'acceptable', color: 'text-yellow-600', labelKey: 'quality.grr.acceptable', msgKey: 'quality.grr.msgAcceptable' };
   }
-  return { status: 'unacceptable', color: 'text-red-600', label: 'Unacceptable' };
+  return { status: 'unacceptable', color: 'text-red-600', labelKey: 'quality.grr.unacceptable', msgKey: 'quality.grr.msgUnacceptable' };
 }
 
 function getNDCStatus(ndc: number): { isAcceptable: boolean; color: string } {
@@ -51,6 +52,7 @@ function getNDCStatus(ndc: number): { isAcceptable: boolean; color: string } {
 }
 
 export function GRRResultsChart({ result, gaugeName, studyName, className }: GRRResultsChartProps) {
+  const { t } = useI18n();
   const grrStatus = getGRRStatus(result.grr_percent);
   const ndcStatus = getNDCStatus(result.ndc);
 
@@ -64,12 +66,12 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-lg font-heading">GRR Analysis Results</CardTitle>
+            <CardTitle className="text-lg font-heading">{t('quality.grr.analysisResults')}</CardTitle>
             {(gaugeName || studyName) && (
               <CardDescription className="text-xs">
                 {studyName && <span>{studyName}</span>}
                 {studyName && gaugeName && <span> • </span>}
-                {gaugeName && <span>Gauge: {gaugeName}</span>}
+                {gaugeName && <span>{t('quality.grr.gauge', { name: gaugeName })}</span>}
               </CardDescription>
             )}
           </div>
@@ -77,7 +79,7 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
             variant={grrStatus.status === 'excellent' ? 'default' : grrStatus.status === 'acceptable' ? 'secondary' : 'destructive'}
             className="text-xs font-bold"
           >
-            {grrStatus.label}
+            {t(grrStatus.labelKey)}
           </Badge>
         </div>
       </CardHeader>
@@ -88,15 +90,13 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
             <span className={grrStatus.color}>{result.grr_percent.toFixed(1)}</span>
             <span className="text-2xl text-muted-foreground">%</span>
           </div>
-          <p className="text-sm text-muted-foreground">Total Gage R&R</p>
+          <p className="text-sm text-muted-foreground">{t('quality.grr.totalGageRR')}</p>
           <div className="flex items-center justify-center gap-1 text-xs">
             {grrStatus.status === 'excellent' && <CheckCircle className="h-3 w-3 text-green-600" />}
             {grrStatus.status === 'acceptable' && <AlertTriangle className="h-3 w-3 text-yellow-600" />}
             {grrStatus.status === 'unacceptable' && <AlertTriangle className="h-3 w-3 text-red-600" />}
             <span className={grrStatus.color}>
-              {grrStatus.status === 'excellent' && 'Measurement system is acceptable'}
-              {grrStatus.status === 'acceptable' && 'May be acceptable depending on application'}
-              {grrStatus.status === 'unacceptable' && 'Measurement system needs improvement'}
+              {t(grrStatus.msgKey)}
             </span>
           </div>
         </div>
@@ -104,7 +104,7 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
         {/* Variation Breakdown Bar Chart */}
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs font-medium">
-            <span className="text-muted-foreground">Variation Breakdown</span>
+            <span className="text-muted-foreground">{t('quality.grr.variationBreakdown')}</span>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
@@ -112,8 +112,7 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="max-w-xs text-xs">
-                    Shows the contribution of each source to total variation.
-                    Lower EV+AV (GRR) means better measurement system.
+                    {t('quality.grr.variationTooltip')}
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -131,8 +130,8 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
                   />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Equipment Variation (EV): {evPercent.toFixed(1)}%</p>
-                  <p className="text-xs text-muted-foreground">Repeatability</p>
+                  <p>{t('quality.grr.equipmentVariation', { value: evPercent.toFixed(1) })}</p>
+                  <p className="text-xs text-muted-foreground">{t('quality.grr.repeatability')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -146,8 +145,8 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
                   />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Appraiser Variation (AV): {avPercent.toFixed(1)}%</p>
-                  <p className="text-xs text-muted-foreground">Reproducibility</p>
+                  <p>{t('quality.grr.appraiserVariation', { value: avPercent.toFixed(1) })}</p>
+                  <p className="text-xs text-muted-foreground">{t('quality.grr.reproducibility')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -161,8 +160,8 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
                   />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Part Variation (PV): {pvPercent.toFixed(1)}%</p>
-                  <p className="text-xs text-muted-foreground">Actual part-to-part variation</p>
+                  <p>{t('quality.grr.partVariationPct', { value: pvPercent.toFixed(1) })}</p>
+                  <p className="text-xs text-muted-foreground">{t('quality.grr.actualPartVariation')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -172,15 +171,15 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
           <div className="flex flex-wrap gap-4 text-xs">
             <div className="flex items-center gap-1.5">
               <div className="h-3 w-3 rounded-sm bg-blue-500" />
-              <span>EV (Repeatability)</span>
+              <span>{t('quality.grr.legendEV')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="h-3 w-3 rounded-sm bg-orange-500" />
-              <span>AV (Reproducibility)</span>
+              <span>{t('quality.grr.legendAV')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="h-3 w-3 rounded-sm bg-green-500" />
-              <span>PV (Part Variation)</span>
+              <span>{t('quality.grr.legendPV')}</span>
             </div>
           </div>
         </div>
@@ -189,25 +188,25 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
         <div className="grid grid-cols-2 gap-4 pt-4 border-t">
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Repeatability (EV)
+              {t('quality.grr.repeatabilityEV')}
             </p>
             <p className="text-lg font-semibold tabular-nums">{result.repeatability_ev.toFixed(4)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Reproducibility (AV)
+              {t('quality.grr.reproducibilityAV')}
             </p>
             <p className="text-lg font-semibold tabular-nums">{result.reproducibility_av.toFixed(4)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Part Variation (PV)
+              {t('quality.grr.partVariation')}
             </p>
             <p className="text-lg font-semibold tabular-nums">{result.part_variation_pv.toFixed(4)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Total Variation (TV)
+              {t('quality.grr.totalVariation')}
             </p>
             <p className="text-lg font-semibold tabular-nums">{result.total_variation_tv.toFixed(4)}</p>
           </div>
@@ -218,7 +217,7 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Number of Distinct Categories (NDC)
+                {t('quality.grr.ndcTitle')}
               </p>
               <p className={cn('text-2xl font-bold tabular-nums', ndcStatus.color)}>
                 {result.ndc}
@@ -228,37 +227,36 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
               {ndcStatus.isAcceptable ? (
                 <div className="flex items-center gap-1 text-xs text-green-600">
                   <CheckCircle className="h-4 w-4" />
-                  <span>≥ 5 (Acceptable)</span>
+                  <span>{t('quality.grr.ndcAcceptable')}</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1 text-xs text-red-600">
                   <AlertTriangle className="h-4 w-4" />
-                  <span>&lt; 5 (Needs Improvement)</span>
+                  <span>{t('quality.grr.ndcNeedsImprovement')}</span>
                 </div>
               )}
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            NDC represents how many distinct part categories the measurement system can reliably distinguish.
-            AIAG recommends a minimum of 5 distinct categories.
+            {t('quality.grr.ndcDescription')}
           </p>
         </div>
 
         {/* AIAG Guidelines Reference */}
         <div className="text-[10px] text-muted-foreground border-t pt-4">
-          <p className="font-bold mb-1">AIAG MSA Guidelines:</p>
+          <p className="font-bold mb-1">{t('quality.grr.aiagGuidelines')}</p>
           <ul className="space-y-0.5">
             <li className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-green-500" />
-              <span>&lt; 10% GRR: Measurement system is acceptable</span>
+              <span>{t('quality.grr.aiagExcellent')}</span>
             </li>
             <li className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-yellow-500" />
-              <span>10-30% GRR: May be acceptable based on application importance</span>
+              <span>{t('quality.grr.aiagAcceptable')}</span>
             </li>
             <li className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-red-500" />
-              <span>&gt; 30% GRR: Measurement system needs improvement</span>
+              <span>{t('quality.grr.aiagUnacceptable')}</span>
             </li>
           </ul>
         </div>
@@ -269,6 +267,7 @@ export function GRRResultsChart({ result, gaugeName, studyName, className }: GRR
 
 // Simple summary badge for use in tables
 export function GRRStatusBadge({ grrPercent }: { grrPercent: number }) {
+  const { t } = useI18n();
   const status = getGRRStatus(grrPercent);
   
   return (
@@ -276,7 +275,7 @@ export function GRRStatusBadge({ grrPercent }: { grrPercent: number }) {
       variant={status.status === 'excellent' ? 'default' : status.status === 'acceptable' ? 'secondary' : 'destructive'}
       className="text-xs"
     >
-      {grrPercent.toFixed(1)}% - {status.label}
+      {grrPercent.toFixed(1)}% - {t(status.labelKey)}
     </Badge>
   );
 }

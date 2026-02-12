@@ -190,8 +190,8 @@ export default function CTQDetailPage() {
       }
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to load CTQ details',
+        title: t('pages.ctq.toast.error'),
+        description: t('pages.ctq.toast.loadFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -204,14 +204,14 @@ export default function CTQDetailPage() {
     try {
       await deleteCTQ(id as string);
       toast({
-        title: 'Success',
-        description: 'CTQ deleted successfully',
+        title: t('pages.ctq.toast.success'),
+        description: t('pages.ctq.toast.deleted'),
       });
       router.push('/ctq');
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to delete CTQ',
+        title: t('pages.ctq.toast.error'),
+        description: t('pages.ctq.toast.deleteFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -231,8 +231,8 @@ export default function CTQDetailPage() {
       });
       
       toast({
-        title: 'Success',
-        description: 'Measurement added successfully',
+        title: t('pages.ctq.toast.success'),
+        description: t('pages.ctq.toast.measurementAdded'),
       });
       
       setShowMeasurementDialog(false);
@@ -242,8 +242,8 @@ export default function CTQDetailPage() {
       loadData();
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to add measurement',
+        title: t('pages.ctq.toast.error'),
+        description: t('pages.ctq.toast.measurementFailed'),
         variant: 'destructive',
       });
     } finally {
@@ -255,8 +255,8 @@ export default function CTQDetailPage() {
     if (!ctq) return;
 
     toast({
-      title: 'Export started',
-      description: 'Your CTQ report is being generated',
+      title: t('pages.ctq.toast.exportStarted'),
+      description: t('pages.ctq.toast.exportStartedDesc'),
     });
 
     const headers = ['Date', 'Measured Value', 'Result', 'Measured By', 'Notes'];
@@ -454,8 +454,8 @@ export default function CTQDetailPage() {
         {/* Specification Details */}
         <Card>
           <CardHeader>
-            <CardTitle>Specification Details</CardTitle>
-            <CardDescription>Quality characteristic requirements</CardDescription>
+            <CardTitle>{t('pages.ctq.detail.specificationDetails')}</CardTitle>
+            <CardDescription>{t('pages.ctq.detail.qualityRequirements')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -470,7 +470,7 @@ export default function CTQDetailPage() {
                   <p className="text-sm font-mono mt-1">{ctq.specification}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Nominal Value</Label>
+                  <Label className="text-sm font-medium">{t('pages.ctq.detail.nominalValue')}</Label>
                   <p className="text-sm font-mono mt-1">
                     {ctq.nominal_value} {ctq.unit_of_measure}
                   </p>
@@ -478,13 +478,13 @@ export default function CTQDetailPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium">Upper Tolerance</Label>
+                  <Label className="text-sm font-medium">{t('pages.ctq.detail.upperTolerance')}</Label>
                   <p className="text-sm font-mono mt-1">
                     +{ctq.upper_tolerance} {ctq.unit_of_measure}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Lower Tolerance</Label>
+                  <Label className="text-sm font-medium">{t('pages.ctq.detail.lowerTolerance')}</Label>
                   <p className="text-sm font-mono mt-1">
                     {ctq.lower_tolerance} {ctq.unit_of_measure}
                   </p>
@@ -495,7 +495,7 @@ export default function CTQDetailPage() {
             <div className="grid gap-4">
               {ctq.rfq_number && (
                 <div>
-                  <Label className="text-sm font-medium">Related RFQ</Label>
+                  <Label className="text-sm font-medium">{t('pages.ctq.detail.relatedRfq')}</Label>
                   <p className="text-sm mt-1">
                     <Link href={`/rfq/${ctq.rfq_id}`} className="text-primary hover:underline">
                       {ctq.rfq_number}
@@ -505,7 +505,7 @@ export default function CTQDetailPage() {
               )}
               {ctq.part_number && (
                 <div>
-                  <Label className="text-sm font-medium">Part Number</Label>
+                  <Label className="text-sm font-medium">{t('pages.ctq.detail.partNumber')}</Label>
                   <p className="text-sm font-mono mt-1">{ctq.part_number}</p>
                 </div>
               )}
@@ -516,27 +516,27 @@ export default function CTQDetailPage() {
         {/* Measurement Details */}
         <Card>
           <CardHeader>
-            <CardTitle>Measurement Information</CardTitle>
-            <CardDescription>How this characteristic is measured</CardDescription>
+            <CardTitle>{t('pages.ctq.detail.measurementInfo')}</CardTitle>
+            <CardDescription>{t('pages.ctq.detail.howMeasured')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label className="text-sm font-medium">Measurement Method</Label>
+              <Label className="text-sm font-medium">{t('pages.ctq.detail.measurementMethod')}</Label>
               <p className="text-sm text-muted-foreground mt-1">{ctq.measurement_method}</p>
             </div>
             <Separator />
             <div>
-              <Label className="text-sm font-medium">Sampling Plan</Label>
+              <Label className="text-sm font-medium">{t('pages.ctq.detail.samplingPlan')}</Label>
               <p className="text-sm text-muted-foreground mt-1">{ctq.sampling_plan}</p>
             </div>
             <Separator />
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium">Check Stage</Label>
+                <Label className="text-sm font-medium">{t('pages.ctq.detail.checkStage')}</Label>
                 <p className="text-sm text-muted-foreground mt-1">{ctq.check_stage}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium">Evidence Required</Label>
+                <Label className="text-sm font-medium">{t('pages.ctq.detail.evidenceRequired')}</Label>
                 <p className="text-sm text-muted-foreground mt-1">
                   {ctq.evidence_required ? 'Yes' : 'No'}
                 </p>
@@ -556,7 +556,7 @@ export default function CTQDetailPage() {
                 </p>
               </div>
               <div>
-                <Label className="text-xs font-medium">Last Updated</Label>
+                <Label className="text-xs font-medium">{t('pages.ctq.detail.lastUpdated')}</Label>
                 <p className="flex items-center gap-1 mt-1">
                   <Calendar className="h-3 w-3" />
                   {new Date(ctq.updated_at).toLocaleDateString()}
@@ -572,12 +572,12 @@ export default function CTQDetailPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Measurement History</CardTitle>
-              <CardDescription>Recent measurement results for this CTQ</CardDescription>
+              <CardTitle>{t('pages.ctq.detail.measurementHistory')}</CardTitle>
+              <CardDescription>{t('pages.ctq.detail.recentResults')}</CardDescription>
             </div>
             <Button onClick={() => setShowMeasurementDialog(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add Measurement
+              {t('pages.ctq.detail.addMeasurement')}
             </Button>
           </div>
         </CardHeader>
@@ -586,7 +586,7 @@ export default function CTQDetailPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date & Time</TableHead>
-                <TableHead>Measured By</TableHead>
+                <TableHead>{t('pages.ctq.detail.measuredBy')}</TableHead>
                 <TableHead>Value</TableHead>
                 <TableHead>Result</TableHead>
                 <TableHead>Notes</TableHead>
@@ -650,7 +650,7 @@ export default function CTQDetailPage() {
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete CTQ</DialogTitle>
+            <DialogTitle>{t('pages.ctq.detail.deleteCtq')}</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete {ctq.ctq_number}? This action cannot be undone and will also delete all associated measurements.
             </DialogDescription>
@@ -660,7 +660,7 @@ export default function CTQDetailPage() {
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete CTQ'}
+              {isDeleting ? 'Deleting...' : t('pages.ctq.detail.deleteCtq')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -670,14 +670,14 @@ export default function CTQDetailPage() {
       <Dialog open={showMeasurementDialog} onOpenChange={setShowMeasurementDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Measurement</DialogTitle>
+            <DialogTitle>{t('pages.ctq.detail.addMeasurement')}</DialogTitle>
             <DialogDescription>
               Record a new measurement for {ctq.characteristic}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="measured_value">Measured Value ({ctq.unit_of_measure})</Label>
+              <Label htmlFor="measured_value">{t('pages.ctq.detail.measuredValue')} ({ctq.unit_of_measure})</Label>
               <Input
                 id="measured_value"
                 type="number"
@@ -700,7 +700,7 @@ export default function CTQDetailPage() {
                   <SelectItem value="pass">Pass</SelectItem>
                   <SelectItem value="fail">Fail</SelectItem>
                   <SelectItem value="marginal">Marginal</SelectItem>
-                  <SelectItem value="not_measured">Not Measured</SelectItem>
+                  <SelectItem value="not_measured">{t('pages.ctq.detail.notMeasured')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -708,7 +708,7 @@ export default function CTQDetailPage() {
               <Label htmlFor="notes">Notes</Label>
               <Textarea
                 id="notes"
-                placeholder="Add any relevant notes about this measurement"
+                placeholder={t('pages.ctq.measurementNotesPlaceholder')}
                 value={measurementForm.notes}
                 onChange={(e) => setMeasurementForm({ ...measurementForm, notes: e.target.value })}
               />
@@ -719,7 +719,7 @@ export default function CTQDetailPage() {
               Cancel
             </Button>
             <Button onClick={handleAddMeasurement} disabled={isAddingMeasurement}>
-              {isAddingMeasurement ? 'Adding...' : 'Add Measurement'}
+              {isAddingMeasurement ? 'Adding...' : t('pages.ctq.detail.addMeasurement')}
             </Button>
           </DialogFooter>
         </DialogContent>

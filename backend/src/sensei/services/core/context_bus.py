@@ -19,10 +19,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sensei.models.account import Account
+from sensei.models.accounts_receivable import SalesOrder, Shipment
+from sensei.models.accounts_receivable import CustomerInvoice, PaymentReceipt
+from sensei.models.finance import JournalEntry, BankTransaction
+from sensei.models.hr import EmployeeProfile, HRLeaveRequest, HRTimeClockEvent
+from sensei.models.opportunity import Opportunity
 from sensei.models.product import Product
-from sensei.models.quality import NonConformance
+from sensei.models.quality import NonConformance, CAPA
 from sensei.models.quote import Quote
 from sensei.models.rfq import RFQ
+from sensei.models.training import TrainingParticipant
 from sensei.models.work_order import WorkOrder
 from sensei.services.core.data_lineage import DataLineageService, LineageGraph
 
@@ -234,6 +241,248 @@ class ContextService:
                 "product_id": str(nc.product_id) if nc.product_id is not None else None,
             }
             return ContextEntitySnapshot(entity_type="non_conformance", entity_id=str(nc.id), data=data)
+
+        if entity_type_norm == "opportunity":
+            opp_id = self._parse_uuid(entity_id)
+            if opp_id is None:
+                return None
+            opp = await db.get(Opportunity, opp_id)
+            if opp is None:
+                return None
+            data = {
+                "name": opp.name,
+                "stage": opp.stage.value if hasattr(opp.stage, "value") else str(opp.stage),
+                "amount": str(opp.amount) if opp.amount is not None else None,
+                "currency": opp.currency,
+                "probability": opp.probability,
+                "close_date": opp.close_date.isoformat() if opp.close_date else None,
+                "account_id": str(opp.account_id),
+                "primary_contact_id": str(opp.primary_contact_id) if opp.primary_contact_id else None,
+                "forecast_category": opp.forecast_category,
+                "next_step": opp.next_step,
+            }
+            return ContextEntitySnapshot(entity_type="opportunity", entity_id=str(opp.id), data=data)
+
+        if entity_type_norm == "sales_order":
+            so_id = self._parse_uuid(entity_id)
+            if so_id is None:
+                return None
+            so = await db.get(SalesOrder, so_id)
+            if so is None:
+                return None
+            data = {
+                "so_number": so.so_number,
+                "status": so.status,
+                "currency": so.currency,
+                "account_id": str(so.account_id),
+                "source_quote_id": str(so.source_quote_id) if so.source_quote_id else None,
+                "payment_terms_days": so.payment_terms_days,
+                "approved_at": so.approved_at.isoformat() if so.approved_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="sales_order", entity_id=str(so.id), data=data)
+
+        if entity_type_norm == "account":
+            acc_id = self._parse_uuid(entity_id)
+            if acc_id is None:
+                return None
+            acc = await db.get(Account, acc_id)
+            if acc is None:
+                return None
+            data = {
+                "name": acc.name,
+                "account_type": acc.account_type,
+                "status": acc.status,
+                "tier": acc.tier,
+                "industry": acc.industry,
+                "country": acc.country,
+                "city": acc.city,
+                "website": acc.website,
+            }
+            return ContextEntitySnapshot(entity_type="account", entity_id=str(acc.id), data=data)
+
+        if entity_type_norm == "capa":
+            capa_id = self._parse_int(entity_id)
+            if capa_id is None:
+                return None
+            capa = await db.get(CAPA, capa_id)
+            if capa is None:
+                return None
+            data = {
+                "capa_number": capa.capa_number,
+                "title": capa.title,
+                "capa_type": capa.capa_type.value if hasattr(capa.capa_type, "value") else str(capa.capa_type),
+                "status": capa.status.value if hasattr(capa.status, "value") else str(capa.status),
+                "priority": capa.priority.value if hasattr(capa.priority, "value") else str(capa.priority),
+                "root_cause_category": (
+                    capa.root_cause_category.value
+                    if capa.root_cause_category and hasattr(capa.root_cause_category, "value")
+                    else str(capa.root_cause_category) if capa.root_cause_category else None
+                ),
+                "due_date": capa.due_date.isoformat() if capa.due_date else None,
+            }
+            return ContextEntitySnapshot(entity_type="capa", entity_id=str(capa.id), data=data)
+
+        if entity_type_norm == "shipment":
+            ship_id = self._parse_uuid(entity_id)
+            if ship_id is None:
+                return None
+            ship = await db.get(Shipment, ship_id)
+            if ship is None:
+                return None
+            data = {
+                "shipment_number": ship.shipment_number,
+                "status": ship.status,
+                "carrier": ship.carrier,
+                "tracking_number": ship.tracking_number,
+                "ship_date": ship.ship_date.isoformat() if ship.ship_date else None,
+                "expected_delivery": ship.expected_delivery.isoformat() if ship.expected_delivery else None,
+                "actual_delivery": ship.actual_delivery.isoformat() if ship.actual_delivery else None,
+                "account_id": str(ship.account_id),
+                "sales_order_id": str(ship.sales_order_id) if ship.sales_order_id else None,
+            }
+            return ContextEntitySnapshot(entity_type="shipment", entity_id=str(ship.id), data=data)
+
+        if entity_type_norm == "invoice":
+            inv_id = self._parse_uuid(entity_id)
+            if inv_id is None:
+                return None
+            inv = await db.get(CustomerInvoice, inv_id)
+            if inv is None:
+                return None
+            data = {
+                "invoice_number": inv.invoice_number,
+                "status": inv.status,
+                "currency": inv.currency,
+                "issued_at": inv.issued_at.isoformat() if inv.issued_at else None,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "account_id": str(inv.account_id),
+                "sales_order_id": str(inv.sales_order_id) if inv.sales_order_id else None,
+                "is_credit_memo": inv.is_credit_memo,
+                "disputed": inv.disputed,
+            }
+            return ContextEntitySnapshot(entity_type="invoice", entity_id=str(inv.id), data=data)
+
+        if entity_type_norm == "payment":
+            payment_id = self._parse_uuid(entity_id)
+            if payment_id is None:
+                return None
+            payment = await db.get(PaymentReceipt, payment_id)
+            if payment is None:
+                return None
+            data = {
+                "status": payment.status,
+                "currency": payment.currency,
+                "amount": str(payment.amount),
+                "received_at": payment.received_at.isoformat() if payment.received_at else None,
+                "account_id": str(payment.account_id),
+                "reference": payment.reference,
+            }
+            return ContextEntitySnapshot(entity_type="payment", entity_id=str(payment.id), data=data)
+
+        if entity_type_norm == "journal_entry":
+            je_id = self._parse_uuid(entity_id)
+            if je_id is None:
+                return None
+            je = await db.get(JournalEntry, je_id)
+            if je is None:
+                return None
+            data = {
+                "reference": je.reference,
+                "entry_date": je.entry_date.isoformat() if je.entry_date else None,
+                "status": je.status,
+                "description": je.description,
+                "posted_at": je.posted_at.isoformat() if je.posted_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="journal_entry", entity_id=str(je.id), data=data)
+
+        if entity_type_norm == "bank_transaction":
+            bt_id = self._parse_uuid(entity_id)
+            if bt_id is None:
+                return None
+            bt = await db.get(BankTransaction, bt_id)
+            if bt is None:
+                return None
+            data = {
+                "transaction_date": bt.transaction_date.isoformat() if bt.transaction_date else None,
+                "transaction_type": bt.transaction_type,
+                "amount": str(bt.amount),
+                "currency": bt.currency,
+                "status": bt.status,
+                "bank_account_id": str(bt.bank_account_id),
+                "source_type": bt.source_type,
+                "source_id": str(bt.source_id) if bt.source_id else None,
+            }
+            return ContextEntitySnapshot(entity_type="bank_transaction", entity_id=str(bt.id), data=data)
+
+        if entity_type_norm == "employee":
+            emp_id = self._parse_uuid(entity_id)
+            if emp_id is None:
+                return None
+            emp = await db.get(EmployeeProfile, emp_id)
+            if emp is None:
+                return None
+            data = {
+                "user_id": str(emp.user_id) if emp.user_id else None,
+                "first_name": emp.first_name,
+                "last_name": emp.last_name,
+                "department": emp.department,
+                "job_title": emp.job_title,
+                "status": emp.status,
+                "hire_date": emp.hire_date.isoformat() if emp.hire_date else None,
+            }
+            return ContextEntitySnapshot(entity_type="employee", entity_id=str(emp.id), data=data)
+
+        if entity_type_norm == "leave_request":
+            leave_id = self._parse_uuid(entity_id)
+            if leave_id is None:
+                return None
+            leave = await db.get(HRLeaveRequest, leave_id)
+            if leave is None:
+                return None
+            data = {
+                "employee_id": str(leave.employee_id),
+                "leave_type": leave.leave_type,
+                "start_date": leave.start_date.isoformat() if leave.start_date else None,
+                "end_date": leave.end_date.isoformat() if leave.end_date else None,
+                "status": leave.status,
+                "approved_by_id": str(leave.approved_by_id) if leave.approved_by_id else None,
+            }
+            return ContextEntitySnapshot(entity_type="leave_request", entity_id=str(leave.id), data=data)
+
+        if entity_type_norm == "timecard":
+            tc_id = self._parse_uuid(entity_id)
+            if tc_id is None:
+                return None
+            tc = await db.get(HRTimeClockEvent, tc_id)
+            if tc is None:
+                return None
+            data = {
+                "employee_id": str(tc.employee_id),
+                "event_type": tc.event_type,
+                "event_time": tc.event_time.isoformat() if tc.event_time else None,
+                "is_within_geofence": tc.is_within_geofence,
+                "is_anomaly": tc.is_anomaly,
+                "anomaly_reason": tc.anomaly_reason,
+                "station_id": tc.station_id,
+            }
+            return ContextEntitySnapshot(entity_type="timecard", entity_id=str(tc.id), data=data)
+
+        if entity_type_norm == "training_record":
+            tr_id = self._parse_int(entity_id)
+            if tr_id is None:
+                return None
+            tr = await db.get(TrainingParticipant, tr_id)
+            if tr is None:
+                return None
+            data = {
+                "training_id": str(tr.training_id),
+                "employee_id": str(tr.user_id),
+                "enrollment_status": tr.enrollment_status,
+                "attendance_status": tr.attendance_status,
+                "score": str(tr.score) if tr.score is not None else None,
+                "completed_at": tr.completed_at.isoformat() if tr.completed_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="training_record", entity_id=str(tr.id), data=data)
 
         return None
 

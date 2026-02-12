@@ -29,7 +29,7 @@ from sensei.services.supply_chain.supplier_portal_token import (
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 # ============================================================================

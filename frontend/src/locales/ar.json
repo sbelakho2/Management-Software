@@ -281,7 +281,14 @@
       "minorIssuesDetected": "تم اكتشاف مشكلات بسيطة",
       "processing": "جارٍ المعالجة",
       "syncing": "جارٍ المزامنة",
-      "systemOffline": "النظام غير متصل"
+      "systemOffline": "النظام غير متصل",
+      "completed": "مكتمل",
+      "picked": "تم الالتقاط",
+      "packed": "تم التغليف",
+      "shipped": "تم الشحن",
+      "delivered": "تم التوصيل",
+      "inProgress": "قيد التنفيذ",
+      "pending": "معلق"
     },
     "submit": "إرسال",
     "subtotal": "المجموع الفرعي",
@@ -311,11 +318,15 @@
     "warning": "تحذير",
     "yes": "نعم",
     "tests": {
-      "aoi": "AOI‏",
-      "xray": "X-Ray‏",
-      "ict": "ICT‏",
-      "fct": "FCT‏"
-    }
+      "aoi": "الفحص البصري الآلي (AOI)‏",
+      "xray": "فحص الأشعة السينية (X-Ray)‏",
+      "ict": "الفحص داخل الدائرة (ICT)‏",
+      "fct": "فحص الوظائف (FCT)‏"
+    },
+    "source": "المصدر",
+    "protocol": "بروتوكول",
+    "cat": "فحص بمساعدة الحاسوب (CAT)",
+    "user": "المستخدم"
   },
   "a3": {
     "detail": {
@@ -439,7 +450,166 @@
       "pendingApprovals": "موافقات معلّقة",
       "queueGates": "بوابات الانتظار",
       "thresholdExceptions": "استثناءات العتبة",
-      "totalNodes": "إجمالي عُقد آ٣"
+      "totalNodes": "إجمالي عُقد آ٣",
+      "emailDrafting": {
+        "title": "مساعد البريد الإلكتروني بالذكاء الاصطناعي",
+        "aria": {
+          "selectPurpose": "اختر الغرض",
+          "toneGroup": "اختر النبرة",
+          "selectLanguage": "اختر اللغة",
+          "recipientEmail": "بريد المستلم الإلكتروني",
+          "recipientName": "اسم المستلم",
+          "addKeyPoint": "إضافة نقطة رئيسية",
+          "keyPointsList": "قائمة النقاط الرئيسية",
+          "removeKeyPoint": "إزالة: {point}",
+          "copyToClipboard": "نسخ إلى الحافظة",
+          "editSubject": "تعديل الموضوع",
+          "close": "إغلاق",
+          "draftsList": "مسودات البريد الإلكتروني"
+        },
+        "placeholders": {
+          "selectPurpose": "اختر الغرض...",
+          "recipientEmail": "recipient@example.com",
+          "recipientNameOptional": "الاسم (اختياري)",
+          "keyPoint": "إضافة نقطة رئيسية",
+          "senderName": "مثلاً: Alex Morgan",
+          "senderEmail": "مثلاً: alex@sensei.com",
+          "senderTitle": "مثلاً: مدير الحساب",
+          "companyName": "مثلاً: شركة سينسي",
+          "threadEntityType": "اختر كيان الموضوع...",
+          "threadEntityId": "أدخل معرف الكيان...",
+          "referenceNumber": "مثلاً: RFQ-2024-001",
+          "subjectHint": "مثلاً: تحديث الأسعار للربع الثاني"
+        },
+        "purpose": {
+          "missingInfoRequest": "طلب معلومات مفقودة",
+          "quoteFollowup": "متابعة عرض السعر",
+          "quoteSubmission": "تقديم عرض سعر",
+          "supplierInquiry": "استفسار المورد",
+          "meetingRequest": "طلب اجتماع",
+          "meetingConfirmation": "تأكيد الاجتماع",
+          "meetingReschedule": "إعادة جدولة الاجتماع",
+          "issueNotification": "إشعار بمشكلة",
+          "statusUpdate": "تحديث الحالة",
+          "thankYou": "شكر",
+          "introduction": "تعارف",
+          "escalation": "تصعيد",
+          "apology": "اعتذار",
+          "custom": "بريد إلكتروني مخصص"
+        },
+        "tone": {
+          "formal": "رسمي",
+          "professional": "مهني",
+          "friendly": "ودي",
+          "urgent": "عاجل",
+          "apologetic": "اعتذاري",
+          "appreciative": "تقديري",
+          "concise": "موجز"
+        },
+        "language": {
+          "english": "الإنجليزية",
+          "french": "الفرنسية",
+          "german": "الألمانية",
+          "spanish": "الإسبانية",
+          "italian": "الإيطالية",
+          "portuguese": "البرتغالية",
+          "japanese": "اليابانية",
+          "chinese": "الصينية",
+          "korean": "الكورية",
+          "arabic": "العربية"
+        },
+        "actions": {
+          "add": "إضافة",
+          "apply": "تطبيق",
+          "edit": "تعديل",
+          "generating": "جاري الإنشاء...",
+          "generateDraft": "إنشاء مسودة",
+          "regenerate": "إعادة الإنشاء",
+          "send": "إرسال"
+        },
+        "preview": {
+          "title": "معاينة المسودة",
+          "subjectLabel": "الموضوع",
+          "confidence": "الدقة: {score}",
+          "generatedIn": "تم الإنشاء في {time}"
+        },
+        "units": {
+          "milliseconds": "مللي ثانية",
+          "seconds": "ثانية"
+        },
+        "compliance": {
+          "none": "لم يتم الكشف عن مشاكل امتثال",
+          "title": "مشاكل الامتثال ({count})"
+        },
+        "suggestions": {
+          "title": "اقتراحات ({count})"
+        },
+        "alternatives": {
+          "title": "عناوين بديلة:"
+        },
+        "thread": {
+          "entityType": {
+            "rfq": "طلب عرض سعر (RFQ)",
+            "quote": "عرض سعر",
+            "workOrder": "أمر عمل",
+            "opportunity": "فرصة بيع",
+            "nonConformance": "عدم مطابقة",
+            "shipment": "شحنة",
+            "invoice": "فاتورة"
+          },
+          "loadFailed": "فشل تحميل سجل المحادثة",
+          "helper": "اربط هذه المسودة بمحادثة للحفاظ على سياق البيانات المشترك.",
+          "loading": "جاري تحميل سجل المحادثة...",
+          "traceTitle": "سجل المحادثة",
+          "traceStats": "السجل: {nodes} عقد / {edges} صلات",
+          "reasoningId": "معرف السبب: {id}"
+        },
+        "defaults": {
+          "senderName": "عامل Sensei",
+          "senderEmail": "operator@sensei.com",
+          "companyName": "Sensei"
+        },
+        "sections": {
+          "recipient": "المستلم",
+          "purpose": "الغرض",
+          "sender": "المرسل",
+          "threadContext": "سياق المحادثة",
+          "tone": "النبرة",
+          "language": "اللغة",
+          "keyPoints": "النقاط الرئيسية"
+        },
+        "fields": {
+          "senderName": "اسم المرسل",
+          "senderEmail": "بريد المرسل الإلكتروني",
+          "senderTitle": "لقب المرسل",
+          "companyName": "اسم الشركة",
+          "threadEntityType": "نوع كيان المحادثة",
+          "threadEntityId": "معرف كيان المحادثة",
+          "referenceNumberOptional": "رقم مرجعي (اختياري)",
+          "subjectHintOptional": "تلميح الموضوع (اختياري)"
+        },
+        "status": {
+          "generating": "جاري الإنشاء...",
+          "ready": "جاهز للمراجعة",
+          "reviewed": "تمت المراجعة",
+          "approved": "تمت الموافقة",
+          "sent": "تم الإرسال",
+          "discarded": "مرفوض",
+          "failed": "فشل"
+        },
+        "notifications": {
+          "copied": "تم النسخ إلى الحافظة!"
+        },
+        "empty": {
+          "title": "لا توجد مسودة بعد",
+          "description": "أنشئ مسودة لرؤية المعاينة واختبارات الامتثال.",
+          "list": "لا توجد مسودات بعد"
+        },
+        "validation": {
+          "emailRequired": "البريد الإلكتروني مطلوب",
+          "emailInvalid": "صيغة البريد الإلكتروني غير صالحة"
+        }
+      }
     },
     "statuses": {
       "approved": "موافق عليه",
@@ -455,7 +625,15 @@
       "protocolType": "نوع البروتوكول",
       "resolutionTitle": "عنوان حل تقرير آ٣",
       "statusNode": "حالة العقدة",
-      "targetHorizon": "الأفق المستهدف"
+      "targetHorizon": "الأفق المستهدف",
+      "biometricSync": "المزامنة البيومترية",
+      "biometricSyncDesc": "استخدم Face ID أو بصمة الإصبع لفك القفل",
+      "description": "إدارة مزامنة التطبيق المحمول ومستويات التفويض البيومتري",
+      "offlineIntelligence": "ذكاء دون اتصال",
+      "offlineIntelligenceDesc": "تخزين العقد التشغيلية مؤقتاً للبيئات ذات الكمون العالي",
+      "telemetryPush": "إشارات دفع القياس عن بعد",
+      "telemetryPushDesc": "استقبال تنبيهات تنظيمية في الوقت الفعلي على الأجهزة المحمولة",
+      "title": "عقدة العمليات المتنقلة"
     },
     "types": {
       "problemSolving": "حل المشكلات",
@@ -676,7 +854,8 @@
     "timeout": "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.‏",
     "unauthorized": "يجب تسجيل الدخول لتنفيذ هذا الإجراء.‏",
     "unknown": "حدث خطأ غير معروف.‏",
-    "validationError": "يرجى التحقق من إدخالاتك والمحاولة مرة أخرى.‏"
+    "validationError": "يرجى التحقق من إدخالاتك والمحاولة مرة أخرى.‏",
+    "boundaryFallback": "حدث خطأ ما. يرجى التحديث أو المحاولة مرة أخرى."
   },
   "forms": {
     "addMore": "إضافة المزيد",
@@ -770,31 +949,31 @@
           "maintenance": "صيانة",
           "completed": "مكتمل"
         },
-        "aggregationPulse": "Aggregation Pulse",
-        "escalateAnomaly": "Escalate Anomaly",
-        "executionVelocity": "Execution Velocity",
-        "exportSpec": "Export Spec",
-        "gateVerified": "Gate Verified",
-        "initiateExecution": "Initiate Execution",
-        "node": "Node",
-        "scrapDeviation": "Scrap Deviation",
-        "suspendProtocol": "Suspend Protocol",
+        "aggregationPulse": "نبض التجميع",
+        "escalateAnomaly": "تصعيد الشذوذ",
+        "executionVelocity": "سرعة التنفيذ",
+        "exportSpec": "تصدير المواصفات",
+        "gateVerified": "تم التحقق من البوابة",
+        "initiateExecution": "بدء التنفيذ",
+        "node": "العقدة",
+        "scrapDeviation": "انحراف الخردة",
+        "suspendProtocol": "تعليق البروتوكول",
         "tabs": {
-          "bom": "Bom",
-          "history": "History",
-          "operations": "Operations",
-          "quality": "Quality"
+          "bom": "قائمة المواد (BOM)",
+          "history": "السجل",
+          "operations": "العمليات",
+          "quality": "الجودة"
         },
-        "targetMagnitude": "Target Magnitude",
-        "unknownProduct": "Unknown Product",
-        "viewHistory": "View History",
-        "loadingBom": "Retrieving Bill of Materials protocol nodes...",
-        "temporalSchedule": "Temporal Schedule",
-        "startHorizon": "Start Horizon",
-        "targetTerminal": "Target Terminal",
-        "standardLeadTime": "Standard Lead Time",
-        "days": "DAYS",
-        "station": "STATION"
+        "targetMagnitude": "الحجم المستهدف",
+        "unknownProduct": "منتج غير معروف",
+        "viewHistory": "عرض السجل",
+        "loadingBom": "جاري استرداد عقد بروتوكول قائمة المواد...",
+        "temporalSchedule": "الجدول الزمني",
+        "startHorizon": "أفق البدء",
+        "targetTerminal": "المحطة المستهدفة",
+        "standardLeadTime": "وقت التسليم القياسي",
+        "days": "أيام",
+        "station": "المحطة"
       }
     },
     "purchase": {
@@ -833,28 +1012,28 @@
             "high": "مرتفع",
             "critical": "حرج"
           },
-          "capaCreated": "Capa Created",
-          "createFailed": "Create Failed",
-          "initiatedSuccess": "Initiated Success"
+          "capaCreated": "تم إنشاء CAPA",
+          "createFailed": "فشل الإنشاء",
+          "initiatedSuccess": "تم البدء بنجاح"
         },
         "detail": {
-          "addNode": "Add Node",
-          "commitAction": "Commit Action",
-          "countermeasureNodes": "Countermeasure Nodes",
-          "exportProtocol": "Export Protocol",
-          "implementationMagnitude": "Implementation Magnitude",
-          "problemStatement": "Problem Statement",
-          "refineCapa": "Refine Capa",
-          "rootCauseAnalysis": "Root Cause Analysis",
-          "subtitle": "Subtitle",
-          "syncPulse": "Sync Pulse",
+          "addNode": "إضافة عقدة",
+          "commitAction": "تنفيذ الإجراء",
+          "countermeasureNodes": "عقد التدابير المضادة",
+          "exportProtocol": "تصدير البروتوكول",
+          "implementationMagnitude": "حجم التنفيذ",
+          "problemStatement": "بيان المشكلة",
+          "refineCapa": "تحسين CAPA",
+          "rootCauseAnalysis": "تحليل السبب الجذري",
+          "subtitle": "العنوان الفرعي",
+          "syncPulse": "نبض المزامنة",
           "tabs": {
-            "actionProtocol": "Action Protocol",
-            "effectivenessSync": "Effectiveness Sync",
-            "relatedAnomalies": "Related Anomalies"
+            "actionProtocol": "بروتوكول العمل",
+            "effectivenessSync": "مزامنة الفعالية",
+            "relatedAnomalies": "الشذوذات ذات الصلة"
           },
-          "terminateNode": "Terminate Node",
-          "verifyEffectiveness": "Verify Effectiveness"
+          "terminateNode": "إنهاء العقدة",
+          "verifyEffectiveness": "التحقق من الفعالية"
         }
       },
       "certifications": "الشهادات",
@@ -878,36 +1057,36 @@
             "major": "كبير",
             "critical": "حرج"
           },
-          "validationError": "Validation Error",
-          "titleDescRequired": "Title and Description are required.",
-          "ncrCreated": "NCR Created",
-          "recordedSuccess": "NCR has been successfully recorded.",
-          "createFailed": "Failed to create NCR",
+          "validationError": "خطأ في التحقق",
+          "titleDescRequired": "العنوان والوصف مطلوبان.",
+          "ncrCreated": "تم إنشاء NCR",
+          "recordedSuccess": "تم تسجيل تقرير عدم المطابقة (NCR) بنجاح.",
+          "createFailed": "فشل إنشاء NCR",
           "placeholders": {
-            "title": "e.g., Dimensional deviation in bracket holes",
-            "location": "e.g., Assembly Line 2",
-            "partNumber": "PART_NUMBER",
-            "woNumber": "WO_NUMBER",
-            "description": "Provide detailed evidence regarding the discrepancy protocol..."
+            "title": "مثال: انحراف الأبعاد في ثقوب الحامل",
+            "location": "مثال: خط التجميع 2",
+            "partNumber": "رقم_القطعة",
+            "woNumber": "رقم_أمر_العمل",
+            "description": "قدم أدلة مفصلة بخصوص بروتوكول التناقض..."
           }
         },
         "detail": {
-          "assignCapa": "Assign Capa",
-          "comment": "Comment",
-          "discrepancyIntelligence": "Discrepancy Intelligence",
-          "investigationProtocol": "Investigation Protocol",
-          "noDescription": "No Description",
-          "refineProtocol": "Refine Protocol",
-          "subjectiveData": "Subjective Data",
-          "subtitle": "Subtitle",
+          "assignCapa": "تعيين إجراء تصحيحي/وقائي",
+          "comment": "تعليق",
+          "discrepancyIntelligence": "استخبارات التناقض",
+          "investigationProtocol": "بروتوكول التحقيق",
+          "noDescription": "لا يوجد وصف",
+          "refineProtocol": "تحسين البروتوكول",
+          "subjectiveData": "بيانات ذاتية",
+          "subtitle": "العنوان الفرعي",
           "tabs": {
-            "disposition": "Disposition",
-            "eventLog": "Event Log",
-            "evidence": "Evidence",
-            "rootCause": "Root Cause"
+            "disposition": "التصرف",
+            "eventLog": "سجل الأحداث",
+            "evidence": "الأدلة",
+            "rootCause": "السبب الجذري"
           },
-          "terminateNode": "Terminate Node",
-          "viewLogs": "View Logs"
+          "terminateNode": "إنهاء العقدة",
+          "viewLogs": "عرض السجلات"
         }
       },
       "passRate": "معدل النجاح",
@@ -928,28 +1107,28 @@
             "final": "نهائي",
             "receiving": "استلام"
           },
-          "inspectionStarted": "Inspection Started",
-          "initializedSuccess": "New inspection record has been initialized.",
-          "createFailed": "Failed to create inspection.",
-          "associatedWoSync": "Associated WO Sync",
-          "initialObservation": "Initial Observation Intel",
+          "inspectionStarted": "بدأ التفتيش",
+          "initializedSuccess": "تمت تهيئة سجل تفتيش جديد.",
+          "createFailed": "فشل إنشاء التفتيش.",
+          "associatedWoSync": "مزامنة أمر العمل المرتبط",
+          "initialObservation": "معلومات الملاحظة الأولية",
           "placeholders": {
-            "protocolIdentity": "e.g., Final Inspection Protocol - BRK-2024",
-            "operatorIdentity": "OPERATIVE_IDENTITY",
-            "partNumber": "PART_NUMBER",
-            "woNumber": "WO_NUMBER",
-            "notes": "Incorporate initial findings and contextual data..."
+            "protocolIdentity": "مثال: بروتوكول التفتيش النهائي - BRK-2024",
+            "operatorIdentity": "هوية_المشغل",
+            "partNumber": "رقم_القطعة",
+            "woNumber": "رقم_أمر_العمل",
+            "notes": "تضمين النتائج الأولية والبيانات السياقية..."
           }
         },
         "detail": {
-          "assignmentTelemetry": "Assignment Telemetry",
-          "checklist": "Checklist",
-          "commitSync": "Commit Sync",
-          "inspectionIntelligence": "Inspection Intelligence",
-          "leadInspector": "Lead Inspector",
-          "printEvidence": "Print Evidence",
-          "resultsAnalytics": "Results Analytics",
-          "scheduledSync": "Scheduled Sync"
+          "assignmentTelemetry": "قياسات التعيين عن بعد",
+          "checklist": "قائمة التحقق",
+          "commitSync": "تأكيد المزامنة",
+          "inspectionIntelligence": "استخبارات التفتيش",
+          "leadInspector": "كبير المفتشين",
+          "printEvidence": "طباعة الأدلة",
+          "resultsAnalytics": "تحليلات النتائج",
+          "scheduledSync": "مزامنة مجدولة"
         }
       }
     },
@@ -988,25 +1167,25 @@
         "createError": "فشل إنشاء المنتج",
         "placeholders": {
           "partNumber": "مثال: PN-2024-001",
-          "nomenclature": "PRODUCT_NAME_STR",
-          "description": "Brief description of the product or component specifications...",
+          "nomenclature": "اسم_المنتج",
+          "description": "وصف موجز للمنتج أو مواصفات المكونات...",
           "uom": "ISO_CODE",
           "unitCost": "0.00",
-          "minStock": "MIN_QTY",
-          "maxStock": "MAX_QTY",
-          "leadTime": "DAYS",
-          "location": "ZONE-BIN-SHELF",
-          "supplier": "SUPPLIER_ID"
+          "minStock": "الحد_الأدنى",
+          "maxStock": "الحد_الأقصى",
+          "leadTime": "أيام",
+          "location": "المنطقة-الصندوق-الرف",
+          "supplier": "معرف_المورد"
         },
         "abort": "إلغاء",
         "synchronizing": "جاري المزامنة...",
         "commitData": "تأكيد البيانات",
-        "requiredParams": "Required Parameters Missing",
-        "providePartAndName": "Please provide at least a Part Number and Name for the node.",
-        "nodeSynchronized": "Node Synchronized",
-        "establishedSuccess": "{name} has been successfully established in the catalog.",
-        "syncFailed": "Synchronization Failed",
-        "failedToEstablish": "Failed to establish product node in the registry."
+        "requiredParams": "المعلمات المطلوبة مفقودة",
+        "providePartAndName": "يرجى تقديم رقم القطعة واسم للعقدة على الأقل.",
+        "nodeSynchronized": "تمت مزامنة العقدة",
+        "establishedSuccess": "تم تأسيس {name} بنجاح في الكتالوج.",
+        "syncFailed": "فشل المزامنة",
+        "failedToEstablish": "فشل في إنشاء عقدة المنتج في السجل."
       },
       "detail": {
         "title": "تفاصيل المنتج",
@@ -1027,60 +1206,60 @@
         "updated": "آخر تحديث",
         "revision": "الإصدار"
       },
-      "title": "Product Catalog",
-      "subtitle": "Manage products, BOMs, and manufacturing routings",
-      "station": "PRODUCTS",
+      "title": "كتالوج المنتجات",
+      "subtitle": "إدارة المنتجات، قوائم المواد، ومسارات التصنيع",
+      "station": "المنتجات",
       "stats": {
-        "activeProducts": "Active Products",
-        "bomsDefined": "BOMs Defined",
-        "routingsActive": "Active Routings",
-        "avgLeadTime": "Avg. Lead Time",
-        "activeInventoryNodes": "Active Products",
-        "aggregatedRevenue": "Total Revenue",
-        "meanMarginKPI": "Average Margin",
-        "stockAbnormalities": "Low Stock Alerts"
+        "activeProducts": "المنتجات النشطة",
+        "bomsDefined": "قوائم المواد المعرفة",
+        "routingsActive": "المسارات النشطة",
+        "avgLeadTime": "متوسط وقت التسليم",
+        "activeInventoryNodes": "عقد المخزون النشطة",
+        "aggregatedRevenue": "إجمالي الإيرادات",
+        "meanMarginKPI": "متوسط الهامش",
+        "stockAbnormalities": "تنبيهات المخزون المنخفض"
       },
       "actions": {
-        "newProduct": "New Product"
+        "newProduct": "منتج جديد"
       },
       "tabs": {
-        "products": "Products",
-        "boms": "BOMs",
-        "routings": "Routings"
+        "products": "المنتجات",
+        "boms": "قوائم المواد",
+        "routings": "المسارات"
       },
       "details": {
-        "overview": "Overview",
-        "specifications": "Specifications",
-        "bom": "Bill of Materials",
-        "routing": "Routing",
-        "inventory": "Inventory",
-        "history": "History"
+        "overview": "نظرة عامة",
+        "specifications": "المواصفات",
+        "bom": "قائمة المواد",
+        "routing": "المسار",
+        "inventory": "المخزون",
+        "history": "السجل"
       },
       "status": {
-        "discontinued": "Discontinued"
+        "discontinued": "متوقف"
       },
-      "viewBom": "View BOM",
-      "viewAnalytics": "View Analytics",
-      "stockLevel": "Stock Level",
-      "allStock": "All Stock",
-      "lowStock": "Low Stock",
-      "outOfStock": "Out of Stock",
+      "viewBom": "عرض قائمة المواد",
+      "viewAnalytics": "عرض التحليلات",
+      "stockLevel": "مستوى المخزون",
+      "allStock": "كل المخزون",
+      "lowStock": "مخزون منخفض",
+      "outOfStock": "نفد المخزون",
       "table": {
-        "product": "Product",
-        "standardCost": "Standard Cost",
-        "listPrice": "List Price",
-        "margin": "Margin",
-        "inventory": "Inventory",
-        "leadTime": "Lead Time",
-        "totalSold": "Total Sold"
+        "product": "المنتج",
+        "standardCost": "التكلفة القياسية",
+        "listPrice": "سعر القائمة",
+        "margin": "الهامش",
+        "inventory": "المخزون",
+        "leadTime": "وقت التسليم",
+        "totalSold": "إجمالي المباع"
       },
       "emptyState": {
-        "description": "Start by adding your first product to the catalog.",
-        "title": "No products found"
+        "description": "ابدأ بإضافة منتجك الأول إلى الكتالوج.",
+        "title": "لم يتم العثور على منتجات"
       },
-      "exportIntel": "Export Catalog",
-      "import": "Import",
-      "initializeNode": "Create Product"
+      "exportIntel": "تصدير الكتالوج",
+      "import": "استيراد",
+      "initializeNode": "إنشاء منتج"
     }
   },
   "navigation": {
@@ -1203,7 +1382,17 @@
         "deleted": "تم حذف تقرير آ٣",
         "deletedDescription": "تم حذف تقرير آ٣ بنجاح.‏",
         "escalated": "تم تصعيد تقرير آ٣",
-        "escalatedDescription": "تم تصعيد التقرير إلى الإدارة للمراجعة.‏"
+        "escalatedDescription": "تم تصعيد التقرير إلى الإدارة للمراجعة.‏",
+        "titleRequired": "يرجى إدخال عنوان لتقرير A3.",
+        "created": "تم إنشاء تقرير A3",
+        "createdDesc": "تمت تهيئة تقرير A3 الجديد بنجاح.",
+        "createFailed": "فشل إنشاء تقرير A3.",
+        "loadFailed": "فشل تحميل تفاصيل A3",
+        "export": "تصدير",
+        "exportDesc": "جاري بدء تصدير PDF...",
+        "updated": "تم تحديث تقرير A3",
+        "updatedDesc": "تم حفظ التغييرات بنجاح.",
+        "updateFailed": "فشل تحديث تقرير A3."
       }
     },
     "admin": {
@@ -1355,7 +1544,12 @@
         "initializeTemplate": "تهيئة قالب",
         "title": "قوالب المستندات"
       },
-      "title": "الإدارة"
+      "title": "الإدارة",
+      "import": {
+        "conflictResolution": "حل النزاع",
+        "skipExisting": "تجاوز الموجود",
+        "updateExisting": "تحديث الموجود"
+      }
     },
     "analytics": {
       "alpha": "ألفا",
@@ -1463,7 +1657,8 @@
         "protocol": "بروتوكول",
         "temporalModel": "النموذج الزمني ٠٤",
         "training": "ذكاء سينسي يقوم بتدريب نماذج التنبؤ الزمني...‏"
-      }
+      },
+      "statusOptimal": "مثالي"
     },
     "andon": {
       "actions": {
@@ -1491,7 +1686,10 @@
         "live": "مباشر",
         "settings": "الإعدادات"
       },
-      "title": "استخبارات أندون"
+      "title": "استخبارات أندون",
+      "toast": {
+        "settingsSaved": "تم تحديث تفضيلات إشعارات الإشارة."
+      }
     },
     "auditor": {
       "actions": {
@@ -1596,10 +1794,42 @@
         "deleted": "تم حذف بروتوكول نقاط الجودة الحرجة",
         "deletedDescription": "تم حذف بروتوكول نقاط الجودة الحرجة بنجاح.‏",
         "retired": "تمت أرشفة بروتوكول نقاط الجودة الحرجة",
-        "retiredDescription": "تمت أرشفة بروتوكول نقاط الجودة الحرجة.‏"
+        "retiredDescription": "تمت أرشفة بروتوكول نقاط الجودة الحرجة.‏",
+        "error": "خطأ",
+        "loadFailed": "فشل تحميل تفاصيل CTQ",
+        "success": "ناجح",
+        "deleteFailed": "فشل حذف CTQ",
+        "measurementAdded": "تمت إضافة القياس بنجاح",
+        "measurementFailed": "فشل إضافة القياس",
+        "exportStarted": "بدأ التصدير",
+        "exportStartedDesc": "جاري إنشاء تقرير CTQ الخاص بك"
       },
       "totalCTQNodes": "إجمالي عُقد نقاط الجودة الحرجة",
-      "zeroCTQProtocols": "لا توجد بروتوكولات نقاط الجودة الحرجة"
+      "zeroCTQProtocols": "لا توجد بروتوكولات نقاط الجودة الحرجة",
+      "detail": {
+        "specificationDetails": "تفاصيل المواصفات",
+        "qualityRequirements": "متطلبات خصائص الجودة",
+        "nominalValue": "القيمة الاسمية",
+        "upperTolerance": "الحد الأعلى للتفاوت",
+        "lowerTolerance": "الحد الأدنى للتفاوت",
+        "relatedRfq": "RFQ ذي الصلة",
+        "partNumber": "رقم القطعة",
+        "measurementInfo": "معلومات القياس",
+        "howMeasured": "كيفية قياس هذه الخاصية",
+        "measurementMethod": "طريقة القياس",
+        "samplingPlan": "خطة أخذ العينات",
+        "checkStage": "مرحلة الفحص",
+        "evidenceRequired": "الأدلة المطلوبة",
+        "lastUpdated": "آخر تحديث",
+        "measurementHistory": "سجل القياسات",
+        "recentResults": "نتائج القياس والاتجاهات الحديثة",
+        "measuredBy": "تم القياس بواسطة",
+        "deleteCtq": "حذف CTQ",
+        "addMeasurement": "إضافة قياس",
+        "measuredValue": "قيمة القياس",
+        "notMeasured": "لم يتم القياس"
+      },
+      "measurementNotesPlaceholder": "أضف أي ملاحظات ذات صلة حول هذا القياس"
     },
     "ctqDetail": {
       "backToCTQs": "العودة إلى نقاط الجودة الحرجة",
@@ -1651,7 +1881,8 @@
           "openRfqs": "طلبات عروض أسعار مفتوحة",
           "totalRevenue": "الإجمالي الإيرادات",
           "totalRfqs": "إجمالي طلبات عروض الأسعار",
-          "winRate": "معدل الفوز"
+          "winRate": "معدل الفوز",
+          "pipelineMagnitude": "حجم مسار المبيعات"
         },
         "viewAll": "عرض الكل",
         "viewAllRfqs": "عرض جميع طلبات عروض الأسعار",
@@ -1773,6 +2004,9 @@
       "viewModes": {
         "grid": "شبكة",
         "table": "جدول"
+      },
+      "toast": {
+        "deactivated": "تم تعطيل العميل"
       }
     },
     "exceptions": {
@@ -1822,7 +2056,9 @@
         "quality": "الجودة",
         "safety": "السلامة"
       },
-      "title": "إدارة الاستثناءات"
+      "title": "إدارة الاستثناءات",
+      "synchronizing": "مزامنة الاستثناءات التشغيلية",
+      "zeroHighUrgency": "تم تحديد صفر عقد عالية الاستعجال"
     },
     "executive": {
       "aggregatingMetrics": "جارٍ تجميع المقاييس",
@@ -1837,7 +2073,14 @@
         "openResolutions": "معالجات مفتوحة",
         "operationalUptime": "جاهزية التشغيل",
         "optimalState": "الحالة المثلى",
-        "revenueMtd": "الإيرادات حتى تاريخه"
+        "revenueMtd": "الإيرادات حتى تاريخه",
+        "qualityScore": "نقاط الجودة",
+        "deliveryScore": "نقاط التسليم",
+        "costEfficiency": "كفاءة التكلفة",
+        "workforce": "القوى العاملة",
+        "overallScore": "النتيجة الإجمالية",
+        "belowTarget": "أقل من الهدف",
+        "awaitingData": "بانتظار البيانات"
       },
       "monitoringActive": "المراقبة نشطة",
       "nl2sql": {
@@ -1899,9 +2142,27 @@
         "finance": "المالية",
         "operations": "العمليات",
         "overview": "نظرة عامة",
-        "strategist": "الاستراتيجي الذكي"
+        "strategist": "الاستراتيجي الذكي",
+        "northStar": "نجم الشمال (North Star)",
+        "sqdcp": "SQDCP",
+        "senseiAi": "ذكاء Sensei",
+        "riskPrediction": "تنبؤ المخاطر"
       },
-      "title": "مركز القيادة التنفيذية"
+      "title": "مركز القيادة التنفيذية",
+      "loading": "جاري التحميل...",
+      "ops": {
+        "activeUsers": "المستخدمون النشطون",
+        "openWorkOrders": "أوامر العمل المفتوحة",
+        "productionEfficiency": "كفاءة الإنتاج",
+        "pendingApprovals": "موافقات معلقة"
+      },
+      "sqdcp": {
+        "safety": "السلامة",
+        "quality": "الجودة",
+        "delivery": "التسليم",
+        "cost": "التكلفة",
+        "people": "الأفراد"
+      }
     },
     "finance": {
       "allSystemsNominal": "جميع الأنظمة مستقرة",
@@ -2006,7 +2267,10 @@
       "sections": {
         "accountsReceivable": "حسابات القبض",
         "budgetAnalysis": "تحليل الميزانية",
-        "overview": "نظرة عامة مالية"
+        "overview": "نظرة عامة مالية",
+        "delete": "حذف العقدة",
+        "edit": "تحرير المعلمات",
+        "view": "عرض المواصفات"
       },
       "station": "المحطة",
       "stats": {
@@ -2100,7 +2364,53 @@
       "thisCycle": "هذه الدورة",
       "thresholdBreaches": "تجاوزات العتبات",
       "title": "الأفراد والمواهب",
-      "trainingMatrix": "مصفوفة التدريب"
+      "trainingMatrix": "مصفوفة التدريب",
+      "unassignedRole": "دور غير معين",
+      "noDepartment": "بدون قسم",
+      "remote": "عن بعد",
+      "unknownPosition": "منصب غير معروف",
+      "candidateDetails": "تفاصيل المرشح",
+      "searchPersonnel": "البحث عن الموظفين...",
+      "searchJobs": "البحث عن وظائف...",
+      "toast": {
+        "employeeCreated": "تم إنشاء الموظف بنجاح",
+        "employeeCreatedTitle": "نجاح",
+        "employeeTerminated": "تم إنهاء سجل الموظف",
+        "jobCreated": "تم إنشاء فرصة عمل",
+        "jobDeleted": "تم حذف فرصة العمل",
+        "deletionFailed": "فشل في إجراء الحذف",
+        "applicationSubmitted": "تم تقديم الطلب",
+        "applicationMoved": "تم نقل الطلب إلى {status}",
+        "updateStatusFailed": "فشل تحديث حالة الطلب",
+        "leaveSubmitted": "تم تقديم طلب الإجازة",
+        "leaveApproved": "تمت الموافقة على طلب الإجازة",
+        "leaveApproveFailed": "فشل الموافقة على طلب الإجازة",
+        "leaveRejected": "تم رفض طلب الإجازة",
+        "leaveRejectFailed": "فشل رفض طلب الإجازة"
+      },
+      "confirmTerminate": {
+        "title": "إنهاء سجل الموظف",
+        "description": "هل أنت متأكد أنك تريد إنهاء سجل هذا الموظف؟ لا يمكن التراجع عن هذا الإجراء."
+      },
+      "confirmDeleteJob": {
+        "title": "حذف فرصة العمل",
+        "description": "هل أنت متأكد أنك تريد حذف فرصة العمل هذه؟"
+      },
+      "placeholders": {
+        "email": "user@company.com",
+        "selectRegion": "اختر المنطقة",
+        "selectStatus": "اختر الحالة",
+        "jobDescription": "وصف الوظيفة...",
+        "requiredSkills": "المهارات المطلوبة...",
+        "selectPosition": "اختر المنصب",
+        "firstName": "الاسم الأول",
+        "lastName": "اسم العائلة",
+        "personalEmail": "email@example.com",
+        "portfolioUrl": "https://...",
+        "additionalNotes": "ملاحظات إضافية...",
+        "selectEmployee": "اختر الموظف",
+        "leaveReason": "سبب الإجازة..."
+      }
     },
     "it": {
       "active": "نشط",
@@ -2330,7 +2640,18 @@
         "senseiAi": "سينسي للذكاء الاصطناعي",
         "sqdcpDetail": "تفاصيل إس كيو دي سي بي"
       },
-      "title": "أوبيا المعرفي"
+      "title": "أوبيا المعرفي",
+      "toast": {
+        "loadFailed": "فشل تحميل بيانات عنصر Obeya",
+        "itemDeleted": "تم حذف العنصر بنجاح",
+        "deleteFailed": "فشل حذف العنصر",
+        "commentAdded": "تمت إضافة التعليق",
+        "commentFailed": "فشل إضافة التعليق",
+        "statusUpdated": "تم تحديث الحالة",
+        "statusFailed": "فشل تحديث الحالة",
+        "created": "تم إنشاء لوحة Obeya",
+        "createdDesc": "تمت تهيئة لوحة Obeya الرقمية الجديدة بنجاح."
+      }
     },
     "obeyaDetail": {
       "backToObeya": "العودة إلى أوبيا",
@@ -2468,8 +2789,8 @@
           "notes": "معلومات سرية، وصول مقيد...‏",
           "title": "مثال: قطع دقيقة لمشروع الطيران",
           "partNumber": "PN-XXXX‏",
-          "itemDescription": "Item description...‏",
-          "unit": "pcs, kg, etc.‏"
+          "itemDescription": "وصف الصنف...‏",
+          "unit": "قطعة، كجم، إلخ.‏"
         },
         "priority": {
           "high": "أولوية عالية",
@@ -2549,8 +2870,8 @@
         "rfqNumber": "رقم طلب عرض الأسعار",
         "statusState": "الحالة",
         "thresholdDate": "تاريخ العتبة",
-        "triageScore": "Triage Score‏",
-        "completeness": "Completeness‏"
+        "triageScore": "درجة الفرز‏",
+        "completeness": "الاكتمال‏"
       },
       "title": "خط أنابيب الإيرادات",
       "unknown": "غير معروف",
@@ -2687,6 +3008,29 @@
       "views": {
         "list": "قائمة",
         "portfolio": "محفظة"
+      },
+      "toast": {
+        "settingsSaved": "تم حفظ الإعدادات",
+        "settingsSavedDesc": "تم تحديث إعدادات المشروع.",
+        "saveFailed": "فشل الحفظ",
+        "saveFailedDesc": "حدث خطأ أثناء حفظ التغييرات."
+      },
+      "kanban": {
+        "columns": {
+          "new": "جديد",
+          "ready": "جاهز",
+          "inProgress": "قيد التنفيذ",
+          "readyForTest": "جاهز للاختبار",
+          "done": "تم"
+        }
+      },
+      "milestones": {
+        "namePlaceholder": "اكتملت المرحلة 1",
+        "detailsPlaceholder": "التفاصيل..."
+      },
+      "wiki": {
+        "searchPlaceholder": "بحث...",
+        "titlePlaceholder": "عنوان الصفحة"
       }
     },
     "purchase": {
@@ -3061,7 +3405,23 @@
         "total": "الإجمالي",
         "totalCost": "إجمالي التكلفة",
         "validUntil": "صالح حتى",
-        "zeroPriceWarning": "تحذير: سعر صفري"
+        "zeroPriceWarning": "تحذير: سعر صفري",
+        "materialCost": "تكلفة المواد",
+        "laborCost": "تكلفة العمل",
+        "overheadCost": "التكاليف العامة",
+        "lineItemNotes": "ملاحظات البند",
+        "noAssumptions": "لا توجد افتراضات محددة",
+        "newQuote": "عرض سعر جديد",
+        "viewVersionHistory": "عرض سجل الإصدارات",
+        "addProductsPricing": "إضافة المنتجات والأسعار",
+        "toggleCostBreakdown": "تبديل تفاصيل التكلفة",
+        "unitPrice": "سعر الوحدة",
+        "internalCostingAnalysis": "تحليل التكاليف الداخلي",
+        "totalRevenue": "إجمالي الإيرادات",
+        "grossProfit": "إجمالي الربح",
+        "quickActions": "إجراءات سريعة",
+        "assumptionsVerified": "تم التحقق من الافتراضات",
+        "warningsPresent": "توجد تحذيرات"
       },
       "rfqNumber": "رقم طلب عرض الأسعار",
       "searchPlaceholder": "عبارة البحث",
@@ -3092,7 +3452,13 @@
         "validThru": "صالح حتى",
         "version": "الإصدار"
       },
-      "title": "استخبارات عروض الأسعار"
+      "title": "استخبارات عروض الأسعار",
+      "toast": {
+        "savedDraft": "تم حفظ عرض السعر كمسودة",
+        "submitted": "تم تقديم عرض السعر للموافقة",
+        "saveFailed": "خطأ في حفظ عرض السعر",
+        "tryAgain": "يرجى المحاولة مرة أخرى."
+      }
     },
     "sales": {
       "allPriority": "كل الأولويات",
@@ -3138,7 +3504,18 @@
       "title": "مركز قيادة المبيعات",
       "totalValue": "القيمة الإجمالية",
       "unassigned": "غير مسند",
-      "unknownPartner": "شريك غير معروف"
+      "unknownPartner": "شريك غير معروف",
+      "noBid": "لا يوجد عطاء",
+      "statusNew": "جديد",
+      "statusReviewing": "قيد المراجعة",
+      "statusQuoting": "قيد التسعير",
+      "statusSubmitted": "تم التقديم",
+      "totalRfqs": "إجمالي طلبات الأسعار",
+      "avgResponseTime": "متوسط وقت الاستجابة",
+      "conversionRate": "معدل التحويل",
+      "dueDate": "تاريخ الاستحقاق",
+      "receivedDate": "تاريخ الاستلام",
+      "searchRfqs": "البحث في طلبات الأسعار..."
     },
     "settings": {
       "account": {
@@ -3537,7 +3914,27 @@
       "trends": {
         "thisCycle": "+124 هذه الدورة"
       },
-      "viewAllLowStock": "عرض كل عناصر انخفاض المخزون"
+      "viewAllLowStock": "عرض كل عناصر انخفاض المخزون",
+      "loading": "جاري تحميل بيانات المستودع...",
+      "searchDescription": "بحث وإدارة جميع مخزون المستودع",
+      "searchPlaceholder": "البحث في الأصناف...",
+      "itemName": "اسم الصنف",
+      "onHand": "متاح",
+      "managePO": "إدارة إيصالات أوامر الشراء والمواد الواردة",
+      "poReference": "مرجع أمر الشراء",
+      "expectedDate": "التاريخ المتوقع",
+      "inTransit": "في النقل",
+      "manageShipments": "إدارة الشحنات ولوجستيات التسليم",
+      "shipDate": "تاريخ الشحن",
+      "activePickLists": "قوائم الالتقاط النشطة وتلبية الطلبات",
+      "itemsPicked": "أصناف تم التقاطها"
+    },
+    "quotingHelper": {
+      "noQuoteFound": "لم يتم العثور على عرض سعر",
+      "toast": {
+        "handoffSuccess": "نجاح تسليم NPI",
+        "handoffFailed": "فشل التسليم"
+      }
     }
   },
   "production": {
@@ -3602,30 +3999,30 @@
       "workCenter": "مركز العمل"
     },
     "workCenter": "مركز العمل",
-    "title": "Production",
+    "title": "الإنتاج",
     "workOrders": {
-      "title": "Work Orders",
-      "addWorkOrder": "Create Work Order",
-      "woNumber": "WO Number",
-      "product": "Product",
-      "quantity": "Quantity",
-      "status": "Status",
-      "planned": "Planned",
-      "released": "Released",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "priority": "Priority",
-      "startDate": "Start Date",
-      "dueDate": "Due Date"
+      "title": "أوامر العمل",
+      "addWorkOrder": "إنشاء أمر عمل",
+      "woNumber": "رقم أمر العمل",
+      "product": "المنتج",
+      "quantity": "الكمية",
+      "status": "الحالة",
+      "planned": "مخطط",
+      "released": "صدر",
+      "inProgress": "قيد التنفيذ",
+      "completed": "مكتمل",
+      "priority": "الأولوية",
+      "startDate": "تاريخ البدء",
+      "dueDate": "تاريخ الاستحقاق"
     },
     "scheduling": {
-      "title": "Scheduling",
-      "gantt": "Gantt Chart",
-      "calendar": "Calendar"
+      "title": "الجدولة",
+      "gantt": "مخطط غانت",
+      "calendar": "التقويم"
     },
     "tabs": {
-      "workOrders": "Work Orders",
-      "scheduling": "Scheduling"
+      "workOrders": "أوامر العمل",
+      "scheduling": "الجدولة"
     }
   },
   "products": {
@@ -3763,68 +4160,102 @@
       "customerSatisfaction": "رضا العملاء",
       "protocols": "البروتوكولات",
       "syncGates": "بوابات المزامنة",
-      "inspections": "Inspections",
-      "ncrs": "NCRs",
-      "capas": "CAPAs",
-      "msa": "MSA",
-      "capability": "Capability",
-      "complaints": "Complaints",
-      "surveys": "Surveys",
-      "fai": "FAI",
-      "selfInspection": "Self Inspection",
-      "labTesting": "Lab Testing",
-      "aql": "AQL Sampling",
-      "traceability": "Traceability",
-      "changePoint": "Change Point"
+      "inspections": "عمليات التفتيش",
+      "ncrs": "تقارير عدم المطابقة (NCRs)",
+      "capas": "الإجراءات التصحيحية (CAPAs)",
+      "msa": "تحليل نظام القياس (MSA)",
+      "capability": "القدرة",
+      "complaints": "الشكاوى",
+      "surveys": "الاستطلاعات",
+      "fai": "فحص القطعة الأولى (FAI)",
+      "selfInspection": "التفتيش الذاتي",
+      "labTesting": "الاختبار المعملي",
+      "aql": "أخذ العينات AQL",
+      "traceability": "التتبع",
+      "changePoint": "نقطة التغيير"
     },
-    "title": "Quality",
+    "title": "الجودة",
     "inspections": {
-      "title": "Inspections",
-      "addInspection": "New Inspection",
-      "workOrder": "Work Order",
-      "product": "Product",
-      "type": "Type",
-      "date": "Inspection Date",
-      "status": "Status",
-      "passed": "Passed",
-      "failed": "Failed",
-      "pending": "Pending",
-      "quantityInspected": "Qty Inspected",
-      "quantityPassed": "Qty Passed",
-      "quantityFailed": "Qty Failed",
-      "searchPlaceholder": "Search inspections..."
+      "title": "عمليات التفتيش",
+      "addInspection": "تفتيش جديد",
+      "workOrder": "أمر العمل",
+      "product": "المنتج",
+      "type": "النوع",
+      "date": "تاريخ التفتيش",
+      "status": "الحالة",
+      "passed": "نجح",
+      "failed": "فشل",
+      "pending": "معلق",
+      "quantityInspected": "الكمية التي تم فحصها",
+      "quantityPassed": "الكمية المقبولة",
+      "quantityFailed": "الكمية المرفوضة",
+      "searchPlaceholder": "بحث في عمليات التفتيش..."
     },
     "ncrs": {
-      "title": "Non-Conformance Reports",
-      "addNCR": "Create NCR",
-      "severity": "Severity",
-      "critical": "Critical",
-      "major": "Major",
-      "minor": "Minor",
-      "rootCause": "Root Cause",
-      "containmentAction": "Containment Action"
+      "title": "تقارير عدم المطابقة (NCRs)",
+      "addNCR": "إنشاء NCR",
+      "severity": "الشدة",
+      "critical": "حرج",
+      "major": "كبير",
+      "minor": "طفيف",
+      "rootCause": "السبب الجذري",
+      "containmentAction": "إجراء الاحتواء"
     },
     "capas": {
-      "title": "CAPA",
-      "addCAPA": "Create CAPA",
-      "correctiveAction": "Corrective Action",
-      "preventiveAction": "Preventive Action",
-      "effectiveness": "Effectiveness"
+      "title": "الإجراءات التصحيحية والوقائية (CAPA)",
+      "addCAPA": "إنشاء CAPA",
+      "correctiveAction": "إجراء تصحيحي",
+      "preventiveAction": "إجراء وقائي",
+      "effectiveness": "الفعالية"
     },
     "msa": {
-      "title": "MSA Studies",
-      "gageRR": "Gage R&R",
-      "compute": "Compute GRR",
-      "repeatability": "Repeatability",
-      "reproducibility": "Reproducibility"
+      "title": "دراسات MSA",
+      "gageRR": "قياس التكرار والاستنساخ (Gage R&R)",
+      "compute": "حساب GRR",
+      "repeatability": "التكرارية (Repeatability)",
+      "reproducibility": "إعادة الإنتاج (Reproducibility)"
     },
     "capability": {
-      "title": "Process Capability",
-      "compute": "Compute Cp/Cpk",
+      "title": "قدرة العملية (Process Capability)",
+      "compute": "حساب Cp/Cpk",
       "cpk": "Cpk",
       "cp": "Cp",
       "pp": "Pp",
       "ppk": "Ppk"
+    },
+    "grr": {
+      "analysisResults": "نتائج تحليل GRR",
+      "gauge": "المقياس: {name}",
+      "totalGageRR": "إجمالي Gage R&R",
+      "excellent": "ممتاز",
+      "acceptable": "مقبول",
+      "unacceptable": "غير مقبول",
+      "msgExcellent": "نظام القياس مقبول",
+      "msgAcceptable": "قد يكون مقبولاً حسب التطبيق",
+      "msgUnacceptable": "نظام القياس يحتاج إلى تحسين",
+      "variationBreakdown": "تفصيل التباين",
+      "variationTooltip": "يوضح مساهمة كل مصدر في التباين الكلي. انخفاض EV + AV (GRR) يعني نظام قياس أفضل.",
+      "equipmentVariation": "تباين المعدات (EV): {value}%",
+      "repeatability": "التكرارية",
+      "appraiserVariation": "تباين المقيّم (AV): {value}%",
+      "reproducibility": "إعادة الإنتاج",
+      "partVariationPct": "تباين القطعة (PV): {value}%",
+      "actualPartVariation": "التباين الفعلي من قطعة إلى قطعة",
+      "legendEV": "EV (التكرارية)",
+      "legendAV": "AV (إعادة الإنتاج)",
+      "legendPV": "PV (تباين القطعة)",
+      "repeatabilityEV": "التكرارية (EV)",
+      "reproducibilityAV": "إعادة الإنتاج (AV)",
+      "partVariation": "تباين القطعة (PV)",
+      "totalVariation": "التباين الكلي (TV)",
+      "ndcTitle": "عدد الفئات المتميزة (NDC)",
+      "ndcAcceptable": "≥ 5 (مقبول)",
+      "ndcNeedsImprovement": "< 5 (يحتاج تحسين)",
+      "ndcDescription": "يمثل NDC عدد فئات الأجزاء المتميزة التي يمكن لنظام القياس تمييزها بشكل موثوق. توصي AIAG بحد أدنى 5 فئات متميزة.",
+      "aiagGuidelines": "إرشادات AIAG MSA:",
+      "aiagExcellent": "< 10% GRR: نظام القياس مقبول",
+      "aiagAcceptable": "10-30% GRR: قد يكون مقبولاً بناءً على أهمية التطبيق",
+      "aiagUnacceptable": "> 30% GRR: نظام القياس يحتاج إلى تحسين"
     }
   },
   "emailDrafting": {
@@ -3925,7 +4356,7 @@
     },
     "thread": {
       "entityType": {
-        "rfq": "RFQ",
+        "rfq": "طلب عرض سعر (RFQ)",
         "quote": "عرض سعر",
         "workOrder": "أمر عمل",
         "opportunity": "فرصة",
@@ -4071,11 +4502,11 @@
       "themeMode": "وضع السمة",
       "title": "المظهر",
       "preview": {
-        "title": "Intelligence Module 04‏",
-        "subtitle": "Live operational stream synchronized‏",
-        "primaryAction": "EXECUTE_COMMAND‏",
-        "secondaryAction": "VIEW_INTEL‏",
-        "tertiaryAction": "TERMINATE‏"
+        "title": "وحدة الاستخبارات 04‏",
+        "subtitle": "تدفق العمليات المباشر متزامن‏",
+        "primaryAction": "تنفيذ_الأمر‏",
+        "secondaryAction": "عرض_الاستخبارات‏",
+        "tertiaryAction": "إنهاء‏"
       }
     },
     "audit": "سجل المراجعة",
@@ -4089,8 +4520,8 @@
       "taxIdVat": "معرّف الضريبة/القيمة المضافة",
       "title": "العنوان",
       "defaults": {
-        "legalEntityIdentity": "Sensei Manufacturing Solutions",
-        "taxIdVat": "MA-123456789",
+        "legalEntityIdentity": "Sensei حلول التصنيع",
+        "taxIdVat": "الرقم الضريبي: MA-123456789",
         "registeredOffice": "123 شارع الصناعة، الدار البيضاء، المغرب"
       },
       "branding": {
@@ -4143,11 +4574,11 @@
       "serverSync": "خادم مزامنة",
       "title": "العنوان",
       "defaults": {
-        "dispatchIdentity": "SENSEI_OS_COMMAND‏",
+        "dispatchIdentity": "أمر_نظام_Sensei‏",
         "relayReplyTo": "no-reply@sensei-manuf.com‏"
       },
-      "smtpStatus": "SMTP_RELAY: SYNCHRONIZED‏",
-      "smtpDetails": "Host: mail.sensei-infra.com // Port: 587 (TLS)‏"
+      "smtpStatus": "مرحل SMTP: متزامن‏",
+      "smtpDetails": "المضيف: mail.sensei-infra.com // المنفذ: 587 (TLS)‏"
     },
     "general": "عام",
     "integrations": {
@@ -4757,8 +5188,8 @@
       "siteName": "اسم الموقع",
       "station": "المحطة: العمليات العالمية-01‏",
       "status": {
-        "active": "ACTIVE‏",
-        "inactive": "INACTIVE‏"
+        "active": "نشط‏",
+        "inactive": "غير نشط‏"
       },
       "subtitle": "تكوين عقد الموقع",
       "synchronizing": "جارٍ المزامنة...‏",
@@ -4856,7 +5287,13 @@
       }
     },
     "title": "الإعدادات",
-    "webhooks": "ويب هوكس"
+    "webhooks": "ويب هوكس",
+    "shell": {
+      "toastTitle": "تمت مزامنة الإعدادات",
+      "toastDescription": "تم تحديث معلمات {title} المستهدفة في السجل.",
+      "synchronizing": "جاري المزامنة...",
+      "saveConfiguration": "حفظ_التكوين"
+    }
   },
   "tables": {
     "ascending": "تصاعدي",
@@ -4934,14 +5371,14 @@
           }
         }
       },
-      "title": "Certifications",
-      "name": "Certification Name",
-      "status": "Status",
-      "enrolled": "Enrolled",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "expired": "Expired",
-      "expiryDate": "Expiry Date"
+      "title": "الشهادات",
+      "name": "اسم الشهادة",
+      "status": "الحالة",
+      "enrolled": "مسجل",
+      "inProgress": "قيد التقدم",
+      "completed": "مكتمل",
+      "expired": "منتهي الصلاحية",
+      "expiryDate": "تاريخ انتهاء الصلاحية"
     },
     "enroll": {
       "configureParams": "تكوين المعلمات",
@@ -4999,11 +5436,11 @@
           }
         }
       },
-      "title": "Training Programs",
-      "addProgram": "Add Program",
-      "name": "Program Name",
-      "duration": "Duration",
-      "participants": "Participants"
+      "title": "برامج التدريب",
+      "addProgram": "إضافة برنامج",
+      "name": "اسم البرنامج",
+      "duration": "المدة",
+      "participants": "المشاركون"
     },
     "skillsMatrix": "مصفوفة المهارات",
     "stats": {
@@ -5017,13 +5454,13 @@
       "programs": "البرامج",
       "records": "السجلات"
     },
-    "title": "Training",
+    "title": "تدريب",
     "records": {
-      "title": "Training Records",
-      "employee": "Employee",
-      "course": "Course",
-      "completedDate": "Completed Date",
-      "score": "Score"
+      "title": "سجلات التدريب",
+      "employee": "الموظف",
+      "course": "الدورة",
+      "completedDate": "تاريخ الإكمال",
+      "score": "النتيجة"
     }
   },
   "userMenu": {
@@ -5088,155 +5525,358 @@
   "components": {
     "factoryFloor": {
       "machineStatus": {
-        "productionIssue": "Production Issue",
-        "qualityAlert": "Quality Alert",
-        "safetyAlert": "Safety Alert",
-        "maintenanceRequired": "Maintenance Required"
+        "productionIssue": "مشكلة إنتاج",
+        "qualityAlert": "تنبيه جودة",
+        "safetyAlert": "تنبيه سلامة",
+        "maintenanceRequired": "الصيانة مطلوبة"
+      },
+      "processing": "جاري المعالجة...",
+      "commandReceived": "تم استلام الأمر",
+      "errorOccurred": "حدث خطأ",
+      "voiceDisabled": "الأوامر الصوتية معطلة"
+    },
+    "errorState": {
+      "connectionError": "خطأ في الاتصال",
+      "connectionErrorDesc": "تعذر الوصول إلى الخادم. يرجى التحقق من اتصالك والمحاولة مرة أخرى.",
+      "serverError": "خطأ في الخادم",
+      "serverErrorDesc": "حدث خطأ ما من جانبنا. يرجى المحاولة مرة أخرى لاحقًا.",
+      "noData": "لا توجد بيانات",
+      "noDataDesc": "لم يتم العثور على سجلات تطابق معاييرك.",
+      "accessDenied": "تم رفض الوصول",
+      "accessDeniedDesc": "ليس لديك إذن للوصول إلى هذا المورد.",
+      "notFound": "غير موجود",
+      "notFoundDesc": "تعذر العثور على المورد المطلوب.",
+      "error": "خطأ",
+      "errorDesc": "حدث خطأ غير متوقع.",
+      "tryAgain": "حاول مرة أخرى"
+    },
+    "pageGuard": {
+      "accessRestricted": "الوصول مقيد",
+      "noPermission": "ليس لديك صلاحية للوصول إلى هذه الصفحة.",
+      "returnToDashboard": "العودة إلى لوحة القيادة"
+    },
+    "comingSoon": {
+      "defaultMessage": "هذه الميزة قيد التطوير حالياً وستكون متاحة قريباً.",
+      "goBack": "الرجوع"
+    },
+    "table": {
+      "noData": "لا توجد بيانات",
+      "rowsPerPage": "صفوف لكل صفحة:"
+    },
+    "commandPalette": {
+      "noCommandsFound": "لا توجد أوامر",
+      "tryDifferentSearch": "جرب مصطلح بحث مختلف",
+      "toToggle": "للتبديل"
+    },
+    "scanner": {
+      "scanComplete": "اكتمل المسح",
+      "cameraNotActive": "الكاميرا غير نشطة",
+      "switchCamera": "تبديل الكاميرا",
+      "captureFrame": "التقاط إطار",
+      "stopScanner": "إيقاف الماسح"
+    },
+    "andon": {
+      "unknownWorkCenter": "مركز عمل غير معروف",
+      "noActiveAlerts": "لا توجد تنبيهات نشطة",
+      "refresh": "تحديث",
+      "toggleFullscreen": "تبديل وضع ملء الشاشة",
+      "ackBy": "تم الإقرار بواسطة {name}",
+      "triggeredBy": "تم التشغيل بواسطة {name}",
+      "allSystemsNormal": "جميع الأنظمة تعمل بشكل طبيعي"
+    },
+    "kanban": {
+      "unknownCustomer": "عميل غير معروف",
+      "pipelineValue": "قيمة خط الأنابيب: ",
+      "kanbanView": "عرض كانبان",
+      "listView": "عرض القائمة",
+      "calendarView": "عرض التقويم"
+    },
+    "quickActions": {
+      "confirmAction": "تأكيد الإجراء"
+    },
+    "correction": {
+      "submissionFailed": "فشل إرسال التصحيح",
+      "rejectionFailed": "فشل إرسال الرفض"
+    },
+    "sync": {
+      "removeOperation": "إزالة العملية"
+    },
+    "pdfPreview": {
+      "immutableVersion": "نسخة غير قابلة للتغيير",
+      "pdfPreview": "معاينة PDF",
+      "versionHistory": "سجل النسخ",
+      "metadata": "البيانات الوصفية",
+      "closeEscape": "إغلاق (Esc)",
+      "previousPage": "الصفحة السابقة",
+      "nextPage": "الصفحة التالية",
+      "zoomOut": "تصغير",
+      "zoomIn": "تكبير",
+      "rotate": "تدوير",
+      "fullscreen": "ملء الشاشة",
+      "download": "تنزيل",
+      "print": "طباعة",
+      "currentlyViewing": "عرض حالي",
+      "loadingPdf": "جاري تحميل PDF...",
+      "documentInfo": "معلومات المستند",
+      "createdBy": "أنشأه"
+    },
+    "security": {
+      "noPermission": "ليس لديك صلاحية لعرض هذه البيانات",
+      "allActions": "جميع الإجراءات"
+    },
+    "spatialUi": {
+      "factoryFloorMap": "خريطة المصنع",
+      "closePanel": "إغلاق اللوحة",
+      "closePathView": "إغلاق عرض المسار",
+      "zoomOut": "تصغير",
+      "zoomIn": "تكبير",
+      "resetView": "إعادة تعيين العرض",
+      "selectCellDetails": "حدد خلية لعرض التفاصيل",
+      "currentJob": "الوظيفة الحالية:",
+      "changeStatus": "تغيير الحالة:",
+      "orderPath": "مسار الطلب:",
+      "processTime": "وقت المعالجة",
+      "wasteRatio": "نسبة الهدر",
+      "pathSteps": "خطوات المسار:",
+      "warRoom": {
+        "kpi": "مؤشرات الأداء الرئيسية",
+        "salesPipeline": "خط أنابيب المبيعات",
+        "productionStatus": "حالة الإنتاج",
+        "qualityMetrics": "مقاييس الجودة",
+        "activeAlerts": "تنبيهات نشطة",
+        "todaysTimeline": "الجدول الزمني لليوم"
       }
+    },
+    "session": {
+      "notifications": "إشعارات",
+      "dismissNotification": "تجاهل الإشعار"
+    },
+    "onboarding": {
+      "productTour": "جولة في المنتج",
+      "closeTour": "إغلاق الجولة",
+      "helpPanel": "لوحة المساعدة",
+      "closeHelpPanel": "إغلاق لوحة المساعدة",
+      "dismissSuggestion": "تجاهل الاقتراح",
+      "toggleAssistant": "تفعيل مساعد Sensei",
+      "dismiss": "تجاهل",
+      "searchHelp": "بحث في المساعدة"
+    },
+    "error": {
+      "somethingWentWrong": "حدث خطأ ما",
+      "dismissError": "تجاهل الخطأ",
+      "dismissBtn": "تجاهل",
+      "readOnlyMode": "وضع القراءة فقط",
+      "resolveConflicts": "حل التناقضات",
+      "yourChanges": "تغييراتك",
+      "serverVersion": "نسخة الخادم"
+    },
+    "emptyState": {
+      "noResultsFound": "لم يتم العثور على نتائج",
+      "noItemsYet": "لا توجد عناصر بعد",
+      "noRfqsInQueue": "لا توجد طلبات عروض أسعار في قائمة الانتظار",
+      "noQuotesCreated": "لم يتم إنشاء عروض أسعار",
+      "noActiveJobs": "لا توجد وظائف نشطة"
+    },
+    "printExport": {
+      "cancelExport": "إلغاء التصدير",
+      "close": "إغلاق",
+      "qrCode": "رمز QR",
+      "dataMatrix": "مصفوفة البيانات"
+    },
+    "designSystem": {
+      "openAuditPanel": "فتح لوحة تدقيق نظام التصميم",
+      "auditPanelTitle": "لوحة تدقيق نظام التصميم",
+      "closeAuditPanel": "إغلاق لوحة التدقيق",
+      "horizontalScale": "المقياس الأفقي",
+      "verticalScale": "المقياس الرأسي",
+      "fontSizes": "أحجام الخطوط",
+      "fontWeights": "أوزان الخطوط",
+      "designSystemAudit": "تدقيق نظام التصميم"
+    },
+    "ganttChart": {
+      "noTasks": "لا توجد مهام لتصورها في غانت",
+      "taskName": "اسم المهمة"
+    },
+    "dataVisualization": {
+      "noData": "لا توجد بيانات"
+    },
+    "timeline": {
+      "noActivity": "لا يوجد نشاط بعد"
+    },
+    "virtualTable": {
+      "noData": "لا توجد بيانات متاحة"
+    },
+    "sidebar": {
+      "senseiHome": "الرئيسية لنظام Sensei",
+      "toggleDarkMode": "تبديل الوضع الداكن",
+      "administration": "الإدارة"
+    },
+    "mobileNav": {
+      "navigation": "التنقل عبر الجوال",
+      "openMenu": "فتح القائمة"
     }
   },
   "hr": {
-    "title": "Human Resources",
+    "title": "الموارد البشرية",
     "employees": {
-      "title": "Employees",
-      "addEmployee": "Add Employee",
-      "editEmployee": "Edit Employee",
-      "firstName": "First Name",
-      "lastName": "Last Name",
-      "email": "Email",
-      "department": "Department",
-      "position": "Position",
-      "status": "Status",
-      "active": "Active",
-      "inactive": "Inactive",
-      "onLeave": "On Leave",
-      "hireDate": "Hire Date",
-      "searchPlaceholder": "Search employees...",
-      "noEmployees": "No employees found",
-      "createSuccess": "Employee created successfully",
-      "updateSuccess": "Employee updated successfully",
-      "deleteSuccess": "Employee removed successfully",
-      "deleteConfirm": "Are you sure you want to delete this employee?",
-      "requiredField": "This field is required",
-      "invalidEmail": "Please enter a valid email address"
+      "title": "الموظفين",
+      "addEmployee": "إضافة موظف",
+      "editEmployee": "تعديل موظف",
+      "firstName": "الاسم الأول",
+      "lastName": "اسم العائلة",
+      "email": "البريد الإلكتروني",
+      "department": "القسم",
+      "position": "المنصب",
+      "status": "الحالة",
+      "active": "نشط‏",
+      "inactive": "غير نشط‏",
+      "onLeave": "في إجازة",
+      "hireDate": "تاريخ التوظيف",
+      "searchPlaceholder": "بحث في الموظفين...",
+      "noEmployees": "لم يتم العثور على موظفين",
+      "createSuccess": "تم إنشاء الموظف بنجاح",
+      "updateSuccess": "تم تحديث الموظف بنجاح",
+      "deleteSuccess": "تمت إزالة الموظف بنجاح",
+      "deleteConfirm": "هل أنت متأكد أنك تريد حذف هذا الموظف؟",
+      "requiredField": "هذا الحقل مطلوب",
+      "invalidEmail": "يرجى إدخال عنوان بريد إلكتروني صالح"
     },
     "jobOpenings": {
-      "title": "Job Openings",
-      "addOpening": "Add Job Opening",
-      "jobTitle": "Job Title",
-      "department": "Department",
-      "location": "Location",
-      "type": "Employment Type",
-      "status": "Status",
-      "open": "Open",
-      "closed": "Closed",
-      "filled": "Filled",
-      "postedDate": "Posted Date",
-      "closingDate": "Closing Date",
-      "applications": "Applications",
-      "noOpenings": "No job openings"
+      "title": "الفرص الوظيفية",
+      "addOpening": "إضافة فرصة عمل",
+      "jobTitle": "المسمى الوظيفي",
+      "department": "القسم",
+      "location": "الموقع",
+      "type": "نوع التوظيف",
+      "status": "الحالة",
+      "open": "مفتوح",
+      "closed": "مغلق",
+      "filled": "مشغول",
+      "postedDate": "تاريخ النشر",
+      "closingDate": "تاريخ الإغلاق",
+      "applications": "الطلبات",
+      "noOpenings": "لا توجد فرص وظيفية"
     },
     "leaveRequests": {
-      "title": "Leave Requests",
-      "addRequest": "New Leave Request",
-      "employee": "Employee",
-      "leaveType": "Leave Type",
-      "startDate": "Start Date",
-      "endDate": "End Date",
-      "status": "Status",
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected",
-      "reason": "Reason",
-      "noRequests": "No leave requests",
-      "approve": "Approve",
-      "reject": "Reject"
+      "title": "طلبات الإجازة",
+      "addRequest": "طلب إجازة جديد",
+      "employee": "الموظف",
+      "leaveType": "نوع الإجازة",
+      "startDate": "تاريخ البدء",
+      "endDate": "تاريخ الانتهاء",
+      "status": "الحالة",
+      "pending": "معلق",
+      "approved": "موافق عليه",
+      "rejected": "مرفوض",
+      "reason": "السبب",
+      "noRequests": "لا توجد طلبات إجازة",
+      "approve": "موافقة",
+      "reject": "رفض"
     },
     "applicationsPipeline": {
-      "title": "Applications Pipeline",
-      "applied": "Applied",
-      "screening": "Screening",
-      "interview": "Interview",
-      "offered": "Offered",
-      "hired": "Hired"
+      "title": "خط أنابيب الطلبات",
+      "applied": "متقدم",
+      "screening": "فحص",
+      "interview": "مقابلة",
+      "offered": "عرض عمل",
+      "hired": "تم التعيين"
     },
     "tabs": {
-      "employees": "Employees",
-      "jobOpenings": "Job Openings",
-      "leaveRequests": "Leave Requests",
-      "applicationsPipeline": "Applications Pipeline"
+      "employees": "الموظفين",
+      "jobOpenings": "الفرص الوظيفية",
+      "leaveRequests": "طلبات الإجازة",
+      "applicationsPipeline": "خط أنابيب الطلبات"
     },
     "toasts": {
-      "employeeCreated": "Employee created successfully",
-      "employeeUpdated": "Employee updated successfully",
-      "leaveApproved": "Leave request approved",
-      "leaveRejected": "Leave request rejected",
-      "openingCreated": "Job opening created"
+      "employeeCreated": "تم إنشاء الموظف بنجاح",
+      "employeeUpdated": "تم تحديث الموظف بنجاح",
+      "leaveApproved": "تمت الموافقة على طلب الإجازة",
+      "leaveRejected": "تم رفض طلب الإجازة",
+      "openingCreated": "تم إنشاء فرصة العمل"
     }
   },
   "maintenance": {
-    "title": "Maintenance",
+    "title": "الصيانة",
     "assets": {
-      "title": "Assets",
-      "addAsset": "Add Asset",
-      "name": "Asset Name",
-      "serialNumber": "Serial Number",
-      "location": "Location",
-      "status": "Status",
-      "operational": "Operational",
-      "needsRepair": "Needs Repair",
-      "outOfService": "Out of Service",
-      "searchPlaceholder": "Search assets..."
+      "title": "الأصول",
+      "addAsset": "إضافة أصل",
+      "name": "اسم الأصل",
+      "serialNumber": "الرقم التسلسلي",
+      "location": "الموقع",
+      "status": "الحالة",
+      "operational": "تشغيلي",
+      "needsRepair": "يحتاج إصلاح",
+      "outOfService": "خارج الخدمة",
+      "searchPlaceholder": "بحث في الأصول..."
     },
     "workOrders": {
-      "title": "Work Orders",
-      "addWorkOrder": "Create Work Order",
-      "title_field": "Title",
-      "priority": "Priority",
-      "status": "Status",
-      "assignee": "Assignee",
-      "dueDate": "Due Date",
-      "open": "Open",
-      "inProgress": "In Progress",
-      "completed": "Completed",
-      "cancelled": "Cancelled"
+      "title": "أوامر العمل",
+      "addWorkOrder": "إنشاء أمر عمل",
+      "title_field": "العنوان",
+      "priority": "الأولوية",
+      "status": "الحالة",
+      "assignee": "المكلف",
+      "dueDate": "تاريخ الاستحقاق",
+      "open": "مفتوح",
+      "inProgress": "قيد التنفيذ",
+      "completed": "مكتمل",
+      "cancelled": "ملغي"
     },
     "preventiveMaintenance": {
-      "title": "Preventive Maintenance",
-      "schedule": "Schedule",
-      "frequency": "Frequency",
-      "lastCompleted": "Last Completed",
-      "nextDue": "Next Due"
+      "title": "الصيانة الوقائية",
+      "schedule": "الجدول",
+      "frequency": "التكرار",
+      "lastCompleted": "آخر إكمال",
+      "nextDue": "الاستحقاق القادم"
     },
     "tabs": {
-      "assets": "Assets",
-      "workOrders": "Work Orders",
-      "pmSchedules": "PM Schedules",
-      "tools": "Tools",
-      "warranties": "Warranties",
-      "loto": "LOTO",
-      "fieldReturns": "Field Returns",
-      "budgets": "Budgets"
+      "assets": "الأصول",
+      "workOrders": "أوامر العمل",
+      "pmSchedules": "جداول الصيانة الوقائية",
+      "tools": "الأدوات",
+      "warranties": "الضمانات",
+      "loto": "تأمين/توسيم (LOTO)",
+      "fieldReturns": "مرتجعات ميدانية",
+      "budgets": "الميزانيات"
     }
   },
   "executive": {
-    "title": "Executive Dashboard",
-    "kpis": "Key Performance Indicators",
-    "northStar": "North Star",
-    "riskDashboard": "Risk Dashboard",
+    "title": "لوحة المعلومات التنفيذية",
+    "kpis": "مؤشرات الأداء الرئيسية (KPIs)",
+    "northStar": "نجم الشمال (North Star)",
+    "riskDashboard": "لوحة معلومات المخاطر",
     "strategicDirectives": {
-      "title": "Strategic Directives",
-      "addDirective": "Add Directive",
-      "status": "Status",
-      "progress": "Progress",
-      "active": "Active",
-      "completed": "Completed",
-      "onHold": "On Hold"
+      "title": "التوجيهات الاستراتيجية",
+      "addDirective": "إضافة توجيه",
+      "status": "الحالة",
+      "progress": "التقدم",
+      "active": "نشط‏",
+      "completed": "مكتمل",
+      "onHold": "معلق"
     },
     "nl2sql": {
-      "title": "Natural Language Query",
-      "placeholder": "Ask a question about your data...",
-      "execute": "Execute Query"
+      "title": "استعلام اللغة الطبيعية",
+      "placeholder": "اطرح سؤالاً حول بياناتك...",
+      "execute": "تنفيد الاستعلام"
     }
+  },
+  "layout": {
+    "brandMark": "S",
+    "systemInitialization": "تهيئة النظام...",
+    "bootProtocol": "البروتوكول: Sensei_OS_V3 // تسلسل التمهيد",
+    "systemMetadata": {
+      "station": "المحطة: {station}",
+      "osVer": "إصدار النظام: {version}",
+      "integrity": "النزاهة: {state}",
+      "latency": "زمن الانتقال: {latency}"
+    }
+  },
+  "tour": {
+    "back": "سابق",
+    "next": "تال",
+    "finish": "إنهاء",
+    "closeTour": "إغلاق الجولة",
+    "productTour": "جولة في المنتج",
+    "stepOf": "{current} من {total}‏"
   }
 }

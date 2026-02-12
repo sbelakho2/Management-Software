@@ -55,6 +55,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn, formatCurrency, formatRelativeTime, formatDate } from '@/lib/utils';
 import { usePipelineStore } from '@/stores/pipeline';
 import type { RFQStatus, Priority, RFQ } from '@/types';
+import { useI18n } from '@/contexts/i18n-context';
 
 // The store returns RFQ objects directly (snake_case).
 // This adapter type adds computed properties for UI convenience.
@@ -131,58 +132,77 @@ const kanbanColumns: { status: RFQStatus; title: string }[] = [
   { status: 'submitted', title: 'Submitted' },
 ];
 
+const statusI18nKeys: Record<RFQStatus, string> = {
+  new: 'pages.sales.statusNew',
+  reviewing: 'pages.sales.statusReviewing',
+  quoting: 'pages.sales.statusQuoting',
+  submitted: 'pages.sales.statusSubmitted',
+  won: 'pages.sales.statusWon',
+  lost: 'pages.sales.statusLost',
+  no_bid: 'pages.sales.noBid',
+  cancelled: 'pages.sales.statusCancelled',
+};
+
+const priorityI18nKeys: Record<Priority, string> = {
+  low: 'pages.sales.priorityLow',
+  medium: 'pages.sales.priorityMedium',
+  high: 'pages.sales.priorityHigh',
+  urgent: 'pages.sales.priorityUrgent',
+};
+
 // Analytics Dashboard Component
 function PipelineAnalytics({ stats }: { stats: PipelineStats }) {
+  const { t } = useI18n();
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="pipeline-analytics">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total RFQs</CardTitle>
+          <CardTitle className="text-sm font-medium">{t('pages.sales.totalRfqs')}</CardTitle>
           <LayoutGrid className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-heading font-bold tracking-tight ">{stats.totalRFQs}</div>
           <p className="text-xs text-muted-foreground">
-            {stats.activeRFQs} active
+            {stats.activeRFQs} {t('pages.sales.active')}
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+          <CardTitle className="text-sm font-medium">{t('pages.sales.totalValue')}</CardTitle>
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-heading font-bold tracking-tight ">{formatCurrency(stats.totalValue)}</div>
           <p className="text-xs text-muted-foreground">
-            Est. pipeline value
+            {t('pages.sales.estPipelineValue')}
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Avg Response Time</CardTitle>
+          <CardTitle className="text-sm font-medium">{t('pages.sales.avgResponseTime')}</CardTitle>
           <Clock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-heading font-bold tracking-tight ">{stats.avgResponseTime}h</div>
           <p className="text-xs text-muted-foreground">
-            Time to first response
+            {t('pages.sales.timeToFirstResponse')}
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Conversion Rate</CardTitle>
+          <CardTitle className="text-sm font-medium">{t('pages.sales.conversionRate')}</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-heading font-bold tracking-tight ">{stats.conversionRate}%</div>
           <p className="text-xs text-muted-foreground">
-            {stats.overdueCount} overdue
+            {stats.overdueCount} {t('pages.sales.overdue')}
           </p>
         </CardContent>
       </Card>
@@ -200,6 +220,7 @@ function RFQListItem({
   isSelected: boolean;
   onSelect: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const router = useRouter();
   const isOverdue = new Date(rfq.due_date) < new Date();
 
@@ -243,13 +264,13 @@ function RFQListItem({
         <Badge className={statusConfig[rfq.status].color}>
           <span className="flex items-center gap-1">
             {statusConfig[rfq.status].icon}
-            {statusConfig[rfq.status].label}
+            {t(statusI18nKeys[rfq.status])}
           </span>
         </Badge>
       </td>
       <td className="py-3 px-4">
         <Badge variant={priorityConfig[rfq.priority].color as any}>
-          {priorityConfig[rfq.priority].label}
+          {t(priorityI18nKeys[rfq.priority])}
         </Badge>
       </td>
       <td className="py-3 px-4">
@@ -258,7 +279,7 @@ function RFQListItem({
             {formatDate(new Date(rfq.due_date))}
           </span>
           {isOverdue && (
-            <p className="text-xs text-danger">Overdue</p>
+            <p className="text-xs text-danger">{t('pages.sales.overdue')}</p>
           )}
         </div>
       </td>
@@ -276,7 +297,7 @@ function RFQListItem({
             <span className="text-sm">{rfq.assigned_user.full_name || rfq.assigned_user.email}</span>
           </div>
         ) : (
-          <span className="text-muted-foreground">Unassigned</span>
+          <span className="text-muted-foreground">{t('pages.sales.unassigned')}</span>
         )}
       </td>
       <td className="py-3 px-4">
@@ -295,27 +316,27 @@ function RFQListItem({
             <DropdownMenuItem asChild>
               <Link href={`/pipeline/${rfq.id}`}>
                 <Eye className="mr-2 h-4 w-4" />
-                View
+                {t('pages.sales.view')}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href={`/pipeline/${rfq.id}?mode=edit`}>
                 <Edit className="mr-2 h-4 w-4" />
-                Edit
+                {t('pages.sales.edit')}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem>
               <Copy className="mr-2 h-4 w-4" />
-              Duplicate
+              {t('pages.sales.duplicate')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <Archive className="mr-2 h-4 w-4" />
-              Archive
+              {t('pages.sales.archive')}
             </DropdownMenuItem>
             <DropdownMenuItem className="text-danger">
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {t('pages.sales.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -326,6 +347,7 @@ function RFQListItem({
 
 // Kanban Card Component
 function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
+  const { t } = useI18n();
   const isOverdue = new Date(rfq.due_date) < new Date();
 
   return (
@@ -335,7 +357,7 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
           <div className="flex items-start justify-between mb-2">
             <p className="font-medium text-sm">{rfq.rfq_number}</p>
             <Badge variant={priorityConfig[rfq.priority].color as any} className="text-xs">
-              {priorityConfig[rfq.priority].label}
+              {t(priorityI18nKeys[rfq.priority])}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mb-1">{rfq.customer?.name || 'Unknown'}</p>
@@ -377,6 +399,7 @@ function RFQKanbanCard({ rfq }: { rfq: RFQItem }) {
 
 // Kanban Column Component
 function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatus; rfqs: RFQItem[] }) {
+  const { t } = useI18n();
   const statusItems = rfqs.filter((r) => r.status === status);
   const totalValue = statusItems.reduce((sum, r) => sum + (r.estimated_value || 0), 0);
 
@@ -396,7 +419,7 @@ function KanbanColumn({ title, status, rfqs }: { title: string; status: RFQStatu
       <div className="bg-muted/50 rounded-lg p-3 min-h-[400px]">
         {statusItems.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground py-8">
-            No RFQs
+            {t('pages.sales.noRfqs')}
           </p>
         ) : (
           statusItems.map((rfq) => (
@@ -418,6 +441,7 @@ function BulkActionsToolbar({
   onClearSelection: () => void;
   onBulkAction: (action: string) => void;
 }) {
+  const { t } = useI18n();
   if (selectedCount === 0) return null;
 
   return (
@@ -426,25 +450,25 @@ function BulkActionsToolbar({
         <CardContent className="flex items-center gap-4 p-4">
           <div className="flex items-center gap-2">
             <CheckSquare className="h-5 w-5" />
-            <span className="font-medium">{selectedCount} selected</span>
+            <span className="font-medium">{selectedCount} {t('pages.sales.selected')}</span>
           </div>
           <div className="h-6 w-px bg-border" />
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => onBulkAction('assign')}>
               <Users className="mr-2 h-4 w-4" />
-              Assign
+              {t('pages.sales.assign')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => onBulkAction('archive')}>
               <Archive className="mr-2 h-4 w-4" />
-              Archive
+              {t('pages.sales.archive')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => onBulkAction('export')}>
               <Download className="mr-2 h-4 w-4" />
-              Export
+              {t('pages.sales.export')}
             </Button>
             <Button size="sm" variant="destructive" onClick={() => onBulkAction('delete')}>
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {t('pages.sales.delete')}
             </Button>
           </div>
           <div className="h-6 w-px bg-border" />
@@ -459,6 +483,7 @@ function BulkActionsToolbar({
 
 // Main Pipeline Page Component
 function PipelinePageContent() {
+  const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { rfqs, stats, isLoading, fetchRFQs, exportRFQs } = usePipelineStore();
@@ -572,9 +597,9 @@ function PipelinePageContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight ">Pipeline</h1>
+          <h1 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.sales.pipeline')}</h1>
           <p className="text-muted-foreground">
-            Manage your RFQs and opportunities
+            {t('pages.sales.manageRfqs')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -584,7 +609,7 @@ function PipelinePageContent() {
           <Button asChild data-testid="new-rfq-button">
             <Link href="/pipeline/new">
               <Plus className="mr-2 h-4 w-4" />
-              New RFQ
+              {t('pages.sales.newRfq')}
             </Link>
           </Button>
         </div>
@@ -598,7 +623,7 @@ function PipelinePageContent() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search RFQs..."
+            placeholder={t('pages.sales.searchRfqs')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -607,10 +632,10 @@ function PipelinePageContent() {
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={t('pages.sales.status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="all">{t('pages.sales.allStatus')}</SelectItem>
             {Object.entries(statusConfig).map(([value, { label }]) => (
               <SelectItem key={value} value={value}>
                 {label}
@@ -620,10 +645,10 @@ function PipelinePageContent() {
         </Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Priority" />
+            <SelectValue placeholder={t('pages.sales.priority')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Priority</SelectItem>
+            <SelectItem value="all">{t('pages.sales.allPriority')}</SelectItem>
             {Object.entries(priorityConfig).map(([value, { label }]) => (
               <SelectItem key={value} value={value}>
                 {label}
@@ -633,13 +658,13 @@ function PipelinePageContent() {
         </Select>
         <Select value={sortBy} onValueChange={setSortBy}>
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Sort by" />
+            <SelectValue placeholder={t('pages.sales.sortBy')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="dueDate">Due Date</SelectItem>
-            <SelectItem value="receivedDate">Received Date</SelectItem>
-            <SelectItem value="value">Value</SelectItem>
-            <SelectItem value="priority">Priority</SelectItem>
+            <SelectItem value="dueDate">{t('pages.sales.dueDate')}</SelectItem>
+            <SelectItem value="receivedDate">{t('pages.sales.receivedDate')}</SelectItem>
+            <SelectItem value="value">{t('pages.sales.value')}</SelectItem>
+            <SelectItem value="priority">{t('pages.sales.priority')}</SelectItem>
           </SelectContent>
         </Select>
         <Button
@@ -684,14 +709,14 @@ function PipelinePageContent() {
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">RFQ</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Title</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Status</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Priority</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Due Date</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Value</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Assignee</th>
-                  <th className="py-3 px-4 text-left text-sm font-medium">Activity</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.rfq')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.table.title')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.status')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.priority')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.dueDate')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.value')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.assignee')}</th>
+                  <th className="py-3 px-4 text-left text-sm font-medium">{t('pages.sales.activity')}</th>
                   <th className="py-3 px-4 text-left text-sm font-medium w-10"></th>
                 </tr>
               </thead>
@@ -699,7 +724,7 @@ function PipelinePageContent() {
                 {filteredRFQs.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="py-12 text-center text-muted-foreground">
-                      No RFQs found
+                      {t('pages.sales.noRfqsFound')}
                     </td>
                   </tr>
                 ) : (
@@ -721,7 +746,7 @@ function PipelinePageContent() {
           {kanbanColumns.map((col) => (
             <KanbanColumn
               key={col.status}
-              title={col.title}
+              title={t(statusI18nKeys[col.status])}
               status={col.status}
               rfqs={filteredRFQs}
             />
@@ -732,10 +757,10 @@ function PipelinePageContent() {
       {/* Summary */}
       <div className="flex items-center justify-between text-sm text-muted-foreground" data-testid="pipeline-summary">
         <p>
-          Showing {filteredRFQs.length} of {rfqs.length} RFQs
+          {t('pages.sales.showingCount', { filtered: String(filteredRFQs.length), total: String(rfqs.length) })}
         </p>
         <p>
-          Total Value: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimated_value || 0), 0))}
+          {t('pages.sales.totalValue')}: {formatCurrency(filteredRFQs.reduce((sum, r) => sum + (r.estimated_value || 0), 0))}
         </p>
       </div>
 

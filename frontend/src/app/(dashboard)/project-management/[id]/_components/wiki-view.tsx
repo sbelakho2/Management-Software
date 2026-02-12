@@ -10,6 +10,7 @@ import { Plus, Search, FileText, ChevronRight, Edit3, Save, X, Trash2 } from 'lu
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface WikiViewProps {
   projectId: string;
@@ -19,6 +20,7 @@ export function WikiView({ projectId }: WikiViewProps) {
   const { 
     wikiPages, fetchWikiPages, createWikiPage, updateWikiPage
   } = useProjectManagementStore();
+  const { t } = useI18n();
   
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedPage, setSelectedPage] = React.useState<WikiPage | null>(null);
@@ -87,7 +89,7 @@ export function WikiView({ projectId }: WikiViewProps) {
       <div className="w-64 border-r flex flex-col bg-secondary/10">
         <div className="p-4 border-b space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm">Pages</h3>
+            <h3 className="font-semibold text-sm">{t('pages.projectManagement.wiki.pages')}</h3>
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleStartCreate}>
               <Plus className="h-4 w-4" />
             </Button>
@@ -95,7 +97,7 @@ export function WikiView({ projectId }: WikiViewProps) {
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-3 w-3 text-muted-foreground" />
             <Input 
-              placeholder="Search..." 
+              placeholder={t('pages.projectManagement.wiki.searchPlaceholder')} 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-7 h-8 text-xs" 
@@ -118,7 +120,7 @@ export function WikiView({ projectId }: WikiViewProps) {
               </button>
             ))}
             {filteredPages.length === 0 && (
-              <p className="text-xs text-center text-muted-foreground py-4">No pages found.</p>
+              <p className="text-xs text-center text-muted-foreground py-4">{t('pages.projectManagement.wiki.noPagesFound')}</p>
             )}
           </div>
         </ScrollArea>
@@ -134,7 +136,7 @@ export function WikiView({ projectId }: WikiViewProps) {
                   <Input 
                     value={editForm.title}
                     onChange={(e) => setEditForm(prev => ({ ...editForm, title: e.target.value }))}
-                    placeholder="Page Title"
+                    placeholder={t('pages.projectManagement.wiki.titlePlaceholder')}
                     className="text-xl font-bold h-10"
                   />
                 ) : (
@@ -145,15 +147,15 @@ export function WikiView({ projectId }: WikiViewProps) {
                 {isEditing || isCreating ? (
                   <>
                     <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); setIsCreating(false); }}>
-                      <X className="h-4 w-4 mr-2" /> Cancel
+                      <X className="h-4 w-4 mr-2" /> {t('common.cancel')}
                     </Button>
                     <Button size="sm" onClick={handleSave}>
-                      <Save className="h-4 w-4 mr-2" /> Save
+                      <Save className="h-4 w-4 mr-2" /> {t('common.save')}
                     </Button>
                   </>
                 ) : (
                   <Button variant="outline" size="sm" onClick={handleStartEdit}>
-                    <Edit3 className="h-4 w-4 mr-2" /> Edit
+                    <Edit3 className="h-4 w-4 mr-2" /> {t('common.edit')}
                   </Button>
                 )}
               </div>
@@ -164,14 +166,14 @@ export function WikiView({ projectId }: WikiViewProps) {
                   <Textarea 
                     value={editForm.content}
                     onChange={(e) => setEditForm(prev => ({ ...editForm, content: e.target.value }))}
-                    placeholder="Write page content here (Markdown supported)..."
+                    placeholder={t('pages.projectManagement.wiki.contentPlaceholder')}
                     className="min-h-[400px] font-mono"
                   />
                 ) : (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <p className="whitespace-pre-wrap">{selectedPage?.content}</p>
                     <div className="mt-10 pt-6 border-t text-xs text-muted-foreground">
-                      Last updated {selectedPage && formatRelativeTime(selectedPage.updated_at)} • Version {selectedPage?.version}
+                      {t('pages.projectManagement.wiki.lastUpdated')} {selectedPage && formatRelativeTime(selectedPage.updated_at)} • {t('pages.projectManagement.wiki.version')} {selectedPage?.version}
                     </div>
                   </div>
                 )}
@@ -182,11 +184,11 @@ export function WikiView({ projectId }: WikiViewProps) {
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
             <FileText className="h-12 w-12 opacity-20" />
             <div className="text-center">
-              <h3 className="font-medium">No page selected</h3>
-              <p className="text-sm">Select a page from the sidebar or create a new one.</p>
+              <h3 className="font-medium">{t('pages.projectManagement.wiki.noPageSelected')}</h3>
+              <p className="text-sm">{t('pages.projectManagement.wiki.selectAPage')}</p>
             </div>
             <Button variant="outline" onClick={handleStartCreate}>
-              <Plus className="h-4 w-4 mr-2" /> Create First Page
+              <Plus className="h-4 w-4 mr-2" /> {t('pages.projectManagement.wiki.createFirstPage')}
             </Button>
           </div>
         )}

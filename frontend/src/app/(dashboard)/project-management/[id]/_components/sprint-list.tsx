@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Progress } from '@/components/ui/progress';
 import { Plus, Calendar, Timer, CheckCircle2 } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface SprintListProps {
   projectId: string;
@@ -17,6 +18,7 @@ interface SprintListProps {
 
 export function SprintList({ projectId }: SprintListProps) {
   const { sprints, createSprint, stories } = useProjectManagementStore();
+  const { t } = useI18n();
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -54,22 +56,22 @@ export function SprintList({ projectId }: SprintListProps) {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-heading font-bold tracking-tight ">Sprints</h2>
-          <p className="text-muted-foreground">Manage your iterative delivery cycles.</p>
+          <h2 className="text-3xl font-heading font-bold tracking-tight ">{t('pages.projectManagement.detail.sprints')}</h2>
+          <p className="text-muted-foreground">{t('pages.projectManagement.sprints.subtitle')}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="pm-create-sprint">
-              <Plus className="mr-2 h-4 w-4" /> New Sprint
+              <Plus className="mr-2 h-4 w-4" /> {t('pages.projectManagement.sprints.newSprint')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Sprint</DialogTitle>
+              <DialogTitle>{t('pages.projectManagement.sprints.createNewSprint')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Sprint Name</label>
+                <label className="text-sm font-medium">{t('pages.projectManagement.sprints.sprintName')}</label>
                 <Input 
                   placeholder="Sprint 1" 
                   value={name} 
@@ -79,7 +81,7 @@ export function SprintList({ projectId }: SprintListProps) {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Start Date</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.sprints.startDate')}</label>
                   <Input 
                     type="date"
                     value={startDate} 
@@ -88,7 +90,7 @@ export function SprintList({ projectId }: SprintListProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">End Date</label>
+                  <label className="text-sm font-medium">{t('pages.projectManagement.sprints.endDate')}</label>
                   <Input 
                     type="date"
                     value={endDate} 
@@ -99,9 +101,9 @@ export function SprintList({ projectId }: SprintListProps) {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t('common.cancel')}</Button>
               <Button onClick={handleCreateSprint} disabled={isSubmitting} data-testid="pm-sprint-submit">
-                {isSubmitting ? 'Creating...' : 'Create Sprint'}
+                {isSubmitting ? t('pages.projectManagement.sprints.creating') : t('pages.projectManagement.sprints.createSprint')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -111,7 +113,7 @@ export function SprintList({ projectId }: SprintListProps) {
       {activeSprint && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Timer className="h-5 w-5 text-primary" /> Active Sprint
+            <Timer className="h-5 w-5 text-primary" /> {t('pages.projectManagement.sprints.activeSprint')}
           </h3>
           <SprintCard sprint={activeSprint} stories={stories} isActive />
         </div>
@@ -120,7 +122,7 @@ export function SprintList({ projectId }: SprintListProps) {
       {plannedSprints.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Calendar className="h-5 w-5" /> Planned Sprints
+            <Calendar className="h-5 w-5" /> {t('pages.projectManagement.sprints.plannedSprints')}
           </h3>
           <div className="grid gap-4 md:grid-cols-2">
             {plannedSprints.map(sprint => (
@@ -133,7 +135,7 @@ export function SprintList({ projectId }: SprintListProps) {
       {completedSprints.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-green-600" /> Completed Sprints
+            <CheckCircle2 className="h-5 w-5 text-green-600" /> {t('pages.projectManagement.sprints.completedSprints')}
           </h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {completedSprints.map(sprint => (
@@ -146,7 +148,7 @@ export function SprintList({ projectId }: SprintListProps) {
       {projectSprints.length === 0 && (
         <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg text-muted-foreground">
           <Calendar className="h-12 w-12 mb-4 opacity-20" />
-          <p>No sprints found. Create one to get started.</p>
+          <p>{t('pages.projectManagement.sprints.noSprintsFound')}</p>
         </div>
       )}
     </div>
@@ -160,6 +162,7 @@ interface SprintCardProps {
 }
 
 function SprintCard({ sprint, stories, isActive }: SprintCardProps) {
+  const { t } = useI18n();
   const sprintStories = stories.filter(s => s.sprint_id === sprint.id);
   const completedStories = sprintStories.filter(s => s.status === 'done');
   const progress = sprintStories.length > 0 
@@ -169,10 +172,10 @@ function SprintCard({ sprint, stories, isActive }: SprintCardProps) {
   const daysRemaining = differenceInDays(new Date(sprint.end_date), new Date());
 
   const statusBadge: Record<string, { label: string; className: string }> = {
-    planned: { label: 'Planned', className: 'bg-gray-100 text-gray-800' },
-    active: { label: 'Active', className: 'bg-blue-100 text-blue-800' },
-    completed: { label: 'Completed', className: 'bg-green-100 text-green-800' },
-    cancelled: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
+    planned: { label: t('pages.projectManagement.sprints.statusPlanned'), className: 'bg-gray-100 text-gray-800' },
+    active: { label: t('pages.projectManagement.sprints.statusActive'), className: 'bg-blue-100 text-blue-800' },
+    completed: { label: t('pages.projectManagement.sprints.statusCompleted'), className: 'bg-green-100 text-green-800' },
+    cancelled: { label: t('pages.projectManagement.sprints.statusCancelled'), className: 'bg-red-100 text-red-800' },
   };
 
   const badge = statusBadge[sprint.status] || statusBadge.planned;
@@ -193,14 +196,14 @@ function SprintCard({ sprint, stories, isActive }: SprintCardProps) {
 
         {isActive && daysRemaining >= 0 && (
           <div className="text-sm">
-            <span className="font-medium">{daysRemaining}</span> days remaining
+            <span className="font-medium">{daysRemaining}</span> {t('pages.projectManagement.sprints.daysRemaining')}
           </div>
         )}
 
         <div className="space-y-2">
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Progress</span>
-            <span>{completedStories.length}/{sprintStories.length} stories ({progress}%)</span>
+            <span>{t('pages.projectManagement.sprints.progress')}</span>
+            <span>{completedStories.length}/{sprintStories.length} {t('pages.projectManagement.sprints.stories')} ({progress}%)</span>
           </div>
           <Progress value={progress} className="h-2" />
         </div>

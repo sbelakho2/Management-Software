@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Save, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/i18n-context';
 
 interface SettingsPageShellProps {
   title: string;
@@ -13,6 +14,7 @@ interface SettingsPageShellProps {
 }
 
 export function SettingsPageShell({ title, description, children }: SettingsPageShellProps) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -21,8 +23,8 @@ export function SettingsPageShell({ title, description, children }: SettingsPage
     await new Promise(resolve => setTimeout(resolve, 800));
     setIsSaving(false);
     toast({
-      title: 'Settings Synchronized',
-      description: `Target ${title.toUpperCase()} parameters updated in registry.`,
+      title: t('settings.shell.toastTitle'),
+      description: t('settings.shell.toastDescription', { title: title.toUpperCase() }),
     });
   };
 
@@ -39,12 +41,12 @@ export function SettingsPageShell({ title, description, children }: SettingsPage
           {isSaving ? (
             <>
               <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              SYNCHRONIZING...
+              {t('settings.shell.synchronizing')}
             </>
           ) : (
             <>
               <Save className="mr-2 h-3.5 w-3.5" />
-              SAVE_CONFIGURATION
+              {t('settings.shell.saveConfiguration')}
             </>
           )}
         </Button>

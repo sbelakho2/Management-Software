@@ -774,7 +774,14 @@
       "minorIssuesDetected": "Kleinere Probleme erkannt",
       "processing": "Verarbeitung",
       "syncing": "Synchronisierung",
-      "systemOffline": "System offline"
+      "systemOffline": "System offline",
+      "completed": "Abgeschlossen",
+      "picked": "Kommissioniert",
+      "packed": "Verpackt",
+      "shipped": "Versendet",
+      "delivered": "Geliefert",
+      "inProgress": "In Bearbeitung",
+      "pending": "Ausstehend"
     },
     "submit": "Absenden",
     "subtotal": "Zwischensumme",
@@ -805,10 +812,14 @@
     "yes": "Ja",
     "tests": {
       "aoi": "AOI",
-      "xray": "X-Ray",
+      "xray": "Röntgen",
       "ict": "ICT",
       "fct": "FCT"
-    }
+    },
+    "source": "Quelle",
+    "protocol": "Protokoll",
+    "cat": "CAT",
+    "user": "Benutzer"
   },
   "confirmations": {
     "archiveDescription": "{item} wird ins Archiv verschoben.",
@@ -836,7 +847,8 @@
     "timeout": "Zeitüberschreitung der Anfrage. Bitte versuchen Sie es erneut.",
     "unauthorized": "Sie müssen angemeldet sein, um diese Aktion durchzuführen.",
     "unknown": "Ein unbekannter Fehler ist aufgetreten.",
-    "validationError": "Bitte überprüfen Sie Ihre Eingaben und versuchen Sie es erneut."
+    "validationError": "Bitte überprüfen Sie Ihre Eingaben und versuchen Sie es erneut.",
+    "boundaryFallback": "Etwas ist schief gelaufen. Bitte aktualisieren oder erneut versuchen."
   },
   "forms": {
     "addMore": "Mehr hinzufügen",
@@ -937,30 +949,30 @@
           "maintenance": "Wartung",
           "completed": "Abgeschlossen"
         },
-        "aggregationPulse": "Aggregation Pulse",
-        "escalateAnomaly": "Escalate Anomaly",
-        "executionVelocity": "Execution Velocity",
-        "exportSpec": "Export Spec",
-        "gateVerified": "Gate Verified",
-        "initiateExecution": "Initiate Execution",
-        "node": "Node",
-        "scrapDeviation": "Scrap Deviation",
-        "suspendProtocol": "Suspend Protocol",
+        "aggregationPulse": "Aggregations-Puls",
+        "escalateAnomaly": "Anomalie eskalieren",
+        "executionVelocity": "Ausführungsgeschwindigkeit",
+        "exportSpec": "Spezifikation exportieren",
+        "gateVerified": "Gate verifiziert",
+        "initiateExecution": "Ausführung initiieren",
+        "node": "Knoten",
+        "scrapDeviation": "Ausschussabweichung",
+        "suspendProtocol": "Protokoll aussetzen",
         "tabs": {
           "bom": "Bom",
-          "history": "History",
-          "operations": "Operations",
-          "quality": "Quality"
+          "history": "Historie",
+          "operations": "Operationen",
+          "quality": "Qualität"
         },
-        "targetMagnitude": "Target Magnitude",
-        "unknownProduct": "Unknown Product",
-        "viewHistory": "View History",
-        "loadingBom": "Retrieving Bill of Materials protocol nodes...",
-        "temporalSchedule": "Temporal Schedule",
-        "startHorizon": "Start Horizon",
-        "targetTerminal": "Target Terminal",
-        "standardLeadTime": "Standard Lead Time",
-        "days": "DAYS",
+        "targetMagnitude": "Zielgröße",
+        "unknownProduct": "Unbekanntes Produkt",
+        "viewHistory": "Historie anzeigen",
+        "loadingBom": "Stücklisten-Protokollknoten abrufen...",
+        "temporalSchedule": "Zeitplan",
+        "startHorizon": "Start-Horizont",
+        "targetTerminal": "Ziel-Terminal",
+        "standardLeadTime": "Standard-Vorlaufzeit",
+        "days": "TAGE",
         "station": "STATION"
       }
     },
@@ -1000,28 +1012,28 @@
             "high": "Hoch",
             "critical": "Kritisch"
           },
-          "capaCreated": "Capa Created",
-          "createFailed": "Create Failed",
-          "initiatedSuccess": "Initiated Success"
+          "capaCreated": "CAPA erstellt",
+          "createFailed": "Erstellung fehlgeschlagen",
+          "initiatedSuccess": "Erfolgreich initiiert"
         },
         "detail": {
-          "addNode": "Add Node",
-          "commitAction": "Commit Action",
-          "countermeasureNodes": "Countermeasure Nodes",
-          "exportProtocol": "Export Protocol",
-          "implementationMagnitude": "Implementation Magnitude",
-          "problemStatement": "Problem Statement",
-          "refineCapa": "Refine Capa",
-          "rootCauseAnalysis": "Root Cause Analysis",
-          "subtitle": "Subtitle",
-          "syncPulse": "Sync Pulse",
+          "addNode": "Knoten hinzufügen",
+          "commitAction": "Aktion festschreiben",
+          "countermeasureNodes": "Gegenmaßnahme-Knoten",
+          "exportProtocol": "Protokoll exportieren",
+          "implementationMagnitude": "Implementierungsgröße",
+          "problemStatement": "Problemstellung",
+          "refineCapa": "CAPA verfeinern",
+          "rootCauseAnalysis": "Ursachenanalyse",
+          "subtitle": "Untertitel",
+          "syncPulse": "Sync-Puls",
           "tabs": {
-            "actionProtocol": "Action Protocol",
-            "effectivenessSync": "Effectiveness Sync",
-            "relatedAnomalies": "Related Anomalies"
+            "actionProtocol": "Aktionsprotokoll",
+            "effectivenessSync": "Wirksamkeits-Sync",
+            "relatedAnomalies": "Verwandte Anomalien"
           },
-          "terminateNode": "Terminate Node",
-          "verifyEffectiveness": "Verify Effectiveness"
+          "terminateNode": "Knoten beenden",
+          "verifyEffectiveness": "Wirksamkeit überprüfen"
         }
       },
       "certifications": "Zertifizierungen",
@@ -1045,36 +1057,36 @@
             "major": "Mittel",
             "critical": "Kritisch"
           },
-          "validationError": "Validation Error",
-          "titleDescRequired": "Title and Description are required.",
-          "ncrCreated": "NCR Created",
-          "recordedSuccess": "NCR has been successfully recorded.",
-          "createFailed": "Failed to create NCR",
+          "validationError": "Validierungsfehler",
+          "titleDescRequired": "Titel und Beschreibung sind erforderlich.",
+          "ncrCreated": "NCR erstellt",
+          "recordedSuccess": "NCR wurde erfolgreich aufgezeichnet.",
+          "createFailed": "Fehler beim Erstellen der NCR",
           "placeholders": {
-            "title": "e.g., Dimensional deviation in bracket holes",
-            "location": "e.g., Assembly Line 2",
+            "title": "z. B. Maßabweichung in Halterungslöchern",
+            "location": "z. B. Montagelinie 2",
             "partNumber": "PART_NUMBER",
             "woNumber": "WO_NUMBER",
-            "description": "Provide detailed evidence regarding the discrepancy protocol..."
+            "description": "Geben Sie detaillierte Beweise bezüglich des Abweichungsprotokolls an..."
           }
         },
         "detail": {
-          "assignCapa": "Assign Capa",
-          "comment": "Comment",
-          "discrepancyIntelligence": "Discrepancy Intelligence",
-          "investigationProtocol": "Investigation Protocol",
-          "noDescription": "No Description",
-          "refineProtocol": "Refine Protocol",
-          "subjectiveData": "Subjective Data",
-          "subtitle": "Subtitle",
+          "assignCapa": "CAPA zuweisen",
+          "comment": "Kommentar",
+          "discrepancyIntelligence": "Abweichungs-Intelligenz",
+          "investigationProtocol": "Untersuchungsprotokoll",
+          "noDescription": "Keine Beschreibung",
+          "refineProtocol": "Protokoll verfeinern",
+          "subjectiveData": "Subjektive Daten",
+          "subtitle": "Untertitel",
           "tabs": {
             "disposition": "Disposition",
-            "eventLog": "Event Log",
-            "evidence": "Evidence",
-            "rootCause": "Root Cause"
+            "eventLog": "Ereignisprotokoll",
+            "evidence": "Beweise",
+            "rootCause": "Ursachenanalyse"
           },
-          "terminateNode": "Terminate Node",
-          "viewLogs": "View Logs"
+          "terminateNode": "Knoten beenden",
+          "viewLogs": "Protokolle anzeigen"
         }
       },
       "passRate": "Erfolgsquote",
@@ -1095,34 +1107,34 @@
             "final": "ENDPRÜFUNG",
             "receiving": "Wareneingang"
           },
-          "inspectionStarted": "Inspection Started",
-          "initializedSuccess": "New inspection record has been initialized.",
-          "createFailed": "Failed to create inspection.",
-          "associatedWoSync": "Associated WO Sync",
-          "initialObservation": "Initial Observation Intel",
+          "inspectionStarted": "Inspektion gestartet",
+          "initializedSuccess": "Neuer Inspektionsdatensatz wurde initialisiert.",
+          "createFailed": "Fehler beim Erstellen der Inspektion.",
+          "associatedWoSync": "Zugehöriger Arbeitsauftrags-Sync",
+          "initialObservation": "Erste Beobachtungsdaten",
           "placeholders": {
-            "protocolIdentity": "e.g., Final Inspection Protocol - BRK-2024",
+            "protocolIdentity": "z. B. Endkontrollprotokoll - BRK-2024",
             "operatorIdentity": "OPERATIVE_IDENTITY",
             "partNumber": "PART_NUMBER",
             "woNumber": "WO_NUMBER",
-            "notes": "Incorporate initial findings and contextual data..."
+            "notes": "Erste Ergebnisse und Kontextdaten einbeziehen..."
           }
         },
         "detail": {
-          "assignmentTelemetry": "Assignment Telemetry",
-          "checklist": "Checklist",
-          "commitSync": "Commit Sync",
-          "inspectionIntelligence": "Inspection Intelligence",
-          "leadInspector": "Lead Inspector",
-          "printEvidence": "Print Evidence",
-          "resultsAnalytics": "Results Analytics",
-          "scheduledSync": "Scheduled Sync"
+          "assignmentTelemetry": "Zuweisungs-Telemetrie",
+          "checklist": "Checkliste",
+          "commitSync": "Übermittlungs-Sync",
+          "inspectionIntelligence": "Inspektions-Intelligenz",
+          "leadInspector": "Leitender Inspektor",
+          "printEvidence": "Beweise drucken",
+          "resultsAnalytics": "Ergebnis-Analyse",
+          "scheduledSync": "Geplanter Sync"
         }
       }
     },
     "sales": {
       "forecast": "Prognose",
-      "leads": "Leads",
+      "leads": "Interessenten",
       "lost": "Verloren",
       "newDeal": "Neuer Abschluss",
       "opportunities": "Chancen",
@@ -1156,7 +1168,7 @@
         "placeholders": {
           "partNumber": "z.B. PN-2024-001",
           "nomenclature": "PRODUCT_NAME_STR",
-          "description": "Brief description of the product or component specifications...",
+          "description": "Kurze Beschreibung des Produkts oder der Komponentenspezifikationen...",
           "uom": "ISO_CODE",
           "unitCost": "0.00",
           "minStock": "MIN_QTY",
@@ -1168,12 +1180,12 @@
         "abort": "Abbrechen",
         "synchronizing": "SYNCHRONISIEREN...",
         "commitData": "BESTÄTIGEN",
-        "requiredParams": "Required Parameters Missing",
-        "providePartAndName": "Please provide at least a Part Number and Name for the node.",
-        "nodeSynchronized": "Node Synchronized",
-        "establishedSuccess": "{name} has been successfully established in the catalog.",
-        "syncFailed": "Synchronization Failed",
-        "failedToEstablish": "Failed to establish product node in the registry."
+        "requiredParams": "Erforderliche Parameter fehlen",
+        "providePartAndName": "Bitte geben Sie mindestens eine Teilenummer und einen Namen für den Knoten an.",
+        "nodeSynchronized": "Knoten synchronisiert",
+        "establishedSuccess": "{name} wurde erfolgreich im Katalog eingerichtet.",
+        "syncFailed": "Synchronisierung fehlgeschlagen",
+        "failedToEstablish": "Fehler beim Einrichten des Produktknotens im Register."
       },
       "detail": {
         "title": "Produktdetails",
@@ -1194,60 +1206,60 @@
         "updated": "AKTUALISIERT AM",
         "revision": "Revision"
       },
-      "title": "Product Catalog",
-      "subtitle": "Manage products, BOMs, and manufacturing routings",
-      "station": "PRODUCTS",
+      "title": "Produktkatalog",
+      "subtitle": "Produkte, Stücklisten und Arbeitspläne verwalten",
+      "station": "PRODUKTE",
       "stats": {
-        "activeProducts": "Active Products",
-        "bomsDefined": "BOMs Defined",
-        "routingsActive": "Active Routings",
-        "avgLeadTime": "Avg. Lead Time",
-        "activeInventoryNodes": "Active Products",
-        "aggregatedRevenue": "Total Revenue",
-        "meanMarginKPI": "Average Margin",
-        "stockAbnormalities": "Low Stock Alerts"
+        "activeProducts": "Aktive Produkte",
+        "bomsDefined": "Definierte Stücklisten",
+        "routingsActive": "Aktive Arbeitspläne",
+        "avgLeadTime": "Durchschnittl. Vorlaufzeit",
+        "activeInventoryNodes": "Aktive Bestände",
+        "aggregatedRevenue": "Gesamteinnahmen",
+        "meanMarginKPI": "Durchschnittliche Marge",
+        "stockAbnormalities": "Bestandsanomalien"
       },
       "actions": {
-        "newProduct": "New Product"
+        "newProduct": "Neues Produkt"
       },
       "tabs": {
-        "products": "Products",
-        "boms": "BOMs",
-        "routings": "Routings"
+        "products": "Produkte",
+        "boms": "Stücklisten",
+        "routings": "Arbeitspläne"
       },
       "details": {
-        "overview": "Overview",
-        "specifications": "Specifications",
-        "bom": "Bill of Materials",
-        "routing": "Routing",
-        "inventory": "Inventory",
-        "history": "History"
+        "overview": "Übersicht",
+        "specifications": "Spezifikationen",
+        "bom": "Stückliste",
+        "routing": "Arbeitsplan",
+        "inventory": "Inventar",
+        "history": "Historie"
       },
       "status": {
-        "discontinued": "Discontinued"
+        "discontinued": "Eingestellt"
       },
-      "viewBom": "View BOM",
-      "viewAnalytics": "View Analytics",
-      "stockLevel": "Stock Level",
-      "allStock": "All Stock",
-      "lowStock": "Low Stock",
-      "outOfStock": "Out of Stock",
+      "viewBom": "Stückliste anzeigen",
+      "viewAnalytics": "Analyse anzeigen",
+      "stockLevel": "Lagerbestand",
+      "allStock": "Gesamtbestand",
+      "lowStock": "Niedriger Bestand",
+      "outOfStock": "Nicht vorrätig",
       "table": {
-        "product": "Product",
-        "standardCost": "Standard Cost",
-        "listPrice": "List Price",
-        "margin": "Margin",
-        "inventory": "Inventory",
-        "leadTime": "Lead Time",
-        "totalSold": "Total Sold"
+        "product": "Produkt",
+        "standardCost": "Standardkosten",
+        "listPrice": "Listenpreis",
+        "margin": "Marge",
+        "inventory": "Inventar",
+        "leadTime": "Vorlaufzeit",
+        "totalSold": "Gesamt Verkauft"
       },
       "emptyState": {
-        "description": "Start by adding your first product to the catalog.",
-        "title": "No products found"
+        "description": "Beginnen Sie, indem Sie Ihr erstes Produkt zum Katalog hinzufügen.",
+        "title": "Keine Produkte gefunden"
       },
-      "exportIntel": "Export Catalog",
-      "import": "Import",
-      "initializeNode": "Create Product"
+      "exportIntel": "Katalog exportieren",
+      "import": "Importieren",
+      "initializeNode": "Produkt erstellen"
     }
   },
   "navigation": {
@@ -1370,7 +1382,17 @@
         "deleted": "A3-Bericht gelöscht",
         "deletedDescription": "Der A3-Bericht wurde erfolgreich gelöscht.",
         "escalated": "A3 eskaliert",
-        "escalatedDescription": "Der Bericht wurde zur Prüfung an das Management eskaliert."
+        "escalatedDescription": "Der Bericht wurde zur Prüfung an das Management eskaliert.",
+        "titleRequired": "Bitte geben Sie einen Titel für den A3-Bericht ein.",
+        "created": "A3-Bericht erstellt",
+        "createdDesc": "Der neue A3-Bericht wurde erfolgreich initialisiert.",
+        "createFailed": "Fehler beim Erstellen des A3-Berichts.",
+        "loadFailed": "Laden der A3-Details fehlgeschlagen",
+        "export": "Exportieren",
+        "exportDesc": "Starte PDF-Export...",
+        "updated": "A3-Bericht aktualisiert",
+        "updatedDesc": "Änderungen wurden erfolgreich gespeichert.",
+        "updateFailed": "Fehler beim Aktualisieren des A3-Berichts."
       }
     },
     "admin": {
@@ -1522,7 +1544,12 @@
         "initializeTemplate": "Vorlage initialisieren",
         "title": "Dokumentvorlagen"
       },
-      "title": "Administration"
+      "title": "Administration",
+      "import": {
+        "conflictResolution": "Conflict Resolution",
+        "skipExisting": "Skip Existing",
+        "updateExisting": "Update Existing"
+      }
     },
     "analytics": {
       "alpha": "Alpha",
@@ -1550,7 +1577,7 @@
         "intelligence": "Intelligenz",
         "neuralCompute": "Neuraler Compute-Stream",
         "precision": "Präzision",
-        "recall": "Recall",
+        "recall": "Abruf",
         "warming": "Verteilte ML-Cluster werden hochgefahren..."
       },
       "overview": {
@@ -1630,7 +1657,8 @@
         "protocol": "Protokoll",
         "temporalModel": "Modell: TEMPORAL-CONV-04",
         "training": "Sensei KI trainiert temporale Projektionsmodelle..."
-      }
+      },
+      "statusOptimal": "OPTIMAL"
     },
     "andon": {
       "actions": {
@@ -1658,7 +1686,10 @@
         "live": "Live",
         "settings": "Einstellungen"
       },
-      "title": "Andon-Intelligenz"
+      "title": "Andon-Intelligenz",
+      "toast": {
+        "settingsSaved": "Signalbenachrichtigungs-Einstellungen wurden aktualisiert."
+      }
     },
     "auditor": {
       "actions": {
@@ -1763,10 +1794,42 @@
         "deleted": "CTQ-Protokoll gelöscht",
         "deletedDescription": "Das CTQ-Protokoll wurde erfolgreich gelöscht.",
         "retired": "CTQ-Protokoll stillgelegt",
-        "retiredDescription": "Das CTQ-Protokoll wurde archiviert."
+        "retiredDescription": "Das CTQ-Protokoll wurde archiviert.",
+        "error": "Fehler",
+        "loadFailed": "Laden der CTQ-Details fehlgeschlagen",
+        "success": "Erfolg",
+        "deleteFailed": "Failed to delete CTQ",
+        "measurementAdded": "Measurement added successfully",
+        "measurementFailed": "Failed to add measurement",
+        "exportStarted": "Export started",
+        "exportStartedDesc": "Your CTQ report is being generated"
       },
       "totalCTQNodes": "Gesamtzahl CTQ-Knoten",
-      "zeroCTQProtocols": "Keine CTQ-Protokolle"
+      "zeroCTQProtocols": "Keine CTQ-Protokolle",
+      "detail": {
+        "specificationDetails": "Specification Details",
+        "qualityRequirements": "Quality characteristic requirements",
+        "nominalValue": "Nominal Value",
+        "upperTolerance": "Upper Tolerance",
+        "lowerTolerance": "Lower Tolerance",
+        "relatedRfq": "Related RFQ",
+        "partNumber": "Part Number",
+        "measurementInfo": "Measurement Information",
+        "howMeasured": "How this characteristic is measured",
+        "measurementMethod": "Measurement Method",
+        "samplingPlan": "Sampling Plan",
+        "checkStage": "Check Stage",
+        "evidenceRequired": "Evidence Required",
+        "lastUpdated": "Last Updated",
+        "measurementHistory": "Measurement History",
+        "recentResults": "Recent measurement results and trends",
+        "measuredBy": "Measured By",
+        "deleteCtq": "Delete CTQ",
+        "addMeasurement": "Add Measurement",
+        "measuredValue": "Measured Value",
+        "notMeasured": "Not Measured"
+      },
+      "measurementNotesPlaceholder": "Add any relevant notes about this measurement"
     },
     "ctqDetail": {
       "backToCTQs": "Zurück zu CTQs",
@@ -1818,11 +1881,12 @@
           "openRfqs": "Offene RFQs",
           "totalRevenue": "Gesamt Umsatz",
           "totalRfqs": "Gesamt RFQs",
-          "winRate": "Erfolgsquote"
+          "winRate": "Erfolgsquote",
+          "pipelineMagnitude": "Pipeline-Größe"
         },
         "viewAll": "Alle anzeigen",
         "viewAllRfqs": "Alle RFQs anzeigen",
-        "website": "Website"
+        "website": "Webseite"
       },
       "emptyState": {
         "description": "Erstellen Sie Ihren ersten Kunden, um zu starten.",
@@ -1839,12 +1903,12 @@
       "initializeNode": "Knoten initialisieren",
       "labels": {
         "revenue": "Umsatz",
-        "rfqs": "RFQs",
+        "rfqs": "Anfragen (RFQs)",
         "winRate": "Erfolgsquote"
       },
       "metrics": {
         "revenue": "Umsatz",
-        "rfqs": "RFQs",
+        "rfqs": "Anfragen (RFQs)",
         "winRate": "Erfolgsquote"
       },
       "new": {
@@ -1907,7 +1971,7 @@
           "customerCodeRequired": "Kundencode erforderlich",
           "industryRequired": "Branche erforderlich"
         },
-        "website": "Website"
+        "website": "Webseite"
       },
       "nodeId": "Knoten-ID",
       "searchPlaceholder": "Suchen...",
@@ -1940,6 +2004,9 @@
       "viewModes": {
         "grid": "Raster",
         "table": "Tabelle"
+      },
+      "toast": {
+        "deactivated": "Kunde deaktiviert"
       }
     },
     "exceptions": {
@@ -1989,7 +2056,9 @@
         "quality": "QUALITÄT",
         "safety": "Sicherheit"
       },
-      "title": "Ausnahmenverwaltung"
+      "title": "Ausnahmenverwaltung",
+      "synchronizing": "Synchronizing operational exceptions",
+      "zeroHighUrgency": "Zero high-urgency nodes identified"
     },
     "executive": {
       "aggregatingMetrics": "Kennzahlen werden aggregiert",
@@ -2004,7 +2073,14 @@
         "openResolutions": "Offene Lösungen",
         "operationalUptime": "Betriebliche Verfügbarkeit",
         "optimalState": "Optimaler Zustand",
-        "revenueMtd": "Umsatz MTD"
+        "revenueMtd": "Umsatz MTD",
+        "qualityScore": "Qualitätsfaktor",
+        "deliveryScore": "Lieferfaktor",
+        "costEfficiency": "Kosteneffizienz",
+        "workforce": "Belegschaft",
+        "overallScore": "Gesamtwertung",
+        "belowTarget": "Unter Ziel",
+        "awaitingData": "Warte auf Daten"
       },
       "monitoringActive": "Überwachung aktiv",
       "nl2sql": {
@@ -2066,9 +2142,27 @@
         "finance": "Finanzen",
         "operations": "Betrieb",
         "overview": "Übersicht",
-        "strategist": "KI-Stratege"
+        "strategist": "KI-Stratege",
+        "northStar": "NORDSTERN",
+        "sqdcp": "SQDCP",
+        "senseiAi": "SENSEI_AI",
+        "riskPrediction": "RISIKOVORHERSAGE"
       },
-      "title": "Executive-Kommandozentrale"
+      "title": "Executive-Kommandozentrale",
+      "loading": "Wird geladen...",
+      "ops": {
+        "activeUsers": "Aktive Benutzer",
+        "openWorkOrders": "Offene Arbeitsaufträge",
+        "productionEfficiency": "Produktionseffizienz",
+        "pendingApprovals": "Ausstehende Genehmigungen"
+      },
+      "sqdcp": {
+        "safety": "Sicherheit",
+        "quality": "Qualität",
+        "delivery": "Lieferung",
+        "cost": "Kosten",
+        "people": "Mitarbeiter"
+      }
     },
     "finance": {
       "allSystemsNominal": "Alle Systeme im Normalbetrieb",
@@ -2173,7 +2267,10 @@
       "sections": {
         "accountsReceivable": "Forderungen",
         "budgetAnalysis": "Budgetanalyse",
-        "overview": "Finanzübersicht"
+        "overview": "Finanzübersicht",
+        "delete": "Knoten löschen",
+        "edit": "Parameter bearbeiten",
+        "view": "Spezifikation anzeigen"
       },
       "station": "Station",
       "stats": {
@@ -2267,7 +2364,53 @@
       "thisCycle": "Dieser Zyklus",
       "thresholdBreaches": "Schwellenwertverletzungen",
       "title": "Personal & Talent",
-      "trainingMatrix": "Schulungsmatrix"
+      "trainingMatrix": "Schulungsmatrix",
+      "unassignedRole": "Nicht zugewiesene Rolle",
+      "noDepartment": "Keine Abt.",
+      "remote": "Remote",
+      "unknownPosition": "Unbekannte Position",
+      "candidateDetails": "Kandidatendetails",
+      "searchPersonnel": "Personal suchen...",
+      "searchJobs": "Stellen suchen...",
+      "toast": {
+        "employeeCreated": "Mitarbeiter erfolgreich erstellt",
+        "employeeCreatedTitle": "Erfolg",
+        "employeeTerminated": "Mitarbeiterakte beendet",
+        "jobCreated": "Stellenanzeige erstellt",
+        "jobDeleted": "Stellenanzeige gelöscht",
+        "deletionFailed": "Löschen fehlgeschlagen",
+        "applicationSubmitted": "Bewerbung eingereicht",
+        "applicationMoved": "Bewerbung verschoben nach {status}",
+        "updateStatusFailed": "Statusaktualisierung fehlgeschlagen",
+        "leaveSubmitted": "Urlaubsantrag eingereicht",
+        "leaveApproved": "Urlaubsantrag genehmigt",
+        "leaveApproveFailed": "Genehmigung fehlgeschlagen",
+        "leaveRejected": "Urlaubsantrag abgelehnt",
+        "leaveRejectFailed": "Ablehnung fehlgeschlagen"
+      },
+      "confirmTerminate": {
+        "title": "Mitarbeiterakte beenden",
+        "description": "Sind Sie sicher, dass Sie diese Mitarbeiterakte beenden wollen? Dies kann nicht rückgängig gemacht werden."
+      },
+      "confirmDeleteJob": {
+        "title": "Stellenanzeige löschen",
+        "description": "Sind Sie sicher, dass Sie diese Stellenanzeige löschen möchten?"
+      },
+      "placeholders": {
+        "email": "john.doe@company.com",
+        "selectRegion": "Region auswählen",
+        "selectStatus": "Status auswählen",
+        "jobDescription": "Stellenbeschreibung...",
+        "requiredSkills": "Erforderliche Fähigkeiten...",
+        "selectPosition": "Position auswählen",
+        "firstName": "John",
+        "lastName": "Doe",
+        "personalEmail": "john.doe@email.com",
+        "portfolioUrl": "https://...",
+        "additionalNotes": "Zusätzliche Notizen...",
+        "selectEmployee": "Mitarbeiter auswählen",
+        "leaveReason": "Grund für Abwesenheit..."
+      }
     },
     "it": {
       "active": "Aktiv",
@@ -2497,7 +2640,18 @@
         "senseiAi": "SENSEI-KI",
         "sqdcpDetail": "SQDCP-DETAIL"
       },
-      "title": "Kognitiver Obeya"
+      "title": "Kognitiver Obeya",
+      "toast": {
+        "loadFailed": "Laden der Obeya-Daten fehlgeschlagen",
+        "itemDeleted": "Element erfolgreich gelöscht",
+        "deleteFailed": "Fehler beim Löschen des Elements",
+        "commentAdded": "Kommentar hinzugefügt",
+        "commentFailed": "Fehler beim Hinzufügen des Kommentars",
+        "statusUpdated": "Status aktualisiert",
+        "statusFailed": "Fehler beim Aktualisieren des Status",
+        "created": "Obeya Board erstellt",
+        "createdDesc": "Ihr neues digitales Obeya-Board wurde erfolgreich initialisiert."
+      }
     },
     "obeyaDetail": {
       "backToObeya": "Zurück zur Obeya",
@@ -2635,7 +2789,7 @@
           "notes": "Vertrauliche Informationen, eingeschränkter Zugriff...",
           "title": "z. B. Präzisionsteile für ein Luftfahrtprojekt",
           "partNumber": "PN-XXXX",
-          "itemDescription": "Item description...",
+          "itemDescription": "Artikelbeschreibung...",
           "unit": "pcs, kg, etc."
         },
         "priority": {
@@ -2716,8 +2870,8 @@
         "rfqNumber": "Rfq Nummer",
         "statusState": "Status Status",
         "thresholdDate": "Schwellendatum",
-        "triageScore": "Triage Score",
-        "completeness": "Completeness"
+        "triageScore": "Triage-Score",
+        "completeness": "Vollständigkeit"
       },
       "title": "Umsatz-Pipeline",
       "unknown": "Unbekannt",
@@ -2854,6 +3008,29 @@
       "views": {
         "list": "Liste",
         "portfolio": "Portfolio"
+      },
+      "toast": {
+        "settingsSaved": "Settings saved",
+        "settingsSavedDesc": "Project settings have been updated.",
+        "saveFailed": "Failed to save",
+        "saveFailedDesc": "There was an error saving your changes."
+      },
+      "kanban": {
+        "columns": {
+          "new": "New",
+          "ready": "Ready",
+          "inProgress": "In Progress",
+          "readyForTest": "Ready for Test",
+          "done": "Done"
+        }
+      },
+      "milestones": {
+        "namePlaceholder": "Phase 1 Complete",
+        "detailsPlaceholder": "Details..."
+      },
+      "wiki": {
+        "searchPlaceholder": "Search...",
+        "titlePlaceholder": "Page Title"
       }
     },
     "purchase": {
@@ -2903,7 +3080,7 @@
           "medium": "MITTLERE_PRIORITÄT",
           "urgent": "Dringend Sync"
         },
-        "priorityLayer": "Priority Layer",
+        "priorityLayer": "Prioritätsebene",
         "requisitionParameters": "Bestellanforderungs-Parameter",
         "resourceLineIntel": "Ressourcenpositions-Intelligenz",
         "resourceNodes": "Ressourcenknoten",
@@ -2911,7 +3088,7 @@
         "savedAsDraft": "Bestellanforderung als Entwurf gespeichert",
         "searchProductNodes": "PRODUKTKNOTEN_SUCHEN...",
         "selectProductNode": "PRODUKTKNOTEN_AUSWÄHLEN...",
-        "station": "STATION: REQ-ENTRY-01",
+        "station": "STATION: REQ-EINGABE-01",
         "submitForApproval": "Zur Genehmigung Einreichen",
         "submittedForApproval": "Bestellanforderung zur Genehmigung eingereicht",
         "subtitle": "Einkaufsbedarf erfassen",
@@ -3228,7 +3405,23 @@
         "total": "Gesamt",
         "totalCost": "Gesamtkosten",
         "validUntil": "Gültig bis",
-        "zeroPriceWarning": "Warnung: Preis 0"
+        "zeroPriceWarning": "Warnung: Preis 0",
+        "materialCost": "Materialkosten",
+        "laborCost": "Arbeitskosten",
+        "overheadCost": "Gemeinkosten",
+        "lineItemNotes": "Positionsnotizen",
+        "noAssumptions": "Keine Annahmen definiert",
+        "newQuote": "Neues Angebot",
+        "viewVersionHistory": "Versionsverlauf anzeigen",
+        "addProductsPricing": "Produkte und Preise hinzufügen",
+        "toggleCostBreakdown": "Detaillierte Kostenaufschlüsselung umschalten",
+        "unitPrice": "Einzelpreis",
+        "internalCostingAnalysis": "Interne Kostenanalyse",
+        "totalRevenue": "Gesamtumsatz",
+        "grossProfit": "Bruttogewinn",
+        "quickActions": "Schnellaktionen",
+        "assumptionsVerified": "Annahmen verifiziert",
+        "warningsPresent": "Warnungen vorhanden"
       },
       "rfqNumber": "RFQ-Nummer",
       "searchPlaceholder": "Suchen...",
@@ -3259,7 +3452,13 @@
         "validThru": "Gültig bis",
         "version": "Version"
       },
-      "title": "Angebotsintelligenz"
+      "title": "Angebotsintelligenz",
+      "toast": {
+        "savedDraft": "Angebot als Entwurf gespeichert",
+        "submitted": "Angebot zur Genehmigung eingereicht",
+        "saveFailed": "Fehler beim Speichern des Angebots",
+        "tryAgain": "Bitte versuchen Sie es erneut."
+      }
     },
     "sales": {
       "allPriority": "Alle Prioritäten",
@@ -3305,7 +3504,18 @@
       "title": "Vertriebszentrale",
       "totalValue": "Gesamtwert",
       "unassigned": "Nicht zugewiesen",
-      "unknownPartner": "Unbekannter Partner"
+      "unknownPartner": "Unbekannter Partner",
+      "noBid": "Kein Angebot",
+      "statusNew": "New",
+      "statusReviewing": "Prüfung",
+      "statusQuoting": "Angebotserstellung",
+      "statusSubmitted": "Eingereicht",
+      "totalRfqs": "Gesamt Anfragen",
+      "avgResponseTime": "Ø Antwortzeit",
+      "conversionRate": "Konversionsrate",
+      "dueDate": "Fälligkeitsdatum",
+      "receivedDate": "Empfangsdatum",
+      "searchRfqs": "Anfragen suchen..."
     },
     "settings": {
       "account": {
@@ -3488,7 +3698,7 @@
         "pending": "Ausstehend"
       },
       "status": {
-        "backlog": "Backlog",
+        "backlog": "Rückstand",
         "cancelled": "Storniert",
         "done": "Abgeschlossen",
         "inProgress": "In Bearbeitung",
@@ -3704,7 +3914,27 @@
       "trends": {
         "thisCycle": "+124 in diesem Zyklus"
       },
-      "viewAllLowStock": "Alle Artikel mit niedrigem Bestand anzeigen"
+      "viewAllLowStock": "Alle Artikel mit niedrigem Bestand anzeigen",
+      "loading": "Lade Lagerdaten...",
+      "searchDescription": "Gesamtes Lagerinventar suchen und verwalten",
+      "searchPlaceholder": "Artikel suchen...",
+      "itemName": "Artikelname",
+      "onHand": "Vorrätig",
+      "managePO": "Bestellungen und Wareneingänge verwalten",
+      "poReference": "Bestell-Ref",
+      "expectedDate": "Erwartetes Datum",
+      "inTransit": "Auf dem Transportweg",
+      "manageShipments": "Sendungen und Lieferlogistik verwalten",
+      "shipDate": "Versanddatum",
+      "activePickLists": "Aktive kommissionierlisten",
+      "itemsPicked": "Artikel kommissioniert"
+    },
+    "quotingHelper": {
+      "noQuoteFound": "No Quote Found",
+      "toast": {
+        "handoffSuccess": "NPI Handoff Successful",
+        "handoffFailed": "Handoff Failed"
+      }
     }
   },
   "production": {
@@ -3769,7 +3999,7 @@
       "workCenter": "Arbeitszentrum"
     },
     "workCenter": "Arbeitszentrum",
-    "title": "Production",
+    "title": "Produktion",
     "workOrders": {
       "title": "Work Orders",
       "addWorkOrder": "Create Work Order",
@@ -3780,7 +4010,7 @@
       "planned": "Planned",
       "released": "Released",
       "inProgress": "In Progress",
-      "completed": "Completed",
+      "completed": "Abgeschlossen",
       "priority": "Priority",
       "startDate": "Start Date",
       "dueDate": "Due Date"
@@ -3788,7 +4018,7 @@
     "scheduling": {
       "title": "Scheduling",
       "gantt": "Gantt Chart",
-      "calendar": "Calendar"
+      "calendar": "Kalender"
     },
     "tabs": {
       "workOrders": "Work Orders",
@@ -3944,18 +4174,18 @@
       "traceability": "Traceability",
       "changePoint": "Change Point"
     },
-    "title": "Quality",
+    "title": "Qualität",
     "inspections": {
       "title": "Inspections",
       "addInspection": "New Inspection",
       "workOrder": "Work Order",
       "product": "Product",
-      "type": "Type",
+      "type": "Typ",
       "date": "Inspection Date",
       "status": "Status",
       "passed": "Passed",
       "failed": "Failed",
-      "pending": "Pending",
+      "pending": "Ausstehend",
       "quantityInspected": "Qty Inspected",
       "quantityPassed": "Qty Passed",
       "quantityFailed": "Qty Failed",
@@ -3965,7 +4195,7 @@
       "title": "Non-Conformance Reports",
       "addNCR": "Create NCR",
       "severity": "Severity",
-      "critical": "Critical",
+      "critical": "Kritisch",
       "major": "Major",
       "minor": "Minor",
       "rootCause": "Root Cause",
@@ -3992,6 +4222,40 @@
       "cp": "Cp",
       "pp": "Pp",
       "ppk": "Ppk"
+    },
+    "grr": {
+      "analysisResults": "GRR Analysis Results",
+      "gauge": "Gauge: {name}",
+      "totalGageRR": "Total Gage R&R",
+      "excellent": "Excellent",
+      "acceptable": "Acceptable",
+      "unacceptable": "Unacceptable",
+      "msgExcellent": "Measurement system is acceptable",
+      "msgAcceptable": "May be acceptable depending on application",
+      "msgUnacceptable": "Measurement system needs improvement",
+      "variationBreakdown": "Variation Breakdown",
+      "variationTooltip": "Shows the contribution of each source to total variation. Lower EV+AV (GRR) means better measurement system.",
+      "equipmentVariation": "Equipment Variation (EV): {value}%",
+      "repeatability": "Repeatability",
+      "appraiserVariation": "Appraiser Variation (AV): {value}%",
+      "reproducibility": "Reproducibility",
+      "partVariationPct": "Part Variation (PV): {value}%",
+      "actualPartVariation": "Actual part-to-part variation",
+      "legendEV": "EV (Repeatability)",
+      "legendAV": "AV (Reproducibility)",
+      "legendPV": "PV (Part Variation)",
+      "repeatabilityEV": "Repeatability (EV)",
+      "reproducibilityAV": "Reproducibility (AV)",
+      "partVariation": "Part Variation (PV)",
+      "totalVariation": "Total Variation (TV)",
+      "ndcTitle": "Number of Distinct Categories (NDC)",
+      "ndcAcceptable": "≥ 5 (Acceptable)",
+      "ndcNeedsImprovement": "< 5 (Needs Improvement)",
+      "ndcDescription": "NDC represents how many distinct part categories the measurement system can reliably distinguish. AIAG recommends a minimum of 5 distinct categories.",
+      "aiagGuidelines": "AIAG MSA Guidelines:",
+      "aiagExcellent": "< 10% GRR: Measurement system is acceptable",
+      "aiagAcceptable": "10-30% GRR: May be acceptable based on application importance",
+      "aiagUnacceptable": "> 30% GRR: Measurement system needs improvement"
     }
   },
   "quickActions": {
@@ -4276,15 +4540,15 @@
         "allRoles": "Alle Rollen"
       },
       "table": {
-        "insightHeader": "Insight"
+        "insightHeader": "Einblick"
       },
       "tooltip": {
-        "level": "Level: {level}",
+        "level": "Stufe: {level}",
         "locked": "{role} hat vollen Zugriff (gesperrt)"
       },
       "roleCard": {
         "insightsAccess": "Insights-Zugriff",
-        "levelBadge": "Level {level}",
+        "levelBadge": "Stufe {level}",
         "fullAccess": "Voller Zugriff",
         "editMappings": "Zuordnungen bearbeiten"
       },
@@ -4295,7 +4559,7 @@
           "timestamp": "Zeitstempel",
           "action": "Aktion",
           "role": "Rolle",
-          "insight": "Insight",
+          "insight": "Einblick",
           "performedBy": "Ausgeführt von",
           "reason": "Grund"
         },
@@ -4856,7 +5120,13 @@
       }
     },
     "title": "Einstellungen",
-    "webhooks": "Webhooks"
+    "webhooks": "Webhooks",
+    "shell": {
+      "toastTitle": "Einstellungen synchronisiert",
+      "toastDescription": "Zielparameter {title} im Register aktualisiert.",
+      "synchronizing": "SYNCHRONISIERUNG...",
+      "saveConfiguration": "KONFIGURATION_SPEICHERN"
+    }
   },
   "tables": {
     "ascending": "Aufsteigend",
@@ -4939,7 +5209,7 @@
       "status": "Status",
       "enrolled": "Enrolled",
       "inProgress": "In Progress",
-      "completed": "Completed",
+      "completed": "Abgeschlossen",
       "expired": "Expired",
       "expiryDate": "Expiry Date"
     },
@@ -5254,7 +5524,191 @@
         "qualityAlert": "Quality Alert",
         "safetyAlert": "Safety Alert",
         "maintenanceRequired": "Maintenance Required"
+      },
+      "processing": "Processing...",
+      "commandReceived": "Command received",
+      "errorOccurred": "Error occurred",
+      "voiceDisabled": "Voice commands disabled"
+    },
+    "errorState": {
+      "connectionError": "Connection Error",
+      "connectionErrorDesc": "Unable to reach the server. Please check your connection and try again.",
+      "serverError": "Server Error",
+      "serverErrorDesc": "Something went wrong on our end. Please try again later.",
+      "noData": "No Data",
+      "noDataDesc": "No records found matching your criteria.",
+      "accessDenied": "Access Denied",
+      "accessDeniedDesc": "You don't have permission to access this resource.",
+      "notFound": "Not Found",
+      "notFoundDesc": "The requested resource could not be found.",
+      "error": "Fehler",
+      "errorDesc": "An unexpected error occurred.",
+      "tryAgain": "Try Again"
+    },
+    "pageGuard": {
+      "accessRestricted": "Access Restricted",
+      "noPermission": "You don't have permission to access this page.",
+      "returnToDashboard": "Return to Dashboard"
+    },
+    "comingSoon": {
+      "defaultMessage": "This feature is currently under development and will be available soon.",
+      "goBack": "Go Back"
+    },
+    "table": {
+      "noData": "Keine Daten",
+      "rowsPerPage": "Rows per page:"
+    },
+    "commandPalette": {
+      "noCommandsFound": "No commands found",
+      "tryDifferentSearch": "Try a different search term",
+      "toToggle": "to toggle"
+    },
+    "scanner": {
+      "scanComplete": "Scan Complete",
+      "cameraNotActive": "Camera not active",
+      "switchCamera": "Switch Camera",
+      "captureFrame": "Capture Frame",
+      "stopScanner": "Stop Scanner"
+    },
+    "andon": {
+      "unknownWorkCenter": "Unknown Work Center",
+      "noActiveAlerts": "No active alerts",
+      "refresh": "Refresh",
+      "toggleFullscreen": "Toggle fullscreen",
+      "ackBy": "Ack by {name}",
+      "triggeredBy": "Triggered by {name}",
+      "allSystemsNormal": "All systems operating normally"
+    },
+    "kanban": {
+      "unknownCustomer": "Unknown Customer",
+      "pipelineValue": "Pipeline Value: ",
+      "kanbanView": "Kanban view",
+      "listView": "List view",
+      "calendarView": "Calendar view"
+    },
+    "quickActions": {
+      "confirmAction": "Confirm Action"
+    },
+    "correction": {
+      "submissionFailed": "Correction submission failed",
+      "rejectionFailed": "Rejection submission failed"
+    },
+    "sync": {
+      "removeOperation": "Remove operation"
+    },
+    "pdfPreview": {
+      "immutableVersion": "Immutable version",
+      "pdfPreview": "PDF Preview",
+      "versionHistory": "Version History",
+      "metadata": "Metadata",
+      "closeEscape": "Close (Escape)",
+      "previousPage": "Previous Page",
+      "nextPage": "Next Page",
+      "zoomOut": "Zoom Out",
+      "zoomIn": "Zoom In",
+      "rotate": "Rotate",
+      "fullscreen": "Fullscreen",
+      "download": "Herunterladen",
+      "print": "Drucken",
+      "currentlyViewing": "Currently viewing",
+      "loadingPdf": "Loading PDF...",
+      "documentInfo": "Document Info",
+      "createdBy": "Created By"
+    },
+    "security": {
+      "noPermission": "You don't have permission to view this data",
+      "allActions": "All Actions"
+    },
+    "spatialUi": {
+      "factoryFloorMap": "Factory floor map",
+      "closePanel": "Close panel",
+      "closePathView": "Close path view",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "resetView": "Reset view",
+      "selectCellDetails": "Select a cell to view details",
+      "currentJob": "Current Job:",
+      "changeStatus": "Change Status:",
+      "orderPath": "Order Path:",
+      "processTime": "Process Time",
+      "wasteRatio": "Waste Ratio",
+      "pathSteps": "Path Steps:",
+      "warRoom": {
+        "kpi": "Key Performance Indicators",
+        "salesPipeline": "Sales Pipeline",
+        "productionStatus": "Production Status",
+        "qualityMetrics": "Quality Metrics",
+        "activeAlerts": "Active Alerts",
+        "todaysTimeline": "Today's Timeline"
       }
+    },
+    "session": {
+      "notifications": "Notifications",
+      "dismissNotification": "Dismiss notification"
+    },
+    "onboarding": {
+      "productTour": "Product tour",
+      "closeTour": "Close tour",
+      "helpPanel": "Help panel",
+      "closeHelpPanel": "Close help panel",
+      "dismissSuggestion": "Dismiss suggestion",
+      "toggleAssistant": "Toggle Sensei assistant",
+      "dismiss": "Dismiss",
+      "searchHelp": "Search help"
+    },
+    "error": {
+      "somethingWentWrong": "Something went wrong",
+      "dismissError": "Dismiss error",
+      "dismissBtn": "Dismiss",
+      "readOnlyMode": "Read-only mode",
+      "resolveConflicts": "Resolve Conflicts",
+      "yourChanges": "Your changes",
+      "serverVersion": "Server version"
+    },
+    "emptyState": {
+      "noResultsFound": "No results found",
+      "noItemsYet": "No items yet",
+      "noRfqsInQueue": "No RFQs in queue",
+      "noQuotesCreated": "No quotes created",
+      "noActiveJobs": "No active jobs"
+    },
+    "printExport": {
+      "cancelExport": "Cancel export",
+      "close": "Schließen",
+      "qrCode": "QR Code",
+      "dataMatrix": "Data Matrix"
+    },
+    "designSystem": {
+      "openAuditPanel": "Open design system audit panel",
+      "auditPanelTitle": "Design System Audit Panel",
+      "closeAuditPanel": "Close audit panel",
+      "horizontalScale": "Horizontal Scale",
+      "verticalScale": "Vertical Scale",
+      "fontSizes": "Font Sizes",
+      "fontWeights": "Font Weights",
+      "designSystemAudit": "Design System Audit"
+    },
+    "ganttChart": {
+      "noTasks": "No tasks to visualize in Gantt",
+      "taskName": "Task Name"
+    },
+    "dataVisualization": {
+      "noData": "Keine Daten"
+    },
+    "timeline": {
+      "noActivity": "No activity yet"
+    },
+    "virtualTable": {
+      "noData": "No data available"
+    },
+    "sidebar": {
+      "senseiHome": "Sensei OS home",
+      "toggleDarkMode": "Toggle dark mode",
+      "administration": "Administration"
+    },
+    "mobileNav": {
+      "navigation": "Mobile navigation",
+      "openMenu": "Open menu"
     }
   },
   "hr": {
@@ -5265,12 +5719,12 @@
       "editEmployee": "Edit Employee",
       "firstName": "First Name",
       "lastName": "Last Name",
-      "email": "Email",
+      "email": "E-Mail",
       "department": "Department",
       "position": "Position",
       "status": "Status",
-      "active": "Active",
-      "inactive": "Inactive",
+      "active": "Aktiv",
+      "inactive": "Inaktiv",
       "onLeave": "On Leave",
       "hireDate": "Hire Date",
       "searchPlaceholder": "Search employees...",
@@ -5290,7 +5744,7 @@
       "location": "Location",
       "type": "Employment Type",
       "status": "Status",
-      "open": "Open",
+      "open": "Öffnen",
       "closed": "Closed",
       "filled": "Filled",
       "postedDate": "Posted Date",
@@ -5306,7 +5760,7 @@
       "startDate": "Start Date",
       "endDate": "End Date",
       "status": "Status",
-      "pending": "Pending",
+      "pending": "Ausstehend",
       "approved": "Approved",
       "rejected": "Rejected",
       "reason": "Reason",
@@ -5337,7 +5791,7 @@
     }
   },
   "maintenance": {
-    "title": "Maintenance",
+    "title": "Wartung",
     "assets": {
       "title": "Assets",
       "addAsset": "Add Asset",
@@ -5353,14 +5807,14 @@
     "workOrders": {
       "title": "Work Orders",
       "addWorkOrder": "Create Work Order",
-      "title_field": "Title",
+      "title_field": "Titel",
       "priority": "Priority",
       "status": "Status",
       "assignee": "Assignee",
       "dueDate": "Due Date",
-      "open": "Open",
+      "open": "Öffnen",
       "inProgress": "In Progress",
-      "completed": "Completed",
+      "completed": "Abgeschlossen",
       "cancelled": "Cancelled"
     },
     "preventiveMaintenance": {
@@ -5391,8 +5845,8 @@
       "addDirective": "Add Directive",
       "status": "Status",
       "progress": "Progress",
-      "active": "Active",
-      "completed": "Completed",
+      "active": "Aktiv",
+      "completed": "Abgeschlossen",
       "onHold": "On Hold"
     },
     "nl2sql": {
@@ -5400,5 +5854,29 @@
       "placeholder": "Ask a question about your data...",
       "execute": "Execute Query"
     }
+  },
+  "rtl": {
+    "inputPlaceholder": "اكتب هنا...‏",
+    "searchPlaceholder": "ابحث هنا...‏",
+    "selectPlaceholder": "اختر...‏"
+  },
+  "layout": {
+    "brandMark": "S",
+    "systemInitialization": "SYSTEM_INITIALISIERUNG...",
+    "bootProtocol": "PROTOKOLL: SENSEI_OS_V3 // BOOT_SEQUENZ",
+    "systemMetadata": {
+      "station": "STATION: {station}",
+      "osVer": "OS_VER: {version}",
+      "integrity": "INTEGRITÄT: {state}",
+      "latency": "LATENZ: {latency}"
+    }
+  },
+  "tour": {
+    "back": "Zurück",
+    "next": "Weiter",
+    "finish": "Fertigstellen",
+    "closeTour": "Close tour",
+    "productTour": "Product tour",
+    "stepOf": "{current} of {total}"
   }
 }

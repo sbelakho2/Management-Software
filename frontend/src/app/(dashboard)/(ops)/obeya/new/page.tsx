@@ -38,8 +38,8 @@ export default function NewObeyaBoardPage() {
     await new Promise(resolve => setTimeout(resolve, 1000));
     setIsSaving(false);
     toast({
-      title: 'Obeya Board Created',
-      description: 'Your new digital obeya board has been successfully initialized.',
+      title: t('pages.obeya.toast.created'),
+      description: t('pages.obeya.toast.createdDesc'),
     });
     router.push('/obeya');
   };

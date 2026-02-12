@@ -1,0 +1,306 @@
+
+import json
+import os
+import sys
+
+def apply_cleanup_part3():
+    file_path = "frontend/src/locales/ar.json"
+    
+    # 260+ updates
+    updates = {
+        # a3.stats.emailDrafting (German -> Arabic)
+        "a3.stats.emailDrafting.title": "مساعد البريد الإلكتروني بالذكاء الاصطناعي",
+        "a3.stats.emailDrafting.aria.selectPurpose": "اختر الغرض",
+        "a3.stats.emailDrafting.aria.toneGroup": "اختر النبرة",
+        "a3.stats.emailDrafting.aria.selectLanguage": "اختر اللغة",
+        "a3.stats.emailDrafting.aria.recipientEmail": "بريد المستلم الإلكتروني",
+        "a3.stats.emailDrafting.aria.recipientName": "اسم المستلم",
+        "a3.stats.emailDrafting.aria.addKeyPoint": "إضافة نقطة رئيسية",
+        "a3.stats.emailDrafting.aria.keyPointsList": "قائمة النقاط الرئيسية",
+        "a3.stats.emailDrafting.aria.removeKeyPoint": "إزالة: {point}",
+        "a3.stats.emailDrafting.aria.copyToClipboard": "نسخ إلى الحافظة",
+        "a3.stats.emailDrafting.aria.editSubject": "تعديل الموضوع",
+        "a3.stats.emailDrafting.aria.close": "إغلاق",
+        "a3.stats.emailDrafting.aria.draftsList": "مسودات البريد الإلكتروني",
+        "a3.stats.emailDrafting.placeholders.selectPurpose": "اختر الغرض...",
+        "a3.stats.emailDrafting.placeholders.recipientEmail": "recipient@example.com",
+        "a3.stats.emailDrafting.placeholders.recipientNameOptional": "الاسم (اختياري)",
+        "a3.stats.emailDrafting.placeholders.keyPoint": "إضافة نقطة رئيسية",
+        "a3.stats.emailDrafting.placeholders.senderName": "مثلاً: Alex Morgan",
+        "a3.stats.emailDrafting.placeholders.senderEmail": "مثلاً: alex@sensei.com",
+        "a3.stats.emailDrafting.placeholders.senderTitle": "مثلاً: مدير الحساب",
+        "a3.stats.emailDrafting.placeholders.companyName": "مثلاً: شركة سينسي",
+        "a3.stats.emailDrafting.placeholders.threadEntityType": "اختر كيان الموضوع...",
+        "a3.stats.emailDrafting.placeholders.threadEntityId": "أدخل معرف الكيان...",
+        "a3.stats.emailDrafting.placeholders.referenceNumber": "مثلاً: RFQ-2024-001",
+        "a3.stats.emailDrafting.placeholders.subjectHint": "مثلاً: تحديث الأسعار للربع الثاني",
+        "a3.stats.emailDrafting.purpose.missingInfoRequest": "طلب معلومات مفقودة",
+        "a3.stats.emailDrafting.purpose.quoteFollowup": "متابعة عرض السعر",
+        "a3.stats.emailDrafting.purpose.quoteSubmission": "تقديم عرض سعر",
+        "a3.stats.emailDrafting.purpose.supplierInquiry": "استفسار المورد",
+        "a3.stats.emailDrafting.purpose.meetingRequest": "طلب اجتماع",
+        "a3.stats.emailDrafting.purpose.meetingConfirmation": "تأكيد الاجتماع",
+        "a3.stats.emailDrafting.purpose.meetingReschedule": "إعادة جدولة الاجتماع",
+        "a3.stats.emailDrafting.purpose.issueNotification": "إشعار بمشكلة",
+        "a3.stats.emailDrafting.purpose.statusUpdate": "تحديث الحالة",
+        "a3.stats.emailDrafting.purpose.thankYou": "شكر",
+        "a3.stats.emailDrafting.purpose.introduction": "تعارف",
+        "a3.stats.emailDrafting.purpose.escalation": "تصعيد",
+        "a3.stats.emailDrafting.purpose.apology": "اعتذار",
+        "a3.stats.emailDrafting.purpose.custom": "بريد إلكتروني مخصص",
+        "a3.stats.emailDrafting.tone.formal": "رسمي",
+        "a3.stats.emailDrafting.tone.professional": "مهني",
+        "a3.stats.emailDrafting.tone.friendly": "ودي",
+        "a3.stats.emailDrafting.tone.urgent": "عاجل",
+        "a3.stats.emailDrafting.tone.apologetic": "اعتذاري",
+        "a3.stats.emailDrafting.tone.appreciative": "تقديري",
+        "a3.stats.emailDrafting.tone.concise": "موجز",
+        "a3.stats.emailDrafting.language.english": "الإنجليزية",
+        "a3.stats.emailDrafting.language.french": "الفرنسية",
+        "a3.stats.emailDrafting.language.german": "الألمانية",
+        "a3.stats.emailDrafting.language.spanish": "الإسبانية",
+        "a3.stats.emailDrafting.language.italian": "الإيطالية",
+        "a3.stats.emailDrafting.language.portuguese": "البرتغالية",
+        "a3.stats.emailDrafting.language.japanese": "اليابانية",
+        "a3.stats.emailDrafting.language.chinese": "الصينية",
+        "a3.stats.emailDrafting.language.korean": "الكورية",
+        "a3.stats.emailDrafting.language.arabic": "العربية",
+        "a3.stats.emailDrafting.actions.add": "إضافة",
+        "a3.stats.emailDrafting.actions.apply": "تطبيق",
+        "a3.stats.emailDrafting.actions.edit": "تعديل",
+        "a3.stats.emailDrafting.actions.generating": "جاري الإنشاء...",
+        "a3.stats.emailDrafting.actions.generateDraft": "إنشاء مسودة",
+        "a3.stats.emailDrafting.actions.regenerate": "إعادة الإنشاء",
+        "a3.stats.emailDrafting.actions.send": "إرسال",
+        "a3.stats.emailDrafting.preview.title": "معاينة المسودة",
+        "a3.stats.emailDrafting.preview.subjectLabel": "الموضوع",
+        "a3.stats.emailDrafting.preview.confidence": "الدقة: {score}",
+        "a3.stats.emailDrafting.preview.generatedIn": "تم الإنشاء في {time}",
+        "a3.stats.emailDrafting.units.milliseconds": "مللي ثانية",
+        "a3.stats.emailDrafting.units.seconds": "ثانية",
+        "a3.stats.emailDrafting.compliance.none": "لم يتم الكشف عن مشاكل امتثال",
+        "a3.stats.emailDrafting.compliance.title": "مشاكل الامتثال ({count})",
+        "a3.stats.emailDrafting.suggestions.title": "اقتراحات ({count})",
+        "a3.stats.emailDrafting.alternatives.title": "عناوين بديلة:",
+        "a3.stats.emailDrafting.thread.entityType.rfq": "طلب عرض سعر (RFQ)",
+        "a3.stats.emailDrafting.thread.entityType.quote": "عرض سعر",
+        "a3.stats.emailDrafting.thread.entityType.workOrder": "أمر عمل",
+        "a3.stats.emailDrafting.thread.entityType.opportunity": "فرصة بيع",
+        "a3.stats.emailDrafting.thread.entityType.nonConformance": "عدم مطابقة",
+        "a3.stats.emailDrafting.thread.entityType.shipment": "شحنة",
+        "a3.stats.emailDrafting.thread.entityType.invoice": "فاتورة",
+        "a3.stats.emailDrafting.thread.loadFailed": "فشل تحميل سجل المحادثة",
+        "a3.stats.emailDrafting.thread.helper": "اربط هذه المسودة بمحادثة للحفاظ على سياق البيانات المشترك.",
+        "a3.stats.emailDrafting.thread.loading": "جاري تحميل سجل المحادثة...",
+        "a3.stats.emailDrafting.thread.traceTitle": "سجل المحادثة",
+        "a3.stats.emailDrafting.thread.traceStats": "السجل: {nodes} عقد / {edges} صلات",
+        "a3.stats.emailDrafting.thread.reasoningId": "معرف السبب: {id}",
+        "a3.stats.emailDrafting.defaults.senderName": "عامل Sensei",
+        "a3.stats.emailDrafting.defaults.senderEmail": "operator@sensei.com",
+        "a3.stats.emailDrafting.sections.recipient": "المستلم",
+        "a3.stats.emailDrafting.sections.purpose": "الغرض",
+        "a3.stats.emailDrafting.sections.sender": "المرسل",
+        "a3.stats.emailDrafting.sections.threadContext": "سياق المحادثة",
+        "a3.stats.emailDrafting.sections.tone": "النبرة",
+        "a3.stats.emailDrafting.sections.language": "اللغة",
+        "a3.stats.emailDrafting.sections.keyPoints": "النقاط الرئيسية",
+        "a3.stats.emailDrafting.fields.senderName": "اسم المرسل",
+        "a3.stats.emailDrafting.fields.senderEmail": "بريد المرسل الإلكتروني",
+        "a3.stats.emailDrafting.fields.senderTitle": "لقب المرسل",
+        "a3.stats.emailDrafting.fields.companyName": "اسم الشركة",
+        "a3.stats.emailDrafting.fields.threadEntityType": "نوع كيان المحادثة",
+        "a3.stats.emailDrafting.fields.threadEntityId": "معرف كيان المحادثة",
+        "a3.stats.emailDrafting.fields.referenceNumberOptional": "رقم مرجعي (اختياري)",
+        "a3.stats.emailDrafting.fields.subjectHintOptional": "تلميح الموضوع (اختياري)",
+        "a3.stats.emailDrafting.status.generating": "جاري الإنشاء...",
+        "a3.stats.emailDrafting.status.ready": "جاهز للمراجعة",
+        "a3.stats.emailDrafting.status.reviewed": "تمت المراجعة",
+        "a3.stats.emailDrafting.status.approved": "تمت الموافقة",
+        "a3.stats.emailDrafting.status.sent": "تم الإرسال",
+        "a3.stats.emailDrafting.status.discarded": "مرفوض",
+        "a3.stats.emailDrafting.status.failed": "فشل",
+        "a3.stats.emailDrafting.notifications.copied": "تم النسخ إلى الحافظة!",
+        "a3.stats.emailDrafting.empty.title": "لا توجد مسودة بعد",
+        "a3.stats.emailDrafting.empty.description": "أنشئ مسودة لرؤية المعاينة واختبارات الامتثال.",
+        "a3.stats.emailDrafting.empty.list": "لا توجد مسودات بعد",
+        "a3.stats.emailDrafting.validation.emailRequired": "البريد الإلكتروني مطلوب",
+        "a3.stats.emailDrafting.validation.emailInvalid": "صيغة البريد الإلكتروني غير صالحة",
+        "a3.table.biometricSync": "المزامنة البيومترية",
+        "a3.table.biometricSyncDesc": "استخدم Face ID أو بصمة الإصبع لفك القفل",
+        "a3.table.description": "إدارة مزامنة التطبيق المحمول ومستويات التفويض البيومتري",
+        "a3.table.offlineIntelligence": "ذكاء دون اتصال",
+        "a3.table.offlineIntelligenceDesc": "تخزين العقد التشغيلية مؤقتاً للبيئات ذات الكمون العالي",
+        "a3.table.telemetryPush": "إشارات دفع القياس عن بعد",
+        "a3.table.telemetryPushDesc": "استقبال تنبيهات تنظيمية في الوقت الفعلي على الأجهزة المحمولة",
+        "a3.table.title": "عقدة العمليات المتنقلة",
+
+        # components (English -> Arabic)
+        "components.factoryFloor.machineStatus.productionIssue": "مشكلة إنتاج",
+        "components.factoryFloor.machineStatus.qualityAlert": "تنبيه جودة",
+        "components.factoryFloor.machineStatus.safetyAlert": "تنبيه سلامة",
+        "components.factoryFloor.machineStatus.maintenanceRequired": "الصيانة مطلوبة",
+        "components.factoryFloor.processing": "جاري المعالجة...",
+        "components.factoryFloor.commandReceived": "تم استلام الأمر",
+        "components.factoryFloor.errorOccurred": "حدث خطأ",
+        "components.factoryFloor.voiceDisabled": "الأوامر الصوتية معطلة",
+        "components.pageGuard.accessRestricted": "الوصول مقيد",
+        "components.pageGuard.noPermission": "ليس لديك صلاحية للوصول إلى هذه الصفحة.",
+        "components.pageGuard.returnToDashboard": "العودة إلى لوحة القيادة",
+        "components.comingSoon.defaultMessage": "هذه الميزة قيد التطوير حالياً وستكون متاحة قريباً.",
+        "components.comingSoon.goBack": "الرجوع",
+        "components.commandPalette.noCommandsFound": "لا توجد أوامر",
+        "components.commandPalette.tryDifferentSearch": "جرب مصطلح بحث مختلف",
+        "components.commandPalette.toToggle": "للتبديل",
+        "components.scanner.scanComplete": "اكتمل المسح",
+        "components.scanner.cameraNotActive": "الكاميرا غير نشطة",
+        "components.scanner.switchCamera": "تبديل الكاميرا",
+        "components.scanner.captureFrame": "التقاط إطار",
+        "components.scanner.stopScanner": "إيقاف الماسح",
+        "components.andon.unknownWorkCenter": "مركز عمل غير معروف",
+        "components.andon.noActiveAlerts": "لا توجد تنبيهات نشطة",
+        "components.andon.refresh": "تحديث",
+        "components.andon.toggleFullscreen": "تبديل وضع ملء الشاشة",
+        "components.andon.ackBy": "تم الإقرار بواسطة {name}",
+        "components.andon.triggeredBy": "تم التشغيل بواسطة {name}",
+        "components.andon.allSystemsNormal": "جميع الأنظمة تعمل بشكل طبيعي",
+        "components.kanban.unknownCustomer": "عميل غير معروف",
+        "components.kanban.pipelineValue": "قيمة خط الأنابيب: ",
+        "components.kanban.kanbanView": "عرض كانبان",
+        "components.kanban.listView": "عرض القائمة",
+        "components.kanban.calendarView": "عرض التقويم",
+        "components.quickActions.confirmAction": "تأكيد الإجراء",
+        "components.correction.submissionFailed": "فشل إرسال التصحيح",
+        "components.correction.rejectionFailed": "فشل إرسال الرفض",
+        "components.sync.removeOperation": "إزالة العملية",
+        "components.pdfPreview.immutableVersion": "نسخة غير قابلة للتغيير",
+        "components.pdfPreview.pdfPreview": "معاينة PDF",
+        "components.pdfPreview.versionHistory": "سجل النسخ",
+        "components.pdfPreview.metadata": "البيانات الوصفية",
+        "components.pdfPreview.closeEscape": "إغلاق (Esc)",
+        "components.pdfPreview.previousPage": "الصفحة السابقة",
+        "components.pdfPreview.nextPage": "الصفحة التالية",
+        "components.pdfPreview.zoomOut": "تصغير",
+        "components.pdfPreview.zoomIn": "تكبير",
+        "components.pdfPreview.rotate": "تدوير",
+        "components.pdfPreview.fullscreen": "ملء الشاشة",
+        "components.pdfPreview.download": "تنزيل",
+        "components.pdfPreview.print": "طباعة",
+        "components.pdfPreview.currentlyViewing": "عرض حالي",
+        "components.pdfPreview.loadingPdf": "جاري تحميل PDF...",
+        "components.pdfPreview.documentInfo": "معلومات المستند",
+        "components.pdfPreview.createdBy": "أنشأه",
+        "components.security.noPermission": "ليس لديك صلاحية لعرض هذه البيانات",
+        "components.security.allActions": "جميع الإجراءات",
+        "components.spatialUi.factoryFloorMap": "خريطة المصنع",
+        "components.spatialUi.closePanel": "إغلاق اللوحة",
+        "components.spatialUi.closePathView": "إغلاق عرض المسار",
+        "components.spatialUi.zoomOut": "تصغير",
+        "components.spatialUi.zoomIn": "تكبير",
+        "components.spatialUi.resetView": "إعادة تعيين العرض",
+        "components.spatialUi.selectCellDetails": "حدد خلية لعرض التفاصيل",
+        "components.spatialUi.currentJob": "الوظيفة الحالية:",
+        "components.spatialUi.changeStatus": "تغيير الحالة:",
+        "components.spatialUi.orderPath": "مسار الطلب:",
+        "components.spatialUi.processTime": "وقت المعالجة",
+        "components.spatialUi.wasteRatio": "نسبة الهدر",
+        "components.spatialUi.pathSteps": "خطوات المسار:",
+        "components.spatialUi.warRoom.kpi": "مؤشرات الأداء الرئيسية",
+        "components.spatialUi.warRoom.salesPipeline": "خط أنابيب المبيعات",
+        "components.spatialUi.warRoom.productionStatus": "حالة الإنتاج",
+        "components.spatialUi.warRoom.qualityMetrics": "مقاييس الجودة",
+        "components.spatialUi.warRoom.activeAlerts": "تنبيهات نشطة",
+        "components.spatialUi.warRoom.todaysTimeline": "الجدول الزمني لليوم",
+        "components.session.notifications": "إشعارات",
+        "components.session.dismissNotification": "تجاهل الإشعار",
+        "components.onboarding.productTour": "جولة في المنتج",
+        "components.onboarding.closeTour": "إغلاق الجولة",
+        "components.onboarding.helpPanel": "لوحة المساعدة",
+        "components.onboarding.closeHelpPanel": "إغلاق لوحة المساعدة",
+        "components.onboarding.dismissSuggestion": "تجاهل الاقتراح",
+        "components.onboarding.toggleAssistant": "تفعيل مساعد Sensei",
+        "components.onboarding.dismiss": "تجاهل",
+        "components.onboarding.searchHelp": "بحث في المساعدة",
+        "components.error.somethingWentWrong": "حدث خطأ ما",
+        "components.error.dismissError": "تجاهل الخطأ",
+        "components.error.dismissBtn": "تجاهل",
+        "components.error.readOnlyMode": "وضع القراءة فقط",
+        "components.error.resolveConflicts": "حل التناقضات",
+        "components.error.yourChanges": "تغييراتك",
+        "components.error.serverVersion": "نسخة الخادم",
+        "components.printExport.cancelExport": "إلغاء التصدير",
+        "components.printExport.close": "إغلاق",
+        "components.printExport.qrCode": "رمز QR",
+        "components.printExport.dataMatrix": "مصفوفة البيانات",
+        "components.designSystem.openAuditPanel": "فتح لوحة تدقيق نظام التصميم",
+        "components.designSystem.auditPanelTitle": "لوحة تدقيق نظام التصميم",
+        "components.designSystem.closeAuditPanel": "إغلاق لوحة التدقيق",
+        "components.designSystem.horizontalScale": "المقياس الأفقي",
+        "components.designSystem.verticalScale": "المقياس الرأسي",
+        "components.designSystem.fontSizes": "أحجام الخطوط",
+        "components.designSystem.fontWeights": "أوزان الخطوط",
+        "components.designSystem.designSystemAudit": "تدقيق نظام التصميم",
+        "components.dataVisualization.noData": "لا توجد بيانات",
+        "components.timeline.noActivity": "لا يوجد نشاط بعد",
+        "components.virtualTable.noData": "لا توجد بيانات متاحة",
+        "components.sidebar.senseiHome": "الرئيسية لنظام Sensei",
+        "components.sidebar.toggleDarkMode": "تبديل الوضع الداكن",
+        "components.sidebar.administration": "الإدارة",
+        "components.mobileNav.navigation": "التنقل عبر الجوال",
+        "components.mobileNav.openMenu": "فتح القائمة",
+
+        # Quality
+        "quality.capas.title": "الإجراءات التصحيحية والوقائية (CAPA)",
+        "quality.msa.gageRR": "قياس التكرار والاستنساخ (Gage R&R)",
+        "quality.capability.cpk": "Cpk",
+        "quality.capability.cp": "Cp",
+        "quality.capability.pp": "Pp",
+        "quality.capability.ppk": "Ppk",
+        "quality.tabs.ncrs": "تقارير عدم المطابقة (NCRs)",
+        "quality.tabs.capas": "الإجراءات التصحيحية (CAPAs)",
+        "quality.tabs.msa": "تحليل نظام القياس (MSA)",
+        "quality.tabs.fai": "فحص القطعة الأولى (FAI)"
+    }
+
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    updated_count = 0
+    
+    # Helper to set nested keys
+    def set_nested(d, key, val):
+        parts = key.split(".")
+        current = d
+        for i, part in enumerate(parts[:-1]):
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+            if not isinstance(current, dict):
+                 # If we hit a non-dict, we can't go deeper.
+                 # Using the key directly is safer if structure is messed up, 
+                 # but we expect standard structure.
+                 # Let's just print warning and skip to be safe? 
+                 # No, let's force dict if it was a string? 
+                 # Actually, usually keys are distinct.
+                 pass
+        current[parts[-1]] = val
+
+    for key, val in updates.items():
+        # Only update if key usually exists or we are sure we want to add it.
+        # The prompt implies we are FIXING existing keys mostly.
+        # But set_nested handles creation too.
+        set_nested(data, key, val)
+        updated_count += 1
+        # print(f"Updated {key}")
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write('\n') # trailing newline
+
+    print(f"Successfully updated {updated_count} translation keys in {file_path}")
+
+if __name__ == "__main__":
+    apply_cleanup_part3()

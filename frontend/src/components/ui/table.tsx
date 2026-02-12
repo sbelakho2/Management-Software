@@ -1,5 +1,8 @@
+'use client';
+
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 
 /**
  * Premium Table Component
@@ -232,24 +235,28 @@ interface TableEmptyStateProps {
 }
 
 const TableEmptyState = React.forwardRef<HTMLDivElement, TableEmptyStateProps>(
-  ({ title = 'No data', description, action, icon, className }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        'flex min-h-[400px] flex-col items-center justify-center gap-4 p-8 text-center',
-        className
-      )}
-    >
-      {icon && <div className="text-muted-foreground opacity-50">{icon}</div>}
-      <div className="space-y-2">
-        <h3 className="text-lg font-semibold">{title}</h3>
-        {description && (
-          <p className="text-sm text-muted-foreground">{description}</p>
+  ({ title, description, action, icon, className }, ref) => {
+    const { t } = useI18n();
+    const resolvedTitle = title ?? t('components.table.noData');
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          'flex min-h-[400px] flex-col items-center justify-center gap-4 p-8 text-center',
+          className
         )}
+      >
+        {icon && <div className="text-muted-foreground opacity-50">{icon}</div>}
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold">{resolvedTitle}</h3>
+          {description && (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+        {action && <div className="mt-4">{action}</div>}
       </div>
-      {action && <div className="mt-4">{action}</div>}
-    </div>
-  )
+    );
+  }
 );
 TableEmptyState.displayName = 'TableEmptyState';
 
@@ -302,6 +309,7 @@ const TablePagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
     },
     ref
   ) => {
+    const { t } = useI18n();
     const startItem = (currentPage - 1) * pageSize + 1;
     const endItem = Math.min(currentPage * pageSize, totalItems);
 
@@ -319,7 +327,7 @@ const TablePagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
           </span>
           {onPageSizeChange && (
             <div className="flex items-center gap-2">
-              <span>Rows per page:</span>
+              <span>{t('components.table.rowsPerPage')}</span>
               <select
                 value={pageSize}
                 onChange={(e) => onPageSizeChange(Number(e.target.value))}

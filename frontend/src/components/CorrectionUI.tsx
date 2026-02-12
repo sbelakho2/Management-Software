@@ -8,6 +8,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useI18n } from '@/contexts/i18n-context';
 
 // =============================================================================
 // Types
@@ -270,9 +271,12 @@ export const CorrectionButton: React.FC<CorrectionButtonProps> = ({
   variant = 'inline',
   className = '',
   disabled = false,
-  buttonText = 'Correct this',
-  ariaLabel = 'Correct this AI output',
+  buttonText: buttonTextProp,
+  ariaLabel: ariaLabelProp,
 }) => {
+  const { t } = useI18n();
+  const buttonText = buttonTextProp ?? t('components.correction.correctThis');
+  const ariaLabel = ariaLabelProp ?? t('components.correction.correctThisAriaLabel');
   const [isModalOpen, setIsModalOpen] = useState(false);
   
   const handleClick = useCallback(() => {
@@ -357,6 +361,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
   onSuccess,
   onError,
 }) => {
+  const { t } = useI18n();
   const [correction, setCorrection] = useState(aiOutput);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -411,12 +416,12 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
   
   const handleSubmit = useCallback(async () => {
     if (correction === aiOutput) {
-      setError('Please make a correction before submitting.');
+      setError(t('components.correction.pleaseCorrect'));
       return;
     }
     
     if (!correction.trim()) {
-      setError('Correction cannot be empty. To reject, please describe why.');
+      setError(t('components.correction.cannotBeEmpty'));
       return;
     }
     
@@ -451,6 +456,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
       setIsSubmitting(false);
     }
   }, [
+    t,
     correction,
     aiOutput,
     inputText,
@@ -516,14 +522,14 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
               id="correction-modal-title"
               className="text-lg font-semibold text-gray-900"
             >
-              Correct AI Output
+              {t('components.correction.correctAiOutput')}
             </h2>
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
               className="rounded-full p-1 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Close modal"
+              aria-label={t('components.correction.closeModal')}
             >
               <XIcon className="h-5 w-5 text-gray-500" />
             </button>
@@ -535,7 +541,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
             {inputText && (
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">
-                  Original Input
+                  {t('components.correction.originalInput')}
                 </label>
                 <div className="rounded-md bg-gray-50 p-2 text-sm text-gray-600 max-h-20 overflow-y-auto">
                   {inputText.length > 200 ? `${inputText.slice(0, 200)}...` : inputText}
@@ -546,7 +552,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
             {/* AI output (current value) */}
             <div className="space-y-1">
               <label className="block text-sm font-medium text-gray-700">
-                AI Output (Incorrect)
+                {t('components.correction.aiOutputIncorrect')}
               </label>
               <div className="rounded-md bg-red-50 p-2 text-sm text-gray-700 max-h-24 overflow-y-auto">
                 {aiOutput}
@@ -559,7 +565,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
                 htmlFor="correction-input"
                 className="block text-sm font-medium text-gray-700"
               >
-                Your Correction
+                {t('components.correction.yourCorrection')}
               </label>
               <textarea
                 ref={textareaRef}
@@ -568,7 +574,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
                 onChange={(e) => setCorrection(e.target.value)}
                 disabled={isSubmitting}
                 className="w-full rounded-md border border-gray-300 p-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 min-h-[100px]"
-                placeholder="Enter the correct value..."
+                placeholder={t('components.correction.enterCorrectValue')}
                 data-testid="correction-input"
               />
             </div>
@@ -579,7 +585,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
                 htmlFor="confidence-slider"
                 className="block text-sm font-medium text-gray-700"
               >
-                Confidence: {Math.round(confidence * 100)}%
+                {t('components.correction.confidence')}: {Math.round(confidence * 100)}%
               </label>
               <input
                 type="range"
@@ -619,7 +625,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
               {isSubmitting ? (
                 <SpinnerIcon className="h-4 w-4" />
               ) : (
-                'Reject Entirely'
+                t('components.correction.rejectEntirely')
               )}
             </button>
             
@@ -630,7 +636,7 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
                 disabled={isSubmitting}
                 className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
               >
-                Cancel
+                {t('components.correction.cancel')}
               </button>
               <button
                 type="button"
@@ -642,12 +648,12 @@ export const CorrectionModal: React.FC<CorrectionModalProps> = ({
                 {isSubmitting ? (
                   <>
                     <SpinnerIcon className="mr-2 h-4 w-4" />
-                    Submitting...
+                    {t('components.correction.submitting')}
                   </>
                 ) : (
                   <>
                     <CheckIcon className="mr-1 h-4 w-4" />
-                    Submit Correction
+                    {t('components.correction.submitCorrection')}
                   </>
                 )}
               </button>
@@ -677,6 +683,7 @@ export const InlineCorrection: React.FC<InlineCorrectionProps> = ({
   onChange,
   className = '',
 }) => {
+  const { t } = useI18n();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -788,7 +795,7 @@ export const InlineCorrection: React.FC<InlineCorrectionProps> = ({
       tabIndex={editable ? 0 : undefined}
       className={`${baseClasses} ${editableClasses} ${correctedClasses} ${className}`}
       data-testid="inline-correction-value"
-      aria-label={editable ? `Click to correct: ${value}` : undefined}
+      aria-label={editable ? `${t('components.correction.clickToCorrect')}: ${value}` : undefined}
     >
       {value}
       {editable && (

@@ -59,14 +59,14 @@ export default function ExecutivePage() {
       fetchSQDCP();
       fetchKPISummary();
       if (user) {
-        const name = (user.full_name || '').trim() || (user.email || '').trim() || 'User';
+        const name = (user.full_name || '').trim() || (user.email || '').trim() || t('common.user');
         fetchTodayScreen(user.id, name);
       }
     }
   }, [fetchNCRs, fetchCAPAs, fetchInsights, fetchSQDCP, fetchKPISummary, fetchTodayScreen, user, isAuthenticated]);
 
-  const [employeeName, setEmployeeName] = React.useState('Alice Example');
-  const [department, setDepartment] = React.useState('Operations');
+  const [employeeName, setEmployeeName] = React.useState(() => t('pages.executive.risk.namePlaceholder'));
+  const [department, setDepartment] = React.useState(() => t('pages.executive.risk.deptPlaceholder'));
   const [tenureMonths, setTenureMonths] = React.useState(3);
   const [overtimeHours, setOvertimeHours] = React.useState(20);
   const [skipRate, setSkipRate] = React.useState(0.25);
@@ -82,7 +82,12 @@ export default function ExecutivePage() {
   // Derive strategic directives from live insights data
   const strategicDirectives = React.useMemo(() => {
     const insightsList = Array.isArray(insights) ? insights : [];
-    const priorityLabels = ['Priority Alpha', 'Priority Beta', 'Priority Gamma', 'Priority Delta'];
+    const priorityLabels = [
+      t('pages.executive.strategicDirectives.priorityAlpha'),
+      t('pages.executive.strategicDirectives.priorityBeta'),
+      t('pages.executive.strategicDirectives.priorityGamma'),
+      t('pages.executive.strategicDirectives.priorityDelta'),
+    ];
     // Take the top insights sorted by severity (critical > warning > info)
     const severityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
     const sorted = [...insightsList]
@@ -90,16 +95,21 @@ export default function ExecutivePage() {
       .slice(0, 4);
     if (sorted.length === 0) {
       return [
-        { label: 'Priority Alpha', title: 'Awaiting Data', desc: 'Insights pipeline is initializing. Data will appear once analytics engine processes live metrics.', severity: 'info' },
+        {
+          label: t('pages.executive.strategicDirectives.priorityAlpha'),
+          title: t('pages.executive.strategicDirectives.awaitingDataTitle'),
+          desc: t('pages.executive.strategicDirectives.awaitingDataDesc'),
+          severity: 'info',
+        },
       ];
     }
     return sorted.map((insight, idx) => ({
-      label: priorityLabels[idx] || `Priority ${idx + 1}`,
-      title: insight.title || 'Insight',
-      desc: insight.description || insight.recommendation || '',
+      label: priorityLabels[idx] || t('pages.executive.strategicDirectives.priorityFallback', { index: idx + 1 }),
+      title: insight.title || t('pages.executive.strategicDirectives.insightFallback'),
+      desc: insight.description || insight.recommendation || t('pages.executive.strategicDirectives.insightDescFallback'),
       severity: insight.severity === 'critical' ? 'critical' : insight.severity === 'warning' ? 'warning' : 'strategic',
     }));
-  }, [insights]);
+  }, [insights, t]);
 
   // Compute revenue delta vs previous month (data-driven, not hardcoded)
   const revenueMtd = ((todayData as any)?.metrics?.revenue || 0);
@@ -111,7 +121,7 @@ export default function ExecutivePage() {
 
   // Compute uptime from real data
   const uptimeValue = ((todayData as any)?.metrics?.uptime_pct ?? null);
-  const uptimeDisplay = uptimeValue !== null ? `${Number(uptimeValue).toFixed(1)}%` : (t('pages.executive.kpi.uptimeValue') || 'N/A');
+  const uptimeDisplay = uptimeValue !== null ? `${Number(uptimeValue).toFixed(1)}%` : t('common.na');
 
   const handleRunNl2sql = () => {
     runNl2sql({ question: nl2sqlQuestion });
@@ -136,23 +146,23 @@ export default function ExecutivePage() {
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-              {t('pages.executive.title') || 'Executive Control Plane'}
+              {t('pages.executive.title')}
             </h1>
             <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
-              <span>{t('pages.executive.subtitle') || 'Strategic intelligence and command center oversight'}</span>
+              <span>{t('pages.executive.subtitle')}</span>
               <span className="opacity-30">|</span>
-              <span>{t('pages.executive.station') || 'STATION: COMMAND-01'}</span>
+              <span>{t('pages.executive.station')}</span>
             </p>
           </div>
           <div className="flex items-center gap-3">
             <AmbientStatus 
               status={totalNcrs > 5 ? 'critical' : totalNcrs > 0 ? 'warning' : 'operational'} 
-              label={totalNcrs > 5 ? (t('pages.executive.anomaliesDetected') || 'Anomalies Detected') : totalNcrs > 0 ? (t('pages.executive.monitoringActive') || 'Monitoring Active') : (t('pages.executive.allSystemsNominal') || 'All Systems Nominal')}
+              label={totalNcrs > 5 ? t('pages.executive.anomaliesDetected') : totalNcrs > 0 ? t('pages.executive.monitoringActive') : t('pages.executive.allSystemsNominal')}
             />
             <Button variant="outline" size="default" className="rounded-rams-sm border-rams-line" asChild>
               <a href={exportUrl}>
                 <Download className="mr-2 h-3.5 w-3.5" />
-                {t('pages.executive.exportIntelligence') || 'Export Intelligence'}
+                {t('pages.executive.exportIntelligence')}
               </a>
             </Button>
           </div>
@@ -160,17 +170,17 @@ export default function ExecutivePage() {
 
         <Tabs defaultValue="north-star" className="space-y-8 animate-in fade-in duration-700">
           <TabsList className="bg-rams-panel border border-rams-line p-1 rounded-rams-sm w-fit overflow-x-auto no-scrollbar">
-            <TabsTrigger value="north-star">NORTH_STAR</TabsTrigger>
-            <TabsTrigger value="sqdcp">SQDCP</TabsTrigger>
-            <TabsTrigger value="nl2sql">SENSEI_AI</TabsTrigger>
-            <TabsTrigger value="employee-risk">RISK_PREDICTION</TabsTrigger>
+            <TabsTrigger value="north-star">{t('pages.executive.tabs.northStar')}</TabsTrigger>
+            <TabsTrigger value="sqdcp">{t('pages.executive.tabs.sqdcp')}</TabsTrigger>
+            <TabsTrigger value="nl2sql">{t('pages.executive.tabs.senseiAi')}</TabsTrigger>
+            <TabsTrigger value="employee-risk">{t('pages.executive.tabs.riskPrediction')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="north-star" data-testid="north-star" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {/* Executive KPIs */}
             <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
               <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.revenueMtd') || 'Revenue Intelligence (MTD)'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.revenueMtd')}</p>
                 <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">
                   ${(revenueMtd / 1000000).toFixed(1)}M
                 </div>
@@ -179,21 +189,21 @@ export default function ExecutivePage() {
                 </p>
               </div>
               <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.activeAnomalies') || 'Active Anomalies'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.activeAnomalies')}</p>
                 <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", totalNcrs > 5 ? "text-rams-red" : "text-foreground/90")}>
                   {totalNcrs}
                 </div>
-                <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.executive.kpi.activeGateBlocks') || 'ACTIVE_GATE_BLOCKS'}</p>
+                <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.executive.kpi.activeGateBlocks')}</p>
               </div>
               <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.openResolutions') || 'Open Resolutions'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.openResolutions')}</p>
                 <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{totalCapas}</div>
-                <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">{t('pages.executive.kpi.capaSyncActive') || 'CAPA_SYNC_ACTIVE'}</p>
+                <p className="text-[9px] font-mono font-bold text-rams-orange uppercase tracking-widest mt-2">{t('pages.executive.kpi.capaSyncActive')}</p>
               </div>
               <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.operationalUptime') || 'Operational Uptime'}</p>
+                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.kpi.operationalUptime')}</p>
                 <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", uptimeValue !== null && uptimeValue >= 99 ? "text-rams-green" : uptimeValue !== null && uptimeValue < 95 ? "text-rams-red" : "text-foreground/90")}>{uptimeDisplay}</div>
-                <p className={cn("text-[9px] font-mono font-bold uppercase tracking-widest mt-2", uptimeValue !== null && uptimeValue >= 99 ? "text-rams-green" : "text-muted-foreground/40")}>{uptimeValue !== null && uptimeValue >= 99 ? (t('pages.executive.kpi.optimalState') || 'OPTIMAL_STATE') : uptimeValue !== null ? (t('pages.executive.kpi.belowTarget') || 'BELOW_TARGET') : (t('pages.executive.kpi.awaitingData') || 'AWAITING_DATA')}</p>
+                <p className={cn("text-[9px] font-mono font-bold uppercase tracking-widest mt-2", uptimeValue !== null && uptimeValue >= 99 ? "text-rams-green" : "text-muted-foreground/40")}>{uptimeValue !== null && uptimeValue >= 99 ? t('pages.executive.kpi.optimalState') : uptimeValue !== null ? t('pages.executive.kpi.belowTarget') : t('pages.executive.kpi.awaitingData')}</p>
               </div>
             </div>
 
@@ -202,7 +212,7 @@ export default function ExecutivePage() {
                 <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                   <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-rams-orange" />
-                    {t('pages.executive.strategicDirectives.title') || 'Strategic Directives'}
+                    {t('pages.executive.strategicDirectives.title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-1 space-y-1">
@@ -223,25 +233,25 @@ export default function ExecutivePage() {
                 <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
                   <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2">
                     <Users className="h-4 w-4 text-rams-orange" />
-                    {t('pages.executive.operationalOverview') || 'Operational Overview'}
+                    {t('pages.executive.operationalOverview')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6 bg-rams-module relative overflow-hidden space-y-4">
                   <div className="relative z-10 grid grid-cols-2 gap-4">
                     <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.activeUsers') || 'Active Users'}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.activeUsers')}</p>
                       <p className="text-2xl font-mono font-bold tabular-nums text-foreground/90">{(todayData as any)?.metrics?.active_users ?? '—'}</p>
                     </div>
                     <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.openWorkOrders') || 'Open Work Orders'}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.openWorkOrders')}</p>
                       <p className="text-2xl font-mono font-bold tabular-nums text-foreground/90">{(todayData as any)?.metrics?.open_work_orders ?? '—'}</p>
                     </div>
                     <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.productionEfficiency') || 'Production Efficiency'}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.productionEfficiency')}</p>
                       <p className="text-2xl font-mono font-bold tabular-nums text-rams-green">{(todayData as any)?.metrics?.production_efficiency ? `${Number((todayData as any).metrics.production_efficiency).toFixed(1)}%` : '—'}</p>
                     </div>
                     <div className="p-4 bg-rams-panel/40 border border-rams-line space-y-1">
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.pendingApprovals') || 'Pending Approvals'}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">{t('pages.executive.ops.pendingApprovals')}</p>
                       <p className="text-2xl font-mono font-bold tabular-nums text-rams-orange">{(todayData as any)?.metrics?.pending_approvals ?? '—'}</p>
                     </div>
                   </div>
@@ -262,7 +272,7 @@ export default function ExecutivePage() {
                 return (
                   <div key={pillar} className="bg-rams-module p-6 border-r border-rams-line group hover:bg-rams-panel transition-none">
                     <div className="flex items-center justify-between mb-4">
-                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{pillar}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50">{t(`pages.executive.sqdcp.${pillar}`)}</p>
                       <span className={cn("px-2 py-0.5 text-[8px] font-black uppercase tracking-widest", statusColor)}>{status}</span>
                     </div>
                     <div className="space-y-3">
@@ -277,7 +287,7 @@ export default function ExecutivePage() {
                         </div>
                       ))}
                       {entries.length === 0 && (
-                        <p className="text-[9px] font-mono text-muted-foreground/30 uppercase tracking-widest">Loading...</p>
+                        <p className="text-[9px] font-mono text-muted-foreground/30 uppercase tracking-widest">{t('pages.executive.loading')}</p>
                       )}
                     </div>
                   </div>
@@ -289,11 +299,11 @@ export default function ExecutivePage() {
             {kpiSummary && (
               <div className="grid gap-0 md:grid-cols-5 border border-rams-line bg-rams-line">
                 {[
-                  { label: 'Quality Score', value: kpiSummary.quality_score },
-                  { label: 'Delivery Score', value: kpiSummary.delivery_score },
-                  { label: 'Cost Efficiency', value: kpiSummary.cost_efficiency },
-                  { label: 'Workforce', value: kpiSummary.workforce_utilization },
-                  { label: 'Overall Score', value: kpiSummary.overall_score },
+                  { label: t('pages.executive.kpi.qualityScore'), value: kpiSummary.quality_score },
+                  { label: t('pages.executive.kpi.deliveryScore'), value: kpiSummary.delivery_score },
+                  { label: t('pages.executive.kpi.costEfficiency'), value: kpiSummary.cost_efficiency },
+                  { label: t('pages.executive.kpi.workforce'), value: kpiSummary.workforce_utilization },
+                  { label: t('pages.executive.kpi.overallScore'), value: kpiSummary.overall_score },
                 ].map((kpi) => (
                   <div key={kpi.label} className="bg-rams-module p-6 border-r border-rams-line text-center">
                     <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-3">{kpi.label}</p>
@@ -320,20 +330,20 @@ export default function ExecutivePage() {
                     <Send className="h-4 w-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.nl2sql.title') || 'Autonomous Data Interface'}</CardTitle>
-                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.executive.nl2sql.protocol') || 'Protocol: Natural Language to SQL Sync'}</p>
+                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.nl2sql.title')}</CardTitle>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.executive.nl2sql.protocol')}</p>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="p-8 space-y-8 bg-rams-module relative overflow-hidden">
                 <div className="space-y-4 relative z-10">
                   <div className="flex flex-col gap-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.nl2sql.commandInput') || 'Command Input'}</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.nl2sql.commandInput')}</label>
                     <Textarea
                       value={nl2sqlQuestion}
                       onChange={(e) => setNl2sqlQuestion(e.target.value)}
                       rows={4}
-                      placeholder={t('pages.executive.nl2sql.placeholder') || 'e.g. Show me the win rate for quotes over $100k in the last 6 months by salesperson.'}
+                      placeholder={t('pages.executive.nl2sql.placeholder')}
                       className="bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider p-4 h-32 focus-visible:ring-rams-orange"
                       data-testid="nl2sql-question"
                     />
@@ -347,10 +357,10 @@ export default function ExecutivePage() {
                     {nl2sqlLoading ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        {t('pages.executive.nl2sql.reasoningInProgress') || 'REASONING_IN_PROGRESS...'}
+                        {t('pages.executive.nl2sql.reasoningInProgress')}
                       </div>
                     ) : (
-                      t('pages.executive.nl2sql.executeInference') || 'EXECUTE_INFERENCE'
+                      t('pages.executive.nl2sql.executeInference')
                     )}
                   </Button>
                 </div>
@@ -366,17 +376,17 @@ export default function ExecutivePage() {
                       <div className="space-y-6" data-testid="nl2sql-result">
                         <div className="grid gap-6 md:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.generatedLogic') || 'Generated Logic (SQL)'}</label>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.generatedLogic')}</label>
                             <pre className="p-4 bg-rams-panel border border-rams-line text-[10px] font-mono text-foreground/70 overflow-auto max-h-40 rounded-none uppercase tracking-tighter">{nl2sqlResult.generated_sql}</pre>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.senseiReasoning') || 'Sensei Reasoning'}</label>
+                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.senseiReasoning')}</label>
                             <div className="p-4 bg-rams-orange/5 border border-rams-orange/20 text-xs font-medium leading-relaxed uppercase text-foreground/80">{nl2sqlResult.explanation}</div>
                           </div>
                         </div>
                         
                         <div className="space-y-2">
-                          <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.dataOutput') || 'Intelligence Data Output'}</label>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.nl2sql.dataOutput')}</label>
                           <pre className="p-4 bg-rams-panel border border-rams-line text-[10px] font-mono text-foreground/70 overflow-auto max-h-60 rounded-none uppercase tracking-tighter">
                             {JSON.stringify(nl2sqlResult.result, null, 2)}
                           </pre>
@@ -398,23 +408,23 @@ export default function ExecutivePage() {
                     <Users className="h-4 w-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.risk.title') || 'Predictive Human Risk Analysis'}</CardTitle>
-                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.executive.risk.protocol') || 'Protocol: Burnout and Retention Scoring Models'}</p>
+                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.risk.title')}</CardTitle>
+                    <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40 mt-0.5">{t('pages.executive.risk.protocol')}</p>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="p-8 space-y-10 bg-rams-module relative overflow-hidden">
                 <div className="grid gap-8 md:grid-cols-2 relative z-10">
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.employeeIdentity') || 'Employee Identity'}</label>
-                    <Input value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} className="bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" data-testid="risk-employee-name" placeholder={t('pages.executive.risk.namePlaceholder') || 'e.g. John Doe'} />
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.employeeIdentity')}</label>
+                    <Input value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} className="bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" data-testid="risk-employee-name" placeholder={t('pages.executive.risk.namePlaceholder')} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.departmentNode') || 'Department Node'}</label>
-                    <Input value={department} onChange={(e) => setDepartment(e.target.value)} className="bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" data-testid="risk-department" placeholder={t('pages.executive.risk.deptPlaceholder') || 'e.g. Engineering'} />
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.departmentNode')}</label>
+                    <Input value={department} onChange={(e) => setDepartment(e.target.value)} className="bg-rams-panel border-rams-line text-[11px] font-bold uppercase tracking-wider" data-testid="risk-department" placeholder={t('pages.executive.risk.deptPlaceholder')} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.tenureProtocol') || 'Tenure Protocol (months)'}</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.tenureProtocol')}</label>
                     <Input
                       type="number"
                       value={tenureMonths}
@@ -424,7 +434,7 @@ export default function ExecutivePage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.overtimeVelocity') || 'Weekly Overtime Velocity (hrs)'}</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.overtimeVelocity')}</label>
                     <Input
                       type="number"
                       value={overtimeHours}
@@ -434,7 +444,7 @@ export default function ExecutivePage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.skipRateIntel') || 'Skip Rate Intelligence (0-1)'}</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.skipRateIntel')}</label>
                     <Input
                       type="number"
                       step="0.01"
@@ -445,7 +455,7 @@ export default function ExecutivePage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.peerComparisonDelta') || 'Peer Comparison Delta'}</label>
+                    <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ml-1">{t('pages.executive.risk.peerComparisonDelta')}</label>
                     <Input
                       type="number"
                       step="0.1"
@@ -461,10 +471,10 @@ export default function ExecutivePage() {
                   {riskLoading ? (
                     <div className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      {t('pages.executive.risk.analystReasoning') || 'ANALYST_REASONING...'}
+                      {t('pages.executive.risk.analystReasoning')}
                     </div>
                   ) : (
-                    t('pages.executive.risk.executePredictiveModel') || 'EXECUTE_PREDICTIVE_MODEL'
+                    t('pages.executive.risk.executePredictiveModel')
                   )}
                 </Button>
 
@@ -480,15 +490,15 @@ export default function ExecutivePage() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between p-8 bg-rams-panel/40 border border-rams-line gap-6">
                       <div className="space-y-1">
                         <div className="text-3xl font-sans font-black uppercase tracking-tight text-foreground/90">{riskResult.employee_name}</div>
-                        <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.risk.scoreConfidence') || 'Predictive Score Confidence:'} {riskResult.confidence ? `${(riskResult.confidence * 100).toFixed(1)}%` : 'N/A'}</div>
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground/40">{t('pages.executive.risk.scoreConfidence')} {riskResult.confidence ? `${(riskResult.confidence * 100).toFixed(1)}%` : 'N/A'}</div>
                       </div>
                       <div className="flex gap-12">
                         <div className="space-y-3">
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 block">{t('pages.executive.risk.retentionProtocol') || 'Retention Protocol'}</span>
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 block">{t('pages.executive.risk.retentionProtocol')}</span>
                           <RiskBadge value={riskResult.retention_risk} />
                         </div>
                         <div className="space-y-3">
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 block">{t('pages.executive.risk.burnoutThreshold') || 'Burnout Threshold'}</span>
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground/40 block">{t('pages.executive.risk.burnoutThreshold')}</span>
                           <RiskBadge value={riskResult.burnout_risk} />
                         </div>
                       </div>
@@ -499,14 +509,14 @@ export default function ExecutivePage() {
                           <CardContent className="p-8 space-y-8 bg-rams-module">
                              <div className="space-y-3">
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-foreground/70">
-                                   <span>{t('pages.executive.risk.retentionIndex') || 'Retention Index'}</span>
+                                   <span>{t('pages.executive.risk.retentionIndex')}</span>
                                    <span className="font-mono font-bold text-rams-orange">{riskResult.retention_score.toFixed(2)}</span>
                                 </div>
                                 <Progress value={riskResult.retention_score * 10} className="h-1" indicatorClassName="bg-rams-orange" />
                              </div>
                              <div className="space-y-3">
                                 <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-foreground/70">
-                                   <span>{t('pages.executive.risk.burnoutMagnitude') || 'Burnout Magnitude'}</span>
+                                   <span>{t('pages.executive.risk.burnoutMagnitude')}</span>
                                    <span className="font-mono font-bold text-rams-red">{riskResult.burnout_score.toFixed(2)}</span>
                                 </div>
                                 <Progress value={riskResult.burnout_score * 10} className="h-1" indicatorClassName="bg-rams-red" />
@@ -516,7 +526,7 @@ export default function ExecutivePage() {
 
                        <Card className="rounded-rams-sm overflow-hidden border-rams-line shadow-none bg-rams-module">
                           <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
-                            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.risk.riskFactorsIdentified') || 'Risk Factors Identified'}</CardTitle>
+                            <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.executive.risk.riskFactorsIdentified')}</CardTitle>
                           </CardHeader>
                           <CardContent className="p-6">
                             {(riskResult.risk_factors?.length ?? 0) > 0 ? (
@@ -531,7 +541,7 @@ export default function ExecutivePage() {
                             ) : (
                               <div className="flex items-center gap-3 text-muted-foreground/40">
                                 <CheckCircle2 className="h-4 w-4" />
-                                <p className="text-[10px] font-mono font-black uppercase tracking-widest">{t('pages.executive.risk.noRiskFactors') || 'Zero specific risk factors detected'}</p>
+                                <p className="text-[10px] font-mono font-black uppercase tracking-widest">{t('pages.executive.risk.noRiskFactors')}</p>
                               </div>
                             )}
                           </CardContent>

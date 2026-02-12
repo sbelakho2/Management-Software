@@ -204,10 +204,12 @@ class MatchingResult(BaseModel):
 
 
 async def _generate_pr_number(db: AsyncSession) -> str:
-    """Generate next PR number using MAX to avoid race-condition duplicates."""
+    """Generate next PR number using advisory lock for concurrency safety."""
     from sqlalchemy import text
     year = datetime.now(timezone.utc).year
     prefix = f"PR-{year}-"
+    # Advisory lock keyed on hash of prefix to serialise concurrent callers
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
     result = await db.execute(
         select(func.max(PurchaseRequisition.pr_number))
         .where(PurchaseRequisition.pr_number.like(f"{prefix}%"))
@@ -224,9 +226,11 @@ async def _generate_pr_number(db: AsyncSession) -> str:
 
 
 async def _generate_po_number(db: AsyncSession) -> str:
-    """Generate next PO number using MAX to avoid race-condition duplicates."""
+    """Generate next PO number using advisory lock for concurrency safety."""
     year = datetime.now(timezone.utc).year
     prefix = f"PO-{year}-"
+    from sqlalchemy import text
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
     result = await db.execute(
         select(func.max(PurchaseOrder.po_number))
         .where(PurchaseOrder.po_number.like(f"{prefix}%"))
@@ -944,6 +948,7 @@ async def create_goods_receipt(
         await ct.bind(
             db,
             purchase_order_id=payload.po_id,
+            goods_receipt_id=str(grn.id),
             created_by_id=current_user.id,
             source="goods_receipt_create",
         )

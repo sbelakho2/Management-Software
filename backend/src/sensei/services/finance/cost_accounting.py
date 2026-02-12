@@ -6,7 +6,7 @@ Implements Development Plan Section 22.4:
 - Variance Accounting: material/labor/overhead variances posted to GL with drill-down
 - COGS & Margin: per-product/per-customer margin from shipments/invoices + cost rollups
 
-This module is pure-Python and in-memory (persistence planned in 22.10).
+State is persisted via the service_state table for DB-backed continuity.
 Optionally integrates with `AccountingLedgerService` for postings.
 """
 
@@ -43,6 +43,269 @@ def _norm_currency(c: str) -> str:
     if len(cc) != 3 or not cc.isalpha():
         raise ValueError("Invalid currency")
     return cc
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "occurred_at": event.occurred_at.isoformat(),
+        "actor_id": event.actor_id,
+        "action": event.action,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "correlation_id": event.correlation_id,
+        "metadata": event.metadata,
+    }
+
+
+def _decode_audit_event(data: dict[str, Any]) -> "AuditEvent":
+    return AuditEvent(
+        id=UUID(data["id"]),
+        occurred_at=datetime.fromisoformat(data["occurred_at"]),
+        actor_id=data["actor_id"],
+        action=data["action"],
+        entity_type=data["entity_type"],
+        entity_id=data["entity_id"],
+        correlation_id=data.get("correlation_id", ""),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_standard_cost(sc: "StandardCost") -> dict[str, Any]:
+    return {
+        "sku": sc.sku,
+        "currency": sc.currency,
+        "effective_date": sc.effective_date.isoformat(),
+        "material_unit_cost": _encode_decimal(sc.material_unit_cost),
+        "labor_unit_cost": _encode_decimal(sc.labor_unit_cost),
+        "overhead_unit_cost": _encode_decimal(sc.overhead_unit_cost),
+    }
+
+
+def _decode_standard_cost(data: dict[str, Any]) -> "StandardCost":
+    return StandardCost(
+        sku=data.get("sku", ""),
+        currency=data.get("currency", ""),
+        effective_date=date.fromisoformat(data["effective_date"]),
+        material_unit_cost=Decimal(data.get("material_unit_cost", "0")),
+        labor_unit_cost=Decimal(data.get("labor_unit_cost", "0")),
+        overhead_unit_cost=Decimal(data.get("overhead_unit_cost", "0")),
+    )
+
+
+def _encode_work_order(st: "WorkOrderCostState") -> dict[str, Any]:
+    return {
+        "work_order_id": st.work_order_id,
+        "finished_sku": st.finished_sku,
+        "currency": st.currency,
+        "planned_quantity": _encode_decimal(st.planned_quantity),
+        "completed_quantity": _encode_decimal(st.completed_quantity),
+        "actual_material_cost": _encode_decimal(st.actual_material_cost),
+        "actual_labor_cost": _encode_decimal(st.actual_labor_cost),
+        "actual_overhead_cost": _encode_decimal(st.actual_overhead_cost),
+        "relieved_actual_cost": _encode_decimal(st.relieved_actual_cost),
+    }
+
+
+def _decode_work_order(data: dict[str, Any]) -> "WorkOrderCostState":
+    return WorkOrderCostState(
+        work_order_id=data.get("work_order_id", ""),
+        finished_sku=data.get("finished_sku", ""),
+        currency=data.get("currency", ""),
+        planned_quantity=Decimal(data.get("planned_quantity", "0")),
+        completed_quantity=Decimal(data.get("completed_quantity", "0")),
+        actual_material_cost=Decimal(data.get("actual_material_cost", "0")),
+        actual_labor_cost=Decimal(data.get("actual_labor_cost", "0")),
+        actual_overhead_cost=Decimal(data.get("actual_overhead_cost", "0")),
+        relieved_actual_cost=Decimal(data.get("relieved_actual_cost", "0")),
+    )
+
+
+def _encode_material_issue(issue: "MaterialIssue") -> dict[str, Any]:
+    return {
+        "id": str(issue.id),
+        "work_order_id": issue.work_order_id,
+        "sku": issue.sku,
+        "quantity": _encode_decimal(issue.quantity),
+        "unit_cost": _encode_decimal(issue.unit_cost),
+        "issued_at": issue.issued_at.isoformat(),
+        "issued_by": issue.issued_by,
+    }
+
+
+def _decode_material_issue(data: dict[str, Any]) -> "MaterialIssue":
+    return MaterialIssue(
+        id=UUID(data["id"]),
+        work_order_id=data.get("work_order_id", ""),
+        sku=data.get("sku", ""),
+        quantity=Decimal(data.get("quantity", "0")),
+        unit_cost=Decimal(data.get("unit_cost", "0")),
+        issued_at=datetime.fromisoformat(data["issued_at"]),
+        issued_by=data.get("issued_by", ""),
+    )
+
+
+def _encode_labor_booking(booking: "DirectLaborBooking") -> dict[str, Any]:
+    return {
+        "id": str(booking.id),
+        "work_order_id": booking.work_order_id,
+        "operation_id": booking.operation_id,
+        "hours": _encode_decimal(booking.hours),
+        "hourly_rate": _encode_decimal(booking.hourly_rate),
+        "booked_at": booking.booked_at.isoformat(),
+        "booked_by": booking.booked_by,
+    }
+
+
+def _decode_labor_booking(data: dict[str, Any]) -> "DirectLaborBooking":
+    return DirectLaborBooking(
+        id=UUID(data["id"]),
+        work_order_id=data.get("work_order_id", ""),
+        operation_id=data.get("operation_id"),
+        hours=Decimal(data.get("hours", "0")),
+        hourly_rate=Decimal(data.get("hourly_rate", "0")),
+        booked_at=datetime.fromisoformat(data["booked_at"]),
+        booked_by=data.get("booked_by", ""),
+    )
+
+
+def _encode_overhead_booking(booking: "OverheadBooking") -> dict[str, Any]:
+    return {
+        "id": str(booking.id),
+        "work_order_id": booking.work_order_id,
+        "amount": _encode_decimal(booking.amount),
+        "booked_at": booking.booked_at.isoformat(),
+        "booked_by": booking.booked_by,
+    }
+
+
+def _decode_overhead_booking(data: dict[str, Any]) -> "OverheadBooking":
+    return OverheadBooking(
+        id=UUID(data["id"]),
+        work_order_id=data.get("work_order_id", ""),
+        amount=Decimal(data.get("amount", "0")),
+        booked_at=datetime.fromisoformat(data["booked_at"]),
+        booked_by=data.get("booked_by", ""),
+    )
+
+
+def _encode_completion(receipt: "CompletionReceipt") -> dict[str, Any]:
+    return {
+        "id": str(receipt.id),
+        "work_order_id": receipt.work_order_id,
+        "finished_sku": receipt.finished_sku,
+        "quantity_completed": _encode_decimal(receipt.quantity_completed),
+        "received_at": receipt.received_at.isoformat(),
+        "received_by": receipt.received_by,
+    }
+
+
+def _decode_completion(data: dict[str, Any]) -> "CompletionReceipt":
+    return CompletionReceipt(
+        id=UUID(data["id"]),
+        work_order_id=data.get("work_order_id", ""),
+        finished_sku=data.get("finished_sku", ""),
+        quantity_completed=Decimal(data.get("quantity_completed", "0")),
+        received_at=datetime.fromisoformat(data["received_at"]),
+        received_by=data.get("received_by", ""),
+    )
+
+
+def _encode_shipment(shipment: "Shipment") -> dict[str, Any]:
+    return {
+        "id": str(shipment.id),
+        "customer_id": shipment.customer_id,
+        "sku": shipment.sku,
+        "quantity_shipped": _encode_decimal(shipment.quantity_shipped),
+        "revenue_total": _encode_decimal(shipment.revenue_total),
+        "currency": shipment.currency,
+        "shipped_at": shipment.shipped_at.isoformat(),
+        "reference": shipment.reference,
+    }
+
+
+def _decode_shipment(data: dict[str, Any]) -> "Shipment":
+    return Shipment(
+        id=UUID(data["id"]),
+        customer_id=data.get("customer_id", ""),
+        sku=data.get("sku", ""),
+        quantity_shipped=Decimal(data.get("quantity_shipped", "0")),
+        revenue_total=Decimal(data.get("revenue_total", "0")),
+        currency=data.get("currency", ""),
+        shipped_at=datetime.fromisoformat(data["shipped_at"]),
+        reference=data.get("reference"),
+    )
+
+
+def _encode_config(cfg: "CostAccountingConfig") -> dict[str, Any]:
+    return {
+        "base_currency": cfg.base_currency,
+        "method": cfg.method.value,
+        "wip_account_code": cfg.wip_account_code,
+        "fg_inventory_account_code": cfg.fg_inventory_account_code,
+        "cogs_account_code": cfg.cogs_account_code,
+        "material_variance_account_code": cfg.material_variance_account_code,
+        "labor_variance_account_code": cfg.labor_variance_account_code,
+        "overhead_variance_account_code": cfg.overhead_variance_account_code,
+    }
+
+
+def _decode_config(data: dict[str, Any], fallback: "CostAccountingConfig") -> "CostAccountingConfig":
+    return CostAccountingConfig(
+        base_currency=data.get("base_currency", fallback.base_currency),
+        method=CostMethod(data.get("method", fallback.method.value)),
+        wip_account_code=data.get("wip_account_code", fallback.wip_account_code),
+        fg_inventory_account_code=data.get("fg_inventory_account_code", fallback.fg_inventory_account_code),
+        cogs_account_code=data.get("cogs_account_code", fallback.cogs_account_code),
+        material_variance_account_code=data.get(
+            "material_variance_account_code", fallback.material_variance_account_code
+        ),
+        labor_variance_account_code=data.get(
+            "labor_variance_account_code", fallback.labor_variance_account_code
+        ),
+        overhead_variance_account_code=data.get(
+            "overhead_variance_account_code", fallback.overhead_variance_account_code
+        ),
+    )
 
 
 _FINANCE_READ_ROLES: set[str] = {
@@ -268,6 +531,142 @@ class CostAccountingService(PersistentServiceMixin):
         self._fg_value: dict[str, Decimal] = {}
 
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        cfg_data = await self.load_state(_DEFAULT_TENANT_ID, "config") or {}
+        standards_data = await self.load_state(_DEFAULT_TENANT_ID, "standard_costs") or {}
+        work_orders_data = await self.load_state(_DEFAULT_TENANT_ID, "work_orders") or {}
+        issues_data = await self.load_state(_DEFAULT_TENANT_ID, "issues") or {}
+        labor_data = await self.load_state(_DEFAULT_TENANT_ID, "labor") or {}
+        overhead_data = await self.load_state(_DEFAULT_TENANT_ID, "overhead") or {}
+        completions_data = await self.load_state(_DEFAULT_TENANT_ID, "completions") or {}
+        shipments_data = await self.load_state(_DEFAULT_TENANT_ID, "shipments") or {}
+        fg_qty_data = await self.load_state(_DEFAULT_TENANT_ID, "fg_qty") or {}
+        fg_value_data = await self.load_state(_DEFAULT_TENANT_ID, "fg_value") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        if cfg_data:
+            self._cfg = _decode_config(cfg_data, self._cfg)
+
+        self._standard_costs = {
+            sku: [_decode_standard_cost(item) for item in items]
+            for sku, items in standards_data.items()
+        }
+        self._work_orders = {wid: _decode_work_order(st) for wid, st in work_orders_data.items()}
+        self._issues = {UUID(iid): _decode_material_issue(mi) for iid, mi in issues_data.items()}
+        self._labor = {UUID(lid): _decode_labor_booking(lb) for lid, lb in labor_data.items()}
+        self._overhead = {UUID(oid): _decode_overhead_booking(ob) for oid, ob in overhead_data.items()}
+        self._completions = {UUID(cid): _decode_completion(rc) for cid, rc in completions_data.items()}
+        self._shipments = {UUID(sid): _decode_shipment(sh) for sid, sh in shipments_data.items()}
+        self._fg_qty = {sku: Decimal(val) for sku, val in fg_qty_data.items()}
+        self._fg_value = {sku: Decimal(val) for sku, val in fg_value_data.items()}
+        self._audit = [_decode_audit_event(a) for a in audit_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        cfg_data = _encode_config(self._cfg)
+        standards_data = {
+            sku: [_encode_standard_cost(item) for item in items]
+            for sku, items in self._standard_costs.items()
+        }
+        work_orders_data = {wid: _encode_work_order(st) for wid, st in self._work_orders.items()}
+        issues_data = {str(iid): _encode_material_issue(mi) for iid, mi in self._issues.items()}
+        labor_data = {str(lid): _encode_labor_booking(lb) for lid, lb in self._labor.items()}
+        overhead_data = {str(oid): _encode_overhead_booking(ob) for oid, ob in self._overhead.items()}
+        completions_data = {str(cid): _encode_completion(rc) for cid, rc in self._completions.items()}
+        shipments_data = {str(sid): _encode_shipment(sh) for sid, sh in self._shipments.items()}
+        fg_qty_data = {sku: _encode_decimal(val) for sku, val in self._fg_qty.items()}
+        fg_value_data = {sku: _encode_decimal(val) for sku, val in self._fg_value.items()}
+        audit_data = [_encode_audit_event(a) for a in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "config", cfg_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "standard_costs", standards_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "work_orders", work_orders_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "issues", issues_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "labor", labor_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "overhead", overhead_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "completions", completions_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "shipments", shipments_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "fg_qty", fg_qty_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "fg_value", fg_value_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def set_standard_cost_async(self, **kwargs: Any) -> StandardCost:
+        await self._ensure_loaded()
+        sc = self.set_standard_cost(**kwargs)
+        await self.persist_all()
+        return sc
+
+    async def get_standard_cost_async(self, *, actor_roles: Iterable[str], sku: str, as_of: date) -> StandardCost | None:
+        await self._ensure_loaded()
+        return self.get_standard_cost(actor_roles=actor_roles, sku=sku, as_of=as_of)
+
+    async def register_work_order_async(self, **kwargs: Any) -> WorkOrderCostState:
+        await self._ensure_loaded()
+        st = self.register_work_order(**kwargs)
+        await self.persist_all()
+        return st
+
+    async def get_work_order_async(self, *, actor_roles: Iterable[str], work_order_id: str) -> WorkOrderCostState | None:
+        await self._ensure_loaded()
+        return self.get_work_order(actor_roles=actor_roles, work_order_id=work_order_id)
+
+    async def record_material_issue_async(self, **kwargs: Any) -> MaterialIssue:
+        await self._ensure_loaded()
+        mi = self.record_material_issue(**kwargs)
+        await self.persist_all()
+        return mi
+
+    async def record_labor_booking_async(self, **kwargs: Any) -> DirectLaborBooking:
+        await self._ensure_loaded()
+        lb = self.record_labor_booking(**kwargs)
+        await self.persist_all()
+        return lb
+
+    async def ingest_labor_booking_like_async(self, **kwargs: Any) -> DirectLaborBooking:
+        await self._ensure_loaded()
+        lb = self.ingest_labor_booking_like(**kwargs)
+        await self.persist_all()
+        return lb
+
+    async def record_overhead_async(self, **kwargs: Any) -> OverheadBooking:
+        await self._ensure_loaded()
+        ob = self.record_overhead(**kwargs)
+        await self.persist_all()
+        return ob
+
+    async def wip_valuation_async(self, *, actor_roles: Iterable[str], as_of: date | None = None) -> list[WIPValuationRow]:
+        await self._ensure_loaded()
+        return self.wip_valuation(actor_roles=actor_roles, as_of=as_of)
+
+    async def receive_completion_async(self, **kwargs: Any) -> CompletionReceipt:
+        await self._ensure_loaded()
+        rc = self.receive_completion(**kwargs)
+        await self.persist_all()
+        return rc
+
+    async def ship_async(self, **kwargs: Any) -> Shipment:
+        await self._ensure_loaded()
+        sh = self.ship(**kwargs)
+        await self.persist_all()
+        return sh
+
+    async def margin_report_async(self, *, actor_roles: Iterable[str], start: date, end: date) -> list[MarginRow]:
+        await self._ensure_loaded()
+        return self.margin_report(actor_roles=actor_roles, start=start, end=end)
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
 
     # ------------------------------------------------------------------
     # Standards

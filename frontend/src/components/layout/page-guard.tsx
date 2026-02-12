@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import { useAuthStore } from '@/stores';
 import type { UserRole } from '@/types';
+import { useI18n } from '@/contexts/i18n-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -28,6 +29,7 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
   const router = useRouter();
   const pathname = usePathname();
   const { user, isLoading, isAuthenticated } = useAuthStore();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -77,14 +79,14 @@ export function PageGuard({ children, requiredRoles = [], fallback }: PageGuardP
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
               <ShieldAlert className="h-7 w-7 text-destructive" />
             </div>
-            <CardTitle>Access Restricted</CardTitle>
+            <CardTitle>{t('components.pageGuard.accessRestricted')}</CardTitle>
             <CardDescription>
-              You don&apos;t have permission to view this page. Contact your administrator if you believe this is an error.
+              {t('components.pageGuard.noPermission')}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
             <Button onClick={() => router.push('/today')} variant="outline">
-              Return to Dashboard
+              {t('components.pageGuard.returnToDashboard')}
             </Button>
           </CardContent>
         </Card>

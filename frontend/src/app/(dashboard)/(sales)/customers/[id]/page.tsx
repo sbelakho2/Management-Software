@@ -51,6 +51,10 @@ import { cn, formatCurrency, formatDate, formatDateTime, formatRelativeTime, get
 import { useI18n } from '@/contexts/i18n-context';
 import { useToast } from '@/hooks/use-toast';
 
+import { accountApi } from '@/api/accounts';
+import { contactApi, type ContactResponse } from '@/api/contacts';
+import { rfqApi } from '@/api/rfq';
+
 interface Contact {
   id: string;
   name: string;
@@ -106,49 +110,6 @@ interface Customer {
   updatedAt: string;
 }
 
-const mockCustomer: Customer = {
-  id: '1',
-  name: 'Aerospace Dynamics Inc.',
-  code: 'AERO-001',
-  status: 'active',
-  industry: 'Aerospace',
-  website: 'https://aerospacedynamics.com',
-  address: {
-    street: '1234 Aviation Blvd',
-    city: 'Los Angeles',
-    state: 'CA',
-    postalCode: '90045',
-    country: 'USA',
-  },
-  contacts: [
-    { id: '1', name: 'Michael Roberts', title: 'Procurement Manager', email: 'mroberts@aerospacedynamics.com', phone: '+1 (555) 234-5678', isPrimary: true },
-    { id: '2', name: 'Sarah Johnson', title: 'Engineering Lead', email: 'sjohnson@aerospacedynamics.com', phone: '+1 (555) 234-5679', isPrimary: false },
-    { id: '3', name: 'David Lee', title: 'Quality Manager', email: 'dlee@aerospacedynamics.com', phone: '+1 (555) 234-5680', isPrimary: false },
-  ],
-  stats: {
-    totalRFQs: 45,
-    openRFQs: 3,
-    totalRevenue: 1250000,
-    avgOrderValue: 42000,
-    winRate: 72,
-  },
-  recentRFQs: [
-    { id: '1', rfqNumber: 'RFQ-2024-0089', title: 'Precision brackets for aircraft assembly', status: 'quoting', value: 124500, createdAt: '2024-01-10' },
-    { id: '2', rfqNumber: 'RFQ-2024-0072', title: 'Landing gear components', status: 'submitted', value: 89000, createdAt: '2024-01-05' },
-    { id: '3', rfqNumber: 'RFQ-2023-0445', title: 'Structural fasteners', status: 'won', value: 156000, createdAt: '2023-12-15' },
-    { id: '4', rfqNumber: 'RFQ-2023-0398', title: 'Hydraulic fittings', status: 'lost', value: 67500, createdAt: '2023-11-20' },
-  ],
-  recentActivity: [
-    { id: '1', type: 'quote_sent', description: 'Quote Q-2024-0112 sent to customer', user: 'Sarah Chen', createdAt: '2024-01-12T10:00:00Z' },
-    { id: '2', type: 'rfq_created', description: 'RFQ-2024-0089 received', user: 'System', createdAt: '2024-01-10T09:30:00Z' },
-    { id: '3', type: 'quote_accepted', description: 'Quote Q-2023-0445 accepted by customer', user: 'System', createdAt: '2023-12-20T14:00:00Z' },
-    { id: '4', type: 'contact_added', description: 'New contact David Lee added', user: 'John Doe', createdAt: '2023-12-01T11:00:00Z' },
-  ],
-  notes: 'Preferred customer - always prioritize their RFQs. They have specific AS9100 quality requirements.',
-  createdAt: '2022-03-15',
-  updatedAt: '2024-01-12T10:00:00Z',
-};
-
 const statusConfig = {
   active: { labelKey: 'pages.customers.status.active', variant: 'success' as const },
   inactive: { labelKey: 'pages.customers.status.inactive', variant: 'secondary' as const },
@@ -196,55 +157,130 @@ function CustomerDetailSkeleton() {
 
 import { useCustomersStore } from '@/stores/customers';
 
+/** Map backend account status to the UI status type. */
+function mapStatus(apiStatus: string): 'active' | 'inactive' | 'prospect' {
+  const s = apiStatus?.toLowerCase() ?? '';
+  if (s === 'active' || s === 'approved') return 'active';
+  if (s === 'inactive' || s === 'closed' || s === 'blacklisted') return 'inactive';
+  return 'prospect';
+}
+
+/** Map backend RFQ status to the limited set the UI understands. */
+function mapRfqStatus(apiStatus: string): 'new' | 'reviewing' | 'quoting' | 'submitted' | 'won' | 'lost' {
+  const s = apiStatus?.toLowerCase() ?? '';
+  if (s === 'won' || s === 'accepted') return 'won';
+  if (s === 'lost' || s === 'no_bid') return 'lost';
+  if (s === 'quoting' || s === 'quoted') return 'quoting';
+  if (s === 'submitted' || s === 'sent') return 'submitted';
+  if (s === 'reviewing' || s === 'in_review') return 'reviewing';
+  return 'new';
+}
+
 export default function CustomerDetailPage() {
   const { t } = useI18n();
   const router = useRouter();
   const params = useParams();
   const { toast } = useToast();
-  const { customers, fetchCustomers } = useCustomersStore();
+  const { updateCustomer } = useCustomersStore();
   const [isLoading, setIsLoading] = React.useState(true);
   const [customer, setCustomer] = React.useState<Customer | null>(null);
   const [showDeactivateDialog, setShowDeactivateDialog] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
-    const loadData = async () => {
+    const customerId = params.id as string;
+    if (!customerId) return;
+
+    let cancelled = false;
+    const load = async () => {
       setIsLoading(true);
       try {
-        await fetchCustomers();
+        // Fetch account, contacts, and RFQs in parallel
+        const [accountData, contactsRes, rfqsRes] = await Promise.all([
+          accountApi.get(customerId),
+          contactApi.list({ account_id: customerId, limit: 50 } as any),
+          rfqApi.list({ customer_id: customerId, limit: 10 } as any),
+        ]);
+        if (cancelled) return;
+
+        const acct = accountData as any;
+
+        // Map contacts from API shape → local Contact shape
+        const contacts: Contact[] = (contactsRes?.items ?? []).map((c: ContactResponse) => ({
+          id: String(c.id),
+          name: c.display_name || `${c.first_name} ${c.last_name}`.trim(),
+          title: c.job_title ?? '',
+          email: c.email ?? '',
+          phone: c.phone_mobile || c.phone_work || '',
+          isPrimary: false, // will be refined below if account has primary_contact_id
+        }));
+
+        // Map RFQs from API shape → local RFQ shape
+        const rfqItems = rfqsRes?.items ?? [];
+        const recentRFQs: RFQ[] = rfqItems.map((r: any) => ({
+          id: String(r.id),
+          rfqNumber: r.rfq_number ?? `RFQ-${String(r.id).slice(0, 8)}`,
+          title: r.title ?? r.description ?? '',
+          status: mapRfqStatus(r.status),
+          value: r.estimated_value ?? r.total ?? 0,
+          createdAt: r.created_at ?? '',
+        }));
+
+        // Compute stats from real RFQ data
+        const totalRFQs = rfqsRes?.total ?? rfqItems.length;
+        const openStatuses = ['new', 'reviewing', 'quoting'];
+        const openRFQs = rfqItems.filter((r: any) => openStatuses.includes(mapRfqStatus(r.status))).length;
+        const wonRfqs = rfqItems.filter((r: any) => mapRfqStatus(r.status) === 'won');
+        const decidedRfqs = rfqItems.filter((r: any) => ['won', 'lost'].includes(mapRfqStatus(r.status)));
+        const totalRevenue = wonRfqs.reduce((s: number, r: any) => s + (r.estimated_value ?? r.total ?? 0), 0);
+        const avgOrderValue = wonRfqs.length > 0 ? totalRevenue / wonRfqs.length : 0;
+        const winRate = decidedRfqs.length > 0 ? Math.round((wonRfqs.length / decidedRfqs.length) * 100) : 0;
+
+        setCustomer({
+          id: String(acct.id),
+          name: acct.name ?? '',
+          code: acct.account_number ?? '',
+          status: mapStatus(acct.status),
+          industry: acct.industry ?? '',
+          website: acct.website ?? undefined,
+          address: {
+            street: [acct.address_line1, acct.address_line2].filter(Boolean).join(', '),
+            city: acct.city ?? '',
+            state: acct.state_province ?? '',
+            postalCode: acct.postal_code ?? '',
+            country: acct.country ?? '',
+          },
+          contacts,
+          stats: { totalRFQs, openRFQs, totalRevenue, avgOrderValue, winRate },
+          recentRFQs,
+          recentActivity: [], // populated from timeline when available
+          notes: acct.internal_notes ?? acct.description ?? undefined,
+          createdAt: acct.created_at ?? '',
+          updatedAt: acct.updated_at ?? '',
+        });
       } catch (err) {
         console.error('Failed to load customer:', err);
+        if (!cancelled) setCustomer(null);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
-    loadData();
-  }, [fetchCustomers]);
+    load();
+    return () => { cancelled = true; };
+  }, [params.id]);
 
-  React.useEffect(() => {
-    if (customers.length > 0 && params.id) {
-      const found = customers.find(c => c.id === params.id);
-      if (found) {
-        setCustomer({
-          ...found,
-          address: (found as any).address || mockCustomer.address,
-          contacts: (found as any).contacts || [],
-          stats: (found as any).stats || mockCustomer.stats,
-          recentRFQs: (found as any).recentRFQs || [],
-          recentActivity: (found as any).recentActivity || [],
-        } as any);
-      } else {
-        // Fallback to mock
-        setCustomer(mockCustomer);
-      }
+  const handleDeactivate = async () => {
+    if (!customer) return;
+    try {
+      await accountApi.update(customer.id, { status: 'inactive' });
+      setCustomer((prev) => prev ? { ...prev, status: 'inactive' } : prev);
+      toast({
+        title: t('pages.customers.detail.deactivated') || 'Customer deactivated',
+        description: `${customer.name} has been deactivated`,
+      });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to deactivate customer', variant: 'destructive' as any });
     }
-  }, [customers, params.id]);
-
-  const handleDeactivate = () => {
-    toast({
-      title: 'Customer deactivated',
-      description: `${mockCustomer.name} has been deactivated`,
-    });
     setShowDeactivateDialog(false);
   };
 

@@ -9,6 +9,7 @@ import {
   type BarcodeFormat,
 } from '@/hooks/use-camera-scanner';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/contexts/i18n-context';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 interface BarcodeScannerProps {
@@ -37,6 +38,7 @@ export function BarcodeScanner({
   continuousMode = false,
   scanCooldown = 2000,
 }: BarcodeScannerProps) {
+  const { t } = useI18n();
   const {
     state,
     videoRef,
@@ -118,12 +120,10 @@ export function BarcodeScanner({
       >
         <CameraOffIcon className="mb-4 h-12 w-12 text-gray-400" />
         <h3 className="text-lg font-medium text-gray-900">
-          Scanner Not Supported
+          {t('components.scanner.scannerNotSupported')}
         </h3>
         <p className="mt-2 text-center text-sm text-gray-500">
-          Your browser doesn't support the Barcode Detection API.
-          <br />
-          Please use Chrome, Edge, or Opera on Android.
+          {t('components.scanner.browserNotSupported')}
         </p>
       </div>
     );
@@ -139,16 +139,16 @@ export function BarcodeScanner({
       >
         <LockIcon className="mb-4 h-12 w-12 text-red-400" />
         <h3 className="text-lg font-medium text-red-900">
-          Camera Access Denied
+          {t('components.scanner.cameraAccessDenied')}
         </h3>
         <p className="mt-2 text-center text-sm text-red-500">
-          Please allow camera access in your browser settings to use the scanner.
+          {t('components.scanner.allowCameraAccess')}
         </p>
         <button
           onClick={handleStart}
           className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
         >
-          Try Again
+          {t('components.scanner.tryAgain')}
         </button>
       </div>
     );
@@ -193,12 +193,12 @@ export function BarcodeScanner({
         {isPaused && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
             <CheckCircleIcon className="mb-2 h-12 w-12 text-green-400" />
-            <p className="text-lg font-medium text-white">Scan Complete</p>
+            <p className="text-lg font-medium text-white">{t('components.scanner.scanComplete')}</p>
             <button
               onClick={handleResume}
               className="mt-4 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
             >
-              Scan Another
+              {t('components.scanner.scanAnother')}
             </button>
           </div>
         )}
@@ -207,12 +207,12 @@ export function BarcodeScanner({
         {!state.isScanning && !state.error && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80">
             <CameraIcon className="mb-4 h-12 w-12 text-gray-400" />
-            <p className="text-gray-300">Camera not active</p>
+            <p className="text-gray-300">{t('components.scanner.cameraNotActive')}</p>
             <button
               onClick={handleStart}
               className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
-              Start Scanner
+              {t('components.scanner.startScanner')}
             </button>
           </div>
         )}
@@ -226,7 +226,7 @@ export function BarcodeScanner({
               onClick={handleStart}
               className="mt-4 rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
             >
-              Try Again
+              {t('components.scanner.tryAgain')}
             </button>
           </div>
         )}
@@ -238,28 +238,28 @@ export function BarcodeScanner({
           <button
             onClick={switchCamera}
             className="flex items-center gap-2 rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-            title="Switch Camera"
+            title={t('components.scanner.switchCamera')}
           >
             <FlipCameraIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">Switch</span>
+            <span className="hidden sm:inline">{t('components.scanner.switch')}</span>
           </button>
 
           <button
             onClick={handleCapture}
             className="flex items-center gap-2 rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
-            title="Capture Frame"
+            title={t('components.scanner.captureFrame')}
           >
             <CameraIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">Capture</span>
+            <span className="hidden sm:inline">{t('components.scanner.capture')}</span>
           </button>
 
           <button
             onClick={handleStop}
             className="flex items-center gap-2 rounded-md bg-red-100 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-200"
-            title="Stop Scanner"
+            title={t('components.scanner.stopScanner')}
           >
             <StopIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">Stop</span>
+            <span className="hidden sm:inline">{t('components.scanner.stop')}</span>
           </button>
         </div>
       )}
@@ -270,13 +270,13 @@ export function BarcodeScanner({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-medium uppercase text-gray-500">
-                Last Scanned
+                {t('components.scanner.lastScanned')}
               </p>
               <p className="mt-1 break-all font-mono text-sm text-gray-900">
                 {state.lastResult.rawValue}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Format: {state.lastResult.format} •{' '}
+                {t('components.scanner.format')}: {state.lastResult.format} •{' '}
                 {new Date(state.lastResult.timestamp).toLocaleTimeString()}
               </p>
             </div>
@@ -307,10 +307,13 @@ export function ScannerModal({
   isOpen,
   onClose,
   onScan,
-  title = 'Scan Barcode',
-  description = 'Point your camera at a barcode or QR code',
+  title,
+  description,
   formats,
 }: ScannerModalProps) {
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t('components.scanner.scanBarcode');
+  const resolvedDescription = description ?? t('components.scanner.pointCamera');
   const handleScan = (
     result: BarcodeResult,
     parsed: ReturnType<typeof parseManufacturingBarcode>
@@ -333,8 +336,8 @@ export function ScannerModal({
       <div className="relative z-10 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-            <p className="text-sm text-gray-500">{description}</p>
+            <h2 className="text-lg font-semibold text-gray-900">{resolvedTitle}</h2>
+            <p className="text-sm text-gray-500">{resolvedDescription}</p>
           </div>
           <button
             onClick={onClose}
@@ -369,9 +372,11 @@ interface ScanButtonProps {
 export function ScanButton({
   onScan,
   className,
-  label = 'Scan',
+  label,
   formats,
 }: ScanButtonProps) {
+  const { t } = useI18n();
+  const resolvedLabel = label ?? t('components.scanner.scan');
   const [isOpen, setIsOpen] = React.useState(false);
 
   return (
@@ -384,7 +389,7 @@ export function ScanButton({
         )}
       >
         <QRCodeIcon className="h-5 w-5" />
-        {label}
+        {resolvedLabel}
       </button>
 
       <ScannerModal

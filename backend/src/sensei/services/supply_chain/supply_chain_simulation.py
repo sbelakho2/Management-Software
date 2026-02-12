@@ -505,19 +505,18 @@ class MonteCarloSimulator:
         active: list[DisruptionScenario] = []
         
         for scenario in scenarios:
-            # Check if this disruption occurs
-            if self.random.random() < scenario.probability:
-                # Check correlations with already active disruptions
-                correlation_boost = 0.0
-                for active_scenario in active:
-                    sorted_ids = sorted([scenario.scenario_id, active_scenario.scenario_id])
-                    key: tuple[str, str] = (sorted_ids[0], sorted_ids[1])
-                    correlation = self._disruption_correlations.get(key, 0.0)
-                    correlation_boost += correlation * 0.1
-                
-                # Correlated disruptions are more likely
-                if self.random.random() < scenario.probability + correlation_boost:
-                    active.append(scenario)
+            # Calculate correlation boost from already-active disruptions
+            correlation_boost = 0.0
+            for active_scenario in active:
+                sorted_ids = sorted([scenario.scenario_id, active_scenario.scenario_id])
+                key: tuple[str, str] = (sorted_ids[0], sorted_ids[1])
+                correlation = self._disruption_correlations.get(key, 0.0)
+                correlation_boost += correlation * 0.1
+            
+            # Single probability check (base probability + correlation boost)
+            effective_probability = min(1.0, scenario.probability + correlation_boost)
+            if self.random.random() < effective_probability:
+                active.append(scenario)
         
         return active
     

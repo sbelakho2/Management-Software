@@ -173,14 +173,14 @@ export default function ShippingPage() {
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="picked">Picked</option>
-            <option value="packed">Packed</option>
-            <option value="shipped">Shipped</option>
-            <option value="delivered">Delivered</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
+            <option value="all">{t('common.allStatus')}</option>
+            <option value="pending">{t('common.status.pending')}</option>
+            <option value="picked">{t('common.status.picked')}</option>
+            <option value="packed">{t('common.status.packed')}</option>
+            <option value="shipped">{t('common.status.shipped')}</option>
+            <option value="delivered">{t('common.status.delivered')}</option>
+            <option value="in_progress">{t('common.status.inProgress')}</option>
+            <option value="completed">{t('common.status.completed')}</option>
           </select>
         </div>
 
@@ -207,7 +207,7 @@ export default function ShippingPage() {
               <Card className="rounded-rams-sm border-rams-line bg-rams-module">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Truck className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">No shipments found</p>
+                  <p className="text-muted-foreground">{t('common.noResults')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -273,7 +273,7 @@ export default function ShippingPage() {
               <Card className="rounded-rams-sm border-rams-line bg-rams-module">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <ClipboardList className="h-12 w-12 text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">No pick lists found</p>
+                  <p className="text-muted-foreground">{t('common.noResults')}</p>
                 </CardContent>
               </Card>
             ) : (
@@ -293,8 +293,8 @@ export default function ShippingPage() {
                             </Badge>
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <span>Source: {pickList.source_type.replace('_', ' ')}</span>
-                            <span>Priority: {pickList.priority}</span>
+                            <span>{t('common.source')}: {pickList.source_type.replace('_', ' ')}</span>
+                            <span>{t('common.priority.label')}: {pickList.priority}</span>
                           </div>
                           {pickList.assigned_to && (
                             <div className="text-sm">

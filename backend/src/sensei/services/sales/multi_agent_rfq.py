@@ -1569,11 +1569,17 @@ class MultiAgentRFQAnalyzer(PersistentServiceMixin):
         self.orchestrator.register_agent(self.risk_agent)
         
         self._analysis_history: dict[str, ComprehensiveAnalysis] = {}
+        self._max_analysis_history: int = 500
     
     async def analyze(self, rfq: RFQSpec) -> ComprehensiveAnalysis:
         """Perform full multi-agent analysis."""
         analysis = await self.orchestrator.analyze_rfq(rfq)
         self._analysis_history[analysis.analysis_id] = analysis
+        # Evict oldest entries when exceeding limit
+        if len(self._analysis_history) > self._max_analysis_history:
+            oldest_keys = list(self._analysis_history.keys())[: len(self._analysis_history) - self._max_analysis_history]
+            for k in oldest_keys:
+                del self._analysis_history[k]
         return analysis
     
     def get_analysis(self, analysis_id: str) -> ComprehensiveAnalysis | None:

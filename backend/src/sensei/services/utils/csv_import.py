@@ -3,16 +3,30 @@ CSV Import Service.
 
 Provides functionality for importing Accounts, Contacts, and Opportunities
 from CSV files with validation, duplicate detection, and audit logging.
+
+Supports two modes:
+- **DB mode**: pass an ``AsyncSession`` to ``CSVImportService(session=db)``.
+  Entity CRUD goes through real ORM models via ``import_csv_async()``.
+- **In-memory mode**: ``CSVImportService()`` with no session — for testing
+  CSV parsing / validation logic.
 """
+
+from __future__ import annotations
 
 import csv
 import io
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 class ImportEntityType(str, Enum):
@@ -307,17 +321,34 @@ OPPORTUNITY_FIELD_MAPPINGS: dict[str, FieldMapping] = {
 
 
 class CSVImportService:
-    """Service for importing entities from CSV files."""
-    
-    def __init__(self) -> None:
-        """Initialize the CSV import service."""
-        # In-memory storage for import jobs
+    """Service for importing entities from CSV files.
+
+    Supports two modes:
+    - **DB mode** (production): pass an ``AsyncSession`` to the constructor.
+      Entity CRUD, duplicate detection and audit entries go through the real
+      ORM models (Account, Contact, Opportunity).
+    - **In-memory mode** (testing / dry-run): omit the session.  CSV parsing,
+      field-mapping and validation are pure functions that work without a DB.
+    """
+
+    def __init__(self, session: "AsyncSession | None" = None) -> None:
+        """Initialize the CSV import service.
+
+        Args:
+            session: Optional SQLAlchemy async session for DB-backed mode.
+        """
+        self._session = session
+        # In-memory fallback (used when session is None — tests / dry-run)
         self._import_jobs: dict[UUID, ImportJobResult] = {}
         self._accounts: dict[UUID, dict] = {}
         self._contacts: dict[UUID, dict] = {}
         self._opportunities: dict[UUID, dict] = {}
         self._account_contacts: list[dict] = []
         self._audit_log: list[dict] = []
+
+    @property
+    def _db_mode(self) -> bool:
+        return self._session is not None
     
     # =========================================================================
     # Import Job Management
@@ -1110,7 +1141,250 @@ class CSVImportService:
             "created_at": datetime.now(timezone.utc),
             "source": "csv_import",
         })
-    
+
+    # =========================================================================
+    # Async / DB-backed import  (production path)
+    # =========================================================================
+
+    async def import_csv_async(
+        self,
+        content: str | bytes,
+        config: ImportConfig,
+    ) -> ImportJobResult:
+        """Import entities from CSV content using the database.
+
+        This is the production entry-point.  Requires ``self._session`` to be
+        set (pass an ``AsyncSession`` to the constructor).
+
+        Uses the same CSV parsing and validation as the sync ``import_csv``
+        but persists entities through the ORM models (Account, Contact,
+        Opportunity).
+        """
+        from sqlalchemy import select as sa_select
+        from sensei.models.account import Account, Contact
+        from sensei.models.opportunity import Opportunity
+
+        session = self._session
+        if session is None:
+            raise RuntimeError(
+                "import_csv_async requires a DB session. "
+                "Pass AsyncSession to CSVImportService(session=db)."
+            )
+
+        job = self.create_import_job(config.entity_type)
+        job.status = ImportStatus.VALIDATING
+        job.started_at = datetime.now(timezone.utc)
+
+        try:
+            headers, rows = self.parse_csv(content, config)
+            job.total_rows = len(rows)
+
+            if not config.field_mappings:
+                config.field_mappings = self.detect_field_mappings(headers, config.entity_type)
+
+            # ---- validation pass (reuses sync logic) ----
+            validation_errors = 0
+            for i, row in enumerate(rows):
+                row_number = i + 2
+                errors = self.validate_row(row, row_number, config)
+                if errors:
+                    validation_errors += 1
+                    job.row_results.append(ImportRowResult(
+                        row_number=row_number,
+                        status=RowStatus.FAILED_VALIDATION,
+                        errors=errors,
+                        original_data=row,
+                    ))
+                    if validation_errors >= config.max_errors:
+                        job.status = ImportStatus.FAILED
+                        job.errors.append(f"Too many validation errors ({validation_errors})")
+                        job.completed_at = datetime.now(timezone.utc)
+                        return job
+
+            if config.dry_run:
+                job.status = ImportStatus.COMPLETED
+                job.completed_at = datetime.now(timezone.utc)
+                return job
+
+            # ---- import pass ----
+            job.status = ImportStatus.IMPORTING
+
+            MODEL_MAP: dict[ImportEntityType, type] = {
+                ImportEntityType.ACCOUNT: Account,
+                ImportEntityType.CONTACT: Contact,
+                ImportEntityType.OPPORTUNITY: Opportunity,
+            }
+            model_cls = MODEL_MAP.get(config.entity_type)
+            if model_cls is None:
+                raise ValueError(f"Unsupported entity type: {config.entity_type}")
+
+            for i, row in enumerate(rows):
+                row_number = i + 2
+                existing_result = next(
+                    (r for r in job.row_results if r.row_number == row_number),
+                    None,
+                )
+                if existing_result and existing_result.status == RowStatus.FAILED_VALIDATION:
+                    job.rows_failed += 1
+                    continue
+
+                try:
+                    entity_data = {}
+                    for mapping in config.field_mappings:
+                        value = self._get_mapped_value(row, mapping)
+                        if value is not None and value != "":
+                            if mapping.mapping_type == FieldMappingType.LOOKUP:
+                                lookup_id = await self._resolve_lookup_db(
+                                    session, sa_select, value,
+                                    mapping.lookup_entity, mapping.lookup_field,
+                                    Account,
+                                )
+                                if lookup_id:
+                                    entity_data[mapping.target_field] = lookup_id
+                            else:
+                                entity_data[mapping.target_field] = value
+
+                    # ---- duplicate detection via DB ----
+                    dup_id = await self._detect_duplicate_db(
+                        session, sa_select, model_cls, entity_data,
+                        config.duplicate_check_fields or ["name", "email"],
+                    )
+
+                    if dup_id is not None:
+                        if config.duplicate_action == DuplicateAction.SKIP:
+                            job.row_results.append(ImportRowResult(
+                                row_number=row_number,
+                                status=RowStatus.SKIPPED_DUPLICATE,
+                                duplicate_of=dup_id,
+                                action_taken="skipped",
+                                original_data=row,
+                            ))
+                            job.rows_skipped += 1
+                            continue
+                        elif config.duplicate_action == DuplicateAction.UPDATE:
+                            existing = await session.get(model_cls, dup_id)
+                            if existing:
+                                for k, v in entity_data.items():
+                                    if hasattr(existing, k):
+                                        setattr(existing, k, v)
+                                session.add(existing)
+                            job.row_results.append(ImportRowResult(
+                                row_number=row_number,
+                                status=RowStatus.IMPORTED,
+                                entity_id=dup_id,
+                                entity_type=config.entity_type,
+                                duplicate_of=dup_id,
+                                action_taken="updated",
+                                original_data=row,
+                            ))
+                            job.rows_imported += 1
+                            continue
+                        elif config.duplicate_action == DuplicateAction.FAIL:
+                            job.row_results.append(ImportRowResult(
+                                row_number=row_number,
+                                status=RowStatus.FAILED_IMPORT,
+                                duplicate_of=dup_id,
+                                errors=[ValidationError(
+                                    row_number=row_number,
+                                    column=None,
+                                    field=None,
+                                    error_type="duplicate",
+                                    message=f"Duplicate of existing record: {dup_id}",
+                                )],
+                                original_data=row,
+                            ))
+                            job.rows_failed += 1
+                            continue
+
+                    # ---- create new entity via ORM ----
+                    entity_id = uuid4()
+                    init_kwargs = {"id": entity_id}
+                    for k, v in entity_data.items():
+                        init_kwargs[k] = v
+                    obj = model_cls(**init_kwargs)  # type: ignore[call-arg]
+                    session.add(obj)
+
+                    job.row_results.append(ImportRowResult(
+                        row_number=row_number,
+                        status=RowStatus.IMPORTED,
+                        entity_id=entity_id,
+                        entity_type=config.entity_type,
+                        action_taken="created",
+                        original_data=row,
+                    ))
+                    job.rows_imported += 1
+
+                except Exception as exc:
+                    job.row_results.append(ImportRowResult(
+                        row_number=row_number,
+                        status=RowStatus.FAILED_IMPORT,
+                        errors=[ValidationError(
+                            row_number=row_number,
+                            column=None,
+                            field=None,
+                            error_type="import_error",
+                            message=str(exc),
+                        )],
+                        original_data=row,
+                    ))
+                    job.rows_failed += 1
+
+            await session.flush()
+
+            if job.rows_failed > 0:
+                job.status = ImportStatus.COMPLETED_WITH_ERRORS
+            else:
+                job.status = ImportStatus.COMPLETED
+
+        except Exception as e:
+            job.status = ImportStatus.FAILED
+            job.errors.append(str(e))
+            logger.exception("import_csv_async failed")
+
+        job.completed_at = datetime.now(timezone.utc)
+        if job.started_at:
+            job.duration_seconds = (job.completed_at - job.started_at).total_seconds()
+        return job
+
+    @staticmethod
+    async def _resolve_lookup_db(
+        session: "AsyncSession",
+        sa_select: Any,
+        value: Any,
+        lookup_entity: str | None,
+        lookup_field: str | None,
+        account_model: type,
+    ) -> UUID | None:
+        """Resolve a lookup value to an entity ID via DB query."""
+        if not lookup_entity or not lookup_field:
+            return None
+        if lookup_entity == "account" and lookup_field == "name":
+            stmt = sa_select(account_model.id).where(account_model.name == str(value)).limit(1)
+            row = (await session.execute(stmt)).first()
+            return row[0] if row else None
+        return None
+
+    @staticmethod
+    async def _detect_duplicate_db(
+        session: "AsyncSession",
+        sa_select: Any,
+        model_cls: type,
+        data: dict[str, Any],
+        check_fields: list[str],
+    ) -> UUID | None:
+        """Return the ID of an existing duplicate or ``None``."""
+        conditions = []
+        for f in check_fields:
+            val = data.get(f)
+            if val is not None and hasattr(model_cls, f):
+                conditions.append(getattr(model_cls, f) == val)
+        if not conditions:
+            return None
+        from sqlalchemy import or_ as sa_or
+        stmt = sa_select(model_cls.id).where(sa_or(*conditions)).limit(1)
+        row = (await session.execute(stmt)).first()
+        return row[0] if row else None
+
     # =========================================================================
     # Export Templates
     # =========================================================================

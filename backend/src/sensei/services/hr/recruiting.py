@@ -6,7 +6,7 @@ Implements:
 - Interviews: schedule and record interview feedback.
 - Offer Letters: generate and track offer acceptance with PII controls.
 
-This module is intentionally in-memory and pure-Python to match other services.
+State is persisted via the service_state table for DB-backed continuity.
 """
 
 from __future__ import annotations
@@ -115,6 +115,269 @@ def _mask_pii(value: str, visible_chars: int = 4) -> str:
     if not value or len(value) <= visible_chars:
         return "****"
     return "*" * (len(value) - visible_chars) + value[-visible_chars:]
+
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _encode_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _decode_decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(value)
+
+
+def _encode_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _encode_date(value: date | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _decode_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    return date.fromisoformat(value)
+
+
+def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
+    return {
+        "id": str(event.id),
+        "actor_id": event.actor_id,
+        "actor_roles": list(event.actor_roles),
+        "action": event.action,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "correlation_id": event.correlation_id,
+        "timestamp": event.timestamp.isoformat(),
+        "metadata": event.metadata,
+    }
+
+
+def _decode_audit_event(data: dict[str, Any]) -> "AuditEvent":
+    return AuditEvent(
+        id=UUID(data["id"]),
+        actor_id=data["actor_id"],
+        actor_roles=frozenset(data.get("actor_roles", [])),
+        action=data["action"],
+        entity_type=data["entity_type"],
+        entity_id=data["entity_id"],
+        correlation_id=data.get("correlation_id", ""),
+        timestamp=datetime.fromisoformat(data["timestamp"]),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_requisition(req: "JobRequisition") -> dict[str, Any]:
+    return {
+        "id": str(req.id),
+        "title": req.title,
+        "department": req.department,
+        "location": req.location,
+        "employment_type": req.employment_type,
+        "status": req.status.value,
+        "headcount": req.headcount,
+        "hiring_manager_id": str(req.hiring_manager_id) if req.hiring_manager_id else None,
+        "min_salary": _encode_decimal(req.min_salary),
+        "max_salary": _encode_decimal(req.max_salary),
+        "currency": req.currency,
+        "job_description": req.job_description,
+        "requirements": req.requirements,
+        "skills": req.skills,
+        "target_start_date": _encode_date(req.target_start_date),
+        "approved_by": req.approved_by,
+        "approved_at": _encode_datetime(req.approved_at),
+        "created_at": req.created_at.isoformat(),
+        "created_by": req.created_by,
+        "correlation_id": req.correlation_id,
+        "metadata": req.metadata,
+    }
+
+
+def _decode_requisition(data: dict[str, Any]) -> "JobRequisition":
+    return JobRequisition(
+        id=UUID(data["id"]),
+        title=data["title"],
+        department=data["department"],
+        location=data["location"],
+        employment_type=data.get("employment_type", "full-time"),
+        status=RequisitionStatus(data["status"]),
+        headcount=int(data.get("headcount", 1)),
+        hiring_manager_id=UUID(data["hiring_manager_id"]) if data.get("hiring_manager_id") else None,
+        min_salary=_decode_decimal(data.get("min_salary")),
+        max_salary=_decode_decimal(data.get("max_salary")),
+        currency=data.get("currency", "EUR"),
+        job_description=data.get("job_description", ""),
+        requirements=data.get("requirements", []) or [],
+        skills=data.get("skills", []) or [],
+        target_start_date=_decode_date(data.get("target_start_date")),
+        approved_by=data.get("approved_by"),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        correlation_id=data.get("correlation_id", ""),
+        metadata=data.get("metadata", {}) or {},
+    )
+
+
+def _encode_candidate(candidate: "Candidate") -> dict[str, Any]:
+    return {
+        "id": str(candidate.id),
+        "requisition_id": str(candidate.requisition_id),
+        "status": candidate.status.value,
+        "first_name": candidate.first_name,
+        "last_name": candidate.last_name,
+        "email": candidate.email,
+        "phone": candidate.phone,
+        "source": candidate.source,
+        "resume_url": candidate.resume_url,
+        "cover_letter_url": candidate.cover_letter_url,
+        "linkedin_url": candidate.linkedin_url,
+        "current_company": candidate.current_company,
+        "current_title": candidate.current_title,
+        "years_experience": candidate.years_experience,
+        "skills": candidate.skills,
+        "notes": candidate.notes,
+        "rating": candidate.rating,
+        "rejection_reason": candidate.rejection_reason,
+        "created_at": candidate.created_at.isoformat(),
+        "created_by": candidate.created_by,
+        "correlation_id": candidate.correlation_id,
+    }
+
+
+def _decode_candidate(data: dict[str, Any]) -> "Candidate":
+    return Candidate(
+        id=UUID(data["id"]),
+        requisition_id=UUID(data["requisition_id"]),
+        status=CandidateStatus(data["status"]),
+        first_name=data.get("first_name", ""),
+        last_name=data.get("last_name", ""),
+        email=data.get("email", ""),
+        phone=data.get("phone", ""),
+        source=data.get("source", ""),
+        resume_url=data.get("resume_url"),
+        cover_letter_url=data.get("cover_letter_url"),
+        linkedin_url=data.get("linkedin_url"),
+        current_company=data.get("current_company", ""),
+        current_title=data.get("current_title", ""),
+        years_experience=int(data.get("years_experience", 0)),
+        skills=data.get("skills", []) or [],
+        notes=data.get("notes", ""),
+        rating=int(data.get("rating", 0)),
+        rejection_reason=data.get("rejection_reason", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        correlation_id=data.get("correlation_id", ""),
+    )
+
+
+def _encode_interview(interview: "Interview") -> dict[str, Any]:
+    return {
+        "id": str(interview.id),
+        "candidate_id": str(interview.candidate_id),
+        "requisition_id": str(interview.requisition_id),
+        "interview_type": interview.interview_type.value,
+        "scheduled_at": interview.scheduled_at.isoformat(),
+        "duration_minutes": interview.duration_minutes,
+        "location": interview.location,
+        "interviewer_ids": [str(iid) for iid in interview.interviewer_ids],
+        "result": interview.result.value,
+        "feedback": interview.feedback,
+        "scores": interview.scores,
+        "completed_at": _encode_datetime(interview.completed_at),
+        "created_at": interview.created_at.isoformat(),
+        "created_by": interview.created_by,
+        "correlation_id": interview.correlation_id,
+    }
+
+
+def _decode_interview(data: dict[str, Any]) -> "Interview":
+    return Interview(
+        id=UUID(data["id"]),
+        candidate_id=UUID(data["candidate_id"]),
+        requisition_id=UUID(data["requisition_id"]),
+        interview_type=InterviewType(data["interview_type"]),
+        scheduled_at=datetime.fromisoformat(data["scheduled_at"]),
+        duration_minutes=int(data.get("duration_minutes", 60)),
+        location=data.get("location", ""),
+        interviewer_ids=[UUID(iid) for iid in data.get("interviewer_ids", [])],
+        result=InterviewResult(data.get("result", InterviewResult.PENDING.value)),
+        feedback=data.get("feedback", ""),
+        scores=data.get("scores", {}) or {},
+        completed_at=_decode_datetime(data.get("completed_at")),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        correlation_id=data.get("correlation_id", ""),
+    )
+
+
+def _encode_offer(offer: "OfferLetter") -> dict[str, Any]:
+    return {
+        "id": str(offer.id),
+        "candidate_id": str(offer.candidate_id),
+        "requisition_id": str(offer.requisition_id),
+        "status": offer.status.value,
+        "base_salary": _encode_decimal(offer.base_salary),
+        "currency": offer.currency,
+        "bonus_percent": _encode_decimal(offer.bonus_percent),
+        "equity_shares": offer.equity_shares,
+        "start_date": _encode_date(offer.start_date),
+        "employment_type": offer.employment_type,
+        "reporting_to": offer.reporting_to,
+        "department": offer.department,
+        "valid_until": _encode_date(offer.valid_until),
+        "approved_by": offer.approved_by,
+        "approved_at": _encode_datetime(offer.approved_at),
+        "sent_at": _encode_datetime(offer.sent_at),
+        "response_at": _encode_datetime(offer.response_at),
+        "decline_reason": offer.decline_reason,
+        "created_at": offer.created_at.isoformat(),
+        "created_by": offer.created_by,
+        "correlation_id": offer.correlation_id,
+    }
+
+
+def _decode_offer(data: dict[str, Any]) -> "OfferLetter":
+    return OfferLetter(
+        id=UUID(data["id"]),
+        candidate_id=UUID(data["candidate_id"]),
+        requisition_id=UUID(data["requisition_id"]),
+        status=OfferStatus(data["status"]),
+        base_salary=Decimal(data.get("base_salary", "0")),
+        currency=data.get("currency", "EUR"),
+        bonus_percent=_decode_decimal(data.get("bonus_percent")),
+        equity_shares=data.get("equity_shares"),
+        start_date=_decode_date(data.get("start_date")),
+        employment_type=data.get("employment_type", "full-time"),
+        reporting_to=data.get("reporting_to", ""),
+        department=data.get("department", ""),
+        valid_until=_decode_date(data.get("valid_until")),
+        approved_by=data.get("approved_by"),
+        approved_at=_decode_datetime(data.get("approved_at")),
+        sent_at=_decode_datetime(data.get("sent_at")),
+        response_at=_decode_datetime(data.get("response_at")),
+        decline_reason=data.get("decline_reason", ""),
+        created_at=datetime.fromisoformat(data["created_at"]),
+        created_by=data.get("created_by", ""),
+        correlation_id=data.get("correlation_id", ""),
+    )
 
 
 # ---------------------- Data Models ----------------------
@@ -308,6 +571,44 @@ class RecruitingService(PersistentServiceMixin):
         self._interviews: dict[UUID, Interview] = {}
         self._offers: dict[UUID, OfferLetter] = {}
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        """Hydrate service state from the service_state table."""
+        if self._state_loaded:
+            return
+
+        requisitions_data = await self.load_state(_DEFAULT_TENANT_ID, "requisitions") or {}
+        candidates_data = await self.load_state(_DEFAULT_TENANT_ID, "candidates") or {}
+        interviews_data = await self.load_state(_DEFAULT_TENANT_ID, "interviews") or {}
+        offers_data = await self.load_state(_DEFAULT_TENANT_ID, "offers") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        self._requisitions = {UUID(rid): _decode_requisition(r) for rid, r in requisitions_data.items()}
+        self._candidates = {UUID(cid): _decode_candidate(c) for cid, c in candidates_data.items()}
+        self._interviews = {UUID(iid): _decode_interview(i) for iid, i in interviews_data.items()}
+        self._offers = {UUID(oid): _decode_offer(o) for oid, o in offers_data.items()}
+        self._audit = [_decode_audit_event(a) for a in audit_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        """Persist all service state to the service_state table."""
+        requisitions_data = {str(rid): _encode_requisition(r) for rid, r in self._requisitions.items()}
+        candidates_data = {str(cid): _encode_candidate(c) for cid, c in self._candidates.items()}
+        interviews_data = {str(iid): _encode_interview(i) for iid, i in self._interviews.items()}
+        offers_data = {str(oid): _encode_offer(o) for oid, o in self._offers.items()}
+        audit_data = [_encode_audit_event(a) for a in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "requisitions", requisitions_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "candidates", candidates_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "interviews", interviews_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "offers", offers_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---------------------- Audit ----------------------
 
@@ -1014,3 +1315,115 @@ class RecruitingService(PersistentServiceMixin):
             _require_any(roles, _PII_ACCESS_ROLES, "PII access role required")
             return offer
         return offer.masked()
+
+    # ---------------------- Async DB-backed wrappers ----------------------
+
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)
+
+    async def create_requisition_async(self, **kwargs: Any) -> JobRequisition:
+        await self._ensure_loaded()
+        req = self.create_requisition(**kwargs)
+        await self.persist_all()
+        return req
+
+    async def submit_requisition_async(self, **kwargs: Any) -> JobRequisition:
+        await self._ensure_loaded()
+        req = self.submit_requisition(**kwargs)
+        await self.persist_all()
+        return req
+
+    async def approve_requisition_async(self, **kwargs: Any) -> JobRequisition:
+        await self._ensure_loaded()
+        req = self.approve_requisition(**kwargs)
+        await self.persist_all()
+        return req
+
+    async def open_requisition_async(self, **kwargs: Any) -> JobRequisition:
+        await self._ensure_loaded()
+        req = self.open_requisition(**kwargs)
+        await self.persist_all()
+        return req
+
+    async def list_requisitions_async(self, **kwargs: Any) -> list[JobRequisition]:
+        await self._ensure_loaded()
+        return self.list_requisitions(**kwargs)
+
+    async def get_requisition_async(self, **kwargs: Any) -> JobRequisition | None:
+        await self._ensure_loaded()
+        return self.get_requisition(**kwargs)
+
+    async def add_candidate_async(self, **kwargs: Any) -> Candidate:
+        await self._ensure_loaded()
+        candidate = self.add_candidate(**kwargs)
+        await self.persist_all()
+        return candidate
+
+    async def advance_candidate_async(self, **kwargs: Any) -> Candidate:
+        await self._ensure_loaded()
+        candidate = self.advance_candidate(**kwargs)
+        await self.persist_all()
+        return candidate
+
+    async def reject_candidate_async(self, **kwargs: Any) -> Candidate:
+        await self._ensure_loaded()
+        candidate = self.reject_candidate(**kwargs)
+        await self.persist_all()
+        return candidate
+
+    async def list_candidates_async(self, **kwargs: Any) -> list[Candidate]:
+        await self._ensure_loaded()
+        return self.list_candidates(**kwargs)
+
+    async def get_candidate_async(self, **kwargs: Any) -> Candidate | None:
+        await self._ensure_loaded()
+        return self.get_candidate(**kwargs)
+
+    async def schedule_interview_async(self, **kwargs: Any) -> Interview:
+        await self._ensure_loaded()
+        interview = self.schedule_interview(**kwargs)
+        await self.persist_all()
+        return interview
+
+    async def complete_interview_async(self, **kwargs: Any) -> Interview:
+        await self._ensure_loaded()
+        interview = self.complete_interview(**kwargs)
+        await self.persist_all()
+        return interview
+
+    async def list_interviews_async(self, **kwargs: Any) -> list[Interview]:
+        await self._ensure_loaded()
+        return self.list_interviews(**kwargs)
+
+    async def create_offer_async(self, **kwargs: Any) -> OfferLetter:
+        await self._ensure_loaded()
+        offer = self.create_offer(**kwargs)
+        await self.persist_all()
+        return offer
+
+    async def approve_offer_async(self, **kwargs: Any) -> OfferLetter:
+        await self._ensure_loaded()
+        offer = self.approve_offer(**kwargs)
+        await self.persist_all()
+        return offer
+
+    async def send_offer_async(self, **kwargs: Any) -> OfferLetter:
+        await self._ensure_loaded()
+        offer = self.send_offer(**kwargs)
+        await self.persist_all()
+        return offer
+
+    async def record_offer_response_async(self, **kwargs: Any) -> OfferLetter:
+        await self._ensure_loaded()
+        offer = self.record_offer_response(**kwargs)
+        await self.persist_all()
+        return offer
+
+    async def list_offers_async(self, **kwargs: Any) -> list[OfferLetter]:
+        await self._ensure_loaded()
+        return self.list_offers(**kwargs)
+
+    async def get_offer_async(self, **kwargs: Any) -> OfferLetter | None:
+        await self._ensure_loaded()
+        return self.get_offer(**kwargs)

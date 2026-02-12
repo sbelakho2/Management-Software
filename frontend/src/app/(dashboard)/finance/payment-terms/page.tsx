@@ -99,20 +99,20 @@ export default function PaymentTermsPage() {
     <div className="grid gap-4 py-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="grid gap-2">
-          <Label>Code</Label>
+          <Label>{t('pages.finance.paymentTerms.code')}</Label>
           <Input
             value={formData.code}
             onChange={(e) => setFormData((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-            placeholder="NET30"
+            placeholder={t('pages.finance.paymentTerms.codePlaceholder')}
             disabled={!!editingTerm}
           />
         </div>
         <div className="grid gap-2">
-          <Label>Name</Label>
+          <Label>{t('pages.finance.paymentTerms.name')}</Label>
           <Input
             value={formData.name}
             onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-            placeholder="Net 30 Days"
+            placeholder={t('pages.finance.paymentTerms.namePlaceholder')}
           />
         </div>
       </div>
@@ -120,7 +120,7 @@ export default function PaymentTermsPage() {
         <div className="grid gap-2">
           <Label className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
-            Days Due
+            {t('pages.finance.paymentTerms.daysDue')}
           </Label>
           <Input
             type="number"
@@ -131,7 +131,7 @@ export default function PaymentTermsPage() {
         <div className="grid gap-2">
           <Label className="flex items-center gap-2">
             <Percent className="h-4 w-4" />
-            Early Discount %
+            {t('pages.finance.paymentTerms.earlyDiscount')}
           </Label>
           <Input
             type="number"
@@ -141,7 +141,7 @@ export default function PaymentTermsPage() {
           />
         </div>
         <div className="grid gap-2">
-          <Label>Discount Days</Label>
+          <Label>{t('pages.finance.paymentTerms.discountDays')}</Label>
           <Input
             type="number"
             value={formData.discount_days}
@@ -150,11 +150,11 @@ export default function PaymentTermsPage() {
         </div>
       </div>
       <div className="grid gap-2">
-        <Label>Description</Label>
+        <Label>{t('pages.finance.paymentTerms.description')}</Label>
         <Textarea
           value={formData.description}
           onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-          placeholder="Payment terms description..."
+          placeholder={t('pages.finance.paymentTerms.descriptionPlaceholder')}
           rows={3}
         />
       </div>
@@ -163,7 +163,7 @@ export default function PaymentTermsPage() {
           checked={formData.is_active}
           onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, is_active: checked }))}
         />
-        <Label>Active</Label>
+        <Label>{t('pages.finance.paymentTerms.active')}</Label>
       </div>
     </div>
   );
@@ -175,34 +175,34 @@ export default function PaymentTermsPage() {
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between border-b border-rams-line pb-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-sans font-black uppercase tracking-tight opacity-90">
-              Payment Terms
+              {t('pages.finance.paymentTerms.title')}
             </h1>
             <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em]">
-              Configure payment terms for customers and suppliers
+              {t('pages.finance.paymentTerms.subtitle')}
             </p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" size="sm" onClick={() => fetchPaymentTerms()} disabled={loading}>
               <RefreshCw className={cn('h-4 w-4 mr-2', loading && 'animate-spin')} />
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Payment Term
+                  {t('pages.finance.paymentTerms.addPaymentTerm')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Add Payment Term</DialogTitle>
+                  <DialogTitle>{t('pages.finance.paymentTerms.addPaymentTerm')}</DialogTitle>
                 </DialogHeader>
                 <FormContent />
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => setShowAddDialog(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleSubmit} disabled={loading}>
                     {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Create
+                    {t('common.create')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -219,10 +219,10 @@ export default function PaymentTermsPage() {
           <Card className="rounded-rams-sm border-rams-line bg-rams-module">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Calendar className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <p className="text-muted-foreground">No payment terms configured</p>
+              <p className="text-muted-foreground">{t('pages.finance.paymentTerms.noPaymentTerms')}</p>
               <Button size="sm" className="mt-4" onClick={() => setShowAddDialog(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add First Payment Term
+                {t('pages.finance.paymentTerms.addFirstPaymentTerm')}
               </Button>
             </CardContent>
           </Card>
@@ -237,7 +237,7 @@ export default function PaymentTermsPage() {
                       <p className="text-xs text-muted-foreground font-mono">{term.code}</p>
                     </div>
                     <Badge variant={term.is_active ? 'default' : 'secondary'}>
-                      {term.is_active ? 'Active' : 'Inactive'}
+                      {term.is_active ? t('pages.finance.paymentTerms.active') : t('pages.finance.paymentTerms.inactive')}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -245,22 +245,22 @@ export default function PaymentTermsPage() {
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div className="p-2 rounded bg-muted/50">
                       <p className="text-2xl font-bold">{term.days_due}</p>
-                      <p className="text-xs text-muted-foreground">Days Due</p>
+                      <p className="text-xs text-muted-foreground">{t('pages.finance.paymentTerms.daysDue')}</p>
                     </div>
                     {term.discount_percent > 0 ? (
                       <>
                         <div className="p-2 rounded bg-emerald-500/10">
                           <p className="text-2xl font-bold text-emerald-500">{term.discount_percent}%</p>
-                          <p className="text-xs text-muted-foreground">Discount</p>
+                          <p className="text-xs text-muted-foreground">{t('pages.finance.paymentTerms.discount')}</p>
                         </div>
                         <div className="p-2 rounded bg-muted/50">
                           <p className="text-2xl font-bold">{term.discount_days}</p>
-                          <p className="text-xs text-muted-foreground">Days</p>
+                          <p className="text-xs text-muted-foreground">{t('pages.finance.paymentTerms.days')}</p>
                         </div>
                       </>
                     ) : (
                       <div className="col-span-2 p-2 rounded bg-muted/50">
-                        <p className="text-sm text-muted-foreground">No early payment discount</p>
+                        <p className="text-sm text-muted-foreground">{t('pages.finance.paymentTerms.noEarlyDiscount')}</p>
                       </div>
                     )}
                   </div>
@@ -274,7 +274,7 @@ export default function PaymentTermsPage() {
                     onClick={() => setEditingTerm(term as unknown as PaymentTerm)}
                   >
                     <Edit className="h-4 w-4 mr-2" />
-                    Edit
+                    {t('common.edit')}
                   </Button>
                 </CardContent>
               </Card>
@@ -286,14 +286,14 @@ export default function PaymentTermsPage() {
         <Dialog open={!!editingTerm} onOpenChange={(open) => !open && setEditingTerm(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Edit Payment Term</DialogTitle>
+              <DialogTitle>{t('pages.finance.paymentTerms.editPaymentTerm')}</DialogTitle>
             </DialogHeader>
             <FormContent />
             <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingTerm(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setEditingTerm(null)}>{t('common.cancel')}</Button>
               <Button onClick={handleSubmit} disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Save Changes
+                {t('pages.finance.paymentTerms.saveChanges')}
               </Button>
             </DialogFooter>
           </DialogContent>
