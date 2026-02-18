@@ -18,6 +18,10 @@ from sensei.tasks.pdf_tasks import (
     get_pdf_generation_progress,
 )
 from sensei.tasks.email_tasks import send_email_task
+from sensei.tasks.analytics_tasks import (
+    daily_analytics_snapshot,
+    compute_warehouse_kpis,
+)
 
 __all__ = [
     # ML Tasks

@@ -13,12 +13,23 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from sensei.main import app
+from sensei.core.security import TokenPayload, create_access_token
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Create test client."""
-    return TestClient(app)
+def auth_headers() -> dict:
+    """Create auth headers for quote-quality endpoints."""
+    payload = TokenPayload(user_id=uuid4(), roles=["sales"], permissions=[])
+    token = create_access_token(payload)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def client(auth_headers: dict) -> TestClient:
+    """Create test client with auth headers."""
+    client = TestClient(app)
+    client.headers.update(auth_headers)
+    return client
 
 
 @pytest.fixture

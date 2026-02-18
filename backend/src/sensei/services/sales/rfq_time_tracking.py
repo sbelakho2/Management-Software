@@ -21,6 +21,8 @@ from enum import Enum
 import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -362,13 +364,17 @@ DEFAULT_TASK_TARGETS: dict[TaskType, TaskTarget] = {
 }
 
 
-class RFQTimeTrackingService:
+class RFQTimeTrackingService(PersistentServiceMixin):
     """
     Service for tracking time spent on RFQ-related tasks.
     
     Provides session-based time tracking with pause/resume capability,
     real-time performance monitoring, and analytics.
     """
+
+    SERVICE_NAME = "rfq_time_tracking"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self) -> None:
         """Initialize the time tracking service."""
@@ -381,6 +387,60 @@ class RFQTimeTrackingService:
         self._listeners: list[Callable[[TimeAlert], None]] = []
         self._completed_sessions_history: list[TaskSession] = []
         self._max_history_size = 10000
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        self._sessions = {
+            UUID(session_id): decode_dataclass(session, TaskSession)
+            for session_id, session in state.get("sessions", {}).items()
+        }
+        self._alerts = {
+            UUID(alert_id): decode_dataclass(alert, TimeAlert)
+            for alert_id, alert in state.get("alerts", {}).items()
+        }
+        self._task_targets = {
+            TaskType(task_type): decode_dataclass(target, TaskTarget)
+            for task_type, target in state.get("task_targets", {}).items()
+        }
+        self._completed_sessions_history = [
+            decode_dataclass(session, TaskSession)
+            for session in state.get("completed_sessions", [])
+        ]
+        self._max_history_size = int(state.get("max_history_size", self._max_history_size))
+
+        self._sessions_by_entity = {}
+        self._sessions_by_user = {}
+        for session in self._sessions.values():
+            self._sessions_by_entity.setdefault(session.entity_id, []).append(session.id)
+            self._sessions_by_user.setdefault(session.user_id, []).append(session.id)
+
+        self._alerts_by_session = {}
+        for alert_id, alert in self._alerts.items():
+            self._alerts_by_session.setdefault(alert.session_id, []).append(alert_id)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "sessions": {str(session_id): encode_dataclass(session) for session_id, session in self._sessions.items()},
+            "alerts": {str(alert_id): encode_dataclass(alert) for alert_id, alert in self._alerts.items()},
+            "task_targets": {task_type.value: encode_dataclass(target) for task_type, target in self._task_targets.items()},
+            "completed_sessions": [encode_dataclass(session) for session in self._completed_sessions_history],
+            "max_history_size": self._max_history_size,
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     # ===== Session Management =====
     
@@ -435,6 +495,12 @@ class RFQTimeTrackingService:
         self._sessions_by_user[user_id].append(session.id)
         
         return session
+
+    async def start_session_async(self, *args: Any, **kwargs: Any) -> TaskSession:
+        await self._ensure_loaded()
+        session = self.start_session(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def pause_session(
         self,
@@ -469,6 +535,12 @@ class RFQTimeTrackingService:
         session.status = TaskSessionStatus.PAUSED
         
         return session
+
+    async def pause_session_async(self, *args: Any, **kwargs: Any) -> TaskSession | None:
+        await self._ensure_loaded()
+        session = self.pause_session(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def resume_session(self, session_id: UUID) -> TaskSession | None:
         """
@@ -494,6 +566,12 @@ class RFQTimeTrackingService:
         session.pauses[-1].resumed_at = datetime.now(timezone.utc)
         session.status = TaskSessionStatus.ACTIVE
         
+        return session
+
+    async def resume_session_async(self, session_id: UUID) -> TaskSession | None:
+        await self._ensure_loaded()
+        session = self.resume_session(session_id)
+        await self.persist_all()
         return session
     
     def complete_session(
@@ -532,6 +610,12 @@ class RFQTimeTrackingService:
         self._archive_session(session)
         
         return session
+
+    async def complete_session_async(self, *args: Any, **kwargs: Any) -> TaskSession | None:
+        await self._ensure_loaded()
+        session = self.complete_session(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def abandon_session(
         self,
@@ -568,6 +652,12 @@ class RFQTimeTrackingService:
         # Archive to history
         self._archive_session(session)
         
+        return session
+
+    async def abandon_session_async(self, *args: Any, **kwargs: Any) -> TaskSession | None:
+        await self._ensure_loaded()
+        session = self.abandon_session(*args, **kwargs)
+        await self.persist_all()
         return session
     
     def _archive_session(self, session: TaskSession) -> None:
@@ -741,6 +831,12 @@ class RFQTimeTrackingService:
         alert.acknowledged_by = user_id
         
         return alert
+
+    async def acknowledge_alert_async(self, alert_id: UUID, user_id: UUID) -> TimeAlert | None:
+        await self._ensure_loaded()
+        alert = self.acknowledge_alert(alert_id, user_id)
+        await self.persist_all()
+        return alert
     
     def get_pending_alerts(self, user_id: UUID | None = None) -> list[TimeAlert]:
         """Get all pending (unacknowledged) alerts, optionally filtered by user."""
@@ -777,6 +873,11 @@ class RFQTimeTrackingService:
     def set_target(self, target: TaskTarget) -> None:
         """Set or update a task target."""
         self._task_targets[target.task_type] = target
+
+    async def set_target_async(self, target: TaskTarget) -> None:
+        await self._ensure_loaded()
+        self.set_target(target)
+        await self.persist_all()
     
     def get_all_targets(self) -> dict[TaskType, TaskTarget]:
         """Get all task targets."""

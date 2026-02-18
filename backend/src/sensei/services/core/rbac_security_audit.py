@@ -19,6 +19,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 class AuditSeverity(str, Enum):
     """Severity level for audit findings."""
@@ -337,7 +339,7 @@ SENSITIVE_RESOURCES = [
 ]
 
 
-class RBACSecurityAuditService:
+class RBACSecurityAuditService(PersistentServiceMixin):
     """
     Service for verifying RBAC configuration and audit log integrity.
     
@@ -359,6 +361,81 @@ class RBACSecurityAuditService:
         self._findings: list[AuditFinding] = []
         self._finding_counter = 0
         self._access_patterns: dict[str, AccessPattern] = {}
+        self._state_loaded = False
+
+    SERVICE_NAME = "rbac_security_audit"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        roles_data = await self.load_state(self._DEFAULT_TENANT_ID, "roles")
+        permissions_data = await self.load_state(self._DEFAULT_TENANT_ID, "permissions")
+        user_roles_data = await self.load_state(self._DEFAULT_TENANT_ID, "user_roles")
+        audit_logs_data = await self.load_state(self._DEFAULT_TENANT_ID, "audit_logs")
+        findings_data = await self.load_state(self._DEFAULT_TENANT_ID, "findings")
+        access_patterns_data = await self.load_state(self._DEFAULT_TENANT_ID, "access_patterns")
+        finding_counter_data = await self.load_state(self._DEFAULT_TENANT_ID, "finding_counter")
+
+        if roles_data is not None:
+            self._roles = {
+                UUID(role_id): decode_dataclass(role, RoleConfig)
+                for role_id, role in roles_data.items()
+            }
+        if permissions_data is not None:
+            self._permissions = {
+                UUID(permission_id): decode_dataclass(permission, PermissionConfig)
+                for permission_id, permission in permissions_data.items()
+            }
+        if user_roles_data is not None:
+            self._user_roles = [decode_dataclass(ur, UserRoleAssignment) for ur in user_roles_data]
+        if audit_logs_data is not None:
+            self._audit_logs = [decode_dataclass(log, AuditLogEntry) for log in audit_logs_data]
+        if findings_data is not None:
+            self._findings = [decode_dataclass(finding, AuditFinding) for finding in findings_data]
+        if access_patterns_data is not None:
+            self._access_patterns = {
+                key: decode_dataclass(pattern, AccessPattern)
+                for key, pattern in access_patterns_data.items()
+            }
+        if finding_counter_data is not None:
+            self._finding_counter = int(finding_counter_data.get("value", 0))
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        roles_data = {
+            str(role_id): encode_dataclass(role)
+            for role_id, role in self._roles.items()
+        }
+        permissions_data = {
+            str(permission_id): encode_dataclass(permission)
+            for permission_id, permission in self._permissions.items()
+        }
+        user_roles_data = [encode_dataclass(ur) for ur in self._user_roles]
+        audit_logs_data = [encode_dataclass(log) for log in self._audit_logs]
+        findings_data = [encode_dataclass(finding) for finding in self._findings]
+        access_patterns_data = {
+            key: encode_dataclass(pattern)
+            for key, pattern in self._access_patterns.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "roles", roles_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "permissions", permissions_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "user_roles", user_roles_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "audit_logs", audit_logs_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "findings", findings_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "access_patterns", access_patterns_data)
+        await self.save_state(
+            self._DEFAULT_TENANT_ID,
+            "finding_counter",
+            {"value": self._finding_counter},
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def _generate_finding_id(self) -> str:
         """Generate a unique finding ID."""
@@ -393,14 +470,49 @@ class RBACSecurityAuditService:
         )
         self._roles[role_id] = role
         return role
+
+    async def register_role_async(
+        self,
+        role_id: UUID,
+        name: str,
+        display_name: str,
+        role_type: str | None = None,
+        is_system: bool = False,
+        is_active: bool = True,
+        hierarchy_level: int = 100,
+        permission_count: int = 0,
+        user_count: int = 0,
+    ) -> RoleConfig:
+        await self._ensure_loaded()
+        role = self.register_role(
+            role_id,
+            name,
+            display_name,
+            role_type,
+            is_system,
+            is_active,
+            hierarchy_level,
+            permission_count,
+            user_count,
+        )
+        await self.persist_all()
+        return role
     
     def get_role(self, role_id: UUID) -> RoleConfig | None:
         """Get a role configuration."""
         return self._roles.get(role_id)
+
+    async def get_role_async(self, role_id: UUID) -> RoleConfig | None:
+        await self._ensure_loaded()
+        return self.get_role(role_id)
     
     def get_all_roles(self) -> list[RoleConfig]:
         """Get all registered roles."""
         return list(self._roles.values())
+
+    async def get_all_roles_async(self) -> list[RoleConfig]:
+        await self._ensure_loaded()
+        return self.get_all_roles()
     
     # ===== Permission Management =====
     
@@ -426,14 +538,45 @@ class RBACSecurityAuditService:
         )
         self._permissions[permission_id] = permission
         return permission
+
+    async def register_permission_async(
+        self,
+        permission_id: UUID,
+        name: str,
+        display_name: str,
+        resource: str,
+        action: str,
+        is_system: bool = False,
+        role_count: int = 0,
+    ) -> PermissionConfig:
+        await self._ensure_loaded()
+        permission = self.register_permission(
+            permission_id,
+            name,
+            display_name,
+            resource,
+            action,
+            is_system,
+            role_count,
+        )
+        await self.persist_all()
+        return permission
     
     def get_permission(self, permission_id: UUID) -> PermissionConfig | None:
         """Get a permission configuration."""
         return self._permissions.get(permission_id)
+
+    async def get_permission_async(self, permission_id: UUID) -> PermissionConfig | None:
+        await self._ensure_loaded()
+        return self.get_permission(permission_id)
     
     def get_all_permissions(self) -> list[PermissionConfig]:
         """Get all registered permissions."""
         return list(self._permissions.values())
+
+    async def get_all_permissions_async(self) -> list[PermissionConfig]:
+        await self._ensure_loaded()
+        return self.get_all_permissions()
     
     # ===== User-Role Assignment Management =====
     
@@ -465,14 +608,47 @@ class RBACSecurityAuditService:
         )
         self._user_roles.append(assignment)
         return assignment
+
+    async def register_user_role_async(
+        self,
+        user_id: UUID,
+        user_email: str,
+        role_id: UUID,
+        role_name: str,
+        assigned_at: datetime,
+        assigned_by_id: UUID | None = None,
+        expires_at: datetime | None = None,
+        is_active: bool = True,
+    ) -> UserRoleAssignment:
+        await self._ensure_loaded()
+        assignment = self.register_user_role(
+            user_id,
+            user_email,
+            role_id,
+            role_name,
+            assigned_at,
+            assigned_by_id,
+            expires_at,
+            is_active,
+        )
+        await self.persist_all()
+        return assignment
     
     def get_user_roles(self, user_id: UUID) -> list[UserRoleAssignment]:
         """Get all role assignments for a user."""
         return [ur for ur in self._user_roles if ur.user_id == user_id]
+
+    async def get_user_roles_async(self, user_id: UUID) -> list[UserRoleAssignment]:
+        await self._ensure_loaded()
+        return self.get_user_roles(user_id)
     
     def get_all_user_roles(self) -> list[UserRoleAssignment]:
         """Get all user-role assignments."""
         return list(self._user_roles)
+
+    async def get_all_user_roles_async(self) -> list[UserRoleAssignment]:
+        await self._ensure_loaded()
+        return self.get_all_user_roles()
     
     # ===== Audit Log Management =====
     
@@ -506,6 +682,37 @@ class RBACSecurityAuditService:
         )
         self._audit_logs.append(entry)
         return entry
+
+    async def register_audit_log_async(
+        self,
+        log_id: UUID,
+        entity_type: str,
+        entity_id: UUID,
+        action: str,
+        created_at: datetime,
+        user_id: UUID | None = None,
+        user_email: str | None = None,
+        ip_address: str | None = None,
+        has_old_values: bool = False,
+        has_new_values: bool = False,
+        has_changed_fields: bool = False,
+    ) -> AuditLogEntry:
+        await self._ensure_loaded()
+        entry = self.register_audit_log(
+            log_id,
+            entity_type,
+            entity_id,
+            action,
+            created_at,
+            user_id,
+            user_email,
+            ip_address,
+            has_old_values,
+            has_new_values,
+            has_changed_fields,
+        )
+        await self.persist_all()
+        return entry
     
     def get_audit_logs(
         self,
@@ -530,6 +737,17 @@ class RBACSecurityAuditService:
             logs = [l for l in logs if l.created_at <= end_date]
         
         return logs
+
+    async def get_audit_logs_async(
+        self,
+        entity_type: str | None = None,
+        user_id: UUID | None = None,
+        action: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[AuditLogEntry]:
+        await self._ensure_loaded()
+        return self.get_audit_logs(entity_type, user_id, action, start_date, end_date)
     
     # ===== RBAC Verification =====
     
@@ -585,6 +803,12 @@ class RBACSecurityAuditService:
         
         self._findings.extend(findings)
         return findings
+
+    async def verify_role_configuration_async(self) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        findings = self.verify_role_configuration()
+        await self.persist_all()
+        return findings
     
     def verify_permission_configuration(self) -> list[AuditFinding]:
         """Verify permission configuration for security issues."""
@@ -622,6 +846,12 @@ class RBACSecurityAuditService:
                 ))
         
         self._findings.extend(findings)
+        return findings
+
+    async def verify_permission_configuration_async(self) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        findings = self.verify_permission_configuration()
+        await self.persist_all()
         return findings
     
     def verify_user_assignments(self) -> list[AuditFinding]:
@@ -685,6 +915,12 @@ class RBACSecurityAuditService:
                 ))
         
         self._findings.extend(findings)
+        return findings
+
+    async def verify_user_assignments_async(self) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        findings = self.verify_user_assignments()
+        await self.persist_all()
         return findings
     
     # ===== Audit Log Verification =====
@@ -767,6 +1003,12 @@ class RBACSecurityAuditService:
         
         self._findings.extend(findings)
         return findings
+
+    async def verify_audit_log_integrity_async(self) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        findings = self.verify_audit_log_integrity()
+        await self.persist_all()
+        return findings
     
     # ===== Access Pattern Analysis =====
     
@@ -802,6 +1044,27 @@ class RBACSecurityAuditService:
             )
         
         return self._access_patterns[key]
+
+    async def record_access_pattern_async(
+        self,
+        user_id: UUID,
+        user_email: str,
+        action: str,
+        resource: str,
+        access_time: datetime,
+        entity_id: UUID | None = None,
+    ) -> AccessPattern:
+        await self._ensure_loaded()
+        pattern = self.record_access_pattern(
+            user_id,
+            user_email,
+            action,
+            resource,
+            access_time,
+            entity_id,
+        )
+        await self.persist_all()
+        return pattern
     
     def detect_access_anomalies(self, threshold_multiplier: float = 3.0) -> list[AuditFinding]:
         """Detect anomalies in access patterns."""
@@ -847,6 +1110,12 @@ class RBACSecurityAuditService:
         
         self._findings.extend(findings)
         return findings
+
+    async def detect_access_anomalies_async(self, threshold_multiplier: float = 3.0) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        findings = self.detect_access_anomalies(threshold_multiplier)
+        await self.persist_all()
+        return findings
     
     def get_access_patterns(self, user_id: UUID | None = None) -> list[AccessPattern]:
         """Get access patterns, optionally filtered by user."""
@@ -854,6 +1123,10 @@ class RBACSecurityAuditService:
         if user_id:
             patterns = [p for p in patterns if p.user_id == user_id]
         return patterns
+
+    async def get_access_patterns_async(self, user_id: UUID | None = None) -> list[AccessPattern]:
+        await self._ensure_loaded()
+        return self.get_access_patterns(user_id)
     
     # ===== Findings Management =====
     
@@ -874,6 +1147,15 @@ class RBACSecurityAuditService:
             findings = [f for f in findings if f.resolved == resolved]
         
         return findings
+
+    async def get_all_findings_async(
+        self,
+        severity: AuditSeverity | None = None,
+        category: AuditCategory | None = None,
+        resolved: bool | None = None,
+    ) -> list[AuditFinding]:
+        await self._ensure_loaded()
+        return self.get_all_findings(severity, category, resolved)
     
     def resolve_finding(
         self,
@@ -888,6 +1170,16 @@ class RBACSecurityAuditService:
                 finding.resolved_by = resolved_by
                 return finding
         return None
+
+    async def resolve_finding_async(
+        self,
+        finding_id: str,
+        resolved_by: str,
+    ) -> AuditFinding | None:
+        await self._ensure_loaded()
+        finding = self.resolve_finding(finding_id, resolved_by)
+        await self.persist_all()
+        return finding
     
     def get_findings_summary(self) -> dict[str, int]:
         """Get summary of findings by severity."""
@@ -896,6 +1188,10 @@ class RBACSecurityAuditService:
             if not finding.resolved:
                 summary[finding.severity.value] += 1
         return summary
+
+    async def get_findings_summary_async(self) -> dict[str, int]:
+        await self._ensure_loaded()
+        return self.get_findings_summary()
     
     # ===== Compliance Reporting =====
     
@@ -990,6 +1286,12 @@ class RBACSecurityAuditService:
             audit_log_summary=audit_log_summary,
             recommendations=recommendations,
         )
+
+    async def run_full_audit_async(self) -> ComplianceReport:
+        await self._ensure_loaded()
+        report = self.run_full_audit()
+        await self.persist_all()
+        return report
     
     def clear_data(self) -> None:
         """Clear all registered data and findings."""
@@ -1000,6 +1302,11 @@ class RBACSecurityAuditService:
         self._findings.clear()
         self._access_patterns.clear()
         self._finding_counter = 0
+
+    async def clear_data_async(self) -> None:
+        await self._ensure_loaded()
+        self.clear_data()
+        await self.persist_all()
 
 
 # Singleton instance

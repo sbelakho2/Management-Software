@@ -30,6 +30,8 @@ from sensei.models.segment import (
     SegmentModule,
     SegmentVisibility,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class FilterOperator(str, Enum):
@@ -150,18 +152,66 @@ class SegmentApplyResult:
     execution_time_ms: float
 
 
-class SegmentViewsService:
+class SegmentViewsService(PersistentServiceMixin):
     """In-memory segment views service for testing and development.
     
     For production, use the database-backed service from segment_views_db.py.
     """
+
+    SERVICE_NAME = "segment_views"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self) -> None:
         """Initialize the segment views service."""
         self._segments: dict[UUID, LegacySegment] = {}
         self._shares: dict[UUID, LegacySegmentShare] = {}
         self._usage: list[LegacySegmentUsage] = []
+        self._state_loaded = False
         self._initialize_default_segments()
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        segments_data = await self.load_state(self._DEFAULT_TENANT_ID, "segments")
+        shares_data = await self.load_state(self._DEFAULT_TENANT_ID, "shares")
+        usage_data = await self.load_state(self._DEFAULT_TENANT_ID, "usage")
+
+        if segments_data is None and shares_data is None and usage_data is None:
+            self._state_loaded = True
+            return
+
+        segments_data = segments_data or {}
+        shares_data = shares_data or {}
+        usage_data = usage_data or []
+
+        self._segments = {
+            UUID(segment_id): decode_dataclass(segment, LegacySegment)
+            for segment_id, segment in segments_data.items()
+        }
+        self._shares = {
+            UUID(share_id): decode_dataclass(share, LegacySegmentShare)
+            for share_id, share in shares_data.items()
+        }
+        self._usage = [decode_dataclass(entry, LegacySegmentUsage) for entry in usage_data]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        segments_data = {
+            str(segment_id): encode_dataclass(segment) for segment_id, segment in self._segments.items()
+        }
+        shares_data = {
+            str(share_id): encode_dataclass(share) for share_id, share in self._shares.items()
+        }
+        usage_data = [encode_dataclass(entry) for entry in self._usage]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "segments", segments_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "shares", shares_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "usage", usage_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def _initialize_default_segments(self) -> None:
         """Initialize default system segments."""
@@ -563,9 +613,19 @@ class SegmentViewsService:
         self._segments[segment.id] = segment
         return segment
 
+    async def create_segment_async(self, **kwargs: Any) -> LegacySegment:
+        await self._ensure_loaded()
+        segment = self.create_segment(**kwargs)
+        await self.persist_all()
+        return segment
+
     def get_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Get a segment by ID."""
         return self._segments.get(segment_id)
+
+    async def get_segment_async(self, segment_id: UUID) -> LegacySegment | None:
+        await self._ensure_loaded()
+        return self.get_segment(segment_id)
 
     def get_segment_by_name(
         self, name: str, module: SegmentModule, owner_id: UUID | None = None
@@ -576,6 +636,15 @@ class SegmentViewsService:
                 if owner_id is None or segment.owner_id == owner_id:
                     return segment
         return None
+
+    async def get_segment_by_name_async(
+        self,
+        name: str,
+        module: SegmentModule,
+        owner_id: UUID | None = None,
+    ) -> LegacySegment | None:
+        await self._ensure_loaded()
+        return self.get_segment_by_name(name=name, module=module, owner_id=owner_id)
 
     def get_segments(
         self,
@@ -611,6 +680,10 @@ class SegmentViewsService:
                 continue
             segments.append(segment)
         return segments
+
+    async def get_segments_async(self, **kwargs: Any) -> list[LegacySegment]:
+        await self._ensure_loaded()
+        return self.get_segments(**kwargs)
 
     def update_segment(
         self,
@@ -653,6 +726,12 @@ class SegmentViewsService:
         segment.updated_at = datetime.now(timezone.utc)
         return segment
 
+    async def update_segment_async(self, **kwargs: Any) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.update_segment(**kwargs)
+        await self.persist_all()
+        return segment
+
     def delete_segment(self, segment_id: UUID) -> bool:
         """Delete a segment."""
         if segment_id in self._segments:
@@ -664,6 +743,12 @@ class SegmentViewsService:
             del self._segments[segment_id]
             return True
         return False
+
+    async def delete_segment_async(self, segment_id: UUID) -> bool:
+        await self._ensure_loaded()
+        result = self.delete_segment(segment_id)
+        await self.persist_all()
+        return result
 
     def duplicate_segment(
         self,
@@ -688,6 +773,12 @@ class SegmentViewsService:
             icon=original.icon,
             is_smart=original.is_smart,
         )
+
+    async def duplicate_segment_async(self, **kwargs: Any) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.duplicate_segment(**kwargs)
+        await self.persist_all()
+        return segment
 
     def share_segment(
         self,
@@ -716,6 +807,12 @@ class SegmentViewsService:
         segment.shared_with.append(shared_with)
         return share
 
+    async def share_segment_async(self, **kwargs: Any) -> LegacySegmentShare | None:
+        await self._ensure_loaded()
+        share = self.share_segment(**kwargs)
+        await self.persist_all()
+        return share
+
     def unshare_segment(self, segment_id: UUID, user_id: UUID) -> bool:
         """Remove segment share for a user."""
         segment = self._segments.get(segment_id)
@@ -733,6 +830,12 @@ class SegmentViewsService:
             return True
         return False
 
+    async def unshare_segment_async(self, segment_id: UUID, user_id: UUID) -> bool:
+        await self._ensure_loaded()
+        result = self.unshare_segment(segment_id, user_id)
+        await self.persist_all()
+        return result
+
     def get_shares(
         self, segment_id: UUID | None = None, user_id: UUID | None = None
     ) -> list[LegacySegmentShare]:
@@ -745,6 +848,10 @@ class SegmentViewsService:
                 continue
             shares.append(share)
         return shares
+
+    async def get_shares_async(self, **kwargs: Any) -> list[LegacySegmentShare]:
+        await self._ensure_loaded()
+        return self.get_shares(**kwargs)
 
     def set_default_segment(
         self, segment_id: UUID, user_id: UUID, module: SegmentModule
@@ -759,6 +866,12 @@ class SegmentViewsService:
         segment.is_default = True
         return True
 
+    async def set_default_segment_async(self, **kwargs: Any) -> bool:
+        await self._ensure_loaded()
+        result = self.set_default_segment(**kwargs)
+        await self.persist_all()
+        return result
+
     def get_default_segment(
         self, user_id: UUID, module: SegmentModule
     ) -> LegacySegment | None:
@@ -772,6 +885,12 @@ class SegmentViewsService:
                 return segment
         return None
 
+    async def get_default_segment_async(
+        self, user_id: UUID, module: SegmentModule
+    ) -> LegacySegment | None:
+        await self._ensure_loaded()
+        return self.get_default_segment(user_id, module)
+
     def pin_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Pin a segment for quick access."""
         segment = self._segments.get(segment_id)
@@ -780,12 +899,24 @@ class SegmentViewsService:
             segment.updated_at = datetime.now(timezone.utc)
         return segment
 
+    async def pin_segment_async(self, segment_id: UUID) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.pin_segment(segment_id)
+        await self.persist_all()
+        return segment
+
     def unpin_segment(self, segment_id: UUID) -> LegacySegment | None:
         """Unpin a segment."""
         segment = self._segments.get(segment_id)
         if segment:
             segment.is_pinned = False
             segment.updated_at = datetime.now(timezone.utc)
+        return segment
+
+    async def unpin_segment_async(self, segment_id: UUID) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.unpin_segment(segment_id)
+        await self.persist_all()
         return segment
 
     def record_usage(
@@ -807,6 +938,14 @@ class SegmentViewsService:
         segment.last_used_at = now
         return usage
 
+    async def record_usage_async(
+        self, segment_id: UUID, user_id: UUID, result_count: int
+    ) -> LegacySegmentUsage | None:
+        await self._ensure_loaded()
+        usage = self.record_usage(segment_id, user_id, result_count)
+        await self.persist_all()
+        return usage
+
     def get_usage_stats(
         self,
         segment_id: UUID | None = None,
@@ -824,6 +963,10 @@ class SegmentViewsService:
         usages.sort(key=lambda u: u.used_at, reverse=True)
         return usages[:limit]
 
+    async def get_usage_stats_async(self, **kwargs: Any) -> list[LegacySegmentUsage]:
+        await self._ensure_loaded()
+        return self.get_usage_stats(**kwargs)
+
     def get_popular_segments(
         self, module: SegmentModule | None = None, limit: int = 10
     ) -> list[LegacySegment]:
@@ -831,6 +974,10 @@ class SegmentViewsService:
         segments = self.get_segments(module=module)
         segments.sort(key=lambda s: s.use_count, reverse=True)
         return segments[:limit]
+
+    async def get_popular_segments_async(self, **kwargs: Any) -> list[LegacySegment]:
+        await self._ensure_loaded()
+        return self.get_popular_segments(**kwargs)
 
     def get_recent_segments(
         self, user_id: UUID, module: SegmentModule | None = None, limit: int = 5
@@ -850,6 +997,10 @@ class SegmentViewsService:
                 if len(segments) >= limit:
                     break
         return segments
+
+    async def get_recent_segments_async(self, **kwargs: Any) -> list[LegacySegment]:
+        await self._ensure_loaded()
+        return self.get_recent_segments(**kwargs)
 
     def apply_segment(
         self, segment_id: UUID, data: list[dict[str, Any]]
@@ -878,6 +1029,10 @@ class SegmentViewsService:
             result_count=len(filtered_data),
             execution_time_ms=execution_time,
         )
+
+    async def apply_segment_async(self, **kwargs: Any) -> SegmentApplyResult:
+        await self._ensure_loaded()
+        return self.apply_segment(**kwargs)
 
     def _apply_filters(
         self, data: list[dict[str, Any]], filter_groups: list[FilterGroup]
@@ -958,6 +1113,12 @@ class SegmentViewsService:
             segment.updated_at = datetime.now(timezone.utc)
         return segment
 
+    async def add_criterion_to_segment_async(self, **kwargs: Any) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.add_criterion_to_segment(**kwargs)
+        await self.persist_all()
+        return segment
+
     def remove_criterion_from_segment(
         self, segment_id: UUID, group_index: int, criterion_index: int
     ) -> LegacySegment | None:
@@ -972,6 +1133,12 @@ class SegmentViewsService:
                 segment.updated_at = datetime.now(timezone.utc)
         return segment
 
+    async def remove_criterion_from_segment_async(self, **kwargs: Any) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.remove_criterion_from_segment(**kwargs)
+        await self.persist_all()
+        return segment
+
     def add_filter_group(
         self, segment_id: UUID, operator: LogicalOperator = LogicalOperator.AND
     ) -> LegacySegment | None:
@@ -981,6 +1148,12 @@ class SegmentViewsService:
             return None
         segment.filter_groups.append(FilterGroup(criteria=[], operator=operator))
         segment.updated_at = datetime.now(timezone.utc)
+        return segment
+
+    async def add_filter_group_async(self, **kwargs: Any) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.add_filter_group(**kwargs)
+        await self.persist_all()
         return segment
 
     def export_segment(self, segment_id: UUID) -> dict[str, Any] | None:
@@ -1024,6 +1197,10 @@ class SegmentViewsService:
             "icon": segment.icon,
             "is_smart": segment.is_smart,
         }
+
+    async def export_segment_async(self, segment_id: UUID) -> dict[str, Any] | None:
+        await self._ensure_loaded()
+        return self.export_segment(segment_id)
 
     def import_segment(self, data: dict[str, Any], owner_id: UUID) -> LegacySegment | None:
         """Import a segment from exported data."""
@@ -1079,6 +1256,14 @@ class SegmentViewsService:
         except (KeyError, ValueError):
             return None
 
+    async def import_segment_async(
+        self, data: dict[str, Any], owner_id: UUID
+    ) -> LegacySegment | None:
+        await self._ensure_loaded()
+        segment = self.import_segment(data, owner_id)
+        await self.persist_all()
+        return segment
+
     def get_summary(self) -> dict[str, Any]:
         """Get a summary of segments in the system."""
         by_module: dict[str, int] = {}
@@ -1099,6 +1284,10 @@ class SegmentViewsService:
             "total_shares": len(self._shares),
             "total_usage": total_usage,
         }
+
+    async def get_summary_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_summary()
 
 
 # Re-export database-backed service for production use

@@ -7,6 +7,7 @@ Suggests preventive maintenance actions based on:
 - Operating hours and cycles
 - Environmental factors (temperature, vibration, etc.)
 - Predictive anomaly detection
+- SHAP/LIME explainability for transparent predictions
 """
 
 import numpy as np
@@ -26,6 +27,25 @@ try:
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
+
+# Explainability imports
+try:
+    from sensei.ml.explainability import (
+        ModelExplainabilityService,
+        ModelType,
+        LocalExplanation,
+        GlobalExplanation,
+        CBM_FEATURE_NAMES,
+        check_explainability_availability,
+    )
+    HAS_EXPLAINABILITY = True
+except ImportError:
+    HAS_EXPLAINABILITY = False
+    ModelExplainabilityService = None  # type: ignore
+    ModelType = None  # type: ignore
+    LocalExplanation = None  # type: ignore
+    GlobalExplanation = None  # type: ignore
+    CBM_FEATURE_NAMES = []
 
 # Type hints for models that may not exist yet
 if TYPE_CHECKING:
@@ -64,6 +84,32 @@ class ConditionBasedMaintenancePredictor:
         self.failure_classifier: Optional[RandomForestClassifier] = None
         self.anomaly_detector: Optional[IsolationForest] = None
         self.scaler: Optional[StandardScaler] = None
+        
+        # Explainability service (initialized after model is loaded/trained)
+        self._explainability_service: Optional[Any] = None
+        self._training_data: Optional[np.ndarray] = None
+        
+        # Feature names for explainability
+        self.feature_names = [
+            "temperature",
+            "vibration",
+            "pressure",
+            "current",
+            "noise",
+            "operating_hours",
+            "temp_mean",
+            "temp_std",
+            "vib_mean",
+            "vib_std",
+            "temp_trend",
+            "vib_trend",
+            "equipment_age_days",
+            "total_operating_hours",
+            "total_cycles",
+            "days_since_maintenance",
+            "maintenance_count",
+            "avg_maintenance_interval",
+        ]
         
         # Try to load existing models
         self._try_load_models()
@@ -127,10 +173,24 @@ class ConditionBasedMaintenancePredictor:
         joblib.dump(self.anomaly_detector, self.model_path / "anomaly_detector.pkl")
         joblib.dump(self.scaler, self.model_path / "scaler.pkl")
         
+        # Store training data for explainability (sample for efficiency)
+        if len(X_scaled) > 500:
+            indices = np.random.choice(len(X_scaled), 500, replace=False)
+            self._training_data = X_scaled[indices]
+        else:
+            self._training_data = X_scaled.copy()
+        
+        # Save training data sample for explainability
+        joblib.dump(self._training_data, self.model_path / "training_sample.pkl")
+        
+        # Reset explainability service to reinitialize with new model
+        self._explainability_service = None
+        
         metrics = {
             'f1_mean': float(np.mean(cv_scores)),
             'f1_std': float(np.std(cv_scores)),
             'training_samples': len(X_train),
+            'explainability_ready': True,
         }
         
         logger.info(f"CBM model trained. F1: {metrics['f1_mean']:.3f} ± {metrics['f1_std']:.3f}")
@@ -151,6 +211,7 @@ class ConditionBasedMaintenancePredictor:
             classifier_path = self.model_path / "failure_classifier.pkl"
             detector_path = self.model_path / "anomaly_detector.pkl"
             scaler_path = self.model_path / "scaler.pkl"
+            training_sample_path = self.model_path / "training_sample.pkl"
             
             if not all(p.exists() for p in [classifier_path, detector_path, scaler_path]):
                 logger.debug("Some model files are missing")
@@ -159,6 +220,11 @@ class ConditionBasedMaintenancePredictor:
             self.failure_classifier = joblib.load(classifier_path)
             self.anomaly_detector = joblib.load(detector_path)
             self.scaler = joblib.load(scaler_path)
+            
+            # Load training sample for explainability if available
+            if training_sample_path.exists():
+                self._training_data = joblib.load(training_sample_path)
+                logger.info("Loaded training sample for explainability")
             
             logger.info(f"Successfully loaded CBM models from {self.model_path}")
             return True
@@ -663,4 +729,263 @@ class ConditionBasedMaintenancePredictor:
             'recommendations': [],
             'reasons': reasons or ['Normal conditions'],
             'estimated_time_to_failure': None,
+        }
+
+    # =========================================================================
+    # Explainability Methods (SHAP/LIME)
+    # =========================================================================
+    
+    def _get_explainability_service(self) -> Optional[Any]:
+        """Get or create explainability service."""
+        if not HAS_EXPLAINABILITY:
+            logger.warning("Explainability module not available")
+            return None
+        
+        if self._explainability_service is None and self.failure_classifier is not None:
+            try:
+                self._explainability_service = ModelExplainabilityService(
+                    model=self.failure_classifier,
+                    feature_names=self.feature_names,
+                    model_type=ModelType.TREE_ENSEMBLE,
+                    background_data=self._training_data,
+                )
+                logger.info("Initialized explainability service for CBM predictor")
+            except Exception as e:
+                logger.warning(f"Failed to initialize explainability service: {e}")
+                return None
+        
+        return self._explainability_service
+    
+    def explain_prediction_shap(
+        self,
+        features: np.ndarray,
+        predicted_class: Optional[int] = None,
+        predicted_probability: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate SHAP-based explanation for a prediction.
+        
+        Args:
+            features: Feature vector from _extract_features
+            predicted_class: Optional predicted class (0 or 1)
+            predicted_probability: Optional probability of failure
+            
+        Returns:
+            Dictionary with SHAP explanation or None if unavailable
+        """
+        service = self._get_explainability_service()
+        if service is None:
+            return None
+        
+        try:
+            explanation = service.explain_with_shap(
+                features, predicted_class, predicted_probability
+            )
+            return explanation.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to generate SHAP explanation: {e}")
+            return None
+    
+    def explain_prediction_lime(
+        self,
+        features: np.ndarray,
+        num_features: int = 10,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate LIME-based explanation for a prediction.
+        
+        Args:
+            features: Feature vector from _extract_features
+            num_features: Number of features to include in explanation
+            
+        Returns:
+            Dictionary with LIME explanation or None if unavailable
+        """
+        service = self._get_explainability_service()
+        if service is None:
+            return None
+        
+        try:
+            explanation = service.explain_with_lime(features, num_features)
+            return explanation.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to generate LIME explanation: {e}")
+            return None
+    
+    def explain_global(
+        self,
+        X_data: Optional[np.ndarray] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate global model explanation using SHAP.
+        
+        Args:
+            X_data: Feature matrix for computing global importance.
+                    Uses cached training data if not provided.
+            
+        Returns:
+            Dictionary with global explanation or None if unavailable
+        """
+        service = self._get_explainability_service()
+        if service is None:
+            return None
+        
+        # Use cached training data if no data provided
+        if X_data is None:
+            X_data = self._training_data
+        
+        if X_data is None:
+            logger.warning("No data available for global explanation")
+            return None
+        
+        try:
+            explanation = service.explain_global(X_data)
+            return explanation.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to generate global explanation: {e}")
+            return None
+    
+    def get_feature_importance_shap(self) -> Dict[str, float]:
+        """
+        Get feature importance from SHAP or model.
+        
+        Returns:
+            Dictionary mapping feature names to importance values
+        """
+        service = self._get_explainability_service()
+        if service is not None:
+            return service.get_feature_importance()
+        
+        # Fallback to tree-based importance
+        if self.failure_classifier is not None and hasattr(self.failure_classifier, 'feature_importances_'):
+            return {
+                fname: float(imp)
+                for fname, imp in zip(self.feature_names, self.failure_classifier.feature_importances_)
+            }
+        
+        return {}
+    
+    def generate_counterfactual(
+        self,
+        features: np.ndarray,
+        desired_outcome: int = 0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Generate counterfactual explanation.
+        
+        Shows what changes would flip the prediction (e.g., reduce failure risk).
+        
+        Args:
+            features: Current feature vector
+            desired_outcome: Target class (0 = low risk, 1 = high risk)
+            
+        Returns:
+            Counterfactual explanation or None if unavailable
+        """
+        service = self._get_explainability_service()
+        if service is None:
+            return None
+        
+        try:
+            explanation = service.generate_counterfactual(features, desired_outcome)
+            return explanation.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to generate counterfactual: {e}")
+            return None
+    
+    def compare_explanations(
+        self,
+        features: np.ndarray,
+    ) -> Dict[str, Any]:
+        """
+        Compare SHAP and LIME explanations for validation.
+        
+        Args:
+            features: Feature vector to explain
+            
+        Returns:
+            Comparison of SHAP vs LIME with agreement score
+        """
+        service = self._get_explainability_service()
+        if service is None:
+            return {"error": "Explainability service not available"}
+        
+        try:
+            return service.compare_explanations(features)
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def predict_with_explanation(
+        self,
+        equipment: Any,
+        recent_readings: List[Any],
+        maintenance_history: List[Any],
+        include_shap: bool = True,
+        include_lime: bool = False,
+        include_counterfactual: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Generate prediction with full explainability.
+        
+        This is the main method for getting predictions with explanations.
+        
+        Args:
+            equipment: Equipment entity
+            recent_readings: Recent condition readings
+            maintenance_history: Maintenance history
+            include_shap: Include SHAP explanation
+            include_lime: Include LIME explanation
+            include_counterfactual: Include counterfactual analysis
+            
+        Returns:
+            Prediction result with explanations
+        """
+        # Get base prediction
+        result = self.predict_maintenance_needs(
+            equipment, recent_readings, maintenance_history
+        )
+        
+        # Add explanations if model is available and we have readings
+        if self.failure_classifier is not None and recent_readings:
+            features = self._extract_features(equipment, recent_readings, maintenance_history)
+            
+            # SHAP explanation
+            if include_shap:
+                shap_exp = self.explain_prediction_shap(
+                    features,
+                    predicted_class=1 if result['failure_probability'] >= 0.5 else 0,
+                    predicted_probability=result['failure_probability'],
+                )
+                if shap_exp:
+                    result['shap_explanation'] = shap_exp
+            
+            # LIME explanation
+            if include_lime:
+                lime_exp = self.explain_prediction_lime(features)
+                if lime_exp:
+                    result['lime_explanation'] = lime_exp
+            
+            # Counterfactual (only if high risk)
+            if include_counterfactual and result['failure_probability'] >= 0.5:
+                cf_exp = self.generate_counterfactual(features, desired_outcome=0)
+                if cf_exp:
+                    result['counterfactual'] = cf_exp
+        
+        return result
+    
+    @staticmethod
+    def get_explainability_status() -> Dict[str, bool]:
+        """Check the availability of explainability features."""
+        if not HAS_EXPLAINABILITY:
+            return {
+                "explainability_available": False,
+                "shap_available": False,
+                "lime_available": False,
+            }
+        
+        availability = check_explainability_availability()
+        return {
+            "explainability_available": True,
+            "shap_available": availability.get("shap", False),
+            "lime_available": availability.get("lime", False),
         }

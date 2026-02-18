@@ -16,6 +16,10 @@ import asyncio
 import heapq
 from collections import defaultdict, deque
 import hashlib
+from uuid import UUID
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 # =============================================================================
@@ -302,6 +306,24 @@ class CriticalPathCalculator:
         """Initialize calculator."""
         self._dependency_graph: dict[str, list[str]] = {}
         self._durations: dict[str, float] = {}
+
+    def export_state(self) -> dict[str, Any]:
+        """Export calculator state for persistence."""
+        return {
+            "dependency_graph": {
+                item_id: list(deps) for item_id, deps in self._dependency_graph.items()
+            },
+            "durations": dict(self._durations),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load calculator state from persistence."""
+        self._dependency_graph = {
+            item_id: list(deps) for item_id, deps in state.get("dependency_graph", {}).items()
+        }
+        self._durations = {
+            item_id: float(duration) for item_id, duration in state.get("durations", {}).items()
+        }
     
     def add_item(
         self,
@@ -471,6 +493,62 @@ class SLAWatchdog:
         
         # Register default rules
         self._register_default_rules()
+
+    def export_state(self) -> dict[str, Any]:
+        """Export watchdog state for persistence."""
+        return {
+            "check_interval": self.check_interval,
+            "deadlines": {
+                item_id: encode_dataclass(deadline)
+                for item_id, deadline in self._deadlines.items()
+            },
+            "rules": {
+                rule_id: encode_dataclass(rule) for rule_id, rule in self._rules.items()
+            },
+            "notification_history": {
+                item_id: timestamp.isoformat()
+                for item_id, timestamp in self._notification_history.items()
+            },
+            "last_check": self._last_check.isoformat() if self._last_check else None,
+            "critical_path": self._critical_path_calculator.export_state(),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load watchdog state from persistence."""
+        if "check_interval" in state:
+            self.check_interval = int(state["check_interval"])
+
+        deadlines = {
+            item_id: decode_dataclass(deadline, SLADeadline)
+            for item_id, deadline in state.get("deadlines", {}).items()
+        }
+        self._deadlines = deadlines
+        self._deadline_heap = [(dl.deadline, dl.item_id) for dl in deadlines.values()]
+        heapq.heapify(self._deadline_heap)
+
+        self._rules = {
+            rule_id: decode_dataclass(rule, NotificationRule)
+            for rule_id, rule in state.get("rules", {}).items()
+        }
+        self._notification_history = {
+            item_id: datetime.fromisoformat(timestamp)
+            for item_id, timestamp in state.get("notification_history", {}).items()
+        }
+        last_check = state.get("last_check")
+        self._last_check = datetime.fromisoformat(last_check) if last_check else None
+        self._is_running = False
+
+        critical_path = state.get("critical_path")
+        self._critical_path_calculator = CriticalPathCalculator()
+        if critical_path:
+            self._critical_path_calculator.load_state(critical_path)
+        else:
+            for deadline in deadlines.values():
+                self._critical_path_calculator.add_item(
+                    deadline.item_id,
+                    duration_hours=24.0,
+                    dependencies=deadline.dependencies,
+                )
     
     def _register_default_rules(self) -> None:
         """Register default notification rules."""
@@ -820,6 +898,19 @@ class CalendarEntityExtractor:
     def __init__(self):
         """Initialize extractor."""
         self._known_entities: dict[EntityCategory, dict[str, str]] = defaultdict(dict)
+
+    def export_state(self) -> dict[str, Any]:
+        """Export extractor state for persistence."""
+        return {
+            category.value: dict(entities)
+            for category, entities in self._known_entities.items()
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load extractor state from persistence."""
+        self._known_entities = defaultdict(dict)
+        for category, entities in state.items():
+            self._known_entities[EntityCategory(category)] = dict(entities)
     
     def register_known_entity(
         self,
@@ -1265,6 +1356,25 @@ class MeetingPreparationAI:
         self.entity_extractor = CalendarEntityExtractor()
         self.briefing_generator = BriefingNoteGenerator(self.entity_extractor)
         self._generated_briefings: dict[str, BriefingNote] = {}
+
+    def export_state(self) -> dict[str, Any]:
+        """Export meeting prep state for persistence."""
+        return {
+            "entity_extractor": self.entity_extractor.export_state(),
+            "generated_briefings": {
+                briefing_id: encode_dataclass(briefing)
+                for briefing_id, briefing in self._generated_briefings.items()
+            },
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load meeting prep state from persistence."""
+        extractor_state = state.get("entity_extractor", {})
+        self.entity_extractor.load_state(extractor_state)
+        self._generated_briefings = {
+            briefing_id: decode_dataclass(briefing, BriefingNote)
+            for briefing_id, briefing in state.get("generated_briefings", {}).items()
+        }
     
     def register_known_entities(
         self,
@@ -1321,12 +1431,16 @@ class MeetingPreparationAI:
 # Virtual Assistant - Combined Interface
 # =============================================================================
 
-class SenseiVirtualAssistant:
+class SenseiVirtualAssistant(PersistentServiceMixin):
     """
     Sensei Virtual Assistant - Proactive AI assistant.
     
     Combines SLA Watchdog and Meeting Preparation AI capabilities.
     """
+
+    SERVICE_NAME = "virtual_assistant"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(
         self,
@@ -1339,6 +1453,37 @@ class SenseiVirtualAssistant:
             notification_callback=notification_callback,
         )
         self.meeting_prep = MeetingPreparationAI()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        sla_state = state.get("sla_watchdog")
+        if sla_state:
+            self.sla_watchdog.load_state(sla_state)
+
+        meeting_state = state.get("meeting_prep")
+        if meeting_state:
+            self.meeting_prep.load_state(meeting_state)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "sla_watchdog": self.sla_watchdog.export_state(),
+            "meeting_prep": self.meeting_prep.export_state(),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def setup_sla_monitoring(
         self,
@@ -1378,6 +1523,42 @@ class SenseiVirtualAssistant:
             "sla_watchdog": self.sla_watchdog.get_stats(),
             "meeting_prep": self.meeting_prep.get_stats(),
         }
+
+    async def setup_sla_monitoring_async(
+        self,
+        deadlines: list[SLADeadline],
+        notification_rules: list[NotificationRule] | None = None,
+    ) -> None:
+        await self._ensure_loaded()
+        self.setup_sla_monitoring(deadlines, notification_rules)
+        await self.persist_all()
+
+    async def get_critical_alerts_async(self) -> list[TimeToFailure]:
+        await self._ensure_loaded()
+        return self.get_critical_alerts()
+
+    async def prepare_for_meeting_async(self, event: CalendarEvent) -> BriefingNote:
+        await self._ensure_loaded()
+        briefing = self.prepare_for_meeting(event)
+        await self.persist_all()
+        return briefing
+
+    async def start_monitoring_async(
+        self,
+        recipient_ids: dict[str, list[str]]
+    ) -> None:
+        await self._ensure_loaded()
+        await self.start_monitoring(recipient_ids)
+        await self.persist_all()
+
+    async def stop_monitoring_async(self) -> None:
+        await self._ensure_loaded()
+        self.stop_monitoring()
+        await self.persist_all()
+
+    async def get_stats_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_stats()
 
 
 # =============================================================================

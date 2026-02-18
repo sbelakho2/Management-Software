@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_db, DBSession
+from sensei.api.deps import get_db, DBSession, CurrentUser, RoleChecker
 from sensei.core.config import settings
 from sensei.services.ops.kpi_metrics import (
     KPIDefinition,
@@ -42,6 +42,7 @@ from sensei.services.ops.kpi_app_services import (
 router = APIRouter(
     prefix="/kpi",
     tags=["KPI Metrics"],
+    dependencies=[Depends(RoleChecker(["ops", "gm", "exec", "supervisor", "quality", "engineering", "finance"]))],
 )
 
 
@@ -731,15 +732,47 @@ async def get_values(
     summary="Calculate KPI",
     description="Calculate a KPI value for a given period.",
 )
-async def calculate_kpi(request: KPICalculationRequest) -> KPICalculationResponse:
-    """Calculate a KPI value."""
+async def calculate_kpi(request: KPICalculationRequest, db: DBSession) -> KPICalculationResponse:
+    """Calculate a KPI value.
+
+    Hydrates the in-memory service from DB if the definition is not already
+    loaded, then persists the computed value back to the database.
+    """
+    # Ensure the definition is loaded from DB into the singleton
+    kpi_id_str = request.kpi_id
+    if kpi_id_str not in _service._definitions:
+        try:
+            row = await kpi_repo.get_definition(db, UUID(kpi_id_str))
+            if row:
+                defn = build_kpi_definition(row)
+                _service._definitions[defn.id] = defn
+                _service._values.setdefault(defn.id, [])
+        except Exception:
+            pass
+
     result = _service.calculate_kpi(
         request.kpi_id,
         request.start_date,
         request.end_date,
         dimensions=request.dimensions or None,
     )
-    
+
+    # Persist calculated value to the database
+    if result.success and result.value:
+        try:
+            await kpi_repo.record_value(
+                db,
+                kpi_id=UUID(result.value.kpi_id),
+                value=result.value.value,
+                period_start=result.value.period_start,
+                period_end=result.value.period_end,
+                dimensions=result.value.dimensions or {},
+                sample_size=result.value.sample_size,
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
     return KPICalculationResponse(
         kpi_id=result.kpi_id,
         success=result.success,
@@ -759,11 +792,38 @@ async def calculate_batch(
     kpi_ids: list[str],
     start_date: date = Query(..., description="Start date"),
     end_date: date = Query(..., description="End date"),
+    db: AsyncSession = Depends(get_db),
 ) -> list[KPICalculationResponse]:
-    """Calculate multiple KPIs."""
+    """Calculate multiple KPIs and persist results to DB."""
+    # Hydrate any missing definitions from DB
+    for kpi_id in kpi_ids:
+        if kpi_id not in _service._definitions:
+            try:
+                row = await kpi_repo.get_definition(db, UUID(kpi_id))
+                if row:
+                    defn = build_kpi_definition(row)
+                    _service._definitions[defn.id] = defn
+                    _service._values.setdefault(defn.id, [])
+            except Exception:
+                pass
+
     results = []
     for kpi_id in kpi_ids:
         result = _service.calculate_kpi(kpi_id, start_date, end_date)
+        # Persist value to DB
+        if result.success and result.value:
+            try:
+                await kpi_repo.record_value(
+                    db,
+                    kpi_id=UUID(result.value.kpi_id),
+                    value=result.value.value,
+                    period_start=result.value.period_start,
+                    period_end=result.value.period_end,
+                    dimensions=result.value.dimensions or {},
+                    sample_size=result.value.sample_size,
+                )
+            except Exception:
+                pass
         results.append(KPICalculationResponse(
             kpi_id=result.kpi_id,
             success=result.success,
@@ -771,6 +831,10 @@ async def calculate_batch(
             error=result.error,
             calculation_time_ms=result.calculation_time_ms,
         ))
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
     return results
 
 
@@ -789,8 +853,47 @@ async def analyze_trend(
     start_date: date = Query(..., description="Current period start"),
     end_date: date = Query(..., description="Current period end"),
     comparison_periods: int = Query(1, description="Number of periods to compare"),
+    db: AsyncSession = Depends(get_db),
 ) -> KPITrendResponse | None:
-    """Analyze KPI trend."""
+    """Analyze KPI trend.
+
+    Hydrates definition from DB and supplements in-memory values with
+    DB-stored values for accurate trend analysis.
+    """
+    # Ensure definition is loaded from DB
+    if kpi_id not in _service._definitions:
+        try:
+            row = await kpi_repo.get_definition(db, UUID(kpi_id))
+            if row:
+                defn = build_kpi_definition(row)
+                _service._definitions[defn.id] = defn
+                _service._values.setdefault(defn.id, [])
+        except Exception:
+            pass
+
+    # Supplement in-memory values with DB values if the service has none
+    if not _service._values.get(kpi_id):
+        try:
+            db_values = await kpi_repo.get_values(db, UUID(kpi_id), limit=200)
+            if db_values:
+                from sensei.services.ops.kpi_metrics import KPIValue as KPIVal
+                for row in db_values:
+                    _service._values.setdefault(kpi_id, []).append(
+                        KPIVal(
+                            id=str(row.id),
+                            kpi_id=str(row.kpi_id),
+                            value=row.value,
+                            timestamp=row.recorded_at or datetime.now(),
+                            period_start=row.period_start,
+                            period_end=row.period_end,
+                            status=KPIStatus(row.status.value) if row.status else KPIStatus.NO_DATA,
+                            dimensions=row.dimensions or {},
+                            sample_size=row.sample_size or 0,
+                        )
+                    )
+        except Exception:
+            pass
+
     trend = _service.analyze_trend(kpi_id, start_date, end_date, comparison_periods)
     
     if not trend:

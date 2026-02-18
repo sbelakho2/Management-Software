@@ -8,15 +8,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.deps import CurrentUser, DBSession, RoleChecker
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.context_bus import get_context_service
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "finance", "engineering", "supervisor"]))],
+)
 
 
 class ContextNodeResponse(BaseModel):

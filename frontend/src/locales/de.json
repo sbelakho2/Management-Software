@@ -2078,9 +2078,22 @@
         "deliveryScore": "Lieferfaktor",
         "costEfficiency": "Kosteneffizienz",
         "workforce": "Belegschaft",
+        "inventoryHealth": "Bestandsgesundheit",
         "overallScore": "Gesamtwertung",
         "belowTarget": "Unter Ziel",
         "awaitingData": "Warte auf Daten"
+      },
+      "dataThread": {
+        "exportedRecords": "Data-Thread-Datensätze",
+        "lineageLinks": "Lineage-Verknüpfungen",
+        "reasoningTraces": "Reasoning-Traces",
+        "cognitiveWarnings": "Kognitive Warnungen",
+        "snapshotPrefix": "Momentaufnahme",
+        "noSnapshotYet": "Noch keine Momentaufnahme",
+        "crossDomainTraces": "Bereichsübergreifende Traces",
+        "aiDecisionPaths": "KI-Entscheidungspfade",
+        "trendBreachesPredicted": "Prognostizierte Trendverletzungen",
+        "allMetricsNominal": "Alle Metriken im Normalbereich"
       },
       "monitoringActive": "Überwachung aktiv",
       "nl2sql": {
@@ -2613,7 +2626,9 @@
     },
     "obeya": {
       "actions": {
-        "newObeya": "Neuer Obeya"
+        "newObeya": "Neuer Obeya",
+        "executeDeployment": "Bereitstellung ausführen",
+        "applySmoothing": "Glättung anwenden"
       },
       "heijunkaLeveling": "Heijunka-Glättung",
       "heijunkaTips": "Heijunka-Tipps",
@@ -2624,6 +2639,7 @@
       "rebalanceOps": "Betrieb neu ausbalancieren",
       "recentSiloAlerts": "Aktuelle Silo-Warnungen",
       "resourceRebalancing": "Ressourcen-Neuausrichtung",
+      "station": "STATION: COMMAND-CENTER-01",
       "sections": {
         "hoshinKanri": "Hoshin Kanri",
         "visualControls": "Visuelle Kontrollen"
@@ -2631,6 +2647,54 @@
       "siloBottlenecks": "Silo-Engpässe",
       "subtitle": "Präskriptive Organisationsintelligenz und visuelles Management",
       "syncIntel": "Intelligenz synchronisieren",
+      "exceptionsTitle": "Anomalien & Ausnahmen",
+      "statusColor": {
+        "green": "GRÜN",
+        "yellow": "GELB",
+        "red": "ROT"
+      },
+      "statuses": {
+        "trendingTowardRed": "TRENDET_RICHTUNG_ROT",
+        "interDeptFriction": "ABTEILUNGSREIBUNG",
+        "skillGapNodes": "SKILL_GAP_NODES",
+        "smoothingProtocols": "GLÄTTUNGSPROTOKOLLE"
+      },
+      "kpis": {
+        "firstPassYield": "Erstprüfungsquote",
+        "onTimeDelivery": "Termingerechte Lieferung",
+        "customerSatisfaction": "Kundenzufriedenheit",
+        "defectRate": "Fehlerrate",
+        "openNcrs": "Offene NCRs",
+        "backlogItems": "Rückstandsposten"
+      },
+      "alerts": {
+        "source": "QUELLE",
+        "impacting": "BETRIFFT"
+      },
+      "badges": {
+        "aiSync": "KI_SYNC",
+        "prescriptive": "PRÄSKRIPTIV"
+      },
+      "labels": {
+        "improvement": "VERBESSERUNG",
+        "recommendedOperators": "EMPFOHLENE_OPERATOR",
+        "horizon": "HORIZONT",
+        "muraReduction": "MURA_REDUKTION",
+        "currentPattern": "Aktuelles Muster",
+        "suggestedPattern": "Empfohlenes Muster",
+        "sensorFusion": "Umschalten auf Echtzeit-Sensorfusion am Shopfloor..."
+      },
+      "sqdcp": {
+        "qualityTitle": "Qualität",
+        "deliveryTitle": "Lieferung"
+      },
+      "emptyStates": {
+        "zeroActiveSiloAlerts": "KEINE_AKTIVEN_SILO_WARNUNGEN",
+        "skillNodesOptimized": "Skill-Knoten über alle Arbeitszentren optimiert",
+        "productionMixLeveled": "Produktionsmix ist ausreichend nivelliert",
+        "pendingAction": "Ausstehende Aktion",
+        "zeroCriticalExceptions": "Keine kritischen Ausnahmen identifiziert"
+      },
       "tabs": {
         "actions": "Maßnahmen",
         "exceptions": "Ausnahmen",

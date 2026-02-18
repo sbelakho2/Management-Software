@@ -26,7 +26,9 @@ from sensei.services.core.database_backup import (
 )
 
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin"]))],
+)
 
 
 # Response Models

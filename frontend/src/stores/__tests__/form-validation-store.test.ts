@@ -49,7 +49,7 @@ describe('Form Management', () => {
     it('should accept gate checks in config', () => {
       const store = useFormValidationStore.getState();
       store.initForm('test-form', {
-        gates: [noErrorsGate],
+        gates: [noErrorsGate()],
       });
       
       // Get updated state after mutation
@@ -498,7 +498,7 @@ describe('Gate Checks', () => {
       store.initForm('test-form', {
         gates: [
           requiredFieldsGate(['name']),
-          noErrorsGate,
+          noErrorsGate(),
         ],
       });
       store.registerField('test-form', { name: 'name', initialValue: 'John' });
@@ -506,8 +506,8 @@ describe('Gate Checks', () => {
       const result = store.runGates('test-form');
       
       expect(result).not.toBeNull();
-      expect(result?.canProceed).toBe(true);
-      expect(result?.checks).toHaveLength(2);
+      expect(result?.passed).toBe(true);
+      expect(result?.gates).toHaveLength(2);
     });
     
     it('should return null when no gates configured', () => {
@@ -528,8 +528,8 @@ describe('Gate Checks', () => {
       
       const result = store.runGates('test-form');
       
-      expect(result?.canProceed).toBe(false);
-      expect(result?.blockers.length).toBeGreaterThan(0);
+      expect(result?.passed).toBe(false);
+      expect(result?.gates.some((gate) => !gate.passed)).toBe(true);
     });
   });
 });
@@ -566,7 +566,7 @@ describe('Getters', () => {
       store.registerField('test-form', {
         name: 'amount',
         rules: [warning('highAmount', (v: number) => v < 10000, 'High amount')],
-        initialValue: 50000,
+        initialValue: 5000,
       });
       
       await store.validateFieldAsync('test-form', 'amount');
@@ -713,7 +713,7 @@ describe('Integration', () => {
     store.initForm('user-form', {
       gates: [
         requiredFieldsGate(['name', 'email']),
-        noErrorsGate,
+        noErrorsGate(),
       ],
     });
     
@@ -734,7 +734,7 @@ describe('Integration', () => {
     
     // Gate checks should fail (missing required)
     let gates = store.runGates('user-form');
-    expect(gates?.canProceed).toBe(false);
+    expect(gates?.passed).toBe(false);
     
     // User fills form with invalid data
     store.setValue('user-form', 'name', 'J');
@@ -760,7 +760,7 @@ describe('Integration', () => {
     
     // Gate checks should pass
     gates = store.runGates('user-form');
-    expect(gates?.canProceed).toBe(true);
+    expect(gates?.passed).toBe(true);
     
     // Submit
     store.incrementSubmitCount('user-form');

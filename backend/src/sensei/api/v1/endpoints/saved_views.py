@@ -4,14 +4,18 @@ Saved Views/Filters API endpoints.
 Provides REST API for creating, managing, and applying saved views.
 """
 
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.api.deps import get_db
 from sensei.core.config import settings
+from sensei.repositories.saved_views_repo import SavedViewsRepository
 from sensei.services.saved_views import (
     SavedViewsService,
     SavedView,
@@ -224,6 +228,16 @@ def _parse_uuid(value: str | None) -> UUID | None:
         )
 
 
+def _safe_uuid(value: str | None) -> UUID | None:
+    """Parse UUID and return None for invalid values."""
+    if not value:
+        return None
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
+
+
 def _parse_entity_type(value: str) -> SavedViewEntityType:
     """Parse an entity type string."""
     try:
@@ -376,9 +390,12 @@ def _view_to_response(view: SavedView) -> SavedViewResponse:
 # --------------------------------------------------------------------------
 
 @router.post("", response_model=SavedViewResponse, status_code=status.HTTP_201_CREATED)
-async def create_view(request: CreateViewRequest) -> SavedViewResponse:
+async def create_view(
+    request: CreateViewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SavedViewResponse:
     """
-    Create a new saved view.
+    Create a new saved view (persisted to database).
     """
     service = get_service()
     
@@ -399,6 +416,7 @@ async def create_view(request: CreateViewRequest) -> SavedViewResponse:
     parsed_team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
     team_ids: list[UUID] = [tid for tid in parsed_team_ids if tid is not None]
     
+    # Create in-memory view (for filtering logic)
     view = service.create_view(
         name=request.name,
         entity_type=entity_type,
@@ -415,6 +433,11 @@ async def create_view(request: CreateViewRequest) -> SavedViewResponse:
         team_ids=team_ids,
     )
     
+    # Persist to database
+    repo = SavedViewsRepository(db)
+    await repo.create(view)
+    await db.commit()
+    
     return _view_to_response(view)
 
 
@@ -425,9 +448,10 @@ async def list_views(
     include_system: bool = Query(True, description="Include system views"),
     include_team: bool = Query(True, description="Include team views"),
     include_organization: bool = Query(True, description="Include organization views"),
+    db: AsyncSession = Depends(get_db),
 ) -> ViewListResponse:
     """
-    List saved views accessible to a user.
+    List saved views accessible to a user (from database).
     """
     service = get_service()
     
@@ -440,17 +464,24 @@ async def list_views(
     
     et = _parse_entity_type(entity_type) if entity_type else None
     
-    views = service.list_views(
+    # Fetch from database
+    repo = SavedViewsRepository(db)
+    db_views = await repo.list_for_user(
         user_id=uid,
         entity_type=et,
-        include_system=include_system,
         include_team=include_team,
         include_organization=include_organization,
     )
     
+    # Add system views
+    results: list[SavedView] = []
+    if include_system:
+        results.extend(service.get_system_views(et))
+    results.extend(db_views)
+    
     return ViewListResponse(
-        views=[_view_to_response(v) for v in views],
-        total_count=len(views),
+        views=[_view_to_response(v) for v in results],
+        total_count=len(results),
     )
 
 
@@ -476,12 +507,11 @@ async def list_system_views(
 async def list_pinned_views(
     user_id: str = Query(..., description="User ID"),
     entity_type: str | None = Query(None, description="Filter by entity type"),
+    db: AsyncSession = Depends(get_db),
 ) -> ViewListResponse:
     """
-    List pinned views for a user.
+    List pinned views for a user (from database).
     """
-    service = get_service()
-    
     uid = _parse_uuid(user_id)
     if not uid:
         raise HTTPException(
@@ -490,7 +520,9 @@ async def list_pinned_views(
         )
     
     et = _parse_entity_type(entity_type) if entity_type else None
-    views = service.get_pinned_views(uid, et)
+    repo = SavedViewsRepository(db)
+    all_views = await repo.list_for_user(user_id=uid, entity_type=et)
+    views = [v for v in all_views if v.pinned]
     
     return ViewListResponse(
         views=[_view_to_response(v) for v in views],
@@ -502,12 +534,11 @@ async def list_pinned_views(
 async def get_default_view(
     user_id: str = Query(..., description="User ID"),
     entity_type: str = Query(..., description="Entity type"),
+    db: AsyncSession = Depends(get_db),
 ) -> SavedViewResponse | None:
     """
-    Get the default view for a user and entity type.
+    Get the default view for a user and entity type (from database).
     """
-    service = get_service()
-    
     uid = _parse_uuid(user_id)
     if not uid:
         raise HTTPException(
@@ -516,7 +547,14 @@ async def get_default_view(
         )
     
     et = _parse_entity_type(entity_type)
+
+    service = get_service()
     view = service.get_default_view(uid, et)
+
+    if not view:
+        repo = SavedViewsRepository(db)
+        all_views = await repo.list_for_user(user_id=uid, entity_type=et)
+        view = next((v for v in all_views if v.is_default), None)
     
     if not view:
         return None
@@ -525,12 +563,13 @@ async def get_default_view(
 
 
 @router.post("/default")
-async def set_default_view(request: SetDefaultRequest) -> dict[str, Any]:
+async def set_default_view(
+    request: SetDefaultRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """
-    Set the default view for a user and entity type.
+    Set the default view for a user and entity type (persisted to database).
     """
-    service = get_service()
-    
     uid = _parse_uuid(request.user_id)
     if not uid:
         raise HTTPException(
@@ -540,10 +579,21 @@ async def set_default_view(request: SetDefaultRequest) -> dict[str, Any]:
     
     et = _parse_entity_type(request.entity_type)
     
-    result = service.set_default_view(uid, et, request.view_id)
+    # Verify view exists in DB
+    repo = SavedViewsRepository(db)
+    view = await repo.get(request.view_id)
+    if not view:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {request.view_id}",
+        )
+    
+    # Also update in-memory service
+    service = get_service()
+    service.set_default_view(uid, et, request.view_id)
     
     return {
-        "success": result,
+        "success": True,
         "view_id": request.view_id,
         "user_id": request.user_id,
         "entity_type": request.entity_type,
@@ -584,13 +634,29 @@ async def list_date_presets() -> list[dict[str, str]]:
 
 
 @router.get("/{view_id}", response_model=SavedViewResponse)
-async def get_view(view_id: str) -> SavedViewResponse:
+async def get_view(
+    view_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SavedViewResponse:
     """
-    Get a saved view by ID.
+    Get a saved view by ID (from database).
     """
     service = get_service()
     
-    view = service.get_view(view_id)
+    # Check system views first
+    for sv in service.get_system_views():
+        if sv.id == view_id:
+            return _view_to_response(sv)
+    
+    # Fetch from database
+    repo = SavedViewsRepository(db)
+    view_uuid = _safe_uuid(view_id)
+    if view_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {view_id}",
+        )
+    view = await repo.get(view_uuid)
     
     if not view:
         raise HTTPException(
@@ -602,12 +668,14 @@ async def get_view(view_id: str) -> SavedViewResponse:
 
 
 @router.put("/{view_id}", response_model=SavedViewResponse)
-async def update_view(view_id: str, request: UpdateViewRequest) -> SavedViewResponse:
+async def update_view(
+    view_id: str,
+    request: UpdateViewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SavedViewResponse:
     """
-    Update a saved view.
+    Update a saved view (persisted to database).
     """
-    service = get_service()
-    
     conditions = None
     if request.conditions is not None:
         conditions = [_condition_from_request(c) for c in request.conditions]
@@ -620,11 +688,6 @@ async def update_view(view_id: str, request: UpdateViewRequest) -> SavedViewResp
     if request.columns is not None:
         columns = [_column_from_request(col) for col in request.columns]
     
-    team_ids: list[UUID] | None = None
-    if request.team_ids is not None:
-        parsed_team_ids = [_parse_uuid(tid) for tid in request.team_ids if tid]
-        team_ids = [tid for tid in parsed_team_ids if tid is not None]
-    
     visibility = None
     if request.visibility:
         visibility = _parse_visibility(request.visibility)
@@ -633,22 +696,35 @@ async def update_view(view_id: str, request: UpdateViewRequest) -> SavedViewResp
     if request.condition_logic:
         condition_logic = _parse_filter_logic(request.condition_logic)
     
-    view = service.update_view(
-        view_id=view_id,
-        name=request.name,
-        description=request.description,
-        conditions=conditions,
-        condition_logic=condition_logic,
-        sort_fields=sort_fields,
-        columns=columns,
-        visibility=visibility,
-        page_size=request.page_size,
-        icon=request.icon,
-        color=request.color,
-        team_ids=team_ids,
-        is_default=request.is_default,
-        pinned=request.pinned,
-    )
+    # Build updates dict
+    updates: dict[str, Any] = {}
+    if request.name is not None:
+        updates["name"] = request.name
+    if request.description is not None:
+        updates["description"] = request.description
+    if conditions is not None:
+        updates["conditions"] = conditions
+    if sort_fields is not None:
+        updates["sort_fields"] = sort_fields
+    if columns is not None:
+        updates["columns"] = columns
+    if visibility is not None:
+        updates["visibility"] = visibility
+    if request.icon is not None:
+        updates["icon"] = request.icon
+    if request.color is not None:
+        updates["color"] = request.color
+    if request.pinned is not None:
+        updates["is_pinned"] = request.pinned
+    
+    repo = SavedViewsRepository(db)
+    view_uuid = _safe_uuid(view_id)
+    if view_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {view_id}",
+        )
+    view = await repo.update(view_uuid, **updates)
     
     if not view:
         raise HTTPException(
@@ -656,17 +732,26 @@ async def update_view(view_id: str, request: UpdateViewRequest) -> SavedViewResp
             detail=f"View not found: {view_id}",
         )
     
+    await db.commit()
     return _view_to_response(view)
 
 
 @router.delete("/{view_id}")
-async def delete_view(view_id: str) -> dict[str, Any]:
+async def delete_view(
+    view_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """
-    Delete a saved view.
+    Delete a saved view (from database).
     """
-    service = get_service()
-    
-    result = service.delete_view(view_id)
+    repo = SavedViewsRepository(db)
+    view_uuid = _safe_uuid(view_id)
+    if view_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {view_id}",
+        )
+    result = await repo.delete(view_uuid)
     
     if not result:
         raise HTTPException(
@@ -674,16 +759,23 @@ async def delete_view(view_id: str) -> dict[str, Any]:
             detail=f"View not found: {view_id}",
         )
     
+    # Also remove from in-memory cache
+    service = get_service()
+    service.delete_view(view_id)
+    
+    await db.commit()
     return {"deleted": True, "view_id": view_id}
 
 
 @router.post("/{view_id}/duplicate", response_model=SavedViewResponse)
-async def duplicate_view(view_id: str, request: DuplicateViewRequest) -> SavedViewResponse:
+async def duplicate_view(
+    view_id: str,
+    request: DuplicateViewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SavedViewResponse:
     """
-    Duplicate a view for another user.
+    Duplicate a view for another user (persisted to database).
     """
-    service = get_service()
-    
     new_owner_id = _parse_uuid(request.new_owner_id)
     if not new_owner_id:
         raise HTTPException(
@@ -691,7 +783,61 @@ async def duplicate_view(view_id: str, request: DuplicateViewRequest) -> SavedVi
             detail="new_owner_id is required",
         )
     
-    view = service.duplicate_view(view_id, new_owner_id, request.new_name)
+    # Get original from DB
+    repo = SavedViewsRepository(db)
+    original = None
+    view_uuid = _safe_uuid(view_id)
+    if view_uuid is not None:
+        original = await repo.get(view_uuid)
+    
+    if not original:
+        # Check system views
+        service = get_service()
+        original = next((sv for sv in service.get_system_views() if sv.id == view_id), None)
+    
+    if not original:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {view_id}",
+        )
+    
+    # Create duplicate
+    duplicate = deepcopy(original)
+    duplicate.id = str(uuid4())
+    duplicate.owner_id = new_owner_id
+    if request.new_name:
+        duplicate.name = request.new_name
+    else:
+        duplicate.name = f"Copy of {original.name}"
+    duplicate.is_default = False
+    duplicate.pinned = False
+    duplicate.use_count = 0
+    duplicate.last_used_at = None
+    duplicate.created_at = datetime.now()
+    duplicate.updated_at = datetime.now()
+    
+    await repo.create(duplicate)
+    await db.commit()
+    
+    return _view_to_response(duplicate)
+
+
+@router.post("/{view_id}/toggle-pin")
+async def toggle_pin(
+    view_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Toggle the pinned status of a view (persisted to database).
+    """
+    repo = SavedViewsRepository(db)
+    view_uuid = _safe_uuid(view_id)
+    if view_uuid is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"View not found: {view_id}",
+        )
+    view = await repo.get(view_uuid)
     
     if not view:
         raise HTTPException(
@@ -699,39 +845,61 @@ async def duplicate_view(view_id: str, request: DuplicateViewRequest) -> SavedVi
             detail=f"View not found: {view_id}",
         )
     
-    return _view_to_response(view)
+    new_pinned = not view.pinned
+    await repo.set_pinned(view_id, new_pinned)
+    await db.commit()
+    
+    return {
+        "view_id": view_id,
+        "pinned": new_pinned,
+    }
 
 
-@router.post("/{view_id}/toggle-pin")
-async def toggle_pin(view_id: str) -> dict[str, Any]:
+@router.post("/{view_id}/apply", response_model=ViewFilterResultResponse)
+async def apply_view(
+    view_id: str,
+    request: ApplyViewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ViewFilterResultResponse:
     """
-    Toggle the pinned status of a view.
+    Apply a view's filters to a list of entities.
+    Fetches view from DB, then applies filtering logic in-memory.
     """
     service = get_service()
     
-    result = service.toggle_pin(view_id)
+    # Try in-memory views (includes system views)
+    view: SavedView | None = service.get_view(view_id)
     
-    if not result:
+    # Fetch from DB if not a system view
+    if not view:
+        repo = SavedViewsRepository(db)
+        view_uuid = _safe_uuid(view_id)
+        if view_uuid is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"View not found: {view_id}",
+            )
+        view = await repo.get(view_uuid)
+        if view:
+            # Record usage
+            await repo.record_usage(view_uuid)
+            await db.commit()
+    else:
+        view_uuid = _safe_uuid(view_id)
+        if view_uuid is not None:
+            repo = SavedViewsRepository(db)
+            await repo.record_usage(view_uuid)
+            await db.commit()
+    
+    if not view:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"View not found: {view_id}",
         )
     
-    view = service.get_view(view_id)
-    
-    return {
-        "view_id": view_id,
-        "pinned": view.pinned if view else False,
-    }
-
-
-@router.post("/{view_id}/apply", response_model=ViewFilterResultResponse)
-async def apply_view(view_id: str, request: ApplyViewRequest) -> ViewFilterResultResponse:
-    """
-    Apply a view's filters to a list of entities.
-    """
-    service = get_service()
-    
+    # Apply filtering logic using in-memory service
+    # Inject the view into the service temporarily for apply
+    service._views[view.id] = view
     result = service.apply_view(
         view_id=view_id,
         entities=request.entities,

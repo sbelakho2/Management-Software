@@ -11,6 +11,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from fastapi import Depends as _Depends
+from sensei.api.deps import CurrentUser, RoleChecker
 from sensei.core.config import settings
 from sensei.services.production.lsw_scheduling import (
     LSWSchedulingService,
@@ -29,6 +31,7 @@ from sensei.services.production.lsw_scheduling import (
 router = APIRouter(
     prefix="/lsw",
     tags=["LSW Scheduling"],
+    dependencies=[_Depends(RoleChecker(["ops", "gm", "exec", "supervisor", "team_lead"]))],
 )
 
 # Global service instance

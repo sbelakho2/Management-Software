@@ -8,11 +8,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api import deps
+from sensei.api.deps import RoleChecker
 from sensei.api.exceptions import NotFoundError
 from sensei.core.database import get_db_session
 from sensei.services.core.site_service import SiteService
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "gm", "exec"]))],
+)
 
 
 class SiteCreate(BaseModel):

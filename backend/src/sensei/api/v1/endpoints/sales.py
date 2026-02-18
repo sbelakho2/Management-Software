@@ -34,6 +34,8 @@ from sensei.models.accounts_receivable import (
 from sensei.models.quote import Quote, QuoteLineItem, QuoteStatus
 from sensei.models.account import Account
 from sensei.services.finance.gl_posting import post_invoice_to_gl, post_payment_to_gl
+from sensei.services.domain_events import SalesOrderCreatedEvent
+from sensei.services.event_bus import get_event_bus
 
 # Sales module is cross-functional (sales + quoting + AR visibility).
 # CEO/admin are handled centrally by RoleChecker.
@@ -382,6 +384,21 @@ async def create_sales_order(
         db.add(so_line)
     
     await db.commit()
+    
+    # Publish domain event
+    try:
+        event_bus = get_event_bus()
+        await event_bus.publish(
+            SalesOrderCreatedEvent(
+                sales_order_id=str(so.id),
+                quote_id=str(payload.source_quote_id) if payload.source_quote_id else None,
+                account_id=str(payload.account_id) if payload.account_id else None,
+                created_by_id=str(current_user.id),
+            )
+        )
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).exception("Failed to publish SalesOrderCreatedEvent")
     
     # Best-effort: bind common thread lineage
     try:

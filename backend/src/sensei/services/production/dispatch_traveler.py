@@ -18,6 +18,9 @@ from typing import Any, Iterable, Protocol
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import ProductionOrderStartedEvent, ProductionOrderCompletedEvent
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class OperationStatus(str, Enum):
@@ -225,6 +228,7 @@ class DispatchTravelerService(PersistentServiceMixin):
     """In-memory dispatching and electronic traveler service."""
 
     SERVICE_NAME = "dispatch_traveler"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(
         self,
@@ -251,6 +255,85 @@ class DispatchTravelerService(PersistentServiceMixin):
         self._skills_provider = skills_provider
 
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        routes_data = await self.load_state(self._DEFAULT_TENANT_ID, "routes") or {}
+        checkpoints_data = await self.load_state(self._DEFAULT_TENANT_ID, "checkpoints") or {}
+        travelers_data = await self.load_state(self._DEFAULT_TENANT_ID, "travelers") or {}
+        traveler_ops_data = await self.load_state(self._DEFAULT_TENANT_ID, "traveler_operations") or {}
+        checkpoint_records_data = await self.load_state(self._DEFAULT_TENANT_ID, "checkpoint_records") or {}
+        dispatch_queue_data = await self.load_state(self._DEFAULT_TENANT_ID, "dispatch_queue") or {}
+        audit_data = await self.load_state(self._DEFAULT_TENANT_ID, "audit") or []
+
+        self._routes = {
+            UUID(route_id): [decode_dataclass(op, RouteOperation) for op in ops]
+            for route_id, ops in routes_data.items()
+        }
+        self._checkpoints = {
+            UUID(checkpoint_id): decode_dataclass(checkpoint, Checkpoint)
+            for checkpoint_id, checkpoint in checkpoints_data.items()
+        }
+        self._travelers = {
+            UUID(traveler_id): decode_dataclass(traveler, Traveler)
+            for traveler_id, traveler in travelers_data.items()
+        }
+        self._traveler_operations = {
+            UUID(operation_id): decode_dataclass(operation, TravelerOperation)
+            for operation_id, operation in traveler_ops_data.items()
+        }
+        self._checkpoint_records = {
+            UUID(record_id): decode_dataclass(record, CheckpointRecord)
+            for record_id, record in checkpoint_records_data.items()
+        }
+        self._dispatch_queue = {
+            UUID(item_id): decode_dataclass(item, DispatchItem)
+            for item_id, item in dispatch_queue_data.items()
+        }
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        routes_data = {
+            str(route_id): [encode_dataclass(op) for op in ops]
+            for route_id, ops in self._routes.items()
+        }
+        checkpoints_data = {
+            str(checkpoint_id): encode_dataclass(checkpoint)
+            for checkpoint_id, checkpoint in self._checkpoints.items()
+        }
+        travelers_data = {
+            str(traveler_id): encode_dataclass(traveler)
+            for traveler_id, traveler in self._travelers.items()
+        }
+        traveler_ops_data = {
+            str(operation_id): encode_dataclass(operation)
+            for operation_id, operation in self._traveler_operations.items()
+        }
+        checkpoint_records_data = {
+            str(record_id): encode_dataclass(record)
+            for record_id, record in self._checkpoint_records.items()
+        }
+        dispatch_queue_data = {
+            str(item_id): encode_dataclass(item)
+            for item_id, item in self._dispatch_queue.items()
+        }
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "routes", routes_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "checkpoints", checkpoints_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "travelers", travelers_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "traveler_operations", traveler_ops_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "checkpoint_records", checkpoint_records_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "dispatch_queue", dispatch_queue_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -288,6 +371,10 @@ class DispatchTravelerService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_READ_ROLES, "MES read role required")
         return list(self._audit)
+
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)
 
     # ----------------------------------------------------------------
     # Route Definition
@@ -341,6 +428,12 @@ class DispatchTravelerService(PersistentServiceMixin):
 
         return route_id
 
+    async def define_route_async(self, **kwargs: Any) -> UUID:
+        await self._ensure_loaded()
+        route_id = self.define_route(**kwargs)
+        await self.persist_all()
+        return route_id
+
     def add_checkpoint(
         self,
         *,
@@ -386,6 +479,12 @@ class DispatchTravelerService(PersistentServiceMixin):
             metadata={"type": checkpoint_type.value, "name": name},
         )
 
+        return checkpoint
+
+    async def add_checkpoint_async(self, **kwargs: Any) -> Checkpoint:
+        await self._ensure_loaded()
+        checkpoint = self.add_checkpoint(**kwargs)
+        await self.persist_all()
         return checkpoint
 
     # ----------------------------------------------------------------
@@ -462,12 +561,22 @@ class DispatchTravelerService(PersistentServiceMixin):
 
         return traveler
 
+    async def create_traveler_async(self, **kwargs: Any) -> Traveler:
+        await self._ensure_loaded()
+        traveler = self.create_traveler(**kwargs)
+        await self.persist_all()
+        return traveler
+
     def get_traveler(
         self, *, actor_roles: Iterable[str], traveler_id: UUID
     ) -> Traveler | None:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MES_READ_ROLES, "MES read role required")
         return self._travelers.get(traveler_id)
+
+    async def get_traveler_async(self, *, actor_roles: Iterable[str], traveler_id: UUID) -> Traveler | None:
+        await self._ensure_loaded()
+        return self.get_traveler(actor_roles=actor_roles, traveler_id=traveler_id)
 
     def get_traveler_operations(
         self, *, actor_roles: Iterable[str], traveler_id: UUID
@@ -481,6 +590,10 @@ class DispatchTravelerService(PersistentServiceMixin):
             if op.traveler_id == traveler_id
         ]
         return sorted(ops, key=lambda o: o.sequence)
+
+    async def get_traveler_operations_async(self, *, actor_roles: Iterable[str], traveler_id: UUID) -> list[TravelerOperation]:
+        await self._ensure_loaded()
+        return self.get_traveler_operations(actor_roles=actor_roles, traveler_id=traveler_id)
 
     # ----------------------------------------------------------------
     # Operation Execution
@@ -541,7 +654,22 @@ class DispatchTravelerService(PersistentServiceMixin):
             metadata={"operator_id": operator_id or actor_id},
         )
 
+        # Publish domain event — feeds single data thread
+        traveler = self._travelers.get(trav_op.traveler_id)
+        event_bus.publish_sync(ProductionOrderStartedEvent(
+            order_id=str(trav_op.traveler_id),
+            product_id=str(getattr(traveler, 'product_id', '') if traveler else ''),
+            quantity=getattr(traveler, 'quantity', 0) if traveler else 0,
+            line_id=str(trav_op.station_id or ''),
+        ))
+
         return updated
+
+    async def start_operation_async(self, **kwargs: Any) -> TravelerOperation:
+        await self._ensure_loaded()
+        operation = self.start_operation(**kwargs)
+        await self.persist_all()
+        return operation
 
     def complete_operation(
         self,
@@ -613,7 +741,21 @@ class DispatchTravelerService(PersistentServiceMixin):
             },
         )
 
+        # Publish domain event — feeds single data thread
+        event_bus.publish_sync(ProductionOrderCompletedEvent(
+            order_id=str(trav_op.traveler_id),
+            product_id=str(getattr(traveler, 'product_id', '') if traveler else ''),
+            quantity_produced=quantity_completed,
+            scrap_quantity=quantity_scrapped,
+        ))
+
         return updated
+
+    async def complete_operation_async(self, **kwargs: Any) -> TravelerOperation:
+        await self._ensure_loaded()
+        operation = self.complete_operation(**kwargs)
+        await self.persist_all()
+        return operation
 
     # ----------------------------------------------------------------
     # Checkpoint Recording
@@ -679,6 +821,32 @@ class DispatchTravelerService(PersistentServiceMixin):
 
         return record
 
+    async def record_checkpoint_async(
+        self,
+        *,
+        actor_id: str,
+        actor_roles: Iterable[str],
+        correlation_id: str,
+        checkpoint_id: UUID,
+        traveler_id: UUID,
+        result: CheckpointResult,
+        measured_value: float | None = None,
+        notes: str = "",
+    ) -> CheckpointRecord:
+        await self._ensure_loaded()
+        record = self.record_checkpoint(
+            actor_id=actor_id,
+            actor_roles=actor_roles,
+            correlation_id=correlation_id,
+            checkpoint_id=checkpoint_id,
+            traveler_id=traveler_id,
+            result=result,
+            measured_value=measured_value,
+            notes=notes,
+        )
+        await self.persist_all()
+        return record
+
     def get_checkpoint_records(
         self,
         *,
@@ -699,6 +867,20 @@ class DispatchTravelerService(PersistentServiceMixin):
             result.append(rec)
 
         return sorted(result, key=lambda r: r.recorded_at)
+
+    async def get_checkpoint_records_async(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        traveler_id: UUID,
+        operation_id: UUID | None = None,
+    ) -> list[CheckpointRecord]:
+        await self._ensure_loaded()
+        return self.get_checkpoint_records(
+            actor_roles=actor_roles,
+            traveler_id=traveler_id,
+            operation_id=operation_id,
+        )
 
     # ----------------------------------------------------------------
     # Dispatching
@@ -790,6 +972,12 @@ class DispatchTravelerService(PersistentServiceMixin):
 
         return dispatch_item
 
+    async def queue_for_dispatch_async(self, **kwargs: Any) -> DispatchItem:
+        await self._ensure_loaded()
+        item = self.queue_for_dispatch(**kwargs)
+        await self.persist_all()
+        return item
+
     def get_dispatch_queue(
         self,
         *,
@@ -821,6 +1009,10 @@ class DispatchTravelerService(PersistentServiceMixin):
             ),
         )
 
+    async def get_dispatch_queue_async(self, **kwargs: Any) -> list[DispatchItem]:
+        await self._ensure_loaded()
+        return self.get_dispatch_queue(**kwargs)
+
     def get_ready_items(
         self,
         *,
@@ -836,6 +1028,10 @@ class DispatchTravelerService(PersistentServiceMixin):
             item for item in queue
             if item.materials_ready and item.tools_ready and item.skills_available
         ]
+
+    async def get_ready_items_async(self, **kwargs: Any) -> list[DispatchItem]:
+        await self._ensure_loaded()
+        return self.get_ready_items(**kwargs)
 
     # ----------------------------------------------------------------
     # Genealogy
@@ -863,3 +1059,7 @@ class DispatchTravelerService(PersistentServiceMixin):
             "parent_lots": list(traveler.genealogy),
             "work_order_id": traveler.work_order_id,
         }
+
+    async def get_genealogy_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_genealogy(**kwargs)

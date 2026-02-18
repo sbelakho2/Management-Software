@@ -17,6 +17,8 @@ from uuid import UUID, uuid4
 import hashlib
 import json
 import asyncio
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 def _utcnow() -> datetime:
@@ -383,7 +385,7 @@ class JobExecutionStats:
             self.average_duration_ms = (total + duration_ms) / self.completed_jobs
 
 
-class JobIdempotencyService:
+class JobIdempotencyService(PersistentServiceMixin):
     """
     Service for ensuring job idempotency and retry safety.
     
@@ -394,6 +396,10 @@ class JobIdempotencyService:
     - Cache job results
     - Handle retries with configurable strategies
     """
+
+    SERVICE_NAME = "job_idempotency"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self) -> None:
         """Initialize the service."""
@@ -402,6 +408,73 @@ class JobIdempotencyService:
         self._results: Dict[str, Any] = {}
         self._stats: Dict[JobType, JobExecutionStats] = {}
         self._default_retry_config = RetryConfig()
+        self._state_loaded = False
+
+    def _encode_results(self) -> Dict[str, Any]:
+        encoded: Dict[str, Any] = {}
+        for key, entry in self._results.items():
+            encoded[key] = {
+                "result": entry.get("result"),
+                "result_hash": entry.get("result_hash"),
+                "cached_at": entry.get("cached_at").isoformat() if entry.get("cached_at") else None,
+                "expires_at": entry.get("expires_at").isoformat() if entry.get("expires_at") else None,
+            }
+        return encoded
+
+    def _decode_results(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        decoded: Dict[str, Any] = {}
+        for key, entry in state.items():
+            cached_at = entry.get("cached_at")
+            expires_at = entry.get("expires_at")
+            decoded[key] = {
+                "result": entry.get("result"),
+                "result_hash": entry.get("result_hash"),
+                "cached_at": datetime.fromisoformat(cached_at) if cached_at else None,
+                "expires_at": datetime.fromisoformat(expires_at) if expires_at else None,
+            }
+        return decoded
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        self._jobs = {
+            key: decode_dataclass(job, JobRecord)
+            for key, job in state.get("jobs", {}).items()
+        }
+        self._locks = {
+            key: decode_dataclass(lock, JobLock)
+            for key, lock in state.get("locks", {}).items()
+        }
+        self._results = self._decode_results(state.get("results", {}))
+        self._stats = {
+            JobType(job_type): decode_dataclass(stats, JobExecutionStats)
+            for job_type, stats in state.get("stats", {}).items()
+        }
+        default_retry = state.get("default_retry_config")
+        if default_retry:
+            self._default_retry_config = decode_dataclass(default_retry, RetryConfig)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "jobs": {key: encode_dataclass(job) for key, job in self._jobs.items()},
+            "locks": {key: encode_dataclass(lock) for key, lock in self._locks.items()},
+            "results": self._encode_results(),
+            "stats": {job_type.value: encode_dataclass(stats) for job_type, stats in self._stats.items()},
+            "default_retry_config": encode_dataclass(self._default_retry_config),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     # Key Management
     
@@ -476,6 +549,12 @@ class JobIdempotencyService:
         self._update_stats(idempotency_key.job_type, pending_increment=1)
         
         return job
+
+    async def register_job_async(self, *args: Any, **kwargs: Any) -> JobRecord:
+        await self._ensure_loaded()
+        job = self.register_job(*args, **kwargs)
+        await self.persist_all()
+        return job
     
     def get_job(self, idempotency_key: str) -> Optional[JobRecord]:
         """Get a job record by idempotency key."""
@@ -541,6 +620,12 @@ class JobIdempotencyService:
             else:
                 self._update_stats(job.job_type, cancelled_increment=1)
         
+        return job
+
+    async def update_job_status_async(self, *args: Any, **kwargs: Any) -> Optional[JobRecord]:
+        await self._ensure_loaded()
+        job = self.update_job_status(*args, **kwargs)
+        await self.persist_all()
         return job
     
     # Lock Management
@@ -639,6 +724,12 @@ class JobIdempotencyService:
             job.result_expires_at = _utcnow() + timedelta(hours=ttl_hours)
         
         return result_hash
+
+    async def cache_result_async(self, *args: Any, **kwargs: Any) -> str:
+        await self._ensure_loaded()
+        result_hash = self.cache_result(*args, **kwargs)
+        await self.persist_all()
+        return result_hash
     
     def get_cached_result(
         self,
@@ -672,6 +763,12 @@ class JobIdempotencyService:
             
             return True
         return False
+
+    async def invalidate_cache_async(self, idempotency_key: str) -> bool:
+        await self._ensure_loaded()
+        result = self.invalidate_cache(idempotency_key)
+        await self.persist_all()
+        return result
     
     # Idempotent Job Execution
     
@@ -691,6 +788,7 @@ class JobIdempotencyService:
         If the job is running, waits for completion.
         If the job hasn't run, executes it with lock protection.
         """
+        await self._ensure_loaded()
         key = idempotency_key.key
         retry_cfg = retry_config or self._default_retry_config
         owner_id = str(uuid4())
@@ -790,6 +888,7 @@ class JobIdempotencyService:
         finally:
             # Release lock
             self.release_lock(key, owner_id)
+            await self.persist_all()
     
     async def _wait_for_job(
         self,

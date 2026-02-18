@@ -18,6 +18,8 @@ from sqlalchemy.orm import selectinload
 from sensei.models.mrp import BOMComponent, MRPDemand, MRPSuggestion, MRPRun
 from sensei.models.product import Product
 from sensei.models.inventory import InventoryLevel
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import MRPRunCompleted
 
 
 class PersistentMRPService:
@@ -189,4 +191,12 @@ class PersistentMRPService:
         )
         self.db.add(run)
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(MRPRunCompleted(
+            run_id=str(run.id),
+            planned_orders=suggestions_created,
+            shortage_count=shortages_detected,
+        ))
+
         return run

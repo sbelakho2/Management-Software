@@ -21,6 +21,10 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Callable
 import heapq
 from collections import Counter
+from uuid import UUID
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +268,40 @@ class InMemoryLearningStore(LearningStore):
         self._by_context: Dict[ContextType, List[str]] = defaultdict(list)
         self._by_pattern: Dict[str, List[str]] = defaultdict(list)
         self._by_model: Dict[str, List[str]] = defaultdict(list)
+
+    def export_state(self) -> Dict[str, Any]:
+        return {
+            "corrections": {
+                correction_id: encode_dataclass(correction)
+                for correction_id, correction in self._corrections.items()
+            },
+            "by_context": {
+                context.value: list(ids) for context, ids in self._by_context.items()
+            },
+            "by_pattern": {key: list(ids) for key, ids in self._by_pattern.items()},
+            "by_model": {key: list(ids) for key, ids in self._by_model.items()},
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        corrections_data = state.get("corrections") or {}
+        self._corrections = {
+            correction_id: decode_dataclass(correction, Correction)
+            for correction_id, correction in corrections_data.items()
+        }
+        by_context_data = state.get("by_context") or {}
+        self._by_context = defaultdict(list)
+        for context_key, ids in by_context_data.items():
+            try:
+                context = ContextType(context_key)
+            except ValueError:
+                continue
+            self._by_context[context] = list(ids)
+        self._by_pattern = defaultdict(list)
+        for key, ids in (state.get("by_pattern") or {}).items():
+            self._by_pattern[key] = list(ids)
+        self._by_model = defaultdict(list)
+        for key, ids in (state.get("by_model") or {}).items():
+            self._by_model[key] = list(ids)
     
     async def store_correction(self, correction: Correction) -> str:
         """Store a new correction."""
@@ -724,7 +762,7 @@ class CorrectionVersionManager:
 # Feedback Loop Manager
 # =============================================================================
 
-class FeedbackLoopManager:
+class FeedbackLoopManager(PersistentServiceMixin):
     """
     Main manager for the automated feedback loop system.
     
@@ -746,11 +784,83 @@ class FeedbackLoopManager:
         
         self._current_model: Optional[ModelVersion] = None
         self._correction_count = 0
+        self._state_loaded = False
+
+    SERVICE_NAME = "automated_feedback_loops"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        manager_state = await self.load_state(self._DEFAULT_TENANT_ID, "manager_state")
+        store_state = await self.load_state(self._DEFAULT_TENANT_ID, "store_state")
+        versions_state = await self.load_state(self._DEFAULT_TENANT_ID, "model_versions")
+
+        if manager_state is None and store_state is None and versions_state is None:
+            self._state_loaded = True
+            return
+
+        if store_state is not None and isinstance(self.store, InMemoryLearningStore):
+            self.store.load_state(store_state)
+
+        if versions_state is not None:
+            self.version_manager._model_versions = {
+                key: decode_dataclass(value, ModelVersion)
+                for key, value in versions_state.items()
+            }
+
+        if manager_state is not None:
+            current_model = manager_state.get("current_model")
+            if current_model is not None:
+                self._current_model = decode_dataclass(current_model, ModelVersion)
+            self._correction_count = int(manager_state.get("correction_count", 0))
+            conflict_strategy = manager_state.get("conflict_strategy")
+            if conflict_strategy:
+                self.conflict_resolver.default_strategy = ConflictResolutionStrategy(conflict_strategy)
+            staleness_days = manager_state.get("staleness_days")
+            if staleness_days is not None:
+                self.version_manager.staleness_threshold_days = int(staleness_days)
+            max_few_shot = manager_state.get("max_few_shot")
+            if max_few_shot is not None:
+                self.few_shot_injector.max_examples = int(max_few_shot)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        manager_state = {
+            "current_model": (
+                encode_dataclass(self._current_model) if self._current_model else None
+            ),
+            "correction_count": self._correction_count,
+            "conflict_strategy": self.conflict_resolver.default_strategy.value,
+            "staleness_days": self.version_manager.staleness_threshold_days,
+            "max_few_shot": self.few_shot_injector.max_examples,
+        }
+        versions_state = {
+            key: encode_dataclass(value)
+            for key, value in self.version_manager._model_versions.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "manager_state", manager_state)
+        await self.save_state(self._DEFAULT_TENANT_ID, "model_versions", versions_state)
+
+        if isinstance(self.store, InMemoryLearningStore):
+            await self.save_state(self._DEFAULT_TENANT_ID, "store_state", self.store.export_state())
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def set_current_model(self, model: ModelVersion) -> None:
         """Set the current model version being used."""
         self._current_model = model
         self.version_manager.register_model_version(model)
+
+    async def set_current_model_async(self, model: ModelVersion) -> None:
+        await self._ensure_loaded()
+        self.set_current_model(model)
+        await self.persist_all()
     
     async def record_correction(
         self,
@@ -781,6 +891,7 @@ class FeedbackLoopManager:
         Returns:
             The stored correction
         """
+        await self._ensure_loaded()
         if not self._current_model:
             raise ValueError("No current model set. Call set_current_model first.")
         
@@ -813,7 +924,7 @@ class FeedbackLoopManager:
                 f"Resolved {len(conflicts)} conflicting corrections for pattern "
                 f"{group.pattern_hash} using {group.resolution_strategy}"
             )
-        
+        await self.persist_all()
         return correction
     
     async def get_enhanced_prompt(
@@ -833,6 +944,7 @@ class FeedbackLoopManager:
         Returns:
             Tuple of (enhanced_prompt, number_of_examples_used)
         """
+        await self._ensure_loaded()
         enhanced_prompt, examples = await self.few_shot_injector.inject_corrections(
             prompt=base_prompt,
             input_text=input_text,
@@ -851,6 +963,7 @@ class FeedbackLoopManager:
     
     async def get_statistics(self) -> Dict[str, Any]:
         """Get feedback loop statistics."""
+        await self._ensure_loaded()
         if isinstance(self.store, InMemoryLearningStore):
             store_stats = self.store.get_stats()
         else:
@@ -869,6 +982,7 @@ class FeedbackLoopManager:
     
     async def cleanup_stale_corrections(self) -> int:
         """Mark stale corrections as expired."""
+        await self._ensure_loaded()
         if not self._current_model:
             return 0
         
@@ -885,6 +999,7 @@ class FeedbackLoopManager:
                         cleaned += 1
         
         logger.info(f"Cleaned up {cleaned} stale corrections")
+        await self.persist_all()
         return cleaned
 
 

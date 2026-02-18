@@ -3,6 +3,7 @@ export { apiClient, type ApiError, type ApiResponse, type PaginationParams } fro
 export { authApi, usersApi, type CreateUserData, type UpdateUserData } from './auth';
 export { rfqApi, quoteApi, type RFQListParams, type QuoteListParams, type CreateRFQData, type CreateQuoteData } from './rfq';
 export { accountApi, type AccountListParams, type CreateAccountData, type UpdateAccountData } from './accounts';
+export { contactApi, type ContactListParams, type ContactResponse } from './contacts';
 export { taskApi, kanbanApi, type TaskListParams, type CreateTaskData, type CreateKanbanBoardData } from './task';
 export { inspectionApi, ncrApi, capaApi, type InspectionListParams, type NCRListParams, type CAPAListParams } from './quality';
 export { productApi, type Product, type ProductDetail, type ProductListParams } from './products';

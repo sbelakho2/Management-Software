@@ -17,6 +17,7 @@ References:
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import io
 import logging
@@ -37,6 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sensei.models.strategic_v2 import InspectionFeedback, TrainingSample
 from sensei.services.core.local_first_infrastructure import get_local_first_service, ModelPrecision, ModelSize
 from uuid import UUID
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -1133,6 +1136,34 @@ class AsyncContinuousLearningManager:
         self._retraining_scheduled: bool = False
         self.feedback_queue: list[FeedbackRecord] = []
 
+    def export_state(self) -> dict[str, Any]:
+        """Export learning state for persistence."""
+        return {
+            "feedback_threshold": self.feedback_threshold,
+            "improvement_threshold": self.improvement_threshold,
+            "current_model_version": self.current_model_version,
+            "candidate_model_version": self.candidate_model_version,
+            "ab_test_active": self.ab_test_active,
+            "retraining_scheduled": self._retraining_scheduled,
+            "feedback_queue": [encode_dataclass(item) for item in self.feedback_queue],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load learning state from persistence."""
+        if "feedback_threshold" in state:
+            self.feedback_threshold = int(state["feedback_threshold"])
+        if "improvement_threshold" in state:
+            self.improvement_threshold = float(state["improvement_threshold"])
+        if "current_model_version" in state:
+            self.current_model_version = state["current_model_version"]
+        self.candidate_model_version = state.get("candidate_model_version")
+        self.ab_test_active = bool(state.get("ab_test_active", False))
+        self._retraining_scheduled = bool(state.get("retraining_scheduled", False))
+        self.feedback_queue = [
+            decode_dataclass(item, FeedbackRecord)
+            for item in state.get("feedback_queue", [])
+        ]
+
     async def record_feedback(
         self,
         db: AsyncSession,
@@ -1248,7 +1279,7 @@ class ContinuousLearningManager(AsyncContinuousLearningManager):
 # =============================================================================
 
 
-class VisualQualityInspectionService:
+class VisualQualityInspectionService(PersistentServiceMixin):
     """
     World-class visual quality inspection service.
     
@@ -1258,6 +1289,10 @@ class VisualQualityInspectionService:
     - Quality scoring
     - Continuous learning
     """
+
+    SERVICE_NAME = "visual_quality_inspection"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(
         self,
@@ -1275,6 +1310,44 @@ class VisualQualityInspectionService:
         
         # Cache
         self._models_loaded = False
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        config_state = state.get("config")
+        if config_state:
+            self.config = decode_dataclass(config_state, InspectionConfig)
+
+        learning_state = state.get("learning_manager")
+        if learning_state:
+            self.learning_manager.load_state(learning_state)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "config": encode_dataclass(self.config),
+            "learning_manager": self.learning_manager.export_state(),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    def _maybe_persist_sync(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self.persist_all())
 
     @property
     def anomaly_detector(self) -> PatchCoreDetector:
@@ -1334,6 +1407,7 @@ class VisualQualityInspectionService:
         Inspect a single image for defects with lazy-loaded models.
         """
         import time
+        await self._ensure_loaded()
         start_time = time.time()
         
         # Models are lazy-loaded via properties
@@ -1454,6 +1528,7 @@ class VisualQualityInspectionService:
             f"time={processing_time:.0f}ms"
         )
         
+        await self.persist_all()
         return result
     
     async def inspect_batch(
@@ -1461,6 +1536,7 @@ class VisualQualityInspectionService:
         images: list[tuple[np.ndarray, str]],  # (image, image_id)
     ) -> InspectionBatch:
         """Inspect a batch of images."""
+        await self._ensure_loaded()
         batch_id = str(uuid.uuid4())
         results = []
         
@@ -1492,6 +1568,7 @@ class VisualQualityInspectionService:
             end_time=results[-1].timestamp if results else None,
         )
         
+        await self.persist_all()
         return batch
     
     async def _record_feedback_async(
@@ -1551,11 +1628,16 @@ class VisualQualityInspectionService:
         self.learning_manager.feedback_queue.append(feedback)
         if len(self.learning_manager.feedback_queue) >= self.learning_manager.feedback_threshold:
             self.learning_manager._retraining_scheduled = True
+        self._maybe_persist_sync()
         return None
     
     def get_learning_status(self) -> dict[str, Any]:
         """Get status of continuous learning."""
         return self.learning_manager.get_training_recommendations()
+
+    async def get_learning_status_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_learning_status()
     
     def _score_to_severity(
         self,

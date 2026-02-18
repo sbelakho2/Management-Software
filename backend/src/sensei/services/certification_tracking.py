@@ -19,6 +19,8 @@ from typing import Any, Iterable
 from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 from sensei.services.core.pii_controls import (
     PIIControlsService,
     PIICategory,
@@ -48,6 +50,7 @@ class CertificationStatus(str, Enum):
 
 _PRIVILEGED_CERT_ROLES: set[str] = {"admin", "hr", "gm", "exec", "ceo", "quality"}
 _CERT_WRITE_ROLES: set[str] = {"admin", "hr", "gm", "quality"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 def _norm_roles(roles: Iterable[str]) -> set[str]:
@@ -116,8 +119,10 @@ class RecertificationNudge:
     send_count: int = 0
 
 
-class CertificationTrackingService:
+class CertificationTrackingService(PersistentServiceMixin):
     """In-memory certification registry + renewal nudges + evidence metadata."""
+
+    SERVICE_NAME = "certification_tracking"
 
     def __init__(self, *, pii: PIIControlsService | None = None) -> None:
         self._certs: dict[UUID, CertificationRecord] = {}
@@ -162,6 +167,40 @@ class CertificationTrackingService:
 
         # Lightweight event capture for KPI hooks / audit.
         self.events: list[dict[str, Any]] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        certs_data = await self.load_state(_DEFAULT_TENANT_ID, "certs") or {}
+        evidence_data = await self.load_state(_DEFAULT_TENANT_ID, "evidence") or {}
+        nudges_data = await self.load_state(_DEFAULT_TENANT_ID, "nudges") or {}
+        subject_ids_data = await self.load_state(_DEFAULT_TENANT_ID, "subject_ids") or {}
+        events_data = await self.load_state(_DEFAULT_TENANT_ID, "events") or []
+
+        self._certs = {UUID(cid): decode_dataclass(c, CertificationRecord) for cid, c in certs_data.items()}
+        self._evidence = {UUID(eid): decode_dataclass(e, CertificationEvidence) for eid, e in evidence_data.items()}
+        self._nudges = {UUID(nid): decode_dataclass(n, RecertificationNudge) for nid, n in nudges_data.items()}
+        self._employee_subject_ids = {UUID(eid): UUID(sid) for eid, sid in subject_ids_data.items()}
+        self.events = list(events_data)
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        certs_data = {str(cid): encode_dataclass(c) for cid, c in self._certs.items()}
+        evidence_data = {str(eid): encode_dataclass(e) for eid, e in self._evidence.items()}
+        nudges_data = {str(nid): encode_dataclass(n) for nid, n in self._nudges.items()}
+        subject_ids_data = {str(eid): str(sid) for eid, sid in self._employee_subject_ids.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "certs", certs_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "evidence", evidence_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "nudges", nudges_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "subject_ids", subject_ids_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "events", list(self.events))
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def _ensure_employee_subject_id(self, employee_id: UUID) -> UUID:
         subject_id = self._employee_subject_ids.get(employee_id)
@@ -232,6 +271,12 @@ class CertificationTrackingService:
         self._certs[cert_id] = record
         return record
 
+    async def add_certification_async(self, **kwargs: Any) -> CertificationRecord:
+        await self._ensure_loaded()
+        record = self.add_certification(**kwargs)
+        await self.persist_all()
+        return record
+
     def update_certification(
         self,
         cert_id: UUID,
@@ -268,6 +313,12 @@ class CertificationTrackingService:
         self._certs[cert_id] = updated
         return updated
 
+    async def update_certification_async(self, **kwargs: Any) -> CertificationRecord:
+        await self._ensure_loaded()
+        record = self.update_certification(**kwargs)
+        await self.persist_all()
+        return record
+
     def list_certifications(
         self,
         *,
@@ -294,6 +345,10 @@ class CertificationTrackingService:
         records.sort(key=lambda r: (r.expires_on or date.max, r.name.lower()))
         return records
 
+    async def list_certifications_async(self, **kwargs: Any) -> list[CertificationRecord]:
+        await self._ensure_loaded()
+        return self.list_certifications(**kwargs)
+
     def expire_due_certifications(self, *, as_of: date) -> list[UUID]:
         expired_ids: list[UUID] = []
         for cert_id, record in list(self._certs.items()):
@@ -316,6 +371,12 @@ class CertificationTrackingService:
                     }
                 )
         return expired_ids
+
+    async def expire_due_certifications_async(self, *, as_of: date) -> list[UUID]:
+        await self._ensure_loaded()
+        expired = self.expire_due_certifications(as_of=as_of)
+        await self.persist_all()
+        return expired
 
     def renew_certification(
         self,
@@ -352,6 +413,12 @@ class CertificationTrackingService:
             }
         )
         return updated
+
+    async def renew_certification_async(self, **kwargs: Any) -> CertificationRecord:
+        await self._ensure_loaded()
+        record = self.renew_certification(**kwargs)
+        await self.persist_all()
+        return record
 
     # ---- Evidence ----
 
@@ -391,6 +458,12 @@ class CertificationTrackingService:
             metadata=dict(metadata or {}),
         )
         self._evidence[ev_id] = evidence
+        return evidence
+
+    async def add_evidence_async(self, **kwargs: Any) -> CertificationEvidence:
+        await self._ensure_loaded()
+        evidence = self.add_evidence(**kwargs)
+        await self.persist_all()
         return evidence
 
     async def _list_evidence_async(
@@ -544,6 +617,7 @@ class CertificationTrackingService:
         actor_user_id: UUID,
         db: AsyncSession,
     ) -> list[dict[str, Any]]:
+        await self._ensure_loaded()
         return await self._list_evidence_async(
             certification_id=certification_id,
             actor_roles=actor_roles,
@@ -553,6 +627,7 @@ class CertificationTrackingService:
         )
 
     async def get_pii_access_logs(self, db: AsyncSession) -> list[dict[str, Any]]:
+        await self._ensure_loaded()
         logs = await self._pii.get_access_logs(db=db)
         return [l.to_dict() for l in logs]
 
@@ -616,6 +691,12 @@ class CertificationTrackingService:
         created.sort(key=lambda n: (n.expires_on, n.employee_id))
         return created
 
+    async def generate_recertification_nudges_async(self, **kwargs: Any) -> list[RecertificationNudge]:
+        await self._ensure_loaded()
+        nudges = self.generate_recertification_nudges(**kwargs)
+        await self.persist_all()
+        return nudges
+
     def list_recertification_nudges(
         self,
         *,
@@ -639,6 +720,10 @@ class CertificationTrackingService:
         nudges.sort(key=lambda n: (n.expires_on, n.employee_id))
         return nudges
 
+    async def list_recertification_nudges_async(self, **kwargs: Any) -> list[RecertificationNudge]:
+        await self._ensure_loaded()
+        return self.list_recertification_nudges(**kwargs)
+
     def mark_nudge_sent(
         self,
         nudge_id: UUID,
@@ -660,3 +745,9 @@ class CertificationTrackingService:
         )
         self._nudges[nudge_id] = updated
         return updated
+
+    async def mark_nudge_sent_async(self, **kwargs: Any) -> RecertificationNudge:
+        await self._ensure_loaded()
+        nudge = self.mark_nudge_sent(**kwargs)
+        await self.persist_all()
+        return nudge

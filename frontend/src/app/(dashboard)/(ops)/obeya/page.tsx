@@ -49,12 +49,14 @@ function SQDCPCard({
   title, 
   icon: Icon, 
   metrics, 
-  status 
+  status,
+  statusLabel
 }: { 
   title: string; 
   icon: React.ElementType; 
   metrics: { label: string; value: string | number; trend?: 'up' | 'down' | 'stable' }[];
   status: 'green' | 'yellow' | 'red';
+  statusLabel: string;
 }) {
   const statusColors = {
     green: 'border-rams-green/30 text-rams-green bg-rams-green/5',
@@ -76,7 +78,7 @@ function SQDCPCard({
             <Icon className="h-4 w-4" />
             {title}
           </div>
-          <Badge variant={badgeVariants[status]} size="sm" className="h-4 px-1">{status.toUpperCase()}</Badge>
+          <Badge variant={badgeVariants[status]} size="sm" className="h-4 px-1">{statusLabel}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="p-4 space-y-1">
@@ -103,8 +105,10 @@ export default function ObeyaPage() {
   const router = useRouter();
   const { 
     cognitiveInsights, 
+    sqdcpMetrics,
     isLoading, 
     fetchCognitiveInsights,
+    fetchSQDCPMetrics,
     fetchItems,
     connect,
     disconnect,
@@ -113,10 +117,11 @@ export default function ObeyaPage() {
 
   React.useEffect(() => {
     fetchCognitiveInsights();
+    fetchSQDCPMetrics();
     fetchItems();
     connect();
     return () => disconnect();
-  }, [fetchCognitiveInsights, fetchItems, connect, disconnect]);
+  }, [fetchCognitiveInsights, fetchSQDCPMetrics, fetchItems, connect, disconnect]);
 
   if (isLoading && !cognitiveInsights) {
     return (
@@ -161,7 +166,7 @@ export default function ObeyaPage() {
           <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-[0.2em] flex items-center gap-2">
             <span>{t('pages.obeya.subtitle')}</span>
             <span className="opacity-30">|</span>
-            <span>STATION: COMMAND-CENTER-01</span>
+            <span>{t('pages.obeya.station')}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -196,28 +201,28 @@ export default function ObeyaPage() {
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.predictiveBreaches')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-orange tabular-nums">{summary.metrics.warnings}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-orange mt-2 flex items-center gap-1">
-                <TrendingDown className="h-3 w-3" /> TRENDING_TOWARD_RED
+                <TrendingDown className="h-3 w-3" /> {t('pages.obeya.statuses.trendingTowardRed')}
               </p>
             </Card>
             <Card className="rounded-none border-0 border-r border-b lg:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.siloBottlenecks')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-red tabular-nums">{summary.cross_functional.active_alerts}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-red mt-2 flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3" /> INTER-DEPT_FRICTION
+                <AlertTriangle className="h-3 w-3" /> {t('pages.obeya.statuses.interDeptFriction')}
               </p>
             </Card>
             <Card className="rounded-none border-0 border-r border-b md:border-b-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.rebalanceOps')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-steel tabular-nums">{summary.cross_functional.pending_rebalances}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-steel mt-2 flex items-center gap-1">
-                <Users className="h-3 w-3" /> SKILL_GAP_NODES
+                <Users className="h-3 w-3" /> {t('pages.obeya.statuses.skillGapNodes')}
               </p>
             </Card>
             <Card className="rounded-none border-0 bg-rams-module p-6 hover:bg-rams-panel/50 transition-none group">
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.obeya.heijunkaTips')}</p>
               <div className="text-3xl font-mono font-bold tracking-tight text-rams-green tabular-nums">{summary.heijunka.pending_suggestions}</div>
               <p className="text-[9px] font-mono font-bold uppercase text-rams-green mt-2 flex items-center gap-1">
-                <Activity className="h-3 w-3" /> SMOOTHING_PROTOCOLS
+                <Activity className="h-3 w-3" /> {t('pages.obeya.statuses.smoothingProtocols')}
               </p>
             </Card>
           </div>
@@ -233,24 +238,30 @@ export default function ObeyaPage() {
               <CardContent className="p-6 space-y-6">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">First Pass Yield</span>
-                    <span className="text-sm font-mono font-bold tabular-nums text-rams-green">98.1%</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">{t('pages.obeya.kpis.firstPassYield')}</span>
+                    <span className={cn("text-sm font-mono font-bold tabular-nums", (sqdcpMetrics?.quality.first_pass_yield ?? 0) >= 95 ? 'text-rams-green' : 'text-rams-orange')}>
+                      {sqdcpMetrics ? `${sqdcpMetrics.quality.first_pass_yield.toFixed(1)}%` : '—'}
+                    </span>
                   </div>
-                  <Progress value={98.1} className="h-1" indicatorClassName="bg-rams-green" />
+                  <Progress value={sqdcpMetrics?.quality.first_pass_yield ?? 0} className="h-1" indicatorClassName={(sqdcpMetrics?.quality.first_pass_yield ?? 0) >= 95 ? 'bg-rams-green' : 'bg-rams-orange'} />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">On-Time Delivery</span>
-                    <span className="text-sm font-mono font-bold tabular-nums text-rams-orange">94.2%</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">{t('pages.obeya.kpis.onTimeDelivery')}</span>
+                    <span className={cn("text-sm font-mono font-bold tabular-nums", (sqdcpMetrics?.delivery.on_time_delivery ?? 0) >= 95 ? 'text-rams-green' : 'text-rams-orange')}>
+                      {sqdcpMetrics ? `${sqdcpMetrics.delivery.on_time_delivery.toFixed(1)}%` : '—'}
+                    </span>
                   </div>
-                  <Progress value={94.2} className="h-1" indicatorClassName="bg-rams-orange" />
+                  <Progress value={sqdcpMetrics?.delivery.on_time_delivery ?? 0} className="h-1" indicatorClassName={(sqdcpMetrics?.delivery.on_time_delivery ?? 0) >= 95 ? 'bg-rams-green' : 'bg-rams-orange'} />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">Customer Satisfaction</span>
-                    <span className="text-sm font-mono font-bold tabular-nums text-rams-green">4.6/5.0</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-foreground/70">{t('pages.obeya.kpis.customerSatisfaction')}</span>
+                    <span className={cn("text-sm font-mono font-bold tabular-nums", (sqdcpMetrics?.people.morale_score ?? 0) >= 4.0 ? 'text-rams-green' : 'text-rams-orange')}>
+                      {sqdcpMetrics ? `${sqdcpMetrics.people.morale_score.toFixed(1)}/5.0` : '—'}
+                    </span>
                   </div>
-                  <Progress value={92} className="h-1" indicatorClassName="bg-rams-green" />
+                  <Progress value={sqdcpMetrics ? (sqdcpMetrics.people.morale_score / 5) * 100 : 0} className="h-1" indicatorClassName={(sqdcpMetrics?.people.morale_score ?? 0) >= 4.0 ? 'bg-rams-green' : 'bg-rams-orange'} />
                 </div>
               </CardContent>
             </Card>
@@ -277,7 +288,7 @@ export default function ObeyaPage() {
                           <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{alert.impact}</p>
                           <Badge variant={alert.severity === 'critical' ? 'danger' : 'warning'} size="sm" className="h-4">{alert.severity.toUpperCase()}</Badge>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-1">SOURCE: {alert.source.toUpperCase()} → IMPACTING: {alert.affected.toUpperCase()}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">{t('pages.obeya.alerts.source')}: {alert.source.toUpperCase()} → {t('pages.obeya.alerts.impacting')}: {alert.affected.toUpperCase()}</p>
                         <p className="text-[9px] font-mono italic mt-2 opacity-0 group-hover:opacity-100 transition-opacity">"{alert.event}"</p>
                       </div>
                     </div>
@@ -285,7 +296,7 @@ export default function ObeyaPage() {
                   {siloAlerts.length === 0 && (
                     <div className="py-12 text-center text-muted-foreground/20">
                       <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                      <p className="text-[9px] font-mono font-black uppercase tracking-widest">ZERO_ACTIVE_SILO_ALERTS</p>
+                      <p className="text-[9px] font-mono font-black uppercase tracking-widest">{t('pages.obeya.emptyStates.zeroActiveSiloAlerts')}</p>
                     </div>
                   )}
                 </div>
@@ -304,7 +315,7 @@ export default function ObeyaPage() {
                     <Users className="h-4 w-4 text-rams-orange" />
                     {t('pages.obeya.resourceRebalancing')}
                   </CardTitle>
-                  <Badge variant="default" className="animate-pulse h-4 px-1 text-[8px] font-black uppercase">AI_SYNC</Badge>
+                  <Badge variant="default" className="animate-pulse h-4 px-1 text-[8px] font-black uppercase">{t('pages.obeya.badges.aiSync')}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
@@ -317,13 +328,13 @@ export default function ObeyaPage() {
                         <Badge variant="default" className="font-mono text-[9px] rounded-none h-4">{s.to_work_center}</Badge>
                       </div>
                       <div className="text-right">
-                        <p className="text-[8px] text-muted-foreground/40 uppercase font-black tracking-widest">IMPROVEMENT</p>
+                        <p className="text-[8px] text-muted-foreground/40 uppercase font-black tracking-widest">{t('pages.obeya.labels.improvement')}</p>
                         <p className="text-lg font-mono font-bold text-rams-green tabular-nums">+{Math.round(s.expected_improvement * 100)}%</p>
                       </div>
                     </div>
                     <p className="text-xs font-medium leading-relaxed text-foreground/70 uppercase">{s.reason}</p>
                     <div className="space-y-2">
-                      <p className="text-[8px] uppercase font-black tracking-widest text-muted-foreground/40">RECOMMENDED_OPERATORS</p>
+                      <p className="text-[8px] uppercase font-black tracking-widest text-muted-foreground/40">{t('pages.obeya.labels.recommendedOperators')}</p>
                       <div className="flex flex-wrap gap-2">
                         {s.operators.map((op: string) => (
                           <div key={op} className="flex items-center gap-2 bg-rams-module border border-rams-line px-2 py-1 rounded-none text-[10px] font-bold uppercase">
@@ -335,13 +346,13 @@ export default function ObeyaPage() {
                         ))}
                       </div>
                     </div>
-                    <Button size="sm" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">EXECUTE_DEPLOYMENT</Button>
+                    <Button size="sm" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">{t('pages.obeya.actions.executeDeployment')}</Button>
                   </div>
                 ))}
                 {rebalanceSuggestions.length === 0 && (
                   <div className="text-center py-16 text-muted-foreground/20">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-10" />
-                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">Skill nodes optimized across all work centers</p>
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">{t('pages.obeya.emptyStates.skillNodesOptimized')}</p>
                   </div>
                 )}
               </CardContent>
@@ -354,41 +365,41 @@ export default function ObeyaPage() {
                     <Activity className="h-4 w-4 text-rams-green" />
                     {t('pages.obeya.heijunkaLeveling')}
                   </CardTitle>
-                  <Badge variant="success" className="h-4 px-1 text-[8px] font-black uppercase">PRESCRIPTIVE</Badge>
+                  <Badge variant="success" className="h-4 px-1 text-[8px] font-black uppercase">{t('pages.obeya.badges.prescriptive')}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 {heijunkaSuggestions.map((s: any) => (
                   <div key={s.suggestion_id} className="p-4 bg-rams-green/5 border border-rams-green/20 space-y-4 group hover:bg-rams-green/10 transition-none">
                     <div className="flex items-center justify-between">
-                      <Badge variant="success" className="uppercase tracking-tighter text-[9px] rounded-none h-4">{s.period} HORIZON</Badge>
+                      <Badge variant="success" className="uppercase tracking-tighter text-[9px] rounded-none h-4">{s.period} {t('pages.obeya.labels.horizon')}</Badge>
                       <div className="text-right">
-                        <p className="text-[8px] text-rams-green/60 uppercase font-black tracking-widest">MURA_REDUCTION</p>
+                        <p className="text-[8px] text-rams-green/60 uppercase font-black tracking-widest">{t('pages.obeya.labels.muraReduction')}</p>
                         <p className="text-lg font-mono font-bold text-rams-green tabular-nums">-{Math.round(s.mura_reduction)}%</p>
                       </div>
                     </div>
                     <p className="text-xs font-medium leading-relaxed text-foreground/70 uppercase">{s.reasoning}</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">Current Pattern</p>
+                        <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.obeya.labels.currentPattern')}</p>
                         <div className="h-12 w-full bg-rams-panel rounded-none flex items-end gap-0.5 p-1 border border-rams-line">
                           {[40, 80, 20, 90, 30].map((h, i) => <div key={i} className="flex-1 bg-rams-red/40" style={{height: `${h}%`}} />)}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-[8px] font-black uppercase tracking-widest text-rams-green/60">Suggested Pattern</p>
+                        <p className="text-[8px] font-black uppercase tracking-widest text-rams-green/60">{t('pages.obeya.labels.suggestedPattern')}</p>
                         <div className="h-12 w-full bg-rams-green/10 rounded-none flex items-end gap-0.5 p-1 border border-rams-green/20">
                           {[50, 55, 48, 52, 53].map((h, i) => <div key={i} className="flex-1 bg-rams-green/40" style={{height: `${h}%`}} />)}
                         </div>
                       </div>
                     </div>
-                    <Button size="sm" variant="success" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">APPLY_SMOOTHING</Button>
+                    <Button size="sm" variant="success" className="w-full rounded-none h-8 text-[9px] font-black uppercase tracking-widest">{t('pages.obeya.actions.applySmoothing')}</Button>
                   </div>
                 ))}
                 {heijunkaSuggestions.length === 0 && (
                   <div className="text-center py-16 text-muted-foreground/20">
                     <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-10" />
-                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">Production mix is sufficiently leveled</p>
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest">{t('pages.obeya.emptyStates.productionMixLeveled')}</p>
                   </div>
                 )}
               </CardContent>
@@ -399,27 +410,29 @@ export default function ObeyaPage() {
         <TabsContent value="sqdcp" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             <SQDCPCard
-              title="Quality"
+              title={t('pages.obeya.sqdcp.qualityTitle')}
               icon={Award}
-              status="green"
+              status={sqdcpMetrics?.quality.status ?? 'green'}
+              statusLabel={t(`pages.obeya.statusColor.${sqdcpMetrics?.quality.status ?? 'green'}`)}
               metrics={[
-                { label: 'First Pass Yield', value: `98.1%`, trend: 'up' },
-                { label: 'Defect Rate', value: `1.9%`, trend: 'down' },
-                { label: 'Open NCRs', value: summary.metrics.total_tracked > 0 ? 3 : 0 },
+                { label: t('pages.obeya.kpis.firstPassYield'), value: sqdcpMetrics ? `${sqdcpMetrics.quality.first_pass_yield.toFixed(1)}%` : '—', trend: 'up' },
+                { label: t('pages.obeya.kpis.defectRate'), value: sqdcpMetrics ? `${sqdcpMetrics.quality.defect_rate.toFixed(1)}%` : '—', trend: 'down' },
+                { label: t('pages.obeya.kpis.openNcrs'), value: sqdcpMetrics?.quality.ncr_open ?? 0 },
               ]}
             />
             <SQDCPCard
-              title="Delivery"
+              title={t('pages.obeya.sqdcp.deliveryTitle')}
               icon={Truck}
-              status="yellow"
+              status={sqdcpMetrics?.delivery.status ?? 'yellow'}
+              statusLabel={t(`pages.obeya.statusColor.${sqdcpMetrics?.delivery.status ?? 'yellow'}`)}
               metrics={[
-                { label: 'On-Time Delivery', value: `94.2%`, trend: 'down' },
-                { label: 'Backlog Items', value: 23 },
+                { label: t('pages.obeya.kpis.onTimeDelivery'), value: sqdcpMetrics ? `${sqdcpMetrics.delivery.on_time_delivery.toFixed(1)}%` : '—', trend: (sqdcpMetrics?.delivery.on_time_delivery ?? 0) >= 95 ? 'up' : 'down' },
+                { label: t('pages.obeya.kpis.backlogItems'), value: sqdcpMetrics?.delivery.backlog_items ?? 0 },
               ]}
             />
             <div className="col-span-full py-12 text-center industrial-panel bg-rams-panel/20 border-dashed">
               <RefreshCw className="h-8 w-8 mx-auto mb-4 animate-spin text-muted-foreground/20" />
-              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Switching to real-time shop floor sensor fusion...</p>
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground/40">{t('pages.obeya.labels.sensorFusion')}</p>
             </div>
           </div>
         </TabsContent>
@@ -427,7 +440,7 @@ export default function ObeyaPage() {
         <TabsContent value="exceptions" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <Card className="rounded-rams-sm overflow-hidden border-rams-line">
             <CardHeader className="bg-rams-panel/20 border-b border-rams-line">
-              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">Anomalies & Exceptions</CardTitle>
+              <CardTitle className="text-xs font-black uppercase tracking-[0.2em]">{t('pages.obeya.exceptionsTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-rams-line/30">
@@ -441,14 +454,14 @@ export default function ObeyaPage() {
                         <p className="font-sans font-black text-xs uppercase tracking-tight text-foreground/80 group-hover:text-rams-orange transition-none">{item.title}</p>
                         <Badge variant="destructive" size="sm">{item.status.toUpperCase()}</Badge>
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1 uppercase">{item.blocked_reason || item.escalation_reason || 'Pending action'}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1 uppercase">{item.blocked_reason || item.escalation_reason || t('pages.obeya.emptyStates.pendingAction')}</p>
                     </div>
                   </div>
                 ))}
                 {items.filter(i => i.status === 'blocked' || i.is_escalated).length === 0 && (
                   <div className="flex items-center gap-4 p-8 justify-center">
                     <CheckCircle className="h-5 w-5 text-rams-green opacity-40" />
-                    <p className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/40">Zero critical exceptions identified</p>
+                    <p className="text-[9px] font-mono font-black uppercase tracking-widest text-muted-foreground/40">{t('pages.obeya.emptyStates.zeroCriticalExceptions')}</p>
                   </div>
                 )}
               </div>

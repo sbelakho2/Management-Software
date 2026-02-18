@@ -1,0 +1,251 @@
+{
+  "timestamp": "2026-02-17T18:00:05.901Z",
+  "totalRoles": 24,
+  "successfulLogins": 0,
+  "totalPagesVisited": 0,
+  "totalPageErrors": 0,
+  "totalConsoleErrors": 24,
+  "totalNetworkErrors": 0,
+  "roleResults": [
+    {
+      "role": "admin",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "ceo",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "gm",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "exec",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "finance",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "accountant",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "hr",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "ops",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "quality",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "auditor",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "it",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "supervisor",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "team_lead",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "operator",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "viewer",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "sales_engineer",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "estimator",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "supply_chain",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "maintenance",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "warehouse",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "sales",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "purchasing",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "logistics",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    },
+    {
+      "role": "engineering",
+      "loginSuccess": false,
+      "pagesSuccessful": 0,
+      "pagesTotal": 0,
+      "avgLoadTime": 0,
+      "errors": [
+        "API login failed"
+      ]
+    }
+  ]
+}

@@ -1049,6 +1049,7 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
         self._suppliers: dict[str, Supplier] = {}
         self._capability_graph = CapabilityGraph()
         self._semantic_matcher = SemanticMatcher()
+        self._state_loaded = False
         
         # Initialize scorers
         self._scorers: dict[MatchingCriteria, CriteriaScorer] = {
@@ -1135,6 +1136,8 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
         """Load persisted supplier catalogue from DB on startup."""
         import logging as _log
         _logger = _log.getLogger(__name__)
+        if self._state_loaded:
+            return
         try:
             data = await self.load_state(self._DEFAULT_TENANT_ID, "suppliers")
             if data and isinstance(data, dict):
@@ -1184,6 +1187,30 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
                     self._semantic_matcher.index_capabilities(list(self._suppliers.values()))
         except Exception:
             _logger.warning("Failed to restore suppliers from DB", exc_info=True)
+        self._state_loaded = True
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def add_supplier_async(self, supplier: Supplier) -> None:
+        await self._ensure_loaded()
+        self.add_supplier(supplier)
+        await self.persist_all()
+
+    async def add_suppliers_async(self, suppliers: list[Supplier]) -> None:
+        await self._ensure_loaded()
+        self.add_suppliers(suppliers)
+        await self.persist_all()
+
+    async def remove_supplier_async(self, supplier_id: str) -> None:
+        await self._ensure_loaded()
+        self.remove_supplier(supplier_id)
+        await self.persist_all()
+
+    async def get_supplier_async(self, supplier_id: str) -> Supplier | None:
+        await self._ensure_loaded()
+        return self.get_supplier(supplier_id)
     
     def _score_supplier(
         self,
@@ -1365,6 +1392,15 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
             total_suppliers_evaluated=len(eligible),
             matching_duration_ms=duration_ms,
         )
+
+    async def match_async(
+        self,
+        requirement: RFQRequirement,
+        max_results: int = 10,
+        use_rank_aggregation: bool = True,
+    ) -> MatchingResult:
+        await self._ensure_loaded()
+        return self.match(requirement, max_results, use_rank_aggregation)
     
     def find_alternative_suppliers(
         self,
@@ -1403,6 +1439,15 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
         ][:max_results]
         
         return alternatives
+
+    async def find_alternative_suppliers_async(
+        self,
+        supplier_id: str,
+        requirement: RFQRequirement,
+        max_results: int = 5,
+    ) -> list[SupplierMatch]:
+        await self._ensure_loaded()
+        return self.find_alternative_suppliers(supplier_id, requirement, max_results)
     
     def compare_suppliers(
         self,
@@ -1447,6 +1492,14 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
             "comparisons": comparisons,
             "recommended": comparisons[0]["supplier_id"] if comparisons else None,
         }
+
+    async def compare_suppliers_async(
+        self,
+        supplier_ids: list[str],
+        requirement: RFQRequirement,
+    ) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.compare_suppliers(supplier_ids, requirement)
     
     def get_capability_gaps(
         self,
@@ -1481,6 +1534,13 @@ class SmartSupplierMatchmaker(PersistentServiceMixin):
             "well_covered": well_covered,
             "total_capabilities_checked": len(required),
         }
+
+    async def get_capability_gaps_async(
+        self,
+        requirement: RFQRequirement,
+    ) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_capability_gaps(requirement)
 
 
 # =============================================================================

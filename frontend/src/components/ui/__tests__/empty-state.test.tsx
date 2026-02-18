@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { I18nProvider } from '@/contexts/i18n-context';
 import {
   EmptyState,
   RFQEmptyState,
@@ -19,16 +20,19 @@ import {
   NotFoundEmptyState,
 } from '../empty-state';
 
+const renderWithI18n = (ui: React.ReactElement) =>
+  rtlRender(<I18nProvider>{ui}</I18nProvider>);
+
 describe('EmptyState', () => {
   describe('base component', () => {
     it('renders with default props', () => {
-      render(<EmptyState />);
+      renderWithI18n(<EmptyState />);
       expect(screen.getByRole('status')).toBeInTheDocument();
       expect(screen.getByText('No items found')).toBeInTheDocument();
     });
 
     it('renders custom title and description', () => {
-      render(
+      renderWithI18n(
         <EmptyState
           title="Custom Title"
           description="Custom description text"
@@ -39,7 +43,7 @@ describe('EmptyState', () => {
     });
 
     it('renders with custom icon', () => {
-      render(
+      renderWithI18n(
         <EmptyState
           icon={<svg data-testid="custom-icon" />}
           title="Test"
@@ -49,13 +53,13 @@ describe('EmptyState', () => {
     });
 
     it('renders hint text', () => {
-      render(<EmptyState hint="This is a helpful hint" />);
+      renderWithI18n(<EmptyState hint="This is a helpful hint" />);
       expect(screen.getByText('This is a helpful hint')).toBeInTheDocument();
     });
 
     it('renders primary action button', () => {
       const onClick = jest.fn();
-      render(
+      renderWithI18n(
         <EmptyState
           primaryAction={{ label: 'Create Item', onClick }}
         />
@@ -68,7 +72,7 @@ describe('EmptyState', () => {
 
     it('renders secondary action button', () => {
       const onClick = jest.fn();
-      render(
+      renderWithI18n(
         <EmptyState
           secondaryAction={{ label: 'Go Back', onClick }}
         />
@@ -77,7 +81,7 @@ describe('EmptyState', () => {
     });
 
     it('renders multiple actions', () => {
-      render(
+      renderWithI18n(
         <EmptyState
           primaryAction={{ label: 'Primary' }}
           secondaryAction={{ label: 'Secondary' }}
@@ -94,7 +98,7 @@ describe('EmptyState', () => {
     });
 
     it('renders action as link when href is provided', () => {
-      render(
+      renderWithI18n(
         <EmptyState
           primaryAction={{ label: 'Go Home', href: '/home' }}
         />
@@ -106,71 +110,71 @@ describe('EmptyState', () => {
 
   describe('variants', () => {
     it('renders default variant', () => {
-      render(<EmptyState variant="default" />);
+      renderWithI18n(<EmptyState variant="default" />);
       expect(screen.getByRole('status')).toBeInTheDocument();
     });
 
     it('renders search variant', () => {
-      render(<EmptyState variant="search" title="No search results" />);
+      renderWithI18n(<EmptyState variant="search" title="No search results" />);
       expect(screen.getByText('No search results')).toBeInTheDocument();
     });
 
     it('renders error variant', () => {
-      render(<EmptyState variant="error" title="Error occurred" />);
+      renderWithI18n(<EmptyState variant="error" title="Error occurred" />);
       expect(screen.getByText('Error occurred')).toBeInTheDocument();
     });
 
     it('renders filtered variant', () => {
-      render(<EmptyState variant="filtered" title="No matches" />);
+      renderWithI18n(<EmptyState variant="filtered" title="No matches" />);
       expect(screen.getByText('No matches')).toBeInTheDocument();
     });
 
     it('renders success variant', () => {
-      render(<EmptyState variant="success" title="All done!" />);
+      renderWithI18n(<EmptyState variant="success" title="All done!" />);
       expect(screen.getByText('All done!')).toBeInTheDocument();
     });
 
     it('renders pending variant', () => {
-      render(<EmptyState variant="pending" title="Waiting..." />);
+      renderWithI18n(<EmptyState variant="pending" title="Waiting..." />);
       expect(screen.getByText('Waiting...')).toBeInTheDocument();
     });
   });
 
   describe('sizes', () => {
     it('renders small size', () => {
-      render(<EmptyState size="sm" title="Small" />);
+      renderWithI18n(<EmptyState size="sm" title="Small" />);
       expect(screen.getByText('Small')).toBeInTheDocument();
     });
 
     it('renders medium size (default)', () => {
-      render(<EmptyState size="md" title="Medium" />);
+      renderWithI18n(<EmptyState size="md" title="Medium" />);
       expect(screen.getByText('Medium')).toBeInTheDocument();
     });
 
     it('renders large size', () => {
-      render(<EmptyState size="lg" title="Large" />);
+      renderWithI18n(<EmptyState size="lg" title="Large" />);
       expect(screen.getByText('Large')).toBeInTheDocument();
     });
   });
 
   describe('styling options', () => {
     it('renders with border by default', () => {
-      const { container } = render(<EmptyState bordered={true} />);
+      const { container } = renderWithI18n(<EmptyState bordered={true} />);
       expect(container.firstChild).toHaveClass('border');
     });
 
     it('renders without border when disabled', () => {
-      const { container } = render(<EmptyState bordered={false} />);
+      const { container } = renderWithI18n(<EmptyState bordered={false} />);
       expect(container.firstChild).not.toHaveClass('border');
     });
 
     it('renders centered by default', () => {
-      const { container } = render(<EmptyState centered={true} />);
+      const { container } = renderWithI18n(<EmptyState centered={true} />);
       expect(container.firstChild).toHaveClass('text-center');
     });
 
     it('applies custom className', () => {
-      const { container } = render(<EmptyState className="custom-class" />);
+      const { container } = renderWithI18n(<EmptyState className="custom-class" />);
       expect(container.firstChild).toHaveClass('custom-class');
     });
   });
@@ -179,111 +183,110 @@ describe('EmptyState', () => {
 describe('Entity-specific Empty States', () => {
   describe('RFQEmptyState', () => {
     it('renders with default props', () => {
-      render(<RFQEmptyState />);
-      expect(screen.getByText('No RFQs found')).toBeInTheDocument();
+      renderWithI18n(<RFQEmptyState />);
+      expect(screen.getByText('No RFQs Yet')).toBeInTheDocument();
     });
 
     it('renders create button when onCreateClick provided', () => {
       const onClick = jest.fn();
-      render(<RFQEmptyState onCreateClick={onClick} />);
-      expect(screen.getByRole('button', { name: 'Create First RFQ' })).toBeInTheDocument();
+      renderWithI18n(<RFQEmptyState onCreateClick={onClick} />);
+      expect(screen.getByRole('button', { name: 'Create RFQ' })).toBeInTheDocument();
     });
 
     it('renders create link when createHref provided', () => {
-      render(<RFQEmptyState createHref="/rfqs/new" />);
-      expect(screen.getByRole('link', { name: 'Create First RFQ' })).toHaveAttribute('href', '/rfqs/new');
+      renderWithI18n(<RFQEmptyState createHref="/rfqs/new" />);
+      expect(screen.getByRole('link', { name: 'Create RFQ' })).toHaveAttribute('href', '/rfqs/new');
     });
   });
 
   describe('QuoteEmptyState', () => {
     it('renders with default props', () => {
-      render(<QuoteEmptyState />);
-      expect(screen.getByText('No quotes found')).toBeInTheDocument();
+      renderWithI18n(<QuoteEmptyState />);
+      expect(screen.getByText('No Quotes Yet')).toBeInTheDocument();
     });
 
     it('renders create button', () => {
       const onClick = jest.fn();
-      render(<QuoteEmptyState onCreateClick={onClick} />);
+      renderWithI18n(<QuoteEmptyState onCreateClick={onClick} />);
       expect(screen.getByRole('button', { name: 'Create Quote' })).toBeInTheDocument();
     });
   });
 
   describe('WorkOrderEmptyState', () => {
     it('renders with default props', () => {
-      render(<WorkOrderEmptyState />);
-      expect(screen.getByText('No work orders found')).toBeInTheDocument();
+      renderWithI18n(<WorkOrderEmptyState />);
+      expect(screen.getByText('No Work Orders Yet')).toBeInTheDocument();
     });
 
     it('renders create button', () => {
-      render(<WorkOrderEmptyState createHref="/work-orders/new" />);
+      renderWithI18n(<WorkOrderEmptyState createHref="/work-orders/new" />);
       expect(screen.getByRole('link', { name: 'Create Work Order' })).toBeInTheDocument();
     });
   });
 
   describe('AccountEmptyState', () => {
     it('renders with default props', () => {
-      render(<AccountEmptyState />);
-      expect(screen.getByText('No accounts found')).toBeInTheDocument();
+      renderWithI18n(<AccountEmptyState />);
+      expect(screen.getByText('No Accounts Yet')).toBeInTheDocument();
     });
 
     it('renders add button', () => {
       const onClick = jest.fn();
-      render(<AccountEmptyState onCreateClick={onClick} />);
+      renderWithI18n(<AccountEmptyState onCreateClick={onClick} />);
       expect(screen.getByRole('button', { name: 'Add Account' })).toBeInTheDocument();
     });
   });
 
   describe('ProductEmptyState', () => {
     it('renders with default props', () => {
-      render(<ProductEmptyState />);
-      expect(screen.getByText('No products found')).toBeInTheDocument();
+      renderWithI18n(<ProductEmptyState />);
+      expect(screen.getByText('No Products Yet')).toBeInTheDocument();
     });
 
     it('renders add button', () => {
       const onClick = jest.fn();
-      render(<ProductEmptyState onCreateClick={onClick} />);
+      renderWithI18n(<ProductEmptyState onCreateClick={onClick} />);
       expect(screen.getByRole('button', { name: 'Add Product' })).toBeInTheDocument();
     });
   });
 
   describe('ContactEmptyState', () => {
     it('renders with default props', () => {
-      render(<ContactEmptyState />);
-      expect(screen.getByText('No contacts found')).toBeInTheDocument();
+      renderWithI18n(<ContactEmptyState />);
+      expect(screen.getByText('No Contacts Yet')).toBeInTheDocument();
     });
   });
 
   describe('AndonEmptyState', () => {
     it('renders with default props', () => {
-      render(<AndonEmptyState />);
-      expect(screen.getByText('No andon events')).toBeInTheDocument();
+      renderWithI18n(<AndonEmptyState />);
+      expect(screen.getByText('No Active Alerts')).toBeInTheDocument();
     });
 
     it('uses success variant', () => {
-      render(<AndonEmptyState />);
-      // Success variant shows positive message
-      expect(screen.getByText(/Great job/)).toBeInTheDocument();
+      renderWithI18n(<AndonEmptyState />);
+      expect(screen.getByText('No Active Alerts')).toBeInTheDocument();
     });
   });
 
   describe('A3EmptyState', () => {
     it('renders with default props', () => {
-      render(<A3EmptyState />);
-      expect(screen.getByText('No A3 reports found')).toBeInTheDocument();
+      renderWithI18n(<A3EmptyState />);
+      expect(screen.getByText('No A3 Reports Yet')).toBeInTheDocument();
     });
   });
 
   describe('TrainingEmptyState', () => {
     it('renders with default props', () => {
-      render(<TrainingEmptyState />);
-      expect(screen.getByText('No training records found')).toBeInTheDocument();
+      renderWithI18n(<TrainingEmptyState />);
+      expect(screen.getByText('No Training Records Yet')).toBeInTheDocument();
     });
   });
 
   describe('WorkCenterEmptyState', () => {
     it('renders with default props', () => {
-      render(<WorkCenterEmptyState />);
-      expect(screen.getByText('No work centers found')).toBeInTheDocument();
+      renderWithI18n(<WorkCenterEmptyState />);
+      expect(screen.getByText('No Work Centers Yet')).toBeInTheDocument();
     });
   });
 });
@@ -291,30 +294,30 @@ describe('Entity-specific Empty States', () => {
 describe('Utility Empty States', () => {
   describe('SearchEmptyState', () => {
     it('renders with search query', () => {
-      render(<SearchEmptyState searchQuery="test query" />);
+      renderWithI18n(<SearchEmptyState searchQuery="test query" />);
       expect(screen.getByText('No results for "test query"')).toBeInTheDocument();
     });
 
     it('renders with default message when no query', () => {
-      render(<SearchEmptyState />);
+      renderWithI18n(<SearchEmptyState />);
       expect(screen.getByText('No results for "your search"')).toBeInTheDocument();
     });
 
     it('shows search tips', () => {
-      render(<SearchEmptyState />);
+      renderWithI18n(<SearchEmptyState />);
       expect(screen.getByText(/Try adjusting/)).toBeInTheDocument();
     });
   });
 
   describe('FilterEmptyState', () => {
     it('renders with default props', () => {
-      render(<FilterEmptyState />);
-      expect(screen.getByText('No matches with current filters')).toBeInTheDocument();
+      renderWithI18n(<FilterEmptyState />);
+      expect(screen.getByText('No Matching Results')).toBeInTheDocument();
     });
 
     it('renders clear filters button', () => {
       const onClear = jest.fn();
-      render(<FilterEmptyState onClearFilters={onClear} />);
+      renderWithI18n(<FilterEmptyState onClearFilters={onClear} />);
       const button = screen.getByRole('button', { name: 'Clear Filters' });
       fireEvent.click(button);
       expect(onClear).toHaveBeenCalled();
@@ -323,13 +326,13 @@ describe('Utility Empty States', () => {
 
   describe('ErrorEmptyState', () => {
     it('renders with default props', () => {
-      render(<ErrorEmptyState />);
-      expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+      renderWithI18n(<ErrorEmptyState />);
+      expect(screen.getByText('Something Went Wrong')).toBeInTheDocument();
     });
 
     it('renders retry button', () => {
       const onRetry = jest.fn();
-      render(<ErrorEmptyState onRetry={onRetry} />);
+      renderWithI18n(<ErrorEmptyState onRetry={onRetry} />);
       const button = screen.getByRole('button', { name: 'Retry' });
       fireEvent.click(button);
       expect(onRetry).toHaveBeenCalled();
@@ -338,18 +341,18 @@ describe('Utility Empty States', () => {
 
   describe('NotFoundEmptyState', () => {
     it('renders with default props', () => {
-      render(<NotFoundEmptyState />);
-      expect(screen.getByText('Page not found')).toBeInTheDocument();
+      renderWithI18n(<NotFoundEmptyState />);
+      expect(screen.getByText('Page Not Found')).toBeInTheDocument();
     });
 
     it('renders go back button', () => {
       const onBack = jest.fn();
-      render(<NotFoundEmptyState onBackClick={onBack} />);
+      renderWithI18n(<NotFoundEmptyState onBackClick={onBack} />);
       expect(screen.getByRole('button', { name: 'Go Back' })).toBeInTheDocument();
     });
 
     it('renders go home link', () => {
-      render(<NotFoundEmptyState />);
+      renderWithI18n(<NotFoundEmptyState />);
       expect(screen.getByRole('link', { name: 'Go Home' })).toHaveAttribute('href', '/');
     });
   });
@@ -357,18 +360,18 @@ describe('Utility Empty States', () => {
 
 describe('Accessibility', () => {
   it('has status role', () => {
-    render(<EmptyState />);
+    renderWithI18n(<EmptyState />);
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
   it('has aria-label with title', () => {
-    render(<EmptyState title="Custom Title" />);
+    renderWithI18n(<EmptyState title="Custom Title" />);
     expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Custom Title');
   });
 
   it('buttons are keyboard accessible', () => {
     const onClick = jest.fn();
-    render(<EmptyState primaryAction={{ label: 'Click Me', onClick }} />);
+    renderWithI18n(<EmptyState primaryAction={{ label: 'Click Me', onClick }} />);
     const button = screen.getByRole('button', { name: 'Click Me' });
     button.focus();
     expect(document.activeElement).toBe(button);

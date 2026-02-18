@@ -41,10 +41,13 @@ export default function ExecutivePage() {
     sqdcp,
     kpiSummary,
     sqdcpLoading,
+    ceoDashboard,
+    ceoDashboardLoading,
     runNl2sql,
     analyzeRisk,
     fetchSQDCP,
     fetchKPISummary,
+    fetchCEODashboard,
   } = useExecutiveStore();
 
   const { totalNcrs, totalCapas, fetchNCRs, fetchCAPAs } = useQualityStore();
@@ -58,12 +61,13 @@ export default function ExecutivePage() {
       fetchInsights();
       fetchSQDCP();
       fetchKPISummary();
+      fetchCEODashboard();
       if (user) {
         const name = (user.full_name || '').trim() || (user.email || '').trim() || t('common.user');
         fetchTodayScreen(user.id, name);
       }
     }
-  }, [fetchNCRs, fetchCAPAs, fetchInsights, fetchSQDCP, fetchKPISummary, fetchTodayScreen, user, isAuthenticated]);
+  }, [fetchNCRs, fetchCAPAs, fetchInsights, fetchSQDCP, fetchKPISummary, fetchCEODashboard, fetchTodayScreen, user, isAuthenticated]);
 
   const [employeeName, setEmployeeName] = React.useState(() => t('pages.executive.risk.namePlaceholder'));
   const [department, setDepartment] = React.useState(() => t('pages.executive.risk.deptPlaceholder'));
@@ -80,8 +84,12 @@ export default function ExecutivePage() {
   }, []);
 
   // Derive strategic directives from live insights data
+  // Prefer CEO dashboard unified insights when available, fall back to separate analytics insights
   const strategicDirectives = React.useMemo(() => {
-    const insightsList = Array.isArray(insights) ? insights : [];
+    const ceoDashInsights = ceoDashboard?.insights;
+    const insightsList = Array.isArray(ceoDashInsights) && ceoDashInsights.length > 0
+      ? ceoDashInsights
+      : Array.isArray(insights) ? insights : [];
     const priorityLabels = [
       t('pages.executive.strategicDirectives.priorityAlpha'),
       t('pages.executive.strategicDirectives.priorityBeta'),
@@ -109,7 +117,7 @@ export default function ExecutivePage() {
       desc: insight.description || insight.recommendation || t('pages.executive.strategicDirectives.insightDescFallback'),
       severity: insight.severity === 'critical' ? 'critical' : insight.severity === 'warning' ? 'warning' : 'strategic',
     }));
-  }, [insights, t]);
+  }, [insights, ceoDashboard, t]);
 
   // Compute revenue delta vs previous month (data-driven, not hardcoded)
   const revenueMtd = ((todayData as any)?.metrics?.revenue || 0);
@@ -177,6 +185,48 @@ export default function ExecutivePage() {
           </TabsList>
 
           <TabsContent value="north-star" data-testid="north-star" className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {/* Data Thread & Cognitive Obeya Summary (Unified CEO Dashboard) */}
+            {ceoDashboard && (
+              <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
+                <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.dataThread.exportedRecords')}</p>
+                  <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">
+                    {ceoDashboard.data_thread.exported_record_count.toLocaleString()}
+                  </div>
+                  <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">
+                    {ceoDashboard.data_thread.latest_snapshot_date
+                      ? `${t('pages.executive.dataThread.snapshotPrefix')}: ${ceoDashboard.data_thread.latest_snapshot_date}`
+                      : t('pages.executive.dataThread.noSnapshotYet')}
+                  </p>
+                </div>
+                <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.dataThread.lineageLinks')}</p>
+                  <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">
+                    {ceoDashboard.data_thread.lineage_link_count}
+                  </div>
+                  <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.executive.dataThread.crossDomainTraces')}</p>
+                </div>
+                <div className="bg-rams-module p-6 border-r border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.dataThread.reasoningTraces')}</p>
+                  <div className="text-3xl font-mono font-bold tracking-tight text-foreground/90 tabular-nums">
+                    {ceoDashboard.data_thread.reasoning_trace_count}
+                  </div>
+                  <p className="text-[9px] font-mono font-bold text-muted-foreground/40 uppercase tracking-widest mt-2">{t('pages.executive.dataThread.aiDecisionPaths')}</p>
+                </div>
+                <div className="bg-rams-module p-6 border-b md:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
+                  <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground/50 mb-4">{t('pages.executive.dataThread.cognitiveWarnings')}</p>
+                  <div className={cn("text-3xl font-mono font-bold tracking-tight tabular-nums", (ceoDashboard.cognitive_obeya?.warning_count ?? 0) > 0 ? "text-rams-orange" : "text-rams-green")}>
+                    {ceoDashboard.cognitive_obeya?.warning_count ?? 0}
+                  </div>
+                  <p className={cn("text-[9px] font-mono font-bold uppercase tracking-widest mt-2", (ceoDashboard.cognitive_obeya?.warning_count ?? 0) > 0 ? "text-rams-orange" : "text-rams-green")}>
+                    {(ceoDashboard.cognitive_obeya?.warning_count ?? 0) > 0
+                      ? t('pages.executive.dataThread.trendBreachesPredicted')
+                      : t('pages.executive.dataThread.allMetricsNominal')}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Executive KPIs */}
             <div className="grid gap-0 md:grid-cols-2 lg:grid-cols-4 border border-rams-line bg-rams-line">
               <div className="bg-rams-module p-6 border-r border-b lg:border-b-0 border-rams-line group hover:bg-rams-panel transition-none cursor-help">
@@ -297,12 +347,13 @@ export default function ExecutivePage() {
 
             {/* KPI Score Cards */}
             {kpiSummary && (
-              <div className="grid gap-0 md:grid-cols-5 border border-rams-line bg-rams-line">
+              <div className="grid gap-0 md:grid-cols-6 border border-rams-line bg-rams-line">
                 {[
                   { label: t('pages.executive.kpi.qualityScore'), value: kpiSummary.quality_score },
                   { label: t('pages.executive.kpi.deliveryScore'), value: kpiSummary.delivery_score },
                   { label: t('pages.executive.kpi.costEfficiency'), value: kpiSummary.cost_efficiency },
                   { label: t('pages.executive.kpi.workforce'), value: kpiSummary.workforce_utilization },
+                  { label: t('pages.executive.kpi.inventoryHealth'), value: kpiSummary.inventory_health ?? 0 },
                   { label: t('pages.executive.kpi.overallScore'), value: kpiSummary.overall_score },
                 ].map((kpi) => (
                   <div key={kpi.label} className="bg-rams-module p-6 border-r border-rams-line text-center">

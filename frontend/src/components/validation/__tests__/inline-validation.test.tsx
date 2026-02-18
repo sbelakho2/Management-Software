@@ -238,7 +238,9 @@ describe('ValidatedInput', () => {
     render(<ValidatedInput formId="test-form" name="name" />);
     
     const input = screen.getByRole('textbox');
-    await user.type(input, 'John');
+    await act(async () => {
+      await user.type(input, 'John');
+    });
     
     expect(store.getValue('test-form', 'name')).toBe('John');
   });
@@ -251,8 +253,10 @@ describe('ValidatedInput', () => {
     render(<ValidatedInput formId="test-form" name="name" />);
     
     const input = screen.getByRole('textbox');
-    await user.click(input);
-    await user.tab(); // Blur
+    await act(async () => {
+      await user.click(input);
+      await user.tab(); // Blur
+    });
     
     expect(store.getField('test-form', 'name')?.touched).toBe(true);
   });
@@ -821,7 +825,7 @@ describe('Integration', () => {
     store.initForm('signup-form', {
       gates: [
         requiredFieldsGate(['name', 'email']),
-        noErrorsGate,
+        noErrorsGate(),
       ],
     });
     
@@ -843,7 +847,7 @@ describe('Integration', () => {
     
     // Run gate checks
     const gateResult = store.runGates('signup-form');
-    expect(gateResult?.canProceed).toBe(true);
+    expect(gateResult?.passed).toBe(true);
     
     render(<GateCheckDisplay result={gateResult!} />);
     

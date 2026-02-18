@@ -10,6 +10,10 @@ from enum import Enum
 from typing import Optional, Any
 import uuid
 import re
+from uuid import UUID
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class AlertSeverity(Enum):
@@ -331,8 +335,12 @@ DEFAULT_TARGETS: list[dict] = [
 ]
 
 
-class AlertingConfigService:
+class AlertingConfigService(PersistentServiceMixin):
     """Service for managing alerting configuration."""
+
+    SERVICE_NAME = "alerting_config"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self) -> None:
         """Initialize the service."""
@@ -344,6 +352,62 @@ class AlertingConfigService:
         self._groups: dict[str, AlertGroup] = {}
         self._history: list[AlertHistory] = []
         self._initialize_defaults()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        self._rules = {
+            rule_id: decode_dataclass(rule, AlertRule)
+            for rule_id, rule in state.get("rules", {}).items()
+        }
+        self._alerts = {
+            alert_id: decode_dataclass(alert, Alert)
+            for alert_id, alert in state.get("alerts", {}).items()
+        }
+        self._silences = {
+            silence_id: decode_dataclass(silence, Silence)
+            for silence_id, silence in state.get("silences", {}).items()
+        }
+        self._targets = {
+            target_id: decode_dataclass(target, NotificationTarget)
+            for target_id, target in state.get("targets", {}).items()
+        }
+        self._routes = {
+            route_id: decode_dataclass(route, NotificationRoute)
+            for route_id, route in state.get("routes", {}).items()
+        }
+        self._groups = {
+            group_id: decode_dataclass(group, AlertGroup)
+            for group_id, group in state.get("groups", {}).items()
+        }
+        self._history = [
+            decode_dataclass(entry, AlertHistory)
+            for entry in state.get("history", [])
+        ]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "rules": {rule_id: encode_dataclass(rule) for rule_id, rule in self._rules.items()},
+            "alerts": {alert_id: encode_dataclass(alert) for alert_id, alert in self._alerts.items()},
+            "silences": {silence_id: encode_dataclass(silence) for silence_id, silence in self._silences.items()},
+            "targets": {target_id: encode_dataclass(target) for target_id, target in self._targets.items()},
+            "routes": {route_id: encode_dataclass(route) for route_id, route in self._routes.items()},
+            "groups": {group_id: encode_dataclass(group) for group_id, group in self._groups.items()},
+            "history": [encode_dataclass(entry) for entry in self._history],
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def _initialize_defaults(self) -> None:
         """Initialize default configuration."""
@@ -452,6 +516,12 @@ class AlertingConfigService:
         self._rules[rule.id] = rule
         return rule
 
+    async def create_rule_async(self, *args: Any, **kwargs: Any) -> AlertRule:
+        await self._ensure_loaded()
+        rule = self.create_rule(*args, **kwargs)
+        await self.persist_all()
+        return rule
+
     def get_rule(self, rule_id: str) -> Optional[AlertRule]:
         """Get a rule by ID."""
         return self._rules.get(rule_id)
@@ -521,6 +591,12 @@ class AlertingConfigService:
         rule.updated_at = datetime.now(timezone.utc)
         return rule
 
+    async def update_rule_async(self, *args: Any, **kwargs: Any) -> Optional[AlertRule]:
+        await self._ensure_loaded()
+        rule = self.update_rule(*args, **kwargs)
+        await self.persist_all()
+        return rule
+
     def enable_rule(self, rule_id: str) -> Optional[AlertRule]:
         """Enable a rule."""
         return self.update_rule(rule_id, is_active=True)
@@ -535,6 +611,12 @@ class AlertingConfigService:
             del self._rules[rule_id]
             return True
         return False
+
+    async def delete_rule_async(self, rule_id: str) -> bool:
+        await self._ensure_loaded()
+        deleted = self.delete_rule(rule_id)
+        await self.persist_all()
+        return deleted
 
     # ========================================
     # Notification Target Management
@@ -555,6 +637,12 @@ class AlertingConfigService:
             config=config or {},
         )
         self._targets[target.id] = target
+        return target
+
+    async def create_target_async(self, *args: Any, **kwargs: Any) -> NotificationTarget:
+        await self._ensure_loaded()
+        target = self.create_target(*args, **kwargs)
+        await self.persist_all()
         return target
 
     def get_target(self, target_id: str) -> Optional[NotificationTarget]:
@@ -595,12 +683,24 @@ class AlertingConfigService:
 
         return target
 
+    async def update_target_async(self, *args: Any, **kwargs: Any) -> Optional[NotificationTarget]:
+        await self._ensure_loaded()
+        target = self.update_target(*args, **kwargs)
+        await self.persist_all()
+        return target
+
     def delete_target(self, target_id: str) -> bool:
         """Delete a target."""
         if target_id in self._targets:
             del self._targets[target_id]
             return True
         return False
+
+    async def delete_target_async(self, target_id: str) -> bool:
+        await self._ensure_loaded()
+        deleted = self.delete_target(target_id)
+        await self.persist_all()
+        return deleted
 
     # ========================================
     # Notification Route Management
@@ -629,6 +729,12 @@ class AlertingConfigService:
             repeat_interval_seconds=repeat_interval_seconds,
         )
         self._routes[route.id] = route
+        return route
+
+    async def create_route_async(self, *args: Any, **kwargs: Any) -> NotificationRoute:
+        await self._ensure_loaded()
+        route = self.create_route(*args, **kwargs)
+        await self.persist_all()
         return route
 
     def get_route(self, route_id: str) -> Optional[NotificationRoute]:
@@ -693,12 +799,24 @@ class AlertingConfigService:
 
         return route
 
+    async def update_route_async(self, *args: Any, **kwargs: Any) -> Optional[NotificationRoute]:
+        await self._ensure_loaded()
+        route = self.update_route(*args, **kwargs)
+        await self.persist_all()
+        return route
+
     def delete_route(self, route_id: str) -> bool:
         """Delete a route."""
         if route_id in self._routes:
             del self._routes[route_id]
             return True
         return False
+
+    async def delete_route_async(self, route_id: str) -> bool:
+        await self._ensure_loaded()
+        deleted = self.delete_route(route_id)
+        await self.persist_all()
+        return deleted
 
     # ========================================
     # Alert Management
@@ -763,6 +881,12 @@ class AlertingConfigService:
 
         return alert
 
+    async def fire_alert_async(self, *args: Any, **kwargs: Any) -> Optional[Alert]:
+        await self._ensure_loaded()
+        alert = self.fire_alert(*args, **kwargs)
+        await self.persist_all()
+        return alert
+
     def get_alert(self, alert_id: str) -> Optional[Alert]:
         """Get an alert by ID."""
         return self._alerts.get(alert_id)
@@ -803,6 +927,12 @@ class AlertingConfigService:
 
         return alert
 
+    async def acknowledge_alert_async(self, *args: Any, **kwargs: Any) -> Optional[Alert]:
+        await self._ensure_loaded()
+        alert = self.acknowledge_alert(*args, **kwargs)
+        await self.persist_all()
+        return alert
+
     def resolve_alert(self, alert_id: str) -> Optional[Alert]:
         """Resolve an alert."""
         alert = self._alerts.get(alert_id)
@@ -814,6 +944,12 @@ class AlertingConfigService:
 
         self._record_history(alert_id, "resolved", {})
 
+        return alert
+
+    async def resolve_alert_async(self, alert_id: str) -> Optional[Alert]:
+        await self._ensure_loaded()
+        alert = self.resolve_alert(alert_id)
+        await self.persist_all()
         return alert
 
     def silence_alert(
@@ -833,6 +969,12 @@ class AlertingConfigService:
             "silence_id": silence_id,
         })
 
+        return alert
+
+    async def silence_alert_async(self, *args: Any, **kwargs: Any) -> Optional[Alert]:
+        await self._ensure_loaded()
+        alert = self.silence_alert(*args, **kwargs)
+        await self.persist_all()
         return alert
 
     # ========================================
@@ -889,6 +1031,12 @@ class AlertingConfigService:
         self._silences[silence.id] = silence
         return silence
 
+    async def create_silence_async(self, *args: Any, **kwargs: Any) -> Silence:
+        await self._ensure_loaded()
+        silence = self.create_silence(*args, **kwargs)
+        await self.persist_all()
+        return silence
+
     def get_silence(self, silence_id: str) -> Optional[Silence]:
         """Get a silence by ID."""
         return self._silences.get(silence_id)
@@ -914,12 +1062,24 @@ class AlertingConfigService:
         silence.ends_at = datetime.now(timezone.utc)
         return silence
 
+    async def expire_silence_async(self, silence_id: str) -> Optional[Silence]:
+        await self._ensure_loaded()
+        silence = self.expire_silence(silence_id)
+        await self.persist_all()
+        return silence
+
     def delete_silence(self, silence_id: str) -> bool:
         """Delete a silence."""
         if silence_id in self._silences:
             del self._silences[silence_id]
             return True
         return False
+
+    async def delete_silence_async(self, silence_id: str) -> bool:
+        await self._ensure_loaded()
+        deleted = self.delete_silence(silence_id)
+        await self.persist_all()
+        return deleted
 
     # ========================================
     # Alert Grouping

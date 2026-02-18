@@ -11,10 +11,10 @@ Provides centralized state management:
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from sensei.api.deps import CurrentUser
+from sensei.api.deps import CurrentUser, RoleChecker
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.state_machine import (
@@ -23,7 +23,10 @@ from sensei.services.core.state_machine import (
 )
 
 
-router = APIRouter(tags=["State Machines"])
+router = APIRouter(
+    tags=["State Machines"],
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "engineering", "supervisor"]))],
+)
 
 
 # =============================================================================

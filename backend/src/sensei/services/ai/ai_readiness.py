@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sensei.services.ai.onnx_model_init import get_model_registry, ModelTier
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +44,41 @@ class AIReadinessReport:
     memory_pressure: str = "low"
 
 
-class AIReadinessService:
+class AIReadinessService(PersistentServiceMixin):
     """
     Service to monitor and verify all on-device AI components.
     """
 
+    SERVICE_NAME = "ai_readiness"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
     def __init__(self):
         self._registry = get_model_registry()
         self._last_report: Optional[AIReadinessReport] = None
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        report_data = await self.load_state(self._DEFAULT_TENANT_ID, "last_report")
+        if report_data is not None:
+            self._last_report = decode_dataclass(report_data, AIReadinessReport)
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        if self._last_report is None:
+            await self.save_state(self._DEFAULT_TENANT_ID, "last_report", None)
+            return
+        await self.save_state(
+            self._DEFAULT_TENANT_ID,
+            "last_report",
+            encode_dataclass(self._last_report),
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def generate_report(self) -> AIReadinessReport:
         """
@@ -92,6 +122,12 @@ class AIReadinessService:
         self._last_report = report
         return report
 
+    async def generate_report_async(self) -> AIReadinessReport:
+        await self._ensure_loaded()
+        report = self.generate_report()
+        await self.persist_all()
+        return report
+
     def _infer_tier(self, model_name: str) -> ModelTier:
         """Infer model tier based on name."""
         if "embeddings" in model_name or "anomaly" in model_name:
@@ -132,6 +168,7 @@ class AIReadinessService:
         """
         Run a real-time performance verification (Golden Samples).
         """
+        await self._ensure_loaded()
         results: Dict[str, Any] = {"status": "success", "measurements": []}
         start_time = time.perf_counter()
         

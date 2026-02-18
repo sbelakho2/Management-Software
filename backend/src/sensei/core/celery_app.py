@@ -1,6 +1,7 @@
 import logging
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_shutting_down
 
 from sensei.core.config import settings
@@ -49,6 +50,20 @@ celery_app.conf.update(
 
     # Track task state transitions (PENDING → STARTED → SUCCESS/FAILURE).
     task_track_started=True,
+
+    # ---------- Beat Schedule (Analytics Warehouse) ----------
+    beat_schedule={
+        "daily-analytics-snapshot": {
+            "task": "sensei.tasks.analytics_tasks.daily_analytics_snapshot",
+            "schedule": crontab(hour=2, minute=0),  # 2:00 AM daily
+            "options": {"queue": "analytics"},
+        },
+        "compute-warehouse-kpis": {
+            "task": "sensei.tasks.analytics_tasks.compute_warehouse_kpis",
+            "schedule": crontab(minute=0, hour="*/4"),  # every 4 hours
+            "options": {"queue": "analytics"},
+        },
+    },
 )
 
 # Autodiscover tasks from all registered apps

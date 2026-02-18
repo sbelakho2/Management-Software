@@ -16,6 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.quality_qms import AQLSamplingPlan, AQLLotInspection
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import InspectionCompletedEvent
 
 
 class AQLSamplingService:
@@ -88,4 +90,13 @@ class AQLSamplingService:
         )
         self.db.add(inspection)
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(InspectionCompletedEvent(
+            inspection_id=str(inspection.id),
+            result=result,
+            product_id="",
+            inspector_id=str(inspector_id or ""),
+        ))
+
         return inspection

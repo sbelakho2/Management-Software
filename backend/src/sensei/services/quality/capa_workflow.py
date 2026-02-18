@@ -15,6 +15,9 @@ import logging
 from typing import Optional, Any
 from uuid import UUID, uuid4
 
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import NCCreatedEvent, CAPACreatedEvent
+
 logger = logging.getLogger(__name__)
 
 
@@ -476,6 +479,17 @@ class CAPAWorkflowIntegrationService:
         
         self._ncs[nc.id] = nc
         
+        # Publish domain event — feeds single data thread + analytics
+        event_bus.publish_sync(NCCreatedEvent(
+            nc_id=str(nc.id),
+            severity=severity.value,
+            nc_type=nc_type.value,
+            product_id=str(product_id) if product_id else None,
+            process_id=str(process_id) if process_id else None,
+            defect_code=defect_code or "",
+            detected_by=str(detected_by),
+        ))
+        
         # Check if CAPA should be auto-created (#364)
         capa_result = None
         severity_threshold = self.config.auto_create_severity_threshold or {NCSeverity.CRITICAL}
@@ -643,6 +657,15 @@ class CAPAWorkflowIntegrationService:
         nc.capa_id = capa.id
         
         self._capas[capa.id] = capa
+        
+        # Publish domain event
+        event_bus.publish_sync(CAPACreatedEvent(
+            capa_id=str(capa.id),
+            nc_id=str(nc.id),
+            priority=priority.value if priority else "",
+            auto_created=auto_created,
+            creation_reason=creation_reason or "",
+        ))
         
         return CAPACreationResult(
             success=True,

@@ -50,6 +50,8 @@ from sensei.models.rfq import (
 )
 from sensei.models.quote import Quote
 from sensei.services.core.common_thread import get_common_thread_service
+from sensei.services.domain_events import RFQCreatedEvent, RFQStatusChangedEvent
+from sensei.services.event_bus import get_event_bus
 from fastapi.responses import StreamingResponse
 
 
@@ -776,6 +778,19 @@ async def create_rfq(
     db.add(rfq)
     await db.commit()
     await db.refresh(rfq)
+
+    # Publish domain event
+    try:
+        event_bus = get_event_bus()
+        await event_bus.publish(
+            RFQCreatedEvent(
+                rfq_id=str(rfq.id),
+                opportunity_id=str(rfq.opportunity_id) if rfq.opportunity_id else None,
+                created_by_id=str(current_user.id),
+            )
+        )
+    except Exception:
+        logger.exception("Failed to publish RFQCreatedEvent")
 
     # Best-effort: bind Opportunity → RFQ lineage + stamp reasoning id.
     try:

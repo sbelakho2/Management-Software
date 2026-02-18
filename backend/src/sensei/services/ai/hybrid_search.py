@@ -30,8 +30,10 @@ import math
 import os
 import time
 from typing import Any, Iterable
+from uuid import UUID
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass, encode_value
 
 
 DEFAULT_CHUNK_SIZE = 500
@@ -528,6 +530,7 @@ class HybridSearchEngine(PersistentServiceMixin):
     """Hybrid search engine combining semantic and keyword search."""
 
     SERVICE_NAME = "hybrid_search"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(
         self,
@@ -542,6 +545,117 @@ class HybridSearchEngine(PersistentServiceMixin):
         self.reranker = reranker
         self.default_alpha = default_alpha
         self._token_estimator = TokenEstimator()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        semantic_chunks = await self.load_state(self._DEFAULT_TENANT_ID, "semantic_chunks")
+        semantic_cache = await self.load_state(self._DEFAULT_TENANT_ID, "semantic_embed_cache")
+        keyword_chunks = await self.load_state(self._DEFAULT_TENANT_ID, "keyword_chunks")
+        keyword_tokens = await self.load_state(self._DEFAULT_TENANT_ID, "keyword_tokens")
+        rerank_cache = await self.load_state(self._DEFAULT_TENANT_ID, "rerank_cache")
+        cache_ttl = await self.load_state(self._DEFAULT_TENANT_ID, "rerank_cache_ttl")
+        default_alpha = await self.load_state(self._DEFAULT_TENANT_ID, "default_alpha")
+
+        if (
+            semantic_chunks is None
+            and semantic_cache is None
+            and keyword_chunks is None
+            and keyword_tokens is None
+            and rerank_cache is None
+            and cache_ttl is None
+            and default_alpha is None
+        ):
+            self._state_loaded = True
+            return
+
+        semantic_chunks = semantic_chunks or {}
+        semantic_cache = semantic_cache or {}
+        keyword_chunks = keyword_chunks or {}
+        keyword_tokens = keyword_tokens or {}
+        rerank_cache = rerank_cache or {}
+
+        self.semantic_searcher._chunks = {
+            chunk_id: (
+                decode_dataclass(payload["chunk"], Chunk),
+                payload.get("embedding", []),
+            )
+            for chunk_id, payload in semantic_chunks.items()
+        }
+        self.semantic_searcher._embed_cache = {
+            text: list(embedding) for text, embedding in semantic_cache.items()
+        }
+        self.keyword_searcher._chunks = {
+            chunk_id: decode_dataclass(payload, Chunk)
+            for chunk_id, payload in keyword_chunks.items()
+        }
+        self.keyword_searcher._chunk_tokens = {
+            chunk_id: (payload.get("tokens", []), payload.get("sqrt_len", 1.0))
+            for chunk_id, payload in keyword_tokens.items()
+        }
+        self.reranker.cache._entries = {
+            key: decode_dataclass(entry, RerankCacheEntry)
+            for key, entry in rerank_cache.items()
+        }
+        if cache_ttl is not None:
+            self.reranker.cache.ttl_seconds = int(cache_ttl)
+        if default_alpha is not None:
+            self.default_alpha = float(default_alpha)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        semantic_chunks = {
+            chunk_id: {
+                "chunk": encode_dataclass(chunk),
+                "embedding": encode_value(embedding),
+            }
+            for chunk_id, (chunk, embedding) in self.semantic_searcher._chunks.items()
+        }
+        semantic_cache = {
+            text: encode_value(embedding)
+            for text, embedding in self.semantic_searcher._embed_cache.items()
+        }
+        keyword_chunks = {
+            chunk_id: encode_dataclass(chunk)
+            for chunk_id, chunk in self.keyword_searcher._chunks.items()
+        }
+        keyword_tokens = {
+            chunk_id: {
+                "tokens": tokens,
+                "sqrt_len": sqrt_len,
+            }
+            for chunk_id, (tokens, sqrt_len) in self.keyword_searcher._chunk_tokens.items()
+        }
+        rerank_cache = {
+            key: encode_dataclass(entry)
+            for key, entry in self.reranker.cache._entries.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "semantic_chunks", semantic_chunks)
+        await self.save_state(self._DEFAULT_TENANT_ID, "semantic_embed_cache", semantic_cache)
+        await self.save_state(self._DEFAULT_TENANT_ID, "keyword_chunks", keyword_chunks)
+        await self.save_state(self._DEFAULT_TENANT_ID, "keyword_tokens", keyword_tokens)
+        await self.save_state(self._DEFAULT_TENANT_ID, "rerank_cache", rerank_cache)
+        await self.save_state(self._DEFAULT_TENANT_ID, "rerank_cache_ttl", self.reranker.cache.ttl_seconds)
+        await self.save_state(self._DEFAULT_TENANT_ID, "default_alpha", self.default_alpha)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    async def search_async(self, query: SearchQuery) -> SearchResponse:
+        await self._ensure_loaded()
+        return self.search(query)
+
+    async def index_chunk(self, chunk: Chunk) -> None:
+        await self._ensure_loaded()
+        embedding = self.semantic_searcher.embed_query(chunk.content)
+        self.semantic_searcher.add_chunk(chunk, embedding)
+        self.keyword_searcher.add_chunk(chunk)
+        await self.persist_all()
 
     def search(self, query: SearchQuery) -> SearchResponse:
         start = time.time()

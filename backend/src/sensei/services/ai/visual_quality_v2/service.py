@@ -16,6 +16,9 @@ import numpy as np
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 from sensei.services.ai.visual_quality_v2.enums import (
     AnomalyMethod,
     DefectCategory,
@@ -206,10 +209,13 @@ class QualityScoringEngine:
         return InspectionDecision.PASS, "No significant defects found"
 
 
-class AsyncContinuousLearningManager:
+class AsyncContinuousLearningManager(PersistentServiceMixin):
     """
     Manages continuous learning from operator feedback with database persistence.
     """
+
+    SERVICE_NAME = "visual_quality_continuous_learning"
+    _DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(
         self,
@@ -223,6 +229,43 @@ class AsyncContinuousLearningManager:
         self.ab_test_active: bool = False
         self._retraining_scheduled: bool = False
         self.feedback_queue: list[FeedbackRecord] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state") or {}
+        feedback_queue = await self.load_state(self._DEFAULT_TENANT_ID, "feedback_queue") or []
+
+        if state:
+            self.feedback_threshold = int(state.get("feedback_threshold", self.feedback_threshold))
+            self.improvement_threshold = float(state.get("improvement_threshold", self.improvement_threshold))
+            self.current_model_version = state.get("current_model_version", self.current_model_version)
+            self.candidate_model_version = state.get("candidate_model_version")
+            self.ab_test_active = bool(state.get("ab_test_active", self.ab_test_active))
+            self._retraining_scheduled = bool(state.get("retraining_scheduled", self._retraining_scheduled))
+
+        self.feedback_queue = [decode_dataclass(f, FeedbackRecord) for f in feedback_queue]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "feedback_threshold": self.feedback_threshold,
+            "improvement_threshold": self.improvement_threshold,
+            "current_model_version": self.current_model_version,
+            "candidate_model_version": self.candidate_model_version,
+            "ab_test_active": self.ab_test_active,
+            "retraining_scheduled": self._retraining_scheduled,
+        }
+        feedback_queue = [encode_dataclass(f) for f in self.feedback_queue]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+        await self.save_state(self._DEFAULT_TENANT_ID, "feedback_queue", feedback_queue)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     async def record_feedback(
         self,
@@ -231,6 +274,7 @@ class AsyncContinuousLearningManager:
         image_key: str | None = None,
     ) -> None:
         """Record operator feedback and persist to database."""
+        await self._ensure_loaded()
         self.feedback_queue.append(feedback)
         
         # Note: Actual database persistence would go here
@@ -239,9 +283,11 @@ class AsyncContinuousLearningManager:
         if len(self.feedback_queue) >= self.feedback_threshold:
             logger.info(f"Feedback threshold reached ({len(self.feedback_queue)}), preparing retraining")
             self._retraining_scheduled = True
+        await self.persist_all()
 
     async def get_training_dataset(self, db: AsyncSession) -> TrainingDataset | None:
         """Retrieve training data from database."""
+        await self._ensure_loaded()
         if not self.feedback_queue:
             return None
 
@@ -274,6 +320,10 @@ class AsyncContinuousLearningManager:
                 "Adjust confidence threshold to reduce false positives",
             ],
         }
+
+    async def get_training_recommendations_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_training_recommendations()
 
 
 class ContinuousLearningManager(AsyncContinuousLearningManager):

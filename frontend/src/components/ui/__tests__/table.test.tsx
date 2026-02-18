@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { screen, fireEvent, within } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import {
   Table,
   TableHeader,
@@ -15,6 +16,8 @@ import {
   TablePagination,
   TableSearch,
 } from '../table';
+
+const render = renderWithI18n;
 
 describe('Table', () => {
   describe('Basic Table Structure', () => {

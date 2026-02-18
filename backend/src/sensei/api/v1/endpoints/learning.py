@@ -22,7 +22,7 @@ from sqlalchemy import and_, func, or_, select
 
 from sensei.core.config import settings
 
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.deps import CurrentUser, DBSession, RoleChecker
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.utils import (
     APIResponse,
@@ -49,7 +49,9 @@ from sensei.models.learning import (
 from sensei.services.ai.reasoning_engine import A3Phase, MentorPersona, SenseiReasoningEngine
 
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "engineering", "supervisor", "team_lead", "operator", "viewer"]))],
+)
 
 
 # =============================================================================

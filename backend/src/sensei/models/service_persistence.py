@@ -621,6 +621,23 @@ class IngestionJobDB(Base, TimestampMixin):
     )
 
 
+class EmailDraftDB(Base, TimestampMixin):
+    """
+    Persisted AI-generated email draft.
+    """
+    
+    __tablename__ = "email_drafts"
+    
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    created_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    to_address: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    template_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class IngestionDocumentDB(Base, TimestampMixin):
     """
     Document metadata for smart ingestion.

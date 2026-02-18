@@ -41,6 +41,8 @@ from sensei.models.andon import (
     ResponseStatus,
     AndonRecurrencePattern,
 )
+from sensei.services.domain_events import AndonCreatedEvent, AndonResolvedEvent
+from sensei.services.event_bus import get_event_bus
 
 AllowAndonModule = deps.require_role(
     "ops",
@@ -494,6 +496,23 @@ async def create_andon_event(
 
     await db.commit()
     await db.refresh(event)
+
+    # Publish domain event
+    try:
+        event_bus = get_event_bus()
+        await event_bus.publish(
+            AndonCreatedEvent(
+                andon_event_id=str(event.id),
+                andon_type=str(event.andon_type.value) if hasattr(event.andon_type, "value") else str(event.andon_type),
+                severity=str(event.severity.value) if hasattr(event.severity, "value") else str(event.severity),
+                work_order_id=str(event.work_order_id) if event.work_order_id else None,
+                station_id=str(event.station_id) if event.station_id else None,
+                reported_by_id=str(event.reported_by_id) if event.reported_by_id else None,
+            )
+        )
+    except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).exception("Failed to publish AndonCreatedEvent")
 
     # ---- Single Data Thread: bind Andon into lineage ----
     try:

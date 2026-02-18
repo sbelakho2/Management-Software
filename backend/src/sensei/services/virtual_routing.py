@@ -19,6 +19,9 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 
 class OperationType(str, Enum):
     """Standard operation types for virtual routing."""
@@ -388,17 +391,71 @@ class RoutingTemplate:
     is_active: bool = True
 
 
-class VirtualRoutingService:
+class VirtualRoutingService(PersistentServiceMixin):
     """Service for managing virtual routings."""
+
+    SERVICE_NAME = "virtual_routing"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self) -> None:
         """Initialize the service."""
         self._routings: dict[UUID, VirtualRouting] = {}
         self._templates: dict[UUID, RoutingTemplate] = {}
         self._work_center_rates: dict[UUID, dict[str, Decimal]] = {}
+        self._state_loaded = False
         
         # Initialize with common templates
         self._init_default_templates()
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        routings_data = await self.load_state(self._DEFAULT_TENANT_ID, "routings")
+        templates_data = await self.load_state(self._DEFAULT_TENANT_ID, "templates")
+        work_center_rates_data = await self.load_state(self._DEFAULT_TENANT_ID, "work_center_rates")
+
+        if routings_data is None and templates_data is None and work_center_rates_data is None:
+            self._state_loaded = True
+            return
+
+        if routings_data is not None:
+            self._routings = {
+                UUID(routing_id): decode_dataclass(routing, VirtualRouting)
+                for routing_id, routing in routings_data.items()
+            }
+        if templates_data is not None:
+            self._templates = {
+                UUID(template_id): decode_dataclass(template, RoutingTemplate)
+                for template_id, template in templates_data.items()
+            }
+        if work_center_rates_data is not None:
+            self._work_center_rates = {
+                UUID(center_id): {k: Decimal(v) for k, v in rates.items()}
+                for center_id, rates in work_center_rates_data.items()
+            }
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        routings_data = {
+            str(routing_id): encode_dataclass(routing) for routing_id, routing in self._routings.items()
+        }
+        templates_data = {
+            str(template_id): encode_dataclass(template) for template_id, template in self._templates.items()
+        }
+        work_center_rates_data = {
+            str(center_id): {k: str(v) for k, v in rates.items()}
+            for center_id, rates in self._work_center_rates.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "routings", routings_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "templates", templates_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "work_center_rates", work_center_rates_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def clear(self) -> None:
         """Clear all data (for testing)."""
@@ -406,6 +463,11 @@ class VirtualRoutingService:
         self._templates.clear()
         self._work_center_rates.clear()
         self._init_default_templates()
+
+    async def clear_async(self) -> None:
+        await self._ensure_loaded()
+        self.clear()
+        await self.persist_all()
     
     def _init_default_templates(self) -> None:
         """Initialize with some default routing templates."""
@@ -490,10 +552,19 @@ class VirtualRoutingService:
             "overhead_rate": overhead_rate,
             "machine_rate": machine_rate,
         }
+
+    async def set_work_center_rates_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.set_work_center_rates(**kwargs)
+        await self.persist_all()
     
     def get_work_center_rates(self, work_center_id: UUID) -> dict[str, Decimal] | None:
         """Get rates for a work center."""
         return self._work_center_rates.get(work_center_id)
+
+    async def get_work_center_rates_async(self, work_center_id: UUID) -> dict[str, Decimal] | None:
+        await self._ensure_loaded()
+        return self.get_work_center_rates(work_center_id)
     
     # =========================================================================
     # Virtual Routing CRUD
@@ -524,6 +595,12 @@ class VirtualRoutingService:
         )
         self._routings[routing_id] = routing
         return routing
+
+    async def create_routing_async(self, **kwargs: Any) -> VirtualRouting:
+        await self._ensure_loaded()
+        routing = self.create_routing(**kwargs)
+        await self.persist_all()
+        return routing
     
     def create_from_template(
         self,
@@ -552,7 +629,7 @@ class VirtualRoutingService:
             default_overhead_rate=template.default_overhead_rate,
             default_machine_rate=template.default_machine_rate,
         )
-        
+
         # Add operations from template
         for op_data in template.operations:
             op_type = op_data.get("operation_type", OperationType.CUSTOM)
@@ -587,6 +664,12 @@ class VirtualRoutingService:
         
         self._routings[routing.id] = routing
         return routing
+
+    async def create_from_template_async(self, **kwargs: Any) -> VirtualRouting | None:
+        await self._ensure_loaded()
+        routing = self.create_from_template(**kwargs)
+        await self.persist_all()
+        return routing
     
     def clone_routing(
         self,
@@ -615,7 +698,7 @@ class VirtualRoutingService:
             learning_curve_factor=source.learning_curve_factor,
             assumptions=source.assumptions.copy(),
         )
-        
+
         # Clone operations
         for op in source.operations:
             new_routing.add_operation(
@@ -647,10 +730,20 @@ class VirtualRoutingService:
         
         self._routings[new_routing.id] = new_routing
         return new_routing
+
+    async def clone_routing_async(self, **kwargs: Any) -> VirtualRouting | None:
+        await self._ensure_loaded()
+        routing = self.clone_routing(**kwargs)
+        await self.persist_all()
+        return routing
     
     def get_routing(self, routing_id: UUID) -> VirtualRouting | None:
         """Get a virtual routing by ID."""
         return self._routings.get(routing_id)
+
+    async def get_routing_async(self, routing_id: UUID) -> VirtualRouting | None:
+        await self._ensure_loaded()
+        return self.get_routing(routing_id)
     
     def list_routings(
         self,
@@ -671,6 +764,10 @@ class VirtualRoutingService:
             routings = [r for r in routings if r.created_by == created_by]
         
         return sorted(routings, key=lambda r: r.created_at, reverse=True)
+
+    async def list_routings_async(self, **kwargs: Any) -> list[VirtualRouting]:
+        await self._ensure_loaded()
+        return self.list_routings(**kwargs)
     
     def delete_routing(self, routing_id: UUID) -> bool:
         """Delete a virtual routing."""
@@ -678,6 +775,12 @@ class VirtualRoutingService:
             del self._routings[routing_id]
             return True
         return False
+
+    async def delete_routing_async(self, routing_id: UUID) -> bool:
+        await self._ensure_loaded()
+        result = self.delete_routing(routing_id)
+        await self.persist_all()
+        return result
     
     # =========================================================================
     # Template Management
@@ -702,6 +805,12 @@ class VirtualRoutingService:
             created_by=created_by,
         )
         self._templates[template_id] = template
+        return template
+
+    async def create_template_async(self, **kwargs: Any) -> RoutingTemplate:
+        await self._ensure_loaded()
+        template = self.create_template(**kwargs)
+        await self.persist_all()
         return template
     
     def create_template_from_routing(
@@ -745,10 +854,20 @@ class VirtualRoutingService:
         
         self._templates[template.id] = template
         return template
+
+    async def create_template_from_routing_async(self, **kwargs: Any) -> RoutingTemplate | None:
+        await self._ensure_loaded()
+        template = self.create_template_from_routing(**kwargs)
+        await self.persist_all()
+        return template
     
     def get_template(self, template_id: UUID) -> RoutingTemplate | None:
         """Get a template by ID."""
         return self._templates.get(template_id)
+
+    async def get_template_async(self, template_id: UUID) -> RoutingTemplate | None:
+        await self._ensure_loaded()
+        return self.get_template(template_id)
     
     def list_templates(
         self,
@@ -765,6 +884,10 @@ class VirtualRoutingService:
             templates = [t for t in templates if t.category == category]
         
         return sorted(templates, key=lambda t: t.name)
+
+    async def list_templates_async(self, **kwargs: Any) -> list[RoutingTemplate]:
+        await self._ensure_loaded()
+        return self.list_templates(**kwargs)
     
     def delete_template(self, template_id: UUID) -> bool:
         """Delete a template (soft delete - marks as inactive)."""
@@ -775,6 +898,12 @@ class VirtualRoutingService:
         template.is_active = False
         template.updated_at = datetime.now(timezone.utc)
         return True
+
+    async def delete_template_async(self, template_id: UUID) -> bool:
+        await self._ensure_loaded()
+        result = self.delete_template(template_id)
+        await self.persist_all()
+        return result
     
     # =========================================================================
     # Cost Estimation
@@ -806,6 +935,10 @@ class VirtualRoutingService:
                 else Decimal("0")
             ).quantize(Decimal("0.0001"), ROUND_HALF_UP),
         }
+
+    async def estimate_costs_async(self, **kwargs: Any) -> dict[str, Any] | None:
+        await self._ensure_loaded()
+        return self.estimate_costs(**kwargs)
     
     def compare_routings(
         self,
@@ -853,6 +986,10 @@ class VirtualRoutingService:
             "best_time_routing": best_time_id,
             "best_time_minutes": best_time,
         }
+
+    async def compare_routings_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.compare_routings(**kwargs)
     
     def calculate_break_even_quantity(
         self,
@@ -889,6 +1026,10 @@ class VirtualRoutingService:
             return low
         
         return None  # Can't achieve target
+
+    async def calculate_break_even_quantity_async(self, **kwargs: Any) -> int | None:
+        await self._ensure_loaded()
+        return self.calculate_break_even_quantity(**kwargs)
     
     # =========================================================================
     # Quick Builders
@@ -933,6 +1074,12 @@ class VirtualRoutingService:
             run_time_minutes=Decimal("1"),
         )
         
+        return routing
+
+    async def create_simple_machining_routing_async(self, **kwargs: Any) -> VirtualRouting:
+        await self._ensure_loaded()
+        routing = self.create_simple_machining_routing(**kwargs)
+        await self.persist_all()
         return routing
     
     def create_assembly_routing(
@@ -981,6 +1128,12 @@ class VirtualRoutingService:
         )
         
         return routing
+
+    async def create_assembly_routing_async(self, **kwargs: Any) -> VirtualRouting:
+        await self._ensure_loaded()
+        routing = self.create_assembly_routing(**kwargs)
+        await self.persist_all()
+        return routing
     
     def create_subcontract_routing(
         self,
@@ -1006,4 +1159,10 @@ class VirtualRoutingService:
             subcontract_vendor_id=vendor_id,
         )
         
+        return routing
+
+    async def create_subcontract_routing_async(self, **kwargs: Any) -> VirtualRouting:
+        await self._ensure_loaded()
+        routing = self.create_subcontract_routing(**kwargs)
+        await self.persist_all()
         return routing

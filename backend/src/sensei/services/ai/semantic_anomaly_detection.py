@@ -16,6 +16,13 @@ import re
 import hashlib
 import uuid
 from collections import defaultdict
+from uuid import UUID
+
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import AnomalyDetectedEvent as DomainAnomalyEvent
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 # =============================================================================
@@ -293,6 +300,22 @@ class SentimentAnalyzer:
     def __init__(self):
         """Initialize analyzer."""
         self._history: dict[str, list[SentimentResult]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "history": {
+                entity_id: [encode_dataclass(result) for result in results]
+                for entity_id, results in self._history.items()
+            }
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        history = state.get("history") or {}
+        self._history = defaultdict(list)
+        for entity_id, results in history.items():
+            self._history[entity_id] = [
+                decode_dataclass(result, SentimentResult) for result in results
+            ]
     
     def analyze(self, text: str, entity_id: str = "") -> SentimentResult:
         """Analyze text for sentiment and urgency."""
@@ -525,6 +548,34 @@ class SequenceAnalyzer:
         """Initialize analyzer."""
         self._learned_patterns: list[SequencePattern] = []
         self._transition_stats: dict[tuple[EventType, EventType], list[float]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "learned_patterns": [
+                encode_dataclass(pattern) for pattern in self._learned_patterns
+            ],
+            "transition_stats": {
+                f"{key[0].value}|{key[1].value}": list(values)
+                for key, values in self._transition_stats.items()
+            },
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        patterns = state.get("learned_patterns") or []
+        self._learned_patterns = [
+            decode_dataclass(pattern, SequencePattern) for pattern in patterns
+        ]
+        transition_stats = state.get("transition_stats") or {}
+        self._transition_stats = defaultdict(list)
+        for key, values in transition_stats.items():
+            if "|" not in key:
+                continue
+            left, right = key.split("|", 1)
+            try:
+                event_key = (EventType(left), EventType(right))
+            except ValueError:
+                continue
+            self._transition_stats[event_key] = list(values)
     
     def learn_pattern(self, events: list[ProcessEvent]) -> Optional[SequencePattern]:
         """Learn a pattern from event sequence."""
@@ -768,6 +819,37 @@ class AlertManager:
         self._alerts: list[Alert] = []
         self._alert_history: dict[str, list[datetime]] = defaultdict(list)
         self._cooldowns: dict[str, datetime] = {}
+
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "config": encode_dataclass(self.config),
+            "alerts": [encode_dataclass(alert) for alert in self._alerts],
+            "alert_history": {
+                key: [timestamp.isoformat() for timestamp in timestamps]
+                for key, timestamps in self._alert_history.items()
+            },
+            "cooldowns": {
+                key: timestamp.isoformat() for key, timestamp in self._cooldowns.items()
+            },
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        config_data = state.get("config")
+        if config_data is not None:
+            self.config = decode_dataclass(config_data, AlertConfig)
+
+        alerts_data = state.get("alerts") or []
+        self._alerts = [decode_dataclass(alert, Alert) for alert in alerts_data]
+
+        history_data = state.get("alert_history") or {}
+        self._alert_history = defaultdict(list)
+        for key, timestamps in history_data.items():
+            self._alert_history[key] = [datetime.fromisoformat(ts) for ts in timestamps]
+
+        cooldowns_data = state.get("cooldowns") or {}
+        self._cooldowns = {
+            key: datetime.fromisoformat(ts) for key, ts in cooldowns_data.items()
+        }
     
     def should_alert(self, anomaly: Anomaly) -> bool:
         """Determine if anomaly should trigger an alert."""
@@ -878,7 +960,7 @@ class AlertManager:
 # Anomaly Detection Engine
 # =============================================================================
 
-class AnomalyDetectionEngine:
+class AnomalyDetectionEngine(PersistentServiceMixin):
     """
     Main engine for deep semantic anomaly detection.
     
@@ -898,6 +980,75 @@ class AnomalyDetectionEngine:
         self._detected_anomalies: list[Anomaly] = []
         # Track event ids already analysed to avoid duplicates
         self._analyzed_event_ids: set[str] = set()
+        self._state_loaded = False
+
+    SERVICE_NAME = "semantic_anomaly_detection"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        engine_state = await self.load_state(self._DEFAULT_TENANT_ID, "engine_state")
+        sentiment_state = await self.load_state(self._DEFAULT_TENANT_ID, "sentiment_state")
+        sequence_state = await self.load_state(self._DEFAULT_TENANT_ID, "sequence_state")
+        alert_state = await self.load_state(self._DEFAULT_TENANT_ID, "alert_state")
+
+        if engine_state is None and sentiment_state is None and sequence_state is None and alert_state is None:
+            self._state_loaded = True
+            return
+
+        if sentiment_state is not None:
+            self.sentiment_analyzer.load_state(sentiment_state)
+        if sequence_state is not None:
+            self.sequence_analyzer.load_state(sequence_state)
+        if alert_state is not None:
+            self.alert_manager.load_state(alert_state)
+
+        if engine_state is not None:
+            event_buffer = engine_state.get("event_buffer") or {}
+            self._event_buffer = defaultdict(list)
+            for entity_id, events in event_buffer.items():
+                self._event_buffer[entity_id] = [
+                    decode_dataclass(event, ProcessEvent) for event in events
+                ]
+
+            anomalies = engine_state.get("detected_anomalies") or []
+            self._detected_anomalies = [
+                decode_dataclass(anomaly, Anomaly) for anomaly in anomalies
+            ]
+
+            analyzed = engine_state.get("analyzed_event_ids") or []
+            self._analyzed_event_ids = set(analyzed)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        engine_state = {
+            "event_buffer": {
+                entity_id: [encode_dataclass(event) for event in events]
+                for entity_id, events in self._event_buffer.items()
+            },
+            "detected_anomalies": [
+                encode_dataclass(anomaly) for anomaly in self._detected_anomalies
+            ],
+            "analyzed_event_ids": sorted(self._analyzed_event_ids),
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "engine_state", engine_state)
+        await self.save_state(
+            self._DEFAULT_TENANT_ID, "sentiment_state", self.sentiment_analyzer.export_state()
+        )
+        await self.save_state(
+            self._DEFAULT_TENANT_ID, "sequence_state", self.sequence_analyzer.export_state()
+        )
+        await self.save_state(
+            self._DEFAULT_TENANT_ID, "alert_state", self.alert_manager.export_state()
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def process_event(self, event: ProcessEvent) -> list[Alert]:
         """Process a single event and return any triggered alerts."""
@@ -922,6 +1073,14 @@ class AnomalyDetectionEngine:
             sentiment_anomalies = self._analyze_sentiment_anomaly(event)
             for anomaly in sentiment_anomalies:
                 self._detected_anomalies.append(anomaly)
+                # Publish domain event — feeds single data thread
+                event_bus.publish_sync(DomainAnomalyEvent(
+                    entity_type=str(getattr(anomaly, 'entity_type', 'process')),
+                    entity_id=str(getattr(anomaly, 'entity_id', event.entity_id)),
+                    anomaly_type="sentiment_escalation",
+                    confidence=float(getattr(anomaly, 'confidence', 0.7)),
+                    description=str(getattr(anomaly, 'description', '')),
+                ))
                 alert = self.alert_manager.create_alert(anomaly)
                 if alert:
                     alerts.append(alert)
@@ -936,10 +1095,24 @@ class AnomalyDetectionEngine:
 
         for anomaly in sequence_anomalies:
             self._detected_anomalies.append(anomaly)
+            # Publish domain event — feeds single data thread
+            event_bus.publish_sync(DomainAnomalyEvent(
+                entity_type=str(getattr(anomaly, 'entity_type', 'process')),
+                entity_id=str(getattr(anomaly, 'entity_id', event.entity_id)),
+                anomaly_type="sequence_anomaly",
+                confidence=float(getattr(anomaly, 'confidence', 0.7)),
+                description=str(getattr(anomaly, 'description', '')),
+            ))
             alert = self.alert_manager.create_alert(anomaly)
             if alert:
                 alerts.append(alert)
 
+        return alerts
+
+    async def process_event_async(self, event: ProcessEvent) -> list[Alert]:
+        await self._ensure_loaded()
+        alerts = self.process_event(event)
+        await self.persist_all()
         return alerts
     
     def process_events(self, events: list[ProcessEvent]) -> list[Alert]:
@@ -949,6 +1122,12 @@ class AnomalyDetectionEngine:
             alerts = self.process_event(event)
             all_alerts.extend(alerts)
         return all_alerts
+
+    async def process_events_async(self, events: list[ProcessEvent]) -> list[Alert]:
+        await self._ensure_loaded()
+        alerts = self.process_events(events)
+        await self.persist_all()
+        return alerts
     
     def analyze_entity(self, entity_id: str) -> list[Anomaly]:
         """Analyze all events for an entity, skipping already-analyzed events."""
@@ -969,6 +1148,12 @@ class AnomalyDetectionEngine:
                 anomalies.extend(sentiment_anomalies)
                 self._analyzed_event_ids.add(event.event_id)
 
+        return anomalies
+
+    async def analyze_entity_async(self, entity_id: str) -> list[Anomaly]:
+        await self._ensure_loaded()
+        anomalies = self.analyze_entity(entity_id)
+        await self.persist_all()
         return anomalies
     
     def _analyze_sentiment_anomaly(self, event: ProcessEvent) -> list[Anomaly]:
@@ -1064,10 +1249,19 @@ class AnomalyDetectionEngine:
             "by_severity": dict(by_severity),
             "active_alerts": len(self.alert_manager.get_active_alerts()),
         }
+
+    async def get_anomaly_summary_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_anomaly_summary()
     
     def set_alert_sensitivity(self, sensitivity: AlertSensitivity) -> None:
         """Set alert sensitivity level."""
         self.alert_manager.config.sensitivity = sensitivity
+
+    async def set_alert_sensitivity_async(self, sensitivity: AlertSensitivity) -> None:
+        await self._ensure_loaded()
+        self.set_alert_sensitivity(sensitivity)
+        await self.persist_all()
     
     def _generate_id(self) -> str:
         """Generate unique ID."""

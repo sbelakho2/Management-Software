@@ -5,6 +5,7 @@ Service for ingesting data from starzERP (MySQL) into Sensei OS (PostgreSQL).
 import logging
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,13 +19,41 @@ from sensei.models.external.starz_erp import (
     StarzLicensePlate,
     StarzArticle,
 )
+from sensei.services.core.common_thread import get_common_thread_service
 
 logger = logging.getLogger(__name__)
 
 class StarzErpIngestionService:
     """Ingestion service for starzERP data."""
 
-    async def ingest_warehouses(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def _record_reasoning(
+        self,
+        *,
+        db: AsyncSession,
+        entity_type: str,
+        entity_id: Any,
+        reasoning_id: str | None,
+        actor_id: UUID | None,
+    ) -> None:
+        if not reasoning_id:
+            return
+        await get_common_thread_service().record_reasoning(
+            db,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            reasoning_id=reasoning_id,
+            created_by_id=actor_id,
+            source="starz_erp",
+        )
+
+    async def ingest_warehouses(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync warehouses from starzERP."""
         result = await starz_db.execute(select(StarzWarehouse))
         starz_warehouses = result.scalars().all()
@@ -45,12 +74,28 @@ class StarzErpIngestionService:
                     address=sw.description
                 )
                 sensei_db.add(sensei_w)
+            if sensei_w.id is None:
+                await sensei_db.flush()
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="warehouse",
+                entity_id=sensei_w.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
             count += 1
         
         await sensei_db.commit()
         return count
 
-    async def ingest_devices(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def ingest_devices(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync devices from starzERP."""
         result = await starz_db.execute(select(StarzWmsDevice))
         starz_devices = result.scalars().all()
@@ -94,12 +139,28 @@ class StarzErpIngestionService:
                     last_seen_at=sd.last_seen_at
                 )
                 sensei_db.add(sensei_d)
+            if sensei_d.id is None:
+                await sensei_db.flush()
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="wms_device",
+                entity_id=sensei_d.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
             count += 1
             
         await sensei_db.commit()
         return count
 
-    async def ingest_workstations(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def ingest_workstations(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync workstations from starzERP."""
         result = await starz_db.execute(select(StarzWmsWorkstation))
         starz_workstations = result.scalars().all()
@@ -144,12 +205,28 @@ class StarzErpIngestionService:
                     last_activity_at=sws.last_activity
                 )
                 sensei_db.add(sensei_ws)
+            if sensei_ws.id is None:
+                await sensei_db.flush()
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="wms_workstation",
+                entity_id=sensei_ws.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
             count += 1
             
         await sensei_db.commit()
         return count
 
-    async def ingest_locations(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def ingest_locations(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync stock locations from starzERP."""
         result = await starz_db.execute(select(StarzStockLocation))
         starz_locations = result.scalars().all()
@@ -185,12 +262,28 @@ class StarzErpIngestionService:
                     location_type=sl.type
                 )
                 sensei_db.add(sensei_l)
+            if sensei_l.id is None:
+                await sensei_db.flush()
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="location",
+                entity_id=sensei_l.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
             count += 1
             
         await sensei_db.commit()
         return count
 
-    async def ingest_articles(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def ingest_articles(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync Articles from starzERP as Products in Sensei OS."""
         result = await starz_db.execute(select(StarzArticle))
         starz_articles = result.scalars().all()
@@ -212,12 +305,28 @@ class StarzErpIngestionService:
                     status=ProductStatus.ACTIVE
                 )
                 sensei_db.add(sensei_p)
+            if sensei_p.id is None:
+                await sensei_db.flush()
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="product",
+                entity_id=sensei_p.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
             count += 1
             
         await sensei_db.commit()
         return count
 
-    async def ingest_lpns(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> int:
+    async def ingest_lpns(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> int:
         """Sync License Plates from starzERP."""
         result = await starz_db.execute(select(StarzLicensePlate))
         starz_lpns = result.scalars().all()
@@ -269,6 +378,14 @@ class StarzErpIngestionService:
             # Flush to get LPN ID if new
             await sensei_db.flush()
 
+            await self._record_reasoning(
+                db=sensei_db,
+                entity_type="license_plate",
+                entity_id=sensei_lp.id,
+                reasoning_id=reasoning_id,
+                actor_id=actor_id,
+            )
+
             # Handle inventory levels if SKU and quantity are present on LPN
             if sl.item_sku and sl.quantity:
                 p_stmt = select(Product).where(Product.part_number == sl.item_sku)
@@ -293,19 +410,65 @@ class StarzErpIngestionService:
                             quantity_on_hand=Decimal(str(sl.quantity))
                         )
                         sensei_db.add(sensei_il)
+                    if sensei_il.id is None:
+                        await sensei_db.flush()
+                    await self._record_reasoning(
+                        db=sensei_db,
+                        entity_type="inventory_level",
+                        entity_id=sensei_il.id,
+                        reasoning_id=reasoning_id,
+                        actor_id=actor_id,
+                    )
 
             count += 1
             
         await sensei_db.commit()
         return count
 
-    async def run_full_ingestion(self, starz_db: AsyncSession, sensei_db: AsyncSession) -> Dict[str, int]:
+    async def run_full_ingestion(
+        self,
+        starz_db: AsyncSession,
+        sensei_db: AsyncSession,
+        *,
+        reasoning_id: str | None = None,
+        actor_id: UUID | None = None,
+    ) -> Dict[str, int]:
         """Run all ingestion tasks in correct order."""
         stats = {}
-        stats["warehouses"] = await self.ingest_warehouses(starz_db, sensei_db)
-        stats["articles"] = await self.ingest_articles(starz_db, sensei_db)
-        stats["locations"] = await self.ingest_locations(starz_db, sensei_db)
-        stats["lpns"] = await self.ingest_lpns(starz_db, sensei_db)
-        stats["devices"] = await self.ingest_devices(starz_db, sensei_db)
-        stats["workstations"] = await self.ingest_workstations(starz_db, sensei_db)
+        stats["warehouses"] = await self.ingest_warehouses(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
+        stats["articles"] = await self.ingest_articles(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
+        stats["locations"] = await self.ingest_locations(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
+        stats["lpns"] = await self.ingest_lpns(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
+        stats["devices"] = await self.ingest_devices(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
+        stats["workstations"] = await self.ingest_workstations(
+            starz_db,
+            sensei_db,
+            reasoning_id=reasoning_id,
+            actor_id=actor_id,
+        )
         return stats

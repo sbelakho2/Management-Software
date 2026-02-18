@@ -20,10 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from sensei.models.account import Account
+from sensei.models.accounts_payable import PurchaseOrder, GoodsReceipt
 from sensei.models.accounts_receivable import SalesOrder, Shipment
 from sensei.models.accounts_receivable import CustomerInvoice, PaymentReceipt
+from sensei.models.andon import AndonEvent
 from sensei.models.finance import JournalEntry, BankTransaction
-from sensei.models.hr import EmployeeProfile, HRLeaveRequest, HRTimeClockEvent
+from sensei.models.hr import EmployeeProfile, HRLeaveRequest, HRTimeClockEvent, HRAppraisal, HRCase
+from sensei.models.inventory import StockMove
 from sensei.models.opportunity import Opportunity
 from sensei.models.product import Product
 from sensei.models.quality import NonConformance, CAPA
@@ -483,6 +486,115 @@ class ContextService:
                 "completed_at": tr.completed_at.isoformat() if tr.completed_at else None,
             }
             return ContextEntitySnapshot(entity_type="training_record", entity_id=str(tr.id), data=data)
+
+        if entity_type_norm == "purchase_order":
+            po_id = self._parse_uuid(entity_id)
+            if po_id is None:
+                return None
+            po = await db.get(PurchaseOrder, po_id)
+            if po is None:
+                return None
+            data = {
+                "po_number": po.po_number,
+                "status": po.status,
+                "supplier_id": str(po.supplier_id) if po.supplier_id else None,
+                "currency": po.currency,
+                "total_amount": str(po.total_amount) if po.total_amount else None,
+                "order_date": po.order_date.isoformat() if po.order_date else None,
+                "expected_date": po.expected_date.isoformat() if po.expected_date else None,
+            }
+            return ContextEntitySnapshot(entity_type="purchase_order", entity_id=str(po.id), data=data)
+
+        if entity_type_norm == "goods_receipt":
+            gr_id = self._parse_uuid(entity_id)
+            if gr_id is None:
+                return None
+            gr = await db.get(GoodsReceipt, gr_id)
+            if gr is None:
+                return None
+            data = {
+                "receipt_number": gr.receipt_number,
+                "status": gr.status,
+                "purchase_order_id": str(gr.purchase_order_id) if gr.purchase_order_id else None,
+                "received_at": gr.received_at.isoformat() if gr.received_at else None,
+                "received_by_id": str(gr.received_by_id) if gr.received_by_id else None,
+            }
+            return ContextEntitySnapshot(entity_type="goods_receipt", entity_id=str(gr.id), data=data)
+
+        if entity_type_norm == "inventory_move" or entity_type_norm == "stock_move":
+            sm_id = self._parse_uuid(entity_id)
+            if sm_id is None:
+                return None
+            sm = await db.get(StockMove, sm_id)
+            if sm is None:
+                return None
+            data = {
+                "move_type": sm.move_type,
+                "status": sm.status,
+                "product_id": str(sm.product_id) if sm.product_id else None,
+                "quantity": str(sm.quantity) if sm.quantity else None,
+                "from_location_id": str(sm.from_location_id) if sm.from_location_id else None,
+                "to_location_id": str(sm.to_location_id) if sm.to_location_id else None,
+                "moved_at": sm.moved_at.isoformat() if hasattr(sm, 'moved_at') and sm.moved_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="inventory_move", entity_id=str(sm.id), data=data)
+
+        if entity_type_norm == "andon_event":
+            andon_id = self._parse_uuid(entity_id)
+            if andon_id is None:
+                return None
+            andon = await db.get(AndonEvent, andon_id)
+            if andon is None:
+                return None
+            data = {
+                "andon_type": andon.andon_type.value if hasattr(andon.andon_type, 'value') else str(andon.andon_type),
+                "status": andon.status.value if hasattr(andon.status, 'value') else str(andon.status),
+                "severity": andon.severity.value if hasattr(andon.severity, 'value') else str(andon.severity),
+                "work_order_id": str(andon.work_order_id) if andon.work_order_id else None,
+                "station_id": str(andon.station_id) if andon.station_id else None,
+                "triggered_at": andon.triggered_at.isoformat() if andon.triggered_at else None,
+                "acknowledged_at": andon.acknowledged_at.isoformat() if andon.acknowledged_at else None,
+                "resolved_at": andon.resolved_at.isoformat() if andon.resolved_at else None,
+                "description": andon.description,
+            }
+            return ContextEntitySnapshot(entity_type="andon_event", entity_id=str(andon.id), data=data)
+
+        if entity_type_norm == "performance_review":
+            pr_id = self._parse_uuid(entity_id)
+            if pr_id is None:
+                return None
+            pr = await db.get(HRAppraisal, pr_id)
+            if pr is None:
+                return None
+            data = {
+                "employee_id": str(pr.employee_id) if pr.employee_id else None,
+                "reviewer_id": str(pr.reviewer_id) if pr.reviewer_id else None,
+                "review_period_start": pr.review_period_start.isoformat() if pr.review_period_start else None,
+                "review_period_end": pr.review_period_end.isoformat() if pr.review_period_end else None,
+                "status": pr.status,
+                "overall_rating": pr.overall_rating,
+                "completed_at": pr.completed_at.isoformat() if pr.completed_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="performance_review", entity_id=str(pr.id), data=data)
+
+        if entity_type_norm == "hr_case":
+            hc_id = self._parse_uuid(entity_id)
+            if hc_id is None:
+                return None
+            hc = await db.get(HRCase, hc_id)
+            if hc is None:
+                return None
+            data = {
+                "case_number": hc.case_number,
+                "case_type": hc.case_type,
+                "status": hc.status,
+                "employee_id": str(hc.employee_id) if hc.employee_id else None,
+                "assigned_to_id": str(hc.assigned_to_id) if hc.assigned_to_id else None,
+                "priority": hc.priority,
+                "created_at": hc.created_at.isoformat() if hc.created_at else None,
+                "closed_at": hc.closed_at.isoformat() if hc.closed_at else None,
+            }
+            return ContextEntitySnapshot(entity_type="hr_case", entity_id=str(hc.id), data=data)
 
         return None
 

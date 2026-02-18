@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   CorrectionButton,
@@ -18,6 +18,9 @@ import {
   CorrectionResponse,
 } from '../CorrectionUI';
 import { renderHook } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
+
+const render = renderWithI18n;
 
 // =============================================================================
 // Mocks
@@ -119,7 +122,7 @@ describe('CorrectionButton', () => {
   
   it('renders with default text', () => {
     render(<CorrectionButton {...defaultProps} />);
-    expect(screen.getByText('Correct this')).toBeInTheDocument();
+    expect(screen.getByText('Correct This')).toBeInTheDocument();
   });
   
   it('renders with custom button text', () => {
@@ -135,7 +138,7 @@ describe('CorrectionButton', () => {
   
   it('renders text variant', () => {
     render(<CorrectionButton {...defaultProps} variant="text" />);
-    expect(screen.getByText('Correct this')).toBeInTheDocument();
+    expect(screen.getByText('Correct This')).toBeInTheDocument();
   });
   
   it('opens modal on click', async () => {
@@ -207,7 +210,7 @@ describe('CorrectionModal', () => {
   it('displays AI output', () => {
     render(<CorrectionModal {...defaultProps} />);
     // AI output appears in the "incorrect" section
-    expect(screen.getByText('AI Output (Incorrect)')).toBeInTheDocument();
+    expect(screen.getByText('Ai Output Incorrect')).toBeInTheDocument();
     // And the value appears in both the display and the textarea
     const displays = screen.getAllByText('Part: ABC');
     expect(displays.length).toBeGreaterThanOrEqual(1);
@@ -235,7 +238,7 @@ describe('CorrectionModal', () => {
   it('closes when close button is clicked', async () => {
     render(<CorrectionModal {...defaultProps} />);
     
-    const closeButton = screen.getByLabelText('Close modal');
+    const closeButton = screen.getByRole('button', { name: /close/i });
     await userEvent.click(closeButton);
     
     expect(defaultProps.onClose).toHaveBeenCalled();

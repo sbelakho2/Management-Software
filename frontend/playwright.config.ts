@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
+
+const frontendDir = __dirname;
 
 /**
  * Playwright E2E test configuration for Sensei OS
@@ -58,7 +61,11 @@ export default defineConfig({
   webServer: {
     // Force the dev server port deterministically; passing -p can be ignored
     // in some environments and leads to baseURL mismatches.
-    command: 'PORT=3100 NEXT_PUBLIC_E2E=1 npm run dev',
+    command: `cd ${frontendDir} && PORT=3100 NEXT_PUBLIC_E2E=1 npm run dev`,
+    env: {
+      ...process.env,
+      NODE_PATH: path.join(frontendDir, 'node_modules'),
+    },
     url: 'http://localhost:3100',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,

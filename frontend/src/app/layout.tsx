@@ -64,10 +64,11 @@ export default function RootLayout({
         {/* Industrial Bezel Frame */}
         <div className="fixed inset-0 border-[8px] border-rams-chassis pointer-events-none z-[100] hidden md:block" aria-hidden="true" />
 
-        {/* System Metadata Bar (Bottom) */}
-        <SystemMetadataBar />
-        
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          {/* System Metadata Bar (Bottom) */}
+          <SystemMetadataBar />
+        </Providers>
       </body>
     </html>
   );

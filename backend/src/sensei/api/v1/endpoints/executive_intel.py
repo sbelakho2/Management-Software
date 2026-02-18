@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import asyncio
 import json
 
-from typing import Any, Annotated, TypeAlias
+from typing import Any, Annotated, TypeAlias, Iterable
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -36,8 +36,19 @@ from sensei.models.opportunity import Opportunity, OpportunityStage
 from sensei.models.accounts_receivable import CustomerInvoice, CustomerInvoiceLine, SalesOrder, SalesOrderLine, Shipment
 from sensei.models.accounts_payable import PurchaseOrder, SupplierInvoice
 from sensei.models.andon import AndonEvent, AndonType
-from sensei.models.inventory import InventoryLevel
+from sensei.models.inventory import InventoryLevel, StockMove
+from sensei.models.hr import EmployeeProfile, HRJobOpening
+from sensei.models.mrp import MRPSuggestion
+from sensei.models.data_lineage import DataLineageLink
+from sensei.models.reasoning_trace import ReasoningTrace
 from sensei.services.ops.ceo_control_plane import CEOControlPlaneService
+from sensei.services.ops.analytics_warehouse import AnalyticsWarehouseService
+from sensei.services.ops.insight_generator import generate_insights
+from sensei.services.ops.cognitive_obeya import AsyncPrescriptiveMetricAnalyzer
+from sensei.services.core.role_insights_config import filter_insights_for_role
+from sensei.services.core.insight_audit_logger import get_insight_audit_logger
+from sensei.core.pii import mask_analytics_data
+from sensei.services.event_bus import event_bus
 
 # Role requirements
 AllowExec: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec")  # type: ignore[valid-type]
@@ -740,6 +751,10 @@ async def export_strategic_report(
         },
     }
 
+    # Apply PII masking before exporting
+    roles = _roles_for_user(current_user)
+    report = await mask_analytics_data(report, list(roles))
+
     payload = json.dumps(report, indent=2, sort_keys=True)
     filename = f"strategic-report-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     return Response(
@@ -762,18 +777,8 @@ class SQDCPResponse(BaseModel):
     generated_at: str
 
 
-@router.get("/sqdcp", response_model=APIResponse[SQDCPResponse])
-async def get_sqdcp_dashboard(
-    _: AllowExec,
-    db: DBSession,
-    current_user: CurrentUser,
-) -> APIResponse[SQDCPResponse]:
-    """SQDCP (Safety, Quality, Delivery, Cost, People) executive dashboard.
-
-    Returns the five pillars of lean manufacturing performance.
-    """
-    _ = _coerce_exec_role(current_user)
-
+async def _build_sqdcp_payload(db: DBSession) -> SQDCPResponse:
+    """Build SQDCP payload from live data."""
     # Safety: active andon events + safety-typed andons
     safety_andons = int((await db.execute(
         select(func.count()).select_from(AndonEvent).where(
@@ -840,7 +845,7 @@ async def get_sqdcp_dashboard(
         )
     )).scalar() or 0)
 
-    # People: active users, overdue tasks, blocked tasks
+    # People: active users, overdue tasks, blocked tasks + HR headcount/turnover
     active_users = int((await db.execute(
         select(func.count()).select_from(User).where(User.status == UserStatus.ACTIVE)
     )).scalar() or 0)
@@ -856,7 +861,59 @@ async def get_sqdcp_dashboard(
         select(func.count()).select_from(Task).where(Task.status == TaskStatus.BLOCKED)
     )).scalar() or 0)
 
-    resp = SQDCPResponse(
+    # HR headcount and turnover (data thread harmonization)
+    active_employees = int((await db.execute(
+        select(func.count()).select_from(EmployeeProfile).where(
+            EmployeeProfile.status == "active"
+        )
+    )).scalar() or 0)
+    open_positions = int((await db.execute(
+        select(func.count()).select_from(HRJobOpening).where(
+            HRJobOpening.status == "open"
+        )
+    )).scalar() or 0)
+    terminated_90d = int((await db.execute(
+        select(func.count()).select_from(EmployeeProfile).where(
+            and_(
+                EmployeeProfile.status == "terminated",
+                EmployeeProfile.termination_date >= (datetime.now(timezone.utc) - timedelta(days=90)),
+            )
+        )
+    )).scalar() or 0)
+    turnover_rate = round((terminated_90d / max(active_employees, 1)) * 100, 1)
+
+    # Inventory health for Cost pillar (data thread harmonization)
+    zero_stock = int((await db.execute(
+        select(func.count()).select_from(InventoryLevel).where(
+            InventoryLevel.quantity_on_hand <= 0
+        )
+    )).scalar() or 0)
+    pending_mrp = int((await db.execute(
+        select(func.count()).select_from(MRPSuggestion).where(
+            MRPSuggestion.status == "pending"
+        )
+    )).scalar() or 0)
+
+    # AP unpaid (data thread harmonization)
+    ap_unpaid = int((await db.execute(
+        select(func.count()).select_from(SupplierInvoice).where(
+            SupplierInvoice.status.in_(["draft", "submitted", "approved", "posted"])
+        )
+    )).scalar() or 0)
+
+    people_status = "GREEN"
+    if overdue_tasks > 10 or turnover_rate > 15:
+        people_status = "RED"
+    elif overdue_tasks > 3 or turnover_rate > 5 or open_positions > 5:
+        people_status = "YELLOW"
+
+    cost_status = "GREEN"
+    if ap_unpaid > 20 or outstanding_inv_count > 20:
+        cost_status = "RED"
+    elif ap_unpaid > 5 or outstanding_inv_count > 5 or zero_stock > 10:
+        cost_status = "YELLOW"
+
+    return SQDCPResponse(
         safety={
             "active_safety_andons": safety_andons,
             "total_active_andons": total_active_andons,
@@ -879,17 +936,40 @@ async def get_sqdcp_dashboard(
             "pipeline_value": pipeline_value,
             "open_po_count": open_po_count,
             "outstanding_invoice_count": outstanding_inv_count,
-            "status": "YELLOW" if outstanding_inv_count > 20 else "GREEN",
+            "ap_unpaid_count": ap_unpaid,
+            "zero_stock_items": zero_stock,
+            "pending_mrp_suggestions": pending_mrp,
+            "status": cost_status,
         },
         people={
             "active_users": active_users,
+            "active_employees": active_employees,
+            "open_positions": open_positions,
+            "turnover_rate_pct": turnover_rate,
             "overdue_tasks": overdue_tasks,
             "blocked_tasks": blocked_tasks,
-            "status": "RED" if overdue_tasks > 10 else "YELLOW" if overdue_tasks > 3 else "GREEN",
+            "status": people_status,
         },
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
-    return build_response(data=resp)
+
+
+@router.get("/sqdcp", response_model=APIResponse[SQDCPResponse])
+async def get_sqdcp_dashboard(
+    _: AllowExec,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[SQDCPResponse]:
+    """SQDCP (Safety, Quality, Delivery, Cost, People) executive dashboard.
+
+    Returns the five pillars of lean manufacturing performance.
+    """
+    _ = _coerce_exec_role(current_user)
+
+    resp = await _build_sqdcp_payload(db)
+    roles = _roles_for_user(current_user)
+    masked_resp = await mask_analytics_data(resp.model_dump(), list(roles))
+    return build_response(data=masked_resp)
 
 
 # ---------------------------------------------------------------------------
@@ -967,19 +1047,13 @@ class CrossFunctionalKPIResponse(BaseModel):
     delivery_score: float
     cost_efficiency: float
     workforce_utilization: float
+    inventory_health: float
     overall_score: float
     details: dict
 
 
-@router.get("/kpi-summary", response_model=APIResponse[CrossFunctionalKPIResponse])
-async def get_cross_functional_kpi_summary(
-    _: AllowExec,
-    db: DBSession,
-    current_user: CurrentUser,
-) -> APIResponse[CrossFunctionalKPIResponse]:
-    """Cross-functional KPI summary scored 0-100 for each pillar."""
-    _ = _coerce_exec_role(current_user)
-
+async def _build_kpi_summary_payload(db: DBSession) -> CrossFunctionalKPIResponse:
+    """Build cross-functional KPI summary payload from live data."""
     # Quality score: penalize for open NCs and CAPAs
     open_ncs = int((await db.execute(
         select(func.count()).select_from(NonConformance).where(
@@ -1006,7 +1080,7 @@ async def get_cross_functional_kpi_summary(
     )).scalar() or 0)
     d_score = max(0.0, 100.0 - (pending_ship * 5)) if completed_wos > 0 else 50.0
 
-    # Cost efficiency: ratio of outstanding invoices to open POs (count-based proxy)
+    # Cost efficiency: ratio of outstanding invoices to open POs + AP health
     outstanding_inv = int((await db.execute(
         select(func.count()).select_from(CustomerInvoice).where(
             CustomerInvoice.status.in_(["draft", "sent", "overdue", "partial"])
@@ -1017,12 +1091,19 @@ async def get_cross_functional_kpi_summary(
             PurchaseOrder.status.in_(["draft", "submitted", "approved", "ordered", "partial"])
         )
     )).scalar() or 0)
-    c_score = 75.0  # baseline
+    ap_unpaid = int((await db.execute(
+        select(func.count()).select_from(SupplierInvoice).where(
+            SupplierInvoice.status.in_(["draft", "submitted", "approved", "posted"])
+        )
+    )).scalar() or 0)
+    c_score = 75.0
     if open_po > 0 and outstanding_inv > 0:
         ratio = outstanding_inv / open_po
         c_score = min(100.0, max(0.0, ratio * 80))
+    # Penalize for high AP backlog
+    c_score = max(0.0, c_score - (ap_unpaid * 2))
 
-    # Workforce: penalize for overdue and blocked tasks
+    # Workforce: penalize for overdue tasks + HR turnover
     overdue_tasks = int((await db.execute(
         select(func.count()).select_from(Task).where(
             and_(
@@ -1031,15 +1112,43 @@ async def get_cross_functional_kpi_summary(
             )
         )
     )).scalar() or 0)
-    w_score = max(0.0, 100.0 - (overdue_tasks * 4))
+    active_employees = int((await db.execute(
+        select(func.count()).select_from(EmployeeProfile).where(
+            EmployeeProfile.status == "active"
+        )
+    )).scalar() or 0)
+    terminated_90d = int((await db.execute(
+        select(func.count()).select_from(EmployeeProfile).where(
+            and_(
+                EmployeeProfile.status == "terminated",
+                EmployeeProfile.termination_date >= (datetime.now(timezone.utc) - timedelta(days=90)),
+            )
+        )
+    )).scalar() or 0)
+    turnover_rate = round((terminated_90d / max(active_employees, 1)) * 100, 1)
+    w_score = max(0.0, 100.0 - (overdue_tasks * 4) - (turnover_rate * 2))
 
-    overall = round((q_score + d_score + c_score + w_score) / 4, 1)
+    # Inventory health: penalize for zero-stock and pending MRP exceptions
+    zero_stock = int((await db.execute(
+        select(func.count()).select_from(InventoryLevel).where(
+            InventoryLevel.quantity_on_hand <= 0
+        )
+    )).scalar() or 0)
+    pending_mrp = int((await db.execute(
+        select(func.count()).select_from(MRPSuggestion).where(
+            MRPSuggestion.status == "pending"
+        )
+    )).scalar() or 0)
+    i_score = max(0.0, 100.0 - (zero_stock * 5) - (pending_mrp * 3))
 
-    resp = CrossFunctionalKPIResponse(
+    overall = round((q_score + d_score + c_score + w_score + i_score) / 5, 1)
+
+    return CrossFunctionalKPIResponse(
         quality_score=round(q_score, 1),
         delivery_score=round(d_score, 1),
         cost_efficiency=round(c_score, 1),
         workforce_utilization=round(w_score, 1),
+        inventory_health=round(i_score, 1),
         overall_score=overall,
         details={
             "open_ncs": open_ncs,
@@ -1048,10 +1157,149 @@ async def get_cross_functional_kpi_summary(
             "completed_work_orders": completed_wos,
             "outstanding_invoice_total": outstanding_inv,
             "open_po_total": open_po,
+            "ap_unpaid_total": ap_unpaid,
             "overdue_tasks": overdue_tasks,
+            "active_employees": active_employees,
+            "turnover_rate_pct": turnover_rate,
+            "zero_stock_items": zero_stock,
+            "pending_mrp_suggestions": pending_mrp,
         },
     )
+
+
+@router.get("/kpi-summary", response_model=APIResponse[CrossFunctionalKPIResponse])
+async def get_cross_functional_kpi_summary(
+    _: AllowExec,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CrossFunctionalKPIResponse]:
+    """Cross-functional KPI summary scored 0-100 for each pillar."""
+    _ = _coerce_exec_role(current_user)
+
+    resp = await _build_kpi_summary_payload(db)
     return build_response(data=resp)
+
+
+class DataThreadSummary(BaseModel):
+    latest_snapshot_date: str | None
+    exported_record_count: int
+    fact_counts: dict[str, int]
+    lineage_link_count: int
+    reasoning_trace_count: int
+    event_bus: dict[str, Any]
+    cross_domain: dict[str, Any]
+
+
+class CEODashboardResponse(BaseModel):
+    data_thread: DataThreadSummary
+    sqdcp: SQDCPResponse
+    kpi_summary: CrossFunctionalKPIResponse
+    insights: list[dict[str, Any]]
+    cognitive_obeya: dict[str, Any] | None = None
+    generated_at: str
+
+
+async def _build_data_thread_summary(
+    db: DBSession,
+    actor_roles: Iterable[str],
+) -> DataThreadSummary:
+    warehouse = AnalyticsWarehouseService()
+    snapshot = await warehouse.get_latest_snapshot(db, actor_roles=actor_roles)
+    snapshot_id = snapshot.id if snapshot else None
+    fact_counts = await warehouse.get_role_scoped_fact_counts(
+        db,
+        actor_roles=actor_roles,
+        snapshot_id=snapshot_id,
+    )
+    exported_count = sum(fact_counts.values())
+
+    lineage_count = int((await db.execute(
+        select(func.count()).select_from(DataLineageLink)
+    )).scalar() or 0)
+    reasoning_count = int((await db.execute(
+        select(func.count()).select_from(ReasoningTrace)
+    )).scalar() or 0)
+
+    cross_domain = await warehouse.build_cross_domain_summary(
+        db, actor_roles=actor_roles,
+    )
+
+    return DataThreadSummary(
+        latest_snapshot_date=snapshot.snapshot_date.isoformat() if snapshot else None,
+        exported_record_count=exported_count,
+        fact_counts=fact_counts,
+        lineage_link_count=lineage_count,
+        reasoning_trace_count=reasoning_count,
+        event_bus=await event_bus.get_stats_async(),
+        cross_domain=cross_domain,
+    )
+
+
+@router.get("/ceo-dashboard", response_model=APIResponse[CEODashboardResponse])
+async def get_ceo_dashboard(
+    _: AllowExec,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> APIResponse[CEODashboardResponse]:
+    """Unified CEO dashboard driven by the single data thread."""
+    roles = _roles_for_user(current_user)
+    audit_logger = get_insight_audit_logger()
+
+    sqdcp = await _build_sqdcp_payload(db)
+    kpi_summary = await _build_kpi_summary_payload(db)
+    insights = await generate_insights(db)
+    filtered = filter_insights_for_role(insights, list(roles))
+    masked = await mask_analytics_data(filtered, list(roles))
+
+    # Audit: Log batch insight filter for CEO dashboard
+    removed_categories = list(set(
+        i.get("category", "unknown") for i in insights
+    ) - set(
+        i.get("category", "unknown") for i in filtered
+    ))
+    
+    audit_logger.log_batch_filter(
+        user_id=str(current_user.id),
+        user_roles=list(roles),
+        total_insights=len(insights),
+        filtered_count=len(filtered),
+        removed_categories=removed_categories,
+        endpoint="/api/v1/executive/ceo-dashboard",
+    )
+
+    data_thread = await _build_data_thread_summary(db, roles)
+
+    # Cognitive Obeya integration — surface trend warnings & causal links
+    cognitive_summary: dict[str, Any] | None = None
+    try:
+        analyzer = AsyncPrescriptiveMetricAnalyzer()
+        warnings = await analyzer.get_all_warnings(db)
+        cognitive_summary = {
+            "trend_warnings": [
+                {
+                    "metric_id": w.metric_id,
+                    "direction": w.direction.value if hasattr(w.direction, "value") else str(w.direction),
+                    "days_to_breach": w.days_to_breach,
+                    "confidence": w.confidence,
+                    "recommendation": w.recommendation,
+                }
+                for w in warnings[:10]  # top 10 most recent
+            ],
+            "warning_count": len(warnings),
+        }
+    except Exception:
+        cognitive_summary = None
+
+    return build_response(
+        data=CEODashboardResponse(
+            data_thread=data_thread,
+            sqdcp=sqdcp,
+            kpi_summary=kpi_summary,
+            insights=masked,
+            cognitive_obeya=cognitive_summary,
+            generated_at=datetime.now(timezone.utc).isoformat(),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1076,7 +1324,7 @@ class RevenueWaterfallResponse(BaseModel):
 @router.get("/revenue-waterfall", response_model=APIResponse[RevenueWaterfallResponse])
 async def get_revenue_waterfall(
     db: DBSession,
-    current_user: CurrentUser,  # noqa: ARG001
+    current_user: CurrentUser,
 ) -> APIResponse[RevenueWaterfallResponse]:
     """Revenue waterfall: Quote → SalesOrder → Invoice pipeline.
 
@@ -1133,12 +1381,15 @@ async def get_revenue_waterfall(
     if total_quoted > 0:
         conversion_rate = round(total_invoiced / total_quoted * 100, 1)
 
-    return build_response(data=RevenueWaterfallResponse(
-        stages=stages,
-        total_quoted=total_quoted,
-        total_ordered=total_ordered,
-        total_invoiced=total_invoiced,
-        conversion_rate=conversion_rate,
+    return build_response(data=await mask_analytics_data(
+        RevenueWaterfallResponse(
+            stages=stages,
+            total_quoted=total_quoted,
+            total_ordered=total_ordered,
+            total_invoiced=total_invoiced,
+            conversion_rate=conversion_rate,
+        ).model_dump(),
+        list(_roles_for_user(current_user)),
     ))
 
 
@@ -1167,7 +1418,7 @@ class MarginAnalysisResponse(BaseModel):
 @router.get("/margin-analysis", response_model=APIResponse[MarginAnalysisResponse])
 async def get_margin_analysis(
     db: DBSession,
-    current_user: CurrentUser,  # noqa: ARG001
+    current_user: CurrentUser,
 ) -> APIResponse[MarginAnalysisResponse]:
     """Margin analysis from Quote.actual_margin, target_margin, and line-item costs.
 
@@ -1268,12 +1519,15 @@ async def get_margin_analysis(
             "line_count": int(r[3]),
         })
 
-    return build_response(data=MarginAnalysisResponse(
-        overall_target_margin=round(overall_target, 2) if overall_target is not None else None,
-        overall_actual_margin=round(overall_actual, 2) if overall_actual is not None else None,
-        margin_gap=margin_gap,
-        quote_count=quote_count,
-        buckets=buckets,
-        top_margin_products=top_products,
-        bottom_margin_products=bottom_products,
+    return build_response(data=await mask_analytics_data(
+        MarginAnalysisResponse(
+            overall_target_margin=round(overall_target, 2) if overall_target is not None else None,
+            overall_actual_margin=round(overall_actual, 2) if overall_actual is not None else None,
+            margin_gap=margin_gap,
+            quote_count=quote_count,
+            buckets=buckets,
+            top_margin_products=top_products,
+            bottom_margin_products=bottom_products,
+        ).model_dump(),
+        list(_roles_for_user(current_user)),
     ))

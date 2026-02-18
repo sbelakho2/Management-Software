@@ -18,7 +18,7 @@ interface TestWrapperProps {
  * Wraps components in all required providers for testing.
  */
 export function TestWrapper({ children }: TestWrapperProps) {
-  return <>{children}</>;
+  return React.createElement(React.Fragment, null, children);
 }
 
 // -----------------------------------------------------------------------

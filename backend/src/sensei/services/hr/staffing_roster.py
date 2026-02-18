@@ -19,6 +19,9 @@ from typing import Any, Iterable
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 class ShiftType(str, Enum):
@@ -133,6 +136,45 @@ class StaffingRosterService(PersistentServiceMixin):
         # External hooks for skill lookup (injected).
         self._employee_skill_lookup: dict[UUID, set[str]] = {}
         self._station_skill_requirements: dict[str, set[str]] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        shifts_data = await self.load_state(_DEFAULT_TENANT_ID, "shifts") or {}
+        roster_data = await self.load_state(_DEFAULT_TENANT_ID, "roster_slots") or {}
+        absences_data = await self.load_state(_DEFAULT_TENANT_ID, "absences") or {}
+        risks_data = await self.load_state(_DEFAULT_TENANT_ID, "risks") or {}
+        skills_data = await self.load_state(_DEFAULT_TENANT_ID, "employee_skills") or {}
+        station_reqs_data = await self.load_state(_DEFAULT_TENANT_ID, "station_skill_requirements") or {}
+
+        self._shifts = {UUID(sid): decode_dataclass(shift, ShiftDefinition) for sid, shift in shifts_data.items()}
+        self._roster_slots = {UUID(rid): decode_dataclass(slot, RosterSlot) for rid, slot in roster_data.items()}
+        self._absences = {UUID(aid): decode_dataclass(absence, Absence) for aid, absence in absences_data.items()}
+        self._risks = {UUID(rid): decode_dataclass(risk, SkillCoverageRisk) for rid, risk in risks_data.items()}
+        self._employee_skill_lookup = {UUID(eid): set(codes) for eid, codes in skills_data.items()}
+        self._station_skill_requirements = {station_id: set(codes) for station_id, codes in station_reqs_data.items()}
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        shifts_data = {str(sid): encode_dataclass(shift) for sid, shift in self._shifts.items()}
+        roster_data = {str(rid): encode_dataclass(slot) for rid, slot in self._roster_slots.items()}
+        absences_data = {str(aid): encode_dataclass(absence) for aid, absence in self._absences.items()}
+        risks_data = {str(rid): encode_dataclass(risk) for rid, risk in self._risks.items()}
+        skills_data = {str(eid): sorted(list(codes)) for eid, codes in self._employee_skill_lookup.items()}
+        station_reqs_data = {station_id: sorted(list(codes)) for station_id, codes in self._station_skill_requirements.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "shifts", shifts_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "roster_slots", roster_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "absences", absences_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "risks", risks_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "employee_skills", skills_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "station_skill_requirements", station_reqs_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---- RBAC helpers ----
 
@@ -172,10 +214,20 @@ class StaffingRosterService(PersistentServiceMixin):
         self._shifts[shift.id] = shift
         return shift
 
+    async def create_shift_async(self, **kwargs: Any) -> ShiftDefinition:
+        await self._ensure_loaded()
+        shift = self.create_shift(**kwargs)
+        await self.persist_all()
+        return shift
+
     def list_shifts(self, *, actor_roles: Iterable[str]) -> list[ShiftDefinition]:
         if not self.can_view(actor_roles=actor_roles):
             raise PermissionError("Not permitted to view shifts")
         return sorted(self._shifts.values(), key=lambda s: s.name.lower())
+
+    async def list_shifts_async(self, *, actor_roles: Iterable[str]) -> list[ShiftDefinition]:
+        await self._ensure_loaded()
+        return self.list_shifts(actor_roles=actor_roles)
 
     # ---- Roster slots ----
 
@@ -208,6 +260,12 @@ class StaffingRosterService(PersistentServiceMixin):
         self._roster_slots[slot.id] = slot
         return slot
 
+    async def assign_slot_async(self, **kwargs: Any) -> RosterSlot:
+        await self._ensure_loaded()
+        slot = self.assign_slot(**kwargs)
+        await self.persist_all()
+        return slot
+
     def remove_slot(
         self,
         slot_id: UUID,
@@ -219,6 +277,11 @@ class StaffingRosterService(PersistentServiceMixin):
         if slot_id not in self._roster_slots:
             raise KeyError("Roster slot not found")
         del self._roster_slots[slot_id]
+
+    async def remove_slot_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.remove_slot(**kwargs)
+        await self.persist_all()
 
     def list_roster(
         self,
@@ -240,6 +303,10 @@ class StaffingRosterService(PersistentServiceMixin):
             result = [s for s in result if s.employee_id == employee_id]
         result.sort(key=lambda s: (s.roster_date, s.shift_id))
         return result
+
+    async def list_roster_async(self, **kwargs: Any) -> list[RosterSlot]:
+        await self._ensure_loaded()
+        return self.list_roster(**kwargs)
 
     # ---- Absences ----
 
@@ -277,6 +344,12 @@ class StaffingRosterService(PersistentServiceMixin):
         self._absences[absence.id] = absence
         return absence
 
+    async def record_absence_async(self, **kwargs: Any) -> Absence:
+        await self._ensure_loaded()
+        absence = self.record_absence(**kwargs)
+        await self.persist_all()
+        return absence
+
     def decide_absence(
         self,
         absence_id: UUID,
@@ -303,6 +376,12 @@ class StaffingRosterService(PersistentServiceMixin):
         self._absences[absence_id] = updated
         return updated
 
+    async def decide_absence_async(self, **kwargs: Any) -> Absence:
+        await self._ensure_loaded()
+        absence = self.decide_absence(**kwargs)
+        await self.persist_all()
+        return absence
+
     def list_absences(
         self,
         *,
@@ -327,6 +406,10 @@ class StaffingRosterService(PersistentServiceMixin):
         result.sort(key=lambda a: (a.start_date, a.employee_id))
         return result
 
+    async def list_absences_async(self, **kwargs: Any) -> list[Absence]:
+        await self._ensure_loaded()
+        return self.list_absences(**kwargs)
+
     def get_absent_employees_on(self, *, on_date: date) -> set[UUID]:
         return {
             a.employee_id
@@ -334,13 +417,27 @@ class StaffingRosterService(PersistentServiceMixin):
             if a.status == AbsenceStatus.APPROVED and a.start_date <= on_date <= a.end_date
         }
 
+    async def get_absent_employees_on_async(self, *, on_date: date) -> set[UUID]:
+        await self._ensure_loaded()
+        return self.get_absent_employees_on(on_date=on_date)
+
     # ---- Skill lookup injection ----
 
     def set_employee_skills(self, employee_id: UUID, skill_codes: Iterable[str]) -> None:
         self._employee_skill_lookup[employee_id] = set(skill_codes)
 
+    async def set_employee_skills_async(self, employee_id: UUID, skill_codes: Iterable[str]) -> None:
+        await self._ensure_loaded()
+        self.set_employee_skills(employee_id, skill_codes)
+        await self.persist_all()
+
     def set_station_skill_requirements(self, station_id: str, skill_codes: Iterable[str]) -> None:
         self._station_skill_requirements[station_id] = set(skill_codes)
+
+    async def set_station_skill_requirements_async(self, station_id: str, skill_codes: Iterable[str]) -> None:
+        await self._ensure_loaded()
+        self.set_station_skill_requirements(station_id, skill_codes)
+        await self.persist_all()
 
     # ---- Skill coverage risk detection ----
 
@@ -400,6 +497,12 @@ class StaffingRosterService(PersistentServiceMixin):
         risks.sort(key=lambda r: (r.severity.value, r.station_id))
         return risks
 
+    async def compute_coverage_risks_async(self, **kwargs: Any) -> list[SkillCoverageRisk]:
+        await self._ensure_loaded()
+        risks = self.compute_coverage_risks(**kwargs)
+        await self.persist_all()
+        return risks
+
     def list_coverage_risks(
         self,
         *,
@@ -421,6 +524,10 @@ class StaffingRosterService(PersistentServiceMixin):
         result.sort(key=lambda r: (r.severity.value, r.roster_date, r.station_id))
         return result
 
+    async def list_coverage_risks_async(self, **kwargs: Any) -> list[SkillCoverageRisk]:
+        await self._ensure_loaded()
+        return self.list_coverage_risks(**kwargs)
+
     def acknowledge_risk(
         self,
         risk_id: UUID,
@@ -437,3 +544,9 @@ class StaffingRosterService(PersistentServiceMixin):
         updated = replace(risk, acknowledged=True, acknowledged_by=actor_user_id)
         self._risks[risk_id] = updated
         return updated
+
+    async def acknowledge_risk_async(self, **kwargs: Any) -> SkillCoverageRisk:
+        await self._ensure_loaded()
+        risk = self.acknowledge_risk(**kwargs)
+        await self.persist_all()
+        return risk

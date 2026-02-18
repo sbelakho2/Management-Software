@@ -69,18 +69,6 @@ def _decode_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value)
 
 
-def _encode_date(value: date | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat()
-
-
-def _decode_date(value: str | None) -> date | None:
-    if value is None:
-        return None
-    return date.fromisoformat(value)
-
-
 def _encode_audit_event(event: "AuditEvent") -> dict[str, Any]:
     return {
         "id": str(event.id),

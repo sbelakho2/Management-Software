@@ -24,6 +24,8 @@ from typing import Optional, Any
 from uuid import UUID, uuid4
 
 from sensei.core.time import utcnow_naive
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 # ============================================================================
@@ -358,7 +360,7 @@ RISK_FACTORS = {
 # Service Class
 # ============================================================================
 
-class AIQualificationAdvisoryService:
+class AIQualificationAdvisoryService(PersistentServiceMixin):
     """
     AI-powered qualification advisory service.
     
@@ -391,6 +393,36 @@ class AIQualificationAdvisoryService:
         self.high_confidence_threshold = high_confidence_threshold
         
         self._advisories: dict[UUID, QualificationAdvisory] = {}
+        self._state_loaded = False
+
+    SERVICE_NAME = "ai_qualification_advisory"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        advisories_data = await self.load_state(self._DEFAULT_TENANT_ID, "advisories")
+        if advisories_data is None:
+            self._state_loaded = True
+            return
+
+        self._advisories = {
+            UUID(advisory_id): decode_dataclass(advisory, QualificationAdvisory)
+            for advisory_id, advisory in advisories_data.items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        advisories_data = {
+            str(advisory_id): encode_dataclass(advisory)
+            for advisory_id, advisory in self._advisories.items()
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "advisories", advisories_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     # ========================================================================
     # Scoring Recommendations
@@ -1344,6 +1376,12 @@ class AIQualificationAdvisoryService:
         self._advisories[advisory.id] = advisory
         
         return advisory
+
+    async def generate_advisory_async(self, **kwargs: Any) -> QualificationAdvisory:
+        await self._ensure_loaded()
+        advisory = self.generate_advisory(**kwargs)
+        await self.persist_all()
+        return advisory
     
     def _generate_recommended_actions(
         self,
@@ -1470,6 +1508,10 @@ Concerns:
     def get_advisory(self, advisory_id: UUID) -> Optional[QualificationAdvisory]:
         """Get stored advisory by ID."""
         return self._advisories.get(advisory_id)
+
+    async def get_advisory_async(self, advisory_id: UUID) -> Optional[QualificationAdvisory]:
+        await self._ensure_loaded()
+        return self.get_advisory(advisory_id)
     
     def list_advisories(
         self,
@@ -1485,3 +1527,7 @@ Concerns:
         advisories.sort(key=lambda a: a.generated_at, reverse=True)
         
         return advisories[:limit]
+
+    async def list_advisories_async(self, **kwargs: Any) -> list[QualificationAdvisory]:
+        await self._ensure_loaded()
+        return self.list_advisories(**kwargs)

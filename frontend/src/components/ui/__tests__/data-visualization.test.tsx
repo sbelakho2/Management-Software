@@ -5,8 +5,9 @@
  */
 
 import React, { createRef } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderWithI18n } from '@/test-utils';
 
 import {
   // Constants
@@ -39,6 +40,8 @@ import {
   DataPoint,
   LegendItem,
 } from '../data-visualization';
+
+const render = renderWithI18n;
 
 // =============================================================================
 // CONSTANTS TESTS

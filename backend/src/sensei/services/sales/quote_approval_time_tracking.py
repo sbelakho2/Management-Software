@@ -20,6 +20,8 @@ from enum import Enum
 import logging
 from typing import Any, Callable
 from uuid import UUID, uuid4
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -402,13 +404,17 @@ DEFAULT_APPROVAL_CRITERIA: list[dict] = [
 ]
 
 
-class QuoteApprovalTimeTrackingService:
+class QuoteApprovalTimeTrackingService(PersistentServiceMixin):
     """
     Service for tracking quote approval time with < 60 second target.
     
     Provides optimized approval workflows for both desktop and mobile,
     with real-time countdown, criteria verification, and quick actions.
     """
+
+    SERVICE_NAME = "quote_approval_time_tracking"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self) -> None:
         """Initialize the quote approval service."""
@@ -423,6 +429,62 @@ class QuoteApprovalTimeTrackingService:
         self._critical_seconds = 55
         self._listeners: list[Callable[[ApprovalAlert], None]] = []
         self._quick_options = DEFAULT_QUICK_OPTIONS.copy()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        self._sessions = {
+            UUID(session_id): decode_dataclass(session, ApprovalSession)
+            for session_id, session in state.get("sessions", {}).items()
+        }
+        self._alerts = {
+            UUID(alert_id): decode_dataclass(alert, ApprovalAlert)
+            for alert_id, alert in state.get("alerts", {}).items()
+        }
+        self._completed_history = [
+            decode_dataclass(session, ApprovalSession)
+            for session in state.get("completed_history", [])
+        ]
+        self._quick_options = [
+            decode_dataclass(option, QuickApprovalOption)
+            for option in state.get("quick_options", [])
+        ]
+        self._max_history = int(state.get("max_history", self._max_history))
+        self._target_seconds = int(state.get("target_seconds", self._target_seconds))
+        self._warning_seconds = int(state.get("warning_seconds", self._warning_seconds))
+        self._critical_seconds = int(state.get("critical_seconds", self._critical_seconds))
+
+        self._sessions_by_quote = {}
+        self._sessions_by_approver = {}
+        for session in self._sessions.values():
+            self._sessions_by_quote.setdefault(session.quote_id, []).append(session.id)
+            self._sessions_by_approver.setdefault(session.approver_id, []).append(session.id)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "sessions": {str(session_id): encode_dataclass(session) for session_id, session in self._sessions.items()},
+            "alerts": {str(alert_id): encode_dataclass(alert) for alert_id, alert in self._alerts.items()},
+            "completed_history": [encode_dataclass(session) for session in self._completed_history],
+            "quick_options": [encode_dataclass(option) for option in self._quick_options],
+            "max_history": self._max_history,
+            "target_seconds": self._target_seconds,
+            "warning_seconds": self._warning_seconds,
+            "critical_seconds": self._critical_seconds,
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     # ===== Session Management =====
     
@@ -473,6 +535,12 @@ class QuoteApprovalTimeTrackingService:
             self._sessions_by_approver[approver_id] = []
         self._sessions_by_approver[approver_id].append(session.id)
         
+        return session
+
+    async def start_approval_session_async(self, *args: Any, **kwargs: Any) -> ApprovalSession:
+        await self._ensure_loaded()
+        session = self.start_approval_session(*args, **kwargs)
+        await self.persist_all()
         return session
     
     def _generate_criteria(self, context: QuoteApprovalContext) -> list[ApprovalCriterion]:
@@ -550,6 +618,12 @@ class QuoteApprovalTimeTrackingService:
         session.status = ApprovalSessionStatus.REVIEWING
         
         return session
+
+    async def update_criterion_async(self, *args: Any, **kwargs: Any) -> ApprovalSession | None:
+        await self._ensure_loaded()
+        session = self.update_criterion(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def make_decision(
         self,
@@ -596,6 +670,12 @@ class QuoteApprovalTimeTrackingService:
         self._archive_session(session)
         
         return session
+
+    async def make_decision_async(self, *args: Any, **kwargs: Any) -> ApprovalSession | None:
+        await self._ensure_loaded()
+        session = self.make_decision(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def quick_approve(
         self,
@@ -631,6 +711,12 @@ class QuoteApprovalTimeTrackingService:
             reason=option.reason,
             comments=comments,
         )
+
+    async def quick_approve_async(self, *args: Any, **kwargs: Any) -> ApprovalSession | None:
+        await self._ensure_loaded()
+        session = self.quick_approve(*args, **kwargs)
+        await self.persist_all()
+        return session
     
     def abandon_session(
         self,
@@ -660,6 +746,12 @@ class QuoteApprovalTimeTrackingService:
         
         self._archive_session(session)
         
+        return session
+
+    async def abandon_session_async(self, *args: Any, **kwargs: Any) -> ApprovalSession | None:
+        await self._ensure_loaded()
+        session = self.abandon_session(*args, **kwargs)
+        await self.persist_all()
         return session
     
     def _archive_session(self, session: ApprovalSession) -> None:
@@ -806,6 +898,11 @@ class QuoteApprovalTimeTrackingService:
     def add_quick_option(self, option: QuickApprovalOption) -> None:
         """Add a custom quick option."""
         self._quick_options.append(option)
+
+    async def add_quick_option_async(self, option: QuickApprovalOption) -> None:
+        await self._ensure_loaded()
+        self.add_quick_option(option)
+        await self.persist_all()
     
     # ===== Analytics =====
     

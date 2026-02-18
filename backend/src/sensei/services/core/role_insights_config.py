@@ -624,11 +624,11 @@ def filter_insights_for_role(
                 if category in accessible:
                     filtered.append(insight)
             except ValueError:
-                # Unknown category - include for safety (may need review)
-                filtered.append(insight)
+                # Unknown category — default-deny for security
+                pass
         else:
-            # No category - include by default
-            filtered.append(insight)
+            # No category — exclude to avoid leaking untagged data
+            pass
     
     return filtered
 

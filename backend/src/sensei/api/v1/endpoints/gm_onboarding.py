@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from sensei.core.config import settings
+from sensei.api.deps import RoleChecker
 from sensei.services.ops.gm_onboarding import (
     GMOnboardingService,
     OnboardingProgress,
@@ -22,7 +23,10 @@ from sensei.services.ops.gm_onboarding import (
 )
 
 
-router = APIRouter(tags=["gm-onboarding"])
+router = APIRouter(
+    tags=["gm-onboarding"],
+    dependencies=[Depends(RoleChecker(["admin", "gm"]))],
+)
 
 
 # =============================================================================

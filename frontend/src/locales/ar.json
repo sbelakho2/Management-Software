@@ -2078,9 +2078,22 @@
         "deliveryScore": "نقاط التسليم",
         "costEfficiency": "كفاءة التكلفة",
         "workforce": "القوى العاملة",
+        "inventoryHealth": "صحة المخزون",
         "overallScore": "النتيجة الإجمالية",
         "belowTarget": "أقل من الهدف",
         "awaitingData": "بانتظار البيانات"
+      },
+      "dataThread": {
+        "exportedRecords": "سجلات خيط البيانات",
+        "lineageLinks": "روابط سلالة البيانات",
+        "reasoningTraces": "آثار الاستدلال",
+        "cognitiveWarnings": "تحذيرات إدراكية",
+        "snapshotPrefix": "لقطة",
+        "noSnapshotYet": "لا توجد لقطة بعد",
+        "crossDomainTraces": "آثار عبر المجالات",
+        "aiDecisionPaths": "مسارات قرار الذكاء الاصطناعي",
+        "trendBreachesPredicted": "تجاوزات الاتجاه المتوقعة",
+        "allMetricsNominal": "جميع المقاييس ضمن النطاق الطبيعي"
       },
       "monitoringActive": "المراقبة نشطة",
       "nl2sql": {
@@ -2613,7 +2626,9 @@
     },
     "obeya": {
       "actions": {
-        "newObeya": "أوبيا جديد"
+        "newObeya": "أوبيا جديد",
+        "executeDeployment": "تنفيذ النشر",
+        "applySmoothing": "تطبيق التسوية"
       },
       "heijunkaLeveling": "تسوية هيجونكا",
       "heijunkaTips": "نصائح هيجونكا",
@@ -2624,6 +2639,7 @@
       "rebalanceOps": "إعادة توازن العمليات",
       "recentSiloAlerts": "تنبيهات الصوامع الأخيرة",
       "resourceRebalancing": "إعادة موازنة الموارد",
+      "station": "المحطة: مركز-القيادة-01",
       "sections": {
         "hoshinKanri": "هوشين كانري",
         "visualControls": "الضوابط البصرية"
@@ -2631,6 +2647,54 @@
       "siloBottlenecks": "اختناقات الصوامع",
       "subtitle": "استخبارات تنظيمية توجيهية وإدارة بصرية",
       "syncIntel": "مزامنة الاستخبارات",
+      "exceptionsTitle": "الشذوذات والاستثناءات",
+      "statusColor": {
+        "green": "أخضر",
+        "yellow": "أصفر",
+        "red": "أحمر"
+      },
+      "statuses": {
+        "trendingTowardRed": "الاتجاه نحو الأحمر",
+        "interDeptFriction": "احتكاك بين الإدارات",
+        "skillGapNodes": "عُقد فجوات المهارات",
+        "smoothingProtocols": "بروتوكولات التسوية"
+      },
+      "kpis": {
+        "firstPassYield": "معدل النجاح من المحاولة الأولى",
+        "onTimeDelivery": "التسليم في الوقت المحدد",
+        "customerSatisfaction": "رضا العملاء",
+        "defectRate": "معدل العيوب",
+        "openNcrs": "حالات عدم المطابقة المفتوحة",
+        "backlogItems": "عناصر التراكم"
+      },
+      "alerts": {
+        "source": "المصدر",
+        "impacting": "المتأثر"
+      },
+      "badges": {
+        "aiSync": "مزامنة الذكاء الاصطناعي",
+        "prescriptive": "توجيهي"
+      },
+      "labels": {
+        "improvement": "التحسن",
+        "recommendedOperators": "المشغّلون الموصى بهم",
+        "horizon": "الأفق",
+        "muraReduction": "خفض مورا",
+        "currentPattern": "النمط الحالي",
+        "suggestedPattern": "النمط المقترح",
+        "sensorFusion": "التحويل إلى دمج مستشعرات أرضية المصنع بالزمن الحقيقي..."
+      },
+      "sqdcp": {
+        "qualityTitle": "الجودة",
+        "deliveryTitle": "التسليم"
+      },
+      "emptyStates": {
+        "zeroActiveSiloAlerts": "لا توجد تنبيهات صوامع نشطة",
+        "skillNodesOptimized": "تم تحسين عقد المهارات عبر جميع مراكز العمل",
+        "productionMixLeveled": "تمت تسوية مزيج الإنتاج بشكل كافٍ",
+        "pendingAction": "إجراء معلق",
+        "zeroCriticalExceptions": "لم يتم تحديد استثناءات حرجة"
+      },
       "tabs": {
         "actions": "الإجراءات",
         "exceptions": "الاستثناءات",

@@ -21,6 +21,8 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 # =============================================================================
 # Enums
@@ -413,6 +415,22 @@ class KnowledgeBase:
         self._a3_patterns: list[dict[str, Any]] = []
         self._best_practices: list[dict[str, Any]] = []
         self._initialize_knowledge()
+
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "sources": [encode_dataclass(source) for source in self._sources.values()],
+            "a3_patterns": list(self._a3_patterns),
+            "best_practices": list(self._best_practices),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        sources_data = state.get("sources") or []
+        self._sources = {}
+        for source in sources_data:
+            decoded = decode_dataclass(source, KnowledgeSource)
+            self._sources[decoded.id] = decoded
+        self._a3_patterns = list(state.get("a3_patterns") or [])
+        self._best_practices = list(state.get("best_practices") or [])
     
     def _initialize_knowledge(self) -> None:
         """Initialize with sample approved knowledge."""
@@ -521,7 +539,7 @@ class KnowledgeBase:
 # AI Drafting Service
 # =============================================================================
 
-class AIDraftingService:
+class AIDraftingService(PersistentServiceMixin):
     """
     Service for generating AI-drafted content.
     
@@ -537,6 +555,61 @@ class AIDraftingService:
         self._drafts: dict[str, DraftContent] = {}
         self._a3_drafts: dict[str, A3FullDraft] = {}
         self._history: list[DraftHistory] = []
+        self._state_loaded = False
+
+    SERVICE_NAME = "ai_content_drafting"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        knowledge_data = await self.load_state(self._DEFAULT_TENANT_ID, "knowledge_base")
+        drafts_data = await self.load_state(self._DEFAULT_TENANT_ID, "drafts")
+        a3_drafts_data = await self.load_state(self._DEFAULT_TENANT_ID, "a3_drafts")
+        history_data = await self.load_state(self._DEFAULT_TENANT_ID, "history")
+
+        if knowledge_data is None and drafts_data is None and a3_drafts_data is None and history_data is None:
+            self._state_loaded = True
+            return
+
+        if knowledge_data is not None:
+            self._knowledge_base.load_state(knowledge_data)
+        if drafts_data is not None:
+            self._drafts = {
+                draft_id: decode_dataclass(draft, DraftContent)
+                for draft_id, draft in drafts_data.items()
+            }
+        if a3_drafts_data is not None:
+            self._a3_drafts = {
+                draft_id: decode_dataclass(draft, A3FullDraft)
+                for draft_id, draft in a3_drafts_data.items()
+            }
+        if history_data is not None:
+            self._history = [decode_dataclass(entry, DraftHistory) for entry in history_data]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        knowledge_data = self._knowledge_base.export_state()
+        drafts_data = {
+            draft_id: encode_dataclass(draft)
+            for draft_id, draft in self._drafts.items()
+        }
+        a3_drafts_data = {
+            draft_id: encode_dataclass(draft)
+            for draft_id, draft in self._a3_drafts.items()
+        }
+        history_data = [encode_dataclass(entry) for entry in self._history]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "knowledge_base", knowledge_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "drafts", drafts_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "a3_drafts", a3_drafts_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "history", history_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     # -------------------------------------------------------------------------
     # A3 Drafting
@@ -596,6 +669,15 @@ class AIDraftingService:
         )
         
         return draft
+
+    async def draft_a3_section_async(
+        self,
+        request: A3DraftRequest,
+    ) -> A3SectionDraft:
+        await self._ensure_loaded()
+        draft = self.draft_a3_section(request)
+        await self.persist_all()
+        return draft
     
     def draft_full_a3(
         self,
@@ -652,6 +734,18 @@ class AIDraftingService:
         
         self._a3_drafts[str(a3_id)] = full_draft
         return full_draft
+
+    async def draft_full_a3_async(
+        self,
+        a3_id: UUID,
+        context: A3Context,
+        user_id: UUID,
+        sections: list[A3SectionType] | None = None,
+    ) -> A3FullDraft:
+        await self._ensure_loaded()
+        draft = self.draft_full_a3(a3_id, context, user_id, sections)
+        await self.persist_all()
+        return draft
     
     def _generate_a3_section_content(
         self,
@@ -1015,10 +1109,27 @@ class AIDraftingService:
         )
         self._drafts[draft.id] = draft
         return draft
+
+    async def create_draft_async(
+        self,
+        content_type: ContentType,
+        title: str,
+        body: str,
+        sources: list[KnowledgeSource] | None = None,
+        user_id: str | None = None,
+    ) -> DraftContent:
+        await self._ensure_loaded()
+        draft = self.create_draft(content_type, title, body, sources, user_id)
+        await self.persist_all()
+        return draft
     
     def get_draft(self, draft_id: str) -> DraftContent | None:
         """Get a draft by ID."""
         return self._drafts.get(draft_id)
+
+    async def get_draft_async(self, draft_id: str) -> DraftContent | None:
+        await self._ensure_loaded()
+        return self.get_draft(draft_id)
     
     def list_drafts(
         self,
@@ -1037,6 +1148,15 @@ class AIDraftingService:
             results = [d for d in results if d.created_by == user_id]
         
         return sorted(results, key=lambda d: d.created_at, reverse=True)
+
+    async def list_drafts_async(
+        self,
+        content_type: ContentType | None = None,
+        status: DraftStatus | None = None,
+        user_id: str | None = None,
+    ) -> list[DraftContent]:
+        await self._ensure_loaded()
+        return self.list_drafts(content_type, status, user_id)
     
     def review_draft(
         self,
@@ -1073,6 +1193,18 @@ class AIDraftingService:
         ))
         
         return draft
+
+    async def review_draft_async(
+        self,
+        draft_id: str,
+        user_id: str,
+        approved: bool,
+        feedback: str | None = None,
+    ) -> DraftContent | None:
+        await self._ensure_loaded()
+        draft = self.review_draft(draft_id, user_id, approved, feedback)
+        await self.persist_all()
+        return draft
     
     def apply_draft(
         self,
@@ -1097,14 +1229,32 @@ class AIDraftingService:
         ))
         
         return draft
+
+    async def apply_draft_async(
+        self,
+        draft_id: str,
+        user_id: str,
+    ) -> DraftContent | None:
+        await self._ensure_loaded()
+        draft = self.apply_draft(draft_id, user_id)
+        await self.persist_all()
+        return draft
     
     def get_draft_history(self, draft_id: str) -> list[DraftHistory]:
         """Get history for a specific draft."""
         return [h for h in self._history if h.draft_id == draft_id]
+
+    async def get_draft_history_async(self, draft_id: str) -> list[DraftHistory]:
+        await self._ensure_loaded()
+        return self.get_draft_history(draft_id)
     
     def get_a3_draft(self, a3_id: str) -> A3FullDraft | None:
         """Get a full A3 draft."""
         return self._a3_drafts.get(a3_id)
+
+    async def get_a3_draft_async(self, a3_id: str) -> A3FullDraft | None:
+        await self._ensure_loaded()
+        return self.get_a3_draft(a3_id)
     
     # -------------------------------------------------------------------------
     # Knowledge Management
@@ -1113,6 +1263,11 @@ class AIDraftingService:
     def add_knowledge_source(self, source: KnowledgeSource) -> None:
         """Add a knowledge source to the base."""
         self._knowledge_base.add_source(source)
+
+    async def add_knowledge_source_async(self, source: KnowledgeSource) -> None:
+        await self._ensure_loaded()
+        self.add_knowledge_source(source)
+        await self.persist_all()
     
     def search_knowledge(
         self,
@@ -1121,6 +1276,14 @@ class AIDraftingService:
     ) -> list[KnowledgeSource]:
         """Search the knowledge base."""
         return self._knowledge_base.search_sources(query, limit=limit)
+
+    async def search_knowledge_async(
+        self,
+        query: str,
+        limit: int = 5,
+    ) -> list[KnowledgeSource]:
+        await self._ensure_loaded()
+        return self.search_knowledge(query, limit)
     
     # -------------------------------------------------------------------------
     # Cleanup
@@ -1131,6 +1294,11 @@ class AIDraftingService:
         self._drafts.clear()
         self._a3_drafts.clear()
         self._history.clear()
+
+    async def clear_all_async(self) -> None:
+        await self._ensure_loaded()
+        self.clear_all()
+        await self.persist_all()
 
 
 # =============================================================================

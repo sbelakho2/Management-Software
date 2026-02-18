@@ -1,0 +1,11 @@
+{
+  "role": "supply_chain",
+  "loginSuccess": false,
+  "pagesVisited": [],
+  "interactiveElements": [],
+  "consoleErrors": [
+    "API login failed"
+  ],
+  "networkErrors": [],
+  "timestamp": "2026-02-17T18:00:04.411Z"
+}

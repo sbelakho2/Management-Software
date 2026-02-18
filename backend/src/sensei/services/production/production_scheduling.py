@@ -19,9 +19,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Protocol, Any
+from uuid import UUID
 
 from sensei.core.config import settings
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +187,7 @@ class ProductionSchedulingService(PersistentServiceMixin):
     """Finite-capacity scheduling engine with constraint and resource checks."""
 
     SERVICE_NAME = "production_scheduling"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(
         self,
@@ -200,6 +203,47 @@ class ProductionSchedulingService(PersistentServiceMixin):
         self._calendar: dict[str, list[CalendarWindow]] = {}
         self._schedule_by_station: dict[str, list[ScheduledTask]] = {}
         self._rush_requests: dict[str, RushRequest] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        calendar_data = await self.load_state(self._DEFAULT_TENANT_ID, "calendar") or {}
+        schedule_data = await self.load_state(self._DEFAULT_TENANT_ID, "schedule") or {}
+        rush_data = await self.load_state(self._DEFAULT_TENANT_ID, "rush_requests") or {}
+
+        self._calendar = {
+            station_id: [decode_dataclass(w, CalendarWindow) for w in windows]
+            for station_id, windows in calendar_data.items()
+        }
+        self._schedule_by_station = {
+            station_id: [decode_dataclass(t, ScheduledTask) for t in tasks]
+            for station_id, tasks in schedule_data.items()
+        }
+        self._rush_requests = {
+            task_id: decode_dataclass(req, RushRequest) for task_id, req in rush_data.items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        calendar_data = {
+            station_id: [encode_dataclass(w) for w in windows]
+            for station_id, windows in self._calendar.items()
+        }
+        schedule_data = {
+            station_id: [encode_dataclass(t) for t in tasks]
+            for station_id, tasks in self._schedule_by_station.items()
+        }
+        rush_data = {task_id: encode_dataclass(req) for task_id, req in self._rush_requests.items()}
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "calendar", calendar_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "schedule", schedule_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "rush_requests", rush_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---------------------------------------------------------------------
     # Calendar configuration
@@ -211,6 +255,11 @@ class ProductionSchedulingService(PersistentServiceMixin):
         if window.end <= window.start:
             raise ValueError("window.end must be after window.start")
         self._calendar.setdefault(window.station_id, []).append(window)
+
+    async def add_calendar_window_async(self, window: CalendarWindow) -> None:
+        await self._ensure_loaded()
+        self.add_calendar_window(window)
+        await self.persist_all()
 
     def clear_calendar_windows(
         self,
@@ -235,8 +284,20 @@ class ProductionSchedulingService(PersistentServiceMixin):
         if not self._calendar[station_id]:
             self._calendar.pop(station_id, None)
 
+    async def clear_calendar_windows_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.clear_calendar_windows(**kwargs)
+        await self.persist_all()
+
     def list_calendar_windows(self, station_id: str) -> list[CalendarWindow]:
-        return sorted(self._calendar.get(station_id, []), key=lambda w: (w.start, w.end, w.window_type.value))
+        return sorted(
+            self._calendar.get(station_id, []),
+            key=lambda w: (w.start, w.end, w.window_type.value),
+        )
+
+    async def list_calendar_windows_async(self, station_id: str) -> list[CalendarWindow]:
+        await self._ensure_loaded()
+        return self.list_calendar_windows(station_id)
 
     # ---------------------------------------------------------------------
     # Rush workflow
@@ -261,6 +322,12 @@ class ProductionSchedulingService(PersistentServiceMixin):
             request_rationale=rationale.strip(),
         )
         self._rush_requests[task_id] = req
+        return req
+
+    async def request_rush_async(self, **kwargs: Any) -> RushRequest:
+        await self._ensure_loaded()
+        req = self.request_rush(**kwargs)
+        await self.persist_all()
         return req
 
     def approve_rush(
@@ -288,8 +355,18 @@ class ProductionSchedulingService(PersistentServiceMixin):
         req.approval_rationale = rationale.strip()
         return req
 
+    async def approve_rush_async(self, **kwargs: Any) -> RushRequest:
+        await self._ensure_loaded()
+        req = self.approve_rush(**kwargs)
+        await self.persist_all()
+        return req
+
     def get_rush_request(self, task_id: str) -> RushRequest | None:
         return self._rush_requests.get(task_id)
+
+    async def get_rush_request_async(self, task_id: str) -> RushRequest | None:
+        await self._ensure_loaded()
+        return self.get_rush_request(task_id)
 
     # ---------------------------------------------------------------------
     # Scheduling
@@ -298,8 +375,17 @@ class ProductionSchedulingService(PersistentServiceMixin):
     def list_station_schedule(self, station_id: str) -> list[ScheduledTask]:
         return sorted(self._schedule_by_station.get(station_id, []), key=lambda s: s.start)
 
+    async def list_station_schedule_async(self, station_id: str) -> list[ScheduledTask]:
+        await self._ensure_loaded()
+        return self.list_station_schedule(station_id)
+
     def clear_schedule(self) -> None:
         self._schedule_by_station.clear()
+
+    async def clear_schedule_async(self) -> None:
+        await self._ensure_loaded()
+        self.clear_schedule()
+        await self.persist_all()
 
     def schedule(
         self,
@@ -412,6 +498,12 @@ class ProductionSchedulingService(PersistentServiceMixin):
             self._schedule_by_station[station_id].sort(key=lambda s: s.start)
 
         return SchedulingResult(scheduled=scheduled, unscheduled=unscheduled)
+
+    async def schedule_async(self, **kwargs: Any) -> SchedulingResult:
+        await self._ensure_loaded()
+        result = self.schedule(**kwargs)
+        await self.persist_all()
+        return result
 
     def _find_slot(
         self,

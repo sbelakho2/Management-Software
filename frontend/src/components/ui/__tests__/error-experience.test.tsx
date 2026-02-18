@@ -13,7 +13,8 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import {
   ERROR_SEVERITY,
   OFFLINE_STATUS,
@@ -36,6 +37,8 @@ import {
   createActionableMessage,
   NotFoundPage,
 } from '../error-experience';
+
+const render = renderWithI18n;
 
 // =============================================================================
 // CONSTANTS TESTS
@@ -824,7 +827,7 @@ describe('NotFoundPage', () => {
     render(<NotFoundPage />);
     
     expect(screen.getByText('404')).toBeInTheDocument();
-    expect(screen.getByText('Page not found')).toBeInTheDocument();
+    expect(screen.getByText('Page Not Found')).toBeInTheDocument();
   });
 
   it('renders custom title and message', () => {

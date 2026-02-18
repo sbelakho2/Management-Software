@@ -21,6 +21,10 @@ from typing import Any, Awaitable, Iterable, overload
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+from sensei.services.core.common_thread import get_common_thread_service
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import EmployeeOnboardedEvent
 
 logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,6 +71,7 @@ class PersonnelDocumentType(str, Enum):
 
 
 _PRIVILEGED_PII_ROLES: set[str] = {"admin", "hr", "gm", "exec", "ceo"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 def _require_tzaware(dt: datetime) -> None:
@@ -168,6 +173,7 @@ class EmployeeLifecycleService(PersistentServiceMixin):
 
         self._pii = pii or PIIControlsService()
         self._employee_subject_ids: dict[UUID, UUID] = {}
+        self._state_loaded = False
 
         # PII field definitions for this module (used for masking/audit)
         self._field_employee_email_id: UUID = self._pii.create_field_definition(
@@ -233,6 +239,48 @@ class EmployeeLifecycleService(PersistentServiceMixin):
             is_searchable=False,
             is_exportable=False,
         ).id
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        profiles_data = await self.load_state(_DEFAULT_TENANT_ID, "profiles") or {}
+        checklists_data = await self.load_state(_DEFAULT_TENANT_ID, "checklists") or {}
+        documents_data = await self.load_state(_DEFAULT_TENANT_ID, "documents") or {}
+        subject_ids_data = await self.load_state(_DEFAULT_TENANT_ID, "subject_ids") or {}
+
+        self._profiles = {
+            UUID(pid): decode_dataclass(profile, EmployeeProfile)
+            for pid, profile in profiles_data.items()
+        }
+        self._checklists = {
+            UUID(cid): decode_dataclass(checklist, EmployeeChecklist)
+            for cid, checklist in checklists_data.items()
+        }
+        self._documents = {
+            UUID(did): decode_dataclass(doc, PersonnelDocument)
+            for did, doc in documents_data.items()
+        }
+        self._employee_subject_ids = {
+            UUID(eid): UUID(sid)
+            for eid, sid in subject_ids_data.items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        profiles_data = {str(pid): encode_dataclass(profile) for pid, profile in self._profiles.items()}
+        checklists_data = {str(cid): encode_dataclass(checklist) for cid, checklist in self._checklists.items()}
+        documents_data = {str(did): encode_dataclass(doc) for did, doc in self._documents.items()}
+        subject_ids_data = {str(eid): str(sid) for eid, sid in self._employee_subject_ids.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "profiles", profiles_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "checklists", checklists_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "documents", documents_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "subject_ids", subject_ids_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ------------------------------------------------------------------
     # Access helpers
@@ -316,6 +364,14 @@ class EmployeeLifecycleService(PersistentServiceMixin):
             )
             self._profiles[employee_id] = profile
             self._get_or_register_subject(employee_id)
+
+            # Publish domain event — feeds single data thread
+            event_bus.publish_sync(EmployeeOnboardedEvent(
+                employee_id=str(employee_id),
+                department=department or "",
+                position=job_title or "",
+            ))
+
             return profile
 
         updated = replace(
@@ -344,6 +400,27 @@ class EmployeeLifecycleService(PersistentServiceMixin):
         self._profiles[employee_id] = updated
         self._get_or_register_subject(employee_id)
         return updated
+
+    async def upsert_employee_profile_async(
+        self,
+        *,
+        reasoning_id: str | None = None,
+        db: AsyncSession | None = None,
+        **kwargs: Any,
+    ) -> EmployeeProfile:
+        await self._ensure_loaded()
+        profile = self.upsert_employee_profile(**kwargs)
+        await self.persist_all()
+        if db is not None and reasoning_id:
+            await get_common_thread_service().record_reasoning(
+                db,
+                entity_type="employee",
+                entity_id=profile.employee_id,
+                reasoning_id=reasoning_id,
+                created_by_id=kwargs.get("actor_id"),
+                source="employee_lifecycle",
+            )
+        return profile
 
     async def _get_employee_profile_async(
         self,
@@ -455,6 +532,32 @@ class EmployeeLifecycleService(PersistentServiceMixin):
 
         return replace(profile, email=masked_email, phone=masked_phone)
 
+    async def get_employee_profile_async(
+        self,
+        *,
+        employee_id: UUID,
+        actor_id: UUID,
+        actor_roles: Iterable[str],
+        db: AsyncSession | None = None,
+        purpose: str = "profile_view",
+    ) -> EmployeeProfile | None:
+        await self._ensure_loaded()
+        if db is not None:
+            return await self._get_employee_profile_async(
+                employee_id,
+                actor_id=actor_id,
+                actor_roles=actor_roles,
+                db=db,
+                purpose=purpose,
+            )
+        return self.get_employee_profile(
+            employee_id,
+            actor_id=actor_id,
+            actor_roles=actor_roles,
+            db=None,
+            purpose=purpose,
+        )
+
     # ------------------------------------------------------------------
     # Onboarding / Offboarding checklists
     # ------------------------------------------------------------------
@@ -485,6 +588,12 @@ class EmployeeLifecycleService(PersistentServiceMixin):
             updated_by=created_by,
         )
         self._checklists[checklist.id] = checklist
+        return checklist
+
+    async def create_checklist_async(self, **kwargs: Any) -> EmployeeChecklist:
+        await self._ensure_loaded()
+        checklist = self.create_checklist(**kwargs)
+        await self.persist_all()
         return checklist
 
     def _default_checklist_items(self, checklist_type: ChecklistType) -> list[ChecklistItem]:
@@ -518,12 +627,22 @@ class EmployeeLifecycleService(PersistentServiceMixin):
     def get_checklist(self, checklist_id: UUID) -> EmployeeChecklist | None:
         return self._checklists.get(checklist_id)
 
+    async def get_checklist_async(self, *, checklist_id: UUID) -> EmployeeChecklist | None:
+        await self._ensure_loaded()
+        return self.get_checklist(checklist_id)
+
     def list_checklists(self, *, employee_id: UUID | None = None) -> list[EmployeeChecklist]:
         checklists = list(self._checklists.values())
         if employee_id is not None:
             checklists = [c for c in checklists if c.employee_id == employee_id]
         checklists.sort(key=lambda c: c.created_at, reverse=True)
         return checklists
+
+    async def list_checklists_async(
+        self, *, employee_id: UUID | None = None
+    ) -> list[EmployeeChecklist]:
+        await self._ensure_loaded()
+        return self.list_checklists(employee_id=employee_id)
 
     def complete_checklist_item(
         self,
@@ -575,6 +694,12 @@ class EmployeeLifecycleService(PersistentServiceMixin):
         self._checklists[checklist_id] = updated
         return updated
 
+    async def complete_checklist_item_async(self, **kwargs: Any) -> EmployeeChecklist:
+        await self._ensure_loaded()
+        checklist = self.complete_checklist_item(**kwargs)
+        await self.persist_all()
+        return checklist
+
     def _compute_checklist_status(self, items: list[ChecklistItem]) -> ChecklistStatus:
         if not items:
             return ChecklistStatus.COMPLETED
@@ -625,6 +750,12 @@ class EmployeeLifecycleService(PersistentServiceMixin):
         )
         self._documents[doc.id] = doc
         self._get_or_register_subject(employee_id)
+        return doc
+
+    async def add_personnel_document_async(self, **kwargs: Any) -> PersonnelDocument:
+        await self._ensure_loaded()
+        doc = self.add_personnel_document(**kwargs)
+        await self.persist_all()
         return doc
 
     def list_personnel_documents(
@@ -679,6 +810,10 @@ class EmployeeLifecycleService(PersistentServiceMixin):
             )
         return redacted
 
+    async def list_personnel_documents_async(self, **kwargs: Any) -> list[PersonnelDocument]:
+        await self._ensure_loaded()
+        return self.list_personnel_documents(**kwargs)
+
     def get_pii_access_logs_for_employee(
         self,
         *,
@@ -689,3 +824,7 @@ class EmployeeLifecycleService(PersistentServiceMixin):
         logs_awaitable = self._pii.get_access_logs(subject_id=subject_id)
         logs = logs_awaitable._get_value() if hasattr(logs_awaitable, "_get_value") else logs_awaitable
         return list(logs)[:limit]
+
+    async def get_pii_access_logs_for_employee_async(self, **kwargs: Any) -> list[Any]:
+        await self._ensure_loaded()
+        return self.get_pii_access_logs_for_employee(**kwargs)

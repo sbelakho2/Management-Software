@@ -15,11 +15,11 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_, select
 
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.deps import CurrentUser, DBSession, RoleChecker
 from sensei.api.exceptions import ConflictError, NotFoundError
 from sensei.api.utils import (
     APIResponse,
@@ -40,7 +40,9 @@ from sensei.models.task import (
 )
 
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "engineering", "supervisor", "team_lead", "operator"]))],
+)
 
 
 # =============================================================================

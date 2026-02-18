@@ -17,6 +17,8 @@ from sqlalchemy.orm import selectinload
 
 from sensei.models.maintenance import Asset, PMSchedule, MaintenanceWorkOrder, SparePart, DowntimeEvent
 from sensei.models.user import User
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import WorkOrderCreatedEvent, PMScheduleTriggeredEvent
 
 class PersistentMaintenanceService:
     """Persistent Maintenance & Asset Reliability service using SQLAlchemy."""
@@ -42,6 +44,23 @@ class PersistentMaintenanceService:
         wo = MaintenanceWorkOrder(**kwargs)
         self.db.add(wo)
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(WorkOrderCreatedEvent(
+            work_order_id=str(wo.id),
+            asset_id=str(kwargs.get("asset_id", "")),
+            priority=kwargs.get("priority", ""),
+            work_type=kwargs.get("work_order_type", "corrective"),
+        ))
+
+        # If preventive maintenance, also publish PM schedule event
+        if kwargs.get("work_order_type") == "preventive":
+            await event_bus.publish(PMScheduleTriggeredEvent(
+                schedule_id=str(kwargs.get("pm_schedule_id", "")),
+                asset_id=str(kwargs.get("asset_id", "")),
+                next_due="",
+            ))
+
         return wo
 
     async def list_pm_schedules(self) -> List[PMSchedule]:

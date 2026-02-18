@@ -2078,9 +2078,22 @@
         "deliveryScore": "Score Livraison",
         "costEfficiency": "Efficacité Coût",
         "workforce": "Main d'œuvre",
+        "inventoryHealth": "Santé des Stocks",
         "overallScore": "Score Global",
         "belowTarget": "Sous la cible",
         "awaitingData": "En attente de données"
+      },
+      "dataThread": {
+        "exportedRecords": "Enregistrements du fil de données",
+        "lineageLinks": "Liens de traçabilité",
+        "reasoningTraces": "Traces de raisonnement",
+        "cognitiveWarnings": "Alertes cognitives",
+        "snapshotPrefix": "Instantané",
+        "noSnapshotYet": "Pas encore d'instantané",
+        "crossDomainTraces": "Traces inter-domaines",
+        "aiDecisionPaths": "Parcours de décision IA",
+        "trendBreachesPredicted": "Dépassements de tendance prédits",
+        "allMetricsNominal": "Toutes les métriques sont nominales"
       },
       "monitoringActive": "Surveillance active",
       "nl2sql": {
@@ -2613,7 +2626,9 @@
     },
     "obeya": {
       "actions": {
-        "newObeya": "Nouvel Obeya"
+        "newObeya": "Nouvel Obeya",
+        "executeDeployment": "EXÉCUTER_DÉPLOIEMENT",
+        "applySmoothing": "APPLIQUER_LISSAGE"
       },
       "heijunkaLeveling": "Nivellement Heijunka",
       "heijunkaTips": "Conseils Heijunka",
@@ -2624,6 +2639,7 @@
       "rebalanceOps": "Rééquilibrer les opérations",
       "recentSiloAlerts": "Alertes de silos récentes",
       "resourceRebalancing": "Rééquilibrage des ressources",
+      "station": "STATION : CENTRE-DE-COMMANDE-01",
       "sections": {
         "hoshinKanri": "Hoshin Kanri",
         "visualControls": "Contrôles visuels"
@@ -2631,6 +2647,54 @@
       "siloBottlenecks": "Goulets d'étranglement par silo",
       "subtitle": "Intelligence organisationnelle prescriptive et gestion visuelle",
       "syncIntel": "Synchroniser l'intelligence",
+      "exceptionsTitle": "Anomalies et Exceptions",
+      "statusColor": {
+        "green": "VERT",
+        "yellow": "JAUNE",
+        "red": "ROUGE"
+      },
+      "statuses": {
+        "trendingTowardRed": "TENDANCE_VERS_ROUGE",
+        "interDeptFriction": "FRICTION_INTER_DÉPARTEMENTS",
+        "skillGapNodes": "NŒUDS_D'ÉCART_DE_COMPÉTENCES",
+        "smoothingProtocols": "PROTOCOLES_DE_LISSAGE"
+      },
+      "kpis": {
+        "firstPassYield": "Rendement premier passage",
+        "onTimeDelivery": "Livraison à temps",
+        "customerSatisfaction": "Satisfaction client",
+        "defectRate": "Taux de défaut",
+        "openNcrs": "NCR ouverts",
+        "backlogItems": "Éléments en retard"
+      },
+      "alerts": {
+        "source": "SOURCE",
+        "impacting": "IMPACTANT"
+      },
+      "badges": {
+        "aiSync": "SYNC_IA",
+        "prescriptive": "PRESCRIPTIF"
+      },
+      "labels": {
+        "improvement": "AMÉLIORATION",
+        "recommendedOperators": "OPÉRATEURS_RECOMMANDÉS",
+        "horizon": "HORIZON",
+        "muraReduction": "RÉDUCTION_MURA",
+        "currentPattern": "Schéma actuel",
+        "suggestedPattern": "Schéma suggéré",
+        "sensorFusion": "Bascule vers la fusion de capteurs atelier en temps réel..."
+      },
+      "sqdcp": {
+        "qualityTitle": "Qualité",
+        "deliveryTitle": "Livraison"
+      },
+      "emptyStates": {
+        "zeroActiveSiloAlerts": "AUCUNE_ALERTE_SILO_ACTIVE",
+        "skillNodesOptimized": "Nœuds de compétences optimisés sur tous les centres de travail",
+        "productionMixLeveled": "Le mix de production est suffisamment nivelé",
+        "pendingAction": "Action en attente",
+        "zeroCriticalExceptions": "Aucune exception critique identifiée"
+      },
       "tabs": {
         "actions": "Actions",
         "exceptions": "Exceptions",

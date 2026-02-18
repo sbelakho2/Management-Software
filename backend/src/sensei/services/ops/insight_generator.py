@@ -26,10 +26,37 @@ from sensei.models.quote import Quote, QuoteStatus
 from sensei.models.task import Task, TaskStatus
 from sensei.models.opportunity import Opportunity, OpportunityStage
 from sensei.models.accounts_receivable import CustomerInvoice, Shipment
-from sensei.models.accounts_payable import PurchaseOrder
+from sensei.models.accounts_payable import PurchaseOrder, SupplierInvoice
 from sensei.models.andon import AndonEvent, AndonStatus
-from sensei.models.inventory import InventoryLevel
+from sensei.models.inventory import InventoryLevel, StockMove
+from sensei.models.hr import EmployeeProfile, HRJobOpening
+from sensei.models.mrp import MRPSuggestion
 from sensei.models.user import User, UserStatus
+from sensei.models.maintenance import (
+    Asset,
+    MaintenanceWorkOrder,
+    PMSchedule,
+    DowntimeEvent,
+    SparePart,
+    FailureRecord,
+)
+from sensei.models.training import (
+    Training,
+    TrainingParticipant,
+    UserSkill,
+    Skill,
+)
+from sensei.models.project_management import (
+    Project,
+    ProjectStatus,
+    UserStory,
+    UserStoryStatus,
+    Sprint,
+    SprintStatus,
+    Issue,
+    IssueStatus,
+    IssueSeverity as PMIssueSeverity,
+)
 from sensei.services.core.role_insights_config import InsightCategory
 
 
@@ -427,6 +454,140 @@ async def generate_insights(db: AsyncSession) -> list[dict[str, Any]]:
         metric_label="Risk Indicators",
     ))
 
+    # ── HR Insights (data thread harmonization) ──────────────
+    active_employees = int(
+        (await db.execute(
+            select(func.count()).select_from(EmployeeProfile).where(
+                EmployeeProfile.status == "active"
+            )
+        )).scalar() or 0
+    )
+    terminated_recent = int(
+        (await db.execute(
+            select(func.count()).select_from(EmployeeProfile).where(
+                and_(
+                    EmployeeProfile.status == "terminated",
+                    EmployeeProfile.termination_date >= (now - timedelta(days=90)),
+                )
+            )
+        )).scalar() or 0
+    )
+    open_positions = int(
+        (await db.execute(
+            select(func.count()).select_from(HRJobOpening).where(
+                HRJobOpening.status == "open"
+            )
+        )).scalar() or 0
+    )
+    turnover_rate = round((terminated_recent / max(active_employees, 1)) * 100, 1)
+
+    if turnover_rate > 10:
+        insights.append(_insight(
+            InsightCategory.RETENTION_RISK,
+            f"Elevated Turnover Rate: {turnover_rate}%",
+            f"{terminated_recent} employee{'s' if terminated_recent != 1 else ''} terminated in the last 90 days "
+            f"({active_employees} active). Turnover rate of {turnover_rate}% exceeds healthy threshold.",
+            severity="warning" if turnover_rate <= 20 else "critical",
+            metric_value=turnover_rate,
+            metric_label="Turnover %",
+            recommendation="Conduct stay interviews and review compensation competitiveness.",
+        ))
+    elif active_employees > 0:
+        insights.append(_insight(
+            InsightCategory.WORKFORCE_ANALYTICS,
+            f"Headcount: {active_employees} Active Employees",
+            f"{active_employees} employees active. {terminated_recent} departed in 90 days. "
+            f"Turnover rate: {turnover_rate}%.",
+            severity="info",
+            metric_value=active_employees,
+            metric_label="Headcount",
+        ))
+
+    if open_positions > 3:
+        insights.append(_insight(
+            InsightCategory.HEADCOUNT_PLANNING,
+            f"{open_positions} Open Positions",
+            f"{open_positions} job opening{'s require' if open_positions != 1 else ' requires'} active recruiting.",
+            severity="warning" if open_positions > 5 else "info",
+            metric_value=open_positions,
+            metric_label="Open Positions",
+            recommendation="Prioritize critical roles and consider internal mobility.",
+        ))
+
+    # ── Inventory / Supply Chain Insights (data thread harmonization) ─
+    zero_stock = int(
+        (await db.execute(
+            select(func.count()).select_from(InventoryLevel).where(
+                InventoryLevel.quantity_on_hand <= 0
+            )
+        )).scalar() or 0
+    )
+    pending_moves = int(
+        (await db.execute(
+            select(func.count()).select_from(StockMove).where(
+                StockMove.status.in_(["draft", "waiting", "confirmed"])
+            )
+        )).scalar() or 0
+    )
+    open_mrp = int(
+        (await db.execute(
+            select(func.count()).select_from(MRPSuggestion).where(
+                MRPSuggestion.status == "pending"
+            )
+        )).scalar() or 0
+    )
+    ap_unpaid = int(
+        (await db.execute(
+            select(func.count()).select_from(SupplierInvoice).where(
+                SupplierInvoice.status.in_(["draft", "submitted", "approved", "posted"])
+            )
+        )).scalar() or 0
+    )
+
+    if zero_stock > 5:
+        insights.append(_insight(
+            InsightCategory.INVENTORY_OPTIMIZATION,
+            f"{zero_stock} SKUs at Zero Stock",
+            f"{zero_stock} items have zero quantity on hand. Production may be at risk of material shortages.",
+            severity="warning" if zero_stock <= 15 else "critical",
+            metric_value=zero_stock,
+            metric_label="Zero-Stock Items",
+            recommendation="Review MRP suggestions and expedite purchase orders for critical items.",
+        ))
+    elif zero_stock > 0:
+        insights.append(_insight(
+            InsightCategory.INVENTORY_OPTIMIZATION,
+            f"{zero_stock} SKU{'s' if zero_stock != 1 else ''} at Zero Stock",
+            f"{zero_stock} item{'s have' if zero_stock != 1 else ' has'} zero quantity on hand.",
+            severity="info",
+            metric_value=zero_stock,
+            metric_label="Zero-Stock Items",
+        ))
+
+    if open_mrp > 5:
+        insights.append(_insight(
+            InsightCategory.REORDER_RECOMMENDATIONS,
+            f"{open_mrp} Pending MRP Suggestions",
+            f"MRP has generated {open_mrp} buy/build suggestions awaiting approval. "
+            "Delays in processing may cascade into production schedules.",
+            severity="warning" if open_mrp <= 15 else "critical",
+            metric_value=open_mrp,
+            metric_label="MRP Suggestions",
+            recommendation="Review and approve/reject MRP suggestions within the planning horizon.",
+        ))
+
+    if ap_unpaid > 10:
+        insights.append(_insight(
+            InsightCategory.COST_OPTIMIZATION,
+            f"{ap_unpaid} Unpaid Supplier Invoices",
+            f"{ap_unpaid} supplier invoice{'s are' if ap_unpaid != 1 else ' is'} unpaid. "
+            "Late payments risk supplier relationship damage and potential supply disruption.",
+            severity="warning",
+            metric_value=ap_unpaid,
+            metric_label="AP Backlog",
+            recommendation="Prioritize payment runs for suppliers with critical material delivery.",
+        ))
+
     # ── Strategic Overview ───────────────────────────────────
     active_users = int(
         (await db.execute(
@@ -450,5 +611,281 @@ async def generate_insights(db: AsyncSession) -> list[dict[str, Any]]:
         },
         metric_label="Summary",
     ))
+
+    # ── Maintenance Insights ─────────────────────────────────
+    overdue_pms = int(
+        (await db.execute(
+            select(func.count()).select_from(PMSchedule).where(
+                and_(
+                    PMSchedule.is_active.is_(True),
+                    PMSchedule.next_due < now,
+                )
+            )
+        )).scalar() or 0
+    )
+    open_maint_wos = int(
+        (await db.execute(
+            select(func.count()).select_from(MaintenanceWorkOrder).where(
+                MaintenanceWorkOrder.status.in_(["open", "in_progress"])
+            )
+        )).scalar() or 0
+    )
+    emergency_maint = int(
+        (await db.execute(
+            select(func.count()).select_from(MaintenanceWorkOrder).where(
+                and_(
+                    MaintenanceWorkOrder.work_order_type == "emergency",
+                    MaintenanceWorkOrder.status.in_(["open", "in_progress"]),
+                )
+            )
+        )).scalar() or 0
+    )
+    low_spare_parts = int(
+        (await db.execute(
+            select(func.count()).select_from(SparePart).where(
+                SparePart.quantity_on_hand <= SparePart.reorder_point
+            )
+        )).scalar() or 0
+    )
+    recent_failures = int(
+        (await db.execute(
+            select(func.count()).select_from(FailureRecord).where(
+                FailureRecord.failure_date >= thirty_days_ago
+            )
+        )).scalar() or 0
+    )
+    recent_downtime_hours = float(
+        (await db.execute(
+            select(func.coalesce(func.sum(DowntimeEvent.duration_minutes), 0)).where(
+                DowntimeEvent.start_time >= thirty_days_ago
+            )
+        )).scalar() or 0
+    ) / 60.0
+
+    if overdue_pms > 0:
+        insights.append(_insight(
+            InsightCategory.MAINTENANCE_SCHEDULE,
+            f"{overdue_pms} Overdue PM Schedule{'s' if overdue_pms != 1 else ''}",
+            f"{overdue_pms} preventive maintenance schedule{'s have' if overdue_pms != 1 else ' has'} "
+            "passed their due date. Equipment reliability is at risk.",
+            severity="critical" if overdue_pms > 5 else "warning",
+            metric_value=overdue_pms,
+            metric_label="Overdue PMs",
+            recommendation="Prioritize overdue PMs by asset criticality and schedule execution immediately.",
+        ))
+
+    if emergency_maint > 0:
+        insights.append(_insight(
+            InsightCategory.PREDICTIVE_MAINTENANCE,
+            f"{emergency_maint} Emergency Maintenance WO{'s' if emergency_maint != 1 else ''}",
+            f"{emergency_maint} emergency work order{'s are' if emergency_maint != 1 else ' is'} active. "
+            "High emergency-to-planned ratio indicates reactive maintenance culture.",
+            severity="critical",
+            metric_value=emergency_maint,
+            metric_label="Emergency WOs",
+            recommendation="Analyze root causes and strengthen the PM program to prevent recurrence.",
+        ))
+
+    if open_maint_wos > 0:
+        insights.append(_insight(
+            InsightCategory.EQUIPMENT_HEALTH,
+            f"{open_maint_wos} Open Maintenance Work Order{'s' if open_maint_wos != 1 else ''}",
+            f"{open_maint_wos} maintenance work order{'s are' if open_maint_wos != 1 else ' is'} "
+            "currently open or in progress.",
+            severity="info" if open_maint_wos <= 10 else "warning",
+            metric_value=open_maint_wos,
+            metric_label="Open Maint WOs",
+        ))
+
+    if recent_failures > 0:
+        insights.append(_insight(
+            InsightCategory.MTBF_ANALYSIS,
+            f"{recent_failures} Equipment Failure{'s' if recent_failures != 1 else ''} (30 days)",
+            f"{recent_failures} failure{'s' if recent_failures != 1 else ''} recorded in the last 30 days. "
+            f"Total downtime: {recent_downtime_hours:.1f} hours.",
+            severity="warning" if recent_failures <= 5 else "critical",
+            metric_value=recent_failures,
+            metric_label="Failures (30d)",
+            recommendation="Review MTBF trends and consider predictive maintenance for high-failure assets.",
+        ))
+
+    if low_spare_parts > 0:
+        insights.append(_insight(
+            InsightCategory.SPARE_PARTS_FORECAST,
+            f"{low_spare_parts} Spare Part{'s' if low_spare_parts != 1 else ''} Below Reorder Point",
+            f"{low_spare_parts} spare part{'s have' if low_spare_parts != 1 else ' has'} "
+            "dropped below their reorder point. Maintenance delays may result.",
+            severity="warning",
+            metric_value=low_spare_parts,
+            metric_label="Low Spares",
+            recommendation="Generate purchase requisitions for critical spare parts immediately.",
+        ))
+
+    if recent_downtime_hours > 0:
+        insights.append(_insight(
+            InsightCategory.DOWNTIME_PREDICTION,
+            f"{recent_downtime_hours:.1f}h Total Downtime (30 days)",
+            f"Equipment downtime totalled {recent_downtime_hours:.1f} hours over the last 30 days.",
+            severity="info" if recent_downtime_hours < 40 else "warning",
+            metric_value=round(recent_downtime_hours, 1),
+            metric_label="Downtime Hours",
+        ))
+
+    # ── Training / Certification Insights ────────────────────
+    expiring_certs = int(
+        (await db.execute(
+            select(func.count()).select_from(UserSkill).where(
+                and_(
+                    UserSkill.certification_status == "certified",
+                    UserSkill.expiration_date.isnot(None),
+                    UserSkill.expiration_date < (now + timedelta(days=30)),
+                    UserSkill.expiration_date >= now,
+                )
+            )
+        )).scalar() or 0
+    )
+    expired_certs = int(
+        (await db.execute(
+            select(func.count()).select_from(UserSkill).where(
+                and_(
+                    UserSkill.certification_status == "expired",
+                )
+            )
+        )).scalar() or 0
+    )
+    scheduled_trainings = int(
+        (await db.execute(
+            select(func.count()).select_from(Training).where(
+                Training.status == "scheduled"
+            )
+        )).scalar() or 0
+    )
+
+    if expired_certs > 0:
+        insights.append(_insight(
+            InsightCategory.TRAINING_GAPS,
+            f"{expired_certs} Expired Certification{'s' if expired_certs != 1 else ''}",
+            f"{expired_certs} employee certification{'s have' if expired_certs != 1 else ' has'} expired. "
+            "Non-compliant operators may be working on controlled processes.",
+            severity="critical" if expired_certs > 3 else "warning",
+            metric_value=expired_certs,
+            metric_label="Expired Certs",
+            recommendation="Schedule recertification training for affected employees immediately.",
+        ))
+
+    if expiring_certs > 0:
+        insights.append(_insight(
+            InsightCategory.TRAINING_GAPS,
+            f"{expiring_certs} Certification{'s' if expiring_certs != 1 else ''} Expiring Within 30 Days",
+            f"{expiring_certs} certification{'s will' if expiring_certs != 1 else ' will'} expire "
+            "within 30 days. Plan recertification proactively.",
+            severity="warning",
+            metric_value=expiring_certs,
+            metric_label="Expiring Certs",
+            recommendation="Enroll affected employees in upcoming training sessions.",
+        ))
+
+    if scheduled_trainings > 0:
+        insights.append(_insight(
+            InsightCategory.TRAINING_GAPS,
+            f"{scheduled_trainings} Scheduled Training Session{'s' if scheduled_trainings != 1 else ''}",
+            f"{scheduled_trainings} training session{'s are' if scheduled_trainings != 1 else ' is'} "
+            "upcoming.",
+            severity="info",
+            metric_value=scheduled_trainings,
+            metric_label="Scheduled Trainings",
+        ))
+
+    # ── Project Management Insights ──────────────────────────
+    active_projects = int(
+        (await db.execute(
+            select(func.count()).select_from(Project).where(
+                Project.status == ProjectStatus.ACTIVE.value
+            )
+        )).scalar() or 0
+    )
+    on_hold_projects = int(
+        (await db.execute(
+            select(func.count()).select_from(Project).where(
+                Project.status == ProjectStatus.ON_HOLD.value
+            )
+        )).scalar() or 0
+    )
+    open_issues_critical = int(
+        (await db.execute(
+            select(func.count()).select_from(Issue).where(
+                and_(
+                    Issue.status.in_([IssueStatus.NEW.value, IssueStatus.IN_PROGRESS.value]),
+                    Issue.severity == PMIssueSeverity.CRITICAL.value,
+                )
+            )
+        )).scalar() or 0
+    )
+    blocked_stories = int(
+        (await db.execute(
+            select(func.count()).select_from(UserStory).where(
+                UserStory.is_blocked.is_(True)
+            )
+        )).scalar() or 0
+    )
+
+    if active_projects > 0:
+        insights.append(_insight(
+            InsightCategory.RESOURCE_UTILIZATION,
+            f"{active_projects} Active Project{'s' if active_projects != 1 else ''}",
+            f"{active_projects} project{'s are' if active_projects != 1 else ' is'} currently active. "
+            f"{on_hold_projects} on hold.",
+            severity="info",
+            metric_value=active_projects,
+            metric_label="Active Projects",
+        ))
+
+    if open_issues_critical > 0:
+        insights.append(_insight(
+            InsightCategory.RISK_ASSESSMENT,
+            f"{open_issues_critical} Critical Issue{'s' if open_issues_critical != 1 else ''} Open",
+            f"{open_issues_critical} critical-severity issue{'s require' if open_issues_critical != 1 else ' requires'} "
+            "immediate attention across projects.",
+            severity="critical",
+            metric_value=open_issues_critical,
+            metric_label="Critical Issues",
+            recommendation="Escalate critical issues to project owners and assign resolution owners.",
+        ))
+
+    if blocked_stories > 0:
+        insights.append(_insight(
+            InsightCategory.SCHEDULE_OPTIMIZATION,
+            f"{blocked_stories} Blocked User Stor{'ies' if blocked_stories != 1 else 'y'}",
+            f"{blocked_stories} user stor{'ies are' if blocked_stories != 1 else 'y is'} blocked. "
+            "Sprint velocity may be impacted.",
+            severity="warning",
+            metric_value=blocked_stories,
+            metric_label="Blocked Stories",
+            recommendation="Identify and resolve dependencies; re-prioritize sprint backlog if needed.",
+        ))
+
+    # ── Task / Personal Productivity Insights ────────────────
+    if overdue_tasks > 0:
+        insights.append(_insight(
+            InsightCategory.UPCOMING_DEADLINES,
+            f"{overdue_tasks} Task{'s' if overdue_tasks != 1 else ''} Past Due",
+            f"{overdue_tasks} task{'s have' if overdue_tasks != 1 else ' has'} missed their deadline.",
+            severity="warning" if overdue_tasks <= 5 else "critical",
+            metric_value=overdue_tasks,
+            metric_label="Overdue Tasks",
+            recommendation="Review and reassign overdue tasks; update stakeholders on revised timelines.",
+        ))
+
+    if blocked_tasks > 0:
+        insights.append(_insight(
+            InsightCategory.TASK_RECOMMENDATIONS,
+            f"Unblock {blocked_tasks} Task{'s' if blocked_tasks != 1 else ''}",
+            f"{blocked_tasks} task{'s are' if blocked_tasks != 1 else ' is'} blocked. "
+            "Resolving blockers will improve team throughput.",
+            severity="warning",
+            metric_value=blocked_tasks,
+            metric_label="Blocked Tasks",
+            recommendation="Escalate blockers to the responsible manager for resolution.",
+        ))
 
     return insights

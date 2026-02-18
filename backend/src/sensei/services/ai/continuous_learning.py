@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Generic
 import uuid
 import os
+from uuid import UUID
 
 import numpy as np
 
@@ -50,6 +51,8 @@ from sensei.services.ai.enhanced_ml_pipeline import (
     ModelMonitor,
     PredictionLog,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -815,7 +818,17 @@ class RetrainingManager:
                 callback(job)
             except Exception as e:
                 logger.warning(f"Retrain callback error: {e}")
-        
+
+        # Publish domain event — feeds single data thread
+        from sensei.services.event_bus import event_bus
+        from sensei.services.domain_events import ModelRetrainedEvent
+        await event_bus.publish(ModelRetrainedEvent(
+            model_name=model_name,
+            version=getattr(job, 'version', job.job_id),
+            accuracy=float(getattr(job, 'metrics', {}).get('accuracy', 0) if isinstance(getattr(job, 'metrics', None), dict) else 0),
+            dataset_size=getattr(job, 'sample_count', 0) or 0,
+        ))
+
         return job
     
     async def _execute_retraining(
@@ -973,7 +986,7 @@ class RetrainingManager:
 # =============================================================================
 
 
-class ContinuousLearningService:
+class ContinuousLearningService(PersistentServiceMixin):
     """
     Main service for continuous learning and self-refining AI.
     
@@ -1009,6 +1022,139 @@ class ContinuousLearningService:
         self._predictions_logged: int = 0
         self._corrections_received: int = 0
         self._auto_retrains_triggered: int = 0
+        self._state_loaded = False
+
+    SERVICE_NAME = "continuous_learning"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    def _encode_array(self, value: Optional[np.ndarray]) -> Optional[list]:
+        if value is None:
+            return None
+        return value.tolist()
+
+    def _decode_array(self, value: Any) -> Optional[np.ndarray]:
+        if value is None:
+            return None
+        return np.array(value)
+
+    def _encode_model_state(self, state: ModelLearningState) -> dict[str, Any]:
+        data = encode_dataclass(state)
+        data["reference_features"] = self._encode_array(state.reference_features)
+        data["reference_predictions"] = self._encode_array(state.reference_predictions)
+        return data
+
+    def _decode_model_state(self, data: dict[str, Any]) -> ModelLearningState:
+        state = decode_dataclass(data, ModelLearningState)
+        if isinstance(state.reference_features, list):
+            state.reference_features = self._decode_array(state.reference_features)
+        if isinstance(state.reference_predictions, list):
+            state.reference_predictions = self._decode_array(state.reference_predictions)
+        return state
+
+    def _export_feedback_state(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            model_name: [encode_dataclass(item) for item in feedback]
+            for model_name, feedback in self.feedback_collector._feedback.items()
+        }
+
+    def _load_feedback_state(self, state: dict[str, list[dict[str, Any]]]) -> None:
+        self.feedback_collector._feedback = defaultdict(
+            lambda: deque(maxlen=self.feedback_collector.buffer_size)
+        )
+        self.feedback_collector._feedback_counts = defaultdict(int)
+        for model_name, feedback_items in state.items():
+            buffer = deque(maxlen=self.feedback_collector.buffer_size)
+            for item in feedback_items:
+                buffer.append(decode_dataclass(item, LearningFeedback))
+            self.feedback_collector._feedback[model_name] = buffer
+            self.feedback_collector._feedback_counts[model_name] = len(buffer)
+
+    def _export_retraining_state(self) -> dict[str, Any]:
+        return {
+            "model_states": {
+                model_name: self._encode_model_state(state)
+                for model_name, state in self.retraining_manager._model_states.items()
+            },
+            "retraining_jobs": [
+                encode_dataclass(job) for job in self.retraining_manager._retraining_jobs
+            ],
+        }
+
+    def _load_retraining_state(self, state: dict[str, Any]) -> None:
+        model_states = state.get("model_states") or {}
+        retraining_jobs = state.get("retraining_jobs") or []
+
+        self.retraining_manager._model_states = {
+            model_name: self._decode_model_state(model_state)
+            for model_name, model_state in model_states.items()
+        }
+        self.retraining_manager._retraining_jobs = [
+            decode_dataclass(job, RetrainingJob) for job in retraining_jobs
+        ]
+        self.retraining_manager._active_jobs = {}
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        config_data = await self.load_state(self._DEFAULT_TENANT_ID, "config")
+        feedback_data = await self.load_state(self._DEFAULT_TENANT_ID, "feedback")
+        retraining_data = await self.load_state(self._DEFAULT_TENANT_ID, "retraining")
+        feature_names_data = await self.load_state(self._DEFAULT_TENANT_ID, "feature_names")
+        stats_data = await self.load_state(self._DEFAULT_TENANT_ID, "stats")
+
+        if (
+            config_data is None
+            and feedback_data is None
+            and retraining_data is None
+            and feature_names_data is None
+            and stats_data is None
+        ):
+            self._state_loaded = True
+            return
+
+        if config_data is not None:
+            self.config = decode_dataclass(config_data, RetrainingConfig)
+            self.retraining_manager.config = self.config
+            self.feedback_collector.buffer_size = self.config.feedback_buffer_size
+
+        if feedback_data is not None:
+            self._load_feedback_state(feedback_data)
+
+        if retraining_data is not None:
+            self._load_retraining_state(retraining_data)
+
+        if feature_names_data is not None:
+            self._feature_names = {
+                name: list(features) for name, features in feature_names_data.items()
+            }
+
+        if stats_data is not None:
+            self._predictions_logged = int(stats_data.get("predictions_logged", 0))
+            self._corrections_received = int(stats_data.get("corrections_received", 0))
+            self._auto_retrains_triggered = int(stats_data.get("auto_retrains_triggered", 0))
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        config_data = encode_dataclass(self.config)
+        feedback_data = self._export_feedback_state()
+        retraining_data = self._export_retraining_state()
+        stats_data = {
+            "predictions_logged": self._predictions_logged,
+            "corrections_received": self._corrections_received,
+            "auto_retrains_triggered": self._auto_retrains_triggered,
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "config", config_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "feedback", feedback_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "retraining", retraining_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "feature_names", self._feature_names)
+        await self.save_state(self._DEFAULT_TENANT_ID, "stats", stats_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def register_model(
         self,
@@ -1040,6 +1186,24 @@ class ContinuousLearningService:
         logger.info(
             f"Registered model {model_name} with {len(feature_names)} features"
         )
+
+    async def register_model_async(
+        self,
+        model_name: str,
+        model: Any,
+        feature_names: List[str],
+        baseline_metrics: Optional[Dict[str, float]] = None,
+        reference_data: Optional[np.ndarray] = None,
+    ) -> None:
+        await self._ensure_loaded()
+        self.register_model(
+            model_name,
+            model,
+            feature_names,
+            baseline_metrics=baseline_metrics,
+            reference_data=reference_data,
+        )
+        await self.persist_all()
     
     def log_prediction(
         self,
@@ -1063,6 +1227,17 @@ class ContinuousLearningService:
                 actual_outcome=actual_outcome,
                 source=FeedbackSource.PREDICTION_OUTCOME,
             )
+
+    async def log_prediction_async(
+        self,
+        model_name: str,
+        features: Dict[str, Any],
+        prediction: Any,
+        actual_outcome: Optional[Any] = None,
+    ) -> None:
+        await self._ensure_loaded()
+        self.log_prediction(model_name, features, prediction, actual_outcome)
+        await self.persist_all()
     
     def record_correction(
         self,
@@ -1087,6 +1262,24 @@ class ContinuousLearningService:
             f"Recorded correction for {model_name}: "
             f"{original_prediction} -> {corrected_value}"
         )
+
+    async def record_correction_async(
+        self,
+        model_name: str,
+        features: Dict[str, Any],
+        original_prediction: Any,
+        corrected_value: Any,
+        user_id: str,
+    ) -> None:
+        await self._ensure_loaded()
+        self.record_correction(
+            model_name,
+            features,
+            original_prediction,
+            corrected_value,
+            user_id,
+        )
+        await self.persist_all()
     
     async def check_and_retrain_if_needed(
         self,
@@ -1100,6 +1293,7 @@ class ContinuousLearningService:
         Returns:
             RetrainingJob if retraining was triggered, None otherwise
         """
+        await self._ensure_loaded()
         needs_retrain, trigger, reason = self.retraining_manager.check_retraining_needed(
             model_name,
             current_features=current_features,
@@ -1127,7 +1321,16 @@ class ContinuousLearningService:
             feature_names=feature_names,
         )
         
+        await self.persist_all()
         return job
+
+    async def get_model_state_async(self, model_name: str) -> Optional[ModelLearningState]:
+        await self._ensure_loaded()
+        return self.get_model_state(model_name)
+
+    async def get_statistics_async(self) -> Dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_statistics()
     
     async def force_retrain(
         self,
@@ -1135,19 +1338,22 @@ class ContinuousLearningService:
         learning_mode: Optional[LearningMode] = None,
     ) -> RetrainingJob:
         """Force immediate retraining of a model."""
+        await self._ensure_loaded()
         model = self._models.get(model_name)
         feature_names = self._feature_names.get(model_name, [])
         
         if model is None:
             raise ValueError(f"Model {model_name} not registered")
         
-        return await self.retraining_manager.trigger_retraining(
+        job = await self.retraining_manager.trigger_retraining(
             model_name=model_name,
             trigger=RetrainingTrigger.MANUAL,
             model=model,
             feature_names=feature_names,
             force_mode=learning_mode,
         )
+        await self.persist_all()
+        return job
     
     def get_model_health(self, model_name: str) -> Dict[str, Any]:
         """Get health status of a model's continuous learning."""
@@ -1173,6 +1379,10 @@ class ContinuousLearningService:
                 if state.last_drift_result else "none"
             ),
         }
+
+    async def get_model_health_async(self, model_name: str) -> Dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_model_health(model_name)
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get overall continuous learning statistics."""

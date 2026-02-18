@@ -12,6 +12,9 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,12 +219,15 @@ class InboxStats:
     by_priority: dict = field(default_factory=dict)
 
 
-class SupportInboxService:
+class SupportInboxService(PersistentServiceMixin):
     """Service for managing support inbox and user feedback.
 
     Routes user issues into A3-lite records or Task creation.
     Provides ticket management, feedback collection, and routing.
     """
+
+    SERVICE_NAME = "support_inbox"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self, session: AsyncSession | None = None) -> None:
         """Initialize the support inbox service.
@@ -243,7 +249,225 @@ class SupportInboxService:
             TicketPriority.MEDIUM: 24,
             TicketPriority.LOW: 72,
         }
+        self._state_loaded = False
         self._setup_default_rules()
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        tickets_data = await self.load_state(self._DEFAULT_TENANT_ID, "tickets")
+        feedback_data = await self.load_state(self._DEFAULT_TENANT_ID, "feedback")
+        routing_rules_data = await self.load_state(self._DEFAULT_TENANT_ID, "routing_rules")
+        a3_lite_data = await self.load_state(self._DEFAULT_TENANT_ID, "a3_lite_records")
+        sla_data = await self.load_state(self._DEFAULT_TENANT_ID, "sla_hours")
+        ticket_ttl_days = await self.load_state(self._DEFAULT_TENANT_ID, "ticket_ttl_days")
+        max_tickets = await self.load_state(self._DEFAULT_TENANT_ID, "max_tickets")
+
+        if (
+            tickets_data is None
+            and feedback_data is None
+            and routing_rules_data is None
+            and a3_lite_data is None
+            and sla_data is None
+            and ticket_ttl_days is None
+            and max_tickets is None
+        ):
+            self._state_loaded = True
+            return
+
+        if tickets_data is not None:
+            self._tickets = {
+                UUID(ticket_id): decode_dataclass(ticket, SupportTicket)
+                for ticket_id, ticket in tickets_data.items()
+            }
+        if feedback_data is not None:
+            self._feedback = {
+                UUID(feedback_id): decode_dataclass(entry, UserFeedback)
+                for feedback_id, entry in feedback_data.items()
+            }
+        if routing_rules_data is not None:
+            self._routing_rules = {
+                UUID(rule_id): decode_dataclass(rule, RoutingRule)
+                for rule_id, rule in routing_rules_data.items()
+            }
+        if a3_lite_data is not None:
+            self._a3_lite_records = {
+                UUID(record_id): decode_dataclass(record, A3LiteRecord)
+                for record_id, record in a3_lite_data.items()
+            }
+        if sla_data is not None:
+            self._default_sla_hours = {
+                TicketPriority(key): int(value) for key, value in sla_data.items()
+            }
+        if isinstance(ticket_ttl_days, int):
+            self._ticket_ttl = timedelta(days=ticket_ttl_days)
+        if isinstance(max_tickets, int):
+            self._max_tickets = max_tickets
+
+        if not self._routing_rules:
+            self._setup_default_rules()
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        tickets_data = {
+            str(ticket_id): encode_dataclass(ticket) for ticket_id, ticket in self._tickets.items()
+        }
+        feedback_data = {
+            str(feedback_id): encode_dataclass(entry) for feedback_id, entry in self._feedback.items()
+        }
+        routing_rules_data = {
+            str(rule_id): encode_dataclass(rule) for rule_id, rule in self._routing_rules.items()
+        }
+        a3_lite_data = {
+            str(record_id): encode_dataclass(record)
+            for record_id, record in self._a3_lite_records.items()
+        }
+        sla_data = {priority.value: int(hours) for priority, hours in self._default_sla_hours.items()}
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "tickets", tickets_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "feedback", feedback_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "routing_rules", routing_rules_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "a3_lite_records", a3_lite_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "sla_hours", sla_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "ticket_ttl_days", self._ticket_ttl.days)
+        await self.save_state(self._DEFAULT_TENANT_ID, "max_tickets", self._max_tickets)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    # --- DB persistence helpers ---
+
+    async def _persist_ticket(self, ticket: SupportTicket) -> None:
+        """Persist a ticket to the database if a session is available."""
+        if not self._session:
+            return
+        try:
+            from sensei.models.service_persistence import SupportTicketDB
+
+            row = SupportTicketDB(
+                id=ticket.id,
+                subject=ticket.subject,
+                description=ticket.description,
+                category=ticket.category.value,
+                status=ticket.status.value,
+                priority=ticket.priority.value,
+                reporter_id=ticket.submitted_by,
+                reporter_email=ticket.submitter_email or None,
+                assignee_id=ticket.assigned_to,
+                sla_due_at=ticket.sla_due_at,
+                sla_breached=ticket.sla_breached,
+                first_response_at=ticket.first_response_at,
+                resolved_at=ticket.resolved_at,
+                closed_at=ticket.closed_at,
+                escalation_level=ticket.escalation_level,
+                escalated_at=ticket.escalated_at,
+                related_entity_type=ticket.related_entity_type,
+                related_entity_id=ticket.related_entity_id,
+                tags=ticket.tags,
+            )
+            self._session.add(row)
+            await self._session.flush()
+        except Exception:
+            pass
+
+    async def _update_ticket_in_db(self, ticket: SupportTicket) -> None:
+        """Update a ticket row in the database if a session is available."""
+        if not self._session:
+            return
+        try:
+            from sensei.models.service_persistence import SupportTicketDB
+            from sqlalchemy import select
+
+            result = await self._session.execute(
+                select(SupportTicketDB).where(SupportTicketDB.id == ticket.id)
+            )
+            row = result.scalar_one_or_none()
+            if row:
+                row.subject = ticket.subject
+                row.description = ticket.description
+                row.category = ticket.category.value
+                row.status = ticket.status.value
+                row.priority = ticket.priority.value
+                row.assignee_id = ticket.assigned_to
+                row.sla_due_at = ticket.sla_due_at
+                row.sla_breached = ticket.sla_breached
+                row.first_response_at = ticket.first_response_at
+                row.resolved_at = ticket.resolved_at
+                row.closed_at = ticket.closed_at
+                row.escalation_level = ticket.escalation_level
+                row.escalated_at = ticket.escalated_at
+                row.tags = ticket.tags
+                await self._session.flush()
+        except Exception:
+            pass
+
+    async def _persist_feedback(self, feedback: UserFeedback) -> None:
+        """Persist feedback to the database if a session is available."""
+        if not self._session:
+            return
+        try:
+            from sensei.models.service_persistence import UserFeedbackDB
+
+            row = UserFeedbackDB(
+                id=feedback.id,
+                user_id=feedback.submitted_by,
+                feedback_type=feedback.feedback_type.value,
+                rating=feedback.rating,
+                content=feedback.content,
+                page_url=feedback.page_url or None,
+                feature_area=feedback.feature_area or None,
+                status="reviewed" if feedback.reviewed else "new",
+            )
+            self._session.add(row)
+            await self._session.flush()
+        except Exception:
+            pass
+
+    async def _persist_a3_lite(self, a3: A3LiteRecord) -> None:
+        """Persist an A3-lite record to the database if a session is available."""
+        if not self._session:
+            return
+        try:
+            from sensei.models.service_persistence import A3LiteRecordDB
+
+            row = A3LiteRecordDB(
+                id=a3.id,
+                source_ticket_id=a3.source_ticket_id,
+                title=a3.title,
+                problem_statement=a3.problem_statement,
+                current_state=a3.current_state,
+                root_cause=a3.root_cause,
+                countermeasures=a3.countermeasures,
+                target_state=a3.target_state,
+                owner_id=a3.owner_id,
+                status=a3.status.value if hasattr(a3.status, "value") else str(a3.status),
+            )
+            self._session.add(row)
+            await self._session.flush()
+        except Exception:
+            pass
+
+    async def _persist_comment(self, comment: TicketComment) -> None:
+        """Persist a ticket comment to the database if a session is available."""
+        if not self._session:
+            return
+        try:
+            from sensei.models.service_persistence import TicketCommentDB
+
+            row = TicketCommentDB(
+                id=comment.id,
+                ticket_id=comment.ticket_id,
+                author_id=comment.author_id,
+                content=comment.content,
+                is_internal=comment.is_internal,
+            )
+            self._session.add(row)
+            await self._session.flush()
+        except Exception:
+            pass
 
     def _prune_tickets(self) -> None:
         """Prune old tickets to prevent unbounded memory growth."""
@@ -377,9 +601,46 @@ class SupportInboxService:
 
         return ticket
 
+    async def create_ticket_async(
+        self,
+        subject: str,
+        description: str,
+        submitted_by: UUID,
+        submitter_name: str = "",
+        submitter_email: str = "",
+        category: TicketCategory = TicketCategory.OTHER,
+        priority: TicketPriority = TicketPriority.MEDIUM,
+        related_entity_type: Optional[str] = None,
+        related_entity_id: Optional[UUID] = None,
+        tags: Optional[list[str]] = None,
+        auto_route: bool = True,
+    ) -> SupportTicket:
+        """Create a ticket and persist to DB."""
+        await self._ensure_loaded()
+        ticket = self.create_ticket(
+            subject=subject,
+            description=description,
+            submitted_by=submitted_by,
+            submitter_name=submitter_name,
+            submitter_email=submitter_email,
+            category=category,
+            priority=priority,
+            related_entity_type=related_entity_type,
+            related_entity_id=related_entity_id,
+            tags=tags,
+            auto_route=auto_route,
+        )
+        await self._persist_ticket(ticket)
+        await self.persist_all()
+        return ticket
+
     def get_ticket(self, ticket_id: UUID) -> Optional[SupportTicket]:
         """Get a ticket by ID."""
         return self._tickets.get(ticket_id)
+
+    async def get_ticket_async(self, ticket_id: UUID) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        return self.get_ticket(ticket_id)
 
     def get_tickets(
         self,
@@ -405,6 +666,10 @@ class SupportInboxService:
             tickets = [t for t in tickets if t.submitted_by == submitted_by]
 
         return sorted(tickets, key=lambda x: x.created_at, reverse=True)
+
+    async def get_tickets_async(self, **kwargs: Any) -> list[SupportTicket]:
+        await self._ensure_loaded()
+        return self.get_tickets(**kwargs)
 
     def update_ticket(
         self,
@@ -439,6 +704,14 @@ class SupportInboxService:
         ticket.updated_at = datetime.now(timezone.utc)
         return ticket
 
+    async def update_ticket_async(self, **kwargs: Any) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        ticket = self.update_ticket(**kwargs)
+        if ticket:
+            await self._update_ticket_in_db(ticket)
+        await self.persist_all()
+        return ticket
+
     def assign_ticket(
         self,
         ticket_id: UUID,
@@ -455,6 +728,14 @@ class SupportInboxService:
         ticket.status = TicketStatus.IN_PROGRESS
         ticket.updated_at = datetime.now(timezone.utc)
 
+        return ticket
+
+    async def assign_ticket_async(self, **kwargs: Any) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        ticket = self.assign_ticket(**kwargs)
+        if ticket:
+            await self._update_ticket_in_db(ticket)
+        await self.persist_all()
         return ticket
 
     def add_comment(
@@ -491,6 +772,35 @@ class SupportInboxService:
 
         return comment
 
+    async def add_comment_async(
+        self,
+        ticket_id: UUID,
+        author_id: UUID,
+        author_name: str,
+        content: str,
+        is_internal: bool = False,
+        is_from_user: bool = True,
+        attachments: Optional[list[str]] = None,
+    ) -> Optional[TicketComment]:
+        """Add a comment and persist to DB."""
+        await self._ensure_loaded()
+        comment = self.add_comment(
+            ticket_id=ticket_id,
+            author_id=author_id,
+            author_name=author_name,
+            content=content,
+            is_internal=is_internal,
+            is_from_user=is_from_user,
+            attachments=attachments,
+        )
+        if comment:
+            await self._persist_comment(comment)
+            ticket = self._tickets.get(ticket_id)
+            if ticket:
+                await self._update_ticket_in_db(ticket)
+            await self.persist_all()
+        return comment
+
     def change_status(
         self,
         ticket_id: UUID,
@@ -512,6 +822,14 @@ class SupportInboxService:
         ticket.status = new_status
         ticket.updated_at = now
 
+        return ticket
+
+    async def change_status_async(self, **kwargs: Any) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        ticket = self.change_status(**kwargs)
+        if ticket:
+            await self._update_ticket_in_db(ticket)
+        await self.persist_all()
         return ticket
 
     def escalate_ticket(
@@ -536,6 +854,14 @@ class SupportInboxService:
         ticket.metadata["escalation_reason"] = reason
         ticket.metadata["escalated_at"] = datetime.now(timezone.utc).isoformat()
 
+        return ticket
+
+    async def escalate_ticket_async(self, **kwargs: Any) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        ticket = self.escalate_ticket(**kwargs)
+        if ticket:
+            await self._update_ticket_in_db(ticket)
+        await self.persist_all()
         return ticket
 
     # --- Routing ---
@@ -635,6 +961,12 @@ class SupportInboxService:
 
         return decision
 
+    async def route_ticket_async(self, **kwargs: Any) -> Optional[RoutingDecision]:
+        await self._ensure_loaded()
+        decision = self.route_ticket(**kwargs)
+        await self.persist_all()
+        return decision
+
     def _create_a3_lite_from_ticket(self, ticket: SupportTicket) -> A3LiteRecord:
         """Create an A3-lite record from a ticket."""
         a3 = A3LiteRecord(
@@ -646,6 +978,14 @@ class SupportInboxService:
         )
 
         self._a3_lite_records[a3.id] = a3
+        return a3
+
+    async def _create_a3_lite_from_ticket_async(self, ticket: SupportTicket) -> A3LiteRecord:
+        """Create an A3-lite record from a ticket and persist to DB."""
+        await self._ensure_loaded()
+        a3 = self._create_a3_lite_from_ticket(ticket)
+        await self._persist_a3_lite(a3)
+        await self.persist_all()
         return a3
 
     # --- Routing Rules ---
@@ -674,6 +1014,12 @@ class SupportInboxService:
         self._routing_rules[rule.id] = rule
         return rule
 
+    async def create_routing_rule_async(self, **kwargs: Any) -> RoutingRule:
+        await self._ensure_loaded()
+        rule = self.create_routing_rule(**kwargs)
+        await self.persist_all()
+        return rule
+
     def get_routing_rules(
         self,
         active_only: bool = False,
@@ -685,6 +1031,10 @@ class SupportInboxService:
             rules = [r for r in rules if r.is_active]
 
         return sorted(rules, key=lambda x: x.priority, reverse=True)
+
+    async def get_routing_rules_async(self, **kwargs: Any) -> list[RoutingRule]:
+        await self._ensure_loaded()
+        return self.get_routing_rules(**kwargs)
 
     def update_routing_rule(
         self,
@@ -716,12 +1066,24 @@ class SupportInboxService:
 
         return rule
 
+    async def update_routing_rule_async(self, **kwargs: Any) -> Optional[RoutingRule]:
+        await self._ensure_loaded()
+        rule = self.update_routing_rule(**kwargs)
+        await self.persist_all()
+        return rule
+
     def delete_routing_rule(self, rule_id: UUID) -> bool:
         """Delete a routing rule."""
         if rule_id in self._routing_rules:
             del self._routing_rules[rule_id]
             return True
         return False
+
+    async def delete_routing_rule_async(self, rule_id: UUID) -> bool:
+        await self._ensure_loaded()
+        result = self.delete_routing_rule(rule_id)
+        await self.persist_all()
+        return result
 
     # --- Feedback ---
 
@@ -753,6 +1115,35 @@ class SupportInboxService:
         self._feedback[feedback.id] = feedback
         return feedback
 
+    async def submit_feedback_async(
+        self,
+        content: str,
+        feedback_type: FeedbackType,
+        submitted_by: UUID,
+        submitter_name: str = "",
+        rating: Optional[int] = None,
+        page_url: str = "",
+        browser_info: str = "",
+        feature_area: str = "",
+        tags: Optional[list[str]] = None,
+    ) -> UserFeedback:
+        """Submit feedback and persist to DB."""
+        await self._ensure_loaded()
+        feedback = self.submit_feedback(
+            content=content,
+            feedback_type=feedback_type,
+            submitted_by=submitted_by,
+            submitter_name=submitter_name,
+            rating=rating,
+            page_url=page_url,
+            browser_info=browser_info,
+            feature_area=feature_area,
+            tags=tags,
+        )
+        await self._persist_feedback(feedback)
+        await self.persist_all()
+        return feedback
+
     def get_feedback(
         self,
         feedback_type: Optional[FeedbackType] = None,
@@ -771,6 +1162,10 @@ class SupportInboxService:
 
         return sorted(feedback_list, key=lambda x: x.created_at, reverse=True)
 
+    async def get_feedback_async(self, **kwargs: Any) -> list[UserFeedback]:
+        await self._ensure_loaded()
+        return self.get_feedback(**kwargs)
+
     def review_feedback(
         self,
         feedback_id: UUID,
@@ -785,6 +1180,14 @@ class SupportInboxService:
         feedback.reviewed_by = reviewer_id
         feedback.reviewed_at = datetime.now(timezone.utc)
 
+        return feedback
+
+    async def review_feedback_async(self, **kwargs: Any) -> Optional[UserFeedback]:
+        await self._ensure_loaded()
+        feedback = self.review_feedback(**kwargs)
+        if feedback:
+            await self._persist_feedback(feedback)
+        await self.persist_all()
         return feedback
 
     def convert_feedback_to_ticket(
@@ -825,11 +1228,23 @@ class SupportInboxService:
 
         return ticket
 
+    async def convert_feedback_to_ticket_async(self, **kwargs: Any) -> Optional[SupportTicket]:
+        await self._ensure_loaded()
+        ticket = self.convert_feedback_to_ticket(**kwargs)
+        if ticket:
+            await self._persist_ticket(ticket)
+        await self.persist_all()
+        return ticket
+
     # --- A3-Lite ---
 
     def get_a3_lite(self, a3_id: UUID) -> Optional[A3LiteRecord]:
         """Get an A3-lite record by ID."""
         return self._a3_lite_records.get(a3_id)
+
+    async def get_a3_lite_async(self, a3_id: UUID) -> Optional[A3LiteRecord]:
+        await self._ensure_loaded()
+        return self.get_a3_lite(a3_id)
 
     def get_a3_lite_for_ticket(self, ticket_id: UUID) -> Optional[A3LiteRecord]:
         """Get A3-lite record created from a ticket."""
@@ -837,6 +1252,10 @@ class SupportInboxService:
             if a3.source_ticket_id == ticket_id:
                 return a3
         return None
+
+    async def get_a3_lite_for_ticket_async(self, ticket_id: UUID) -> Optional[A3LiteRecord]:
+        await self._ensure_loaded()
+        return self.get_a3_lite_for_ticket(ticket_id)
 
     def update_a3_lite(
         self,
@@ -862,6 +1281,14 @@ class SupportInboxService:
             if status == "completed":
                 a3.completed_at = datetime.now(timezone.utc)
 
+        return a3
+
+    async def update_a3_lite_async(self, **kwargs: Any) -> Optional[A3LiteRecord]:
+        await self._ensure_loaded()
+        a3 = self.update_a3_lite(**kwargs)
+        if a3:
+            await self._persist_a3_lite(a3)
+        await self.persist_all()
         return a3
 
     # --- Statistics ---
@@ -923,6 +1350,10 @@ class SupportInboxService:
             by_priority=by_priority,
         )
 
+    async def get_inbox_stats_async(self) -> InboxStats:
+        await self._ensure_loaded()
+        return self.get_inbox_stats()
+
     def get_overdue_tickets(self) -> list[SupportTicket]:
         """Get tickets that have exceeded their SLA."""
         now = datetime.now(timezone.utc)
@@ -936,6 +1367,10 @@ class SupportInboxService:
 
         return sorted(overdue, key=lambda x: x.sla_due_at or x.created_at)
 
+    async def get_overdue_tickets_async(self) -> list[SupportTicket]:
+        await self._ensure_loaded()
+        return self.get_overdue_tickets()
+
     def get_unassigned_tickets(self) -> list[SupportTicket]:
         """Get open tickets that are not assigned."""
         unassigned = [
@@ -945,6 +1380,10 @@ class SupportInboxService:
         ]
 
         return sorted(unassigned, key=lambda x: x.created_at)
+
+    async def get_unassigned_tickets_async(self) -> list[SupportTicket]:
+        await self._ensure_loaded()
+        return self.get_unassigned_tickets()
 
     def get_ticket_summary(self, ticket_id: UUID) -> Optional[dict]:
         """Get a summary of a ticket."""
@@ -970,6 +1409,10 @@ class SupportInboxService:
             "routing_target": ticket.routing_decision.target.value if ticket.routing_decision else None,
         }
 
+    async def get_ticket_summary_async(self, ticket_id: UUID) -> Optional[dict]:
+        await self._ensure_loaded()
+        return self.get_ticket_summary(ticket_id)
+
     # --- SLA Management ---
 
     def update_sla_hours(
@@ -981,9 +1424,18 @@ class SupportInboxService:
         if hours > 0:
             self._default_sla_hours[priority] = hours
 
+    async def update_sla_hours_async(self, priority: TicketPriority, hours: int) -> None:
+        await self._ensure_loaded()
+        self.update_sla_hours(priority, hours)
+        await self.persist_all()
+
     def get_sla_config(self) -> dict[str, int]:
         """Get current SLA configuration."""
         return {p.value: h for p, h in self._default_sla_hours.items()}
+
+    async def get_sla_config_async(self) -> dict[str, int]:
+        await self._ensure_loaded()
+        return self.get_sla_config()
 
     # --- Search ---
 
@@ -1003,3 +1455,7 @@ class SupportInboxService:
         ]
 
         return sorted(matches, key=lambda x: x.created_at, reverse=True)[:limit]
+
+    async def search_tickets_async(self, **kwargs: Any) -> list[SupportTicket]:
+        await self._ensure_loaded()
+        return self.search_tickets(**kwargs)

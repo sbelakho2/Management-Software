@@ -189,7 +189,7 @@ function QuoteLineItemRow({
   );
 }
 
-import { useQuoteStore } from '@/stores/quote';
+import { useQuoteStore } from '@/stores/quotes';
 
 function NewQuotePageContent() {
   const { t } = useI18n();

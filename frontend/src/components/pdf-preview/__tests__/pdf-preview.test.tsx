@@ -3,14 +3,11 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { I18nProvider } from '@/contexts/i18n-context';
 import { PDFPreview } from '../pdf-preview';
-import {
-  usePDFPreviewStore,
-  PDFDocument,
-  PDFVersion,
-} from '../../../stores/pdf-preview-store';
+import { usePDFPreviewStore, PDFDocument, PDFVersion } from '../../../stores/pdf-preview-store';
 
 // Mock window.print
 const mockPrint = jest.fn();
@@ -45,6 +42,9 @@ jest.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
   }
   return originalCreateElement(tagName);
 });
+const renderWithI18n = (ui: React.ReactElement) =>
+  rtlRender(<I18nProvider>{ui}</I18nProvider>);
+
 
 // Sample test data
 const mockVersion1: PDFVersion = {
@@ -95,7 +95,7 @@ beforeEach(() => {
 describe('PDFPreview', () => {
   describe('rendering states', () => {
     it('should render nothing when closed', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -103,7 +103,7 @@ describe('PDFPreview', () => {
     it('should render modal when open', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
@@ -111,7 +111,7 @@ describe('PDFPreview', () => {
     it('should display document title', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Quote #12345')).toBeInTheDocument();
     });
@@ -119,7 +119,7 @@ describe('PDFPreview', () => {
     it('should display document type in subtitle', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Document type is in the subtitle paragraph
       expect(screen.getByText(/Quote.*•.*Final/)).toBeInTheDocument();
@@ -129,7 +129,7 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       usePDFPreviewStore.getState().setStatus('loading');
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Loading PDF...')).toBeInTheDocument();
     });
@@ -138,7 +138,7 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       usePDFPreviewStore.getState().setStatus('error', 'Failed to load document');
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Failed to load document')).toBeInTheDocument();
     });
@@ -147,7 +147,7 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       usePDFPreviewStore.getState().setStatus('error', 'Failed to load PDF');
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Failed to load PDF')).toBeInTheDocument();
     });
@@ -157,7 +157,7 @@ describe('PDFPreview', () => {
     it('should close modal when X button clicked', async () => {
       usePDFPreviewStore.getState().open(mockDocument);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const closeButton = screen.getByTitle(/close/i);
       await userEvent.click(closeButton);
@@ -168,7 +168,7 @@ describe('PDFPreview', () => {
     it('should close modal on Escape key', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: 'Escape' });
       
@@ -179,7 +179,7 @@ describe('PDFPreview', () => {
       usePDFPreviewStore.getState().open(mockDocument);
       usePDFPreviewStore.getState().toggleFullscreen();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: 'Escape' });
       
@@ -201,13 +201,13 @@ describe('PDFPreview', () => {
     });
 
     it('should display page count', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText(/Page 1 of 10/i)).toBeInTheDocument();
     });
 
     it('should navigate to next page', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const nextButton = screen.getByTitle(/next page/i);
       await userEvent.click(nextButton);
@@ -218,7 +218,7 @@ describe('PDFPreview', () => {
     it('should navigate to previous page', async () => {
       usePDFPreviewStore.getState().setCurrentPage(5);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const prevButton = screen.getByTitle(/previous page/i);
       await userEvent.click(prevButton);
@@ -227,7 +227,7 @@ describe('PDFPreview', () => {
     });
 
     it('should disable previous button on first page', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const prevButton = screen.getByTitle(/previous page/i);
       expect(prevButton).toBeDisabled();
@@ -236,7 +236,7 @@ describe('PDFPreview', () => {
     it('should disable next button on last page', () => {
       usePDFPreviewStore.getState().setCurrentPage(10);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const nextButton = screen.getByTitle(/next page/i);
       expect(nextButton).toBeDisabled();
@@ -245,7 +245,7 @@ describe('PDFPreview', () => {
     it('should navigate with arrow keys', () => {
       usePDFPreviewStore.getState().setCurrentPage(5);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: 'ArrowRight' });
       expect(usePDFPreviewStore.getState().currentPage).toBe(6);
@@ -262,7 +262,7 @@ describe('PDFPreview', () => {
     it('should navigate with Page Up/Down', () => {
       usePDFPreviewStore.getState().setCurrentPage(5);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: 'PageDown' });
       expect(usePDFPreviewStore.getState().currentPage).toBe(6);
@@ -272,7 +272,7 @@ describe('PDFPreview', () => {
     });
 
     it('should navigate with Space key', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: ' ' });
       expect(usePDFPreviewStore.getState().currentPage).toBe(2);
@@ -291,7 +291,7 @@ describe('PDFPreview', () => {
     });
 
     it('should display zoom level in select', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Zoom is displayed in a select element
       const zoomSelect = screen.getByRole('combobox');
@@ -299,7 +299,7 @@ describe('PDFPreview', () => {
     });
 
     it('should zoom in', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const zoomInButton = screen.getByTitle(/zoom in/i);
       await userEvent.click(zoomInButton);
@@ -308,7 +308,7 @@ describe('PDFPreview', () => {
     });
 
     it('should zoom out', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const zoomOutButton = screen.getByTitle(/zoom out/i);
       await userEvent.click(zoomOutButton);
@@ -317,7 +317,7 @@ describe('PDFPreview', () => {
     });
 
     it('should zoom with keyboard shortcuts', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Cmd/Ctrl + Plus
       fireEvent.keyDown(document, { key: '+', metaKey: true });
@@ -331,7 +331,7 @@ describe('PDFPreview', () => {
     it('should reset zoom with Cmd+0', () => {
       usePDFPreviewStore.getState().setZoom(2.0);
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: '0', metaKey: true });
       // Cmd+0 sets fitMode to 'page', not directly zoom
@@ -339,7 +339,7 @@ describe('PDFPreview', () => {
     });
 
     it('should show zoom options in select', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const zoomSelect = screen.getByRole('combobox');
       // Should have zoom level options
@@ -347,7 +347,7 @@ describe('PDFPreview', () => {
     });
 
     it('should select zoom level from dropdown', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const zoomSelect = screen.getByRole('combobox');
       await userEvent.selectOptions(zoomSelect, '1.5');
@@ -363,7 +363,7 @@ describe('PDFPreview', () => {
     });
 
     it('should rotate clockwise', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const rotateButton = screen.getByTitle(/rotate/i);
       await userEvent.click(rotateButton);
@@ -372,7 +372,7 @@ describe('PDFPreview', () => {
     });
 
     it('should continue rotating', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const rotateButton = screen.getByTitle(/rotate/i);
       await userEvent.click(rotateButton);
@@ -391,7 +391,7 @@ describe('PDFPreview', () => {
     });
 
     it('should toggle fullscreen', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const fullscreenButton = screen.getByTitle(/fullscreen/i);
       await userEvent.click(fullscreenButton);
@@ -400,7 +400,7 @@ describe('PDFPreview', () => {
     });
 
     it('should toggle fullscreen with Cmd+F', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       fireEvent.keyDown(document, { key: 'f', metaKey: true });
       
@@ -415,7 +415,7 @@ describe('PDFPreview', () => {
     });
 
     it('should toggle version history sidebar', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const historyButton = screen.getByTitle(/version history/i);
       await userEvent.click(historyButton);
@@ -426,7 +426,7 @@ describe('PDFPreview', () => {
     it('should display versions when sidebar is open', async () => {
       usePDFPreviewStore.getState().toggleVersionHistory();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Draft')).toBeInTheDocument();
       expect(screen.getByText('Final')).toBeInTheDocument();
@@ -435,7 +435,7 @@ describe('PDFPreview', () => {
     it('should show version author', async () => {
       usePDFPreviewStore.getState().toggleVersionHistory();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText(/John Doe/)).toBeInTheDocument();
       expect(screen.getByText(/Jane Smith/)).toBeInTheDocument();
@@ -444,7 +444,7 @@ describe('PDFPreview', () => {
     it('should switch version when clicked', async () => {
       usePDFPreviewStore.getState().toggleVersionHistory();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Find and click version 1 (Draft)
       const versionButtons = screen.getAllByRole('button');
@@ -458,7 +458,7 @@ describe('PDFPreview', () => {
     it('should highlight selected version', () => {
       usePDFPreviewStore.getState().toggleVersionHistory();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Current version (v2/Final) should show "Currently viewing"
       expect(screen.getByText('Currently viewing')).toBeInTheDocument();
@@ -467,7 +467,7 @@ describe('PDFPreview', () => {
     it('should show immutable indicator on locked versions', () => {
       usePDFPreviewStore.getState().toggleVersionHistory();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // v2 is immutable - look for the "Immutable version" title
       const lockIcons = screen.getAllByTitle('Immutable version');
@@ -482,7 +482,7 @@ describe('PDFPreview', () => {
     });
 
     it('should toggle metadata sidebar', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const infoButton = screen.getByTitle(/metadata/i);
       await userEvent.click(infoButton);
@@ -493,7 +493,7 @@ describe('PDFPreview', () => {
     it('should display document metadata', () => {
       usePDFPreviewStore.getState().toggleMetadata();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Document Info')).toBeInTheDocument();
       // Title appears in both header and metadata
@@ -503,7 +503,7 @@ describe('PDFPreview', () => {
     it('should display description when available', () => {
       usePDFPreviewStore.getState().toggleMetadata();
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText('Quote for customer XYZ')).toBeInTheDocument();
     });
@@ -517,7 +517,7 @@ describe('PDFPreview', () => {
 
     it('should call onDownload callback when provided', async () => {
       const onDownload = jest.fn();
-      render(<PDFPreview onDownload={onDownload} />);
+      renderWithI18n(<PDFPreview onDownload={onDownload} />);
       
       const downloadButton = screen.getByTitle(/download/i);
       await userEvent.click(downloadButton);
@@ -532,7 +532,7 @@ describe('PDFPreview', () => {
 
     it('should reset downloading state after download', async () => {
       const onDownload = jest.fn();
-      render(<PDFPreview onDownload={onDownload} />);
+      renderWithI18n(<PDFPreview onDownload={onDownload} />);
       
       const downloadButton = screen.getByTitle(/download/i);
       await userEvent.click(downloadButton);
@@ -552,7 +552,7 @@ describe('PDFPreview', () => {
 
     it('should call onPrint callback when provided', async () => {
       const onPrint = jest.fn();
-      render(<PDFPreview onPrint={onPrint} />);
+      renderWithI18n(<PDFPreview onPrint={onPrint} />);
       
       const printButton = screen.getByTitle(/print/i);
       await userEvent.click(printButton);
@@ -565,7 +565,7 @@ describe('PDFPreview', () => {
     });
 
     it('should trigger print via window.open when no callback', async () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const printButton = screen.getByTitle(/print/i);
       await userEvent.click(printButton);
@@ -583,14 +583,14 @@ describe('PDFPreview', () => {
     });
 
     it('should render iframe with PDF title', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const iframe = screen.getByTitle(/pdf preview/i);
       expect(iframe).toBeInTheDocument();
     });
 
     it('should have iframe src containing document URL', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const iframe = screen.getByTitle(/pdf preview/i);
       expect(iframe).toHaveAttribute('src', expect.stringContaining('api.example.com'));
@@ -605,13 +605,13 @@ describe('PDFPreview', () => {
     });
 
     it('should display page info', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByText(/Page 1 of 10/i)).toBeInTheDocument();
     });
 
     it('should display keyboard navigation hints', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       // Footer shows keyboard shortcut hints with arrows
       expect(screen.getByText('Navigate')).toBeInTheDocument();
@@ -626,13 +626,13 @@ describe('PDFPreview', () => {
     });
 
     it('should have accessible dialog role', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
     it('should have accessible buttons with titles', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       expect(screen.getByTitle(/close/i)).toBeInTheDocument();
       expect(screen.getByTitle(/zoom in/i)).toBeInTheDocument();
@@ -640,7 +640,7 @@ describe('PDFPreview', () => {
     });
 
     it('should have aria-modal attribute', () => {
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const dialog = screen.getByRole('dialog');
       expect(dialog).toHaveAttribute('aria-modal', 'true');
@@ -649,13 +649,17 @@ describe('PDFPreview', () => {
 
   describe('retry functionality', () => {
     it('should retry loading on error', async () => {
-      usePDFPreviewStore.getState().open(mockDocument);
-      usePDFPreviewStore.getState().setStatus('error', 'Network error');
+      act(() => {
+        usePDFPreviewStore.getState().open(mockDocument);
+        usePDFPreviewStore.getState().setStatus('error', 'Network error');
+      });
       
-      render(<PDFPreview />);
+      renderWithI18n(<PDFPreview />);
       
       const retryButton = screen.getByRole('button', { name: /retry/i });
-      await userEvent.click(retryButton);
+      await act(async () => {
+        await userEvent.click(retryButton);
+      });
       
       expect(usePDFPreviewStore.getState().status).toBe('loading');
     });
@@ -668,20 +672,24 @@ describe('PDFPreview', () => {
 
 describe('PDFPreview Integration', () => {
   it('should handle complete viewing workflow', async () => {
-    render(<PDFPreview />);
+    renderWithI18n(<PDFPreview />);
     
     // Initially closed
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     
     // Open document
-    usePDFPreviewStore.getState().open(mockDocument);
+    act(() => {
+      usePDFPreviewStore.getState().open(mockDocument);
+    });
     
     // Should show loading
     expect(await screen.findByText('Loading PDF...')).toBeInTheDocument();
     
     // Load complete
-    usePDFPreviewStore.getState().setTotalPages(10);
-    usePDFPreviewStore.getState().setStatus('ready');
+    act(() => {
+      usePDFPreviewStore.getState().setTotalPages(10);
+      usePDFPreviewStore.getState().setStatus('ready');
+    });
     
     // Should show viewer
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -689,22 +697,28 @@ describe('PDFPreview Integration', () => {
     
     // Navigate
     const nextButton = screen.getByTitle(/next page/i);
-    await userEvent.click(nextButton);
+    await act(async () => {
+      await userEvent.click(nextButton);
+    });
     expect(screen.getByText(/Page 2 of 10/i)).toBeInTheDocument();
     
     // Close
     const closeButton = screen.getByTitle(/close/i);
-    await userEvent.click(closeButton);
+    await act(async () => {
+      await userEvent.click(closeButton);
+    });
     
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('should handle version switching', async () => {
-    usePDFPreviewStore.getState().open(mockDocument);
-    usePDFPreviewStore.getState().setStatus('ready');
-    usePDFPreviewStore.getState().toggleVersionHistory();
+    act(() => {
+      usePDFPreviewStore.getState().open(mockDocument);
+      usePDFPreviewStore.getState().setStatus('ready');
+      usePDFPreviewStore.getState().toggleVersionHistory();
+    });
     
-    render(<PDFPreview />);
+    renderWithI18n(<PDFPreview />);
     
     // Verify initial version
     expect(usePDFPreviewStore.getState().selectedVersionId).toBe('v2');
@@ -713,7 +727,9 @@ describe('PDFPreview Integration', () => {
     const versionButtons = screen.getAllByRole('button');
     const draftButton = versionButtons.find(btn => btn.textContent?.includes('Draft'));
     expect(draftButton).toBeDefined();
-    await userEvent.click(draftButton!);
+    await act(async () => {
+      await userEvent.click(draftButton!);
+    });
     
     expect(usePDFPreviewStore.getState().selectedVersionId).toBe('v1');
     expect(usePDFPreviewStore.getState().status).toBe('loading');

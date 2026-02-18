@@ -17,6 +17,9 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 
 class CaseType(str, Enum):
     DISCIPLINARY = "disciplinary"
@@ -59,6 +62,7 @@ class ActionType(str, Enum):
 _HR_CASE_ROLES: set[str] = {"admin", "hr", "ceo"}
 _HR_CASE_VIEW_ROLES: set[str] = {"admin", "hr", "ceo", "legal"}
 _HR_CASE_AUDIT_ROLES: set[str] = {"admin", "ceo", "legal", "auditor"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 # Retention periods by case type (days)
 _RETENTION_DAYS: dict[CaseType, int] = {
@@ -160,8 +164,10 @@ class HRCase:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class HRCaseManagementService:
+class HRCaseManagementService(PersistentServiceMixin):
     """In-memory HR case management service with PII controls."""
+
+    SERVICE_NAME = "hr_case_management"
 
     def __init__(self) -> None:
         self._cases: dict[UUID, HRCase] = {}
@@ -170,6 +176,44 @@ class HRCaseManagementService:
         self._actions: dict[UUID, CaseAction] = {}
         self._audit: list[AuditEvent] = []
         self._case_counter: int = 0
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        cases_data = await self.load_state(_DEFAULT_TENANT_ID, "cases") or {}
+        notes_data = await self.load_state(_DEFAULT_TENANT_ID, "notes") or {}
+        evidence_data = await self.load_state(_DEFAULT_TENANT_ID, "evidence") or {}
+        actions_data = await self.load_state(_DEFAULT_TENANT_ID, "actions") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+        counter_data = await self.load_state(_DEFAULT_TENANT_ID, "case_counter") or {}
+
+        self._cases = {UUID(cid): decode_dataclass(case, HRCase) for cid, case in cases_data.items()}
+        self._notes = {UUID(nid): decode_dataclass(note, CaseNote) for nid, note in notes_data.items()}
+        self._evidence = {UUID(eid): decode_dataclass(ev, CaseEvidence) for eid, ev in evidence_data.items()}
+        self._actions = {UUID(aid): decode_dataclass(action, CaseAction) for aid, action in actions_data.items()}
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+        self._case_counter = int(counter_data.get("value", 0)) if isinstance(counter_data, dict) else 0
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        cases_data = {str(cid): encode_dataclass(case) for cid, case in self._cases.items()}
+        notes_data = {str(nid): encode_dataclass(note) for nid, note in self._notes.items()}
+        evidence_data = {str(eid): encode_dataclass(ev) for eid, ev in self._evidence.items()}
+        actions_data = {str(aid): encode_dataclass(action) for aid, action in self._actions.items()}
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "cases", cases_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "notes", notes_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "evidence", evidence_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "actions", actions_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "case_counter", {"value": self._case_counter})
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -224,6 +268,10 @@ class HRCaseManagementService:
                 or e.metadata.get("case_id") == str(case_id)
             ]
         return list(self._audit)
+
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)
 
     # ----------------------------------------------------------------
     # Case Management
@@ -285,6 +333,12 @@ class HRCaseManagementService:
 
         return case
 
+    async def open_case_async(self, **kwargs: Any) -> HRCase:
+        await self._ensure_loaded()
+        case = self.open_case(**kwargs)
+        await self.persist_all()
+        return case
+
     def get_case(
         self,
         *,
@@ -307,6 +361,10 @@ class HRCaseManagementService:
                 correlation_id=f"view-{case_id}",
             )
         return case
+
+    async def get_case_async(self, **kwargs: Any) -> HRCase | None:
+        await self._ensure_loaded()
+        return self.get_case(**kwargs)
 
     def list_cases(
         self,
@@ -333,6 +391,10 @@ class HRCaseManagementService:
             result.append(case)
 
         return sorted(result, key=lambda c: c.opened_at, reverse=True)
+
+    async def list_cases_async(self, **kwargs: Any) -> list[HRCase]:
+        await self._ensure_loaded()
+        return self.list_cases(**kwargs)
 
     def update_case_status(
         self,
@@ -384,6 +446,12 @@ class HRCaseManagementService:
 
         return updated
 
+    async def update_case_status_async(self, **kwargs: Any) -> HRCase:
+        await self._ensure_loaded()
+        case = self.update_case_status(**kwargs)
+        await self.persist_all()
+        return case
+
     def assign_case(
         self,
         *,
@@ -433,6 +501,12 @@ class HRCaseManagementService:
         )
 
         return updated
+
+    async def assign_case_async(self, **kwargs: Any) -> HRCase:
+        await self._ensure_loaded()
+        case = self.assign_case(**kwargs)
+        await self.persist_all()
+        return case
 
     def close_case(
         self,
@@ -495,6 +569,12 @@ class HRCaseManagementService:
 
         return closed
 
+    async def close_case_async(self, **kwargs: Any) -> HRCase:
+        await self._ensure_loaded()
+        case = self.close_case(**kwargs)
+        await self.persist_all()
+        return case
+
     # ----------------------------------------------------------------
     # Notes
     # ----------------------------------------------------------------
@@ -542,6 +622,12 @@ class HRCaseManagementService:
 
         return note
 
+    async def add_note_async(self, **kwargs: Any) -> CaseNote:
+        await self._ensure_loaded()
+        note = self.add_note(**kwargs)
+        await self.persist_all()
+        return note
+
     def list_notes(
         self,
         *,
@@ -553,6 +639,10 @@ class HRCaseManagementService:
 
         notes = [n for n in self._notes.values() if n.case_id == case_id]
         return sorted(notes, key=lambda n: n.created_at)
+
+    async def list_notes_async(self, **kwargs: Any) -> list[CaseNote]:
+        await self._ensure_loaded()
+        return self.list_notes(**kwargs)
 
     # ----------------------------------------------------------------
     # Evidence
@@ -611,6 +701,12 @@ class HRCaseManagementService:
 
         return evidence
 
+    async def add_evidence_async(self, **kwargs: Any) -> CaseEvidence:
+        await self._ensure_loaded()
+        evidence = self.add_evidence(**kwargs)
+        await self.persist_all()
+        return evidence
+
     def list_evidence(
         self,
         *,
@@ -634,6 +730,10 @@ class HRCaseManagementService:
 
         evidence = [e for e in self._evidence.values() if e.case_id == case_id]
         return sorted(evidence, key=lambda e: e.uploaded_at)
+
+    async def list_evidence_async(self, **kwargs: Any) -> list[CaseEvidence]:
+        await self._ensure_loaded()
+        return self.list_evidence(**kwargs)
 
     # ----------------------------------------------------------------
     # Actions / Outcomes
@@ -689,6 +789,12 @@ class HRCaseManagementService:
 
         return action
 
+    async def record_action_async(self, **kwargs: Any) -> CaseAction:
+        await self._ensure_loaded()
+        action = self.record_action(**kwargs)
+        await self.persist_all()
+        return action
+
     def list_actions(
         self,
         *,
@@ -700,6 +806,10 @@ class HRCaseManagementService:
 
         actions = [a for a in self._actions.values() if a.case_id == case_id]
         return sorted(actions, key=lambda a: a.effective_date)
+
+    async def list_actions_async(self, **kwargs: Any) -> list[CaseAction]:
+        await self._ensure_loaded()
+        return self.list_actions(**kwargs)
 
     # ----------------------------------------------------------------
     # Retention / Archival
@@ -761,6 +871,12 @@ class HRCaseManagementService:
 
         return archived_ids
 
+    async def archive_expired_cases_async(self, **kwargs: Any) -> list[UUID]:
+        await self._ensure_loaded()
+        archived = self.archive_expired_cases(**kwargs)
+        await self.persist_all()
+        return archived
+
     def purge_archived_data(
         self,
         *,
@@ -811,3 +927,9 @@ class HRCaseManagementService:
         )
 
         return True
+
+    async def purge_archived_data_async(self, **kwargs: Any) -> bool:
+        await self._ensure_loaded()
+        result = self.purge_archived_data(**kwargs)
+        await self.persist_all()
+        return result

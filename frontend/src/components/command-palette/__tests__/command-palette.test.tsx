@@ -1,8 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CommandPalette } from '../command-palette';
 import { useCommandPaletteStore, Command, CommandCategory } from '@/stores/command-palette-store';
+import { renderWithI18n } from '@/test-utils';
+
+const render = renderWithI18n;
 
 // Mock next/navigation
 const mockPush = jest.fn();

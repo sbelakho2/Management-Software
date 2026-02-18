@@ -22,6 +22,7 @@ from sensei.services.ai.ai_email_drafting import (
     Recipient,
 )
 from sensei.services.core.common_thread import get_common_thread_service
+from sensei.models.service_persistence import EmailDraftDB
 
 AllowEmailDrafting: deps.RoleDependency = deps.require_role(
     "admin",
@@ -54,6 +55,28 @@ _ALLOWED_THREAD_ENTITY_TYPES = {
     "shipment",
     "invoice",
 }
+
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+async def _persist_draft_to_db(
+    db: AsyncSession,
+    draft: Any,
+    user_id: UUID,
+    to_address: str,
+) -> None:
+    """Persist a generated email draft to the database."""
+    row = EmailDraftDB(
+        id=draft.id,
+        tenant_id=_DEFAULT_TENANT_ID,
+        created_by=user_id,
+        to_address=to_address[:200] if to_address else None,
+        subject=draft.subject[:500] if draft.subject else None,
+        body=draft.body_plain,
+        status=draft.status.value if hasattr(draft.status, "value") else str(draft.status),
+    )
+    db.add(row)
+    await db.flush()
 
 
 class RecipientInput(BaseModel):
@@ -186,6 +209,13 @@ async def generate_email_draft(
         draft = _service.generate_draft(generation_request)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Persist draft to database
+    try:
+        await _persist_draft_to_db(db, draft, current_user.id, request.recipient.email)
+        await db.commit()
+    except Exception:
+        await db.rollback()
 
     response = EmailGenerationResponse(
         id=draft.id,

@@ -27,7 +27,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Type, TypeVar
+from uuid import UUID
 from uuid import uuid4
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,7 @@ class DomainEvent:
     tenant_id: str | None = None
 
 
-class EventBus:
+class EventBus(PersistentServiceMixin):
     """In-process domain event bus.
 
     Supports both sync and async handlers. Handlers are invoked in
@@ -53,10 +56,42 @@ class EventBus:
     from executing.
     """
 
+    SERVICE_NAME = "event_bus"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
     def __init__(self) -> None:
         self._handlers: dict[Type[DomainEvent], list[Handler]] = defaultdict(list)
         self._global_handlers: list[Handler] = []
         self._published_count: int = 0
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        stats = await self.load_state(self._DEFAULT_TENANT_ID, "stats")
+        if stats and "published_count" in stats:
+            self._published_count = int(stats["published_count"])
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        await self.save_state(
+            self._DEFAULT_TENANT_ID,
+            "stats",
+            {"published_count": self._published_count},
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
+
+    def _maybe_persist_sync(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self.persist_all())
 
     # ------------------------------------------------------------------
     # Subscription
@@ -83,6 +118,7 @@ class EventBus:
 
     async def publish(self, event: DomainEvent) -> None:
         """Publish an event to all registered handlers."""
+        await self._ensure_loaded()
         event_type = type(event)
         handlers = list(self._handlers.get(event_type, [])) + list(self._global_handlers)
 
@@ -111,6 +147,8 @@ class EventBus:
                     event.event_id,
                 )
 
+        await self.persist_all()
+
     def publish_sync(self, event: DomainEvent) -> None:
         """Publish an event synchronously (only invokes sync handlers)."""
         event_type = type(event)
@@ -134,6 +172,8 @@ class EventBus:
                     event.event_id,
                 )
 
+        self._maybe_persist_sync()
+
     # ------------------------------------------------------------------
     # Introspection
     # ------------------------------------------------------------------
@@ -147,12 +187,21 @@ class EventBus:
             "published_count": self._published_count,
         }
 
+    async def get_stats_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.stats
+
     def clear(self) -> None:
         """Remove all handlers (useful for testing)."""
         self._handlers.clear()
         self._global_handlers.clear()
         self._published_count = 0
+        self._state_loaded = True
 
 
 # Module-level singleton
 event_bus = EventBus()
+
+
+def get_event_bus() -> EventBus:
+    return event_bus

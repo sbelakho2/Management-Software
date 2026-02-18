@@ -2,19 +2,73 @@
 Tests for Saved Views API endpoints.
 """
 
+import asyncio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sensei.api.v1.endpoints.saved_views import router, get_service, _service
+from sensei.api.deps import get_db
+from sensei.models.base import Base
+
+
+def _ensure_user(user_id: str, session_maker) -> None:
+    from sqlalchemy import select
+    from sensei.models.user import User
+
+    async def _insert() -> None:
+        async with session_maker() as session:
+            existing = (await session.execute(
+                select(User).where(User.id == UUID(user_id))
+            )).scalar_one_or_none()
+            if existing is None:
+                user = User(
+                    id=UUID(user_id),
+                    email=f"{user_id}@example.com",
+                    username=f"user_{user_id[:8]}",
+                    password_hash="test",
+                    first_name="Test",
+                    last_name="User",
+                    status="active",
+                    email_verified=True,
+                )
+                session.add(user)
+                await session.commit()
+
+    asyncio.run(_insert())
 
 
 @pytest.fixture
 def app() -> FastAPI:
     """Create a FastAPI app with saved views router."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import StaticPool
+
     app = FastAPI()
     app.include_router(router)
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_maker = async_sessionmaker(
+        engine, expire_on_commit=False, autoflush=True
+    )
+
+    async def _init_models() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_init_models())
+
+    async def override_get_db():
+        async with session_maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.state.session_maker = session_maker
     return app
 
 
@@ -34,9 +88,11 @@ def clear_service():
 
 
 @pytest.fixture
-def user_id() -> str:
+def user_id(app: FastAPI) -> str:
     """Create a test user ID."""
-    return str(uuid4())
+    user_id = str(uuid4())
+    _ensure_user(user_id, app.state.session_maker)
+    return user_id
 
 
 # --------------------------------------------------------------------------
@@ -376,6 +432,7 @@ class TestDuplicateView:
         
         # Duplicate
         new_owner = str(uuid4())
+        _ensure_user(new_owner, client.app.state.session_maker)
         response = client.post(f"/saved-views/{view_id}/duplicate", json={
             "new_owner_id": new_owner,
         })
@@ -397,6 +454,7 @@ class TestDuplicateView:
         view_id = create_response.json()["id"]
         
         new_owner = str(uuid4())
+        _ensure_user(new_owner, client.app.state.session_maker)
         response = client.post(f"/saved-views/{view_id}/duplicate", json={
             "new_owner_id": new_owner,
             "new_name": "My Custom Copy",
@@ -649,6 +707,7 @@ class TestSavedViewsIntegration:
     def test_full_workflow(self, client: TestClient):
         """Test complete saved views workflow."""
         user_id = str(uuid4())
+        _ensure_user(user_id, client.app.state.session_maker)
         
         # 1. Create a view
         create_response = client.post("/saved-views", json={
@@ -704,6 +763,7 @@ class TestSavedViewsIntegration:
         
         # 7. Duplicate for another user
         other_user = str(uuid4())
+        _ensure_user(other_user, client.app.state.session_maker)
         dup_response = client.post(f"/saved-views/{view_id}/duplicate", json={
             "new_owner_id": other_user,
             "new_name": "My Copy",

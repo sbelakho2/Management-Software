@@ -18,6 +18,9 @@ from __future__ import annotations
 
 import numpy as np
 import random
+
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import AnomalyDetectedEvent as DomainAnomalyDetectedEvent
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -487,6 +490,16 @@ class AIReasoningService(PersistentServiceMixin):
         )
 
         self._anomalies.append(anomaly)
+
+        # Publish domain event — feeds single data thread
+        event_bus.publish_sync(DomainAnomalyDetectedEvent(
+            entity_type="process",
+            entity_id=str(process),
+            anomaly_type="unusual_delay",
+            confidence=severity,
+            description=anomaly.description,
+        ))
+
         return anomaly
 
     def detect_rfq_to_quote_anomalies(

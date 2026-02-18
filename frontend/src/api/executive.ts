@@ -51,6 +51,7 @@ export interface CrossFunctionalKPIResponse {
   delivery_score: number;
   cost_efficiency: number;
   workforce_utilization: number;
+  inventory_health: number;
   overall_score: number;
   details: Record<string, unknown>;
 }
@@ -65,6 +66,45 @@ export interface StrategicDirective {
 
 export interface StrategicDirectivesResponse {
   directives: StrategicDirective[];
+  generated_at: string;
+}
+
+export interface DataThreadSummary {
+  latest_snapshot_date: string | null;
+  exported_record_count: number;
+  fact_counts: Record<string, number>;
+  lineage_link_count: number;
+  reasoning_trace_count: number;
+  event_bus: Record<string, unknown>;
+  cross_domain: Record<string, unknown>;
+}
+
+export interface CognitiveObeySummary {
+  trend_warnings: {
+    metric_id: string;
+    direction: string;
+    days_to_breach: number;
+    confidence: number;
+    recommendation: string;
+  }[];
+  warning_count: number;
+}
+
+export interface CEOInsight {
+  title?: string;
+  description?: string;
+  recommendation?: string;
+  severity?: string;
+  category?: string;
+  [key: string]: unknown;
+}
+
+export interface CEODashboardResponse {
+  data_thread: DataThreadSummary;
+  sqdcp: SQDCPResponse;
+  kpi_summary: CrossFunctionalKPIResponse;
+  insights: CEOInsight[];
+  cognitive_obeya: CognitiveObeySummary | null;
   generated_at: string;
 }
 
@@ -92,5 +132,9 @@ export const executiveApi = {
 
   async getStrategicDirectives(): Promise<StrategicDirectivesResponse> {
     return apiClient.get<StrategicDirectivesResponse>('/executive/strategic-directives');
+  },
+
+  async getCEODashboard(): Promise<CEODashboardResponse> {
+    return apiClient.get<CEODashboardResponse>('/executive/ceo-dashboard');
   },
 };

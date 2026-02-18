@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.deps import CurrentUser, DBSession, RoleChecker
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.common_thread import get_common_thread_service
@@ -31,7 +31,9 @@ from sensei.models.accounts_receivable import CustomerInvoice, CustomerInvoiceLi
 from sensei.models.accounts_payable import PurchaseOrder, POLine
 from sensei.models.quality import NonConformance
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "finance", "auditor"]))],
+)
 
 
 class CommonThreadNodeResponse(BaseModel):

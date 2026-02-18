@@ -21,6 +21,7 @@ from typing import Any, Iterable, Protocol
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +271,7 @@ class SPCScrapReworkService(PersistentServiceMixin):
     """In-memory SPC and Scrap/Rework accounting service."""
 
     SERVICE_NAME = "spc_scrap_rework"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     _MAX_DATA_POINTS = 100_000
     _MAX_AUDIT_EVENTS = 50_000
@@ -302,6 +304,75 @@ class SPCScrapReworkService(PersistentServiceMixin):
         self._wip_account = wip_account
 
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        charts_data = await self.load_state(self._DEFAULT_TENANT_ID, "charts") or {}
+        data_points_data = await self.load_state(self._DEFAULT_TENANT_ID, "data_points") or {}
+        violations_data = await self.load_state(self._DEFAULT_TENANT_ID, "violations") or {}
+        scrap_records_data = await self.load_state(self._DEFAULT_TENANT_ID, "scrap_records") or {}
+        rework_records_data = await self.load_state(self._DEFAULT_TENANT_ID, "rework_records") or {}
+        audit_data = await self.load_state(self._DEFAULT_TENANT_ID, "audit") or []
+
+        async def calculate_process_capability_async(self, **kwargs: Any) -> dict[str, float]:
+            await self._ensure_loaded()
+            return self.calculate_process_capability(**kwargs)
+
+        self._charts = {
+            UUID(chart_id): decode_dataclass(chart, ControlChart)
+            for chart_id, chart in charts_data.items()
+        }
+        self._data_points = {
+            UUID(point_id): decode_dataclass(point, SPCDataPoint)
+            for point_id, point in data_points_data.items()
+        }
+        self._violations = {
+            UUID(violation_id): decode_dataclass(violation, ControlViolation)
+            for violation_id, violation in violations_data.items()
+        }
+        self._scrap_records = {
+            UUID(record_id): decode_dataclass(record, ScrapRecord)
+            for record_id, record in scrap_records_data.items()
+        }
+        self._rework_records = {
+            UUID(record_id): decode_dataclass(record, ReworkRecord)
+            for record_id, record in rework_records_data.items()
+        }
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        charts_data = {str(chart_id): encode_dataclass(chart) for chart_id, chart in self._charts.items()}
+        data_points_data = {
+            str(point_id): encode_dataclass(point) for point_id, point in self._data_points.items()
+        }
+        violations_data = {
+            str(violation_id): encode_dataclass(violation)
+            for violation_id, violation in self._violations.items()
+        }
+        scrap_records_data = {
+            str(record_id): encode_dataclass(record)
+            for record_id, record in self._scrap_records.items()
+        }
+        rework_records_data = {
+            str(record_id): encode_dataclass(record)
+            for record_id, record in self._rework_records.items()
+        }
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "charts", charts_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "data_points", data_points_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "violations", violations_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "scrap_records", scrap_records_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "rework_records", rework_records_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -406,6 +477,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
         _require_any(roles, _QUALITY_READ_ROLES, "Quality read role required")
         return list(self._audit)
 
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)
+
     # ----------------------------------------------------------------
     # Control Chart Management
     # ----------------------------------------------------------------
@@ -469,12 +544,22 @@ class SPCScrapReworkService(PersistentServiceMixin):
 
         return chart
 
+    async def create_control_chart_async(self, **kwargs: Any) -> ControlChart:
+        await self._ensure_loaded()
+        chart = self.create_control_chart(**kwargs)
+        await self.persist_all()
+        return chart
+
     def get_control_chart(
         self, *, actor_roles: Iterable[str], chart_id: UUID
     ) -> ControlChart | None:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _QUALITY_READ_ROLES, "Quality read role required")
         return self._charts.get(chart_id)
+
+    async def get_control_chart_async(self, **kwargs: Any) -> ControlChart | None:
+        await self._ensure_loaded()
+        return self.get_control_chart(**kwargs)
 
     def list_control_charts(
         self,
@@ -498,6 +583,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
             result.append(chart)
 
         return sorted(result, key=lambda c: c.name)
+
+    async def list_control_charts_async(self, **kwargs: Any) -> list[ControlChart]:
+        await self._ensure_loaded()
+        return self.list_control_charts(**kwargs)
 
     # ----------------------------------------------------------------
     # SPC Data Collection
@@ -601,6 +690,15 @@ class SPCScrapReworkService(PersistentServiceMixin):
 
         return data_point, violation
 
+    async def record_measurement_async(
+        self,
+        **kwargs: Any,
+    ) -> tuple[SPCDataPoint, ControlViolation | None]:
+        await self._ensure_loaded()
+        result = self.record_measurement(**kwargs)
+        await self.persist_all()
+        return result
+
     def get_chart_data(
         self,
         *,
@@ -614,6 +712,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
 
         points = [p for p in self._data_points.values() if p.chart_id == chart_id]
         return sorted(points, key=lambda p: p.timestamp, reverse=True)[:limit]
+
+    async def get_chart_data_async(self, **kwargs: Any) -> list[SPCDataPoint]:
+        await self._ensure_loaded()
+        return self.get_chart_data(**kwargs)
 
     def get_violations(
         self,
@@ -632,6 +734,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
             result.append(v)
 
         return sorted(result, key=lambda v: v.detected_at, reverse=True)
+
+    async def get_violations_async(self, **kwargs: Any) -> list[ControlViolation]:
+        await self._ensure_loaded()
+        return self.get_violations(**kwargs)
 
     def calculate_process_capability(
         self,
@@ -750,6 +856,18 @@ class SPCScrapReworkService(PersistentServiceMixin):
 
         return record
 
+    async def record_rework_async(self, **kwargs: Any) -> ReworkRecord:
+        await self._ensure_loaded()
+        record = self.record_rework(**kwargs)
+        await self.persist_all()
+        return record
+
+    async def record_scrap_async(self, **kwargs: Any) -> ScrapRecord:
+        await self._ensure_loaded()
+        record = self.record_scrap(**kwargs)
+        await self.persist_all()
+        return record
+
     def post_scrap_to_gl(
         self,
         *,
@@ -821,6 +939,24 @@ class SPCScrapReworkService(PersistentServiceMixin):
         )
 
         return updated
+
+    async def post_rework_to_gl_async(self, **kwargs: Any) -> ReworkRecord:
+        await self._ensure_loaded()
+        record = self.post_rework_to_gl(**kwargs)
+        await self.persist_all()
+        return record
+
+    async def complete_rework_async(self, **kwargs: Any) -> ReworkRecord:
+        await self._ensure_loaded()
+        record = self.complete_rework(**kwargs)
+        await self.persist_all()
+        return record
+
+    async def post_scrap_to_gl_async(self, **kwargs: Any) -> ScrapRecord:
+        await self._ensure_loaded()
+        record = self.post_scrap_to_gl(**kwargs)
+        await self.persist_all()
+        return record
 
     # ----------------------------------------------------------------
     # Rework Recording
@@ -1077,6 +1213,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
             by_product=by_product,
         )
 
+    async def get_copq_summary_async(self, **kwargs: Any) -> COPQSummary:
+        await self._ensure_loaded()
+        return self.get_copq_summary(**kwargs)
+
     def list_scrap_records(
         self,
         *,
@@ -1097,6 +1237,10 @@ class SPCScrapReworkService(PersistentServiceMixin):
 
         return sorted(result, key=lambda r: r.recorded_at, reverse=True)
 
+    async def list_scrap_records_async(self, **kwargs: Any) -> list[ScrapRecord]:
+        await self._ensure_loaded()
+        return self.list_scrap_records(**kwargs)
+
     def list_rework_records(
         self,
         *,
@@ -1116,3 +1260,7 @@ class SPCScrapReworkService(PersistentServiceMixin):
             result.append(rec)
 
         return sorted(result, key=lambda r: r.recorded_at, reverse=True)
+
+    async def list_rework_records_async(self, **kwargs: Any) -> list[ReworkRecord]:
+        await self._ensure_loaded()
+        return self.list_rework_records(**kwargs)

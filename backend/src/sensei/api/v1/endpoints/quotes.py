@@ -51,6 +51,8 @@ from sensei.models.quote import (
 )
 from sensei.services.core.common_thread import get_common_thread_service
 from sensei.services.core.data_lineage import get_data_lineage_service
+from sensei.services.domain_events import QuoteCreatedEvent, QuoteApprovedEvent, QuoteConvertedEvent
+from sensei.services.event_bus import get_event_bus
 
 
 AllowQuotingModule: TypeAlias = deps.require_role(
@@ -728,6 +730,19 @@ async def create_quote(
     await maybe_await(db.add(quote))
     await db.commit()
     await db.refresh(quote)
+
+    # Publish domain event
+    try:
+        event_bus = get_event_bus()
+        await event_bus.publish(
+            QuoteCreatedEvent(
+                quote_id=str(quote.id),
+                rfq_id=str(quote.rfq_id) if quote.rfq_id else None,
+                created_by_id=str(current_user.id),
+            )
+        )
+    except Exception:
+        logger.exception("Failed to publish QuoteCreatedEvent")
 
     # Best-effort: RFQ->Quote lineage + reasoning stamp (do not block quote creation).
     try:

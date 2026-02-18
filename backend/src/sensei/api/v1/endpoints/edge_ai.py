@@ -17,7 +17,7 @@ from sensei.services.core.edge_ai import (
     SensorReading,
 )
 
-router = APIRouter(dependencies=[Depends(RoleChecker(["admin", "ops", "engineer"]))])
+router = APIRouter(dependencies=[Depends(RoleChecker(["admin", "ops", "engineering"]))])
 
 # Singleton orchestrator
 _orchestrator = EdgeOrchestrator(machine_id="system_core")

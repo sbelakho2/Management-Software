@@ -48,6 +48,8 @@ from sensei.services.ai.chatbot.response_sanitizer import (
     ResponseSanitizer,
     SanitizationResult,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,7 @@ class ChatResponse:
     processing_time_ms: float = 0.0
 
 
-class ChatService:
+class ChatService(PersistentServiceMixin):
     """
     Main chat service orchestrating all components.
     
@@ -135,6 +137,10 @@ class ChatService:
     - Aggressive caching
     - Rate limiting
     """
+
+    SERVICE_NAME = "chat_service"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     # System prompts for different roles
     ROLE_SYSTEM_PROMPTS: Dict[str, str] = {
@@ -193,6 +199,36 @@ class ChatService:
         
         # Cache for frequently accessed data
         self._context_cache: Dict[str, tuple] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "sessions")
+        if not state:
+            self._state_loaded = True
+            return
+
+        sessions_data = state.get("sessions", {})
+        self._sessions = {
+            UUID(session_id): decode_dataclass(session, ChatSession)
+            for session_id, session in sessions_data.items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "sessions": {
+                str(session_id): encode_dataclass(session)
+                for session_id, session in self._sessions.items()
+            }
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "sessions", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def get_or_create_session(self, user_id: UUID) -> ChatSession:
         """Get existing session or create new one."""
@@ -230,6 +266,7 @@ class ChatService:
             ChatResponse with message and any actions
         """
         start_time = asyncio.get_event_loop().time()
+        await self._ensure_loaded()
         
         try:
             # Get or create session
@@ -263,12 +300,14 @@ class ChatService:
                     response_content = action_result.confirmation_prompt
                     session.add_message(MessageRole.ASSISTANT, response_content)
                     
-                    return ChatResponse(
+                    response = ChatResponse(
                         message=response_content,
                         intent=intent.intent_type,
                         action_result=action_result,
                         processing_time_ms=(asyncio.get_event_loop().time() - start_time) * 1000,
                     )
+                    await self.persist_all()
+                    return response
             
             # Step 4: Generate LLM response
             llm_response = await self._generate_response(
@@ -320,7 +359,7 @@ class ChatService:
             
             processing_time = (asyncio.get_event_loop().time() - start_time) * 1000
             
-            return ChatResponse(
+            response = ChatResponse(
                 message=final_response,
                 intent=intent.intent_type,
                 action_result=action_result,
@@ -333,18 +372,22 @@ class ChatService:
                     "sanitized": sanitization_result.was_modified,
                 },
             )
+            await self.persist_all()
+            return response
             
         except Exception as e:
             logger.error(f"Chat processing failed: {e}", exc_info=True)
             
             processing_time = (asyncio.get_event_loop().time() - start_time) * 1000
             
-            return ChatResponse(
+            response = ChatResponse(
                 message="I apologize, but I encountered an error processing your request. Please try again or contact support if the issue persists.",
                 intent=IntentType.UNKNOWN,
                 processing_time_ms=processing_time,
                 metadata={"error": str(e)},
             )
+            await self.persist_all()
+            return response
     
     async def _generate_response(
         self,
@@ -574,6 +617,12 @@ class ChatService:
             del self._sessions[session_id]
         
         return len(to_remove)
+
+    async def cleanup_inactive_sessions_async(self, max_age_hours: int = 24) -> int:
+        await self._ensure_loaded()
+        removed = self.cleanup_inactive_sessions(max_age_hours)
+        await self.persist_all()
+        return removed
 
 
 def create_chat_service(

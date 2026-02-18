@@ -30,6 +30,8 @@ import math
 import statistics
 
 from sensei.core.time import utcnow_naive
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -386,7 +388,7 @@ TREND_DESCRIPTIONS = {
 # Service Class
 # ============================================================================
 
-class AICTQSummarizationService:
+class AICTQSummarizationService(PersistentServiceMixin):
     """
     AI-powered CTQ summarization and analysis service.
     
@@ -426,6 +428,51 @@ class AICTQSummarizationService:
         
         self._summaries: dict[UUID, CTQSummary] = {}
         self._multi_summaries: dict[UUID, MultiCTQSummary] = {}
+        self._state_loaded = False
+
+    SERVICE_NAME = "ai_ctq_summarization"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        summaries_data = await self.load_state(self._DEFAULT_TENANT_ID, "summaries")
+        multi_data = await self.load_state(self._DEFAULT_TENANT_ID, "multi_summaries")
+
+        if summaries_data is None and multi_data is None:
+            self._state_loaded = True
+            return
+
+        if summaries_data is not None:
+            self._summaries = {
+                UUID(summary_id): decode_dataclass(summary, CTQSummary)
+                for summary_id, summary in summaries_data.items()
+            }
+        if multi_data is not None:
+            self._multi_summaries = {
+                UUID(summary_id): decode_dataclass(summary, MultiCTQSummary)
+                for summary_id, summary in multi_data.items()
+            }
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        summaries_data = {
+            str(summary_id): encode_dataclass(summary)
+            for summary_id, summary in self._summaries.items()
+        }
+        multi_data = {
+            str(summary_id): encode_dataclass(summary)
+            for summary_id, summary in self._multi_summaries.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "summaries", summaries_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "multi_summaries", multi_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     @staticmethod
     def _to_utc_aware(dt: datetime) -> datetime:
@@ -1022,6 +1069,12 @@ class AICTQSummarizationService:
         self._summaries[summary.id] = summary
         
         return summary
+
+    async def generate_summary_async(self, **kwargs: Any) -> CTQSummary:
+        await self._ensure_loaded()
+        summary = self.generate_summary(**kwargs)
+        await self.persist_all()
+        return summary
     
     def _calculate_period(
         self,
@@ -1368,6 +1421,12 @@ Overview:
         self._multi_summaries[multi_summary.id] = multi_summary
         
         return multi_summary
+
+    async def generate_multi_ctq_summary_async(self, **kwargs: Any) -> MultiCTQSummary:
+        await self._ensure_loaded()
+        summary = self.generate_multi_ctq_summary(**kwargs)
+        await self.persist_all()
+        return summary
     
     # ========================================================================
     # Retrieval Methods
@@ -1376,10 +1435,18 @@ Overview:
     def get_summary(self, summary_id: UUID) -> Optional[CTQSummary]:
         """Get a stored summary by ID."""
         return self._summaries.get(summary_id)
+
+    async def get_summary_async(self, summary_id: UUID) -> Optional[CTQSummary]:
+        await self._ensure_loaded()
+        return self.get_summary(summary_id)
     
     def get_multi_summary(self, summary_id: UUID) -> Optional[MultiCTQSummary]:
         """Get a stored multi-CTQ summary by ID."""
         return self._multi_summaries.get(summary_id)
+
+    async def get_multi_summary_async(self, summary_id: UUID) -> Optional[MultiCTQSummary]:
+        await self._ensure_loaded()
+        return self.get_multi_summary(summary_id)
     
     def list_summaries(
         self,
@@ -1400,6 +1467,10 @@ Overview:
         summaries.sort(key=lambda s: s.generated_at, reverse=True)
         
         return summaries[:limit]
+
+    async def list_summaries_async(self, **kwargs: Any) -> list[CTQSummary]:
+        await self._ensure_loaded()
+        return self.list_summaries(**kwargs)
     
     def compare_periods(
         self,

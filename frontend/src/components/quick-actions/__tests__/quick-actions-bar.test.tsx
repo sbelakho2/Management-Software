@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   QuickActionsBar,
@@ -16,6 +16,9 @@ import {
   type ActionContext,
   type QuickAction,
 } from '@/stores/quick-actions-store';
+import { renderWithI18n } from '@/test-utils';
+
+const render = renderWithI18n;
 
 // Mock the tooltip to avoid portal issues
 jest.mock('@radix-ui/react-tooltip', () => {
@@ -203,7 +206,7 @@ describe('QuickActionsBar', () => {
 
     it('should show close button in floating position', () => {
       render(<QuickActionsBar context={mockContext} position="floating" />);
-      expect(screen.getByLabelText('Close quick actions')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
     });
   });
 
@@ -402,7 +405,7 @@ describe('QuickActionsBar', () => {
       const user = userEvent.setup();
       render(<QuickActionsBar context={mockContext} position="floating" />);
       
-      const closeButton = screen.getByLabelText('Close quick actions');
+      const closeButton = screen.getByRole('button', { name: /close/i });
       await act(async () => {
         await user.click(closeButton);
       });

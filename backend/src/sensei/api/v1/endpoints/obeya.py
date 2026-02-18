@@ -65,6 +65,7 @@ router = APIRouter(
             deps.RoleChecker(
                 [
                     "ops",
+                    "operator",
                     "supervisor",
                     "team_lead",
                     "quality",
@@ -352,7 +353,7 @@ async def create_obeya_item(
     "/{item_id}",
     response_model=APIResponse[ObeyaItemResponse],
     summary="Get Obeya item",
-    description="Get an Obeya item by ID.",
+    description="Get an Obeya item by ID with RBAC-based access control.",
 )
 async def get_obeya_item(
     item_id: UUID,
@@ -368,6 +369,22 @@ async def get_obeya_item(
     if not item:
         raise NotFoundError(f"Obeya item {item_id} not found")
 
+    # RBAC check: verify user has access to this item
+    user_roles = set(getattr(current_user, 'roles', []) or [])
+    full_access_roles = {'admin', 'ceo', 'gm', 'exec', 'supervisor'}
+    
+    if not (user_roles & full_access_roles):
+        # Non-privileged users: must be owner, creator, assignee, or escalatee
+        user_id = current_user.id
+        has_access = (
+            item.owner_id == user_id or
+            item.created_by_id == user_id or
+            item.assigned_to_id == user_id or
+            item.escalated_to_id == user_id
+        )
+        if not has_access:
+            raise NotFoundError(f"Obeya item {item_id} not found")
+
     return build_response(
         data=ObeyaItemResponse.model_validate(item),
         message="Obeya item retrieved successfully",
@@ -378,7 +395,7 @@ async def get_obeya_item(
     "",
     response_model=PaginatedResponse[ObeyaItemResponse],
     summary="List Obeya items",
-    description="List Obeya items with filtering and pagination.",
+    description="List Obeya items with filtering, pagination, and RBAC-based visibility.",
 )
 async def list_obeya_items(
     db: DBSession,
@@ -393,6 +410,22 @@ async def list_obeya_items(
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> PaginatedResponse[ObeyaItemResponse]:
     base_conditions: list[Any] = [ObeyaItem.deleted_at.is_(None)]
+
+    # RBAC filtering: Users can see items they own, created, are assigned to,
+    # or are escalated to. Admin/CEO/GM/Exec roles can see all items.
+    user_roles = set(getattr(current_user, 'roles', []) or [])
+    full_access_roles = {'admin', 'ceo', 'gm', 'exec', 'supervisor'}
+    
+    if not (user_roles & full_access_roles):
+        # Non-privileged users: filter by ownership/assignment
+        user_id = current_user.id
+        rbac_filter = or_(
+            ObeyaItem.owner_id == user_id,
+            ObeyaItem.created_by_id == user_id,
+            ObeyaItem.assigned_to_id == user_id,
+            ObeyaItem.escalated_to_id == user_id,
+        )
+        base_conditions.append(rbac_filter)
 
     if board and isinstance(board, ObeyaBoard):
         base_conditions.append(ObeyaItem.board == board.value)
@@ -446,7 +479,7 @@ async def list_obeya_items(
     "/{item_id}",
     response_model=APIResponse[ObeyaItemResponse],
     summary="Update Obeya item",
-    description="Update an Obeya item's details.",
+    description="Update an Obeya item's details with RBAC-based authorization.",
 )
 async def update_obeya_item(
     item_id: UUID,
@@ -462,6 +495,21 @@ async def update_obeya_item(
 
     if not item:
         raise NotFoundError(f"Obeya item {item_id} not found")
+
+    # RBAC check: verify user has permission to update this item
+    user_roles = set(getattr(current_user, 'roles', []) or [])
+    full_access_roles = {'admin', 'ceo', 'gm', 'exec', 'supervisor'}
+    
+    if not (user_roles & full_access_roles):
+        # Non-privileged users: must be owner, creator, or assignee to update
+        user_id = current_user.id
+        has_access = (
+            item.owner_id == user_id or
+            item.created_by_id == user_id or
+            item.assigned_to_id == user_id
+        )
+        if not has_access:
+            raise NotFoundError(f"Obeya item {item_id} not found")
 
     update_data = data.model_dump(exclude_unset=True)
 
@@ -495,7 +543,7 @@ async def update_obeya_item(
     "/{item_id}",
     response_model=APIResponse,
     summary="Delete Obeya item",
-    description="Soft delete an Obeya item.",
+    description="Soft delete an Obeya item with RBAC-based authorization.",
 )
 async def delete_obeya_item(
     item_id: UUID,
@@ -510,6 +558,19 @@ async def delete_obeya_item(
 
     if not item:
         raise NotFoundError(f"Obeya item {item_id} not found")
+
+    # RBAC check: only owner, creator, or admin roles can delete
+    user_roles = set(getattr(current_user, 'roles', []) or [])
+    full_access_roles = {'admin', 'ceo', 'gm', 'exec'}
+    
+    if not (user_roles & full_access_roles):
+        user_id = current_user.id
+        has_access = (
+            item.owner_id == user_id or
+            item.created_by_id == user_id
+        )
+        if not has_access:
+            raise NotFoundError(f"Obeya item {item_id} not found")
 
     item.deleted_at = datetime.now(timezone.utc)
     item.deleted_by_id = current_user.id

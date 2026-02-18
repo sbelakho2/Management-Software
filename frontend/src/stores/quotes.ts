@@ -58,6 +58,8 @@ interface QuoteState {
   deleteQuote: (id: string) => Promise<void>;
   exportQuote: (id: string, format: 'pdf' | 'excel') => Promise<void>;
   sendQuote: (id: string) => Promise<void>;
+  approveQuote: (id: string, rationale: string) => Promise<void>;
+  rejectQuote: (id: string, reason: string) => Promise<void>;
   calculateQuoteTotals: (lineItems: QuoteLineItem[], discountType: 'percentage' | 'amount', discountValue: number, taxRate: number) => { subtotal: number; discount: number; tax: number; total: number };
   clearError: () => void;
 }
@@ -244,6 +246,34 @@ export const useQuoteStore = create<QuoteState>()(
           } catch (error) {
             console.error('Error sending quote:', error);
             set({ error: error instanceof Error ? error.message : 'Failed to send quote' });
+            throw error;
+          }
+        },
+
+        approveQuote: async (id: string, rationale: string) => {
+          try {
+            const approvedQuote = await apiClient.post<Quote>(`/quotes/${id}/approve`, { rationale });
+
+            set(state => ({
+              quotes: state.quotes.map(q => q.id === id ? approvedQuote : q),
+            }));
+          } catch (error) {
+            console.error('Error approving quote:', error);
+            set({ error: error instanceof Error ? error.message : 'Failed to approve quote' });
+            throw error;
+          }
+        },
+
+        rejectQuote: async (id: string, reason: string) => {
+          try {
+            const rejectedQuote = await apiClient.post<Quote>(`/quotes/${id}/reject`, { reason });
+
+            set(state => ({
+              quotes: state.quotes.map(q => q.id === id ? rejectedQuote : q),
+            }));
+          } catch (error) {
+            console.error('Error rejecting quote:', error);
+            set({ error: error instanceof Error ? error.message : 'Failed to reject quote' });
             throw error;
           }
         },

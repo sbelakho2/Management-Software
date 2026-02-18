@@ -1,7 +1,10 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BarcodeScanner, ScannerModal, ScanButton } from '../barcode-scanner';
 import type { BarcodeResult } from '@/hooks/use-camera-scanner';
+import { renderWithI18n } from '@/test-utils';
+
+const render = renderWithI18n;
 
 // Mock the camera scanner hook
 const mockStart = jest.fn();
@@ -314,7 +317,7 @@ describe('ScannerModal', () => {
     );
     
     expect(screen.getByText('Scan Barcode')).toBeInTheDocument();
-    expect(screen.getByText('Point your camera at a barcode or QR code')).toBeInTheDocument();
+    expect(screen.getByText('Point your camera at a barcode or QR code to scan it.')).toBeInTheDocument();
   });
   
   it('uses custom title and description', () => {

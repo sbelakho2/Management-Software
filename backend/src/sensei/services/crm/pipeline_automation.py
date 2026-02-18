@@ -18,6 +18,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import OpportunityStageChangedEvent
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
@@ -320,6 +323,14 @@ class CRMPipelineAutomation:
             triggered_by="system",
             reason=reason,
         )
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(OpportunityStageChangedEvent(
+            opportunity_id=str(opportunity_id),
+            old_stage=old_stage,
+            new_stage=new_stage,
+            amount=float(opp.amount or 0),
+        ))
 
         logger.info(
             "Auto-advanced opportunity %s: %s → %s (%s)",

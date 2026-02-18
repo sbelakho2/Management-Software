@@ -214,10 +214,31 @@ class TrainingMatrixService(PersistentServiceMixin):
     
     # Default recertification lead time (days before expiration)
     RECERTIFICATION_LEAD_DAYS = 30
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self) -> None:
         """Initialize the training matrix service."""
         self._custom_thresholds: dict[ExpirationUrgency, int] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        thresholds = await self.load_state(self._DEFAULT_TENANT_ID, "expiration_thresholds") or {}
+        self._custom_thresholds = {
+            ExpirationUrgency(key): int(value) for key, value in thresholds.items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        thresholds = {urgency.value: days for urgency, days in self._custom_thresholds.items()}
+        await self.save_state(self._DEFAULT_TENANT_ID, "expiration_thresholds", thresholds)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def set_expiration_threshold(
         self,
@@ -226,6 +247,15 @@ class TrainingMatrixService(PersistentServiceMixin):
     ) -> None:
         """Set custom expiration threshold."""
         self._custom_thresholds[urgency] = days
+
+    async def set_expiration_threshold_async(
+        self,
+        urgency: ExpirationUrgency,
+        days: int,
+    ) -> None:
+        await self._ensure_loaded()
+        self.set_expiration_threshold(urgency, days)
+        await self.persist_all()
     
     def get_expiration_thresholds(self) -> dict[str, int]:
         """Get current expiration thresholds."""
@@ -233,6 +263,10 @@ class TrainingMatrixService(PersistentServiceMixin):
         for urgency, days in self._custom_thresholds.items():
             result[urgency.value] = days
         return result
+
+    async def get_expiration_thresholds_async(self) -> dict[str, int]:
+        await self._ensure_loaded()
+        return self.get_expiration_thresholds()
     
     def _get_threshold(self, urgency: ExpirationUrgency) -> int:
         """Get threshold for an urgency level."""

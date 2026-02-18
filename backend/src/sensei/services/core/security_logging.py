@@ -16,6 +16,9 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 
 class EventSeverity(str, Enum):
     CRITICAL = "critical"
@@ -78,7 +81,7 @@ class ThreatAlert:
     updated_at: datetime
 
 
-class SecurityLoggingService:
+class SecurityLoggingService(PersistentServiceMixin):
     """In-memory security event collection & threat detection."""
 
     def __init__(self) -> None:
@@ -87,6 +90,67 @@ class SecurityLoggingService:
 
         # For anomaly detection: track auth failures per user within rolling window.
         self._auth_failures_by_user: dict[UUID, list[datetime]] = defaultdict(list)
+        self._state_loaded = False
+
+    SERVICE_NAME = "security_logging"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        events_data = await self.load_state(self._DEFAULT_TENANT_ID, "events")
+        alerts_data = await self.load_state(self._DEFAULT_TENANT_ID, "alerts")
+        auth_failures_data = await self.load_state(
+            self._DEFAULT_TENANT_ID, "auth_failures_by_user"
+        )
+
+        if events_data is None and alerts_data is None and auth_failures_data is None:
+            self._state_loaded = True
+            return
+
+        if events_data is not None:
+            self._events = {
+                UUID(event_id): decode_dataclass(event, SecurityEvent)
+                for event_id, event in events_data.items()
+            }
+        if alerts_data is not None:
+            self._alerts = {
+                UUID(alert_id): decode_dataclass(alert, ThreatAlert)
+                for alert_id, alert in alerts_data.items()
+            }
+        if auth_failures_data is not None:
+            self._auth_failures_by_user = defaultdict(list)
+            for user_id, timestamps in auth_failures_data.items():
+                self._auth_failures_by_user[UUID(user_id)] = [
+                    datetime.fromisoformat(ts) for ts in timestamps
+                ]
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        events_data = {
+            str(event_id): encode_dataclass(event)
+            for event_id, event in self._events.items()
+        }
+        alerts_data = {
+            str(alert_id): encode_dataclass(alert)
+            for alert_id, alert in self._alerts.items()
+        }
+        auth_failures_data = {
+            str(user_id): [ts.isoformat() for ts in timestamps]
+            for user_id, timestamps in self._auth_failures_by_user.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "events", events_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "alerts", alerts_data)
+        await self.save_state(
+            self._DEFAULT_TENANT_ID, "auth_failures_by_user", auth_failures_data
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---- RBAC ----
 
@@ -124,6 +188,28 @@ class SecurityLoggingService:
 
         return event
 
+    async def log_event_async(
+        self,
+        *,
+        category: EventCategory,
+        severity: EventSeverity,
+        description: str,
+        source_ip: str | None = None,
+        user_id: UUID | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> SecurityEvent:
+        await self._ensure_loaded()
+        event = self.log_event(
+            category=category,
+            severity=severity,
+            description=description,
+            source_ip=source_ip,
+            user_id=user_id,
+            metadata=metadata,
+        )
+        await self.persist_all()
+        return event
+
     def list_events(
         self,
         *,
@@ -148,6 +234,24 @@ class SecurityLoggingService:
         result.sort(key=lambda e: e.timestamp, reverse=True)
         return result[:limit]
 
+    async def list_events_async(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        category: EventCategory | None = None,
+        severity: EventSeverity | None = None,
+        since: datetime | None = None,
+        limit: int = 100,
+    ) -> list[SecurityEvent]:
+        await self._ensure_loaded()
+        return self.list_events(
+            actor_roles=actor_roles,
+            category=category,
+            severity=severity,
+            since=since,
+            limit=limit,
+        )
+
     def get_event_counts_by_severity(
         self,
         *,
@@ -163,6 +267,15 @@ class SecurityLoggingService:
                 continue
             counts[event.severity.value] += 1
         return counts
+
+    async def get_event_counts_by_severity_async(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        since: datetime | None = None,
+    ) -> dict[str, int]:
+        await self._ensure_loaded()
+        return self.get_event_counts_by_severity(actor_roles=actor_roles, since=since)
 
     # ---- Threat Detection ----
 
@@ -218,6 +331,15 @@ class SecurityLoggingService:
         result.sort(key=lambda a: a.created_at, reverse=True)
         return result
 
+    async def list_alerts_async(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        status: AlertStatus | None = None,
+    ) -> list[ThreatAlert]:
+        await self._ensure_loaded()
+        return self.list_alerts(actor_roles=actor_roles, status=status)
+
     def update_alert_status(
         self,
         alert_id: UUID,
@@ -233,6 +355,18 @@ class SecurityLoggingService:
         alert = self._alerts[alert_id]
         alert.status = status
         alert.updated_at = _utcnow()
+        return alert
+
+    async def update_alert_status_async(
+        self,
+        alert_id: UUID,
+        *,
+        status: AlertStatus,
+        actor_roles: Iterable[str],
+    ) -> ThreatAlert:
+        await self._ensure_loaded()
+        alert = self.update_alert_status(alert_id, status=status, actor_roles=actor_roles)
+        await self.persist_all()
         return alert
 
     def compute_risk_score(
@@ -262,3 +396,12 @@ class SecurityLoggingService:
             score += min(count * weights.get(sev, 0), 1.0)
 
         return min(score, 1.0)
+
+    async def compute_risk_score_async(
+        self,
+        *,
+        actor_roles: Iterable[str],
+        window_hours: int = 24,
+    ) -> float:
+        await self._ensure_loaded()
+        return self.compute_risk_score(actor_roles=actor_roles, window_hours=window_hours)

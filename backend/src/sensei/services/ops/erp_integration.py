@@ -18,6 +18,8 @@ from sensei.models.accounts_receivable import SalesOrder, CustomerInvoice, Sales
 from sensei.models.accounts_payable import PurchaseOrder, SupplierInvoice, POLine, SupplierInvoiceLine
 from sensei.models.finance import JournalEntry, JournalLine, GLAccount
 from sensei.models.product import Product
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import InvoiceCreatedEvent
 
 class ERPIntegrationService:
     """
@@ -58,6 +60,17 @@ class ERPIntegrationService:
             db.add(inv_line)
         
         so.status = "closed"
+
+        # Publish domain event — feeds single data thread + analytics
+        total = sum(float(line.quantity * line.unit_price) for line in so.lines)
+        await event_bus.publish(InvoiceCreatedEvent(
+            invoice_id=str(invoice.id),
+            invoice_type="receivable",
+            amount=total,
+            currency=so.currency or "USD",
+            counterparty=str(so.account_id) if so.account_id else "",
+        ))
+
         return invoice
 
     @staticmethod

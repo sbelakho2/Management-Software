@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from sensei.core.config import settings
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class RequirementType(str, Enum):
@@ -142,6 +143,7 @@ class MRPService(PersistentServiceMixin):
     """In-memory MRP-lite service."""
 
     SERVICE_NAME = "mrp_lite"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self) -> None:
         # Master data
@@ -155,6 +157,77 @@ class MRPService(PersistentServiceMixin):
         self._suggestions: dict[UUID, MRPSuggestion] = {}
         self._runs: list[MRPRunResult] = []
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        bom_data = await self.load_state(self._DEFAULT_TENANT_ID, "bom") or {}
+        inventory_data = await self.load_state(self._DEFAULT_TENANT_ID, "inventory") or {}
+        lead_times_data = await self.load_state(self._DEFAULT_TENANT_ID, "lead_times") or {}
+        item_types_data = await self.load_state(self._DEFAULT_TENANT_ID, "item_types") or {}
+        demands_data = await self.load_state(self._DEFAULT_TENANT_ID, "demands") or {}
+        suggestions_data = await self.load_state(self._DEFAULT_TENANT_ID, "suggestions") or {}
+        runs_data = await self.load_state(self._DEFAULT_TENANT_ID, "runs") or []
+        audit_data = await self.load_state(self._DEFAULT_TENANT_ID, "audit") or []
+
+        self._bom = {
+            parent_id: [decode_dataclass(comp, BOMComponent) for comp in comps]
+            for parent_id, comps in bom_data.items()
+        }
+        self._inventory = {
+            item_id: decode_dataclass(level, InventoryLevel)
+            for item_id, level in inventory_data.items()
+        }
+        self._lead_times = {item_id: int(days) for item_id, days in lead_times_data.items()}
+        self._item_types = {
+            item_id: RequirementType(value) for item_id, value in item_types_data.items()
+        }
+        self._demands = {
+            UUID(demand_id): decode_dataclass(entry, DemandEntry)
+            for demand_id, entry in demands_data.items()
+        }
+        self._suggestions = {
+            UUID(suggestion_id): decode_dataclass(entry, MRPSuggestion)
+            for suggestion_id, entry in suggestions_data.items()
+        }
+        self._runs = [decode_dataclass(run, MRPRunResult) for run in runs_data]
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        bom_data = {
+            parent_id: [encode_dataclass(comp) for comp in comps]
+            for parent_id, comps in self._bom.items()
+        }
+        inventory_data = {
+            item_id: encode_dataclass(level) for item_id, level in self._inventory.items()
+        }
+        lead_times_data = dict(self._lead_times)
+        item_types_data = {item_id: item_type.value for item_id, item_type in self._item_types.items()}
+        demands_data = {
+            str(demand_id): encode_dataclass(entry) for demand_id, entry in self._demands.items()
+        }
+        suggestions_data = {
+            str(suggestion_id): encode_dataclass(entry)
+            for suggestion_id, entry in self._suggestions.items()
+        }
+        runs_data = [encode_dataclass(run) for run in self._runs]
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "bom", bom_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "inventory", inventory_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "lead_times", lead_times_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "item_types", item_types_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "demands", demands_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "suggestions", suggestions_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "runs", runs_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -192,6 +265,10 @@ class MRPService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MRP_READ_ROLES, "MRP read role required")
         return list(self._audit)
+
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)
 
     # ----------------------------------------------------------------
     # Master Data Management
@@ -238,6 +315,18 @@ class MRPService(PersistentServiceMixin):
 
         return bom_components
 
+    async def register_bom_async(self, **kwargs: Any) -> list[BOMComponent]:
+        await self._ensure_loaded()
+        result = self.register_bom(**kwargs)
+        await self.persist_all()
+        return result
+
+    async def run_mrp_async(self, **kwargs: Any) -> MRPRunResult:
+        await self._ensure_loaded()
+        result = self.run_mrp(**kwargs)
+        await self.persist_all()
+        return result
+
     def set_inventory_level(
         self,
         *,
@@ -277,6 +366,12 @@ class MRPService(PersistentServiceMixin):
 
         return level
 
+    async def set_inventory_level_async(self, **kwargs: Any) -> InventoryLevel:
+        await self._ensure_loaded()
+        level = self.set_inventory_level(**kwargs)
+        await self.persist_all()
+        return level
+
     def set_item_type(
         self,
         *,
@@ -308,6 +403,11 @@ class MRPService(PersistentServiceMixin):
             correlation_id=correlation_id,
             metadata={"type": requirement_type.value, "lead_time": lead_time_days},
         )
+
+    async def set_item_type_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.set_item_type(**kwargs)
+        await self.persist_all()
 
     # ----------------------------------------------------------------
     # Demand Management
@@ -356,6 +456,12 @@ class MRPService(PersistentServiceMixin):
 
         return demand
 
+    async def add_demand_async(self, **kwargs: Any) -> DemandEntry:
+        await self._ensure_loaded()
+        demand = self.add_demand(**kwargs)
+        await self.persist_all()
+        return demand
+
     def remove_demand(
         self,
         *,
@@ -382,6 +488,11 @@ class MRPService(PersistentServiceMixin):
             correlation_id=correlation_id,
         )
 
+    async def remove_demand_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.remove_demand(**kwargs)
+        await self.persist_all()
+
     def list_demands(
         self,
         *,
@@ -399,6 +510,10 @@ class MRPService(PersistentServiceMixin):
             result.append(d)
 
         return sorted(result, key=lambda d: d.required_date)
+
+    async def list_demands_async(self, **kwargs: Any) -> list[DemandEntry]:
+        await self._ensure_loaded()
+        return self.list_demands(**kwargs)
 
     # ----------------------------------------------------------------
     # MRP Calculation
@@ -590,6 +705,10 @@ class MRPService(PersistentServiceMixin):
 
         return sorted(result, key=lambda s: s.needed_date)
 
+    async def list_suggestions_async(self, **kwargs: Any) -> list[MRPSuggestion]:
+        await self._ensure_loaded()
+        return self.list_suggestions(**kwargs)
+
     def approve_suggestion(
         self,
         *,
@@ -640,6 +759,18 @@ class MRPService(PersistentServiceMixin):
 
         return updated
 
+    async def reject_suggestion_async(self, **kwargs: Any) -> MRPSuggestion:
+        await self._ensure_loaded()
+        suggestion = self.reject_suggestion(**kwargs)
+        await self.persist_all()
+        return suggestion
+
+    async def approve_suggestion_async(self, **kwargs: Any) -> MRPSuggestion:
+        await self._ensure_loaded()
+        suggestion = self.approve_suggestion(**kwargs)
+        await self.persist_all()
+        return suggestion
+
     def reject_suggestion(
         self,
         *,
@@ -688,6 +819,12 @@ class MRPService(PersistentServiceMixin):
         )
 
         return updated
+
+    async def release_suggestion_async(self, **kwargs: Any) -> MRPSuggestion:
+        await self._ensure_loaded()
+        suggestion = self.release_suggestion(**kwargs)
+        await self.persist_all()
+        return suggestion
 
     def release_suggestion(
         self,
@@ -773,6 +910,10 @@ class MRPService(PersistentServiceMixin):
             "net_requirement": net_requirement,
         }
 
+    async def get_item_requirements_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_item_requirements(**kwargs)
+
     def list_runs(
         self,
         *,
@@ -782,3 +923,7 @@ class MRPService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _MRP_READ_ROLES, "MRP read role required")
         return list(self._runs)
+
+    async def list_runs_async(self, **kwargs: Any) -> list[MRPRunResult]:
+        await self._ensure_loaded()
+        return self.list_runs(**kwargs)

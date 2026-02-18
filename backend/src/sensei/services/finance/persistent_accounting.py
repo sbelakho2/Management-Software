@@ -17,6 +17,8 @@ from sqlalchemy.orm import selectinload
 
 from sensei.models.finance import GLAccount, JournalEntry, JournalLine, AccountingPeriod, FXRate
 from sensei.models.user import User
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import JournalEntryPosted
 
 class PersistentAccountingLedgerService:
     """Persistent General Ledger service using SQLAlchemy."""
@@ -96,6 +98,17 @@ class PersistentAccountingLedgerService:
             self.db.add(line)
         
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        total_debit = sum(float(ld.get("debit", 0)) for ld in lines)
+        total_credit = sum(float(ld.get("credit", 0)) for ld in lines)
+        await event_bus.publish(JournalEntryPosted(
+            entry_id=str(entry.id),
+            debit_total=total_debit,
+            credit_total=total_credit,
+            period=str(entry_date),
+        ))
+
         return entry
 
     async def post_journal_entry(self, entry_id: UUID, user_id: UUID):

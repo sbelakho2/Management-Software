@@ -18,6 +18,9 @@ from enum import Enum
 from typing import Any, Iterable
 from uuid import UUID, uuid4
 
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
+
 
 class FeedbackType(str, Enum):
     BUG = "bug"
@@ -62,6 +65,7 @@ class ChecklistItemStatus(str, Enum):
 
 _HYPERCARE_ADMIN_ROLES: set[str] = {"admin", "gm", "exec", "ceo", "ops"}
 _CUTOVER_ADMIN_ROLES: set[str] = {"admin", "it", "gm"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 def _norm_roles(roles: Iterable[str]) -> set[str]:
@@ -143,8 +147,10 @@ class GoLiveChecklist:
     created_at: datetime
 
 
-class HypercareService:
+class HypercareService(PersistentServiceMixin):
     """In-memory hypercare monitoring & cutover support service."""
+
+    SERVICE_NAME = "hypercare"
 
     def __init__(self) -> None:
         self._feedback: dict[UUID, UserFeedback] = {}
@@ -152,6 +158,41 @@ class HypercareService:
         self._exports: dict[UUID, EnvironmentConfig] = {}
         self._seed_jobs: dict[UUID, SeedJob] = {}
         self._checklists: dict[UUID, GoLiveChecklist] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        feedback_data = await self.load_state(_DEFAULT_TENANT_ID, "feedback") or {}
+        changes_data = await self.load_state(_DEFAULT_TENANT_ID, "changes") or {}
+        exports_data = await self.load_state(_DEFAULT_TENANT_ID, "exports") or {}
+        seed_jobs_data = await self.load_state(_DEFAULT_TENANT_ID, "seed_jobs") or {}
+        checklists_data = await self.load_state(_DEFAULT_TENANT_ID, "checklists") or {}
+
+        self._feedback = {UUID(fid): decode_dataclass(f, UserFeedback) for fid, f in feedback_data.items()}
+        self._change_requests = {UUID(cid): decode_dataclass(c, ConfigChangeRequest) for cid, c in changes_data.items()}
+        self._exports = {UUID(eid): decode_dataclass(e, EnvironmentConfig) for eid, e in exports_data.items()}
+        self._seed_jobs = {UUID(sid): decode_dataclass(s, SeedJob) for sid, s in seed_jobs_data.items()}
+        self._checklists = {UUID(cid): decode_dataclass(c, GoLiveChecklist) for cid, c in checklists_data.items()}
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        feedback_data = {str(fid): encode_dataclass(f) for fid, f in self._feedback.items()}
+        changes_data = {str(cid): encode_dataclass(c) for cid, c in self._change_requests.items()}
+        exports_data = {str(eid): encode_dataclass(e) for eid, e in self._exports.items()}
+        seed_jobs_data = {str(sid): encode_dataclass(s) for sid, s in self._seed_jobs.items()}
+        checklists_data = {str(cid): encode_dataclass(c) for cid, c in self._checklists.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "feedback", feedback_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "changes", changes_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "exports", exports_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "seed_jobs", seed_jobs_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "checklists", checklists_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ---- RBAC ----
 
@@ -184,6 +225,12 @@ class HypercareService:
         self._feedback[feedback.id] = feedback
         return feedback
 
+    async def submit_feedback_async(self, **kwargs: Any) -> UserFeedback:
+        await self._ensure_loaded()
+        feedback = self.submit_feedback(**kwargs)
+        await self.persist_all()
+        return feedback
+
     def list_feedback(
         self,
         *,
@@ -198,6 +245,10 @@ class HypercareService:
             result = [f for f in result if f.status == status]
         result.sort(key=lambda f: f.created_at, reverse=True)
         return result
+
+    async def list_feedback_async(self, **kwargs: Any) -> list[UserFeedback]:
+        await self._ensure_loaded()
+        return self.list_feedback(**kwargs)
 
     def update_feedback_status(
         self,
@@ -215,6 +266,12 @@ class HypercareService:
         feedback.status = status
         if status == FeedbackStatus.RESOLVED:
             feedback.resolved_at = _utcnow()
+        return feedback
+
+    async def update_feedback_status_async(self, **kwargs: Any) -> UserFeedback:
+        await self._ensure_loaded()
+        feedback = self.update_feedback_status(**kwargs)
+        await self.persist_all()
         return feedback
 
     # ---- Configuration Change Control ----
@@ -248,6 +305,12 @@ class HypercareService:
         self._change_requests[request.id] = request
         return request
 
+    async def request_config_change_async(self, **kwargs: Any) -> ConfigChangeRequest:
+        await self._ensure_loaded()
+        change = self.request_config_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def dry_run_change(
         self,
         request_id: UUID,
@@ -269,6 +332,12 @@ class HypercareService:
         }
         return request
 
+    async def dry_run_change_async(self, **kwargs: Any) -> ConfigChangeRequest:
+        await self._ensure_loaded()
+        change = self.dry_run_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def approve_change(
         self,
         request_id: UUID,
@@ -287,6 +356,12 @@ class HypercareService:
         request.reviewed_at = _utcnow()
         return request
 
+    async def approve_change_async(self, **kwargs: Any) -> ConfigChangeRequest:
+        await self._ensure_loaded()
+        change = self.approve_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def list_change_requests(
         self,
         *,
@@ -301,6 +376,10 @@ class HypercareService:
             result = [r for r in result if r.status == status]
         result.sort(key=lambda r: r.requested_at, reverse=True)
         return result
+
+    async def list_change_requests_async(self, **kwargs: Any) -> list[ConfigChangeRequest]:
+        await self._ensure_loaded()
+        return self.list_change_requests(**kwargs)
 
     # ---- Environment Sync ----
 
@@ -325,6 +404,12 @@ class HypercareService:
         self._exports[export.id] = export
         return export
 
+    async def export_config_async(self, **kwargs: Any) -> EnvironmentConfig:
+        await self._ensure_loaded()
+        export = self.export_config(**kwargs)
+        await self.persist_all()
+        return export
+
     def import_config(
         self,
         export_id: UUID,
@@ -337,6 +422,10 @@ class HypercareService:
             raise KeyError("Export not found")
 
         return self._exports[export_id].config_data
+
+    async def import_config_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.import_config(**kwargs)
 
     # ---- Master Data Seed Scripts ----
 
@@ -365,6 +454,12 @@ class HypercareService:
         self._seed_jobs[job.id] = job
         return job
 
+    async def create_seed_job_async(self, **kwargs: Any) -> SeedJob:
+        await self._ensure_loaded()
+        seed = self.create_seed_job(**kwargs)
+        await self.persist_all()
+        return seed
+
     def run_seed_job(
         self,
         job_id: UUID,
@@ -390,6 +485,12 @@ class HypercareService:
 
         return job
 
+    async def run_seed_job_async(self, **kwargs: Any) -> SeedJob:
+        await self._ensure_loaded()
+        seed = self.run_seed_job(**kwargs)
+        await self.persist_all()
+        return seed
+
     def list_seed_jobs(
         self,
         *,
@@ -401,6 +502,10 @@ class HypercareService:
         result = list(self._seed_jobs.values())
         result.sort(key=lambda j: j.created_at, reverse=True)
         return result
+
+    async def list_seed_jobs_async(self, **kwargs: Any) -> list[SeedJob]:
+        await self._ensure_loaded()
+        return self.list_seed_jobs(**kwargs)
 
     # ---- Go-Live Checklist ----
 
@@ -441,6 +546,12 @@ class HypercareService:
         self._checklists[checklist.id] = checklist
         return checklist
 
+    async def create_checklist_async(self, **kwargs: Any) -> GoLiveChecklist:
+        await self._ensure_loaded()
+        checklist = self.create_checklist(**kwargs)
+        await self.persist_all()
+        return checklist
+
     def sign_off_item(
         self,
         checklist_id: UUID,
@@ -464,12 +575,22 @@ class HypercareService:
 
         raise KeyError("Checklist item not found")
 
+    async def sign_off_item_async(self, **kwargs: Any) -> ChecklistItem:
+        await self._ensure_loaded()
+        item = self.sign_off_item(**kwargs)
+        await self.persist_all()
+        return item
+
     def is_checklist_complete(self, checklist_id: UUID) -> bool:
         if checklist_id not in self._checklists:
             raise KeyError("Checklist not found")
 
         checklist = self._checklists[checklist_id]
         return all(item.status == ChecklistItemStatus.SIGNED_OFF for item in checklist.items)
+
+    async def is_checklist_complete_async(self, checklist_id: UUID) -> bool:
+        await self._ensure_loaded()
+        return self.is_checklist_complete(checklist_id)
 
     def list_checklists(
         self,
@@ -482,3 +603,7 @@ class HypercareService:
         result = list(self._checklists.values())
         result.sort(key=lambda c: c.target_date)
         return result
+
+    async def list_checklists_async(self, **kwargs: Any) -> list[GoLiveChecklist]:
+        await self._ensure_loaded()
+        return self.list_checklists(**kwargs)

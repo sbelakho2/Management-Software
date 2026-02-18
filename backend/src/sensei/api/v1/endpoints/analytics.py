@@ -1,26 +1,27 @@
 from typing import Any, Annotated, TypeAlias
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select, case
 from sensei.services.ai.enhanced_ml_pipeline import get_ml_pipeline_service, EnhancedMLPipelineService
 from sensei.services.ops.analytics_warehouse import AnalyticsWarehouseService, FactType
 from sensei.services.ops.insight_generator import generate_insights
 from sensei.services.core.role_insights_config import filter_insights_for_role
+from sensei.services.core.insight_audit_logger import get_insight_audit_logger
 from sensei.api import deps
 from sensei.core.pii import mask_analytics_data
 from sensei.models.work_order import WorkOrder, WorkOrderStatus
 from sensei.models.quality import NonConformance
 from sensei.models.andon import AndonEvent
 
-# Role requirements
-AllowAnalytics: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec", "ops", "finance", "quality")  # type: ignore[valid-type]
+# Role requirements — keep aligned with frontend ANALYTICS_ROLES in page-access.ts
+AllowAnalytics: TypeAlias = deps.require_role("admin", "ceo", "gm", "exec", "ops", "supervisor", "sales_engineer", "engineering", "finance", "quality")  # type: ignore[valid-type]
 AllowAdminAnalytics: TypeAlias = deps.require_role("admin", "ceo", "gm")  # type: ignore[valid-type]
 
 router = APIRouter(
     dependencies=[
         Depends(
             deps.RoleChecker(
-                ["admin", "ceo", "gm", "exec", "ops", "finance", "quality"]
+                ["admin", "ceo", "gm", "exec", "ops", "supervisor", "sales_engineer", "engineering", "finance", "quality"]
             )
         )
     ]
@@ -85,16 +86,37 @@ async def get_analytics_health(
 
 @router.get("/insights", response_model=list[dict[str, Any]])
 async def get_ml_insights(
+    request: Request,
     db: deps.DBSession,
     ml_service: EnhancedMLPipelineService = Depends(get_ml_pipeline_service),
     token_data: deps.TokenData = Depends(deps.get_token_data)
 ):
     """Get AI/ML driven insights generated from live database metrics."""
+    # Initialize audit logger
+    audit_logger = get_insight_audit_logger()
+    
     # Generate real insights from database state
     all_insights = await generate_insights(db)
     
     # INTEGRATED: Filter insights based on user's roles
     filtered_insights = filter_insights_for_role(all_insights, token_data.roles)
+    
+    # Audit: Log batch filter operation
+    removed_count = len(all_insights) - len(filtered_insights)
+    removed_categories = list(set(
+        i.get("category", "unknown") for i in all_insights
+    ) - set(
+        i.get("category", "unknown") for i in filtered_insights
+    ))
+    
+    audit_logger.log_batch_filter(
+        user_id=str(token_data.user_id),
+        user_roles=token_data.roles,
+        total_insights=len(all_insights),
+        filtered_count=len(filtered_insights),
+        removed_categories=removed_categories,
+        endpoint="/api/v1/analytics/insights",
+    )
     
     return await mask_analytics_data(filtered_insights, token_data.roles)
 

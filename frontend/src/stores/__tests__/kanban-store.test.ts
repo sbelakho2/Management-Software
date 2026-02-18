@@ -503,11 +503,11 @@ describe('helper functions', () => {
 
   describe('formatCurrency', () => {
     it('formats USD currency', () => {
-      expect(formatCurrency(1234567, 'USD')).toBe('$1,234,567');
+      expect(formatCurrency(1234567, 'USD')).toBe('$1,234,567.00');
     });
 
     it('formats with default USD', () => {
-      expect(formatCurrency(1000)).toBe('$1,000');
+      expect(formatCurrency(1000)).toBe('$1,000.00');
     });
   });
 

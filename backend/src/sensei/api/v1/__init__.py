@@ -81,6 +81,7 @@ from sensei.api.v1.endpoints import (
     knowledge_pack,
     sites,
     warehouse,
+    shipping,
     it_monitoring,
     auditor,
     chat,
@@ -166,6 +167,8 @@ api_router.include_router(smart_ingestion.router, tags=["Smart Ingestion"])
 api_router.include_router(knowledge_pack.router, tags=["Knowledge Pack"])
 api_router.include_router(sites.router, tags=["Sites"])
 api_router.include_router(warehouse.router, prefix="/warehouse", tags=["Warehouse"])
+api_router.include_router(shipping.shipping_router, tags=["Shipping"])
+api_router.include_router(shipping.wms_router, tags=["WMS"])
 api_router.include_router(it_monitoring.router, prefix="/it", tags=["IT Monitoring"])
 api_router.include_router(auditor.router, prefix="/auditor", tags=["Auditor"])
 api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])

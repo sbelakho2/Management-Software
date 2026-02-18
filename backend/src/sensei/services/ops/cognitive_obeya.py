@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import statistics
 import uuid
+from uuid import UUID
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -26,6 +27,8 @@ from sensei.models.cognitive_obeya import (
     ResourceRebalanceRecord,
     HeijunkaSuggestionRecord,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -611,8 +614,11 @@ class AsyncPrescriptiveMetricAnalyzer:
         ]
 
 
-class PrescriptiveMetricAnalyzer:
+class PrescriptiveMetricAnalyzer(PersistentServiceMixin):
     """In-memory Prescriptive Metric Analyzer for sync use cases and tests."""
+
+    SERVICE_NAME = "prescriptive_metric_analyzer"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self):
         self.detection_rules: dict[str, Any] = {}
@@ -620,9 +626,56 @@ class PrescriptiveMetricAnalyzer:
         self.work_orders: dict[str, dict[str, Any]] = {}
         self.supplier_quotes: dict[str, dict[str, Any]] = {}
         self.incidents: dict[str, dict[str, Any]] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        detection_rules = await self.load_state(self._DEFAULT_TENANT_ID, "detection_rules")
+        metrics_history = await self.load_state(self._DEFAULT_TENANT_ID, "metrics_history")
+        work_orders = await self.load_state(self._DEFAULT_TENANT_ID, "work_orders")
+        supplier_quotes = await self.load_state(self._DEFAULT_TENANT_ID, "supplier_quotes")
+        incidents = await self.load_state(self._DEFAULT_TENANT_ID, "incidents")
+
+        if detection_rules is not None:
+            self.detection_rules = detection_rules
+        if metrics_history is not None:
+            self.metrics_history = {
+                metric_id: [decode_dataclass(m, MetricValue) for m in entries]
+                for metric_id, entries in metrics_history.items()
+            }
+        if work_orders is not None:
+            self.work_orders = work_orders
+        if supplier_quotes is not None:
+            self.supplier_quotes = supplier_quotes
+        if incidents is not None:
+            self.incidents = incidents
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        metrics_history = {
+            metric_id: [encode_dataclass(m) for m in entries]
+            for metric_id, entries in self.metrics_history.items()
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "detection_rules", self.detection_rules)
+        await self.save_state(self._DEFAULT_TENANT_ID, "metrics_history", metrics_history)
+        await self.save_state(self._DEFAULT_TENANT_ID, "work_orders", self.work_orders)
+        await self.save_state(self._DEFAULT_TENANT_ID, "supplier_quotes", self.supplier_quotes)
+        await self.save_state(self._DEFAULT_TENANT_ID, "incidents", self.incidents)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def record_metric(self, metric: MetricValue) -> None:
         self.metrics_history.setdefault(metric.metric_id, []).append(metric)
+
+    async def record_metric_async(self, metric: MetricValue) -> None:
+        await self._ensure_loaded()
+        self.record_metric(metric)
+        await self.persist_all()
 
     def get_metric_history(self, metric_id: str, days: int = 90) -> list[MetricValue]:
         history = self.metrics_history.get(metric_id, [])
@@ -632,6 +685,10 @@ class PrescriptiveMetricAnalyzer:
         if history and history[0].timestamp.tzinfo is None:
             cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
         return [m for m in history if m.timestamp >= cutoff]
+
+    async def get_metric_history_async(self, metric_id: str, days: int = 90) -> list[MetricValue]:
+        await self._ensure_loaded()
+        return self.get_metric_history(metric_id, days=days)
 
     def register_work_order(
         self,
@@ -651,6 +708,11 @@ class PrescriptiveMetricAnalyzer:
             "safety_incidents": safety_incidents,
         }
 
+    async def register_work_order_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.register_work_order(**kwargs)
+        await self.persist_all()
+
     def register_supplier_quote(
         self,
         quote_id: str,
@@ -667,6 +729,11 @@ class PrescriptiveMetricAnalyzer:
             "cost_variance": cost_variance,
         }
 
+    async def register_supplier_quote_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.register_supplier_quote(**kwargs)
+        await self.persist_all()
+
     def register_incident(
         self,
         incident_id: str,
@@ -680,6 +747,11 @@ class PrescriptiveMetricAnalyzer:
             "severity": severity,
             "category": category,
         }
+
+    async def register_incident_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.register_incident(**kwargs)
+        await self.persist_all()
 
     def _evaluate_work_order_link(
         self,
@@ -809,6 +881,10 @@ class PrescriptiveMetricAnalyzer:
 
         return links
 
+    async def find_causal_links_async(self, metric_id: str) -> list[CausalLink]:
+        await self._ensure_loaded()
+        return self.find_causal_links(metric_id)
+
     def analyze_trend(self, metric_id: str, days: int = 7) -> TrendWarning | None:
         history = self.get_metric_history(metric_id, days=days)
         if len(history) < 3:
@@ -862,6 +938,10 @@ class PrescriptiveMetricAnalyzer:
             detected_at=datetime.now(timezone.utc),
             recommendation=f"Review {latest.category.value} processes to prevent metric degradation",
         )
+
+    async def analyze_trend_async(self, metric_id: str, days: int = 7) -> TrendWarning | None:
+        await self._ensure_loaded()
+        return self.analyze_trend(metric_id, days=days)
 
 
 # =============================================================================
@@ -1065,8 +1145,11 @@ class AsyncCrossFunctionalSynergyEngine:
         return matches / len(required_skills)
 
 
-class CrossFunctionalSynergyEngine:
+class CrossFunctionalSynergyEngine(PersistentServiceMixin):
     """In-memory Cross-Functional Synergy Engine for sync use cases and tests."""
+
+    SERVICE_NAME = "cross_functional_synergy"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self):
         self.department_events: dict[DepartmentType, list[dict[str, Any]]] = {
@@ -1076,6 +1159,75 @@ class CrossFunctionalSynergyEngine:
         self.work_centers: dict[str, WorkCenterLoad] = {}
         self.operators: dict[str, SkillProfile] = {}
         self.rebalance_suggestions: list[ResourceRebalance] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        events_data = await self.load_state(self._DEFAULT_TENANT_ID, "department_events") or {}
+        alerts_data = await self.load_state(self._DEFAULT_TENANT_ID, "silo_alerts") or []
+        work_centers = await self.load_state(self._DEFAULT_TENANT_ID, "work_centers") or {}
+        operators = await self.load_state(self._DEFAULT_TENANT_ID, "operators") or {}
+        rebalances = await self.load_state(self._DEFAULT_TENANT_ID, "rebalance_suggestions") or []
+
+        self.department_events = {
+            DepartmentType(dept): [
+                {
+                    **event,
+                    "severity": AlertSeverity(event["severity"]) if "severity" in event else AlertSeverity.INFO,
+                    "timestamp": datetime.fromisoformat(event["timestamp"]) if "timestamp" in event else datetime.now(timezone.utc),
+                }
+                for event in events
+            ]
+            for dept, events in events_data.items()
+        }
+        self.silo_alerts = [decode_dataclass(alert, SiloAlert) for alert in alerts_data]
+        self.work_centers = {
+            work_center_id: decode_dataclass(wc, WorkCenterLoad)
+            for work_center_id, wc in work_centers.items()
+        }
+        self.operators = {
+            operator_id: decode_dataclass(op, SkillProfile)
+            for operator_id, op in operators.items()
+        }
+        self.rebalance_suggestions = [
+            decode_dataclass(suggestion, ResourceRebalance) for suggestion in rebalances
+        ]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        events_data: dict[str, list[dict[str, Any]]] = {}
+        for dept, events in self.department_events.items():
+            events_data[dept.value] = [
+                {
+                    **event,
+                    "severity": event.get("severity", AlertSeverity.INFO).value
+                    if isinstance(event.get("severity"), AlertSeverity)
+                    else event.get("severity", AlertSeverity.INFO),
+                    "timestamp": event.get("timestamp", datetime.now(timezone.utc)).isoformat()
+                    if isinstance(event.get("timestamp"), datetime)
+                    else event.get("timestamp"),
+                }
+                for event in events
+            ]
+
+        alerts_data = [encode_dataclass(alert) for alert in self.silo_alerts]
+        work_centers = {
+            work_center_id: encode_dataclass(wc) for work_center_id, wc in self.work_centers.items()
+        }
+        operators = {operator_id: encode_dataclass(op) for operator_id, op in self.operators.items()}
+        rebalances = [encode_dataclass(suggestion) for suggestion in self.rebalance_suggestions]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "department_events", events_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "silo_alerts", alerts_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "work_centers", work_centers)
+        await self.save_state(self._DEFAULT_TENANT_ID, "operators", operators)
+        await self.save_state(self._DEFAULT_TENANT_ID, "rebalance_suggestions", rebalances)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def register_event(
         self,
@@ -1095,6 +1247,12 @@ class CrossFunctionalSynergyEngine:
             "timestamp": datetime.now(timezone.utc),
         })
         self._check_cross_functional_impact_sync(department, event_type, description, severity)
+        return event_id
+
+    async def register_event_async(self, **kwargs: Any) -> str:
+        await self._ensure_loaded()
+        event_id = self.register_event(**kwargs)
+        await self.persist_all()
         return event_id
 
     def _check_cross_functional_impact_sync(
@@ -1164,6 +1322,11 @@ class CrossFunctionalSynergyEngine:
             wip_count=wip_count,
             operator_count=operator_count,
         )
+
+    async def register_work_center_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.register_work_center(**kwargs)
+        await self.persist_all()
     
     def register_operator(
         self,
@@ -1181,6 +1344,11 @@ class CrossFunctionalSynergyEngine:
             current_work_center=current_work_center,
             available=available,
         )
+
+    async def register_operator_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.register_operator(**kwargs)
+        await self.persist_all()
     
     def analyze_resource_rebalancing(self, db: AsyncSession | None = None) -> list[ResourceRebalance]:
         """
@@ -1251,6 +1419,12 @@ class CrossFunctionalSynergyEngine:
         
         self.rebalance_suggestions.extend(suggestions)
         return suggestions
+
+    async def analyze_resource_rebalancing_async(self, **kwargs: Any) -> list[ResourceRebalance]:
+        await self._ensure_loaded()
+        suggestions = self.analyze_resource_rebalancing(**kwargs)
+        await self.persist_all()
+        return suggestions
     
     def _infer_required_skills(self, work_center_name: str) -> dict[str, float]:
         """Infer required skills from work center name."""
@@ -1291,6 +1465,10 @@ class CrossFunctionalSynergyEngine:
     def get_active_silo_alerts(self) -> list[SiloAlert]:
         """Get active silo alerts."""
         return [a for a in self.silo_alerts if a.resolution_status == "open"]
+
+    async def get_active_silo_alerts_async(self) -> list[SiloAlert]:
+        await self._ensure_loaded()
+        return self.get_active_silo_alerts()
     
     def resolve_silo_alert(self, alert_id: str, resolution: str) -> bool:
         """Resolve a silo alert."""
@@ -1299,10 +1477,20 @@ class CrossFunctionalSynergyEngine:
                 alert.resolution_status = resolution
                 return True
         return False
+
+    async def resolve_silo_alert_async(self, alert_id: str, resolution: str) -> bool:
+        await self._ensure_loaded()
+        result = self.resolve_silo_alert(alert_id, resolution)
+        await self.persist_all()
+        return result
     
     def get_pending_rebalance_suggestions(self) -> list[ResourceRebalance]:
         """Get pending rebalance suggestions."""
         return [s for s in self.rebalance_suggestions if s.status == "pending"]
+
+    async def get_pending_rebalance_suggestions_async(self) -> list[ResourceRebalance]:
+        await self._ensure_loaded()
+        return self.get_pending_rebalance_suggestions()
 
 
 # =============================================================================
@@ -1482,18 +1670,52 @@ class AsyncHeijunkaAdvisor:
         return suggestion
 
 
-class HeijunkaAdvisor:
+class HeijunkaAdvisor(PersistentServiceMixin):
     """In-memory Heijunka Advisor for sync use cases and tests."""
+
+    SERVICE_NAME = "heijunka_advisor"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self):
         """Initialize advisor."""
         self.demand_data: dict[str, list[int]] = {}
         self.production_data: dict[str, list[int]] = {}
         self.suggestions: list[HeijunkaSuggestion] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        demand_data = await self.load_state(self._DEFAULT_TENANT_ID, "demand_data") or {}
+        production_data = await self.load_state(self._DEFAULT_TENANT_ID, "production_data") or {}
+        suggestions = await self.load_state(self._DEFAULT_TENANT_ID, "suggestions") or []
+
+        self.demand_data = demand_data
+        self.production_data = production_data
+        self.suggestions = [decode_dataclass(suggestion, HeijunkaSuggestion) for suggestion in suggestions]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        await self.save_state(self._DEFAULT_TENANT_ID, "demand_data", self.demand_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "production_data", self.production_data)
+        await self.save_state(
+            self._DEFAULT_TENANT_ID,
+            "suggestions",
+            [encode_dataclass(suggestion) for suggestion in self.suggestions],
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def get_all_suggestions(self) -> list[HeijunkaSuggestion]:
         """Get all Heijunka suggestions from in-memory store."""
         return self.suggestions
+
+    async def get_all_suggestions_async(self) -> list[HeijunkaSuggestion]:
+        await self._ensure_loaded()
+        return self.get_all_suggestions()
     
     def apply_suggestion(self, suggestion_id: str) -> bool:
         """Mark a suggestion as applied."""
@@ -1502,6 +1724,12 @@ class HeijunkaAdvisor:
                 suggestion.status = "applied"
                 return True
         return False
+
+    async def apply_suggestion_async(self, suggestion_id: str) -> bool:
+        await self._ensure_loaded()
+        result = self.apply_suggestion(suggestion_id)
+        await self.persist_all()
+        return result
     
     def dismiss_suggestion(self, suggestion_id: str, reason: str) -> bool:
         """Dismiss a suggestion."""
@@ -1511,11 +1739,27 @@ class HeijunkaAdvisor:
                 return True
         return False
 
+    async def dismiss_suggestion_async(self, suggestion_id: str, reason: str) -> bool:
+        await self._ensure_loaded()
+        result = self.dismiss_suggestion(suggestion_id, reason)
+        await self.persist_all()
+        return result
+
     def record_demand(self, product: str, quantities: list[int]) -> None:
         self.demand_data[product] = quantities
 
+    async def record_demand_async(self, product: str, quantities: list[int]) -> None:
+        await self._ensure_loaded()
+        self.record_demand(product, quantities)
+        await self.persist_all()
+
     def record_production(self, product: str, quantities: list[int]) -> None:
         self.production_data[product] = quantities
+
+    async def record_production_async(self, product: str, quantities: list[int]) -> None:
+        await self._ensure_loaded()
+        self.record_production(product, quantities)
+        await self.persist_all()
 
     def _smooth_production(self, values: list[int]) -> list[float]:
         """Apply moving average smoothing."""
@@ -1586,6 +1830,12 @@ class HeijunkaAdvisor:
         self.suggestions.append(suggestion)
         return suggestion
 
+    async def analyze_volume_leveling_async(self) -> HeijunkaSuggestion | None:
+        await self._ensure_loaded()
+        suggestion = self.analyze_volume_leveling()
+        await self.persist_all()
+        return suggestion
+
     def analyze_mix_leveling(self) -> HeijunkaSuggestion | None:
         """
         Analyze and suggest mix leveling.
@@ -1629,6 +1879,12 @@ class HeijunkaAdvisor:
         )
         
         self.suggestions.append(suggestion)
+        return suggestion
+
+    async def analyze_mix_leveling_async(self) -> HeijunkaSuggestion | None:
+        await self._ensure_loaded()
+        suggestion = self.analyze_mix_leveling()
+        await self.persist_all()
         return suggestion
 
 
@@ -1837,6 +2093,65 @@ class AsyncCognitiveObeya:
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+    async def handle_domain_event(self, event: Any) -> None:
+        """Handle domain events to drive cross-functional intelligence.
+
+        Converts domain events into Obeya cross-functional alerts when they
+        indicate potential silo issues or cross-department impacts.
+        """
+        from sensei.core.database import async_session_factory
+        from sensei.services.domain_events import (
+            AndonCreatedEvent,
+            QualityDeviationEvent,
+            WorkOrderCompletedEvent,
+            ProductionBottleneckEvent,
+        )
+
+        event_type = type(event).__name__
+
+        # Map event types to department impacts
+        department_map = {
+            "AndonCreatedEvent": DepartmentType.OPERATIONS,
+            "QualityDeviationEvent": DepartmentType.QUALITY,
+            "WorkOrderCompletedEvent": DepartmentType.OPERATIONS,
+            "ProductionBottleneckEvent": DepartmentType.OPERATIONS,
+            "SalesOrderCreatedEvent": DepartmentType.SALES,
+            "RFQCreatedEvent": DepartmentType.SALES,
+            "PurchaseOrderCreatedEvent": DepartmentType.PURCHASING,
+            "InvoiceCreatedEvent": DepartmentType.FINANCE,
+            "ProjectCreatedEvent": DepartmentType.ENGINEERING,
+        }
+
+        department = department_map.get(event_type)
+        if not department:
+            return  # Not a cross-functional event
+
+        # Determine severity from event attributes
+        severity = AlertSeverity.INFO
+        if hasattr(event, "severity"):
+            sev_val = str(getattr(event, "severity", "")).lower()
+            if "critical" in sev_val:
+                severity = AlertSeverity.CRITICAL
+            elif "high" in sev_val or "major" in sev_val:
+                severity = AlertSeverity.WARNING
+
+        description = f"Domain event: {event_type}"
+        if hasattr(event, "event_id"):
+            description = f"{event_type} (id={event.event_id})"
+
+        try:
+            async with async_session_factory() as db:
+                await self.register_cross_functional_event(
+                    db,
+                    department=department,
+                    event_type=event_type,
+                    description=description,
+                    severity=severity,
+                )
+                await db.commit()
+        except Exception:
+            logger.exception("Failed to register cross-functional event from %s", event_type)
 
 
 class CognitiveObeya:

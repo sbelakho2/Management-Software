@@ -2213,9 +2213,22 @@
         "deliveryScore": "Delivery Score",
         "costEfficiency": "Cost Efficiency",
         "workforce": "Workforce",
+        "inventoryHealth": "Inventory Health",
         "overallScore": "Overall Score",
         "belowTarget": "Below Target",
         "awaitingData": "Awaiting Data"
+      },
+      "dataThread": {
+        "exportedRecords": "Data Thread Records",
+        "lineageLinks": "Lineage Links",
+        "reasoningTraces": "Reasoning Traces",
+        "cognitiveWarnings": "Cognitive Warnings",
+        "snapshotPrefix": "Snapshot",
+        "noSnapshotYet": "No Snapshot Yet",
+        "crossDomainTraces": "Cross Domain Traces",
+        "aiDecisionPaths": "AI Decision Paths",
+        "trendBreachesPredicted": "Trend Breaches Predicted",
+        "allMetricsNominal": "All Metrics Nominal"
       },
       "monitoringActive": "Monitoring Active",
       "nl2sql": {
@@ -4387,7 +4400,9 @@
         "visualControls": "Visual Controls"
       },
       "actions": {
-        "newObeya": "New Obeya"
+        "newObeya": "New Obeya",
+        "executeDeployment": "EXECUTE_DEPLOYMENT",
+        "applySmoothing": "APPLY_SMOOTHING"
       },
       "heijunkaLeveling": "Heijunka Leveling",
       "initializeBoard": "Initialize Board",
@@ -4396,10 +4411,59 @@
       "primaryNorthStars": "Primary North Stars",
       "recentSiloAlerts": "Recent Silo Alerts",
       "resourceRebalancing": "Resource Rebalancing",
+      "station": "STATION: COMMAND-CENTER-01",
       "syncIntel": "Sync Intel",
       "siloBottlenecks": "Silo Bottlenecks",
       "rebalanceOps": "Rebalance Ops",
       "heijunkaTips": "Heijunka Tips",
+      "exceptionsTitle": "Anomalies & Exceptions",
+      "statusColor": {
+        "green": "GREEN",
+        "yellow": "YELLOW",
+        "red": "RED"
+      },
+      "statuses": {
+        "trendingTowardRed": "TRENDING_TOWARD_RED",
+        "interDeptFriction": "INTER-DEPT_FRICTION",
+        "skillGapNodes": "SKILL_GAP_NODES",
+        "smoothingProtocols": "SMOOTHING_PROTOCOLS"
+      },
+      "kpis": {
+        "firstPassYield": "First Pass Yield",
+        "onTimeDelivery": "On-Time Delivery",
+        "customerSatisfaction": "Customer Satisfaction",
+        "defectRate": "Defect Rate",
+        "openNcrs": "Open NCRs",
+        "backlogItems": "Backlog Items"
+      },
+      "alerts": {
+        "source": "SOURCE",
+        "impacting": "IMPACTING"
+      },
+      "badges": {
+        "aiSync": "AI_SYNC",
+        "prescriptive": "PRESCRIPTIVE"
+      },
+      "labels": {
+        "improvement": "IMPROVEMENT",
+        "recommendedOperators": "RECOMMENDED_OPERATORS",
+        "horizon": "HORIZON",
+        "muraReduction": "MURA_REDUCTION",
+        "currentPattern": "Current Pattern",
+        "suggestedPattern": "Suggested Pattern",
+        "sensorFusion": "Switching to real-time shop floor sensor fusion..."
+      },
+      "sqdcp": {
+        "qualityTitle": "Quality",
+        "deliveryTitle": "Delivery"
+      },
+      "emptyStates": {
+        "zeroActiveSiloAlerts": "ZERO_ACTIVE_SILO_ALERTS",
+        "skillNodesOptimized": "Skill nodes optimized across all work centers",
+        "productionMixLeveled": "Production mix is sufficiently leveled",
+        "pendingAction": "Pending action",
+        "zeroCriticalExceptions": "Zero critical exceptions identified"
+      },
       "toast": {
         "loadFailed": "Failed to load Obeya item data",
         "itemDeleted": "Item deleted successfully",

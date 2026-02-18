@@ -18,6 +18,7 @@ from typing import Any, Iterable
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class OrgUnitType(str, Enum):
@@ -52,6 +53,7 @@ class AssignmentStatus(str, Enum):
 _HR_WRITE_ROLES: set[str] = {"admin", "hr", "ceo"}
 _HR_READ_ROLES: set[str] = {"admin", "hr", "ceo", "exec", "gm", "finance", "auditor"}
 _ORG_VIEW_ROLES: set[str] = {"admin", "hr", "ceo", "exec", "gm", "supervisor", "team_lead"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 def _norm_roles(roles: Iterable[str]) -> set[str]:
@@ -154,6 +156,41 @@ class OrgStructureService(PersistentServiceMixin):
         self._assignments: dict[UUID, PositionAssignment] = {}
         self._reporting: dict[UUID, ReportingRelation] = {}
         self._audit: list[AuditEvent] = []
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        units_data = await self.load_state(_DEFAULT_TENANT_ID, "units") or {}
+        positions_data = await self.load_state(_DEFAULT_TENANT_ID, "positions") or {}
+        assignments_data = await self.load_state(_DEFAULT_TENANT_ID, "assignments") or {}
+        reporting_data = await self.load_state(_DEFAULT_TENANT_ID, "reporting") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        self._units = {UUID(uid): decode_dataclass(unit, OrgUnit) for uid, unit in units_data.items()}
+        self._positions = {UUID(pid): decode_dataclass(pos, Position) for pid, pos in positions_data.items()}
+        self._assignments = {UUID(aid): decode_dataclass(assign, PositionAssignment) for aid, assign in assignments_data.items()}
+        self._reporting = {UUID(rid): decode_dataclass(rel, ReportingRelation) for rid, rel in reporting_data.items()}
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        units_data = {str(uid): encode_dataclass(unit) for uid, unit in self._units.items()}
+        positions_data = {str(pid): encode_dataclass(pos) for pid, pos in self._positions.items()}
+        assignments_data = {str(aid): encode_dataclass(assign) for aid, assign in self._assignments.items()}
+        reporting_data = {str(rid): encode_dataclass(rel) for rid, rel in self._reporting.items()}
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "units", units_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "positions", positions_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "assignments", assignments_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "reporting", reporting_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -191,6 +228,10 @@ class OrgStructureService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _HR_READ_ROLES, "HR read role required")
         return list(self._audit)
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
 
     # ----------------------------------------------------------------
     # Org Units
@@ -253,12 +294,22 @@ class OrgStructureService(PersistentServiceMixin):
 
         return unit
 
+    async def create_org_unit_async(self, **kwargs: Any) -> OrgUnit:
+        await self._ensure_loaded()
+        unit = self.create_org_unit(**kwargs)
+        await self.persist_all()
+        return unit
+
     def get_org_unit(
         self, *, actor_roles: Iterable[str], unit_id: UUID
     ) -> OrgUnit | None:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _ORG_VIEW_ROLES, "Org view role required")
         return self._units.get(unit_id)
+
+    async def get_org_unit_async(self, *, actor_roles: Iterable[str], unit_id: UUID) -> OrgUnit | None:
+        await self._ensure_loaded()
+        return self.get_org_unit(actor_roles=actor_roles, unit_id=unit_id)
 
     def list_org_units(
         self,
@@ -283,6 +334,10 @@ class OrgStructureService(PersistentServiceMixin):
 
         return sorted(result, key=lambda u: u.code)
 
+    async def list_org_units_async(self, **kwargs: Any) -> list[OrgUnit]:
+        await self._ensure_loaded()
+        return self.list_org_units(**kwargs)
+
     def get_org_tree(
         self, *, actor_roles: Iterable[str], root_id: UUID | None = None
     ) -> list[dict[str, Any]]:
@@ -304,6 +359,12 @@ class OrgStructureService(PersistentServiceMixin):
             return sorted(children, key=lambda c: c["code"])
 
         return build_tree(root_id)
+
+    async def get_org_tree_async(
+        self, *, actor_roles: Iterable[str], root_id: UUID | None = None
+    ) -> list[dict[str, Any]]:
+        await self._ensure_loaded()
+        return self.get_org_tree(actor_roles=actor_roles, root_id=root_id)
 
     def update_org_unit(
         self,
@@ -349,6 +410,12 @@ class OrgStructureService(PersistentServiceMixin):
         )
 
         return updated
+
+    async def update_org_unit_async(self, **kwargs: Any) -> OrgUnit:
+        await self._ensure_loaded()
+        unit = self.update_org_unit(**kwargs)
+        await self.persist_all()
+        return unit
 
     # ----------------------------------------------------------------
     # Positions
@@ -422,12 +489,22 @@ class OrgStructureService(PersistentServiceMixin):
 
         return position
 
+    async def create_position_async(self, **kwargs: Any) -> Position:
+        await self._ensure_loaded()
+        position = self.create_position(**kwargs)
+        await self.persist_all()
+        return position
+
     def get_position(
         self, *, actor_roles: Iterable[str], position_id: UUID
     ) -> Position | None:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _ORG_VIEW_ROLES, "Org view role required")
         return self._positions.get(position_id)
+
+    async def get_position_async(self, *, actor_roles: Iterable[str], position_id: UUID) -> Position | None:
+        await self._ensure_loaded()
+        return self.get_position(actor_roles=actor_roles, position_id=position_id)
 
     def list_positions(
         self,
@@ -448,6 +525,10 @@ class OrgStructureService(PersistentServiceMixin):
             result.append(pos)
 
         return sorted(result, key=lambda p: p.code)
+
+    async def list_positions_async(self, **kwargs: Any) -> list[Position]:
+        await self._ensure_loaded()
+        return self.list_positions(**kwargs)
 
     def update_position_status(
         self,
@@ -492,6 +573,12 @@ class OrgStructureService(PersistentServiceMixin):
         )
 
         return updated
+
+    async def update_position_status_async(self, **kwargs: Any) -> Position:
+        await self._ensure_loaded()
+        position = self.update_position_status(**kwargs)
+        await self.persist_all()
+        return position
 
     # ----------------------------------------------------------------
     # Position Assignments
@@ -564,6 +651,12 @@ class OrgStructureService(PersistentServiceMixin):
 
         return assignment
 
+    async def assign_employee_to_position_async(self, **kwargs: Any) -> PositionAssignment:
+        await self._ensure_loaded()
+        assignment = self.assign_employee_to_position(**kwargs)
+        await self.persist_all()
+        return assignment
+
     def end_assignment(
         self,
         *,
@@ -620,6 +713,12 @@ class OrgStructureService(PersistentServiceMixin):
 
         return ended
 
+    async def end_assignment_async(self, **kwargs: Any) -> PositionAssignment:
+        await self._ensure_loaded()
+        assignment = self.end_assignment(**kwargs)
+        await self.persist_all()
+        return assignment
+
     def get_employee_assignments(
         self,
         *,
@@ -639,6 +738,10 @@ class OrgStructureService(PersistentServiceMixin):
             result.append(a)
 
         return sorted(result, key=lambda a: a.start_date)
+
+    async def get_employee_assignments_async(self, **kwargs: Any) -> list[PositionAssignment]:
+        await self._ensure_loaded()
+        return self.get_employee_assignments(**kwargs)
 
     # ----------------------------------------------------------------
     # Reporting Relations
@@ -707,6 +810,12 @@ class OrgStructureService(PersistentServiceMixin):
 
         return relation
 
+    async def set_reporting_relation_async(self, **kwargs: Any) -> ReportingRelation:
+        await self._ensure_loaded()
+        relation = self.set_reporting_relation(**kwargs)
+        await self.persist_all()
+        return relation
+
     def get_direct_reports(
         self,
         *,
@@ -724,6 +833,10 @@ class OrgStructureService(PersistentServiceMixin):
             and rel.is_primary
             and rel.end_date is None
         ]
+
+    async def get_direct_reports_async(self, **kwargs: Any) -> list[UUID]:
+        await self._ensure_loaded()
+        return self.get_direct_reports(**kwargs)
 
     def get_manager(
         self,
@@ -743,6 +856,10 @@ class OrgStructureService(PersistentServiceMixin):
             ):
                 return rel.manager_id
         return None
+
+    async def get_manager_async(self, **kwargs: Any) -> UUID | None:
+        await self._ensure_loaded()
+        return self.get_manager(**kwargs)
 
     # ----------------------------------------------------------------
     # Headcount Analytics
@@ -780,3 +897,7 @@ class OrgStructureService(PersistentServiceMixin):
             "open": open_count,
             "fill_rate": (filled_count / total_headcount * 100) if total_headcount > 0 else 0,
         }
+
+    async def get_headcount_summary_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_headcount_summary(**kwargs)

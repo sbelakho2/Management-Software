@@ -6,11 +6,13 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from sensei.api.deps import get_current_active_user
+from sensei.api.deps import get_current_active_user, RoleChecker
 from sensei.services.ai.ai_readiness import get_ai_readiness_service, AIReadinessReport
 from sensei.models.user import User
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "it"]))],
+)
 
 
 @router.get("/status", response_model=AIReadinessReport)

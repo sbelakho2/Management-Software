@@ -64,7 +64,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn, formatCurrency, formatDate, generateId } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useI18n } from '@/contexts/i18n-context';
-import { useQuoteStore } from '@/stores/quote';
+import { useQuoteStore } from '@/stores/quotes';
 
 // Types
 interface QuoteLineItem {

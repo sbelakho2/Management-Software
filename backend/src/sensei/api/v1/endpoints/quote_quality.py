@@ -9,9 +9,10 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from sensei.api.deps import CurrentUser, RoleChecker
 from sensei.services.sales.quote_quality import (
     QuoteQualityService,
     QuoteData,
@@ -26,7 +27,11 @@ from sensei.services.sales.quote_quality import (
     get_warnings,
 )
 
-router = APIRouter(prefix="/quote-quality", tags=["Quote Quality"])
+router = APIRouter(
+    prefix="/quote-quality",
+    tags=["Quote Quality"],
+    dependencies=[Depends(RoleChecker(["sales", "sales_engineer", "estimator", "quality", "gm", "exec"]))],
+)
 
 
 # --------------------------------------------------------------------------

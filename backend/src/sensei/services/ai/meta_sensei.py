@@ -21,8 +21,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 from collections import defaultdict
+from uuid import UUID
 
 import numpy as np
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +318,41 @@ class AutonomousKnowledgeSynthesizer:
         self.corrections: list[UserCorrection] = []
         self.templates: dict[str, StandardTemplate] = {}
         self._correction_clusters: dict[str, list[UserCorrection]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        """Export synthesizer state for persistence."""
+        return {
+            "min_corrections": self.min_corrections,
+            "similarity_threshold": self.similarity_threshold,
+            "confidence_threshold": self.confidence_threshold,
+            "corrections": [encode_dataclass(c) for c in self.corrections],
+            "templates": {
+                template_id: encode_dataclass(template)
+                for template_id, template in self.templates.items()
+            },
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load synthesizer state from persistence."""
+        if "min_corrections" in state:
+            self.min_corrections = int(state["min_corrections"])
+        if "similarity_threshold" in state:
+            self.similarity_threshold = float(state["similarity_threshold"])
+        if "confidence_threshold" in state:
+            self.confidence_threshold = float(state["confidence_threshold"])
+
+        self.corrections = [
+            decode_dataclass(item, UserCorrection)
+            for item in state.get("corrections", [])
+        ]
+        self.templates = {
+            template_id: decode_dataclass(template, StandardTemplate)
+            for template_id, template in state.get("templates", {}).items()
+        }
+        self._correction_clusters = defaultdict(list)
+        for correction in self.corrections:
+            cluster_key = self._compute_cluster_key(correction)
+            self._correction_clusters[cluster_key].append(correction)
     
     def add_correction(self, correction: UserCorrection) -> None:
         """Add a user correction for aggregation."""
@@ -410,6 +449,28 @@ class SemanticDeduplicator:
         self.similarity_threshold = similarity_threshold
         self.strategy = strategy
         self.chunks: dict[str, KnowledgeChunk] = {}
+
+    def export_state(self) -> dict[str, Any]:
+        """Export deduplicator state for persistence."""
+        return {
+            "similarity_threshold": self.similarity_threshold,
+            "strategy": self.strategy.value,
+            "chunks": {
+                chunk_id: encode_dataclass(chunk)
+                for chunk_id, chunk in self.chunks.items()
+            },
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load deduplicator state from persistence."""
+        if "similarity_threshold" in state:
+            self.similarity_threshold = float(state["similarity_threshold"])
+        if "strategy" in state:
+            self.strategy = DeduplicationStrategy(state["strategy"])
+        self.chunks = {
+            chunk_id: decode_dataclass(chunk, KnowledgeChunk)
+            for chunk_id, chunk in state.get("chunks", {}).items()
+        }
     
     def add_chunk(self, chunk: KnowledgeChunk) -> None:
         """Add a knowledge chunk."""
@@ -524,6 +585,36 @@ class SiteSpecificLearner:
         self.reranker: SiteReranker | None = None
         self._term_frequencies: dict[str, int] = defaultdict(int)
         self._term_contexts: dict[str, list[str]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        """Export learner state for persistence."""
+        return {
+            "site_id": self.site_id,
+            "terms": {
+                term_id: encode_dataclass(term)
+                for term_id, term in self.terms.items()
+            },
+            "reranker": encode_dataclass(self.reranker) if self.reranker else None,
+            "term_frequencies": dict(self._term_frequencies),
+            "term_contexts": {term: list(contexts) for term, contexts in self._term_contexts.items()},
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load learner state from persistence."""
+        if "site_id" in state:
+            self.site_id = state["site_id"]
+        self.terms = {
+            term_id: decode_dataclass(term, SiteTerm)
+            for term_id, term in state.get("terms", {}).items()
+        }
+        reranker = state.get("reranker")
+        self.reranker = decode_dataclass(reranker, SiteReranker) if reranker else None
+        self._term_frequencies = defaultdict(int)
+        for term, count in state.get("term_frequencies", {}).items():
+            self._term_frequencies[term] = int(count)
+        self._term_contexts = defaultdict(list)
+        for term, contexts in state.get("term_contexts", {}).items():
+            self._term_contexts[term] = list(contexts)
     
     def learn_term(
         self,
@@ -631,6 +722,23 @@ class DocImplementationSync:
         self.doc_file = Path(doc_file)
         self.detected_features: list[FeatureDetection] = []
         self._documented_features: set[str] = set()
+
+    def export_state(self) -> dict[str, Any]:
+        """Export documentation sync state for persistence."""
+        return {
+            "detected_features": [encode_dataclass(f) for f in self.detected_features],
+            "documented_features": sorted(self._documented_features),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load documentation sync state from persistence."""
+        self.detected_features = [
+            decode_dataclass(feature, FeatureDetection)
+            for feature in state.get("detected_features", [])
+        ]
+        self._documented_features = set(state.get("documented_features", []))
+        if hasattr(self, "_file_cache"):
+            self._file_cache = {}
     
     def _parse_docstring(self, source: str, start_line: int) -> str | None:
         """Extract docstring from source starting at a line."""
@@ -794,6 +902,21 @@ class DevelopmentPlanTracker:
         self.repo_path = Path(repo_path)
         self.items: list[PlanItem] = []
         self._verification_methods: dict[str, str] = {}
+
+    def export_state(self) -> dict[str, Any]:
+        """Export plan tracker state for persistence."""
+        return {
+            "items": [encode_dataclass(item) for item in self.items],
+            "verification_methods": dict(self._verification_methods),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load plan tracker state from persistence."""
+        self.items = [
+            decode_dataclass(item, PlanItem)
+            for item in state.get("items", [])
+        ]
+        self._verification_methods = dict(state.get("verification_methods", {}))
     
     def parse_plan(self) -> list[PlanItem]:
         """Parse the development plan file."""
@@ -930,6 +1053,19 @@ class OnDeviceCodeAuditor:
     def __init__(self, source_dir: str):
         self.source_dir = Path(source_dir)
         self.issues: list[CodeIssue] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export auditor state for persistence."""
+        return {
+            "issues": [encode_dataclass(issue) for issue in self.issues],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load auditor state from persistence."""
+        self.issues = [
+            decode_dataclass(issue, CodeIssue)
+            for issue in state.get("issues", [])
+        ]
     
     def _analyze_file(self, file_path: Path) -> list[CodeIssue]:
         """Analyze a single file for issues."""
@@ -1095,6 +1231,19 @@ class AutonomousRefactoringSuggestor:
     def __init__(self, source_dir: str):
         self.source_dir = Path(source_dir)
         self.suggestions: list[RefactoringSuggestion] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export refactoring suggestion state for persistence."""
+        return {
+            "suggestions": [encode_dataclass(item) for item in self.suggestions],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load refactoring suggestion state from persistence."""
+        self.suggestions = [
+            decode_dataclass(item, RefactoringSuggestion)
+            for item in state.get("suggestions", [])
+        ]
     
     def _analyze_for_refactoring(self, file_path: Path) -> list[RefactoringSuggestion]:
         """Analyze a file for refactoring opportunities."""
@@ -1227,6 +1376,33 @@ class BestPracticeExtractor:
         self.min_samples = min_samples
         self.quotes: list[QuotePerformance] = []
         self.best_practices: list[BestPractice] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export best practice state for persistence."""
+        return {
+            "min_margin": self.min_margin,
+            "min_win_rate": self.min_win_rate,
+            "min_samples": self.min_samples,
+            "quotes": [encode_dataclass(q) for q in self.quotes],
+            "best_practices": [encode_dataclass(p) for p in self.best_practices],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load best practice state from persistence."""
+        if "min_margin" in state:
+            self.min_margin = float(state["min_margin"])
+        if "min_win_rate" in state:
+            self.min_win_rate = float(state["min_win_rate"])
+        if "min_samples" in state:
+            self.min_samples = int(state["min_samples"])
+        self.quotes = [
+            decode_dataclass(item, QuotePerformance)
+            for item in state.get("quotes", [])
+        ]
+        self.best_practices = [
+            decode_dataclass(item, BestPractice)
+            for item in state.get("best_practices", [])
+        ]
     
     def add_quote(self, quote: QuotePerformance) -> None:
         """Add a quote for analysis."""
@@ -1310,6 +1486,14 @@ class PrivacyPreservingAggregator:
     
     def __init__(self):
         self.anonymization_log: list[dict[str, Any]] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export anonymization state for persistence."""
+        return {"anonymization_log": list(self.anonymization_log)}
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load anonymization state from persistence."""
+        self.anonymization_log = list(state.get("anonymization_log", []))
     
     def anonymize_text(self, text: str) -> str:
         """Anonymize sensitive information in text."""
@@ -1364,6 +1548,30 @@ class A3RecommendationEvolver:
         self.learning_rate = learning_rate
         self.weights: dict[str, ReasoningWeight] = {}
         self.a3_history: list[A3Effectiveness] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export evolver state for persistence."""
+        return {
+            "learning_rate": self.learning_rate,
+            "weights": {
+                category: encode_dataclass(weight)
+                for category, weight in self.weights.items()
+            },
+            "a3_history": [encode_dataclass(a3) for a3 in self.a3_history],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load evolver state from persistence."""
+        if "learning_rate" in state:
+            self.learning_rate = float(state["learning_rate"])
+        self.weights = {
+            category: decode_dataclass(weight, ReasoningWeight)
+            for category, weight in state.get("weights", {}).items()
+        }
+        self.a3_history = [
+            decode_dataclass(item, A3Effectiveness)
+            for item in state.get("a3_history", [])
+        ]
     
     def add_a3_result(self, a3: A3Effectiveness) -> None:
         """Add an A3 result for learning."""
@@ -1453,10 +1661,14 @@ class A3RecommendationEvolver:
 # =============================================================================
 
 
-class MetaSensei:
+class MetaSensei(PersistentServiceMixin):
     """
     Main orchestrator for Meta-Sensei functionality.
     """
+
+    SERVICE_NAME = "meta_sensei"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(
         self,
@@ -1487,6 +1699,77 @@ class MetaSensei:
         self.practice_extractor = BestPracticeExtractor()
         self.privacy_aggregator = PrivacyPreservingAggregator()
         self.a3_evolver = A3RecommendationEvolver()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        synthesizer = state.get("knowledge_synthesizer")
+        if synthesizer:
+            self.knowledge_synthesizer.load_state(synthesizer)
+
+        deduplicator = state.get("deduplicator")
+        if deduplicator:
+            self.deduplicator.load_state(deduplicator)
+
+        site_learner = state.get("site_learner")
+        if site_learner:
+            self.site_learner.load_state(site_learner)
+
+        doc_sync = state.get("doc_sync")
+        if doc_sync:
+            self.doc_sync.load_state(doc_sync)
+
+        plan_tracker = state.get("plan_tracker")
+        if plan_tracker:
+            self.plan_tracker.load_state(plan_tracker)
+
+        code_auditor = state.get("code_auditor")
+        if code_auditor:
+            self.code_auditor.load_state(code_auditor)
+
+        refactoring = state.get("refactoring_suggestor")
+        if refactoring:
+            self.refactoring_suggestor.load_state(refactoring)
+
+        practice_state = state.get("practice_extractor")
+        if practice_state:
+            self.practice_extractor.load_state(practice_state)
+
+        privacy_state = state.get("privacy_aggregator")
+        if privacy_state:
+            self.privacy_aggregator.load_state(privacy_state)
+
+        evolver_state = state.get("a3_evolver")
+        if evolver_state:
+            self.a3_evolver.load_state(evolver_state)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "knowledge_synthesizer": self.knowledge_synthesizer.export_state(),
+            "deduplicator": self.deduplicator.export_state(),
+            "site_learner": self.site_learner.export_state(),
+            "doc_sync": self.doc_sync.export_state(),
+            "plan_tracker": self.plan_tracker.export_state(),
+            "code_auditor": self.code_auditor.export_state(),
+            "refactoring_suggestor": self.refactoring_suggestor.export_state(),
+            "practice_extractor": self.practice_extractor.export_state(),
+            "privacy_aggregator": self.privacy_aggregator.export_state(),
+            "a3_evolver": self.a3_evolver.export_state(),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def run_knowledge_synthesis(self) -> list[StandardTemplate]:
         """Run autonomous knowledge synthesis."""
@@ -1539,6 +1822,66 @@ class MetaSensei:
             "reasoning_weights": len(self.evolve_reasoning_weights()),
             "cycle_time": datetime.now().isoformat(),
         }
+
+    async def run_knowledge_synthesis_async(self) -> list[StandardTemplate]:
+        await self._ensure_loaded()
+        templates = self.run_knowledge_synthesis()
+        await self.persist_all()
+        return templates
+
+    async def run_deduplication_async(self) -> DeduplicationResult:
+        await self._ensure_loaded()
+        result = self.run_deduplication()
+        await self.persist_all()
+        return result
+
+    async def train_site_model_async(self) -> SiteReranker:
+        await self._ensure_loaded()
+        reranker = self.train_site_model()
+        await self.persist_all()
+        return reranker
+
+    async def sync_documentation_async(self) -> DocSyncResult:
+        await self._ensure_loaded()
+        result = self.sync_documentation()
+        await self.persist_all()
+        return result
+
+    async def sync_plan_async(self) -> PlanSyncResult:
+        await self._ensure_loaded()
+        result = self.sync_plan()
+        await self.persist_all()
+        return result
+
+    async def run_code_audit_async(self) -> list[CodeIssue]:
+        await self._ensure_loaded()
+        issues = self.run_code_audit()
+        await self.persist_all()
+        return issues
+
+    async def get_refactoring_suggestions_async(self) -> list[RefactoringSuggestion]:
+        await self._ensure_loaded()
+        suggestions = self.get_refactoring_suggestions()
+        await self.persist_all()
+        return suggestions
+
+    async def extract_best_practices_async(self) -> list[BestPractice]:
+        await self._ensure_loaded()
+        practices = self.extract_best_practices()
+        await self.persist_all()
+        return practices
+
+    async def evolve_reasoning_weights_async(self) -> dict[str, ReasoningWeight]:
+        await self._ensure_loaded()
+        weights = self.evolve_reasoning_weights()
+        await self.persist_all()
+        return weights
+
+    async def run_full_cycle_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        result = self.run_full_cycle()
+        await self.persist_all()
+        return result
 
 
 # =============================================================================

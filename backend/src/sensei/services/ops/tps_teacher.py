@@ -20,6 +20,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
 from sensei.core.enums import JidokaAction
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import DowntimeRecordedEvent
 from sensei.models.tps import (
     PDCACycleRecord, 
     KataSessionRecord, 
@@ -986,6 +988,14 @@ class AsyncJidokaMentor:
         
         await db.flush()
         await db.refresh(record)
+        
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(DowntimeRecordedEvent(
+            asset_id=station_id,
+            duration_minutes=0.0,
+            cause=issue_description,
+            impact=self._assess_quality_impact(status),
+        ))
         
         return self._record_to_event(record)
     

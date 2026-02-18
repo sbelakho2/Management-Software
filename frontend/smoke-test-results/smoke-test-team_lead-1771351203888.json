@@ -1,0 +1,11 @@
+{
+  "role": "team_lead",
+  "loginSuccess": false,
+  "pagesVisited": [],
+  "interactiveElements": [],
+  "consoleErrors": [
+    "API login failed"
+  ],
+  "networkErrors": [],
+  "timestamp": "2026-02-17T18:00:03.840Z"
+}

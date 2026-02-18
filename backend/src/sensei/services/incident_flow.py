@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta, time
 from enum import Enum
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import uuid4, UUID
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class IncidentSeverity(Enum):
@@ -264,7 +267,7 @@ SEVERITY_CONFIGS: dict[IncidentSeverity, SeverityConfig] = {
 }
 
 
-class IncidentFlowService:
+class IncidentFlowService(PersistentServiceMixin):
     """Service for managing incident workflows."""
 
     def __init__(self) -> None:
@@ -275,6 +278,92 @@ class IncidentFlowService:
         self._notifications: list[IncidentNotification] = []
         self._severity_configs = dict(SEVERITY_CONFIGS)
         self._setup_default_policies()
+        self._state_loaded = False
+
+    SERVICE_NAME = "incident_flow"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        incidents_data = await self.load_state(self._DEFAULT_TENANT_ID, "incidents")
+        schedules_data = await self.load_state(self._DEFAULT_TENANT_ID, "schedules")
+        policies_data = await self.load_state(self._DEFAULT_TENANT_ID, "policies")
+        notifications_data = await self.load_state(self._DEFAULT_TENANT_ID, "notifications")
+        severity_data = await self.load_state(self._DEFAULT_TENANT_ID, "severity_configs")
+
+        if (
+            incidents_data is None
+            and schedules_data is None
+            and policies_data is None
+            and notifications_data is None
+            and severity_data is None
+        ):
+            self._state_loaded = True
+            return
+
+        if incidents_data is not None:
+            self._incidents = {
+                incident_id: decode_dataclass(incident, Incident)
+                for incident_id, incident in incidents_data.items()
+            }
+        if schedules_data is not None:
+            self._schedules = {
+                schedule_id: decode_dataclass(schedule, OnCallSchedule)
+                for schedule_id, schedule in schedules_data.items()
+            }
+        if policies_data is not None:
+            self._policies = {
+                policy_id: decode_dataclass(policy, EscalationPolicy)
+                for policy_id, policy in policies_data.items()
+            }
+        if notifications_data is not None:
+            self._notifications = [
+                decode_dataclass(notification, IncidentNotification)
+                for notification in notifications_data
+            ]
+        if severity_data is not None:
+            self._severity_configs = {
+                IncidentSeverity(key): decode_dataclass(config, SeverityConfig)
+                for key, config in severity_data.items()
+            }
+
+        if not self._policies:
+            self._setup_default_policies()
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        incidents_data = {
+            incident_id: encode_dataclass(incident)
+            for incident_id, incident in self._incidents.items()
+        }
+        schedules_data = {
+            schedule_id: encode_dataclass(schedule)
+            for schedule_id, schedule in self._schedules.items()
+        }
+        policies_data = {
+            policy_id: encode_dataclass(policy)
+            for policy_id, policy in self._policies.items()
+        }
+        notifications_data = [
+            encode_dataclass(notification) for notification in self._notifications
+        ]
+        severity_data = {
+            severity.value: encode_dataclass(config)
+            for severity, config in self._severity_configs.items()
+        }
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "incidents", incidents_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "schedules", schedules_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "policies", policies_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "notifications", notifications_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "severity_configs", severity_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def _setup_default_policies(self) -> None:
         """Set up default escalation policies."""
@@ -316,9 +405,17 @@ class IncidentFlowService:
         """Get configuration for a severity level."""
         return self._severity_configs[severity]
 
+    async def get_severity_config_async(self, severity: IncidentSeverity) -> SeverityConfig:
+        await self._ensure_loaded()
+        return self.get_severity_config(severity)
+
     def get_all_severity_configs(self) -> list[SeverityConfig]:
         """Get all severity configurations."""
         return list(self._severity_configs.values())
+
+    async def get_all_severity_configs_async(self) -> list[SeverityConfig]:
+        await self._ensure_loaded()
+        return self.get_all_severity_configs()
 
     def update_severity_config(
         self,
@@ -337,6 +434,23 @@ class IncidentFlowService:
         if auto_escalate_after_minutes is not None:
             config.auto_escalate_after_minutes = auto_escalate_after_minutes
 
+        return config
+
+    async def update_severity_config_async(
+        self,
+        severity: IncidentSeverity,
+        response_time_minutes: Optional[int] = None,
+        resolution_target_hours: Optional[int] = None,
+        auto_escalate_after_minutes: Optional[int] = None,
+    ) -> SeverityConfig:
+        await self._ensure_loaded()
+        config = self.update_severity_config(
+            severity,
+            response_time_minutes,
+            resolution_target_hours,
+            auto_escalate_after_minutes,
+        )
+        await self.persist_all()
         return config
 
     # --- On-Call Schedule Management ---
@@ -358,17 +472,41 @@ class IncidentFlowService:
         self._schedules[schedule.id] = schedule
         return schedule
 
+    async def create_schedule_async(
+        self,
+        name: str,
+        team: str,
+        rotation_type: str = "weekly",
+        members: Optional[list[OnCallPerson]] = None,
+    ) -> OnCallSchedule:
+        await self._ensure_loaded()
+        schedule = self.create_schedule(name, team, rotation_type, members)
+        await self.persist_all()
+        return schedule
+
     def get_schedule(self, schedule_id: str) -> Optional[OnCallSchedule]:
         """Get a schedule by ID."""
         return self._schedules.get(schedule_id)
+
+    async def get_schedule_async(self, schedule_id: str) -> Optional[OnCallSchedule]:
+        await self._ensure_loaded()
+        return self.get_schedule(schedule_id)
 
     def get_all_schedules(self) -> list[OnCallSchedule]:
         """Get all schedules."""
         return list(self._schedules.values())
 
+    async def get_all_schedules_async(self) -> list[OnCallSchedule]:
+        await self._ensure_loaded()
+        return self.get_all_schedules()
+
     def get_schedules_by_team(self, team: str) -> list[OnCallSchedule]:
         """Get schedules for a team."""
         return [s for s in self._schedules.values() if s.team == team]
+
+    async def get_schedules_by_team_async(self, team: str) -> list[OnCallSchedule]:
+        await self._ensure_loaded()
+        return self.get_schedules_by_team(team)
 
     def add_member_to_schedule(
         self,
@@ -379,6 +517,16 @@ class IncidentFlowService:
         schedule = self._schedules.get(schedule_id)
         if schedule:
             schedule.rotation_members.append(member)
+        return schedule
+
+    async def add_member_to_schedule_async(
+        self,
+        schedule_id: str,
+        member: OnCallPerson,
+    ) -> Optional[OnCallSchedule]:
+        await self._ensure_loaded()
+        schedule = self.add_member_to_schedule(schedule_id, member)
+        await self.persist_all()
         return schedule
 
     def remove_member_from_schedule(
@@ -394,12 +542,26 @@ class IncidentFlowService:
             ]
         return schedule
 
+    async def remove_member_from_schedule_async(
+        self,
+        schedule_id: str,
+        user_id: str,
+    ) -> Optional[OnCallSchedule]:
+        await self._ensure_loaded()
+        schedule = self.remove_member_from_schedule(schedule_id, user_id)
+        await self.persist_all()
+        return schedule
+
     def get_current_on_call(self, schedule_id: str) -> Optional[OnCallPerson]:
         """Get the current on-call person for a schedule."""
         schedule = self._schedules.get(schedule_id)
         if not schedule or not schedule.rotation_members:
             return None
         return schedule.rotation_members[schedule.current_index % len(schedule.rotation_members)]
+
+    async def get_current_on_call_async(self, schedule_id: str) -> Optional[OnCallPerson]:
+        await self._ensure_loaded()
+        return self.get_current_on_call(schedule_id)
 
     def rotate_schedule(self, schedule_id: str) -> Optional[OnCallPerson]:
         """Rotate to the next person in the schedule."""
@@ -409,6 +571,12 @@ class IncidentFlowService:
 
         schedule.current_index = (schedule.current_index + 1) % len(schedule.rotation_members)
         return self.get_current_on_call(schedule_id)
+
+    async def rotate_schedule_async(self, schedule_id: str) -> Optional[OnCallPerson]:
+        await self._ensure_loaded()
+        person = self.rotate_schedule(schedule_id)
+        await self.persist_all()
+        return person
 
     # --- Escalation Policy Management ---
 
@@ -427,13 +595,32 @@ class IncidentFlowService:
         self._policies[policy.id] = policy
         return policy
 
+    async def create_policy_async(
+        self,
+        name: str,
+        description: str = "",
+        levels: Optional[list[EscalationLevel]] = None,
+    ) -> EscalationPolicy:
+        await self._ensure_loaded()
+        policy = self.create_policy(name, description, levels)
+        await self.persist_all()
+        return policy
+
     def get_policy(self, policy_id: str) -> Optional[EscalationPolicy]:
         """Get an escalation policy by ID."""
         return self._policies.get(policy_id)
 
+    async def get_policy_async(self, policy_id: str) -> Optional[EscalationPolicy]:
+        await self._ensure_loaded()
+        return self.get_policy(policy_id)
+
     def get_all_policies(self) -> list[EscalationPolicy]:
         """Get all escalation policies."""
         return list(self._policies.values())
+
+    async def get_all_policies_async(self) -> list[EscalationPolicy]:
+        await self._ensure_loaded()
+        return self.get_all_policies()
 
     def add_level_to_policy(
         self,
@@ -446,6 +633,16 @@ class IncidentFlowService:
             policy.levels.append(level)
             # Sort by level number
             policy.levels.sort(key=lambda l: l.level)
+        return policy
+
+    async def add_level_to_policy_async(
+        self,
+        policy_id: str,
+        level: EscalationLevel,
+    ) -> Optional[EscalationPolicy]:
+        await self._ensure_loaded()
+        policy = self.add_level_to_policy(policy_id, level)
+        await self.persist_all()
         return policy
 
     def get_escalation_level(
@@ -461,6 +658,14 @@ class IncidentFlowService:
             if level.level == level_number:
                 return level
         return None
+
+    async def get_escalation_level_async(
+        self,
+        policy_id: str,
+        level_number: int,
+    ) -> Optional[EscalationLevel]:
+        await self._ensure_loaded()
+        return self.get_escalation_level(policy_id, level_number)
 
     # --- Incident Management ---
 
@@ -493,26 +698,67 @@ class IncidentFlowService:
         self._incidents[incident.id] = incident
         return incident
 
+    async def create_incident_async(
+        self,
+        title: str,
+        description: str = "",
+        severity: IncidentSeverity = IncidentSeverity.SEV3,
+        category: IncidentCategory = IncidentCategory.APPLICATION,
+        affected_services: Optional[list[str]] = None,
+        escalation_policy_id: Optional[str] = None,
+    ) -> Incident:
+        await self._ensure_loaded()
+        incident = self.create_incident(
+            title,
+            description,
+            severity,
+            category,
+            affected_services,
+            escalation_policy_id,
+        )
+        await self.persist_all()
+        return incident
+
     def get_incident(self, incident_id: str) -> Optional[Incident]:
         """Get an incident by ID."""
         return self._incidents.get(incident_id)
+
+    async def get_incident_async(self, incident_id: str) -> Optional[Incident]:
+        await self._ensure_loaded()
+        return self.get_incident(incident_id)
 
     def get_all_incidents(self) -> list[Incident]:
         """Get all incidents."""
         return list(self._incidents.values())
 
+    async def get_all_incidents_async(self) -> list[Incident]:
+        await self._ensure_loaded()
+        return self.get_all_incidents()
+
     def get_incidents_by_status(self, status: IncidentStatus) -> list[Incident]:
         """Get incidents by status."""
         return [i for i in self._incidents.values() if i.status == status]
+
+    async def get_incidents_by_status_async(self, status: IncidentStatus) -> list[Incident]:
+        await self._ensure_loaded()
+        return self.get_incidents_by_status(status)
 
     def get_incidents_by_severity(self, severity: IncidentSeverity) -> list[Incident]:
         """Get incidents by severity."""
         return [i for i in self._incidents.values() if i.severity == severity]
 
+    async def get_incidents_by_severity_async(self, severity: IncidentSeverity) -> list[Incident]:
+        await self._ensure_loaded()
+        return self.get_incidents_by_severity(severity)
+
     def get_open_incidents(self) -> list[Incident]:
         """Get all open (unresolved) incidents."""
         closed_statuses = {IncidentStatus.RESOLVED, IncidentStatus.CLOSED}
         return [i for i in self._incidents.values() if i.status not in closed_statuses]
+
+    async def get_open_incidents_async(self) -> list[Incident]:
+        await self._ensure_loaded()
+        return self.get_open_incidents()
 
     def acknowledge_incident(
         self,
@@ -534,6 +780,16 @@ class IncidentFlowService:
             "user": user_id,
         })
 
+        return incident
+
+    async def acknowledge_incident_async(
+        self,
+        incident_id: str,
+        user_id: str,
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.acknowledge_incident(incident_id, user_id)
+        await self.persist_all()
         return incident
 
     def update_incident_status(
@@ -565,6 +821,17 @@ class IncidentFlowService:
 
         return incident
 
+    async def update_incident_status_async(
+        self,
+        incident_id: str,
+        status: IncidentStatus,
+        notes: str = "",
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.update_incident_status(incident_id, status, notes)
+        await self.persist_all()
+        return incident
+
     def escalate_incident(
         self,
         incident_id: str,
@@ -588,6 +855,17 @@ class IncidentFlowService:
                 "notes": notes,
             })
 
+        return incident
+
+    async def escalate_incident_async(
+        self,
+        incident_id: str,
+        trigger: EscalationTrigger = EscalationTrigger.MANUAL,
+        notes: str = "",
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.escalate_incident(incident_id, trigger, notes)
+        await self.persist_all()
         return incident
 
     def update_incident_severity(
@@ -614,6 +892,17 @@ class IncidentFlowService:
 
         return incident
 
+    async def update_incident_severity_async(
+        self,
+        incident_id: str,
+        severity: IncidentSeverity,
+        reason: str = "",
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.update_incident_severity(incident_id, severity, reason)
+        await self.persist_all()
+        return incident
+
     def add_incident_note(
         self,
         incident_id: str,
@@ -634,6 +923,17 @@ class IncidentFlowService:
 
         return incident
 
+    async def add_incident_note_async(
+        self,
+        incident_id: str,
+        note: str,
+        user_id: str,
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.add_incident_note(incident_id, note, user_id)
+        await self.persist_all()
+        return incident
+
     def set_root_cause(
         self,
         incident_id: str,
@@ -650,6 +950,16 @@ class IncidentFlowService:
             })
         return incident
 
+    async def set_root_cause_async(
+        self,
+        incident_id: str,
+        root_cause: str,
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.set_root_cause(incident_id, root_cause)
+        await self.persist_all()
+        return incident
+
     def set_resolution(
         self,
         incident_id: str,
@@ -664,6 +974,16 @@ class IncidentFlowService:
                 "event": "resolution_recorded",
                 "resolution": resolution,
             })
+        return incident
+
+    async def set_resolution_async(
+        self,
+        incident_id: str,
+        resolution: str,
+    ) -> Optional[Incident]:
+        await self._ensure_loaded()
+        incident = self.set_resolution(incident_id, resolution)
+        await self.persist_all()
         return incident
 
     # --- Notifications ---
@@ -685,12 +1005,31 @@ class IncidentFlowService:
         self._notifications.append(notification)
         return notification
 
+    async def send_notification_async(
+        self,
+        incident_id: str,
+        channel: NotificationChannel,
+        recipient: str,
+        message: str,
+    ) -> IncidentNotification:
+        await self._ensure_loaded()
+        notification = self.send_notification(incident_id, channel, recipient, message)
+        await self.persist_all()
+        return notification
+
     def get_notifications_for_incident(
         self,
         incident_id: str,
     ) -> list[IncidentNotification]:
         """Get all notifications for an incident."""
         return [n for n in self._notifications if n.incident_id == incident_id]
+
+    async def get_notifications_for_incident_async(
+        self,
+        incident_id: str,
+    ) -> list[IncidentNotification]:
+        await self._ensure_loaded()
+        return self.get_notifications_for_incident(incident_id)
 
     def acknowledge_notification(
         self,
@@ -703,6 +1042,15 @@ class IncidentFlowService:
                 notification.acknowledged_at = datetime.now(timezone.utc)
                 return notification
         return None
+
+    async def acknowledge_notification_async(
+        self,
+        notification_id: str,
+    ) -> Optional[IncidentNotification]:
+        await self._ensure_loaded()
+        notification = self.acknowledge_notification(notification_id)
+        await self.persist_all()
+        return notification
 
     # --- SLA Checking ---
 
@@ -726,6 +1074,10 @@ class IncidentFlowService:
             "is_acknowledged": incident.acknowledged_at is not None,
         }
 
+    async def check_response_sla_async(self, incident: Incident) -> dict:
+        await self._ensure_loaded()
+        return self.check_response_sla(incident)
+
     def check_resolution_sla(self, incident: Incident) -> dict:
         """Check if resolution SLA is met for an incident."""
         config = self._severity_configs[incident.severity]
@@ -745,6 +1097,10 @@ class IncidentFlowService:
             "is_met": is_met,
             "is_resolved": incident.resolved_at is not None,
         }
+
+    async def check_resolution_sla_async(self, incident: Incident) -> dict:
+        await self._ensure_loaded()
+        return self.check_resolution_sla(incident)
 
     def should_escalate(self, incident: Incident) -> bool:
         """Check if an incident should be auto-escalated."""
@@ -770,6 +1126,10 @@ class IncidentFlowService:
             elapsed = datetime.now(timezone.utc) - incident.detected_at
 
         return elapsed > escalate_after
+
+    async def should_escalate_async(self, incident: Incident) -> bool:
+        await self._ensure_loaded()
+        return self.should_escalate(incident)
 
     # --- Metrics ---
 
@@ -841,6 +1201,14 @@ class IncidentFlowService:
 
         return metrics
 
+    async def get_metrics_async(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> IncidentMetrics:
+        await self._ensure_loaded()
+        return self.get_metrics(start_date, end_date)
+
     # --- Summary ---
 
     def get_summary(self) -> dict:
@@ -852,3 +1220,7 @@ class IncidentFlowService:
             "total_policies": len(self._policies),
             "severities_configured": len(self._severity_configs),
         }
+
+    async def get_summary_async(self) -> dict:
+        await self._ensure_loaded()
+        return self.get_summary()

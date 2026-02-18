@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { executiveApi, type NL2SQLResponse, type EmployeeRiskResponse, type NL2SQLRequest, type EmployeeRiskRequest, type SQDCPResponse, type CrossFunctionalKPIResponse, type StrategicDirectivesResponse } from '@/api/executive';
+import { executiveApi, type NL2SQLResponse, type EmployeeRiskResponse, type NL2SQLRequest, type EmployeeRiskRequest, type SQDCPResponse, type CrossFunctionalKPIResponse, type StrategicDirectivesResponse, type CEODashboardResponse } from '@/api/executive';
 
 interface ExecutiveState {
   nl2sqlResult: NL2SQLResponse | null;
@@ -7,6 +7,9 @@ interface ExecutiveState {
   sqdcp: SQDCPResponse | null;
   kpiSummary: CrossFunctionalKPIResponse | null;
   directives: StrategicDirectivesResponse | null;
+  ceoDashboard: CEODashboardResponse | null;
+  ceoDashboardLoading: boolean;
+  ceoDashboardError: string | null;
   nl2sqlLoading: boolean;
   nl2sqlError: string | null;
   riskLoading: boolean;
@@ -18,6 +21,7 @@ interface ExecutiveState {
   fetchSQDCP: () => Promise<void>;
   fetchKPISummary: () => Promise<void>;
   fetchDirectives: () => Promise<void>;
+  fetchCEODashboard: () => Promise<void>;
   clearResults: () => void;
 }
 
@@ -27,6 +31,9 @@ export const useExecutiveStore = create<ExecutiveState>((set) => ({
   sqdcp: null,
   kpiSummary: null,
   directives: null,
+  ceoDashboard: null,
+  ceoDashboardLoading: false,
+  ceoDashboardError: null,
   nl2sqlLoading: false,
   nl2sqlError: null,
   riskLoading: false,
@@ -78,6 +85,22 @@ export const useExecutiveStore = create<ExecutiveState>((set) => ({
       set({ directives: result });
     } catch {
       // silent fail
+    }
+  },
+
+  fetchCEODashboard: async () => {
+    set({ ceoDashboardLoading: true, ceoDashboardError: null });
+    try {
+      const result = await executiveApi.getCEODashboard();
+      // Populate sqdcp and kpiSummary from unified response as well
+      set({
+        ceoDashboard: result,
+        sqdcp: result.sqdcp,
+        kpiSummary: result.kpi_summary,
+        ceoDashboardLoading: false,
+      });
+    } catch (error: any) {
+      set({ ceoDashboardError: error.message, ceoDashboardLoading: false });
     }
   },
 

@@ -107,6 +107,6 @@ describe('Sidebar', () => {
     expect(todayLink).toHaveAttribute('href', '/today');
     
     const pipelineLink = screen.getByText('Pipeline').closest('a');
-    expect(pipelineLink).toHaveAttribute('href', '/rfqs');
+    expect(pipelineLink).toHaveAttribute('href', '/pipeline');
   });
 });

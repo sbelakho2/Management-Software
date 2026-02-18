@@ -255,6 +255,275 @@ class ModelRetrainedEvent(DomainEvent):
 
 
 # =====================================================================
+# Sales domain events (RFQ, Quote, Sales Order)
+# =====================================================================
+
+
+@dataclass
+class RFQCreatedEvent(DomainEvent):
+    """A Request for Quote was created."""
+    rfq_id: UUID | str = ""
+    rfq_number: str = ""
+    account_id: UUID | str = ""
+    priority: str = ""
+    source: str = ""
+
+
+@dataclass
+class RFQStatusChangedEvent(DomainEvent):
+    """An RFQ's status changed."""
+    rfq_id: UUID | str = ""
+    old_status: str = ""
+    new_status: str = ""
+
+
+@dataclass
+class QuoteCreatedEvent(DomainEvent):
+    """A Quote was created."""
+    quote_id: UUID | str = ""
+    quote_number: str = ""
+    rfq_id: UUID | str = ""
+    total_amount: float = 0.0
+    currency: str = "USD"
+
+
+@dataclass
+class QuoteApprovedEvent(DomainEvent):
+    """A Quote was approved."""
+    quote_id: UUID | str = ""
+    approved_by_id: UUID | str = ""
+    total_amount: float = 0.0
+
+
+@dataclass
+class QuoteConvertedEvent(DomainEvent):
+    """A Quote was converted to a Sales Order."""
+    quote_id: UUID | str = ""
+    sales_order_id: UUID | str = ""
+
+
+@dataclass
+class SalesOrderCreatedEvent(DomainEvent):
+    """A Sales Order was created."""
+    sales_order_id: UUID | str = ""
+    so_number: str = ""
+    account_id: UUID | str = ""
+    total_amount: float = 0.0
+    currency: str = "USD"
+
+
+# =====================================================================
+# Shop Floor / Andon domain events
+# =====================================================================
+
+
+@dataclass
+class AndonCreatedEvent(DomainEvent):
+    """An Andon signal was triggered."""
+    andon_event_id: UUID | str = ""
+    andon_type: str = ""  # safety, quality, production, maintenance
+    work_order_id: int | None = None
+    station_id: int | None = None
+    severity: str = ""
+
+
+@dataclass
+class AndonAcknowledgedEvent(DomainEvent):
+    """An Andon signal was acknowledged."""
+    andon_event_id: UUID | str = ""
+    acknowledged_by_id: UUID | str = ""
+
+
+@dataclass
+class AndonResolvedEvent(DomainEvent):
+    """An Andon signal was resolved."""
+    andon_event_id: UUID | str = ""
+    resolved_by_id: UUID | str = ""
+    resolution: str = ""
+    downtime_minutes: float = 0.0
+
+
+# =====================================================================
+# Inventory domain events
+# =====================================================================
+
+
+@dataclass
+class StockMoveCreatedEvent(DomainEvent):
+    """An inventory stock move was created."""
+    stock_move_id: UUID | str = ""
+    product_id: UUID | str = ""
+    quantity: float = 0.0
+    from_location_id: UUID | str = ""
+    to_location_id: UUID | str = ""
+    move_type: str = ""  # receipt, issue, transfer
+
+
+@dataclass
+class GoodsReceiptCreatedEvent(DomainEvent):
+    """Goods were received into inventory."""
+    goods_receipt_id: UUID | str = ""
+    purchase_order_id: UUID | str = ""
+    quantity: float = 0.0
+
+
+# =====================================================================
+# HR extended domain events
+# =====================================================================
+
+
+@dataclass
+class LeaveRequestCreatedEvent(DomainEvent):
+    """A leave request was created."""
+    leave_request_id: UUID | str = ""
+    employee_id: UUID | str = ""
+    leave_type: str = ""
+    start_date: str = ""
+    end_date: str = ""
+
+
+@dataclass
+class LeaveRequestApprovedEvent(DomainEvent):
+    """A leave request was approved."""
+    leave_request_id: UUID | str = ""
+    employee_id: UUID | str = ""
+    approved_by_id: UUID | str = ""
+
+
+@dataclass
+class PerformanceReviewCompletedEvent(DomainEvent):
+    """A performance review was completed."""
+    performance_review_id: UUID | str = ""
+    employee_id: UUID | str = ""
+    reviewer_id: UUID | str = ""
+    rating: str = ""
+
+
+@dataclass
+class TimecardSubmittedEvent(DomainEvent):
+    """A timecard/time clock event was submitted."""
+    timecard_id: UUID | str = ""
+    employee_id: UUID | str = ""
+    event_type: str = ""  # clock_in, clock_out, break_start, break_end
+    event_time: str = ""
+
+
+# =====================================================================
+# Project Management domain events
+# =====================================================================
+
+
+@dataclass
+class ProjectCreatedEvent(DomainEvent):
+    """A project was created."""
+    project_id: UUID | str = ""
+    project_name: str = ""
+    project_type: str = ""
+
+
+@dataclass
+class SprintCompletedEvent(DomainEvent):
+    """A sprint was completed."""
+    sprint_id: UUID | str = ""
+    project_id: UUID | str = ""
+    stories_completed: int = 0
+    velocity: float = 0.0
+
+
+@dataclass
+class IssueCreatedEvent(DomainEvent):
+    """A project issue was created."""
+    issue_id: UUID | str = ""
+    project_id: UUID | str = ""
+    issue_type: str = ""
+    severity: str = ""
+
+
+# =====================================================================
+# A3 / Problem Solving domain events
+# =====================================================================
+
+
+@dataclass
+class A3CreatedEvent(DomainEvent):
+    """An A3 problem-solving report was created."""
+    a3_id: UUID | str = ""
+    a3_type: str = ""
+    title: str = ""
+    priority: str = ""
+
+
+@dataclass
+class A3ClosedEvent(DomainEvent):
+    """An A3 was closed."""
+    a3_id: UUID | str = ""
+    outcome: str = ""  # effective, ineffective, inconclusive
+
+
+# =====================================================================
+# Risk domain events
+# =====================================================================
+
+
+@dataclass
+class RiskCreatedEvent(DomainEvent):
+    """A risk was identified and recorded."""
+    risk_id: UUID | str = ""
+    risk_category: str = ""
+    severity: str = ""
+    likelihood: str = ""
+    entity_type: str = ""
+    entity_id: UUID | str = ""
+
+
+@dataclass
+class RiskMitigatedEvent(DomainEvent):
+    """A risk mitigation was completed."""
+    risk_id: UUID | str = ""
+    mitigation_id: UUID | str = ""
+    effectiveness: str = ""
+
+
+# =====================================================================
+# Accounts Payable / Receivable domain events
+# =====================================================================
+
+
+@dataclass
+class PurchaseOrderCreatedEvent(DomainEvent):
+    """A purchase order was created."""
+    purchase_order_id: UUID | str = ""
+    po_number: str = ""
+    supplier_id: UUID | str = ""
+    total_amount: float = 0.0
+    currency: str = "USD"
+
+
+@dataclass
+class PaymentProcessedEvent(DomainEvent):
+    """A payment was processed (AR or AP)."""
+    payment_id: UUID | str = ""
+    payment_type: str = ""  # received, issued
+    amount: float = 0.0
+    currency: str = "USD"
+    counterparty_id: UUID | str = ""
+
+
+# =====================================================================
+# Kanban domain events
+# =====================================================================
+
+
+@dataclass
+class KanbanCardMovedEvent(DomainEvent):
+    """A Kanban card was moved between columns."""
+    card_id: UUID | str = ""
+    board_id: UUID | str = ""
+    from_column: str = ""
+    to_column: str = ""
+
+
+# =====================================================================
 # Convenience: register standard event subscriptions at startup
 # =====================================================================
 
@@ -267,6 +536,8 @@ def register_standard_subscriptions() -> None:
     import logging
 
     from sensei.services.event_bus import event_bus
+    from sensei.services.core.single_data_thread import get_single_data_thread_service
+    from sensei.services.ops.cognitive_obeya import get_cognitive_obeya
 
     _log = logging.getLogger(__name__)
 
@@ -280,4 +551,9 @@ def register_standard_subscriptions() -> None:
 
     # Global audit subscriber
     event_bus.subscribe_all(_log_event)
+    event_bus.subscribe_all(get_single_data_thread_service().handle_event)
+
+    # Wire Cognitive Obeya for cross-functional intelligence
+    event_bus.subscribe_all(get_cognitive_obeya().handle_domain_event)
+
     _log.info("Registered standard domain event subscriptions")

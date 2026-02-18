@@ -20,6 +20,10 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 import difflib
+from uuid import UUID
+
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +254,20 @@ class FuzzyMatcher:
     
     def __init__(self, known_symbols: Optional[Dict[EntityType, List[str]]] = None):
         self.known_symbols = known_symbols or {}
+
+    def export_state(self) -> Dict[str, Any]:
+        """Export known symbols for persistence."""
+        return {
+            entity_type.value: list(symbols)
+            for entity_type, symbols in self.known_symbols.items()
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load known symbols from persistence."""
+        self.known_symbols = {
+            EntityType(entity_type): list(symbols)
+            for entity_type, symbols in state.items()
+        }
     
     def add_known_symbols(
         self,
@@ -839,6 +857,25 @@ class ConversationManager:
         self.session_ttl = session_ttl
         self.parser = parser or ActionParser()
         self._sessions: Dict[str, ConversationSession] = {}
+
+    def export_state(self) -> Dict[str, Any]:
+        """Export conversation state for persistence."""
+        return {
+            "session_ttl": self.session_ttl,
+            "sessions": {
+                session_id: encode_dataclass(session)
+                for session_id, session in self._sessions.items()
+            },
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """Load conversation state from persistence."""
+        if "session_ttl" in state:
+            self.session_ttl = int(state["session_ttl"])
+        self._sessions = {
+            session_id: decode_dataclass(session, ConversationSession)
+            for session_id, session in state.get("sessions", {}).items()
+        }
     
     def get_or_create_session(
         self,
@@ -923,12 +960,16 @@ class ConversationManager:
 # NLP Command Palette
 # =============================================================================
 
-class NLPCommandPalette:
+class NLPCommandPalette(PersistentServiceMixin):
     """
     Main NLP command palette interface.
     
     Provides natural language interface to system commands.
     """
+
+    SERVICE_NAME = "nlp_command_palette"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(
         self,
@@ -944,6 +985,37 @@ class NLPCommandPalette:
         
         # Action handlers
         self._handlers: Dict[ActionType, Callable[[ParsedAction], Any]] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        matcher_state = state.get("fuzzy_matcher")
+        if matcher_state:
+            self.fuzzy_matcher.load_state(matcher_state)
+
+        conversation_state = state.get("conversation_manager")
+        if conversation_state:
+            self.conversation_manager.load_state(conversation_state)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "fuzzy_matcher": self.fuzzy_matcher.export_state(),
+            "conversation_manager": self.conversation_manager.export_state(),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def register_handler(
         self,
@@ -960,6 +1032,15 @@ class NLPCommandPalette:
     ) -> None:
         """Register known symbols for fuzzy matching."""
         self.fuzzy_matcher.add_known_symbols(entity_type, symbols)
+
+    async def register_known_symbols_async(
+        self,
+        entity_type: EntityType,
+        symbols: List[str],
+    ) -> None:
+        await self._ensure_loaded()
+        self.register_known_symbols(entity_type, symbols)
+        await self.persist_all()
     
     def execute(
         self,
@@ -1003,6 +1084,17 @@ class NLPCommandPalette:
             except Exception as e:
                 result["error"] = str(e)
         
+        return result
+
+    async def execute_async(
+        self,
+        query: str,
+        session_id: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        await self._ensure_loaded()
+        result = self.execute(query, session_id, user_id)
+        await self.persist_all()
         return result
     
     def get_suggestions(

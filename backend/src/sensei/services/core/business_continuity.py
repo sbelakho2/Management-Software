@@ -24,6 +24,8 @@ from sensei.models.business_continuity import (
     RTORPOConfig as RTORPOConfigModel,
     RestoreRehearsal as RestoreRehearsalModel,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 class EventPriority(str, Enum):
@@ -448,14 +450,57 @@ class AsyncBusinessContinuityService:
         return list(result.scalars().all())
 
 
-class BusinessContinuityService:
+class BusinessContinuityService(PersistentServiceMixin):
     """In-memory Business Continuity service for sync workflows and tests."""
+
+    SERVICE_NAME = "business_continuity"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self):
         self._events: dict[UUID, QueuedEvent] = {}
         self._rules: dict[str, CriticalityRule] = {}
         self._rto_rpo: RTORPOConfig | None = None
         self._rehearsals: dict[UUID, RestoreRehearsal] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        self._events = {
+            UUID(event_id): decode_dataclass(event, QueuedEvent)
+            for event_id, event in state.get("events", {}).items()
+        }
+        self._rules = {
+            entity_type: decode_dataclass(rule, CriticalityRule)
+            for entity_type, rule in state.get("rules", {}).items()
+        }
+        rto_rpo = state.get("rto_rpo")
+        self._rto_rpo = decode_dataclass(rto_rpo, RTORPOConfig) if rto_rpo else None
+        self._rehearsals = {
+            UUID(rehearsal_id): decode_dataclass(rehearsal, RestoreRehearsal)
+            for rehearsal_id, rehearsal in state.get("rehearsals", {}).items()
+        }
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "events": {str(event_id): encode_dataclass(event) for event_id, event in self._events.items()},
+            "rules": {entity_type: encode_dataclass(rule) for entity_type, rule in self._rules.items()},
+            "rto_rpo": encode_dataclass(self._rto_rpo) if self._rto_rpo else None,
+            "rehearsals": {str(rehearsal_id): encode_dataclass(rehearsal) for rehearsal_id, rehearsal in self._rehearsals.items()},
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def can_admin(self, *, actor_roles: Iterable[str]) -> bool:
         return len(_norm_roles(actor_roles).intersection(_DR_ADMIN_ROLES)) > 0
@@ -484,6 +529,12 @@ class BusinessContinuityService:
             queued_at=_utcnow(),
         )
         self._events[event.id] = event
+        return event
+
+    async def queue_event_async(self, *args: Any, **kwargs: Any) -> QueuedEvent:
+        await self._ensure_loaded()
+        event = self.queue_event(*args, **kwargs)
+        await self.persist_all()
         return event
 
     def get_pending_events(
@@ -515,6 +566,12 @@ class BusinessContinuityService:
         event.synced_at = _utcnow()
         return event
 
+    async def mark_synced_async(self, event_id: UUID) -> QueuedEvent:
+        await self._ensure_loaded()
+        event = self.mark_synced(event_id)
+        await self.persist_all()
+        return event
+
     def mark_conflict(self, event_id: UUID, *, conflict_details: dict[str, Any]) -> QueuedEvent:
         event = self._events.get(event_id)
         if not event:
@@ -526,6 +583,12 @@ class BusinessContinuityService:
             event.resolution_strategy = rule.resolution_strategy
         else:
             event.resolution_strategy = ConflictResolutionStrategy.MANUAL_REVIEW
+        return event
+
+    async def mark_conflict_async(self, event_id: UUID, *, conflict_details: dict[str, Any]) -> QueuedEvent:
+        await self._ensure_loaded()
+        event = self.mark_conflict(event_id, conflict_details=conflict_details)
+        await self.persist_all()
         return event
 
     def resolve_conflict(
@@ -542,6 +605,18 @@ class BusinessContinuityService:
             raise KeyError("Event not found")
         event.resolution_strategy = resolution
         event.status = QueuedEventStatus.RESOLVED
+        return event
+
+    async def resolve_conflict_async(
+        self,
+        event_id: UUID,
+        *,
+        resolution: ConflictResolutionStrategy,
+        actor_roles: Iterable[str],
+    ) -> QueuedEvent:
+        await self._ensure_loaded()
+        event = self.resolve_conflict(event_id, resolution=resolution, actor_roles=actor_roles)
+        await self.persist_all()
         return event
 
     def get_conflicts(self) -> list[QueuedEvent]:
@@ -562,6 +637,12 @@ class BusinessContinuityService:
             resolution_strategy=resolution_strategy,
         )
         self._rules[entity_type] = rule
+        return rule
+
+    async def set_criticality_rule_async(self, *args: Any, **kwargs: Any) -> CriticalityRule:
+        await self._ensure_loaded()
+        rule = self.set_criticality_rule(*args, **kwargs)
+        await self.persist_all()
         return rule
 
     def get_criticality_rule(self, entity_type: str) -> CriticalityRule | None:
@@ -593,6 +674,12 @@ class BusinessContinuityService:
             self._rto_rpo.rpo_minutes = rpo_minutes
             self._rto_rpo.updated_by = actor_user_id
         return self._rto_rpo
+
+    async def set_rto_rpo_targets_async(self, *args: Any, **kwargs: Any) -> RTORPOConfig:
+        await self._ensure_loaded()
+        config = self.set_rto_rpo_targets(*args, **kwargs)
+        await self.persist_all()
+        return config
 
     def get_rto_rpo_config(self) -> RTORPOConfig | None:
         return self._rto_rpo
@@ -626,6 +713,12 @@ class BusinessContinuityService:
             "overall_passed": overall_passed,
         }
 
+    async def validate_rto_rpo_async(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        result = self.validate_rto_rpo(*args, **kwargs)
+        await self.persist_all()
+        return result
+
     def schedule_rehearsal(
         self,
         *,
@@ -649,6 +742,12 @@ class BusinessContinuityService:
         self._rehearsals[rehearsal.id] = rehearsal
         return rehearsal
 
+    async def schedule_rehearsal_async(self, *args: Any, **kwargs: Any) -> RestoreRehearsal:
+        await self._ensure_loaded()
+        rehearsal = self.schedule_rehearsal(*args, **kwargs)
+        await self.persist_all()
+        return rehearsal
+
     def start_rehearsal(
         self,
         rehearsal_id: UUID,
@@ -662,6 +761,12 @@ class BusinessContinuityService:
             raise KeyError("Rehearsal not found")
         rehearsal.status = RehearsalStatus.RUNNING
         rehearsal.started_at = _utcnow()
+        return rehearsal
+
+    async def start_rehearsal_async(self, rehearsal_id: UUID, *, actor_roles: Iterable[str]) -> RestoreRehearsal:
+        await self._ensure_loaded()
+        rehearsal = self.start_rehearsal(rehearsal_id, actor_roles=actor_roles)
+        await self.persist_all()
         return rehearsal
 
     def complete_rehearsal(
@@ -694,9 +799,19 @@ class BusinessContinuityService:
             rehearsal.status = RehearsalStatus.PASSED
         return rehearsal
 
+    async def complete_rehearsal_async(self, *args: Any, **kwargs: Any) -> RestoreRehearsal:
+        await self._ensure_loaded()
+        rehearsal = self.complete_rehearsal(*args, **kwargs)
+        await self.persist_all()
+        return rehearsal
+
     def list_rehearsals(self, *, actor_roles: Iterable[str]) -> list[RestoreRehearsal]:
         if not self.can_admin(actor_roles=actor_roles):
             raise PermissionError("Not permitted to view rehearsals")
         rehearsals = list(self._rehearsals.values())
         rehearsals.sort(key=lambda r: r.scheduled_at, reverse=True)
         return rehearsals
+
+    async def list_rehearsals_async(self, *, actor_roles: Iterable[str]) -> list[RestoreRehearsal]:
+        await self._ensure_loaded()
+        return self.list_rehearsals(actor_roles=actor_roles)

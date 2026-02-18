@@ -18,6 +18,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone, timedelta
+
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import AuditFindingEvent as DomainAuditFindingEvent, SupplierEvaluatedEvent
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Iterable, Any
@@ -897,6 +900,15 @@ class QMSQualityService(PersistentServiceMixin):
             otd = Decimal(stats.deliveries_on_time) / Decimal(stats.deliveries_total)
 
         copq = stats.copq_scrap_cost + stats.copq_rework_cost + stats.copq_warranty_cost
+
+        # Publish domain event — feeds single data thread
+        overall_score = float((otd * 100 + (Decimal("1000000") - ppm) / Decimal("10000")) / 2) if units > 0 else 0.0
+        event_bus.publish_sync(SupplierEvaluatedEvent(
+            supplier_id=supplier_id,
+            score=overall_score,
+            tier="A" if overall_score >= 80 else "B" if overall_score >= 60 else "C",
+        ))
+
         return SupplierScorecard(supplier_id=supplier_id, period_key=period_key, ppm=ppm, otd=otd, copq=copq)
 
     # -----------------------------
@@ -1081,9 +1093,16 @@ class QMSQualityService(PersistentServiceMixin):
         )
         self.findings[finding.id] = finding
         self.audits[audit_id].finding_ids.append(finding.id)
-        return finding
 
-    def plan_finding_action(self, finding_id: UUID, corrective_action_plan: str) -> AuditFinding:
+        # Publish domain event — feeds single data thread
+        event_bus.publish_sync(DomainAuditFindingEvent(
+            finding_id=str(finding.id),
+            audit_id=str(audit_id),
+            severity=severity.value if hasattr(severity, 'value') else str(severity),
+            area=requirement_ref,
+        ))
+
+        return finding
         self._require(finding_id in self.findings, "finding not found")
         f = self.findings[finding_id]
         self._require(f.status == FindingStatus.OPEN, "finding must be open")

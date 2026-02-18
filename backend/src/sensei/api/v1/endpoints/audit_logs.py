@@ -14,12 +14,12 @@ from datetime import datetime, timezone
 from typing import Any, Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import DBSession, CurrentUser
+from sensei.api.deps import DBSession, CurrentUser, RoleChecker
 from sensei.api.exceptions import NotFoundError, ForbiddenError
 from sensei.api.utils import (
     build_response,
@@ -30,7 +30,9 @@ from sensei.api.utils import (
 from sensei.models.audit_log import AuditLog, AuditAction
 
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "auditor", "gm", "exec"]))],
+)
 
 
 # =============================================================================

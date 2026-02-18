@@ -17,6 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.models.finance import StandardCostRecord, WorkOrderCostRollup
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import CostRollupCompleted
 
 
 class CostRollupService:
@@ -82,4 +84,12 @@ class CostRollupService:
         rollup = WorkOrderCostRollup(**kwargs)
         self.db.add(rollup)
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(CostRollupCompleted(
+            product_id=str(kwargs.get("product_id", kwargs.get("work_order_id", ""))),
+            total_cost=float(kwargs.get("actual_total_cost", 0)),
+            currency=str(kwargs.get("currency", "MAD")),
+        ))
+
         return rollup

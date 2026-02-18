@@ -5,15 +5,17 @@ Exposes a deterministic lineage graph view around an entity.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from sensei.api.deps import CurrentUser, DBSession
+from sensei.api.deps import CurrentUser, DBSession, RoleChecker
 from sensei.api.schemas import APIResponse
 from sensei.api.utils import build_response
 from sensei.services.core.data_lineage import get_data_lineage_service
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "finance", "auditor"]))],
+)
 
 
 class LineageNodeResponse(BaseModel):

@@ -5,13 +5,17 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sensei.api.deps import get_db, get_current_user
+from sensei.api.deps import get_db, get_current_user, RoleChecker
 from sensei.api.exceptions import NotFoundError, ForbiddenError
 from sensei.models.production import HandoverSeverity
 from sensei.models.user import User
 from sensei.services.ops.pulse_service import get_pulse_service
 
-router = APIRouter(prefix="/pulse", tags=["The Pulse"])
+router = APIRouter(
+    prefix="/pulse",
+    tags=["The Pulse"],
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "supervisor", "team_lead", "operator"]))],
+)
 
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]

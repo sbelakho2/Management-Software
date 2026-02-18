@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sensei.api import deps
+from sensei.api.deps import RoleChecker
 from sensei.api.schemas import APIResponse
 from sensei.models.user import User
 from sensei.api.utils import build_response
@@ -18,7 +19,9 @@ from sensei.services.ai.knowledge_enrichment import (
     SourceType,
 )
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(RoleChecker(["admin", "ceo", "gm", "exec", "ops", "quality", "engineering", "knowledge_curator", "ml_engineer"]))],
+)
 
 _service = KnowledgeEnrichmentService()
 

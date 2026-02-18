@@ -30,6 +30,8 @@ from sensei.models.strategic_v2 import (
     KnowledgeSourceRecord,
     SemanticChunkRecord,
 )
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 # ============================================================
@@ -366,8 +368,11 @@ class CrossDomainSynthesizer:
         return insights
 
 
-class KnowledgeEnrichmentService:
+class KnowledgeEnrichmentService(PersistentServiceMixin):
     """AI Model Enrichment / TPS & Lean Knowledge Service with DB persistence."""
+
+    SERVICE_NAME = "knowledge_enrichment"
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
     def __init__(self) -> None:
         self.synthesizer = CrossDomainSynthesizer()
@@ -378,7 +383,117 @@ class KnowledgeEnrichmentService:
         self._alignments: dict[UUID, AlignmentResult] = {}
         self._knowledge_packs: dict[UUID, KnowledgePack] = {}
         self._audit_log: list[AuditEntry] = []
+        self._state_loaded = False
         self._initialize_default_sources()
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        sources_data = await self.load_state(self._DEFAULT_TENANT_ID, "sources")
+        acquisition_data = await self.load_state(self._DEFAULT_TENANT_ID, "acquisition_jobs")
+        chunks_data = await self.load_state(self._DEFAULT_TENANT_ID, "chunks")
+        embeddings_data = await self.load_state(self._DEFAULT_TENANT_ID, "embeddings")
+        alignments_data = await self.load_state(self._DEFAULT_TENANT_ID, "alignments")
+        packs_data = await self.load_state(self._DEFAULT_TENANT_ID, "knowledge_packs")
+        audit_data = await self.load_state(self._DEFAULT_TENANT_ID, "audit_log")
+        correlation_map = await self.load_state(self._DEFAULT_TENANT_ID, "correlation_map")
+
+        if (
+            sources_data is None
+            and acquisition_data is None
+            and chunks_data is None
+            and embeddings_data is None
+            and alignments_data is None
+            and packs_data is None
+            and audit_data is None
+            and correlation_map is None
+        ):
+            self._state_loaded = True
+            return
+
+        if sources_data is not None:
+            self._sources = {
+                UUID(source_id): decode_dataclass(source, KnowledgeSource)
+                for source_id, source in sources_data.items()
+            }
+        if acquisition_data is not None:
+            self._acquisition_jobs = {
+                UUID(job_id): decode_dataclass(job, AcquisitionJob)
+                for job_id, job in acquisition_data.items()
+            }
+        if chunks_data is not None:
+            self._chunks = {
+                UUID(chunk_id): decode_dataclass(chunk, SemanticChunk)
+                for chunk_id, chunk in chunks_data.items()
+            }
+        if embeddings_data is not None:
+            self._embeddings = {
+                UUID(embedding_id): decode_dataclass(embedding, EmbeddingRecord)
+                for embedding_id, embedding in embeddings_data.items()
+            }
+        if alignments_data is not None:
+            self._alignments = {
+                UUID(alignment_id): decode_dataclass(alignment, AlignmentResult)
+                for alignment_id, alignment in alignments_data.items()
+            }
+        if packs_data is not None:
+            self._knowledge_packs = {
+                UUID(pack_id): decode_dataclass(pack, KnowledgePack)
+                for pack_id, pack in packs_data.items()
+            }
+        if audit_data is not None:
+            self._audit_log = [decode_dataclass(entry, AuditEntry) for entry in audit_data]
+        if correlation_map is not None:
+            self.synthesizer.correlation_map = {
+                str(key): list(value) for key, value in correlation_map.items()
+            }
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        sources_data = {
+            str(source_id): encode_dataclass(source)
+            for source_id, source in self._sources.items()
+        }
+        acquisition_data = {
+            str(job_id): encode_dataclass(job)
+            for job_id, job in self._acquisition_jobs.items()
+        }
+        chunks_data = {
+            str(chunk_id): encode_dataclass(chunk)
+            for chunk_id, chunk in self._chunks.items()
+        }
+        embeddings_data = {
+            str(embedding_id): encode_dataclass(embedding)
+            for embedding_id, embedding in self._embeddings.items()
+        }
+        alignments_data = {
+            str(alignment_id): encode_dataclass(alignment)
+            for alignment_id, alignment in self._alignments.items()
+        }
+        packs_data = {
+            str(pack_id): encode_dataclass(pack)
+            for pack_id, pack in self._knowledge_packs.items()
+        }
+        audit_data = [encode_dataclass(entry) for entry in self._audit_log]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "sources", sources_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "acquisition_jobs", acquisition_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "chunks", chunks_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "embeddings", embeddings_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "alignments", alignments_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "knowledge_packs", packs_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "audit_log", audit_data)
+        await self.save_state(
+            self._DEFAULT_TENANT_ID,
+            "correlation_map",
+            {key: list(value) for key, value in self.synthesizer.correlation_map.items()},
+        )
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def _initialize_default_sources(self) -> None:
         """Load built-in knowledge sources into in-memory storage."""
@@ -666,6 +781,10 @@ class KnowledgeEnrichmentService:
             sources = [s for s in sources if tag in s.tags]
         return sources
 
+    async def list_sources_async(self, **kwargs: Any) -> list[KnowledgeSource]:
+        await self._ensure_loaded()
+        return self.list_sources(**kwargs)
+
     def get_source(
         self, actor_roles: set[str], source_id: UUID
     ) -> KnowledgeSource:
@@ -674,6 +793,10 @@ class KnowledgeEnrichmentService:
         if source_id not in self._sources:
             raise ValueError(f"Source {source_id} not found")
         return self._sources[source_id]
+
+    async def get_source_async(self, **kwargs: Any) -> KnowledgeSource:
+        await self._ensure_loaded()
+        return self.get_source(**kwargs)
 
     def register_custom_source(
         self,
@@ -710,6 +833,12 @@ class KnowledgeEnrichmentService:
             correlation_id,
             {"name": name, "url": url},
         )
+        return source
+
+    async def register_custom_source_async(self, **kwargs: Any) -> KnowledgeSource:
+        await self._ensure_loaded()
+        source = self.register_custom_source(**kwargs)
+        await self.persist_all()
         return source
 
     # --------------------------------------------------------
@@ -767,6 +896,12 @@ class KnowledgeEnrichmentService:
         )
         return job
 
+    async def acquire_resource_async(self, **kwargs: Any) -> AcquisitionJob:
+        await self._ensure_loaded()
+        job = self.acquire_resource(**kwargs)
+        await self.persist_all()
+        return job
+
     def mark_acquisition_complete(
         self,
         actor_id: str,
@@ -805,6 +940,12 @@ class KnowledgeEnrichmentService:
         )
         return updated
 
+    async def mark_acquisition_complete_async(self, **kwargs: Any) -> AcquisitionJob:
+        await self._ensure_loaded()
+        job = self.mark_acquisition_complete(**kwargs)
+        await self.persist_all()
+        return job
+
     def mark_acquisition_failed(
         self,
         actor_id: str,
@@ -842,6 +983,12 @@ class KnowledgeEnrichmentService:
             {"error": error_message},
         )
         return updated
+
+    async def mark_acquisition_failed_async(self, **kwargs: Any) -> AcquisitionJob:
+        await self._ensure_loaded()
+        job = self.mark_acquisition_failed(**kwargs)
+        await self.persist_all()
+        return job
 
     # --------------------------------------------------------
     # Step 2: Semantic Ingestion (In-Memory)
@@ -897,6 +1044,12 @@ class KnowledgeEnrichmentService:
             correlation_id,
             {"source_id": str(source_id), "chunk_count": len(chunks)},
         )
+        return chunks
+
+    async def ingest_content_inmemory_async(self, **kwargs: Any) -> list[SemanticChunk]:
+        await self._ensure_loaded()
+        chunks = self.ingest_content_inmemory(**kwargs)
+        await self.persist_all()
         return chunks
 
     # --------------------------------------------------------
@@ -973,6 +1126,12 @@ class KnowledgeEnrichmentService:
         )
         return processed
 
+    async def process_chunks_async(self, **kwargs: Any) -> list[SemanticChunk]:
+        await self._ensure_loaded()
+        chunks = self.process_chunks(**kwargs)
+        await self.persist_all()
+        return chunks
+
     # --------------------------------------------------------
     # Step 4: Vectorization (ONNX)
     # --------------------------------------------------------
@@ -1035,6 +1194,12 @@ class KnowledgeEnrichmentService:
         )
         return embeddings
 
+    async def embed_chunks_async(self, **kwargs: Any) -> list[EmbeddingRecord]:
+        await self._ensure_loaded()
+        embeddings = self.embed_chunks(**kwargs)
+        await self.persist_all()
+        return embeddings
+
     # --------------------------------------------------------
     # Step 5: Reasoning Alignment
     # --------------------------------------------------------
@@ -1089,6 +1254,12 @@ class KnowledgeEnrichmentService:
         )
         return result
 
+    async def verify_alignment_async(self, **kwargs: Any) -> AlignmentResult:
+        await self._ensure_loaded()
+        result = self.verify_alignment(**kwargs)
+        await self.persist_all()
+        return result
+
     # --------------------------------------------------------
     # Knowledge Pack Management
     # --------------------------------------------------------
@@ -1129,6 +1300,12 @@ class KnowledgeEnrichmentService:
         )
         return pack
 
+    async def create_knowledge_pack_async(self, **kwargs: Any) -> KnowledgePack:
+        await self._ensure_loaded()
+        pack = self.create_knowledge_pack(**kwargs)
+        await self.persist_all()
+        return pack
+
     def list_knowledge_packs(
         self, actor_roles: set[str], active_only: bool = True
     ) -> list[KnowledgePack]:
@@ -1138,6 +1315,10 @@ class KnowledgeEnrichmentService:
         if active_only:
             packs = [p for p in packs if p.is_active]
         return packs
+
+    async def list_knowledge_packs_async(self, **kwargs: Any) -> list[KnowledgePack]:
+        await self._ensure_loaded()
+        return self.list_knowledge_packs(**kwargs)
 
     def deactivate_knowledge_pack(
         self,
@@ -1172,6 +1353,12 @@ class KnowledgeEnrichmentService:
         )
         return updated
 
+    async def deactivate_knowledge_pack_async(self, **kwargs: Any) -> KnowledgePack:
+        await self._ensure_loaded()
+        pack = self.deactivate_knowledge_pack(**kwargs)
+        await self.persist_all()
+        return pack
+
     # --------------------------------------------------------
     # Query / Search
     # --------------------------------------------------------
@@ -1189,6 +1376,10 @@ class KnowledgeEnrichmentService:
         ]
         return matching[:limit]
 
+    async def search_chunks_by_taxonomy_async(self, **kwargs: Any) -> list[SemanticChunk]:
+        await self._ensure_loaded()
+        return self.search_chunks_by_taxonomy(**kwargs)
+
     def search_chunks_by_keyword(
         self,
         actor_roles: set[str],
@@ -1203,6 +1394,10 @@ class KnowledgeEnrichmentService:
         ]
         return matching[:limit]
 
+    async def search_chunks_by_keyword_async(self, **kwargs: Any) -> list[SemanticChunk]:
+        await self._ensure_loaded()
+        return self.search_chunks_by_keyword(**kwargs)
+
     def get_chunk(self, actor_roles: set[str], chunk_id: UUID) -> SemanticChunk:
         """Get a specific chunk by ID."""
         self._require_reader(actor_roles)
@@ -1210,12 +1405,20 @@ class KnowledgeEnrichmentService:
             raise ValueError(f"Chunk {chunk_id} not found")
         return self._chunks[chunk_id]
 
+    async def get_chunk_async(self, **kwargs: Any) -> SemanticChunk:
+        await self._ensure_loaded()
+        return self.get_chunk(**kwargs)
+
     def list_chunks_for_source(
         self, actor_roles: set[str], source_id: UUID
     ) -> list[SemanticChunk]:
         """List all chunks for a source."""
         self._require_reader(actor_roles)
         return [c for c in self._chunks.values() if c.source_id == source_id]
+
+    async def list_chunks_for_source_async(self, **kwargs: Any) -> list[SemanticChunk]:
+        await self._ensure_loaded()
+        return self.list_chunks_for_source(**kwargs)
 
     # --------------------------------------------------------
     # Statistics
@@ -1239,6 +1442,10 @@ class KnowledgeEnrichmentService:
             "knowledge_packs": len(self._knowledge_packs),
         }
 
+    async def get_enrichment_stats_async(self, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_enrichment_stats(**kwargs)
+
     # --------------------------------------------------------
     # Audit Trail
     # --------------------------------------------------------
@@ -1256,3 +1463,7 @@ class KnowledgeEnrichmentService:
         if entity_type:
             events = [e for e in events if e.entity_type == entity_type]
         return events
+
+    async def list_audit_events_async(self, **kwargs: Any) -> list[AuditEntry]:
+        await self._ensure_loaded()
+        return self.list_audit_events(**kwargs)

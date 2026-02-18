@@ -5,8 +5,9 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { renderWithI18n } from '@/test-utils';
 
 import {
   // Constants
@@ -36,6 +37,8 @@ import {
   ExportProgress,
   LabelConfig,
 } from '../print-export';
+
+const render = renderWithI18n;
 
 // =============================================================================
 // CONSTANTS TESTS
@@ -771,7 +774,7 @@ describe('LabelPrinterDialog', () => {
     // Change quantity by setting value directly then triggering change
     fireEvent.change(quantityInput, { target: { value: '5' } });
 
-    expect(screen.getByRole('button', { name: /print 5 labels/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /print 5 label\(s\)/i })).toBeInTheDocument();
   });
 });
 

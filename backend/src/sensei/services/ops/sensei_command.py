@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 from collections import defaultdict
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update as sql_update
@@ -30,6 +31,8 @@ from sensei.models.strategic import (
     ScenarioResultRecord,
 )
 from sensei.core.time import now_utc
+from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 # =============================================================================
@@ -304,6 +307,26 @@ class ExecutiveKPIAggregator:
         self.kpis: list[ExecutiveKPI] = []
         self._site_data: dict[str, list[ExecutiveKPI]] = defaultdict(list)
         self._family_data: dict[str, list[ExecutiveKPI]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        """Export KPI aggregator state for persistence."""
+        return {
+            "kpis": [encode_dataclass(kpi) for kpi in self.kpis],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load KPI aggregator state from persistence."""
+        self.kpis = [
+            decode_dataclass(kpi, ExecutiveKPI)
+            for kpi in state.get("kpis", [])
+        ]
+        self._site_data = defaultdict(list)
+        self._family_data = defaultdict(list)
+        for kpi in self.kpis:
+            if kpi.site_id:
+                self._site_data[kpi.site_id].append(kpi)
+            if kpi.product_family:
+                self._family_data[kpi.product_family].append(kpi)
     
     def add_kpi(self, kpi: ExecutiveKPI) -> None:
         """Add a KPI measurement."""
@@ -371,6 +394,24 @@ class FinancialHealthMonitor:
     def __init__(self):
         self.current_health: FinancialHealth | None = None
         self._history: list[FinancialHealth] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export financial monitor state for persistence."""
+        return {
+            "current_health": encode_dataclass(self.current_health)
+            if self.current_health
+            else None,
+            "history": [encode_dataclass(item) for item in self._history],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load financial monitor state from persistence."""
+        current = state.get("current_health")
+        self.current_health = decode_dataclass(current, FinancialHealth) if current else None
+        self._history = [
+            decode_dataclass(item, FinancialHealth)
+            for item in state.get("history", [])
+        ]
     
     def update_health(self, health: FinancialHealth) -> None:
         """Update current financial health."""
@@ -428,6 +469,19 @@ class RiskHeatmapGenerator:
     
     def __init__(self):
         self.risks: list[RiskItem] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export risk generator state for persistence."""
+        return {
+            "risks": [encode_dataclass(risk) for risk in self.risks],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load risk generator state from persistence."""
+        self.risks = [
+            decode_dataclass(risk, RiskItem)
+            for risk in state.get("risks", [])
+        ]
     
     def add_risk(self, risk: RiskItem) -> None:
         """Add a risk item."""
@@ -514,6 +568,30 @@ class BrainHealthDashboard:
     def __init__(self):
         self.component_status: dict[str, SystemHealthStatus] = {}
         self._status_history: list[tuple[datetime, dict[str, str]]] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export brain health state for persistence."""
+        return {
+            "component_status": {
+                name: encode_dataclass(status)
+                for name, status in self.component_status.items()
+            },
+            "status_history": [
+                {"timestamp": timestamp.isoformat(), "snapshot": snapshot}
+                for timestamp, snapshot in self._status_history
+            ],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load brain health state from persistence."""
+        self.component_status = {
+            name: decode_dataclass(status, SystemHealthStatus)
+            for name, status in state.get("component_status", {}).items()
+        }
+        self._status_history = [
+            (datetime.fromisoformat(item["timestamp"]), dict(item["snapshot"]))
+            for item in state.get("status_history", [])
+        ]
     
     def update_component(self, status: SystemHealthStatus) -> None:
         """Update a component's status."""
@@ -561,6 +639,19 @@ class LearningProgressionAnalytics:
     
     def __init__(self):
         self.progressions: list[LearningProgression] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export learning progression state for persistence."""
+        return {
+            "progressions": [encode_dataclass(item) for item in self.progressions],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load learning progression state from persistence."""
+        self.progressions = [
+            decode_dataclass(item, LearningProgression)
+            for item in state.get("progressions", [])
+        ]
     
     def add_progression(self, progression: LearningProgression) -> None:
         """Add a progression measurement."""
@@ -622,6 +713,22 @@ class MaintenanceAuditLog:
     def __init__(self, max_entries: int = 10000):
         self.max_entries = max_entries
         self.entries: list[MaintenanceAuditEntry] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export maintenance log state for persistence."""
+        return {
+            "max_entries": self.max_entries,
+            "entries": [encode_dataclass(entry) for entry in self.entries],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load maintenance log state from persistence."""
+        if "max_entries" in state:
+            self.max_entries = int(state["max_entries"])
+        self.entries = [
+            decode_dataclass(entry, MaintenanceAuditEntry)
+            for entry in state.get("entries", [])
+        ]
     
     def log_action(self, entry: MaintenanceAuditEntry) -> None:
         """Log a maintenance action."""
@@ -694,6 +801,16 @@ class NL2SQLEngine:
     
     def __init__(self, security_level: QuerySecurityLevel = QuerySecurityLevel.READ_ONLY):
         self.security_level = security_level
+
+    def export_state(self) -> dict[str, Any]:
+        """Export NL2SQL engine state for persistence."""
+        return {"security_level": self.security_level.value}
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load NL2SQL engine state from persistence."""
+        level = state.get("security_level")
+        if level:
+            self.security_level = QuerySecurityLevel(level)
 
     def generate_sql(self, natural_language: str, user_id: str | None = None) -> NL2SQLQuery:
         """Generate SQL from natural language query without persistence."""
@@ -831,6 +948,19 @@ class StrategicBriefingGenerator:
     
     def __init__(self):
         self.briefings: list[StrategicBriefing] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export strategic briefing state for persistence."""
+        return {
+            "briefings": [encode_dataclass(item) for item in self.briefings],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load strategic briefing state from persistence."""
+        self.briefings = [
+            decode_dataclass(item, StrategicBriefing)
+            for item in state.get("briefings", [])
+        ]
     
     def generate_briefing(
         self,
@@ -934,6 +1064,34 @@ class DeepDatabaseAnalytics:
         self.leakages: list[MarginLeakage] = []
         self.cohorts: list[CohortAnalysis] = []
         self.bottlenecks: list[Bottleneck] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export deep analytics state for persistence."""
+        return {
+            "correlations": [encode_dataclass(item) for item in self.correlations],
+            "leakages": [encode_dataclass(item) for item in self.leakages],
+            "cohorts": [encode_dataclass(item) for item in self.cohorts],
+            "bottlenecks": [encode_dataclass(item) for item in self.bottlenecks],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load deep analytics state from persistence."""
+        self.correlations = [
+            decode_dataclass(item, CrossSiloCorrelation)
+            for item in state.get("correlations", [])
+        ]
+        self.leakages = [
+            decode_dataclass(item, MarginLeakage)
+            for item in state.get("leakages", [])
+        ]
+        self.cohorts = [
+            decode_dataclass(item, CohortAnalysis)
+            for item in state.get("cohorts", [])
+        ]
+        self.bottlenecks = [
+            decode_dataclass(item, Bottleneck)
+            for item in state.get("bottlenecks", [])
+        ]
     
     def analyze_cross_silo_correlation(
         self,
@@ -1106,6 +1264,27 @@ class GlobalAuditTrail:
         self.entries: list[AuditTrailEntry] = []
         self._by_entity: dict[str, list[AuditTrailEntry]] = defaultdict(list)
         self._by_user: dict[str, list[AuditTrailEntry]] = defaultdict(list)
+
+    def export_state(self) -> dict[str, Any]:
+        """Export audit trail state for persistence."""
+        return {
+            "max_entries": self.max_entries,
+            "entries": [encode_dataclass(entry) for entry in self.entries],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load audit trail state from persistence."""
+        if "max_entries" in state:
+            self.max_entries = int(state["max_entries"])
+        self.entries = [
+            decode_dataclass(entry, AuditTrailEntry)
+            for entry in state.get("entries", [])
+        ]
+        self._by_entity = defaultdict(list)
+        self._by_user = defaultdict(list)
+        for entry in self.entries:
+            self._by_entity[f"{entry.entity_type}:{entry.entity_id}"].append(entry)
+            self._by_user[entry.user_id].append(entry)
     
     def log_entry(self, entry: AuditTrailEntry) -> None:
         """Log an audit entry."""
@@ -1166,6 +1345,26 @@ class CEOSuperView:
         self.active_overlay: PersonaOverlay | None = None
         self.overlay_history: list[PersonaOverlay] = []
         self._action_log: list[dict[str, Any]] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export CEO super view state for persistence."""
+        return {
+            "active_overlay": encode_dataclass(self.active_overlay)
+            if self.active_overlay
+            else None,
+            "overlay_history": [encode_dataclass(item) for item in self.overlay_history],
+            "action_log": list(self._action_log),
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load CEO super view state from persistence."""
+        active = state.get("active_overlay")
+        self.active_overlay = decode_dataclass(active, PersonaOverlay) if active else None
+        self.overlay_history = [
+            decode_dataclass(item, PersonaOverlay)
+            for item in state.get("overlay_history", [])
+        ]
+        self._action_log = list(state.get("action_log", []))
     
     def enable_persona_overlay(self, persona: PersonaType) -> PersonaOverlay:
         """Enable a persona overlay for the CEO."""
@@ -1260,6 +1459,30 @@ class EmployeeIntelligenceAnalytics:
         self.gdpr_compliant = gdpr_compliant
         self.analytics: dict[str, EmployeeAnalytics] = {}
         self.talent_alerts: list[TalentRiskAlert] = []
+
+    def export_state(self) -> dict[str, Any]:
+        """Export employee intelligence state for persistence."""
+        return {
+            "gdpr_compliant": self.gdpr_compliant,
+            "analytics": {
+                employee_id: encode_dataclass(item)
+                for employee_id, item in self.analytics.items()
+            },
+            "talent_alerts": [encode_dataclass(item) for item in self.talent_alerts],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Load employee intelligence state from persistence."""
+        if "gdpr_compliant" in state:
+            self.gdpr_compliant = bool(state["gdpr_compliant"])
+        self.analytics = {
+            employee_id: decode_dataclass(item, EmployeeAnalytics)
+            for employee_id, item in state.get("analytics", {}).items()
+        }
+        self.talent_alerts = [
+            decode_dataclass(item, TalentRiskAlert)
+            for item in state.get("talent_alerts", [])
+        ]
     
     def update_employee_analytics(self, analytics: EmployeeAnalytics) -> None:
         """Update analytics for an employee."""
@@ -1381,10 +1604,14 @@ class EmployeeIntelligenceAnalytics:
 # =============================================================================
 
 
-class SenseiCommand:
+class SenseiCommand(PersistentServiceMixin):
     """
     Main orchestrator for CEO Strategic Control Plane.
     """
+
+    SERVICE_NAME = "sensei_command"
+
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
     
     def __init__(self, ceo_user_id: str):
         self.ceo_user_id = ceo_user_id
@@ -1410,6 +1637,92 @@ class SenseiCommand:
         self.audit_trail = GlobalAuditTrail()
         self.ceo_view = CEOSuperView(ceo_user_id)
         self.employee_analytics = EmployeeIntelligenceAnalytics()
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        state = await self.load_state(self._DEFAULT_TENANT_ID, "state")
+        if not state:
+            self._state_loaded = True
+            return
+
+        if state.get("ceo_user_id"):
+            self.ceo_user_id = state["ceo_user_id"]
+            self.ceo_view.ceo_user_id = self.ceo_user_id
+
+        kpi_state = state.get("kpi_aggregator")
+        if kpi_state:
+            self.kpi_aggregator.load_state(kpi_state)
+
+        financial_state = state.get("financial_monitor")
+        if financial_state:
+            self.financial_monitor.load_state(financial_state)
+
+        risk_state = state.get("risk_generator")
+        if risk_state:
+            self.risk_generator.load_state(risk_state)
+
+        brain_state = state.get("brain_dashboard")
+        if brain_state:
+            self.brain_dashboard.load_state(brain_state)
+
+        learning_state = state.get("learning_analytics")
+        if learning_state:
+            self.learning_analytics.load_state(learning_state)
+
+        maintenance_state = state.get("maintenance_log")
+        if maintenance_state:
+            self.maintenance_log.load_state(maintenance_state)
+
+        nl2sql_state = state.get("nl2sql_engine")
+        if nl2sql_state:
+            self.nl2sql_engine.load_state(nl2sql_state)
+
+        briefing_state = state.get("briefing_generator")
+        if briefing_state:
+            self.briefing_generator.load_state(briefing_state)
+
+        analytics_state = state.get("deep_analytics")
+        if analytics_state:
+            self.deep_analytics.load_state(analytics_state)
+
+        audit_state = state.get("audit_trail")
+        if audit_state:
+            self.audit_trail.load_state(audit_state)
+
+        ceo_view_state = state.get("ceo_view")
+        if ceo_view_state:
+            self.ceo_view.load_state(ceo_view_state)
+
+        employee_state = state.get("employee_analytics")
+        if employee_state:
+            self.employee_analytics.load_state(employee_state)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        state = {
+            "ceo_user_id": self.ceo_user_id,
+            "kpi_aggregator": self.kpi_aggregator.export_state(),
+            "financial_monitor": self.financial_monitor.export_state(),
+            "risk_generator": self.risk_generator.export_state(),
+            "brain_dashboard": self.brain_dashboard.export_state(),
+            "learning_analytics": self.learning_analytics.export_state(),
+            "maintenance_log": self.maintenance_log.export_state(),
+            "nl2sql_engine": self.nl2sql_engine.export_state(),
+            "briefing_generator": self.briefing_generator.export_state(),
+            "deep_analytics": self.deep_analytics.export_state(),
+            "audit_trail": self.audit_trail.export_state(),
+            "ceo_view": self.ceo_view.export_state(),
+            "employee_analytics": self.employee_analytics.export_state(),
+        }
+        await self.save_state(self._DEFAULT_TENANT_ID, "state", state)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
     
     def get_executive_dashboard(self) -> dict[str, Any]:
         """Get the executive dashboard summary."""
@@ -1471,6 +1784,41 @@ class SenseiCommand:
             "margin_leakages": self.deep_analytics.detect_margin_leakage(quote_data, []),
             "bottlenecks": self.deep_analytics.detect_bottlenecks([]),
         }
+
+    async def get_executive_dashboard_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_executive_dashboard()
+
+    async def query_database_async(self, db: AsyncSession, natural_language: str) -> NL2SQLQuery:
+        await self._ensure_loaded()
+        return await self._query_database_async(db, natural_language)
+
+    async def generate_weekly_briefing_async(self) -> StrategicBriefing:
+        await self._ensure_loaded()
+        briefing = self.generate_weekly_briefing()
+        await self.persist_all()
+        return briefing
+
+    async def enable_persona_view_async(self, persona: PersonaType) -> PersonaOverlay:
+        await self._ensure_loaded()
+        overlay = self.enable_persona_view(persona)
+        await self.persist_all()
+        return overlay
+
+    async def get_talent_insights_async(self) -> dict[str, Any]:
+        await self._ensure_loaded()
+        return self.get_talent_insights()
+
+    async def run_deep_analytics_async(
+        self,
+        rfq_data: list[dict[str, Any]],
+        production_data: list[dict[str, Any]],
+        quote_data: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        await self._ensure_loaded()
+        result = self.run_deep_analytics(rfq_data, production_data, quote_data)
+        await self.persist_all()
+        return result
 
 
 # =============================================================================

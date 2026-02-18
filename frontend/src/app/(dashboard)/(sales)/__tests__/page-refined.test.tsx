@@ -1,7 +1,10 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PipelinePage from '../page-refined';
 import { usePipelineStore } from '@/stores/pipeline';
+
+const render = renderWithI18n;
 
 // Mock next/navigation
 jest.mock('next/navigation', () => ({

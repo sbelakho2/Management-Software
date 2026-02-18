@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { I18nProvider } from '@/contexts/i18n-context';
 import {
   KanbanBoard,
   KanbanToolbar,
@@ -8,6 +9,9 @@ import {
 } from '../kanban-board';
 import { useKanbanStore } from '@/stores/kanban-store';
 import type { RFQ, Customer, Priority } from '@/types';
+
+const renderWithI18n = (ui: React.ReactElement) =>
+  rtlRender(<I18nProvider>{ui}</I18nProvider>);
 
 // Mock the kanban store
 const mockGetFilteredCards = jest.fn(() => []);
@@ -132,7 +136,7 @@ describe('KanbanBoard', () => {
   });
 
   it('renders all columns', () => {
-    render(<KanbanBoard rfqs={[]} />);
+    renderWithI18n(<KanbanBoard rfqs={[]} />);
     
     expect(screen.getByText('New')).toBeInTheDocument();
     expect(screen.getByText('Reviewing')).toBeInTheDocument();
@@ -140,9 +144,9 @@ describe('KanbanBoard', () => {
   });
 
   it('renders empty state message in columns', () => {
-    render(<KanbanBoard rfqs={[]} />);
+    renderWithI18n(<KanbanBoard rfqs={[]} />);
     
-    const emptyMessages = screen.getAllByText('No items');
+    const emptyMessages = screen.getAllByText('No items in this column');
     expect(emptyMessages.length).toBe(3);
   });
 
@@ -155,7 +159,7 @@ describe('KanbanBoard', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     expect(screen.getByText('RFQ-001')).toBeInTheDocument();
     expect(screen.getByText('Test RFQ')).toBeInTheDocument();
@@ -169,7 +173,7 @@ describe('KanbanBoard', () => {
       return { count: 0, limit: 10, isOverLimit: false };
     });
     
-    render(<KanbanBoard rfqs={[]} />);
+    renderWithI18n(<KanbanBoard rfqs={[]} />);
     
     expect(screen.getByText('7')).toBeInTheDocument();
   });
@@ -184,7 +188,7 @@ describe('KanbanBoard', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} onCardClick={mockOnCardClick} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} onCardClick={mockOnCardClick} />);
     
     const card = screen.getByText('RFQ-001').closest('div[draggable="true"]');
     if (card) {
@@ -196,7 +200,7 @@ describe('KanbanBoard', () => {
   it('initializes store with RFQs on mount', () => {
     const mockRfqs = [createMockRFQ({ id: 'rfq-1' })];
     
-    render(<KanbanBoard rfqs={mockRfqs} />);
+    renderWithI18n(<KanbanBoard rfqs={mockRfqs} />);
     
     expect(mockInitializeFromRFQs).toHaveBeenCalledWith(mockRfqs);
   });
@@ -210,7 +214,7 @@ describe('KanbanBoard', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     expect(screen.getByText('High')).toBeInTheDocument();
   });
@@ -224,7 +228,7 @@ describe('KanbanBoard', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     expect(screen.getByText('Test Customer Inc.')).toBeInTheDocument();
   });
@@ -238,13 +242,13 @@ describe('KanbanBoard', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     expect(screen.getByText('automotive')).toBeInTheDocument();
   });
 
   it('applies custom className', () => {
-    const { container } = render(<KanbanBoard rfqs={[]} className="custom-class" />);
+    const { container } = renderWithI18n(<KanbanBoard rfqs={[]} className="custom-class" />);
     
     expect(container.firstChild).toHaveClass('custom-class');
   });
@@ -257,13 +261,13 @@ describe('KanbanToolbar', () => {
   });
 
   it('renders search input', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     expect(screen.getByPlaceholderText('Search RFQs...')).toBeInTheDocument();
   });
 
   it('renders filter button', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     expect(screen.getByText('Filters')).toBeInTheDocument();
   });
@@ -271,7 +275,7 @@ describe('KanbanToolbar', () => {
   it('calls onFilterChange when filter button clicked', async () => {
     const user = userEvent.setup();
     const onFilterChange = jest.fn();
-    render(<KanbanToolbar onFilterChange={onFilterChange} />);
+    renderWithI18n(<KanbanToolbar onFilterChange={onFilterChange} />);
     
     const filterButton = screen.getByText('Filters');
     await act(async () => {
@@ -282,7 +286,7 @@ describe('KanbanToolbar', () => {
   });
 
   it('renders view toggle buttons', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     expect(screen.getByTitle('Kanban view')).toBeInTheDocument();
     expect(screen.getByTitle('List view')).toBeInTheDocument();
@@ -292,7 +296,7 @@ describe('KanbanToolbar', () => {
   it('calls onViewChange when view button clicked', async () => {
     const user = userEvent.setup();
     const onViewChange = jest.fn();
-    render(<KanbanToolbar onViewChange={onViewChange} />);
+    renderWithI18n(<KanbanToolbar onViewChange={onViewChange} />);
     
     const listButton = screen.getByTitle('List view');
     await act(async () => {
@@ -303,14 +307,14 @@ describe('KanbanToolbar', () => {
   });
 
   it('renders compact mode toggle', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     expect(screen.getByTitle('Compact cards')).toBeInTheDocument();
   });
 
   it('toggles compact mode when clicked', async () => {
     const user = userEvent.setup();
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     const compactToggle = screen.getByTitle('Compact cards');
     await act(async () => {
@@ -322,7 +326,7 @@ describe('KanbanToolbar', () => {
 
   it('submits search on form submit', async () => {
     const user = userEvent.setup();
-    render(<KanbanToolbar onSearch={jest.fn()} />);
+    renderWithI18n(<KanbanToolbar onSearch={jest.fn()} />);
     
     const input = screen.getByPlaceholderText('Search RFQs...');
     await act(async () => {
@@ -333,7 +337,7 @@ describe('KanbanToolbar', () => {
   });
 
   it('highlights current view', () => {
-    render(<KanbanToolbar currentView="list" />);
+    renderWithI18n(<KanbanToolbar currentView="list" />);
     
     const listButton = screen.getByTitle('List view');
     expect(listButton).toHaveClass('bg-blue-600');
@@ -357,20 +361,20 @@ describe('KanbanMetrics', () => {
   });
 
   it('renders total RFQ count', () => {
-    render(<KanbanMetrics />);
+    renderWithI18n(<KanbanMetrics />);
     
     expect(screen.getByText(/2\s*RFQs/)).toBeInTheDocument();
     expect(screen.getByText(/Total:/)).toBeInTheDocument();
   });
 
   it('renders pipeline value section', () => {
-    render(<KanbanMetrics />);
+    renderWithI18n(<KanbanMetrics />);
     
     expect(screen.getByText(/Pipeline Value:/)).toBeInTheDocument();
   });
 
   it('renders column metrics', () => {
-    render(<KanbanMetrics />);
+    renderWithI18n(<KanbanMetrics />);
     
     expect(screen.getByText('New')).toBeInTheDocument();
     expect(screen.getByText('Reviewing')).toBeInTheDocument();
@@ -378,7 +382,7 @@ describe('KanbanMetrics', () => {
   });
 
   it('shows column counts', () => {
-    render(<KanbanMetrics />);
+    renderWithI18n(<KanbanMetrics />);
     
     // Verify columns are rendered with their values
     const container = screen.getByText('New').parentElement;
@@ -401,7 +405,7 @@ describe('Drag and Drop Integration', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     const card = screen.getByText('RFQ-001').closest('div[draggable="true"]');
     expect(card).toHaveAttribute('draggable', 'true');
@@ -416,7 +420,7 @@ describe('Drag and Drop Integration', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     const card = screen.getByText('RFQ-001').closest('div[draggable="true"]');
     if (card) {
@@ -449,7 +453,7 @@ describe('Priority Badges (via KanbanBoard)', () => {
         return [];
       });
       
-      render(<KanbanBoard rfqs={[mockRfq]} />);
+      renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
       
       expect(screen.getByText(label)).toBeInTheDocument();
     });
@@ -471,7 +475,7 @@ describe('Card Selection', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     const card = screen.getByText('RFQ-001').closest('div[draggable="true"]');
     if (card) {
@@ -491,7 +495,7 @@ describe('Card Selection', () => {
       return [];
     });
     
-    render(<KanbanBoard rfqs={[mockRfq]} />);
+    renderWithI18n(<KanbanBoard rfqs={[mockRfq]} />);
     
     const card = screen.getByText('RFQ-001').closest('div[draggable="true"]');
     expect(card).toHaveClass('ring-2');
@@ -505,7 +509,7 @@ describe('Accessibility', () => {
   });
 
   it('has column headings', () => {
-    render(<KanbanBoard rfqs={[]} />);
+    renderWithI18n(<KanbanBoard rfqs={[]} />);
     
     expect(screen.getByRole('heading', { name: 'New' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Reviewing' })).toBeInTheDocument();
@@ -513,14 +517,14 @@ describe('Accessibility', () => {
   });
 
   it('search input has placeholder', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     const input = screen.getByPlaceholderText('Search RFQs...');
     expect(input).toHaveAttribute('type', 'text');
   });
 
   it('view buttons have titles', () => {
-    render(<KanbanToolbar />);
+    renderWithI18n(<KanbanToolbar />);
     
     expect(screen.getByTitle('Kanban view')).toBeInTheDocument();
     expect(screen.getByTitle('List view')).toBeInTheDocument();

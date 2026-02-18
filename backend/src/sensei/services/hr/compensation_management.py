@@ -20,6 +20,7 @@ from typing import Any, Iterable
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ _HR_WRITE_ROLES: set[str] = {"admin", "hr", "ceo"}
 _HR_READ_ROLES: set[str] = {"admin", "hr", "ceo", "exec", "gm", "finance", "auditor"}
 _COMP_APPROVE_ROLES: set[str] = {"admin", "ceo", "exec", "hr"}
 _SALARY_VIEW_ROLES: set[str] = {"admin", "hr", "ceo", "finance", "auditor"}
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 def _norm_roles(roles: Iterable[str]) -> set[str]:
@@ -153,6 +155,44 @@ class CompensationManagementService(PersistentServiceMixin):
         self._audit: list[AuditEvent] = []
         # Secondary index: employee_id -> set of record ids (#96)
         self._records_by_employee: dict[UUID, set[UUID]] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        bands_data = await self.load_state(_DEFAULT_TENANT_ID, "pay_bands") or {}
+        records_data = await self.load_state(_DEFAULT_TENANT_ID, "compensation_records") or {}
+        changes_data = await self.load_state(_DEFAULT_TENANT_ID, "changes") or {}
+        audit_data = await self.load_state(_DEFAULT_TENANT_ID, "audit") or []
+
+        self._pay_bands = {UUID(bid): decode_dataclass(b, PayBand) for bid, b in bands_data.items()}
+        self._compensation_records = {
+            UUID(rid): decode_dataclass(r, CompensationRecord) for rid, r in records_data.items()
+        }
+        self._changes = {UUID(cid): decode_dataclass(c, CompensationChange) for cid, c in changes_data.items()}
+        self._audit = [decode_dataclass(ev, AuditEvent) for ev in audit_data]
+
+        self._records_by_employee.clear()
+        for record in self._compensation_records.values():
+            self._records_by_employee.setdefault(record.employee_id, set()).add(record.id)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        bands_data = {str(bid): encode_dataclass(b) for bid, b in self._pay_bands.items()}
+        records_data = {str(rid): encode_dataclass(r) for rid, r in self._compensation_records.items()}
+        changes_data = {str(cid): encode_dataclass(c) for cid, c in self._changes.items()}
+        audit_data = [encode_dataclass(ev) for ev in self._audit]
+
+        await self.save_state(_DEFAULT_TENANT_ID, "pay_bands", bands_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "compensation_records", records_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "changes", changes_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "audit", audit_data)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     # ----------------------------------------------------------------
     # Internal helpers
@@ -190,6 +230,10 @@ class CompensationManagementService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _HR_READ_ROLES, "HR read role required")
         return list(self._audit)
+
+    async def list_audit_events_async(self, *, actor_roles: Iterable[str]) -> list[AuditEvent]:
+        await self._ensure_loaded()
+        return self.list_audit_events(actor_roles=actor_roles)
 
     # ----------------------------------------------------------------
     # Pay Bands
@@ -253,6 +297,12 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return band
 
+    async def create_pay_band_async(self, **kwargs: Any) -> PayBand:
+        await self._ensure_loaded()
+        band = self.create_pay_band(**kwargs)
+        await self.persist_all()
+        return band
+
     def list_pay_bands(
         self,
         *,
@@ -277,12 +327,20 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return sorted(result, key=lambda b: (b.grade, b.level))
 
+    async def list_pay_bands_async(self, **kwargs: Any) -> list[PayBand]:
+        await self._ensure_loaded()
+        return self.list_pay_bands(**kwargs)
+
     def get_pay_band(
         self, *, actor_roles: Iterable[str], band_id: UUID
     ) -> PayBand | None:
         roles = _norm_roles(actor_roles)
         _require_any(roles, _HR_READ_ROLES, "HR read role required")
         return self._pay_bands.get(band_id)
+
+    async def get_pay_band_async(self, **kwargs: Any) -> PayBand | None:
+        await self._ensure_loaded()
+        return self.get_pay_band(**kwargs)
 
     # ----------------------------------------------------------------
     # Compensation Records
@@ -380,6 +438,12 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return record
 
+    async def set_compensation_async(self, **kwargs: Any) -> CompensationRecord:
+        await self._ensure_loaded()
+        record = self.set_compensation(**kwargs)
+        await self.persist_all()
+        return record
+
     def get_current_compensation(
         self,
         *,
@@ -416,6 +480,10 @@ class CompensationManagementService(PersistentServiceMixin):
                 return rec
         return None
 
+    async def get_current_compensation_async(self, **kwargs: Any) -> CompensationRecord | None:
+        await self._ensure_loaded()
+        return self.get_current_compensation(**kwargs)
+
     def get_compensation_history(
         self,
         *,
@@ -433,6 +501,10 @@ class CompensationManagementService(PersistentServiceMixin):
             if rid in self._compensation_records
         ]
         return sorted(result, key=lambda r: r.effective_date)
+
+    async def get_compensation_history_async(self, **kwargs: Any) -> list[CompensationRecord]:
+        await self._ensure_loaded()
+        return self.get_compensation_history(**kwargs)
 
     # ----------------------------------------------------------------
     # Compensation Change Workflow
@@ -512,6 +584,12 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return change
 
+    async def propose_change_async(self, **kwargs: Any) -> CompensationChange:
+        await self._ensure_loaded()
+        change = self.propose_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def approve_change(
         self,
         *,
@@ -583,6 +661,12 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return approved
 
+    async def approve_change_async(self, **kwargs: Any) -> CompensationChange:
+        await self._ensure_loaded()
+        change = self.approve_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def reject_change(
         self,
         *,
@@ -637,6 +721,12 @@ class CompensationManagementService(PersistentServiceMixin):
 
         return rejected
 
+    async def reject_change_async(self, **kwargs: Any) -> CompensationChange:
+        await self._ensure_loaded()
+        change = self.reject_change(**kwargs)
+        await self.persist_all()
+        return change
+
     def list_pending_changes(
         self, *, actor_roles: Iterable[str]
     ) -> list[CompensationChange]:
@@ -650,6 +740,10 @@ class CompensationManagementService(PersistentServiceMixin):
             if c.status == ChangeStatus.PENDING_APPROVAL
         ]
 
+    async def list_pending_changes_async(self, **kwargs: Any) -> list[CompensationChange]:
+        await self._ensure_loaded()
+        return self.list_pending_changes(**kwargs)
+
     def get_change(
         self, *, actor_roles: Iterable[str], change_id: UUID
     ) -> CompensationChange | None:
@@ -657,6 +751,10 @@ class CompensationManagementService(PersistentServiceMixin):
         roles = _norm_roles(actor_roles)
         _require_any(roles, _HR_READ_ROLES, "HR read role required")
         return self._changes.get(change_id)
+
+    async def get_change_async(self, **kwargs: Any) -> CompensationChange | None:
+        await self._ensure_loaded()
+        return self.get_change(**kwargs)
 
     # ----------------------------------------------------------------
     # Exports
@@ -702,3 +800,7 @@ class CompensationManagementService(PersistentServiceMixin):
         )
 
         return result
+
+    async def export_payroll_rates_async(self, **kwargs: Any) -> list[dict[str, Any]]:
+        await self._ensure_loaded()
+        return self.export_payroll_rates(**kwargs)

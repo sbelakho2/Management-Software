@@ -15,10 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import UUID, uuid4
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass
 
 
 def _require_tzaware(dt: datetime) -> None:
@@ -33,6 +34,7 @@ def _norm_roles(roles: Iterable[str]) -> set[str]:
 _HR_WRITE_ROLES: set[str] = {"admin", "hr"}
 _MANAGER_ROLES: set[str] = {"gm", "exec", "ops", "supervisor", "manager"}
 _SUCCESSION_WRITE_ROLES: set[str] = _HR_WRITE_ROLES.union({"exec", "ceo"})
+_DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 
 class ReviewCycleType(str, Enum):
@@ -180,12 +182,59 @@ class TalentPerformanceService(PersistentServiceMixin):
 
         # Optional org map for manager checks (employee -> manager)
         self._manager_of: dict[str, str] = {}
+        self._state_loaded = False
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        a3_data = await self.load_state(_DEFAULT_TENANT_ID, "a3_contribs") or {}
+        suggestions_data = await self.load_state(_DEFAULT_TENANT_ID, "suggestions") or {}
+        oee_data = await self.load_state(_DEFAULT_TENANT_ID, "oee") or {}
+        reviews_data = await self.load_state(_DEFAULT_TENANT_ID, "reviews") or {}
+        succession_data = await self.load_state(_DEFAULT_TENANT_ID, "succession") or {}
+        praise_data = await self.load_state(_DEFAULT_TENANT_ID, "praise") or {}
+        manager_data = await self.load_state(_DEFAULT_TENANT_ID, "manager_map") or {}
+
+        self._a3_contribs = {UUID(cid): decode_dataclass(c, A3Contribution) for cid, c in a3_data.items()}
+        self._suggestions = {UUID(sid): decode_dataclass(s, Suggestion) for sid, s in suggestions_data.items()}
+        self._oee = {UUID(oid): decode_dataclass(o, OeeSnapshot) for oid, o in oee_data.items()}
+        self._reviews = {UUID(rid): decode_dataclass(r, PerformanceReview) for rid, r in reviews_data.items()}
+        self._succession = {UUID(sid): decode_dataclass(s, SuccessionCandidate) for sid, s in succession_data.items()}
+        self._praise = {UUID(pid): decode_dataclass(p, PraiseMilestone) for pid, p in praise_data.items()}
+        self._manager_of = {str(k): str(v) for k, v in manager_data.items()}
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        a3_data = {str(cid): encode_dataclass(c) for cid, c in self._a3_contribs.items()}
+        suggestions_data = {str(sid): encode_dataclass(s) for sid, s in self._suggestions.items()}
+        oee_data = {str(oid): encode_dataclass(o) for oid, o in self._oee.items()}
+        reviews_data = {str(rid): encode_dataclass(r) for rid, r in self._reviews.items()}
+        succession_data = {str(sid): encode_dataclass(s) for sid, s in self._succession.items()}
+        praise_data = {str(pid): encode_dataclass(p) for pid, p in self._praise.items()}
+
+        await self.save_state(_DEFAULT_TENANT_ID, "a3_contribs", a3_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "suggestions", suggestions_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "oee", oee_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "reviews", reviews_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "succession", succession_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "praise", praise_data)
+        await self.save_state(_DEFAULT_TENANT_ID, "manager_map", dict(self._manager_of))
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     def set_manager(self, *, employee_id: str, manager_employee_id: str, actor_roles: Iterable[str]) -> None:
         roles = _norm_roles(actor_roles)
         if not roles.intersection(_HR_WRITE_ROLES.union(_MANAGER_ROLES)):
             raise PermissionError("HR/Manager role required")
         self._manager_of[employee_id] = manager_employee_id
+
+    async def set_manager_async(self, **kwargs: Any) -> None:
+        await self._ensure_loaded()
+        self.set_manager(**kwargs)
+        await self.persist_all()
 
     def record_a3_contribution(
         self,
@@ -199,7 +248,6 @@ class TalentPerformanceService(PersistentServiceMixin):
         if occurred_at is None:
             occurred_at = datetime.now(timezone.utc)
         _require_tzaware(occurred_at)
-
         if points is None:
             points = 5 if contribution_type == A3ContributionType.OWNER else 2
 
@@ -212,6 +260,12 @@ class TalentPerformanceService(PersistentServiceMixin):
             occurred_at=occurred_at,
         )
         self._a3_contribs[contrib.id] = contrib
+        return contrib
+
+    async def record_a3_contribution_async(self, **kwargs: Any) -> A3Contribution:
+        await self._ensure_loaded()
+        contrib = self.record_a3_contribution(**kwargs)
+        await self.persist_all()
         return contrib
 
     def submit_suggestion(
@@ -233,6 +287,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         )
         self._suggestions[sug.id] = sug
         return sug
+
+    async def submit_suggestion_async(self, **kwargs: Any) -> Suggestion:
+        await self._ensure_loaded()
+        suggestion = self.submit_suggestion(**kwargs)
+        await self.persist_all()
+        return suggestion
 
     def decide_suggestion(
         self,
@@ -265,6 +325,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         self._suggestions[suggestion_id] = updated
         return updated
 
+    async def decide_suggestion_async(self, **kwargs: Any) -> Suggestion:
+        await self._ensure_loaded()
+        suggestion = self.decide_suggestion(**kwargs)
+        await self.persist_all()
+        return suggestion
+
     def record_oee_snapshot(
         self,
         *,
@@ -296,6 +362,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         )
         self._oee[snap.id] = snap
         return snap
+
+    async def record_oee_snapshot_async(self, **kwargs: Any) -> OeeSnapshot:
+        await self._ensure_loaded()
+        snapshot = self.record_oee_snapshot(**kwargs)
+        await self.persist_all()
+        return snapshot
 
     def _is_manager_of(self, *, manager_employee_id: str, employee_id: str) -> bool:
         return self._manager_of.get(employee_id) == manager_employee_id
@@ -371,6 +443,10 @@ class TalentPerformanceService(PersistentServiceMixin):
             score=score,
         )
 
+    async def compute_metrics_async(self, **kwargs: Any) -> PerformanceReviewMetrics:
+        await self._ensure_loaded()
+        return self.compute_metrics(**kwargs)
+
     def create_performance_review(
         self,
         *,
@@ -411,6 +487,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         self._reviews[review.id] = review
         return review
 
+    async def create_performance_review_async(self, **kwargs: Any) -> PerformanceReview:
+        await self._ensure_loaded()
+        review = self.create_performance_review(**kwargs)
+        await self.persist_all()
+        return review
+
     def submit_review(
         self,
         *,
@@ -444,6 +526,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         self._reviews[review_id] = updated
         return updated
 
+    async def submit_review_async(self, **kwargs: Any) -> PerformanceReview:
+        await self._ensure_loaded()
+        review = self.submit_review(**kwargs)
+        await self.persist_all()
+        return review
+
     def approve_review(
         self,
         *,
@@ -473,6 +561,12 @@ class TalentPerformanceService(PersistentServiceMixin):
         )
         self._reviews[review_id] = updated
         return updated
+
+    async def approve_review_async(self, **kwargs: Any) -> PerformanceReview:
+        await self._ensure_loaded()
+        review = self.approve_review(**kwargs)
+        await self.persist_all()
+        return review
 
     def upsert_succession_candidate(
         self,
@@ -525,11 +619,21 @@ class TalentPerformanceService(PersistentServiceMixin):
         self._succession[existing_id] = updated
         return updated
 
+    async def upsert_succession_candidate_async(self, **kwargs: Any) -> SuccessionCandidate:
+        await self._ensure_loaded()
+        candidate = self.upsert_succession_candidate(**kwargs)
+        await self.persist_all()
+        return candidate
+
     def list_succession_candidates(self, *, target_role: str | None = None) -> list[SuccessionCandidate]:
         items = list(self._succession.values())
         if target_role:
             items = [c for c in items if c.target_role == target_role]
         return sorted(items, key=lambda c: (-c.readiness, c.created_at))
+
+    async def list_succession_candidates_async(self, **kwargs: Any) -> list[SuccessionCandidate]:
+        await self._ensure_loaded()
+        return self.list_succession_candidates(**kwargs)
 
     def record_a3_outcome(
         self,
@@ -573,8 +677,18 @@ class TalentPerformanceService(PersistentServiceMixin):
 
         return created
 
+    async def record_a3_outcome_async(self, **kwargs: Any) -> list[PraiseMilestone]:
+        await self._ensure_loaded()
+        milestones = self.record_a3_outcome(**kwargs)
+        await self.persist_all()
+        return milestones
+
     def list_praise(self, *, employee_id: str | None = None) -> list[PraiseMilestone]:
         items = list(self._praise.values())
         if employee_id is not None:
             items = [p for p in items if p.employee_id == employee_id]
         return sorted(items, key=lambda p: p.awarded_at)
+
+    async def list_praise_async(self, **kwargs: Any) -> list[PraiseMilestone]:
+        await self._ensure_loaded()
+        return self.list_praise(**kwargs)

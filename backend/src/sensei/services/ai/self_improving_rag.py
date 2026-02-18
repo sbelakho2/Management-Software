@@ -1,4 +1,4 @@
-"""Self-improving RAG components with in-memory persistence for tests.\n\n.. warning:: Fake Embeddings Active\n\n   This module uses ``hash()``-based fake embeddings (16 calls per chunk)\n   instead of real sentence-transformer embeddings. Replace with actual\n   ONNX model calls for production quality. All state is in-memory only;\n   back with pgvector/Redis for persistence. See **#208, #32, #455**.\n"""
+"""Self-improving RAG components with lightweight persistence.\n\n.. warning:: Fake Embeddings Active\n\n   This module uses ``hash()``-based fake embeddings (16 calls per chunk)\n   instead of real sentence-transformer embeddings. Replace with actual\n   ONNX model calls for production quality. See **#208, #32, #455**.\n"""
 
 from __future__ import annotations
 
@@ -6,14 +6,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timezone
 from enum import Enum
 import asyncio
+import base64
 import heapq
 import hashlib
 import math
 from typing import Any
+from uuid import UUID
 
 import numpy as np
 
 from sensei.services.core.persistent_service_mixin import PersistentServiceMixin
+from sensei.services.core.state_codec import decode_dataclass, encode_dataclass, encode_value
 
 
 def _utcnow() -> datetime:
@@ -426,8 +429,34 @@ class SimpleDocumentProcessor:
 
     def __init__(self, chunk_size: int = 200) -> None:
         self.chunk_size = chunk_size
+        self._onnx_embedder = None
+        self._onnx_attempted = False
+
+    def _get_onnx_embedder(self):
+        """Lazy-load the ONNX embedder for real vector embeddings."""
+        if not self._onnx_attempted:
+            self._onnx_attempted = True
+            try:
+                from sensei.services.ai.real_ml_implementations import OnnxEmbedder
+                self._onnx_embedder = OnnxEmbedder()
+            except Exception:
+                self._onnx_embedder = None
+        return self._onnx_embedder
 
     def _embed_text(self, text: str, dim: int = 16) -> list[float]:
+        # Try ONNX embedder first for real semantic embeddings
+        embedder = self._get_onnx_embedder()
+        if embedder is not None:
+            try:
+                vec = embedder.embed(text)
+                # Truncate or pad to requested dim if needed
+                if len(vec) >= dim:
+                    return vec[:dim]
+                return vec + [0.0] * (dim - len(vec))
+            except Exception:
+                pass
+
+        # Fallback: deterministic hash-based embeddings (test/offline only)
         values: list[float] = []
         for i in range(dim):
             digest = hashlib.sha256(f"{text}:{i}".encode("utf-8")).digest()
@@ -458,6 +487,8 @@ class SelfImprovingRAGService(PersistentServiceMixin):
 
     SERVICE_NAME = "self_improving_rag"
 
+    _DEFAULT_TENANT_ID = UUID("00000000-0000-0000-0000-000000000000")
+
     def __init__(
         self,
         *,
@@ -477,8 +508,128 @@ class SelfImprovingRAGService(PersistentServiceMixin):
         self.processor = processor
         self.utility_threshold = utility_threshold
         self._documents: dict[str, bytes] = {}
+        self._state_loaded = False
+
+    # ------------------------------------------------------------------
+    # DB persistence helpers (via PersistentServiceMixin save_state/load_state)
+    # ------------------------------------------------------------------
+
+    async def load_from_db(self) -> None:
+        if self._state_loaded:
+            return
+
+        chunks_data = await self.load_state(self._DEFAULT_TENANT_ID, "chunks")
+        events_data = await self.load_state(self._DEFAULT_TENANT_ID, "events")
+        doc_chunks = await self.load_state(self._DEFAULT_TENANT_ID, "document_chunks")
+        vectors_data = await self.load_state(self._DEFAULT_TENANT_ID, "vectors")
+        documents_data = await self.load_state(self._DEFAULT_TENANT_ID, "documents")
+        pending_data = await self.load_state(self._DEFAULT_TENANT_ID, "scheduler_pending")
+        active_data = await self.load_state(self._DEFAULT_TENANT_ID, "scheduler_active")
+        completed_data = await self.load_state(self._DEFAULT_TENANT_ID, "scheduler_completed")
+        threshold_data = await self.load_state(self._DEFAULT_TENANT_ID, "utility_threshold")
+
+        if (
+            chunks_data is None
+            and events_data is None
+            and doc_chunks is None
+            and vectors_data is None
+            and documents_data is None
+            and pending_data is None
+            and active_data is None
+            and completed_data is None
+            and threshold_data is None
+        ):
+            self._state_loaded = True
+            return
+
+        chunks_data = chunks_data or {}
+        events_data = events_data or []
+        doc_chunks = doc_chunks or {}
+        vectors_data = vectors_data or {}
+        documents_data = documents_data or {}
+        pending_data = pending_data or []
+        active_data = active_data or {}
+        completed_data = completed_data or []
+
+        self.utility_tracker._chunks = {
+            chunk_id: decode_dataclass(data, ChunkMetadata)
+            for chunk_id, data in chunks_data.items()
+        }
+        self.utility_tracker._events = [
+            decode_dataclass(event, ChunkUtilityEvent) for event in events_data
+        ]
+        self.utility_tracker._document_chunks = {
+            document_id: list(chunk_ids) for document_id, chunk_ids in doc_chunks.items()
+        }
+
+        self.vector_store._vectors = {
+            vector_id: (
+                vector_payload.get("vector", []),
+                vector_payload.get("metadata", {}),
+            )
+            for vector_id, vector_payload in vectors_data.items()
+        }
+        self._documents = {
+            document_id: base64.b64decode(encoded)
+            for document_id, encoded in documents_data.items()
+        }
+
+        self.scheduler._pending = [decode_dataclass(job, ReindexJob) for job in pending_data]
+        self.scheduler._active = {
+            job_id: decode_dataclass(job, ReindexJob) for job_id, job in active_data.items()
+        }
+        self.scheduler._completed = [decode_dataclass(job, ReindexJob) for job in completed_data]
+
+        if threshold_data is not None:
+            self.utility_threshold = float(threshold_data)
+
+        self._state_loaded = True
+
+    async def persist_all(self) -> None:
+        chunks_data = {
+            chunk_id: encode_dataclass(chunk)
+            for chunk_id, chunk in self.utility_tracker._chunks.items()
+        }
+        events_data = [
+            encode_dataclass(event) for event in self.utility_tracker._events[-1000:]
+        ]
+        doc_chunks = {
+            document_id: list(chunk_ids)
+            for document_id, chunk_ids in self.utility_tracker._document_chunks.items()
+        }
+        vectors_data = {
+            vector_id: {
+                "vector": encode_value(vector),
+                "metadata": encode_value(metadata),
+            }
+            for vector_id, (vector, metadata) in self.vector_store._vectors.items()
+        }
+        documents_data = {
+            document_id: base64.b64encode(content).decode("ascii")
+            for document_id, content in self._documents.items()
+        }
+        pending_data = [encode_dataclass(job) for job in self.scheduler._pending]
+        active_data = {
+            job_id: encode_dataclass(job) for job_id, job in self.scheduler._active.items()
+        }
+        completed_data = [encode_dataclass(job) for job in self.scheduler._completed]
+
+        await self.save_state(self._DEFAULT_TENANT_ID, "chunks", chunks_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "events", events_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "document_chunks", doc_chunks)
+        await self.save_state(self._DEFAULT_TENANT_ID, "vectors", vectors_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "documents", documents_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "scheduler_pending", pending_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "scheduler_active", active_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "scheduler_completed", completed_data)
+        await self.save_state(self._DEFAULT_TENANT_ID, "utility_threshold", self.utility_threshold)
+
+    async def _ensure_loaded(self) -> None:
+        if not self._state_loaded:
+            await self.load_from_db()
 
     async def index_document(self, document_id: str, content: bytes) -> int:
+        await self._ensure_loaded()
         self._documents[document_id] = content
         chunks = await self.processor.process_document(document_id, content)
         if not chunks:
@@ -494,9 +645,11 @@ class SelfImprovingRAGService(PersistentServiceMixin):
             )
             self.utility_tracker.register_chunk(metadata)
         count = await self.index_manager.add_vectors(vectors)
+        await self.persist_all()
         return count
 
     async def query(self, query_embedding: list[float], top_k: int = 5) -> list[tuple[str, float, dict[str, Any]]]:
+        await self._ensure_loaded()
         results = await self.vector_store.query(query_embedding, top_k=top_k)
         adjusted: list[tuple[str, float, dict[str, Any]]] = []
         for chunk_id, score, metadata in results:
@@ -513,6 +666,7 @@ class SelfImprovingRAGService(PersistentServiceMixin):
         chunks_in_answer: list[str],
         correction_id: str | None = None,
     ) -> list[ChunkUtilityEvent]:
+        await self._ensure_loaded()
         events: list[ChunkUtilityEvent] = []
         retrieved_set = set(retrieved_chunks)
         in_answer_set = set(chunks_in_answer)
@@ -525,21 +679,27 @@ class SelfImprovingRAGService(PersistentServiceMixin):
                 correction_id=correction_id if chunk_id in in_answer_set else None,
             )
             events.append(event)
+        await self.persist_all()
         return events
 
     async def check_and_schedule_reindex(self) -> int:
+        await self._ensure_loaded()
         needing = self.utility_tracker.get_documents_needing_reindex(self.utility_threshold)
         scheduled = 0
         for document_id, _score in needing:
             await self.scheduler.schedule_reindex(document_id, ReindexPriority.HIGH)
             scheduled += 1
+        if scheduled:
+            await self.persist_all()
         return scheduled
 
     async def process_reindex_job(self, job: ReindexJob) -> bool:
+        await self._ensure_loaded()
         document_id = job.document_id
         content = self._documents.get(document_id)
         if content is None:
             await self.scheduler.complete_job(job.job_id, success=False, error="Document missing")
+            await self.persist_all()
             return False
         old_ids = list(self.utility_tracker._document_chunks.get(document_id, []))
         self.utility_tracker.remove_document(document_id)
@@ -556,9 +716,11 @@ class SelfImprovingRAGService(PersistentServiceMixin):
             self.utility_tracker.register_chunk(metadata)
         await self.index_manager.reindex_document(document_id, vectors, old_ids)
         await self.scheduler.complete_job(job.job_id, success=True)
+        await self.persist_all()
         return True
 
     async def run_reindex_cycle(self, max_jobs: int = 10) -> int:
+        await self._ensure_loaded()
         processed = 0
         while processed < max_jobs:
             job = await self.scheduler.get_next_job()
@@ -569,6 +731,16 @@ class SelfImprovingRAGService(PersistentServiceMixin):
         return processed
 
     def get_stats(self) -> dict[str, Any]:
+        if not self._state_loaded:
+            return {
+                "utility_tracker": {
+                    "total_chunks": len(self.utility_tracker._chunks),
+                    "total_events": len(self.utility_tracker._events),
+                },
+                "scheduler": self.scheduler.get_stats(),
+                "current_threads": self.throttle.get_allowed_threads(_utcnow()),
+                "state_loaded": False,
+            }
         return {
             "utility_tracker": {
                 "total_chunks": len(self.utility_tracker._chunks),
@@ -576,6 +748,7 @@ class SelfImprovingRAGService(PersistentServiceMixin):
             },
             "scheduler": self.scheduler.get_stats(),
             "current_threads": self.throttle.get_allowed_threads(_utcnow()),
+            "state_loaded": True,
         }
 
 

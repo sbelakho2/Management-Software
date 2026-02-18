@@ -706,7 +706,9 @@ class ContextBuilder:
                 pass
 
             if engine is not None:
-                result = engine.search(SearchQuery(query=query, top_k=3, mode=SearchMode.HYBRID))
+                result = await engine.search_async(
+                    SearchQuery(query=query, top_k=3, mode=SearchMode.HYBRID)
+                )
                 if result.results:
                     parts = [f"[Knowledge] {r.chunk.text[:300]}" for r in result.results[:3]]
                     context.add_chunk(ContextChunk(

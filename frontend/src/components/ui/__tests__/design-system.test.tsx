@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { renderWithI18n } from '@/test-utils';
 import {
   // Constants
   COLOR_TOKENS,
@@ -43,6 +44,8 @@ import {
   DesignAuditPanel,
   CLSIndicator,
 } from '../design-system';
+
+const render = renderWithI18n;
 
 // =============================================================================
 // TEST UTILITIES
@@ -925,7 +928,7 @@ describe('DesignAuditPanel Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /open design system audit/i }));
     
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /re-run audit/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /re run audit/i })).toBeInTheDocument();
     });
   });
 

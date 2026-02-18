@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from sensei.models.quality_qms import FirstArticleInspection, FAICharacteristic
+from sensei.services.event_bus import event_bus
+from sensei.services.domain_events import InspectionCompletedEvent
 
 
 class FirstArticleService:
@@ -88,4 +90,13 @@ class FirstArticleService:
         inspection.status = "completed"
         inspection.completed_at = datetime.now(timezone.utc)
         await self.db.flush()
+
+        # Publish domain event — feeds single data thread
+        await event_bus.publish(InspectionCompletedEvent(
+            inspection_id=str(inspection.id),
+            result="completed",
+            product_id=str(getattr(inspection, "product_id", "") or ""),
+            inspector_id=str(getattr(inspection, "inspector_id", "") or ""),
+        ))
+
         return inspection
