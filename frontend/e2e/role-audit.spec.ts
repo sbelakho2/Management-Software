@@ -6,7 +6,9 @@ type BootstrapTokens = {
 };
 
 async function authenticateAsRole(page: Page, role: string): Promise<BootstrapTokens> {
-  const apiUrl = process.env.E2E_API_URL || 'http://localhost:8004';
+  const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000';
+
+  await page.request.post(`${apiUrl}/api/v1/dev/repair-core-rbac`).catch(() => undefined);
 
   const bootstrap = await page.request.post(`${apiUrl}/api/v1/dev/bootstrap-user`, {
     data: {
@@ -86,6 +88,8 @@ const majorPages = [
 test.describe('Full Role-based UI/UX Audit', () => {
   for (const role of rolesToTest) {
     test(`Audit for ${role}`, async ({ page }) => {
+      test.skip(!process.env.E2E_WITH_BACKEND, 'Requires real backend (set E2E_WITH_BACKEND=1)');
+      test.setTimeout(180000);
       await authenticateAsRole(page, role);
       
       // Wait for sidebar to be populated
@@ -97,8 +101,8 @@ test.describe('Full Role-based UI/UX Audit', () => {
 
       for (const path of majorPages) {
         await page.goto(path);
-        // Wait a bit for page load and any redirects/hiding to happen
-        await page.waitForTimeout(500);
+        await page.waitForLoadState('domcontentloaded');
+        await page.waitForTimeout(100);
         
         // We check if the body is visible. If PageGuard returned null, the main content area might be empty.
         // We capture what's there.

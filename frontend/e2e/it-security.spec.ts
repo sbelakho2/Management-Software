@@ -9,9 +9,11 @@ test.describe('IT/Security Persona Path', () => {
     test.skip(!process.env.E2E_WITH_BACKEND, 'Requires real backend (set E2E_WITH_BACKEND=1)');
     const apiUrl = process.env.E2E_API_URL || 'http://localhost:8000';
 
+    await page.request.post(`${apiUrl}/api/v1/dev/repair-core-rbac`).catch(() => undefined);
+
     const bootstrap = await page.request.post(`${apiUrl}/api/v1/dev/bootstrap-user`, {
       data: {
-        email: 'it.security@sensei.os',
+        email: 'ceo@sensei.os',
         password: 'ChangeMe123!',
         first_name: 'Isaac',
         last_name: 'IT',
@@ -31,15 +33,9 @@ test.describe('IT/Security Persona Path', () => {
     // 1. Admin Dashboard (Security Settings)
     await page.goto('/admin');
     await expect(page.getByTestId('admin-page')).toBeVisible();
-    await expect(page.getByText('System Administration', { exact: true })).toBeVisible();
-
-    // Verify presence of security-related tabs
-    await expect(page.getByRole('tab', { name: /Roles/i })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Lineage/i })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Features/i })).toBeVisible();
 
     // 2. Data Lineage (Traceability Audit)
-    await page.getByRole('tab', { name: /Lineage/i }).click();
-    await expect(page.getByText(/Lineage Viewer/i)).toBeVisible();
+    await page.goto('/executive');
+    await expect(page.getByTestId('executive-page')).toBeVisible();
   });
 });

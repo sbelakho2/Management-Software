@@ -1,5 +1,5 @@
 {
-  "role": "quality",
+  "role": "estimator",
   "loginSuccess": false,
   "pagesVisited": [],
   "interactiveElements": [],
@@ -7,5 +7,5 @@
     "API login failed"
   ],
   "networkErrors": [],
-  "timestamp": "2026-02-17T18:00:03.377Z"
+  "timestamp": "2026-02-18T23:13:13.382Z"
 }

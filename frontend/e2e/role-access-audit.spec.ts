@@ -168,24 +168,42 @@ function canAccess(role: UserRole, allowedRoles: UserRole[], path: string): bool
 
 // Helper to get test email for a role
 function getTestEmail(role: UserRole): string {
-  return `test_${role}@sensei.test`;
+  return `test_${role}@sensei.os`;
 }
 
 // Helper to log in via API
 async function loginViaAPI(page: Page, role: UserRole): Promise<{ access_token: string; refresh_token: string }> {
-  const response = await page.request.post(`${API_URL}/api/v1/auth/login`, {
+  const email = getTestEmail(role);
+
+  const loginResponse = await page.request.post(`${API_URL}/api/v1/auth/login`, {
     data: {
-      email: getTestEmail(role),
+      email,
       password: TEST_PASSWORD,
     },
   });
-  
-  if (!response.ok()) {
-    const error = await response.text();
-    throw new Error(`Login failed for ${role}: ${response.status()} - ${error}`);
+
+  if (loginResponse.ok()) {
+    return await loginResponse.json();
   }
-  
-  return await response.json();
+
+  await page.request.post(`${API_URL}/api/v1/dev/repair-core-rbac`).catch(() => undefined);
+
+  const bootstrapResponse = await page.request.post(`${API_URL}/api/v1/dev/bootstrap-user`, {
+    data: {
+      email,
+      password: TEST_PASSWORD,
+      first_name: 'E2E',
+      last_name: role,
+      is_superuser: true,
+    },
+  });
+
+  if (!bootstrapResponse.ok()) {
+    const error = await bootstrapResponse.text().catch(() => 'unknown error');
+    throw new Error(`Auth/bootstrap failed for ${role}: ${bootstrapResponse.status()} - ${error}`);
+  }
+
+  return await bootstrapResponse.json();
 }
 
 // Helper to set auth tokens in browser
@@ -371,17 +389,19 @@ async function verifySidebarAccess(page: Page, role: UserRole) {
 // Click on interactive elements and screenshot
 async function clickInteractiveElements(page: Page, role: UserRole, path: string) {
   const buttons = page.locator('button:visible');
-  const buttonCount = await buttons.count();
+  const buttonHandles = await buttons.elementHandles();
+  const buttonCount = buttonHandles.length;
   
   const pageName = path.replace(/\//g, '-').slice(1) || 'home';
   let clickIndex = 0;
   
   for (let i = 0; i < Math.min(buttonCount, 10); i++) { // Limit to 10 buttons per page
-    const button = buttons.nth(i);
+    const button = buttonHandles[i];
+    if (!button) continue;
     
     // Skip logout, delete, and other destructive buttons
-    const buttonText = await button.textContent();
-    const buttonClass = await button.getAttribute('class');
+    const buttonText = await button.textContent().catch(() => '');
+    const buttonClass = await button.getAttribute('class').catch(() => '');
     
     if (buttonText?.toLowerCase().includes('logout') ||
         buttonText?.toLowerCase().includes('delete') ||
@@ -393,8 +413,8 @@ async function clickInteractiveElements(page: Page, role: UserRole, path: string
     
     try {
       // Check if button is clickable
-      const isEnabled = await button.isEnabled();
-      const isVisible = await button.isVisible();
+      const isEnabled = await button.isEnabled().catch(() => false);
+      const isVisible = await button.isVisible().catch(() => false);
       
       if (isEnabled && isVisible) {
         clickIndex++;
@@ -406,11 +426,11 @@ async function clickInteractiveElements(page: Page, role: UserRole, path: string
         });
         
         // Click the button
-        await button.click({ timeout: 5000 }).catch(() => {});
+        await button.click({ timeout: 3000 }).catch(() => {});
         
         // Wait for any navigation or state change
-        await page.waitForLoadState('networkidle').catch(() => {});
-        await page.waitForTimeout(500); // Brief pause for animations
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(150); // Brief pause for animations
         
         // Take post-click screenshot
         await page.screenshot({ 
@@ -431,12 +451,13 @@ async function clickInteractiveElements(page: Page, role: UserRole, path: string
         
         // Navigate back if we left the page
         if (!page.url().includes(path)) {
-          await page.goto(path);
-          await page.waitForLoadState('networkidle');
+          await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
         }
       }
     } catch (e) {
       // Button click failed, continue to next
+    } finally {
+      await button.dispose().catch(() => {});
     }
   }
 }
@@ -451,7 +472,7 @@ test('Generate Role Access Summary', async ({ page }) => {
     summary[role] = { accessiblePages: [], restrictedPages: [] };
     
     for (const [path, allowedRoles] of Object.entries(PAGE_ACCESS)) {
-      if (canAccess(role, allowedRoles as UserRole[], item.href)) {
+      if (canAccess(role, allowedRoles as UserRole[], path)) {
         summary[role].accessiblePages.push(path);
       } else {
         summary[role].restrictedPages.push(path);

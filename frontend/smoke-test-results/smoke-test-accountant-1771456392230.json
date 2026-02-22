@@ -1,5 +1,5 @@
 {
-  "role": "estimator",
+  "role": "accountant",
   "loginSuccess": false,
   "pagesVisited": [],
   "interactiveElements": [],
@@ -7,5 +7,5 @@
     "API login failed"
   ],
   "networkErrors": [],
-  "timestamp": "2026-02-17T18:00:04.300Z"
+  "timestamp": "2026-02-18T23:13:12.182Z"
 }
