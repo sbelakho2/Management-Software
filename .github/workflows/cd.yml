@@ -36,7 +36,7 @@ jobs:
           password: ${{ secrets.REGISTRY_PASSWORD }}
       
       - name: Build & Push Backend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           push: ${{ github.event_name != 'pull_request' }}
@@ -47,7 +47,7 @@ jobs:
           cache-to: type=gha,mode=max
       
       - name: Build & Push Frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: ${{ github.event_name != 'pull_request' }}
