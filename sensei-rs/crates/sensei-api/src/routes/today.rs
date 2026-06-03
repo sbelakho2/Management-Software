@@ -116,12 +116,19 @@ pub async fn get_today_snapshot(
         .count();
 
     // ── Quality (NCRs via quality_service) ───────────────────────────
-    // Note: NCR and CAPA listing is done via the quality service.
-    // The quality_service trait exposes list_ncrs which requires
-    // additional parameters; we use minimal arguments for a broad scan.
-    let open_ncrs = 0; // Placeholder – will be integrated when quality_service
-                       // is extended with a simple count or list method.
-    let open_capas = 0; // Placeholder – same as above.
+    // List NCRs with minimal filters to count open records.
+    let all_ncrs = state
+        .quality_service
+        .list_ncrs(tenant_id, None, None, None, Some(1), Some(10_000))
+        .await?;
+    let open_ncrs = all_ncrs.data.len();
+
+    // List CAPAs with minimal filters to count open records.
+    let all_capas = state
+        .quality_service
+        .list_capas(tenant_id, None, None, Some(1), Some(10_000))
+        .await?;
+    let open_capas = all_capas.data.len();
 
     // ── Operations (Risks, A3s, Projects) ────────────────────────────
     let all_risks = state

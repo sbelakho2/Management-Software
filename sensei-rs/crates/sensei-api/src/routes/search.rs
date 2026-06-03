@@ -2,6 +2,7 @@
 //!
 //! Provides a unified search endpoint across multiple entity types by
 //! delegating to the [`SearchService`] (database-backed or in-memory).
+//! Supports optional entity-type filtering and pagination.
 
 use axum::{Json, extract::{Query, State}};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,10 @@ pub struct SearchParams {
     pub q: String,
     /// Maximum number of results to return (default 10, max 50).
     pub limit: Option<usize>,
+    /// Optional entity type filter: "task", "account", "contact", "product",
+    /// "user", "kanban_board", "obeya_board", "knowledge_pack",
+    /// "training_course", "work_center", etc.
+    pub entity_type: Option<String>,
 }
 
 /// Unified search response.
@@ -32,7 +37,7 @@ pub struct SearchResponse {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-/// Unified search across users, accounts, contacts, and products.
+/// Unified search across users, accounts, contacts, products, and PM entities.
 pub async fn search(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -43,7 +48,7 @@ pub async fn search(
 
     let mut results = state
         .search_service
-        .search(user.tenant_id, &query)
+        .search(user.tenant_id, &query, params.entity_type.as_deref())
         .await?;
 
     let total = results.len();

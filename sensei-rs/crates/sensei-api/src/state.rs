@@ -63,6 +63,49 @@ pub struct EmailVerificationToken {
     pub expires_at: Timestamp,
 }
 
+/// Temporary helper to collect PM store references and build search providers.
+///
+/// Used to avoid the chicken-and-egg problem where stores need to be created
+/// before the search service (which references them), but the search service
+/// is assigned to the state struct that also owns the stores.
+struct PmStores<'a> {
+    tasks: &'a crate::stores::TaskStore,
+    kanban_boards: &'a crate::stores::KanbanBoardStore,
+    obeya_boards: &'a crate::stores::ObeyaBoardStore,
+    knowledge_packs: &'a crate::stores::KnowledgePackStore,
+    training_courses: &'a crate::stores::TrainingCourseStore,
+    work_centers: &'a crate::stores::WorkCenterStore,
+    state_machine_instances: &'a crate::stores::StateMachineInstanceStore,
+    production_cells: &'a crate::stores::ProductionCellStore,
+    standard_work_documents: &'a crate::stores::StandardWorkStore,
+    lsw_standards: &'a crate::stores::LswStandardStore,
+    kpi_definitions: &'a crate::stores::KpiDefinitionStore,
+    notification_triggers: &'a crate::stores::NotificationTriggerStore,
+}
+
+impl<'a> PmStores<'a> {
+    /// Build [`SearchableEntityProvider`] instances for all PM stores.
+    fn build_providers(&self) -> Vec<Arc<dyn sensei_services::ops::search::SearchableEntityProvider>> {
+        use crate::search_providers::*;
+        use std::sync::Arc;
+
+        vec![
+            task_search_provider(self.tasks.clone()),
+            kanban_board_search_provider(self.kanban_boards.clone()),
+            obeya_board_search_provider(self.obeya_boards.clone()),
+            knowledge_pack_search_provider(self.knowledge_packs.clone()),
+            training_course_search_provider(self.training_courses.clone()),
+            work_center_search_provider(self.work_centers.clone()),
+            state_machine_instance_search_provider(self.state_machine_instances.clone()),
+            production_cell_search_provider(self.production_cells.clone()),
+            standard_work_search_provider(self.standard_work_documents.clone()),
+            lsw_standard_search_provider(self.lsw_standards.clone()),
+            kpi_definition_search_provider(self.kpi_definitions.clone()),
+            notification_trigger_search_provider(self.notification_triggers.clone()),
+        ]
+    }
+}
+
 /// Shared application state available to all handlers via `State<AppState>`.
 #[derive(Clone)]
 pub struct AppState {
@@ -300,13 +343,78 @@ impl AppState {
         let products_service: Arc<dyn ProductsService> =
             Arc::new(InMemoryProductsService::new()) as Arc<dyn ProductsService>;
 
+        // ── Create in-memory entity stores (referenced by both the search service and routes) ──
+        let kanban_boards = stores::new_store!("kanban_board");
+        let notifications = stores::new_store!("notification");
+        let notification_preferences = stores::new_store!("notification_preferences");
+        let attachment_meta = stores::new_store!("attachment");
+        let attachment_data = stores::new_store!("attachment_data");
+        let quote_versions = stores::new_store!("quote_version");
+        let learning_modules = stores::new_store!("learning_module");
+        let opportunities = stores::new_store!("opportunity");
+        let escalation_policies = stores::new_store!("escalation_policy");
+        let training_matrix = stores::new_store!("training_matrix_entry");
+        let knowledge_packs = stores::new_store!("knowledge_pack");
+        let ingestion_jobs = stores::new_store!("ingestion_job");
+        let ingestion_data = stores::new_store!("ingestion_data");
+        let work_centers = stores::new_store!("work_center");
+        let obeya_boards = stores::new_store!("obeya_board");
+        let ctq_characteristics = stores::new_store!("ctq_characteristic");
+        let ctq_records = stores::new_store!("ctq_record");
+        let inventory_items = stores::new_store!("inventory_item");
+        let stock_moves = stores::new_store!("stock_move");
+        let warehouses = stores::new_store!("warehouse");
+        let demand_entries = stores::new_store!("demand_entry");
+        let supply_orders = stores::new_store!("supply_order");
+        let mrp_runs = stores::new_store!("mrp_run");
+        let tasks = stores::new_store!("task");
+        let audit_log_entries = stores::new_store!("audit_log_entry");
+        let production_cells = stores::new_store!("production_cell");
+        let saved_views = stores::new_store!("saved_view");
+        let work_packets = stores::new_store!("work_packet");
+        let cost_builds = stores::new_store!("cost_build");
+        let npi_conversions = stores::new_store!("npi_conversion");
+        let kpi_definitions = stores::new_store!("kpi_definition");
+        let kpi_values = stores::new_store!("kpi_value");
+        let lsw_standards = stores::new_store!("lsw_standard");
+        let lsw_audits = stores::new_store!("lsw_audit");
+        let notification_triggers = stores::new_store!("notification_trigger");
+        let standard_work_documents = stores::new_store!("standard_work_document");
+        let standard_work_versions = stores::new_store!("standard_work_version");
+        let state_machine_definitions = stores::new_store!("state_machine_definition");
+        let state_machine_instances = stores::new_store!("state_machine_instance");
+        let training_courses = stores::new_store!("training_course");
+        let training_enrollments = stores::new_store!("training_enrollment");
+
+        // Build a temporary AppState-like struct to pass to the macro.
+        // We use a temporary block to create a scope for the references.
+        let pm_stores = PmStores {
+            tasks: &tasks,
+            kanban_boards: &kanban_boards,
+            obeya_boards: &obeya_boards,
+            knowledge_packs: &knowledge_packs,
+            training_courses: &training_courses,
+            work_centers: &work_centers,
+            state_machine_instances: &state_machine_instances,
+            production_cells: &production_cells,
+            standard_work_documents: &standard_work_documents,
+            lsw_standards: &lsw_standards,
+            kpi_definitions: &kpi_definitions,
+            notification_triggers: &notification_triggers,
+        };
+
+        let entity_providers = pm_stores.build_providers();
+
         let search_service: Arc<dyn SearchService> =
-            Arc::new(InMemorySearchService::new(
-                accounts_service.clone(),
-                contacts_service.clone(),
-                products_service.clone(),
-                users_service.clone(),
-            )) as Arc<dyn SearchService>;
+            Arc::new(
+                InMemorySearchService::new(
+                    accounts_service.clone(),
+                    contacts_service.clone(),
+                    products_service.clone(),
+                    users_service.clone(),
+                )
+                .with_entity_providers(entity_providers),
+            ) as Arc<dyn SearchService>;
 
         Self {
             config: Arc::new(config),
@@ -345,47 +453,47 @@ impl AppState {
             ws_manager: WebSocketManager::new(),
             sse_manager: SseManager::new(),
             // ── Entity stores (in-memory by default, DB-backed when pool is configured) ──
-            kanban_boards: stores::new_store!("kanban_board"),
-            notifications: stores::new_store!("notification"),
-            notification_preferences: stores::new_store!("notification_preferences"),
-            attachment_meta: stores::new_store!("attachment"),
-            attachment_data: stores::new_store!("attachment_data"),
-            quote_versions: stores::new_store!("quote_version"),
-            learning_modules: stores::new_store!("learning_module"),
-            opportunities: stores::new_store!("opportunity"),
-            escalation_policies: stores::new_store!("escalation_policy"),
-            training_matrix: stores::new_store!("training_matrix_entry"),
-            knowledge_packs: stores::new_store!("knowledge_pack"),
-            ingestion_jobs: stores::new_store!("ingestion_job"),
-            ingestion_data: stores::new_store!("ingestion_data"),
-            work_centers: stores::new_store!("work_center"),
-            obeya_boards: stores::new_store!("obeya_board"),
-            ctq_characteristics: stores::new_store!("ctq_characteristic"),
-            ctq_records: stores::new_store!("ctq_record"),
-            inventory_items: stores::new_store!("inventory_item"),
-            stock_moves: stores::new_store!("stock_move"),
-            warehouses: stores::new_store!("warehouse"),
-            demand_entries: stores::new_store!("demand_entry"),
-            supply_orders: stores::new_store!("supply_order"),
-            mrp_runs: stores::new_store!("mrp_run"),
-            tasks: stores::new_store!("task"),
-            audit_log_entries: stores::new_store!("audit_log_entry"),
-            production_cells: stores::new_store!("production_cell"),
-            saved_views: stores::new_store!("saved_view"),
-            work_packets: stores::new_store!("work_packet"),
-            cost_builds: stores::new_store!("cost_build"),
-            npi_conversions: stores::new_store!("npi_conversion"),
-            kpi_definitions: stores::new_store!("kpi_definition"),
-            kpi_values: stores::new_store!("kpi_value"),
-            lsw_standards: stores::new_store!("lsw_standard"),
-            lsw_audits: stores::new_store!("lsw_audit"),
-            notification_triggers: stores::new_store!("notification_trigger"),
-            standard_work_documents: stores::new_store!("standard_work_document"),
-            standard_work_versions: stores::new_store!("standard_work_version"),
-            state_machine_definitions: stores::new_store!("state_machine_definition"),
-            state_machine_instances: stores::new_store!("state_machine_instance"),
-            training_courses: stores::new_store!("training_course"),
-            training_enrollments: stores::new_store!("training_enrollment"),
+            kanban_boards,
+            notifications,
+            notification_preferences,
+            attachment_meta,
+            attachment_data,
+            quote_versions,
+            learning_modules,
+            opportunities,
+            escalation_policies,
+            training_matrix,
+            knowledge_packs,
+            ingestion_jobs,
+            ingestion_data,
+            work_centers,
+            obeya_boards,
+            ctq_characteristics,
+            ctq_records,
+            inventory_items,
+            stock_moves,
+            warehouses,
+            demand_entries,
+            supply_orders,
+            mrp_runs,
+            tasks,
+            audit_log_entries,
+            production_cells,
+            saved_views,
+            work_packets,
+            cost_builds,
+            npi_conversions,
+            kpi_definitions,
+            kpi_values,
+            lsw_standards,
+            lsw_audits,
+            notification_triggers,
+            standard_work_documents,
+            standard_work_versions,
+            state_machine_definitions,
+            state_machine_instances,
+            training_courses,
+            training_enrollments,
         }
     }
 

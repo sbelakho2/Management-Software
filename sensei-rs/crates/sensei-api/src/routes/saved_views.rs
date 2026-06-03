@@ -1,19 +1,22 @@
 //! Saved Views route handlers.
 //!
 //! Provides endpoints for managing user-saved view configurations,
-//! including CRUD operations.
+//! including CRUD operations, RBAC-based sharing, and compound sorting.
 
 use axum::{Json, extract::{Path, Query, State}};
 use chrono::Utc;
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::events::{
+    SavedViewCreatedEvent, SavedViewUpdatedEvent, SavedViewDeletedEvent,
+};
 use sensei_core::error::{Result, SenseiError};
 use sensei_core::pagination::PaginatedResponse;
 use sensei_core::types::new_id;
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::stores::SavedView;
+use crate::stores::{SavedView, SortConfig, ViewVisibility};
 
 // ── Request DTOs ───────────────────────────────────────────────────────────
 
@@ -22,6 +25,8 @@ use crate::stores::SavedView;
 pub struct ListSavedViewsParams {
     pub page: Option<usize>,
     pub per_page: Option<usize>,
+    /// Optional filter by entity type.
+    pub entity_type: Option<String>,
 }
 
 /// Request body for creating/updating a saved view.
@@ -30,15 +35,34 @@ pub struct SavedViewRequest {
     pub name: String,
     pub entity_type: String,
     pub filters: serde_json::Value,
-    pub sort_by: Option<String>,
-    pub sort_order: Option<String>,
+    /// Compound sort configuration (replaces sort_by/sort_order).
+    #[serde(default)]
+    pub sort_config: Vec<SortConfig>,
     pub columns: Vec<String>,
     pub is_default: Option<bool>,
+    /// Visibility level for sharing.
+    #[serde(default)]
+    pub visibility: ViewVisibility,
+    /// Explicit user IDs to share with.
+    #[serde(default)]
+    pub shared_with: Vec<Uuid>,
+}
+
+/// Request body for sharing a saved view.
+#[derive(Debug, Deserialize)]
+pub struct ShareViewRequest {
+    /// The user IDs to share the view with.
+    pub user_ids: Vec<Uuid>,
+    /// The visibility level to set.
+    pub visibility: ViewVisibility,
 }
 
 // ── Saved Views ────────────────────────────────────────────────────────────
 
-/// List saved views for the current user with pagination.
+/// List saved views visible to the current user with pagination.
+///
+/// Returns the user's own views + views shared with the user + views with
+/// visibility >= Team (public to team/dept/org).
 pub async fn list_saved_views(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -47,11 +71,28 @@ pub async fn list_saved_views(
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     let store = state.saved_views.read().await;
+
     let mut views: Vec<SavedView> = store
         .values()
-        .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)
+        .filter(|v| {
+            // Only views in the same tenant
+            if v.tenant_id != tenant_id {
+                return false;
+            }
+            // Filter by optional entity_type
+            if let Some(ref etype) = params.entity_type {
+                if v.entity_type != *etype {
+                    return false;
+                }
+            }
+            // Visibility check: user's own views OR views shared with user OR public views
+            v.user_id == user_id
+                || v.shared_with.contains(&user_id)
+                || v.visibility != ViewVisibility::Private
+        })
         .cloned()
         .collect();
+
     views.sort_by(|a, b| a.name.cmp(&b.name));
     let result = PaginatedResponse::new(views, params.page, params.per_page);
     Ok(Json(result))
@@ -82,16 +123,31 @@ pub async fn create_saved_view(
         id: new_id(),
         tenant_id,
         user_id,
-        name: req.name,
-        entity_type: req.entity_type,
+        name: req.name.clone(),
+        entity_type: req.entity_type.clone(),
         filters: req.filters,
-        sort_by: req.sort_by,
-        sort_order: req.sort_order,
+        sort_config: req.sort_config,
         columns: req.columns,
         is_default,
+        visibility: req.visibility.clone(),
+        shared_with: req.shared_with,
         created_at: now,
         updated_at: now,
     };
+
+    // Publish domain event
+    let event = SavedViewCreatedEvent::new(
+        tenant_id,
+        view.id,
+        view.name.clone(),
+        view.entity_type.clone(),
+        user_id,
+        view.visibility.to_string(),
+    );
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!(error = %e, "Failed to publish SavedViewCreatedEvent");
+    }
+
     let mut store = state.saved_views.write().await;
     store.insert(view.id, view.clone());
     Ok(Json(view))
@@ -108,7 +164,13 @@ pub async fn get_saved_view(
     let store = state.saved_views.read().await;
     let view = store
         .values()
-        .find(|v| v.id == id && v.tenant_id == tenant_id && v.user_id == user_id)
+        .find(|v| {
+            v.id == id
+                && v.tenant_id == tenant_id
+                && (v.user_id == user_id
+                    || v.shared_with.contains(&user_id)
+                    || v.visibility != ViewVisibility::Private)
+        })
         .cloned()
         .ok_or_else(|| SenseiError::NotFound(format!("Saved view {id} not found")))?;
     Ok(Json(view))
@@ -153,15 +215,36 @@ pub async fn update_saved_view(
         .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)
         .ok_or_else(|| SenseiError::NotFound(format!("Saved view {id} not found")))?;
 
-    view.name = req.name;
-    view.entity_type = req.entity_type;
+    let _old_name = view.name.clone();
+    let _old_visibility = view.visibility.clone();
+    let _old_entity_type = view.entity_type.clone();
+
+    view.name = req.name.clone();
+    view.entity_type = req.entity_type.clone();
     view.filters = req.filters;
-    view.sort_by = req.sort_by;
-    view.sort_order = req.sort_order;
+    view.sort_config = req.sort_config;
     view.columns = req.columns;
     view.is_default = is_default;
+    view.visibility = req.visibility.clone();
+    view.shared_with = req.shared_with;
     view.updated_at = now;
-    Ok(Json(view.clone()))
+
+    let updated = view.clone();
+
+    // Publish domain event
+    let event = SavedViewUpdatedEvent::new(
+        tenant_id,
+        id,
+        updated.name.clone(),
+        updated.entity_type.clone(),
+        user_id,
+        updated.visibility.to_string(),
+    );
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!(error = %e, "Failed to publish SavedViewUpdatedEvent");
+    }
+
+    Ok(Json(updated))
 }
 
 /// Delete a saved view.
@@ -173,13 +256,64 @@ pub async fn delete_saved_view(
     let tenant_id = user.tenant_id;
     let user_id = user.user_id;
     let mut store = state.saved_views.write().await;
-    let exists = store
+
+    let view_name = store
         .get(&id)
         .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)
-        .is_some();
-    if !exists {
-        return Err(SenseiError::NotFound(format!("Saved view {id} not found")));
-    }
+        .map(|v| v.name.clone());
+
+    let view_name = match view_name {
+        Some(name) => name,
+        None => return Err(SenseiError::NotFound(format!("Saved view {id} not found"))),
+    };
+
     store.remove(&id);
+
+    // Publish domain event
+    let event = SavedViewDeletedEvent::new(tenant_id, id, view_name, user_id);
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!(error = %e, "Failed to publish SavedViewDeletedEvent");
+    }
+
     Ok(Json(()))
+}
+
+/// Share a saved view with specific users or set its visibility level.
+///
+/// Only the creator of the saved view can share it.
+pub async fn share_saved_view(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(view_id): Path<Uuid>,
+    Json(req): Json<ShareViewRequest>,
+) -> Result<Json<SavedView>> {
+    let tenant_id = user.tenant_id;
+    let user_id = user.user_id;
+
+    let mut store = state.saved_views.write().await;
+    let view = store
+        .get_mut(&view_id)
+        .filter(|v| v.tenant_id == tenant_id && v.user_id == user_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Saved view {view_id} not found")))?;
+
+    view.shared_with = req.user_ids;
+    view.visibility = req.visibility;
+    view.updated_at = Utc::now();
+
+    let updated = view.clone();
+
+    // Publish domain event for the share/visibility update
+    let event = SavedViewUpdatedEvent::new(
+        tenant_id,
+        view_id,
+        updated.name.clone(),
+        updated.entity_type.clone(),
+        user_id,
+        updated.visibility.to_string(),
+    );
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!(error = %e, "Failed to publish SavedViewUpdatedEvent (share)");
+    }
+
+    Ok(Json(updated))
 }

@@ -3531,3 +3531,537 @@ impl DomainEvent for ObeyaItemDeletedEvent {
         self
     }
 }
+
+// ── Task Domain Events ─────────────────────────────────────────────────────────
+
+/// Published when a new task is created.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskCreatedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The task's unique identifier.
+    pub task_id: Uuid,
+    /// The task title.
+    pub title: String,
+    /// The initial status.
+    pub status: String,
+    /// The initial priority.
+    pub priority: String,
+    /// The ID of the user who created the task.
+    pub created_by: Uuid,
+}
+
+impl TaskCreatedEvent {
+    /// Create a new [`TaskCreatedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        task_id: Uuid,
+        title: String,
+        status: String,
+        priority: String,
+        created_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("project-management.task.created", tenant_id),
+            task_id,
+            title,
+            status,
+            priority,
+            created_by,
+        }
+    }
+}
+
+impl DomainEvent for TaskCreatedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "project-management.task.created"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a task's fields are updated (title, description, priority, etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskUpdatedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The task's unique identifier.
+    pub task_id: Uuid,
+    /// The previous priority value (if changed).
+    pub old_priority: Option<String>,
+    /// The new priority value (if changed).
+    pub new_priority: Option<String>,
+    /// The ID of the user who updated the task.
+    pub updated_by: Uuid,
+}
+
+impl TaskUpdatedEvent {
+    /// Create a new [`TaskUpdatedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        task_id: Uuid,
+        old_priority: Option<String>,
+        new_priority: Option<String>,
+        updated_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("project-management.task.updated", tenant_id),
+            task_id,
+            old_priority,
+            new_priority,
+            updated_by,
+        }
+    }
+}
+
+impl DomainEvent for TaskUpdatedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "project-management.task.updated"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a task's status changes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskStatusChangedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The task's unique identifier.
+    pub task_id: Uuid,
+    /// The previous status value.
+    pub old_status: String,
+    /// The new status value.
+    pub new_status: String,
+    /// The ID of the user who triggered the change.
+    pub changed_by: Uuid,
+}
+
+impl TaskStatusChangedEvent {
+    /// Create a new [`TaskStatusChangedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        task_id: Uuid,
+        old_status: String,
+        new_status: String,
+        changed_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("project-management.task.status-changed", tenant_id),
+            task_id,
+            old_status,
+            new_status,
+            changed_by,
+        }
+    }
+}
+
+impl DomainEvent for TaskStatusChangedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "project-management.task.status-changed"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a task is assigned to a user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskAssignedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The task's unique identifier.
+    pub task_id: Uuid,
+    /// The ID of the user the task was assigned to.
+    pub assignee_id: Uuid,
+    /// The ID of the user who performed the assignment.
+    pub assigned_by: Uuid,
+}
+
+impl TaskAssignedEvent {
+    /// Create a new [`TaskAssignedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        task_id: Uuid,
+        assignee_id: Uuid,
+        assigned_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("project-management.task.assigned", tenant_id),
+            task_id,
+            assignee_id,
+            assigned_by,
+        }
+    }
+}
+
+impl DomainEvent for TaskAssignedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "project-management.task.assigned"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a state machine instance transitions between states.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateMachineTransitionedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The state machine instance ID.
+    pub instance_id: Uuid,
+    /// The state machine definition ID.
+    pub definition_id: Uuid,
+    /// The entity ID this instance is tracking.
+    pub entity_id: Uuid,
+    /// The previous state.
+    pub from_state: String,
+    /// The new state.
+    pub to_state: String,
+    /// The event that triggered the transition.
+    pub event: String,
+    /// The ID of the user who triggered the transition.
+    pub triggered_by: Uuid,
+}
+
+impl StateMachineTransitionedEvent {
+    /// Create a new [`StateMachineTransitionedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        instance_id: Uuid,
+        definition_id: Uuid,
+        entity_id: Uuid,
+        from_state: String,
+        to_state: String,
+        event: String,
+        triggered_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("state-machine.instance.transitioned", tenant_id),
+            instance_id,
+            definition_id,
+            entity_id,
+            from_state,
+            to_state,
+            event,
+            triggered_by,
+        }
+    }
+}
+
+impl DomainEvent for StateMachineTransitionedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "state-machine.instance.transitioned"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+// =========================================================================
+// Saved View Domain Events
+// =========================================================================
+
+/// Published when a new saved view is created.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewCreatedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The saved view's unique identifier.
+    pub view_id: Uuid,
+    /// The saved view name.
+    pub name: String,
+    /// The entity type this view is for.
+    pub entity_type: String,
+    /// The ID of the user who created the view.
+    pub created_by: Uuid,
+    /// The visibility level of the view.
+    pub visibility: String,
+}
+
+impl SavedViewCreatedEvent {
+    /// Create a new [`SavedViewCreatedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        view_id: Uuid,
+        name: String,
+        entity_type: String,
+        created_by: Uuid,
+        visibility: String,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("saved-view.created", tenant_id),
+            view_id,
+            name,
+            entity_type,
+            created_by,
+            visibility,
+        }
+    }
+}
+
+impl DomainEvent for SavedViewCreatedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "saved-view.created"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a saved view is updated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewUpdatedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The saved view's unique identifier.
+    pub view_id: Uuid,
+    /// The saved view name.
+    pub name: String,
+    /// The entity type this view is for.
+    pub entity_type: String,
+    /// The ID of the user who updated the view.
+    pub updated_by: Uuid,
+    /// The new visibility level.
+    pub visibility: String,
+}
+
+impl SavedViewUpdatedEvent {
+    /// Create a new [`SavedViewUpdatedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        view_id: Uuid,
+        name: String,
+        entity_type: String,
+        updated_by: Uuid,
+        visibility: String,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("saved-view.updated", tenant_id),
+            view_id,
+            name,
+            entity_type,
+            updated_by,
+            visibility,
+        }
+    }
+}
+
+impl DomainEvent for SavedViewUpdatedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "saved-view.updated"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Published when a saved view is deleted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewDeletedEvent {
+    /// Event metadata.
+    pub metadata: EventMetadata,
+    /// The saved view's unique identifier.
+    pub view_id: Uuid,
+    /// The saved view name.
+    pub name: String,
+    /// The ID of the user who deleted the view.
+    pub deleted_by: Uuid,
+}
+
+impl SavedViewDeletedEvent {
+    /// Create a new [`SavedViewDeletedEvent`].
+    pub fn new(
+        tenant_id: Uuid,
+        view_id: Uuid,
+        name: String,
+        deleted_by: Uuid,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::new("saved-view.deleted", tenant_id),
+            view_id,
+            name,
+            deleted_by,
+        }
+    }
+}
+
+impl DomainEvent for SavedViewDeletedEvent {
+    fn event_id(&self) -> EventId {
+        self.metadata.event_id
+    }
+
+    fn event_type(&self) -> &'static str {
+        "saved-view.deleted"
+    }
+
+    fn correlation_id(&self) -> CorrelationId {
+        self.metadata.correlation_id
+    }
+
+    fn tenant_id(&self) -> Uuid {
+        self.metadata.tenant_id
+    }
+
+    fn occurred_at(&self) -> Timestamp {
+        self.metadata.occurred_at
+    }
+
+    fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}

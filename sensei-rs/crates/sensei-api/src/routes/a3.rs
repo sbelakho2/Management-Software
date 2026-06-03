@@ -6,6 +6,7 @@
 use axum::{Json, extract::{Path, Query, State}};
 use serde::Deserialize;
 use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::domain::events::{A3ClosedEvent, A3CreatedEvent};
 use sensei_core::error::Result;
 use sensei_core::pagination::PaginatedResponse;
 use sensei_services::ops::A3;
@@ -50,6 +51,19 @@ pub async fn create_a3(
         .ops_service
         .create_a3(tenant_id, req)
         .await?;
+
+    // Publish A3 created event for notification triggers and downstream consumers.
+    let event = A3CreatedEvent::new(
+        tenant_id,
+        a3.id,
+        "standard".to_string(),
+        a3.title.clone(),
+        "medium".to_string(),
+    );
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!("Failed to publish A3CreatedEvent: {e}");
+    }
+
     Ok(Json(a3))
 }
 
@@ -93,5 +107,12 @@ pub async fn close_a3(
         .ops_service
         .close_a3(tenant_id, id)
         .await?;
+
+    // Publish A3 closed event for notification triggers and downstream consumers.
+    let event = A3ClosedEvent::new(tenant_id, id, "Closed".to_string());
+    if let Err(e) = state.event_bus.publish(&event).await {
+        tracing::warn!("Failed to publish A3ClosedEvent: {e}");
+    }
+
     Ok(Json(a3))
 }

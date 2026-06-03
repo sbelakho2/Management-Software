@@ -231,12 +231,37 @@ pub async fn toggle_trigger(
     Ok(Json(trigger.clone()))
 }
 
+/// Evaluate whether a trigger condition matches an event payload.
+///
+/// Supports simple JSON matching:
+/// - If condition is `null` or `true`, always matches.
+/// - If condition is a JSON object, all key/value pairs must be present
+///   in the payload with matching values.
+/// - If condition is a JSON array, at least one element must match (OR logic).
+fn evaluate_condition(condition: &serde_json::Value, payload: &serde_json::Value) -> bool {
+    match condition {
+        serde_json::Value::Null => true,
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Object(map) => map.iter().all(|(key, val)| {
+            payload.get(key).map_or(false, |pv| pv == val)
+        }),
+        serde_json::Value::Array(arr) => {
+            if arr.is_empty() {
+                return true;
+            }
+            arr.iter().any(|item| evaluate_condition(item, payload))
+        }
+        // For primitive values (string, number), check exact match
+        _ => condition == payload,
+    }
+}
+
 /// Test trigger execution with a sample event payload.
 pub async fn test_trigger(
     user: AuthenticatedUser,
     State(state): State<AppState>,
     Path(trigger_id): Path<Uuid>,
-    Json(_req): Json<TestTriggerRequest>,
+    Json(req): Json<TestTriggerRequest>,
 ) -> Result<Json<TriggerTestResult>> {
     let tenant_id = user.tenant_id;
     let store = state.notification_triggers.read().await;
@@ -246,12 +271,23 @@ pub async fn test_trigger(
         .cloned()
         .ok_or_else(|| SenseiError::NotFound(format!("Notification trigger {trigger_id} not found")))?;
 
-    // Simulate test execution — in a real implementation this would evaluate
-    // the condition against the event payload and execute the action.
+    // Evaluate the trigger condition against the provided event payload.
+    let condition_matched = evaluate_condition(&trigger.condition, &req.event_payload);
+
+    let actions_executed = if condition_matched {
+        let template_name = trigger.action.template.as_deref().unwrap_or("default");
+        vec![format!(
+            "Execute {} action for event type: {}",
+            template_name, trigger.event_type
+        )]
+    } else {
+        vec![]
+    };
+
     let result = TriggerTestResult {
         trigger_id,
-        condition_matched: true,
-        actions_executed: vec![format!("Execute action for event type: {}", trigger.event_type)],
+        condition_matched,
+        actions_executed,
         channels_notified: trigger.channels.clone(),
     };
     Ok(Json(result))
@@ -263,6 +299,7 @@ pub async fn list_event_types(
     State(_state): State<AppState>,
 ) -> Result<Json<Vec<EventTypeDescriptor>>> {
     let event_types = vec![
+        // ── ERP / existing domains ──────────────────────────────────────
         EventTypeDescriptor {
             event_type: "work_order.status_change".to_string(),
             description: "Work order status transition",
@@ -302,6 +339,75 @@ pub async fn list_event_types(
         EventTypeDescriptor {
             event_type: "kpi.threshold_breach".to_string(),
             description: "KPI value exceeds upper or lower limit",
+        },
+        // ── PM / Operations domain events ─────────────────────────────
+        EventTypeDescriptor {
+            event_type: "operations.a3.created".to_string(),
+            description: "A3 problem-solving report created",
+        },
+        EventTypeDescriptor {
+            event_type: "operations.a3.closed".to_string(),
+            description: "A3 problem-solving report closed",
+        },
+        EventTypeDescriptor {
+            event_type: "risk.created".to_string(),
+            description: "Risk identified and recorded",
+        },
+        EventTypeDescriptor {
+            event_type: "risk.mitigated".to_string(),
+            description: "Risk mitigation action completed",
+        },
+        EventTypeDescriptor {
+            event_type: "project.created".to_string(),
+            description: "New improvement project created",
+        },
+        EventTypeDescriptor {
+            event_type: "sprint.completed".to_string(),
+            description: "Sprint / iteration completed",
+        },
+        EventTypeDescriptor {
+            event_type: "issue.created".to_string(),
+            description: "New issue or bug reported",
+        },
+        // ── PM / Kanban domain events ────────────────────────────────
+        EventTypeDescriptor {
+            event_type: "kanban.card_moved".to_string(),
+            description: "Kanban card moved to a different column",
+        },
+        EventTypeDescriptor {
+            event_type: "kanban.card_created".to_string(),
+            description: "New Kanban card created",
+        },
+        // ── PM / Task domain events ──────────────────────────────────
+        EventTypeDescriptor {
+            event_type: "task.created".to_string(),
+            description: "New task created",
+        },
+        EventTypeDescriptor {
+            event_type: "task.updated".to_string(),
+            description: "Task details updated",
+        },
+        EventTypeDescriptor {
+            event_type: "task.status_changed".to_string(),
+            description: "Task status transition occurred",
+        },
+        EventTypeDescriptor {
+            event_type: "task.assigned".to_string(),
+            description: "Task assigned to a user",
+        },
+        // ── PM / Obeya domain events ─────────────────────────────────
+        EventTypeDescriptor {
+            event_type: "obeya.item_added".to_string(),
+            description: "New item added to Obeya board",
+        },
+        EventTypeDescriptor {
+            event_type: "obeya.item_updated".to_string(),
+            description: "Obeya board item updated",
+        },
+        // ── PM / State Machine events ────────────────────────────────
+        EventTypeDescriptor {
+            event_type: "state_machine.transitioned".to_string(),
+            description: "State machine instance transitioned",
         },
     ];
     Ok(Json(event_types))

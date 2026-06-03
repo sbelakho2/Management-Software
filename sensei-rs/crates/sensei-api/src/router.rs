@@ -1019,6 +1019,7 @@ pub fn build_router(state: AppState) -> Router {
         // ── Saved Views Routes ───────────────────────────────────────────
         .route("/api/v1/saved-views", get(routes::saved_views::list_saved_views).post(routes::saved_views::create_saved_view))
         .route("/api/v1/saved-views/{id}", get(routes::saved_views::get_saved_view).put(routes::saved_views::update_saved_view).delete(routes::saved_views::delete_saved_view))
+        .route("/api/v1/saved-views/{id}/share", post(routes::saved_views::share_saved_view))
         // ── Quoting Helper Routes ────────────────────────────────────────
         .route("/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets/generate", post(routes::quoting_helper::generate_work_packets))
         .route("/api/v1/quoting-helper/rfqs/{rfq_id}/workpackets", get(routes::quoting_helper::list_work_packets))

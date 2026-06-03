@@ -577,6 +577,64 @@ pub type MrpRunStore = EntityStore<MrpRun>;
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
+/// The status of a task within its lifecycle.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Open,
+    InProgress,
+    InReview,
+    Completed,
+    Cancelled,
+    Blocked,
+}
+
+impl Default for TaskStatus {
+    fn default() -> Self {
+        Self::Open
+    }
+}
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskStatus::Open => write!(f, "open"),
+            TaskStatus::InProgress => write!(f, "in_progress"),
+            TaskStatus::InReview => write!(f, "in_review"),
+            TaskStatus::Completed => write!(f, "completed"),
+            TaskStatus::Cancelled => write!(f, "cancelled"),
+            TaskStatus::Blocked => write!(f, "blocked"),
+        }
+    }
+}
+
+/// The priority level of a task.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPriority {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl Default for TaskPriority {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+impl std::fmt::Display for TaskPriority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskPriority::Low => write!(f, "low"),
+            TaskPriority::Medium => write!(f, "medium"),
+            TaskPriority::High => write!(f, "high"),
+            TaskPriority::Critical => write!(f, "critical"),
+        }
+    }
+}
+
 /// A task for tracking work items.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -584,8 +642,8 @@ pub struct Task {
     pub tenant_id: Uuid,
     pub title: String,
     pub description: String,
-    pub status: String,
-    pub priority: String,
+    pub status: TaskStatus,
+    pub priority: TaskPriority,
     pub assignee_id: Option<Uuid>,
     pub due_date: Option<DateTime<Utc>>,
     pub category: String,
@@ -595,6 +653,8 @@ pub struct Task {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// The state machine instance ID, if this task is governed by a state machine.
+    pub state_machine_instance_id: Option<Uuid>,
 }
 
 /// Entity store for tasks.
@@ -647,6 +707,63 @@ pub type ProductionCellStore = EntityStore<ProductionCell>;
 
 // ── Saved Views ───────────────────────────────────────────────────────────────
 
+/// Visibility level for a saved view.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewVisibility {
+    /// Only the creator can see this view.
+    Private,
+    /// All users in the same team can see this view.
+    Team,
+    /// All users in the same department can see this view.
+    Dept,
+    /// All users in the tenant can see this view.
+    Org,
+}
+
+impl Default for ViewVisibility {
+    fn default() -> Self {
+        Self::Private
+    }
+}
+
+impl std::fmt::Display for ViewVisibility {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewVisibility::Private => write!(f, "private"),
+            ViewVisibility::Team => write!(f, "team"),
+            ViewVisibility::Dept => write!(f, "dept"),
+            ViewVisibility::Org => write!(f, "org"),
+        }
+    }
+}
+
+/// Sort direction for a sort column.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SortDirection {
+    /// Ascending order (A-Z, 0-9).
+    Asc,
+    /// Descending order (Z-A, 9-0).
+    Desc,
+}
+
+impl Default for SortDirection {
+    fn default() -> Self {
+        Self::Asc
+    }
+}
+
+/// A single sort column configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SortConfig {
+    /// The field name to sort by.
+    pub field: String,
+    /// The sort direction.
+    #[serde(default)]
+    pub direction: SortDirection,
+}
+
 /// A user-saved view configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedView {
@@ -656,10 +773,17 @@ pub struct SavedView {
     pub name: String,
     pub entity_type: String,
     pub filters: serde_json::Value,
-    pub sort_by: Option<String>,
-    pub sort_order: Option<String>,
+    /// Compound sort configuration (replaces the old sort_by/sort_order).
+    #[serde(default)]
+    pub sort_config: Vec<SortConfig>,
     pub columns: Vec<String>,
     pub is_default: bool,
+    /// Visibility level for RBAC-based sharing.
+    #[serde(default)]
+    pub visibility: ViewVisibility,
+    /// Explicit list of user IDs this view is shared with.
+    #[serde(default)]
+    pub shared_with: Vec<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
