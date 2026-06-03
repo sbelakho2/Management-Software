@@ -1,8 +1,18 @@
+# =============================================================================
+# Caddyfile — Sensei OS Reverse Proxy Configuration
+# =============================================================================
+# This file configures Caddy as the reverse proxy for Sensei OS.
+# For development: runs on :80 (HTTP) with WebSocket support at /ws.
+# For production: uncomment the {$DOMAIN} block below or use Caddyfile.production.
+#
+# All API and WebSocket traffic routes to the Rust Axum API (sensei-api).
+# =============================================================================
+
 # Global options
 {
     # Admin email for ACME (Let's Encrypt) certificates
     email admin@starzmorocco.com
-    
+
     # Security headers
     servers {
         # Enable HTTP/2 and HTTP/3
@@ -16,18 +26,28 @@
 #     tls {$TLS_EMAIL:admin@starzmorocco.com}
 # }
 
-# Development configuration (HTTP only - for local development)
+# =============================================================================
+# Development configuration — HTTP for local development
+# =============================================================================
+
+# HTTP development server (no TLS — quick local access)
 :80 {
+    # =========================================================================
+    # Global Middleware
+    # =========================================================================
+
+    # Response compression
     encode gzip
 
     # Security headers
     header {
-        # HTTPS redirect header for browsers
+        # HSTS (only meaningful over HTTPS, but included for completeness)
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         # Prevent clickjacking
         X-Frame-Options "DENY"
-        # XSS protection
+        # MIME-type sniffing protection
         X-Content-Type-Options "nosniff"
+        # XSS protection
         X-XSS-Protection "1; mode=block"
         # Referrer policy
         Referrer-Policy "strict-origin-when-cross-origin"
@@ -35,21 +55,95 @@
         Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:;"
         # Remove server header
         -Server
+        # CORS headers
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
     }
 
-    route /api/* {
-        reverse_proxy api:8000 {
-            # Health checks
+    # =========================================================================
+    # Routes
+    # =========================================================================
+
+    # WebSocket route — proxies /ws/* to Rust API for real-time features
+    route /ws/* {
+        reverse_proxy sensei-api:8080 {
             health_uri /api/v1/health
             health_interval 30s
             health_timeout 5s
         }
     }
 
+    # API routes — proxies /api/* to Rust Axum API
+    route /api/* {
+        reverse_proxy sensei-api:8080 {
+            health_uri /api/v1/health
+            health_interval 30s
+            health_timeout 5s
+        }
+    }
+
+    # Frontend routes — proxies all other requests to Rust API (serves Leptos WASM frontend)
     route /* {
-        reverse_proxy web:3000
+        reverse_proxy sensei-api:8080 {
+            health_uri /api/v1/health
+            health_interval 30s
+            health_timeout 5s
+        }
     }
 }
+
+# =============================================================================
+# HTTPS development server (TLS with self-signed certs)
+# =============================================================================
+# Enable this block for testing secure cookie functionality locally.
+# Uncomment and generate certificates as described above.
+#
+# :443 {
+#     # Self-signed TLS for development (use mkcert for proper certs, or
+#     # uncomment 'tls internal' for Caddy-generated self-signed on the fly)
+#     tls /etc/caddy/certs/localhost.pem /etc/caddy/certs/localhost-key.pem
+#     # tls internal  # alternative: Caddy generates self-signed on the fly
+#
+#     encode gzip
+#
+#     header {
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+#         X-Frame-Options "DENY"
+#         X-Content-Type-Options "nosniff"
+#         X-XSS-Protection "1; mode=block"
+#         Referrer-Policy "strict-origin-when-cross-origin"
+#         Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:;"
+#         -Server
+#         Access-Control-Allow-Origin *
+#         Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+#         Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+#     }
+#
+#     route /ws/* {
+#         reverse_proxy sensei-api:8080 {
+#             health_uri /api/v1/health
+#             health_interval 30s
+#             health_timeout 5s
+#         }
+#     }
+#
+#     route /api/* {
+#         reverse_proxy sensei-api:8080 {
+#             health_uri /api/v1/health
+#             health_interval 30s
+#             health_timeout 5s
+#         }
+#     }
+#
+#     route /* {
+#         reverse_proxy sensei-api:8080 {
+#             health_uri /api/v1/health
+#             health_interval 30s
+#             health_timeout 5s
+#         }
+#     }
+# }
 
 # HTTPS configuration (production) - use this block when deploying
 # Requires setting DOMAIN environment variable
@@ -72,8 +166,16 @@
 #         -Server
 #     }
 #
+#     route /ws/* {
+#         reverse_proxy sensei-api:8080 {
+#             health_uri /api/v1/health
+#             health_interval 30s
+#             health_timeout 5s
+#         }
+#     }
+#
 #     route /api/* {
-#         reverse_proxy api:8000 {
+#         reverse_proxy sensei-api:8080 {
 #             health_uri /api/v1/health
 #             health_interval 30s
 #             health_timeout 5s
@@ -81,6 +183,10 @@
 #     }
 #
 #     route / {
-#         reverse_proxy web:3000
+#         reverse_proxy sensei-api:8080 {
+#             health_uri /api/v1/health
+#             health_interval 30s
+#             health_timeout 5s
+#         }
 #     }
 # }

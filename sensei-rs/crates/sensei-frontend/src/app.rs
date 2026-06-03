@@ -1,0 +1,177 @@
+//! Root Leptos application component.
+//!
+//! Provides global app state, UI store, i18n, responsive context, and
+//! defines all application routes.
+//!
+//! Uses leptos_router 0.7.8 components::*, path!() macro, ParentRoute for nesting.
+//!
+//! # Route Layout
+//!
+//! Public routes (`/`, `/login`) render [`LoginPage`] directly — no industrial bezel.
+//! All authenticated routes are nested under [`ProtectedShell`] which provides the
+//! [`RootLayout`] with rack sidebar, status bar, and corner screws.
+
+use leptos::prelude::*;
+use leptos_meta::*;
+use leptos_router::components::*;
+use leptos_router::path;
+
+use crate::components::layout::ProtectedShell;
+use crate::i18n::provide_i18n;
+use crate::hooks::use_responsive::provide_responsive;
+use crate::pages::{
+    dashboard::DashboardPage,
+    finance::{
+        BudgetListPage, CostRollupListPage, FinancePage, InvoiceListPage,
+        JournalEntryListPage, PaymentListPage,
+    },
+    hr::{
+        EmployeeListPage, HrPage, LeaveListPage, ReviewListPage,
+        TimecardListPage, TrainingListPage,
+    },
+    login::LoginPage,
+    maintenance::{
+        EquipmentListPage, MaintenancePage, PmScheduleListPage,
+        WorkRequestListPage,
+    },
+    ops::{A3ListPage, AndonListPage, OpsPage, ProjectListPage, RiskListPage},
+    production::{
+        BomListPage, MrpPage, ProductionOrderListPage, ProductionPage,
+        WorkOrderListPage,
+    },
+    quality::{
+        AuditListPage, CapaListPage, InspectionListPage, NcrListPage,
+        QualityPage, SupplierEvalListPage,
+    },
+    supply_chain::{
+        InventoryListPage, PurchaseOrderListPage, QuoteListPage, RfqListPage,
+        SalesOrderListPage, StockMoveListPage, SupplyChainPage,
+    },
+};
+use crate::state::AppState;
+use crate::stores::ui::provide_ui_store;
+
+/// Root application component.
+#[component]
+pub fn App() -> impl IntoView {
+    provide_meta_context();
+
+    // Provide shared app state (auth tokens, API client, etc.)
+    let app_state = AppState::new();
+    provide_context(app_state.clone());
+
+    // Provide reactive UI store.
+    let _ui_store = provide_ui_store();
+
+    // Provide i18n context.
+    let i18n = provide_i18n();
+    let dir = i18n.direction;
+
+    // Provide responsive breakpoint info.
+    let _responsive = provide_responsive();
+
+    view! {
+        <Html attr:lang=move || i18n.locale.get() attr:dir=move || dir.get() />
+
+        <Title text="Sensei ERP" />
+
+        <Meta charset="UTF-8" />
+        <Meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <Meta name="description" content="Sensei ERP - Manufacturing Management System" />
+
+        <Stylesheet href="/pkg/sensei-frontend.css" />
+        <Stylesheet href="/styles/rams.css" />
+
+        <Router>
+            <Routes fallback=|| view! {
+                <div class="not-found">
+                    <h1>"404 - Page Not Found"</h1>
+                    <a href="/dashboard">"Back to Dashboard"</a>
+                </div>
+            }>
+                // ═══════════════════════════════════════════════
+                // PUBLIC ROUTES — no industrial bezel / sidebar
+                // ═══════════════════════════════════════════════
+                <Route path=path!("/") view=LoginPage />
+                <Route path=path!("/login") view=LoginPage />
+
+                // ═══════════════════════════════════════════════
+                // AUTHENTICATED ROUTES — wrapped in Rams layout
+                // ═══════════════════════════════════════════════
+                // ProtectedShell provides the RootLayout (bezel, status bar,
+                // rack sidebar, corner screws) via <Outlet/>.
+                <ParentRoute path=path!("/") view=ProtectedShell>
+                    // Dashboard
+                    <Route path=path!("/dashboard") view=DashboardPage />
+
+                    // Quality Management
+                    <ParentRoute path=path!("/quality") view=QualityPage>
+                        <Route path=path!("/") view=NcrListPage />
+                        <Route path=path!("ncr") view=NcrListPage />
+                        <Route path=path!("capa") view=CapaListPage />
+                        <Route path=path!("inspections") view=InspectionListPage />
+                        <Route path=path!("audits") view=AuditListPage />
+                        <Route path=path!("suppliers") view=SupplierEvalListPage />
+                    </ParentRoute>
+
+                    // Production Management
+                    <ParentRoute path=path!("/production") view=ProductionPage>
+                        <Route path=path!("/") view=WorkOrderListPage />
+                        <Route path=path!("work-orders") view=WorkOrderListPage />
+                        <Route path=path!("orders") view=ProductionOrderListPage />
+                        <Route path=path!("bom") view=BomListPage />
+                        <Route path=path!("mrp") view=MrpPage />
+                    </ParentRoute>
+
+                    // Maintenance Management
+                    <ParentRoute path=path!("/maintenance") view=MaintenancePage>
+                        <Route path=path!("/") view=WorkRequestListPage />
+                        <Route path=path!("work-requests") view=WorkRequestListPage />
+                        <Route path=path!("pm-schedules") view=PmScheduleListPage />
+                        <Route path=path!("equipment") view=EquipmentListPage />
+                    </ParentRoute>
+
+                    // Finance Management
+                    <ParentRoute path=path!("/finance") view=FinancePage>
+                        <Route path=path!("/") view=InvoiceListPage />
+                        <Route path=path!("invoices") view=InvoiceListPage />
+                        <Route path=path!("payments") view=PaymentListPage />
+                        <Route path=path!("budgets") view=BudgetListPage />
+                        <Route path=path!("journal-entries") view=JournalEntryListPage />
+                        <Route path=path!("cost-rollups") view=CostRollupListPage />
+                    </ParentRoute>
+
+                    // Human Resources
+                    <ParentRoute path=path!("/hr") view=HrPage>
+                        <Route path=path!("/") view=EmployeeListPage />
+                        <Route path=path!("employees") view=EmployeeListPage />
+                        <Route path=path!("training") view=TrainingListPage />
+                        <Route path=path!("leave") view=LeaveListPage />
+                        <Route path=path!("reviews") view=ReviewListPage />
+                        <Route path=path!("timecards") view=TimecardListPage />
+                    </ParentRoute>
+
+                    // Supply Chain
+                    <ParentRoute path=path!("/supply-chain") view=SupplyChainPage>
+                        <Route path=path!("/") view=RfqListPage />
+                        <Route path=path!("rfqs") view=RfqListPage />
+                        <Route path=path!("quotes") view=QuoteListPage />
+                        <Route path=path!("sales-orders") view=SalesOrderListPage />
+                        <Route path=path!("purchase-orders") view=PurchaseOrderListPage />
+                        <Route path=path!("inventory") view=InventoryListPage />
+                        <Route path=path!("stock-moves") view=StockMoveListPage />
+                    </ParentRoute>
+
+                    // Operations / Continuous Improvement
+                    <ParentRoute path=path!("/ops") view=OpsPage>
+                        <Route path=path!("/") view=AndonListPage />
+                        <Route path=path!("andons") view=AndonListPage />
+                        <Route path=path!("projects") view=ProjectListPage />
+                        <Route path=path!("a3") view=A3ListPage />
+                        <Route path=path!("risks") view=RiskListPage />
+                    </ParentRoute>
+                </ParentRoute>
+            </Routes>
+        </Router>
+    }
+}

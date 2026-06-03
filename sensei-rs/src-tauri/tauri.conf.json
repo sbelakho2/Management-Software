@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegram/nicegram/refs/heads/dev/tauri.conf.json",
+  "productName": "Sensei",
+  "version": "0.1.0",
+  "identifier": "com.sensei.mos",
+  "build": {
+    "frontendDist": "../crates/sensei-frontend/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "cd ../crates/sensei-frontend && trunk serve --port 1420",
+    "beforeBuildCommand": "cd ../crates/sensei-frontend && trunk build --release"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "Sensei MOS",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "ios": {
+      "minimumSystemVersion": "15.0"
+    },
+    "android": {
+      "minSdkVersion": 26
+    }
+  }
+}

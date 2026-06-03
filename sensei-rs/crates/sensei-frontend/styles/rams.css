@@ -1,0 +1,1555 @@
+/* ==========================================================================
+   Sensei-Rams Design System v3.0.1
+   High-Precision Industrial Functionalism
+   ==========================================================================
+   Philosophy: "Less, but better" — Dieter Rams
+   Paradigm:   Control Station / Industrial Instrument
+   Grid:       4px base unit
+   ========================================================================== */
+
+/* ==========================================================================
+   1. CSS Custom Properties (Design Tokens)
+   ========================================================================== */
+
+:root {
+  /* --------------------------------------------------------------------
+     Warm-Grey Chassis Scale (Braun-derived)
+     Never use pure white (#FFF) or pure black (#000) for backgrounds.
+     -------------------------------------------------------------------- */
+  --rams-chassis: #F2F2F2;
+  --rams-module:  #E6E6E6;
+  --rams-panel:   #D9D9D9;
+  --rams-line:    #CCCCCC;
+  --rams-muted:   #999999;
+
+  /* --------------------------------------------------------------------
+     Functional Accents (Semantic only — never decorative)
+     -------------------------------------------------------------------- */
+  --rams-orange: #FFBE00;   /* Primary action, active state */
+  --rams-green:  #2D8C3C;   /* Success, operational, healthy */
+  --rams-red:    #D62D2D;   /* Error, critical, stop, danger */
+  --rams-steel:  #4A90E2;   /* Information, links */
+
+  /* User-customizable accent (defaults to orange) */
+  --rams-accent: var(--rams-orange);
+
+  /* --------------------------------------------------------------------
+     Text Colors
+     -------------------------------------------------------------------- */
+  --rams-foreground:      #1A1A1A;
+  --rams-foreground-muted: #666666;
+
+  /* --------------------------------------------------------------------
+     Border Radius (max 4px — mass, not roundness)
+     -------------------------------------------------------------------- */
+  --rams-radius-sm: 2px;
+  --rams-radius-md: 4px;
+
+  /* --------------------------------------------------------------------
+     Shadows (Inset only — NO drop shadows)
+     -------------------------------------------------------------------- */
+  --rams-pressed:  inset 0 1px 2px rgba(0, 0, 0, 0.15);
+  --rams-border:   inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  --rams-inset:    inset 1px 1px 0 rgba(255, 255, 255, 0.5),
+                   inset -1px -1px 0 rgba(0, 0, 0, 0.05);
+  --rams-focus:    0 0 0 2px rgba(255, 190, 0, 0.3);
+
+  /* --------------------------------------------------------------------
+     Typography
+     -------------------------------------------------------------------- */
+  --rams-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                    'Roboto', system-ui, sans-serif;
+  --rams-font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code',
+                    'Consolas', monospace;
+
+  /* --------------------------------------------------------------------
+     Spacing (4px grid)
+     -------------------------------------------------------------------- */
+  --rams-space-1:  4px;
+  --rams-space-2:  8px;
+  --rams-space-3:  12px;
+  --rams-space-4:  16px;
+  --rams-space-5:  20px;
+  --rams-space-6:  24px;
+  --rams-space-8:  32px;
+  --rams-space-10: 40px;
+  --rams-space-12: 48px;
+  --rams-space-16: 64px;
+
+  /* --------------------------------------------------------------------
+     Font Weights
+     -------------------------------------------------------------------- */
+  --rams-weight-normal:   400;
+  --rams-weight-medium:   500;
+  --rams-weight-semibold: 600;
+  --rams-weight-bold:     700;
+
+  /* --------------------------------------------------------------------
+     Font Sizes (exact pixel values, no fractional)
+     -------------------------------------------------------------------- */
+  --rams-text-3xs: 8px;
+  --rams-text-2xs: 10px;
+  --rams-text-xs:  12px;
+  --rams-text-sm:  14px;
+  --rams-text-base: 16px;
+  --rams-text-lg:  18px;
+  --rams-text-xl:  20px;
+  --rams-text-2xl: 24px;
+  --rams-text-3xl: 32px;
+  --rams-text-4xl: 40px;
+
+  /* --------------------------------------------------------------------
+     Line Heights (pixel values)
+     -------------------------------------------------------------------- */
+  --rams-leading-3xs: 12px;
+  --rams-leading-2xs: 14px;
+  --rams-leading-xs:  16px;
+  --rams-leading-sm:  20px;
+  --rams-leading-base: 24px;
+  --rams-leading-lg:  28px;
+  --rams-leading-xl:  28px;
+  --rams-leading-2xl: 32px;
+  --rams-leading-3xl: 40px;
+  --rams-leading-4xl: 48px;
+
+  /* --------------------------------------------------------------------
+     Transitions (max 200ms)
+     -------------------------------------------------------------------- */
+  --rams-instant: 50ms;
+  --rams-fast:    100ms;
+  --rams-normal:  150ms;
+  --rams-slow:    200ms;
+}
+
+/* ==========================================================================
+   Dark Mode
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rams-chassis: #1A1A1A;
+    --rams-module:  #252525;
+    --rams-panel:   #2D2D2D;
+    --rams-line:    #404040;
+    --rams-muted:   #666666;
+
+    --rams-foreground:      #F2F2F2;
+    --rams-foreground-muted: #999999;
+
+    --rams-pressed:  inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    --rams-border:   inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --rams-inset:    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+                     inset -1px -1px 0 rgba(0, 0, 0, 0.2);
+    --rams-focus:    0 0 0 2px rgba(255, 190, 0, 0.4);
+  }
+}
+
+/* ==========================================================================
+   2. Base Styles
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--rams-font-sans);
+  font-size: var(--rams-text-sm);
+  line-height: var(--rams-leading-sm);
+  background-color: var(--rams-chassis);
+  color: var(--rams-foreground);
+
+  /* Anti-blur text rendering */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "kern" 1, "liga" 1;
+
+  min-height: 100vh;
+}
+
+/* Tabular figures for numeric data */
+[data-numeric],
+.tabular-nums,
+.metric-display-value,
+.data-value {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: var(--rams-steel);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   3. Industrial Bezel Layout
+   ========================================================================== */
+
+.rams-bezel {
+  position: relative;
+  border: 8px solid var(--rams-chassis);
+  min-height: 100vh;
+  pointer-events: none;
+}
+
+.rams-bezel-inner {
+  pointer-events: auto;
+  min-height: calc(100vh - 16px);
+}
+
+.rams-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--rams-space-8);
+  background-color: var(--rams-chassis);
+  border-top: 1px solid var(--rams-line);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--rams-space-6);
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-2xs);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.rams-status-bar-left,
+.rams-status-bar-right {
+  display: flex;
+  gap: var(--rams-space-6);
+}
+
+/* Corner screw decoration */
+.rams-screw {
+  position: fixed;
+  z-index: 101;
+  opacity: 0.3;
+  user-select: none;
+  pointer-events: none;
+  width: 12px;
+  height: 12px;
+}
+
+.rams-screw::before {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--rams-foreground);
+  border-radius: 50%;
+}
+
+.rams-screw::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 2px;
+  height: 2px;
+  background: var(--rams-foreground);
+  box-shadow: 2px 0 0 var(--rams-foreground);
+}
+
+/* ==========================================================================
+   4. Rack Sidebar
+   ========================================================================== */
+
+.racksidebar {
+  width: 240px;
+  height: 100%;
+  background-color: var(--rams-module);
+  border-right: 1px solid var(--rams-line);
+  display: flex;
+  flex-direction: column;
+}
+
+.racksidebar-station {
+  height: 56px;
+  border-bottom: 1px solid var(--rams-line);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--rams-space-4);
+  gap: var(--rams-space-3);
+}
+
+.racksidebar-station-icon {
+  width: var(--rams-space-8);
+  height: var(--rams-space-8);
+  background-color: var(--rams-panel);
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  font-size: var(--rams-text-sm);
+}
+
+.racksidebar-station-name {
+  font-weight: var(--rams-weight-semibold);
+  font-size: var(--rams-text-sm);
+  letter-spacing: -0.02em;
+}
+
+.racksidebar-station-sub {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+}
+
+.racksidebar-nav {
+  flex: 1;
+  padding: var(--rams-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--rams-space-1);
+}
+
+.racksidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-3);
+  padding: var(--rams-space-2) var(--rams-space-3);
+  border-radius: var(--rams-radius-sm);
+  border: 1px solid transparent;
+  color: var(--rams-muted);
+  font-size: var(--rams-text-sm);
+  font-weight: var(--rams-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--rams-fast),
+              border-color var(--rams-fast),
+              color var(--rams-fast);
+  text-decoration: none;
+}
+
+.racksidebar-item:hover {
+  background-color: var(--rams-panel);
+  border-color: var(--rams-line);
+  color: var(--rams-foreground);
+  text-decoration: none;
+}
+
+.racksidebar-item--active {
+  background-color: var(--rams-panel);
+  border-color: var(--rams-line);
+  color: var(--rams-foreground);
+  box-shadow: inset 3px 0 0 0 var(--rams-orange);
+}
+
+.racksidebar-item-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--rams-muted);
+  opacity: 0.3;
+  transition: background-color var(--rams-fast), opacity var(--rams-fast);
+}
+
+.racksidebar-item--active .racksidebar-item-indicator {
+  background-color: var(--rams-orange);
+  opacity: 1;
+}
+
+.racksidebar-item-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.6;
+}
+
+.racksidebar-item--active .racksidebar-item-icon {
+  opacity: 1;
+  color: var(--rams-foreground);
+}
+
+.racksidebar-andon {
+  padding: var(--rams-space-4);
+  border-top: 1px solid var(--rams-line);
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-2);
+}
+
+.racksidebar-andon-label {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  text-transform: uppercase;
+  color: var(--rams-green);
+}
+
+/* ==========================================================================
+   5. Module Container (NOT card)
+   ========================================================================== */
+
+.module {
+  background-color: var(--rams-module);
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+}
+
+.module--inset {
+  background-color: var(--rams-panel);
+  box-shadow: var(--rams-inset);
+}
+
+.module--raised {
+  border-width: 2px;
+}
+
+.module-header {
+  padding: var(--rams-space-3) var(--rams-space-4);
+  border-bottom: 1px solid var(--rams-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.module-title {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--rams-muted);
+}
+
+.module-content {
+  padding: var(--rams-space-4);
+}
+
+/* ==========================================================================
+   6. Industrial Button
+   ========================================================================== */
+
+.rams-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--rams-space-2);
+  font-family: var(--rams-font-sans);
+  font-weight: var(--rams-weight-medium);
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: transform var(--rams-instant),
+              box-shadow var(--rams-instant),
+              background-color var(--rams-instant),
+              border-color var(--rams-instant),
+              opacity var(--rams-instant);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.rams-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--rams-focus);
+}
+
+.rams-btn:active {
+  transform: scale(0.98);
+  box-shadow: var(--rams-pressed);
+}
+
+.rams-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Size variants */
+.rams-btn--sm {
+  height: var(--rams-space-8);
+  padding: 0 var(--rams-space-3);
+  font-size: var(--rams-text-xs);
+}
+
+.rams-btn--md {
+  height: var(--rams-space-10);
+  padding: 0 var(--rams-space-4);
+  font-size: var(--rams-text-sm);
+}
+
+.rams-btn--lg {
+  height: var(--rams-space-12);
+  padding: 0 var(--rams-space-6);
+  font-size: var(--rams-text-base);
+}
+
+/* Color variants */
+.rams-btn--default {
+  background-color: var(--rams-module);
+  border-color: var(--rams-line);
+  color: var(--rams-foreground);
+}
+
+.rams-btn--default:hover {
+  background-color: var(--rams-panel);
+  border-color: var(--rams-muted);
+}
+
+.rams-btn--primary {
+  background-color: var(--rams-orange);
+  border-color: var(--rams-orange);
+  color: #000000;
+}
+
+.rams-btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+.rams-btn--danger {
+  background-color: var(--rams-red);
+  border-color: var(--rams-red);
+  color: #ffffff;
+}
+
+.rams-btn--danger:hover {
+  filter: brightness(1.1);
+}
+
+.rams-btn--ghost {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--rams-foreground);
+}
+
+.rams-btn--ghost:hover {
+  background-color: var(--rams-panel);
+  border-color: var(--rams-line);
+}
+
+/* ==========================================================================
+   7. Industrial Input
+   ========================================================================== */
+
+.rams-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rams-space-1);
+}
+
+.rams-label {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--rams-muted);
+}
+
+.rams-input {
+  width: 100%;
+  height: var(--rams-space-10);
+  padding: 0 var(--rams-space-3);
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+  background-color: var(--rams-panel);
+  color: var(--rams-foreground);
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-sm);
+  box-shadow: var(--rams-inset);
+  transition: border-color var(--rams-fast),
+              box-shadow var(--rams-fast);
+}
+
+.rams-input::placeholder {
+  color: var(--rams-muted);
+  opacity: 0.6;
+}
+
+.rams-input:focus {
+  outline: none;
+  border-color: var(--rams-orange);
+  box-shadow: var(--rams-inset), var(--rams-focus);
+}
+
+.rams-input--error {
+  border-color: var(--rams-red);
+}
+
+.rams-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rams-input-error {
+  font-size: var(--rams-text-xs);
+  color: var(--rams-red);
+  font-weight: var(--rams-weight-medium);
+}
+
+/* ==========================================================================
+   8. Industrial Data Table
+   ========================================================================== */
+
+.rams-table-container {
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+  overflow: hidden;
+}
+
+.rams-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--rams-module);
+}
+
+.rams-table th {
+  padding: var(--rams-space-3) var(--rams-space-4);
+  background-color: var(--rams-panel);
+  border-bottom: 1px solid var(--rams-line);
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--rams-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.rams-table th.rams-table-cell--center {
+  text-align: center;
+}
+
+.rams-table th.rams-table-cell--right {
+  text-align: right;
+}
+
+.rams-table td {
+  padding: var(--rams-space-3) var(--rams-space-4);
+  border-bottom: 1px solid var(--rams-line);
+  font-size: var(--rams-text-sm);
+  color: var(--rams-foreground);
+}
+
+.rams-table tr:last-child td {
+  border-bottom: none;
+}
+
+.rams-table tr:hover td {
+  background-color: var(--rams-panel);
+}
+
+.rams-table-cell--mono {
+  font-family: var(--rams-font-mono);
+}
+
+.rams-table-cell--center {
+  text-align: center;
+}
+
+.rams-table-cell--right {
+  text-align: right;
+}
+
+.rams-table-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.rams-table-header:hover {
+  color: var(--rams-foreground);
+}
+
+/* ==========================================================================
+   9. Andon Status
+   ========================================================================== */
+
+.andon-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rams-space-1);
+  padding: var(--rams-space-1);
+  background-color: var(--rams-panel);
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+}
+
+.andon-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--rams-muted);
+  opacity: 0.2;
+  transition: background-color var(--rams-fast),
+              opacity var(--rams-fast),
+              box-shadow var(--rams-fast);
+}
+
+.andon-light--sm {
+  width: 12px;
+  height: 12px;
+}
+
+.andon-light--md {
+  width: 16px;
+  height: 16px;
+}
+
+.andon-light--lg {
+  width: 20px;
+  height: 20px;
+}
+
+.andon-light--red {
+  background-color: var(--rams-red);
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(214, 45, 45, 0.5);
+}
+
+.andon-light--yellow {
+  background-color: var(--rams-orange);
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(255, 190, 0, 0.5);
+}
+
+.andon-light--green {
+  background-color: var(--rams-green);
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(45, 140, 60, 0.5);
+}
+
+/* Andon inline (horizontal) */
+.andon-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-2);
+}
+
+.andon-inline-label {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ==========================================================================
+   10. Metric Display
+   ========================================================================== */
+
+.metric-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rams-space-1);
+}
+
+.metric-display-label {
+  font-size: var(--rams-text-2xs);
+  font-family: var(--rams-font-mono);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--rams-muted);
+}
+
+.metric-display-value {
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-3xl);
+  font-weight: var(--rams-weight-bold);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--rams-foreground);
+}
+
+.metric-display-value--sm {
+  font-size: var(--rams-text-2xl);
+}
+
+.metric-display-value--lg {
+  font-size: var(--rams-text-4xl);
+}
+
+.metric-display-unit {
+  font-size: var(--rams-text-sm);
+  font-family: var(--rams-font-mono);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+}
+
+.metric-display-trend {
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-1);
+  font-size: var(--rams-text-xs);
+  font-weight: var(--rams-weight-medium);
+}
+
+.metric-display-trend--up {
+  color: var(--rams-green);
+}
+
+.metric-display-trend--down {
+  color: var(--rams-red);
+}
+
+.metric-display-trend--neutral {
+  color: var(--rams-muted);
+}
+
+/* ==========================================================================
+   11. Dymo Label
+   ========================================================================== */
+
+.dymo-label {
+  display: inline-block;
+  padding: var(--rams-space-1) var(--rams-space-2);
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-2xs);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transform: rotate(-0.5deg);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.dymo-label--default {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+.dymo-label--warning {
+  background-color: var(--rams-orange);
+  color: #000000;
+}
+
+.dymo-label--critical {
+  background-color: var(--rams-red);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   12. Stamp Overlay
+   ========================================================================== */
+
+.rams-stamp {
+  position: absolute;
+  top: var(--rams-space-4);
+  right: var(--rams-space-4);
+  padding: var(--rams-space-2) var(--rams-space-4);
+  border-width: 4px;
+  border-style: solid;
+  font-weight: var(--rams-weight-black, 900);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transform: rotate(-12deg);
+  opacity: 0.6;
+  mix-blend-mode: multiply;
+  user-select: none;
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .rams-stamp {
+    mix-blend-mode: screen;
+  }
+}
+
+.rams-stamp--approved {
+  border-color: var(--rams-green);
+  color: var(--rams-green);
+}
+
+.rams-stamp--rejected {
+  border-color: var(--rams-red);
+  color: var(--rams-red);
+}
+
+.rams-stamp--pending {
+  border-color: var(--rams-orange);
+  color: var(--rams-orange);
+}
+
+/* ==========================================================================
+   13. Perforated Grille Pattern
+   ========================================================================== */
+
+.rams-grille {
+  background-image: radial-gradient(circle, var(--rams-muted) 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+.rams-grille--fine {
+  background-image: radial-gradient(circle, var(--rams-muted) 0.5px, transparent 0.5px);
+  background-size: 4px 4px;
+}
+
+.rams-grille--coarse {
+  background-image: radial-gradient(circle, var(--rams-muted) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+
+/* ==========================================================================
+   14. Engineering Blueprint Grid
+   ========================================================================== */
+
+.rams-blueprint-grid {
+  background-image: radial-gradient(circle, var(--rams-line) 0.5px, transparent 0.5px);
+  background-size: 20px 20px;
+}
+
+.rams-blueprint-grid--fine {
+  background-image:
+    linear-gradient(var(--rams-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rams-line) 1px, transparent 1px);
+  background-size: 4px 4px;
+  opacity: 0.3;
+}
+
+/* ==========================================================================
+   15. Grid / Spacing Utilities
+   ========================================================================== */
+
+.rams-grid {
+  display: grid;
+  gap: var(--rams-space-4);
+}
+
+.rams-grid--cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.rams-grid--cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.rams-grid--cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.rams-grid--gap-sm {
+  gap: var(--rams-space-2);
+}
+
+.rams-grid--gap-lg {
+  gap: var(--rams-space-6);
+}
+
+.rams-flex {
+  display: flex;
+}
+
+.rams-flex--col {
+  flex-direction: column;
+}
+
+.rams-flex--wrap {
+  flex-wrap: wrap;
+}
+
+.rams-flex--center {
+  align-items: center;
+}
+
+.rams-flex--between {
+  justify-content: space-between;
+}
+
+.rams-flex--gap-1 {
+  gap: var(--rams-space-1);
+}
+
+.rams-flex--gap-2 {
+  gap: var(--rams-space-2);
+}
+
+.rams-flex--gap-3 {
+  gap: var(--rams-space-3);
+}
+
+.rams-flex--gap-4 {
+  gap: var(--rams-space-4);
+}
+
+.rams-flex--gap-6 {
+  gap: var(--rams-space-6);
+}
+
+.rams-flex--gap-8 {
+  gap: var(--rams-space-8);
+}
+
+/* ==========================================================================
+   16. Spacing Utilities
+   ========================================================================== */
+
+.rams-p-1  { padding: var(--rams-space-1); }
+.rams-p-2  { padding: var(--rams-space-2); }
+.rams-p-3  { padding: var(--rams-space-3); }
+.rams-p-4  { padding: var(--rams-space-4); }
+.rams-p-6  { padding: var(--rams-space-6); }
+.rams-p-8  { padding: var(--rams-space-8); }
+
+.rams-px-1 { padding-inline: var(--rams-space-1); }
+.rams-px-2 { padding-inline: var(--rams-space-2); }
+.rams-px-3 { padding-inline: var(--rams-space-3); }
+.rams-px-4 { padding-inline: var(--rams-space-4); }
+.rams-px-6 { padding-inline: var(--rams-space-6); }
+
+.rams-py-1 { padding-block: var(--rams-space-1); }
+.rams-py-2 { padding-block: var(--rams-space-2); }
+.rams-py-3 { padding-block: var(--rams-space-3); }
+.rams-py-4 { padding-block: var(--rams-space-4); }
+
+.rams-m-0  { margin: 0; }
+.rams-mt-1 { margin-top: var(--rams-space-1); }
+.rams-mt-2 { margin-top: var(--rams-space-2); }
+.rams-mt-3 { margin-top: var(--rams-space-3); }
+.rams-mt-4 { margin-top: var(--rams-space-4); }
+.rams-mt-6 { margin-top: var(--rams-space-6); }
+.rams-mt-8 { margin-top: var(--rams-space-8); }
+
+.rams-mb-1 { margin-bottom: var(--rams-space-1); }
+.rams-mb-2 { margin-bottom: var(--rams-space-2); }
+.rams-mb-3 { margin-bottom: var(--rams-space-3); }
+.rams-mb-4 { margin-bottom: var(--rams-space-4); }
+.rams-mb-6 { margin-bottom: var(--rams-space-6); }
+.rams-mb-8 { margin-bottom: var(--rams-space-8); }
+
+/* ==========================================================================
+   17. Focus Management
+   ========================================================================== */
+
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--rams-orange);
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  padding: var(--rams-space-2) var(--rams-space-4);
+  background-color: var(--rams-orange);
+  color: #000000;
+  z-index: 9999;
+  transition: top var(--rams-slow);
+  font-family: var(--rams-font-sans);
+  font-weight: var(--rams-weight-semibold);
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* ==========================================================================
+   18. Typography Utilities
+   ========================================================================== */
+
+.rams-text-3xs { font-size: var(--rams-text-3xs); line-height: var(--rams-leading-3xs); }
+.rams-text-2xs { font-size: var(--rams-text-2xs); line-height: var(--rams-leading-2xs); }
+.rams-text-xs  { font-size: var(--rams-text-xs);  line-height: var(--rams-leading-xs); }
+.rams-text-sm  { font-size: var(--rams-text-sm);  line-height: var(--rams-leading-sm); }
+.rams-text-base { font-size: var(--rams-text-base); line-height: var(--rams-leading-base); }
+.rams-text-lg  { font-size: var(--rams-text-lg);  line-height: var(--rams-leading-lg); }
+.rams-text-xl  { font-size: var(--rams-text-xl);  line-height: var(--rams-leading-xl); }
+.rams-text-2xl { font-size: var(--rams-text-2xl); line-height: var(--rams-leading-2xl); }
+.rams-text-3xl { font-size: var(--rams-text-3xl); line-height: var(--rams-leading-3xl); }
+.rams-text-4xl { font-size: var(--rams-text-4xl); line-height: var(--rams-leading-4xl); }
+
+.rams-font-mono   { font-family: var(--rams-font-mono); }
+.rams-font-sans   { font-family: var(--rams-font-sans); }
+.rams-font-normal { font-weight: var(--rams-weight-normal); }
+.rams-font-medium { font-weight: var(--rams-weight-medium); }
+.rams-font-bold   { font-weight: var(--rams-weight-bold); }
+
+.rams-uppercase     { text-transform: uppercase; }
+.rams-tracking-wide { letter-spacing: 0.05em; }
+.rams-tracking-wider { letter-spacing: 0.1em; }
+
+/* ==========================================================================
+   19. Density Modes
+   ========================================================================== */
+
+.density-compact {
+  --density-scale: 0.75;
+  --font-scale: 0.9;
+}
+
+.density-comfortable {
+  --density-scale: 1;
+  --font-scale: 1;
+}
+
+.density-expanded {
+  --density-scale: 1.25;
+  --font-scale: 1.1;
+}
+
+/* ==========================================================================
+   20. Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   21. Mechanical Toggle Switch
+   ========================================================================== */
+
+.rams-toggle {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  border: 1px solid var(--rams-line);
+  border-radius: var(--rams-radius-sm);
+  background-color: var(--rams-panel);
+  cursor: pointer;
+  transition: background-color var(--rams-fast), border-color var(--rams-fast);
+}
+
+.rams-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--rams-focus);
+}
+
+.rams-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rams-toggle--active {
+  background-color: rgba(255, 190, 0, 0.2);
+  border-color: var(--rams-orange);
+}
+
+.rams-toggle-knob {
+  position: absolute;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--rams-foreground);
+  border: 1px solid var(--rams-line);
+  transition: transform var(--rams-fast);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.rams-toggle--active .rams-toggle-knob {
+  transform: translateX(24px);
+}
+
+.rams-toggle-track-indicators {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  font-size: 8px;
+  font-family: var(--rams-font-mono);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   22. Status Indicator
+   ========================================================================== */
+
+.rams-status {
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-1);
+  font-size: var(--rams-text-xs);
+  font-weight: var(--rams-weight-medium);
+}
+
+.rams-status--success { color: var(--rams-green); }
+.rams-status--error   { color: var(--rams-red); }
+.rams-status--warning { color: var(--rams-orange); }
+.rams-status--info    { color: var(--rams-steel); }
+
+/* ==========================================================================
+   23. Scrollbar Styling
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--rams-chassis);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--rams-line);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--rams-muted);
+}
+
+/* ==========================================================================
+   24. Badge / Status Indicator (rams-badge)
+   ========================================================================== */
+
+.rams-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--rams-space-1) var(--rams-space-2);
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-2xs);
+  font-weight: var(--rams-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid transparent;
+  border-radius: var(--rams-radius-sm);
+  white-space: nowrap;
+}
+
+/* Status badges */
+.rams-badge--open,
+.status-open {
+  background-color: rgba(74, 144, 226, 0.15);
+  color: var(--rams-steel);
+  border-color: var(--rams-steel);
+}
+
+.rams-badge--closed,
+.status-closed {
+  background-color: rgba(153, 153, 153, 0.15);
+  color: var(--rams-muted);
+  border-color: var(--rams-line);
+}
+
+.rams-badge--active,
+.status-active {
+  background-color: rgba(45, 140, 60, 0.15);
+  color: var(--rams-green);
+  border-color: var(--rams-green);
+}
+
+.rams-badge--pending,
+.status-pending {
+  background-color: rgba(255, 190, 0, 0.15);
+  color: #B38600;
+  border-color: var(--rams-orange);
+}
+
+.rams-badge--paid,
+.status-paid {
+  background-color: rgba(45, 140, 60, 0.15);
+  color: var(--rams-green);
+  border-color: var(--rams-green);
+}
+
+.rams-badge--overdue,
+.status-overdue {
+  background-color: rgba(214, 45, 45, 0.15);
+  color: var(--rams-red);
+  border-color: var(--rams-red);
+}
+
+.rams-badge--cancelled,
+.status-cancelled {
+  background-color: rgba(153, 153, 153, 0.15);
+  color: var(--rams-muted);
+  border-color: var(--rams-line);
+}
+
+.rams-badge--approved,
+.status-approved {
+  background-color: rgba(45, 140, 60, 0.15);
+  color: var(--rams-green);
+  border-color: var(--rams-green);
+}
+
+.rams-badge--rejected,
+.status-rejected {
+  background-color: rgba(214, 45, 45, 0.15);
+  color: var(--rams-red);
+  border-color: var(--rams-red);
+}
+
+.rams-badge--draft,
+.status-draft {
+  background-color: rgba(153, 153, 153, 0.1);
+  color: var(--rams-muted);
+  border-color: var(--rams-line);
+}
+
+.rams-badge--in-progress,
+.status-in-progress,
+.status-in_progress {
+  background-color: rgba(74, 144, 226, 0.15);
+  color: var(--rams-steel);
+  border-color: var(--rams-steel);
+}
+
+.rams-badge--completed,
+.status-completed {
+  background-color: rgba(45, 140, 60, 0.15);
+  color: var(--rams-green);
+  border-color: var(--rams-green);
+}
+
+/* Priority badges */
+.priority-critical,
+.priority-high {
+  background-color: rgba(214, 45, 45, 0.15);
+  color: var(--rams-red);
+  border-color: var(--rams-red);
+}
+
+.priority-medium {
+  background-color: rgba(255, 190, 0, 0.15);
+  color: #B38600;
+  border-color: var(--rams-orange);
+}
+
+.priority-low {
+  background-color: rgba(74, 144, 226, 0.15);
+  color: var(--rams-steel);
+  border-color: var(--rams-steel);
+}
+
+/* Severity badges */
+.severity-critical {
+  background-color: rgba(214, 45, 45, 0.15);
+  color: var(--rams-red);
+  border-color: var(--rams-red);
+}
+
+.severity-major {
+  background-color: rgba(255, 190, 0, 0.15);
+  color: #B38600;
+  border-color: var(--rams-orange);
+}
+
+.severity-medium {
+  background-color: rgba(255, 190, 0, 0.15);
+  color: #B38600;
+  border-color: var(--rams-orange);
+}
+
+.severity-minor {
+  background-color: rgba(74, 144, 226, 0.15);
+  color: var(--rams-steel);
+  border-color: var(--rams-steel);
+}
+
+/* Result badges */
+.result-pass {
+  background-color: rgba(45, 140, 60, 0.15);
+  color: var(--rams-green);
+  border-color: var(--rams-green);
+}
+
+.result-fail {
+  background-color: rgba(214, 45, 45, 0.15);
+  color: var(--rams-red);
+  border-color: var(--rams-red);
+}
+
+/* Tier badges */
+.tier-1 { color: var(--rams-red); font-weight: var(--rams-weight-bold); }
+.tier-2 { color: var(--rams-orange); font-weight: var(--rams-weight-bold); }
+.tier-3 { color: var(--rams-steel); font-weight: var(--rams-weight-bold); }
+
+/* Move type badges */
+.move-type-in { color: var(--rams-green); }
+.move-type-out { color: var(--rams-red); }
+.move-type-transfer { color: var(--rams-steel); }
+
+/* ==========================================================================
+   25. Missing Layout Utilities
+   ========================================================================== */
+
+/* Main content area */
+.rams-main {
+  flex: 1;
+  padding: var(--rams-space-4);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Input group alias */
+.rams-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rams-space-1);
+}
+
+/* Status bar elements */
+.rams-status-bar-separator {
+  color: var(--rams-line);
+  font-family: var(--rams-font-mono);
+  user-select: none;
+}
+
+.rams-status-text {
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-2xs);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Corner screw positions */
+.rams-screw--tl {
+  top: var(--rams-space-2);
+  left: var(--rams-space-2);
+}
+
+.rams-screw--tr {
+  top: var(--rams-space-2);
+  right: var(--rams-space-2);
+}
+
+.rams-screw--bl {
+  bottom: var(--rams-space-2);
+  left: var(--rams-space-2);
+}
+
+.rams-screw--br {
+  bottom: var(--rams-space-2);
+  right: var(--rams-space-2);
+}
+
+/* ==========================================================================
+   26. Rack Sidebar Extended Classes
+   ========================================================================== */
+
+.racksidebar-station-id {
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-2xs);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.racksidebar-footer {
+  padding: var(--rams-space-3) var(--rams-space-4);
+  border-top: 1px solid var(--rams-line);
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-3);
+  margin-top: auto;
+}
+
+.racksidebar-user {
+  display: flex;
+  align-items: center;
+  gap: var(--rams-space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.racksidebar-user-name {
+  font-size: var(--rams-text-xs);
+  font-weight: var(--rams-weight-medium);
+  color: var(--rams-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.racksidebar-item-label {
+  font-size: var(--rams-text-sm);
+  font-weight: var(--rams-weight-medium);
+}
+
+/* ==========================================================================
+   27. Class Name Aliases (component compatibility)
+   ========================================================================== */
+
+/* Alias: components use rams-flex-col, CSS defines rams-flex--col */
+.rams-flex-col { flex-direction: column; }
+.rams-flex-wrap { flex-wrap: wrap; }
+.rams-flex-center { align-items: center; justify-content: center; }
+
+/* Alias: gap utilities */
+.rams-gap-1 { gap: var(--rams-space-1); }
+.rams-gap-2 { gap: var(--rams-space-2); }
+.rams-gap-3 { gap: var(--rams-space-3); }
+.rams-gap-4 { gap: var(--rams-space-4); }
+.rams-gap-6 { gap: var(--rams-space-6); }
+.rams-gap-8 { gap: var(--rams-space-8); }
+
+/* Alias: grid columns */
+.rams-grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+.rams-grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+.rams-grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* ==========================================================================
+   28. Additional Utilities
+   ========================================================================== */
+
+.rams-min-h-screen {
+  min-height: 100vh;
+}
+
+.rams-w-full {
+  width: 100%;
+}
+
+.not-found {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: var(--rams-space-4);
+  text-align: center;
+}
+
+.not-found h1 {
+  font-family: var(--rams-font-mono);
+  font-size: var(--rams-text-4xl);
+  font-weight: var(--rams-weight-bold);
+  color: var(--rams-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.not-found p {
+  font-size: var(--rams-text-sm);
+  color: var(--rams-muted);
+}
+
+/* ==========================================================================
+   29. Andon Inactive State
+   ========================================================================== */
+
+.andon-light--inactive {
+  background-color: var(--rams-muted);
+  opacity: 0.2;
+}

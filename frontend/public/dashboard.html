@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sensei OS — Control Station</title>
+  <style>
+    /* ── Sensei-RAMS Design Tokens (Dark Mode) ────────────────────── */
+    /* ── ONLY --rams-* tokens OR #000/#fff on accent backgrounds ─── */
+    :root {
+      --rams-chassis:    #1A1A1A;
+      --rams-module:     #252525;
+      --rams-panel:      #2D2D2D;
+      --rams-line:       #404040;
+      --rams-muted:      #666666;
+      --rams-foreground: #F2F2F2;
+      --rams-orange:     #FFBE00;
+      --rams-green:      #2D8C3C;
+      --rams-red:        #D62D2D;
+      --rams-steel:      #4A90E2;
+      --sidebar-width:   240px;
+    }
+
+    /* ── Reset ────────────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--rams-chassis);
+      color: var(--rams-foreground);
+      min-height: 100vh;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      font-feature-settings: "kern" 1, "liga" 1;
+      line-height: 24px;
+      font-size: 16px;
+      padding-bottom: 40px;
+    }
+
+    /* ── Skip Link ────────────────────────────────────────────────── */
+    .skip-link {
+      position: absolute;
+      top: -48px;
+      left: 0;
+      padding: 8px 16px;
+      background: var(--rams-orange);
+      color: #000;
+      font-weight: 600;
+      font-size: 14px;
+      z-index: 9999;
+      transition: top 0.2s;
+      text-decoration: none;
+    }
+    .skip-link:focus { top: 0; }
+
+    /* ── Industrial Bezel ─────────────────────────────────────────── */
+    .bezel {
+      position: fixed;
+      inset: 0;
+      border: 8px solid var(--rams-chassis);
+      pointer-events: none;
+      z-index: 100;
+    }
+    .screw {
+      position: fixed;
+      z-index: 101;
+      opacity: 0.3;
+      user-select: none;
+      pointer-events: none;
+    }
+    .screw-tl { top: 4px; left: 4px; }
+    .screw-tr { top: 4px; right: 4px; }
+    .screw-bl { bottom: 36px; left: 4px; }
+    .screw-br { bottom: 36px; right: 4px; }
+
+    /* ── Status Bar ───────────────────────────────────────────────── */
+    .status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      background: var(--rams-chassis);
+      border-top: 1px solid var(--rams-line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 100;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      line-height: 14px;
+      color: var(--rams-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    .status-bar-group { display: flex; gap: 24px; }
+
+    /* ── Layout Shell ─────────────────────────────────────────────── */
+    .shell { display: flex; min-height: 100vh; }
+
+    /* ── Rack Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 32px;
+      width: var(--sidebar-width);
+      background: var(--rams-module);
+      border-right: 1px solid var(--rams-line);
+      display: flex;
+      flex-direction: column;
+      z-index: 50;
+      overflow-y: auto;
+    }
+    .sidebar-header {
+      height: 56px;
+      border-bottom: 1px solid var(--rams-line);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      background: var(--rams-panel);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--rams-orange);
+      flex-shrink: 0;
+    }
+    .sidebar-brand { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .sidebar-brand-name {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sidebar-brand-sub {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+      white-space: nowrap;
+    }
+
+    /* ── Sidebar Navigation ───────────────────────────────────────── */
+    .sidebar-nav { flex: 1; padding: 8px; overflow-y: auto; }
+    .sidebar-section-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+      color: var(--rams-muted);
+      padding: 12px 12px 8px;
+      opacity: 0.7;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 2px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      color: var(--rams-foreground);
+      cursor: pointer;
+      transition: background 100ms ease-out, border-color 100ms ease-out;
+      margin-bottom: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 18px;
+    }
+    .nav-item:hover {
+      background: var(--rams-panel);
+      border-color: var(--rams-line);
+    }
+    .nav-item:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--rams-orange);
+    }
+    .nav-item:active { transform: scale(0.98); }
+    .nav-item.active {
+      background: var(--rams-panel);
+      border-color: var(--rams-line);
+      box-shadow: inset 3px 0 0 0 var(--rams-orange);
+    }
+    .nav-item-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--rams-muted);
+      opacity: 0.3;
+      flex-shrink: 0;
+    }
+    .nav-item.active .nav-item-indicator {
+      background: var(--rams-orange);
+      opacity: 1;
+      box-shadow: 0 0 6px rgba(255,190,0,0.4);
+    }
+    .nav-item:hover .nav-item-indicator { opacity: 0.6; }
+    .nav-item-icon {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+      color: var(--rams-muted);
+    }
+    .nav-item.active .nav-item-icon { color: var(--rams-foreground); }
+    .nav-item:hover .nav-item-icon { color: var(--rams-foreground); }
+    .nav-item-label {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nav-item.active .nav-item-label {
+      color: var(--rams-foreground);
+      font-weight: 600;
+    }
+    .nav-item:not(.active) .nav-item-label { color: var(--rams-muted); }
+    .nav-item:hover .nav-item-label { color: var(--rams-foreground); }
+    .nav-item-count {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--rams-muted);
+      background: var(--rams-chassis);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      padding: 4px 8px;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    /* ── Sidebar Footer ───────────────────────────────────────────── */
+    .sidebar-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--rams-line);
+      flex-shrink: 0;
+    }
+    .sidebar-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sidebar-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--rams-green);
+      box-shadow: 0 0 8px rgba(45,140,60,0.5);
+      flex-shrink: 0;
+    }
+    .sidebar-status-text {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-green);
+    }
+
+    /* ── Main Content Area ────────────────────────────────────────── */
+    .main-area {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────────── */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--rams-module);
+      border-bottom: 1px solid var(--rams-line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      height: 56px;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .topbar-page-title {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-role {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      background: var(--rams-chassis);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--rams-orange);
+    }
+    .topbar-user { display: flex; align-items: center; gap: 8px; }
+    .topbar-avatar {
+      width: 32px;
+      height: 32px;
+      background: var(--rams-panel);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--rams-foreground);
+    }
+    .topbar-user-name { font-size: 13px; font-weight: 500; color: var(--rams-foreground); }
+
+    /* ── Buttons ──────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 16px;
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      background: var(--rams-panel);
+      color: var(--rams-foreground);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 100ms ease-out, border-color 100ms ease-out, transform 50ms ease-out;
+      text-decoration: none;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--rams-module);
+      border-color: var(--rams-muted);
+    }
+    .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--rams-orange); }
+    .btn:active { transform: scale(0.98); }
+    .btn-danger { border-color: var(--rams-red); color: var(--rams-red); }
+    .btn-danger:hover {
+      background: rgba(214,45,45,0.1);
+      border-color: var(--rams-red);
+    }
+    .btn-primary {
+      background: var(--rams-orange);
+      border-color: var(--rams-orange);
+      color: #000;
+      font-weight: 700;
+    }
+    .btn-primary:hover { background: #e6ab00; }
+    .btn-sm { height: 28px; padding: 0 10px; font-size: 11px; }
+
+    /* ── Page Content ─────────────────────────────────────────────── */
+    .page-content {
+      padding: 24px;
+      max-width: 1200px;
+    }
+
+    /* ── Module Container ─────────────────────────────────────────── */
+    .module {
+      background: var(--rams-module);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      margin-bottom: 24px;
+    }
+    .module-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--rams-line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .module-title {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      line-height: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .module-content { padding: 16px; }
+    .module.hidden { display: none; }
+
+    /* ── Stats Grid ───────────────────────────────────────────────── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+    }
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 12px;
+      background: var(--rams-panel);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+    }
+    .stat-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .stat-value {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 36px;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums lining-nums;
+    }
+
+    /* ── User Profile Grid ────────────────────────────────────────── */
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .profile-item { display: flex; flex-direction: column; gap: 4px; }
+    .profile-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .profile-value {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+      word-break: break-all;
+    }
+
+    /* ── Data Tables ──────────────────────────────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .data-table th {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--rams-line);
+    }
+    .data-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--rams-line);
+      color: var(--rams-foreground);
+    }
+    .data-table tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+    .data-table .empty-row td {
+      color: var(--rams-muted);
+      text-align: center;
+      padding: 24px;
+      font-style: italic;
+    }
+
+    /* ── Status Badges ────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 2px;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 1px solid var(--rams-line);
+    }
+    .badge-open, .badge-pending, .badge-active {
+      border-color: var(--rams-orange);
+      color: var(--rams-orange);
+      background: rgba(255,190,0,0.08);
+    }
+    .badge-in-progress, .badge-started, .badge-ongoing {
+      border-color: var(--rams-steel);
+      color: var(--rams-steel);
+      background: rgba(74,144,226,0.08);
+    }
+    .badge-completed, .badge-done, .badge-approved, .badge-resolved {
+      border-color: var(--rams-green);
+      color: var(--rams-green);
+      background: rgba(45,140,60,0.08);
+    }
+    .badge-closed, .badge-cancelled, .badge-rejected {
+      border-color: var(--rams-muted);
+      color: var(--rams-muted);
+      background: rgba(102,102,102,0.08);
+    }
+    .badge-warning, .badge-overdue {
+      border-color: var(--rams-red);
+      color: var(--rams-red);
+      background: rgba(214,45,45,0.08);
+    }
+
+    /* ── Screen-reader only ───────────────────────────────────────── */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* ── Module header count badge ────────────────────────────────── */
+    .module-header-count {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+
+    /* ── Status dot (inline variant) ──────────────────────────────── */
+    .status-dot-inline {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--rams-green);
+      box-shadow: 0 0 6px rgba(45,140,60,0.5);
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* ── Object section renderer (replaces inline styles) ─────────── */
+    .obj-section {
+      margin-bottom: 2px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .obj-section-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      color: var(--rams-muted);
+      min-width: 140px;
+      flex-shrink: 0;
+      line-height: 20px;
+    }
+    .obj-section-value {
+      color: var(--rams-foreground);
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .obj-section-value.num {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums lining-nums;
+    }
+    .obj-nested {
+      padding-left: 16px;
+      border-left: 2px solid var(--rams-line);
+      margin-left: 4px;
+      margin-bottom: 8px;
+    }
+    .obj-nested-group {
+      margin-bottom: 8px;
+    }
+    .obj-nested-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--rams-muted);
+      margin-bottom: 2px;
+    }
+
+    /* ── View Container (replaces old api-console) ────────────────── */
+    .view-content { width: 100%; }
+    .view-content .loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 24px 0;
+      color: var(--rams-muted);
+      font-size: 14px;
+    }
+    .view-content .error-message {
+      padding: 16px;
+      color: var(--rams-red);
+      border: 1px solid var(--rams-red);
+      border-radius: 2px;
+      background: rgba(214,45,45,0.05);
+      font-size: 13px;
+    }
+    .view-content .empty-message {
+      padding: 24px;
+      color: var(--rams-muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* ── Card Grid (for kanban, users) ────────────────────────────── */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--rams-panel);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--rams-foreground);
+    }
+    .card-subtitle {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .card-detail {
+      font-size: 12px;
+      color: var(--rams-muted);
+    }
+    .card-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── Key-Value Details ────────────────────────────────────────── */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 4px 16px;
+      font-size: 13px;
+    }
+    .detail-label {
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      color: var(--rams-muted);
+    }
+    .detail-value {
+      color: var(--rams-foreground);
+      word-break: break-word;
+    }
+
+    /* ── Quick Actions Row ────────────────────────────────────────── */
+    .actions-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    /* ── Mobile sidebar toggle ────────────────────────────────────── */
+    .sidebar-toggle {
+      display: none;
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 60;
+      width: 44px;
+      height: 44px;
+      background: var(--rams-module);
+      border: 1px solid var(--rams-line);
+      border-radius: 2px;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      color: var(--rams-foreground);
+      font-size: 18px;
+    }
+
+    /* ── Responsive ───────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 150ms ease-out;
+        z-index: 55;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .main-area { margin-left: 0; }
+      .sidebar-toggle { display: flex; }
+      .topbar { padding-left: 56px; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .profile-grid { grid-template-columns: 1fr; }
+      .card-grid { grid-template-columns: 1fr; }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ── Spinner ──────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Text Colors ──────────────────────────────────────────────── */
+    .text-green { color: var(--rams-green); }
+    .text-orange { color: var(--rams-orange); }
+    .text-steel { color: var(--rams-steel); }
+    .text-red { color: var(--rams-red); }
+    .text-muted { color: var(--rams-muted); }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Industrial Bezel -->
+  <div class="bezel" aria-hidden="true"></div>
+  <div class="screw screw-tl" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3 6L9 6M6 3L6 9" stroke="currentColor" stroke-width="1"/></svg>
+  </div>
+  <div class="screw screw-tr" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3 6L9 6M6 3L6 9" stroke="currentColor" stroke-width="1"/></svg>
+  </div>
+  <div class="screw screw-bl" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3 6L9 6M6 3L6 9" stroke="currentColor" stroke-width="1"/></svg>
+  </div>
+  <div class="screw screw-br" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3 6L9 6M6 3L6 9" stroke="currentColor" stroke-width="1"/></svg>
+  </div>
+
+  <!-- Mobile sidebar toggle -->
+  <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle navigation">&#9776;</button>
+
+  <div class="shell">
+    <!-- ── Rack Sidebar ────────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">S</div>
+        <div class="sidebar-brand">
+          <div class="sidebar-brand-name">Sensei OS</div>
+          <div class="sidebar-brand-sub">Control Station</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <div class="sidebar-section-label">Operations</div>
+        <a href="#" class="nav-item active" data-section="dashboard" onclick="navigateTo('dashboard', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9632;</span>
+          <span class="nav-item-label">Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-section="today" onclick="navigateTo('today', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9783;</span>
+          <span class="nav-item-label">Today</span>
+          <span class="nav-item-count" id="count-today">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="tasks" onclick="navigateTo('tasks', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9745;</span>
+          <span class="nav-item-label">Tasks</span>
+          <span class="nav-item-count" id="count-tasks">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="production" onclick="navigateTo('production', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9881;</span>
+          <span class="nav-item-label">Production</span>
+          <span class="nav-item-count" id="count-production">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="kanban" onclick="navigateTo('kanban', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9638;</span>
+          <span class="nav-item-label">Kanban</span>
+          <span class="nav-item-count" id="count-kanban">—</span>
+        </a>
+
+        <div class="sidebar-section-label">Quality & Maintenance</div>
+        <a href="#" class="nav-item" data-section="quality" onclick="navigateTo('quality', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9733;</span>
+          <span class="nav-item-label">Quality</span>
+          <span class="nav-item-count" id="count-quality">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="maintenance" onclick="navigateTo('maintenance', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9835;</span>
+          <span class="nav-item-label">Maintenance</span>
+          <span class="nav-item-count" id="count-maintenance">—</span>
+        </a>
+
+        <div class="sidebar-section-label">Business</div>
+        <a href="#" class="nav-item" data-section="hr" onclick="navigateTo('hr', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9824;</span>
+          <span class="nav-item-label">HR</span>
+          <span class="nav-item-count" id="count-hr">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="finance" onclick="navigateTo('finance', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9830;</span>
+          <span class="nav-item-label">Finance</span>
+          <span class="nav-item-count" id="count-finance">—</span>
+        </a>
+        <a href="#" class="nav-item" data-section="supply_chain" onclick="navigateTo('supply_chain', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9744;</span>
+          <span class="nav-item-label">Supply Chain</span>
+          <span class="nav-item-count" id="count-supply">—</span>
+        </a>
+
+        <div class="sidebar-section-label">Intelligence</div>
+        <a href="#" class="nav-item" data-section="users" onclick="navigateTo('users', event)">
+          <span class="nav-item-indicator"></span>
+          <span class="nav-item-icon">&#9673;</span>
+          <span class="nav-item-label">Users</span>
+          <span class="nav-item-count" id="count-users">—</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <div class="sidebar-status-dot" aria-hidden="true"></div>
+          <span class="sidebar-status-text">System Optimal</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main Area ───────────────────────────────────────────────── -->
+    <div class="main-area">
+      <!-- Top Bar -->
+      <header class="topbar" role="banner">
+        <div class="topbar-left">
+          <span class="topbar-page-title" id="page-title">System Overview</span>
+        </div>
+        <div class="topbar-right">
+          <span class="topbar-role" id="user-role-badge">—</span>
+          <div class="topbar-user">
+            <div class="topbar-avatar" id="user-avatar">?</div>
+            <span class="topbar-user-name" id="user-display-name">Loading</span>
+          </div>
+          <button class="btn btn-danger btn-sm" id="logout-btn" aria-label="Sign out of control station">
+            &#9211; Logout
+          </button>
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <main id="main-content" class="page-content" role="main">
+        <!-- Dynamic View Container -->
+        <div id="view-container"></div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Status Bar -->
+  <footer class="status-bar" role="contentinfo">
+    <div class="status-bar-group">
+      <span>STATION: SENSEI-ALPHA-01</span>
+      <span>OS_VER: 3.0.1-RAMS</span>
+    </div>
+    <div class="status-bar-group">
+      <span>INTEGRITY: OPTIMAL</span>
+      <span id="status-time"></span>
+    </div>
+  </footer>
+
+  <script>
+    // ── Auth guard ───────────────────────────────────────────────────
+    const token = localStorage.getItem('sensei_access_token');
+    if (!token) {
+      window.location.href = '/index.html';
+    }
+
+    // ── Status bar clock ─────────────────────────────────────────────
+    function updateClock() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      document.getElementById('status-time').textContent =
+        `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} UTC${now.getTimezoneOffset() <= 0 ? '+' : '-'}${String(Math.abs(Math.floor(now.getTimezoneOffset() / 60))).padStart(2, '0')}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ── Mobile sidebar toggle ────────────────────────────────────────
+    const sidebar = document.getElementById('sidebar');
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) sidebar.classList.remove('open');
+      });
+    });
+
+    // ── API helper ───────────────────────────────────────────────────
+    async function apiFetch(path, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sensei_access_token')}`,
+        ...options.headers,
+      };
+      const resp = await fetch(path, { ...options, headers });
+      if (resp.status === 401 || resp.status === 403) {
+        localStorage.removeItem('sensei_access_token');
+        localStorage.removeItem('sensei_refresh_token');
+        localStorage.removeItem('sensei_user_id');
+        localStorage.removeItem('sensei_roles');
+        window.location.href = '/index.html';
+        return null;
+      }
+      return resp;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────
+    function badge(status) {
+      if (!status) return '';
+      const s = String(status).toLowerCase().replace(/\s+/g, '-');
+      const cls = s.match(/^(open|pending|active)/) ? 'badge-open'
+        : s.match(/^(in-progress|started|ongoing)/) ? 'badge-in-progress'
+        : s.match(/^(completed|done|approved|resolved)/) ? 'badge-completed'
+        : s.match(/^(closed|cancelled|rejected)/) ? 'badge-closed'
+        : s.match(/^(warning|overdue)/) ? 'badge-warning'
+        : '';
+      return `<span class="badge ${cls}">${status}</span>`;
+    }
+
+    function dateFmt(d) {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
+      catch(e) { return d; }
+    }
+
+    function renderTable(headers, rows) {
+      if (!rows || rows.length === 0) {
+        return `<table class="data-table"><thead><tr>${headers.map(h => `<th>${h.label}</th>`).join('')}</thead><tbody><tr class="empty-row"><td colspan="${headers.length}">No records found</td></tr></tbody></table>`;
+      }
+      const thead = `<thead><tr>${headers.map(h => `<th>${h.label}</th>`).join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows.map(row => `<tr>${headers.map(h => `<td>${h.fn ? h.fn(row) : row[h.key] || '—'}</td>`).join('')}</tr>`).join('')}</tbody>`;
+      return `<table class="data-table">${thead}${tbody}</table>`;
+    }
+
+    function renderCards(items, titleFn, detailFns) {
+      if (!items || items.length === 0) {
+        return '<div class="empty-message">No records found</div>';
+      }
+      return `<div class="card-grid">${items.map(item => {
+        const details = detailFns.map(fn => `<div class="card-detail">${fn(item)}</div>`).join('');
+        return `<div class="card"><div class="card-title">${titleFn(item)}</div>${details}</div>`;
+      }).join('')}</div>`;
+    }
+
+    function showLoading(container) {
+      container.innerHTML = '<div class="loading"><span class="spinner"></span> Loading data...</div>';
+    }
+
+    function showError(container, msg) {
+      container.innerHTML = `<div class="error-message">${msg}</div>`;
+    }
+
+    // ── View Renderers ────────────────────────────────────────────────
+
+    const viewContainer = document.getElementById('view-container');
+
+    async function renderDashboard() {
+      viewContainer.innerHTML = `
+        <div class="actions-row">
+          <button class="btn btn-sm" onclick="navigateTo('today', event)">Today Snapshot</button>
+          <button class="btn btn-sm" onclick="navigateTo('production', event)">Work Orders</button>
+          <button class="btn btn-sm" onclick="navigateTo('tasks', event)">Tasks</button>
+          <button class="btn btn-sm" onclick="navigateTo('quality', event)">Quality NCRs</button>
+          <button class="btn btn-sm" onclick="navigateTo('finance', event)">Invoices</button>
+          <button class="btn btn-sm" onclick="navigateTo('users', event)">Users</button>
+        </div>
+
+        <div class="module" id="module-status">
+          <div class="module-header">
+            <span class="module-title">System Status</span>
+            <span class="topbar-role text-green">
+              <span class="status-dot-inline" aria-hidden="true"></span>
+              Operational
+            </span>
+          </div>
+          <div class="module-content">
+            <div class="stats-grid" id="stats-grid">
+              <div class="stat-item">
+                <span class="stat-label">API Server</span>
+                <span class="stat-value text-green" id="stat-api">Online</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Auth Service</span>
+                <span class="stat-value text-green" id="stat-auth">Active</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Event Bus</span>
+                <span class="stat-value text-steel">In-Memory</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Storage</span>
+                <span class="stat-value text-orange" id="stat-storage">—</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Work Orders</span>
+                <span class="stat-value" id="stat-workorders">—</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Active Users</span>
+                <span class="stat-value" id="stat-users">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="module">
+          <div class="module-header">
+            <span class="module-title">Operator Profile</span>
+            <button class="btn btn-sm" onclick="loadProfile()">Refresh</button>
+          </div>
+          <div class="module-content">
+            <div class="profile-grid" id="profile-grid">
+              <div class="profile-item">
+                <span class="profile-label">Email</span>
+                <span class="profile-value" id="profile-email">—</span>
+              </div>
+              <div class="profile-item">
+                <span class="profile-label">Name</span>
+                <span class="profile-value" id="profile-name">—</span>
+              </div>
+              <div class="profile-item">
+                <span class="profile-label">Roles</span>
+                <span class="profile-value" id="profile-roles">—</span>
+              </div>
+              <div class="profile-item">
+                <span class="profile-label">User ID</span>
+                <span class="profile-value" id="profile-uid">—</span>
+              </div>
+              <div class="profile-item">
+                <span class="profile-label">Status</span>
+                <span class="profile-value text-green" id="profile-status">—</span>
+              </div>
+              <div class="profile-item">
+                <span class="profile-label">Session</span>
+                <span class="profile-value" id="profile-session">—</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      // Load profile and counts into the dashboard
+      await loadProfile();
+      await loadCounts();
+    }
+
+    function renderObjectSection(obj, depth = 0) {
+      let html = depth > 0 ? '<div class="obj-nested">' : '<div>';
+      for (const [key, val] of Object.entries(obj)) {
+        const label = key.replace(/_/g, ' ');
+        if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+          html += '<div class="obj-nested-group">';
+          html += '<div class="obj-nested-label">' + label + '</div>';
+          html += renderObjectSection(val, depth + 1);
+          html += '</div>';
+        } else if (Array.isArray(val)) {
+          html += '<div class="obj-section">';
+          html += '<span class="obj-section-label">' + label + '</span>';
+          html += '<span class="obj-section-value">' + val.length + ' items</span>';
+          html += '</div>';
+        } else {
+          html += '<div class="obj-section">';
+          html += '<span class="obj-section-label">' + label + '</span>';
+          html += '<span class="obj-section-value' + (typeof val === 'number' ? ' num' : '') + '">' + (val ?? '—') + '</span>';
+          html += '</div>';
+        }
+      }
+      html += '</div>';
+      return html;
+    }
+
+    async function renderToday() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/today');
+        if (!resp) return;
+        const data = await resp.json();
+
+        const dateStr = data && data.date ? data.date : new Date().toISOString().slice(0, 10);
+        let html = '<div class="module">' +
+          '<div class="module-header"><span class="module-title">Today Snapshot</span>' +
+          '<span class="module-header-count">' + dateStr + '</span></div>' +
+          '<div class="module-content">';
+
+        if (data && typeof data === 'object') {
+          const sections = Object.assign({}, data);
+          delete sections.date;
+          const keys = Object.keys(sections);
+          if (keys.length === 0) {
+            html += '<div class="empty-message">Today snapshot is empty</div>';
+          } else {
+            html += renderObjectSection(sections);
+          }
+        } else {
+          html += '<div>' + JSON.stringify(data) + '</div>';
+        }
+
+        html += '</div></div>';
+        viewContainer.innerHTML = html;
+      } catch (err) {
+        showError(viewContainer, 'Failed to load today snapshot: ' + err.message);
+      }
+    }
+
+    async function renderTasks() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/tasks');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Task Management</span>
+            <span class="module-header-count">${items.length} tasks</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'Title', key:'title'}, {label:'Status', key:'status', fn: r => badge(r.status)}, {label:'Priority', key:'priority'}, {label:'Assigned', key:'assignee'}, {label:'Due', key:'due_date', fn: r => dateFmt(r.due_date)}],
+              items.map(r => ({title: r.title || r.name || '—', status: r.status || '—', priority: r.priority || '—', assignee: r.assignee || r.assigned_to || '—', due_date: r.due_date || r.due || null}))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load tasks: ${err.message}`);
+      }
+    }
+
+    async function renderProduction() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/production/work-orders');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Production — Work Orders</span>
+            <span class="module-header-count">${items.length} orders</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'WO #', key:'id', fn: r => r.work_order_number || r.id || '—'},
+               {label:'Product', key:'product'},
+               {label:'Qty', key:'quantity'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Due', key:'due_date', fn: r => dateFmt(r.due_date)},
+               {label:'Assigned', key:'assigned_to'}],
+              items.map(r => ({
+                'work_order_number': r.work_order_number || r.number || r.id?.slice(0,8),
+                'product': r.product_name || r.product || r.part_number || '—',
+                'quantity': r.quantity ?? r.qty ?? '—',
+                'status': r.status || '—',
+                'due_date': r.due_date || r.due || null,
+                'assigned_to': r.assigned_to || r.assignee || '—'
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load work orders: ${err.message}`);
+      }
+    }
+
+    async function renderKanban() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/kanban/boards');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Kanban Boards</span>
+            <span class="module-header-count">${items.length} boards</span>
+          </div>
+          <div class="module-content">
+            ${renderCards(items,
+              r => r.name || r.title || 'Board',
+              [
+                r => `Status: ${r.status || 'active'}`,
+                r => `Columns: ${(r.columns || r.stages || []).length}`,
+                r => `ID: ${r.id?.slice(0,8) || '—'}`
+              ]
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load kanban boards: ${err.message}`);
+      }
+    }
+
+    async function renderQuality() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/quality/ncrs');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Quality — Non-Conformance Reports</span>
+            <span class="module-header-count">${items.length} NCRs</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'NCR #', key:'id', fn: r => r.ncr_number || r.id?.slice(0,8)},
+               {label:'Title', key:'title'},
+               {label:'Severity', key:'severity'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Reported', key:'created_at', fn: r => dateFmt(r.created_at)},
+               {label:'Assignee', key:'assigned_to'}],
+              items.map(r => ({
+                'ncr_number': r.ncr_number || r.number,
+                'title': r.title || r.description?.slice(0,60) || '—',
+                'severity': r.severity || r.priority || '—',
+                'status': r.status || '—',
+                'created_at': r.created_at || r.created || r.date || null,
+                'assigned_to': r.assigned_to || r.assignee || '—'
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load quality NCRs: ${err.message}`);
+      }
+    }
+
+    async function renderMaintenance() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/maintenance/work-requests');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Maintenance — Work Requests</span>
+            <span class="module-header-count">${items.length} requests</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'Request', key:'title'},
+               {label:'Equipment', key:'equipment'},
+               {label:'Priority', key:'priority'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Submitted', key:'created_at', fn: r => dateFmt(r.created_at)}],
+              items.map(r => ({
+                'title': r.title || r.name || r.description?.slice(0,60) || '—',
+                'equipment': r.equipment || r.asset || r.machine || '—',
+                'priority': r.priority || '—',
+                'status': r.status || '—',
+                'created_at': r.created_at || r.created || r.date || null
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load maintenance requests: ${err.message}`);
+      }
+    }
+
+    async function renderHr() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/hr/employees');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Human Resources — Employees</span>
+            <span class="module-header-count">${items.length} employees</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'Name', key:'name'},
+               {label:'Department', key:'department'},
+               {label:'Role', key:'role'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Email', key:'email'}],
+              items.map(r => ({
+                'name': r.name || r.full_name || '—',
+                'department': r.department || '—',
+                'role': r.role || r.position || '—',
+                'status': r.status || (r.is_active !== false ? 'Active' : 'Inactive'),
+                'email': r.email || '—'
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load employees: ${err.message}`);
+      }
+    }
+
+    async function renderFinance() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/finance/invoices');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Finance — Invoices</span>
+            <span class="module-header-count">${items.length} invoices</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'Invoice #', key:'number'},
+               {label:'Customer', key:'customer'},
+               {label:'Amount', key:'amount'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Date', key:'date', fn: r => dateFmt(r.date)}],
+              items.map(r => ({
+                'number': r.invoice_number || r.number || r.id?.slice(0,8),
+                'customer': r.customer_name || r.customer || r.client || '—',
+                'amount': r.amount ? `$${Number(r.amount).toLocaleString()}` : '—',
+                'status': r.status || '—',
+                'date': r.date || r.created_at || r.issued_date || null
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load invoices: ${err.message}`);
+      }
+    }
+
+    async function renderSupplyChain() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/supply-chain/purchase-orders');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">Supply Chain — Orders</span>
+            <span class="module-header-count">${items.length} orders</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'PO #', key:'number'},
+               {label:'Supplier', key:'supplier'},
+               {label:'Item', key:'item'},
+               {label:'Qty', key:'quantity'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Delivery', key:'delivery', fn: r => dateFmt(r.delivery_date)}],
+              items.map(r => ({
+                'number': r.po_number || r.order_number || r.number || r.id?.slice(0,8),
+                'supplier': r.supplier_name || r.supplier || r.vendor || '—',
+                'item': r.item_name || r.item || r.product || r.description?.slice(0,40) || '—',
+                'quantity': r.quantity ?? r.qty ?? '—',
+                'status': r.status || '—',
+                'delivery_date': r.delivery_date || r.expected_date || r.due || null
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load supply chain orders: ${err.message}`);
+      }
+    }
+
+    async function renderUsers() {
+      showLoading(viewContainer);
+      try {
+        const resp = await apiFetch('/api/v1/users');
+        if (!resp) return;
+        const data = await resp.json();
+        const items = Array.isArray(data) ? data : (data.data || []);
+
+        viewContainer.innerHTML = `<div class="module">
+          <div class="module-header">
+            <span class="module-title">User Management</span>
+            <span class="module-header-count">${items.length} users</span>
+          </div>
+          <div class="module-content">
+            ${renderTable(
+              [{label:'Name', key:'name'},
+               {label:'Email', key:'email'},
+               {label:'Roles', key:'roles'},
+               {label:'Status', key:'status', fn: r => badge(r.status)},
+               {label:'Created', key:'created_at', fn: r => dateFmt(r.created_at)}],
+              items.map(r => ({
+                'name': r.name || r.full_name || r.username || '—',
+                'email': r.email || '—',
+                'roles': Array.isArray(r.roles) ? r.roles.join(', ') : r.roles || r.role || '—',
+                'status': r.status || (r.is_active !== false ? 'Active' : 'Inactive'),
+                'created_at': r.created_at || r.created || null
+              }))
+            )}
+          </div>
+        </div>`;
+      } catch (err) {
+        showError(viewContainer, `Failed to load users: ${err.message}`);
+      }
+    }
+
+    // ── Render routing ────────────────────────────────────────────────
+    const renderers = {
+      dashboard:   renderDashboard,
+      today:       renderToday,
+      tasks:       renderTasks,
+      production:  renderProduction,
+      quality:     renderQuality,
+      maintenance: renderMaintenance,
+      hr:          renderHr,
+      finance:     renderFinance,
+      supply_chain: renderSupplyChain,
+      kanban:      renderKanban,
+      users:       renderUsers,
+    };
+
+    // ── Sidebar navigation ───────────────────────────────────────────
+    const sectionTitles = {
+      dashboard:   'System Overview',
+      today:       'Today Snapshot',
+      tasks:       'Task Management',
+      production:  'Production Operations',
+      quality:     'Quality Control',
+      maintenance: 'Maintenance',
+      hr:          'Human Resources',
+      finance:     'Finance',
+      supply_chain:'Supply Chain',
+      kanban:      'Kanban Boards',
+      users:       'User Management',
+    };
+
+    let currentSection = 'dashboard';
+
+    function navigateTo(section, event) {
+      if (event) event.preventDefault();
+      if (section === currentSection) return;
+      currentSection = section;
+
+      // Update active state on nav items
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      const activeItem = document.querySelector(`.nav-item[data-section="${section}"]`);
+      if (activeItem) activeItem.classList.add('active');
+
+      // Update page title
+      document.getElementById('page-title').textContent = sectionTitles[section] || section.toUpperCase();
+
+      // Render the view
+      const renderer = renderers[section];
+      if (renderer) {
+        renderer();
+      } else {
+        viewContainer.innerHTML = '<div class="empty-message">Module view not available</div>';
+      }
+    }
+
+    // ── Load user profile ────────────────────────────────────────────
+    async function loadProfile() {
+      try {
+        const resp = await apiFetch('/api/v1/auth/me');
+        if (!resp) return;
+        const data = await resp.json();
+
+        const name = data.name || data.email || 'Operator';
+        const initials = name.charAt(0).toUpperCase();
+        document.getElementById('user-display-name').textContent = name;
+        document.getElementById('user-avatar').textContent = initials;
+
+        const roles = data.roles || [];
+        document.getElementById('user-role-badge').textContent = roles.join(' / ').toUpperCase();
+
+        const emailEl = document.getElementById('profile-email');
+        const nameEl = document.getElementById('profile-name');
+        const rolesEl = document.getElementById('profile-roles');
+        const uidEl = document.getElementById('profile-uid');
+        const statusEl = document.getElementById('profile-status');
+        const sessionEl = document.getElementById('profile-session');
+
+        if (emailEl) emailEl.textContent = data.email || '—';
+        if (nameEl) nameEl.textContent = data.name || '—';
+        if (rolesEl) rolesEl.textContent = roles.join(', ') || '—';
+        if (uidEl) uidEl.textContent = data.id || '—';
+        if (statusEl) statusEl.textContent = data.is_active !== false ? 'Active' : 'Inactive';
+        if (sessionEl) sessionEl.textContent = new Date().toLocaleString();
+        const storageEl = document.getElementById('stat-storage');
+        if (storageEl) storageEl.textContent = 'In-Memory';
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+      }
+    }
+
+    // ── Load counts for sidebar badges ───────────────────────────────
+    async function loadCounts() {
+      const countEndpoints = [
+        { id: 'count-today',      path: '/api/v1/today' },
+        { id: 'count-tasks',      path: '/api/v1/tasks' },
+        { id: 'count-production', path: '/api/v1/production/work-orders' },
+        { id: 'count-kanban',     path: '/api/v1/kanban/boards' },
+        { id: 'count-quality',    path: '/api/v1/quality/ncrs' },
+        { id: 'count-maintenance',path: '/api/v1/maintenance/work-requests' },
+        { id: 'count-hr',         path: '/api/v1/hr/employees' },
+        { id: 'count-finance',    path: '/api/v1/finance/invoices' },
+        { id: 'count-supply',     path: '/api/v1/supply-chain/purchase-orders' },
+        { id: 'count-users',      path: '/api/v1/users' },
+      ];
+
+      for (const ep of countEndpoints) {
+        try {
+          const resp = await apiFetch(ep.path);
+          if (!resp) continue;
+          const data = await resp.json();
+          let count;
+          if (Array.isArray(data)) {
+            count = data.length;
+          } else if (data.data && Array.isArray(data.data)) {
+            count = data.data.length;
+          } else if (data.total !== undefined) {
+            count = data.total;
+          } else if (data.count !== undefined) {
+            count = data.count;
+          } else if (typeof data === 'object') {
+            const el = document.getElementById(ep.id);
+            if (el) el.textContent = '✓';
+            continue;
+          }
+          const el = document.getElementById(ep.id);
+          if (el) el.textContent = count !== undefined ? count : '—';
+        } catch (err) {
+          const el = document.getElementById(ep.id);
+          if (el) el.textContent = '—';
+        }
+      }
+
+      // Update stats on dashboard
+      try {
+        const resp = await apiFetch('/api/v1/production/work-orders');
+        if (resp) {
+          const data = await resp.json();
+          const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : (data.total || '—'));
+          const el = document.getElementById('stat-workorders');
+          if (el) el.textContent = count;
+        }
+      } catch (e) {}
+
+      try {
+        const resp = await apiFetch('/api/v1/users');
+        if (resp) {
+          const data = await resp.json();
+          const count = Array.isArray(data) ? data.length : (data.data ? data.data.length : (data.total || '—'));
+          const el = document.getElementById('stat-users');
+          if (el) el.textContent = count;
+        }
+      } catch (e) {}
+    }
+
+    // ── Logout ───────────────────────────────────────────────────────
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try { await apiFetch('/api/v1/auth/logout', { method: 'POST' }); } catch (e) {}
+      localStorage.removeItem('sensei_access_token');
+      localStorage.removeItem('sensei_refresh_token');
+      localStorage.removeItem('sensei_user_id');
+      localStorage.removeItem('sensei_roles');
+      window.location.href = '/index.html';
+    });
+
+    // ── Initialize ───────────────────────────────────────────────────
+    renderDashboard();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-fobjc-arc"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-fobjc-arc"]
+
+[profile.dev]
+# Faster builds for development
+incremental = true
+debug = 1
+
+[profile.release]
+# Optimize for size + speed
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
+[env]
+# Default DATABASE_URL for local development
+DATABASE_URL = "postgres://postgres:postgres@localhost:5432/sensei"
+# NATS URL for local development
+NATS_URL = "nats://localhost:4222"

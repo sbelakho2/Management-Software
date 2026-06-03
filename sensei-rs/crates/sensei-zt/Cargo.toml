@@ -1,0 +1,26 @@
+[package]
+name = "sensei-zt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Zig FFI bridge — high-performance SIMD, memory, and IPC primitives"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+sensei-core = { path = "../sensei-core" }
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+once_cell.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+which = "7"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true

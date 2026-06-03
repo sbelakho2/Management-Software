@@ -1,0 +1,135 @@
+//! Escalation policy management route handlers.
+//!
+//! Provides CRUD endpoints for alert escalation policies.
+
+use axum::{Json, extract::{Path, Query, State}};
+use chrono::Utc;
+use serde::Deserialize;
+use sensei_auth::middleware::AuthenticatedUser;
+use sensei_core::error::{Result, SenseiError};
+use sensei_core::pagination::PaginatedResponse;
+use sensei_core::types::new_id;
+use uuid::Uuid;
+
+use crate::state::AppState;
+use crate::stores::{EscalationPolicy, EscalationRule};
+
+// ── Query / Request DTOs ───────────────────────────────────────────────────
+
+/// Query parameters for listing escalation policies.
+#[derive(Debug, Deserialize)]
+pub struct ListPoliciesParams {
+    pub event_type: Option<String>,
+    pub is_active: Option<bool>,
+    pub page: Option<usize>,
+    pub per_page: Option<usize>,
+}
+
+/// Request body for creating/updating an escalation policy.
+#[derive(Debug, Deserialize)]
+pub struct PolicyRequest {
+    pub name: String,
+    pub description: String,
+    pub event_type: String,
+    pub is_active: bool,
+    pub rules: Vec<EscalationRule>,
+}
+
+// ── Handlers ─────────────────────────────────────────────────────────────────
+
+/// List all escalation policies with optional filters.
+pub async fn list_policies(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Query(params): Query<ListPoliciesParams>,
+) -> Result<Json<PaginatedResponse<EscalationPolicy>>> {
+    let store = state.escalation_policies.read().await;
+    let mut policies: Vec<EscalationPolicy> = store
+        .values()
+        .filter(|p| p.tenant_id == user.tenant_id)
+        .filter(|p| params.event_type.as_ref().map_or(true, |t| p.event_type == *t))
+        .filter(|p| params.is_active.map_or(true, |a| p.is_active == a))
+        .cloned()
+        .collect();
+    policies.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let result = PaginatedResponse::new(policies, params.page, params.per_page);
+    Ok(Json(result))
+}
+
+/// Create a new escalation policy.
+pub async fn create_policy(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Json(req): Json<PolicyRequest>,
+) -> Result<Json<EscalationPolicy>> {
+    let now = Utc::now();
+    let policy = EscalationPolicy {
+        id: new_id(),
+        tenant_id: user.tenant_id,
+        name: req.name,
+        description: req.description,
+        event_type: req.event_type,
+        is_active: req.is_active,
+        rules: req.rules,
+        created_by: user.user_id,
+        created_at: now,
+        updated_at: now,
+    };
+    let mut store = state.escalation_policies.write().await;
+    store.insert(policy.id, policy.clone());
+    Ok(Json(policy))
+}
+
+/// Get a specific escalation policy by ID.
+pub async fn get_policy(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EscalationPolicy>> {
+    let store = state.escalation_policies.read().await;
+    let policy = store
+        .values()
+        .find(|p| p.id == id && p.tenant_id == user.tenant_id)
+        .cloned()
+        .ok_or_else(|| SenseiError::NotFound(format!("Escalation policy {id} not found")))?;
+    Ok(Json(policy))
+}
+
+/// Update an escalation policy.
+pub async fn update_policy(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<PolicyRequest>,
+) -> Result<Json<EscalationPolicy>> {
+    let mut store = state.escalation_policies.write().await;
+    let policy = store
+        .get_mut(&id)
+        .filter(|p| p.tenant_id == user.tenant_id)
+        .ok_or_else(|| SenseiError::NotFound(format!("Escalation policy {id} not found")))?;
+    policy.name = req.name;
+    policy.description = req.description;
+    policy.event_type = req.event_type;
+    policy.is_active = req.is_active;
+    policy.rules = req.rules;
+    policy.updated_at = Utc::now();
+    Ok(Json(policy.clone()))
+}
+
+/// Delete an escalation policy.
+pub async fn delete_policy(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<()>> {
+    let mut store = state.escalation_policies.write().await;
+    let exists = store
+        .get(&id)
+        .filter(|p| p.tenant_id == user.tenant_id)
+        .is_some();
+    if !exists {
+        return Err(SenseiError::NotFound(format!("Escalation policy {id} not found")));
+    }
+    store.remove(&id);
+    Ok(Json(()))
+}

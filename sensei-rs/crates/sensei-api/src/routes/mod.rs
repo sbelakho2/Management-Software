@@ -1,0 +1,57 @@
+//! API route handlers.
+//!
+//! Each module corresponds to a domain or functional area of the API.
+
+pub mod a3;
+pub mod accounts;
+pub mod ai;
+pub mod andon;
+pub mod attachments;
+pub mod auth;
+pub mod chatbot;
+pub mod contacts;
+pub mod ctq;
+pub mod escalation;
+pub mod finance;
+pub mod health;
+pub mod hr;
+pub mod kanban;
+pub mod knowledge;
+pub mod learning;
+pub mod maintenance;
+pub mod metrics;
+pub mod notifications;
+pub mod obeya;
+pub mod ops;
+pub mod opportunities;
+pub mod production;
+pub mod products;
+pub mod quality;
+pub mod quotes;
+pub mod rfqs;
+pub mod risk;
+pub mod search;
+pub mod smart_ingestion;
+pub mod supply_chain;
+pub mod tenants;
+pub mod today;
+pub mod training_matrix;
+pub mod export;
+pub mod users;
+pub mod work_centers;
+pub mod work_orders;
+pub mod ws;
+pub mod admin;
+pub mod audit_logs;
+pub mod inventory;
+pub mod mrp;
+pub mod production_cells;
+pub mod quoting_helper;
+pub mod saved_views;
+pub mod tasks;
+pub mod kpi;
+pub mod lsw;
+pub mod notification_triggers;
+pub mod standard_work;
+pub mod state_machines;
+pub mod training;

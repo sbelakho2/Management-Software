@@ -10,36 +10,15 @@ global:
 
 # Replica counts
 replicaCount:
-  backend: 2
-  frontend: 2
+  senseiApi: 2
   worker: 1
-
-# Image configuration
-# IMPORTANT: Always use specific version tags in production, never "latest"
-# If tag is empty, defaults to Chart.appVersion (see Chart.yaml)
-# Override via: --set image.backend.tag=v1.0.0 during deployment
-image:
-  backend:
-    repository: sensei/backend
-    pullPolicy: IfNotPresent
-    # Tag defaults to Chart.appVersion if empty - set explicitly for version pinning
-    tag: ""
-  frontend:
-    repository: sensei/frontend
-    pullPolicy: IfNotPresent
-    # Tag defaults to Chart.appVersion if empty - set explicitly for version pinning
-    tag: ""
 
 # Service configuration
 service:
-  backend:
+  senseiApi:
     type: ClusterIP
-    port: 8000
-    targetPort: 8000
-  frontend:
-    type: ClusterIP
-    port: 3000
-    targetPort: 3000
+    port: 8080
+    targetPort: 8080
 
 # Ingress configuration
 ingress:
@@ -54,10 +33,10 @@ ingress:
       paths:
         - path: /api
           pathType: Prefix
-          backend: backend
+          backend: sensei-api
         - path: /
           pathType: Prefix
-          backend: frontend
+          backend: sensei-api
   tls:
     - secretName: sensei-tls
       hosts:
@@ -72,23 +51,98 @@ config:
   secretKey: ""
   # Database URL - constructed from postgresql values
   databaseUrl: ""
-  # Redis URL - constructed from redis values
-  redisUrl: ""
-  # CORS origins
+  # Sentry DSN for error tracking
+  sentryDsn: ""
+  # SMTP configuration for email notifications
+  smtp:
+    host: ""
+    port: 587
+    user: ""
+    password: ""  # Secret — set via externalSecrets or --set
+    fromEmail: "noreply@sensei.local"
+    fromName: "Sensei OS"
+  # CORS origins — includes cross-system origins for tri-system integration
   corsOrigins:
     - https://sensei.example.com
+    - https://erp.starz.example.com
+    - https://crm-v2.example.com
   # Feature flags
   features:
     phase2Npi: true
     phase3Production: false
     smartIngestion: true
     knowledgePack: true
+    enableMl: true
+    enableWebsockets: true
+    enableBackgroundJobs: true
   # S3/MinIO configuration
   storage:
     endpoint: http://minio:9000
     bucket: sensei-attachments
     accessKey: ""
     secretKey: ""
+  # ==================================================================
+  # Tri-System Integration (erpStarz + CRM-v2)
+  # ==================================================================
+  erpStarz:
+    apiUrl: ""        # e.g. https://erp.starz.example.com/api
+    apiKey: ""        # Secret — set via externalSecrets or --set
+    webhookSecret: "" # Secret — set via externalSecrets or --set
+    databaseUrl: ""   # e.g. postgresql://user:pass@erp-db:5432/erpstarz
+  crmV2:
+    apiUrl: ""        # e.g. https://crm-v2.example.com/api
+    apiKey: ""        # Secret — set via externalSecrets or --set
+    webhookSecret: "" # Secret — set via externalSecrets or --set
+    databaseUrl: ""   # e.g. postgresql://user:pass@crm-db:5432/crmv2
+
+# NATS JetStream configuration
+nats:
+  enabled: true
+  cluster:
+    enabled: false  # Single node for now
+  jetstream:
+    enabled: true
+    memoryStorage:
+      enabled: true
+      size: 1Gi
+    fileStorage:
+      enabled: false
+  auth:
+    enabled: false  # Will use NATS token auth later
+
+# Rust Axum API (sensei-rs) configuration
+senseiApi:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: sensei-api
+    # Tag defaults to Chart.appVersion if empty - set explicitly for version pinning
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  healthChecks:
+    livenessProbe:
+      httpGet:
+        path: /api/v1/health
+        port: 8080
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /api/v1/health
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
 
 # External Secrets Operator integration
 externalSecrets:
@@ -103,9 +157,6 @@ externalSecrets:
     POSTGRES_PASSWORD:
       remoteKey: "sensei/prod/db"
       remoteProperty: "password"
-    REDIS_PASSWORD:
-      remoteKey: "sensei/prod/redis"
-      remoteProperty: "password"
     S3_ACCESS_KEY:
       remoteKey: "sensei/prod/storage"
       remoteProperty: "access_key"
@@ -115,21 +166,13 @@ externalSecrets:
 
 # Resource limits
 resources:
-  backend:
+  senseiApi:
     requests:
-      memory: "512Mi"
+      memory: "256Mi"
       cpu: "250m"
     limits:
-      memory: "2Gi"
+      memory: "1Gi"
       cpu: "1000m"
-      # nvidia.com/gpu: 1 # GPU for Edge AI acceleration
-  frontend:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
   worker:
     requests:
       memory: "512Mi"
@@ -140,50 +183,52 @@ resources:
 
 # Autoscaling
 autoscaling:
-  backend:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
-  frontend:
-    enabled: true
+  senseiApi:
+    enabled: false
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
 
 # Health checks
 healthChecks:
-  backend:
+  senseiApi:
     livenessProbe:
       httpGet:
-        path: /health
-        port: 8000
+        path: /api/v1/health
+        port: 8080
       initialDelaySeconds: 30
       periodSeconds: 10
       timeoutSeconds: 5
       failureThreshold: 3
     readinessProbe:
       httpGet:
-        path: /health
-        port: 8000
+        path: /api/v1/health
+        port: 8080
       initialDelaySeconds: 10
       periodSeconds: 5
       timeoutSeconds: 3
       failureThreshold: 3
-  frontend:
+  worker:
     livenessProbe:
-      httpGet:
-        path: /api/health
-        port: 3000
-      initialDelaySeconds: 15
-      periodSeconds: 10
+      exec:
+        command:
+          - pgrep
+          - -f
+          - sensei-workers
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      timeoutSeconds: 15
+      failureThreshold: 3
     readinessProbe:
-      httpGet:
-        path: /api/health
-        port: 3000
-      initialDelaySeconds: 5
-      periodSeconds: 5
+      exec:
+        command:
+          - pgrep
+          - -f
+          - sensei-workers
+      initialDelaySeconds: 15
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 3
 
 # PostgreSQL configuration (Bitnami chart)
 postgresql:
@@ -218,25 +263,6 @@ postgresql:
       storage:
         size: 10Gi
 
-# Redis configuration (Bitnami chart)
-redis:
-  enabled: true
-  architecture: standalone
-  auth:
-    enabled: true
-    password: ""  # Set via secrets
-  master:
-    persistence:
-      enabled: true
-      size: 8Gi
-    resources:
-      requests:
-        memory: "128Mi"
-        cpu: "100m"
-      limits:
-        memory: "512Mi"
-        cpu: "500m"
-
 # MinIO (S3-compatible storage)
 minio:
   enabled: true
@@ -261,14 +287,12 @@ minio:
       secretKey: ""  # Set via secrets
       policy: readwrite
 
-# Worker configuration (background tasks)
+# Worker configuration (Rust NATS workers)
 worker:
   enabled: true
   replicas: 1
   command:
-    - "python"
-    - "-m"
-    - "sensei.worker"
+    - "./sensei-workers"
   resources:
     requests:
       memory: "512Mi"
@@ -305,6 +329,10 @@ networkPolicy:
   policyTypes:
     - Ingress
     - Egress
+  # CIDR blocks for external system egress restrictions
+  # These restrict egress to only the specific erpStarz/CRM-v2 IP ranges
+  erpStarzCIDR: ""   # e.g. "203.0.113.0/24"
+  crmV2CIDR: ""      # e.g. "198.51.100.0/24"
 
 # Service accounts
 serviceAccount:

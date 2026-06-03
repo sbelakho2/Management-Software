@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
-      - 'frontend/**'
+      - 'sensei-rs/**'
       - 'k8s/**'
       - '.github/workflows/cd.yml'
 
@@ -35,25 +34,14 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
       
-      - name: Build & Push Backend
+      - name: Build & Push Sensei-RS (Rust API)
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: ./sensei-rs
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ secrets.REGISTRY_URL }}/sensei-api:${{ env.IMAGE_TAG }}
-            ${{ secrets.REGISTRY_URL }}/sensei-api:${{ github.ref_name }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      
-      - name: Build & Push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ secrets.REGISTRY_URL }}/sensei-web:${{ env.IMAGE_TAG }}
-            ${{ secrets.REGISTRY_URL }}/sensei-web:${{ github.ref_name }}
+            ${{ secrets.REGISTRY_URL }}/sensei-rs-api:${{ env.IMAGE_TAG }}
+            ${{ secrets.REGISTRY_URL }}/sensei-rs-api:${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
@@ -71,8 +59,8 @@ jobs:
             --namespace sensei-production \
             --create-namespace \
             --set global.imageRegistry="${{ secrets.REGISTRY_URL }}" \
-            --set image.backend.tag=${{ env.IMAGE_TAG }} \
-            --set image.frontend.tag=${{ env.IMAGE_TAG }} \
+            --set senseiApi.image.tag=${{ env.IMAGE_TAG }} \
+            --set senseiApi.image.repository=${{ secrets.REGISTRY_URL }}/sensei-rs-api \
             --dry-run --debug
       
       - name: Set up Kubeconfig
@@ -89,12 +77,11 @@ jobs:
             --namespace sensei-production \
             --create-namespace \
             --set global.imageRegistry=${{ secrets.REGISTRY_URL }} \
-            --set image.backend.tag=${{ env.IMAGE_TAG }} \
-            --set image.frontend.tag=${{ env.IMAGE_TAG }} \
+            --set senseiApi.image.tag=${{ env.IMAGE_TAG }} \
+            --set senseiApi.image.repository=${{ secrets.REGISTRY_URL }}/sensei-rs-api \
             --wait --timeout 10m0s
       
       - name: Verify Deployment
         if: github.event_name != 'pull_request'
         run: |
-          kubectl rollout status deployment/sensei-os-backend -n sensei-production --timeout=5m
-          kubectl rollout status deployment/sensei-os-frontend -n sensei-production --timeout=5m
+          kubectl rollout status deployment/sensei-os-sensei-api -n sensei-production --timeout=5m

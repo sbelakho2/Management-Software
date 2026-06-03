@@ -1,0 +1,38 @@
+[package]
+name = "sensei-services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Domain service implementations for Sensei ERP"
+
+[dependencies]
+sensei-core = { path = "../sensei-core" }
+sensei-auth = { path = "../sensei-auth" }
+sensei-db = { path = "../sensei-db" }
+sensei-event-bus = { path = "../sensei-event-bus" }
+sensei-zt = { path = "../sensei-zt" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+sqlx.workspace = true
+rand.workspace = true
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+ring = "0.17"
+lettre.workspace = true
+rust-s3.workspace = true
+printpdf.workspace = true
+rust_xlsxwriter.workspace = true
+tempfile = "3" # test helper
+
+# ML / numerical computing
+ndarray = "0.16"
+ndarray-stats = "0.6"
+regex = "1"
+itertools.workspace = true

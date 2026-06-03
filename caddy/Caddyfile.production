@@ -43,25 +43,22 @@ http:// {
         -Server
     }
 
-    # API routes with health checks and timeouts
-    route /api/* {
-        reverse_proxy api:8000 {
+    # WebSocket route — proxies /ws/* to Rust API for real-time features
+    route /ws/* {
+        reverse_proxy sensei-api:8080 {
             # Health checks
             health_uri /api/v1/health
             health_interval 30s
             health_timeout 5s
             health_status 200
-            
+
             # Timeouts
             transport http {
                 read_timeout 60s
                 write_timeout 60s
                 dial_timeout 10s
             }
-            
-            # Load balancing (if multiple backends)
-            lb_policy round_robin
-            
+
             # Header manipulation
             header_up Host {upstream_hostport}
             header_up X-Real-IP {remote_host}
@@ -70,23 +67,42 @@ http:// {
         }
     }
 
-    # WebSocket support for frontend (Next.js hot reload in dev, real-time features)
-    route /ws/* {
-        reverse_proxy web:3000 {
+    # API routes — proxies /api/* to Rust Axum API
+    route /api/* {
+        reverse_proxy sensei-api:8080 {
+            # Health checks
+            health_uri /api/v1/health
+            health_interval 30s
+            health_timeout 5s
+            health_status 200
+
+            # Timeouts
             transport http {
-                # WebSocket support
+                read_timeout 60s
+                write_timeout 60s
+                dial_timeout 10s
             }
+
+            # Load balancing (if multiple backends)
+            lb_policy round_robin
+
+            # Header manipulation
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
         }
     }
 
-    # Frontend routes
+    # Frontend routes — serves Leptos WASM frontend via Rust API
     route /* {
-        reverse_proxy web:3000 {
+        reverse_proxy sensei-api:8080 {
             # Health checks
-            health_uri /
+            health_uri /api/v1/health
             health_interval 30s
             health_timeout 5s
-            
+            health_status 200
+
             # Header manipulation
             header_up Host {upstream_hostport}
             header_up X-Real-IP {remote_host}

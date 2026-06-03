@@ -1,0 +1,1811 @@
+# TRI-SYSTEM INTEGRATION PROGRAM
+## Sensei OS (Management-Software) × erpStarz × starzCRM (CRM-v2)
+### Program Start: 2026-06-02 | Target Completion: 2026-10-31 (5 months)
+
+---
+
+## PROGRAM OVERVIEW
+
+### Systems Involved
+
+| System | Location | Stack | DB | Lines of Code | Files | Maturity |
+|--------|----------|-------|----|---------------|-------|----------|
+| **Sensei OS** | `./` (Management-Software) | FastAPI + Next.js 14 | PostgreSQL 16 + pgvector | ~95K Python + ~85K TS/TSX | 318 Python + 559 TS/TSX | High (11K tests) |
+| **erpStarz** | `../erpStarz` | Symfony 6.4 + PHP 8.1+ | MySQL 8 (multi-DB: US/TN/MA/EDI) | ~180K PHP + ~15K Twig | 700+ PHP + 623 Twig | Moderate (1.1K tests) |
+| **CRM-v2** | `../CRM-v2` | Symfony 7.0 + PHP 8.2+ | MySQL 8 (port 3308) | ~30K PHP + ~10K Twig | 76 PHP + 42 Twig | Low (360 tests) |
+
+### Current Integration Status: ZERO
+- No cross-system data flow exists
+- No shared entity identity
+- No cross-system event bus
+- No unified authentication
+- No shared customer/product/order records
+- Sensei has 1030 lines of dead erpStarz model mappings with no consuming service
+- erpStarz has 220 documented faults (24 critical, 10 unfixed)
+- CRM-v2 is self-reported 65-70% complete with 20+ stub implementations
+
+### Deep Analysis Findings Summary (5-agent scan, June 2026)
+
+The following table summarizes ALL issues discovered during the 5-agent deep analysis of the Sensei OS codebase. Each issue references the detailed report where it was found.
+
+| Category | Critical | High | Medium | Low | Report Reference |
+|----------|----------|------|--------|-----|------------------|
+| **Backend Services (12 files)** | 4 | 8 | 12 | 15 | `plans/sensei-backend-services-deep-analysis.md` |
+| **Frontend (19 files)** | 2 | 6 | 8 | 10 | `plans/sensei-frontend-deep-analysis.md` |
+| **Infrastructure/Deploy (24 files)** | 1 | 5 | 10 | 8 | `plans/sensei-infra-deep-analysis.md` |
+| **Documentation (86 files)** | 3 | 5 | 8 | 5 | `plans/sensei-docs-deep-analysis.md` |
+| **Scripts/Tooling (52 files)** | 8 | 14 | 18 | 12 | `plans/sensei-scripts-deep-analysis.md` |
+| **TOTAL** | **18** | **38** | **56** | **50** | — |
+
+### Program Goals
+1. **Interoperability**: Seamless data flow between all three systems via event-driven architecture
+2. **Zero Duplication**: Each system owns its domain; no overlapping functionality
+3. **Unified Identity**: Every real-world entity (customer, product, order, employee) has one global ID
+4. **Event-Driven**: All cross-system communication via Redis Streams with guaranteed delivery
+5. **Observable**: Full audit trail, monitoring, and alerting for all cross-system operations
+6. **Tested**: Every integration point has unit, integration, and E2E tests with measurable coverage targets
+
+---
+
+## PHASE 0: FOUNDATION AUDIT & FIXES (Weeks 1-3)
+
+### Step 0.1: Complete erpStarz Critical Fault Remediation
+
+**Context**: erpStarz has 10 unfixed CRITICAL faults from faults.md audit that will cause data corruption or compliance failures if not fixed before integration.
+
+**Affected Systems**: erpStarz
+
+**Faults to Fix**:
+
+| Fault | File | Issue | Fix Description |
+|-------|------|-------|-----------------|
+| F-023 | TunisianEFactureService | SignInvoice SOAP not integrated | Implement SOAP client for Tunisian e-facture API |
+| F-028 | UsPayrollService | EFTPS/ACH tax payment not integrated | Implement ACH file generation with NACHA format |
+| F-031 | UsPayrollService | US state withholding partial | Complete WY/TX state tax tables and withholding calc |
+| F-036 | MoroccanPayrollService | Morocco RPS partial | Complete RPS calculation with correct brackets |
+| F-039 | MoroccanPayrollService | CIMR withholding not implemented | Add CIMR (retirement) contribution calculation |
+| F-042 | MoroccanPayrollService | IGSS declaration not submitted | Implement IGSS declaration file generation |
+| F-044 | MoroccanPayrollService | DGI monthly declaration not integrated | Implement DGI e-billing integration |
+| F-050 | MoroccanEmployeeService | CNSS on-boarding missing | Implement CNSS declaration on employee creation |
+| F-054 | TunisianEmployeeService | CNSS on-boarding not fully implemented | Complete CNSS registration workflow |
+| F-064 | AbsenceService | Multi-country absence integration broken | Fix cross-entity absence calculation logic |
+
+**Deliverables**:
+- [ ] D0.1.0: All 10 critical faults verified fixed with passing tests
+- [ ] D0.1.1: Updated faults.md with fixed status + test coverage report
+- [ ] D0.1.2: PHPStan level 6 compliance for all modified files
+
+**Tests Required**:
+- T0.1.1: TunisianEFactureServiceTest — test SOAP submission with mock client, verify signature, verify status update (5 test cases)
+- T0.1.2: UsPayrollServiceTest — test EFTPS file generation (3 test cases), test state withholding for WY/TX (4 test cases)
+- T0.1.3: MoroccanPayrollServiceTest — test RPS calculation (3 test cases), test CIMR deduction (2 test cases), test IGSS declaration (2 test cases)
+- T0.1.4: DgiDeclarationServiceTest — test e-billing submission (2 test cases)
+- T0.1.5: EmployeeOnboardingTest — test CNSS declaration creation (2 test cases each for MA and TN)
+- T0.1.6: AbsenceServiceTest — test cross-country absence calculation (3 test cases)
+
+**Proof of Completion**:
+- [ ] All 10 faults marked `✅ Fix Verified` in faults.md
+- [ ] PHPUnit: 21+ new test cases all passing
+- [ ] PHPStan level 6: 0 errors on modified files
+- [ ] Code coverage ≥ 80% for all modified services
+
+---
+
+### Step 0.2: Fix Sensei Backend Critical Bugs
+
+**Context**: Deep analysis of 12 backend service files revealed 4 critical runtime bugs and 8 high-priority issues that must be fixed before integration work begins.
+
+**Affected Systems**: Sensei OS
+
+#### Bug 0.2.1: `_id_cache` Undefined in starz_import_service.py
+
+**File**: [`backend/src/sensei/services/external/starz_import_service.py`](backend/src/sensei/services/external/starz_import_service.py:898)
+
+**Issue**: Methods `_import_article_groups` (line 898), `_import_article_categories` (line 920), `_import_article_types` (line 944), `_import_supplier_types` (line 961) reference `self._id_cache` which is NOT defined in `__init__`. Only `self._id_maps` exists (line 444-451 defines `_cache_id`/`_get_cached_id` which use `_id_maps`). This will raise `AttributeError` at runtime.
+
+**Fix**: Replace all 4 occurrences of `self._id_cache` with `self._id_maps`.
+
+#### Bug 0.2.2: Missing SLA Fields in SupportTicket Dataclass
+
+**File**: [`backend/src/sensei/services/support_inbox.py`](backend/src/sensei/services/support_inbox.py:123)
+
+**Issue**: DB persistence code (lines 363-366) references `sla_breached`, `escalation_level`, `escalated_at` on the database model, but the `SupportTicket` dataclass (lines 123-149) does NOT have these fields. This will cause `AttributeError` at runtime.
+
+**Fix**: Add `sla_breached: bool = False`, `escalation_level: int = 0`, `escalated_at: Optional[datetime] = None` to `SupportTicket` dataclass.
+
+#### Bug 0.2.3: `except Exception: pass` in 5 Persistence Methods
+
+**File**: [`backend/src/sensei/services/support_inbox.py`](backend/src/sensei/services/support_inbox.py:343-469)
+
+**Issue**: Five persistence methods have `except Exception: pass` (lines 373, 404, 426, 451, 469). DB write failures are completely invisible — no logs, no alerts, no error propagation. This means support tickets, feedback, A3 records, and comments can silently fail to persist.
+
+**Fix**: Replace all 5 bare `pass` with at minimum `logger.exception()` call. Consider raising domain-specific exceptions for critical writes.
+
+#### Bug 0.2.4: Wrong Module Enum in erpstarz_import.py
+
+**File**: [`backend/src/sensei/services/migration/erpstarz_import.py`](backend/src/sensei/services/migration/erpstarz_import.py:402)
+
+**Issue**: `import_shipping_module()` passes `ImportModule.SALES` instead of a shipping-specific module value. This would cause incorrect reporting and module tracking.
+
+**Fix**: Create `ImportModule.SHIPPING` or use correct existing module.
+
+#### Bug 0.2.5: Mutable Default Parameter in create_routing_rule()
+
+**File**: [`backend/src/sensei/services/support_inbox.py`](backend/src/sensei/services/support_inbox.py:1001)
+
+**Issue**: `created_by: UUID = uuid4()` — `uuid4()` is evaluated once at import time. All rules created without explicit `created_by` share the same creator UUID.
+
+**Fix**: Use `created_by: Optional[UUID] = None` and generate UUID inside the function body.
+
+#### Bug 0.2.6: Date Filter Operators Are Stubs
+
+**File**: [`backend/src/sensei/services/segment_views.py`](backend/src/sensei/services/segment_views.py:1101-1102)
+
+**Issue**: `_evaluate_criterion()` has cases for `DATE_BEFORE`, `DATE_AFTER`, `DATE_BETWEEN`, `RELATIVE_DATE` but all default to `return True`. Date-based segment filtering is completely non-functional.
+
+**Fix**: Implement actual date comparison logic for all 4 operators.
+
+#### Bug 0.2.7: `_import_wms_transactions` Buggy FK Resolution
+
+**File**: [`backend/src/sensei/services/external/starz_import_service.py`](backend/src/sensei/services/external/starz_import_service.py:2365)
+
+**Issue**: `self._get_cached_id("article", None)` passes `None` as starz_id, which would never match any cached ID.
+
+**Fix**: Resolve the correct starz_id from the WMS transaction record.
+
+#### Bug 0.2.8: Cross-Contaminated i18n Translation Files
+
+**Files**: [`scripts/missing_ar_strict.json`](scripts/missing_ar_strict.json), [`scripts/missing_de_strict.json`](scripts/missing_de_strict.json), [`scripts/missing_es_strict.json`](scripts/missing_es_strict.json), [`scripts/missing_fr_strict.json`](scripts/missing_fr_strict.json)
+
+**Issue**: German translations appear in Arabic, Spanish, and French missing-key files. Arabic values appear in the French file. These files are used by cleanup scripts and will cause incorrect translation replacements.
+
+**Fix**: Re-extract missing keys per language using corrected extraction scripts. Regenerate all 4 JSON files.
+
+#### Bug 0.2.9: Docstring Script Path Mismatch
+
+**File**: [`scripts/add_docstrings_v2.py`](scripts/add_docstrings_v2.py:86)
+
+**Issue**: Docstring prefix `app/services/` doesn't match actual project structure `backend/src/sensei/services/`. The script silently skips all 31 target files because the path prefix never matches.
+
+**Fix**: Update path prefix to `backend/src/sensei/services/`.
+
+#### Bug 0.2.10: Hardcoded Path in Training Pipeline Script
+
+**File**: [`run_full_training_pipeline.sh`](run_full_training_pipeline.sh:12)
+
+**Issue**: Hardcoded `/home/aaron/...` path makes the script non-portable. It will fail on any machine other than the original developer's.
+
+**Fix**: Replace with relative paths derived from `BASH_SOURCE[0]`.
+
+**Deliverables**:
+- [ ] D0.2.1: All 10 critical backend bugs fixed with tests
+- [ ] D0.2.2: Updated segment_views date operators implemented
+- [ ] D0.2.3: i18n JSON files regenerated and verified clean
+- [ ] D0.2.4: Docstring script path fixed and verified
+- [ ] D0.2.5: Training pipeline script made portable
+
+**Tests Required**:
+- T0.2.1: test_starz_import_cache — verify _id_cache → _id_maps fix (4 test cases)
+- T0.2.2: test_support_ticket_sla_fields — verify SLA fields exist on dataclass
+- T0.2.3: test_db_persist_exception_logging — verify persistence exceptions are logged
+- T0.2.4: test_import_shipping_module — verify correct module enum
+- T0.2.5: test_routing_rule_unique_uuids — verify each rule gets unique created_by
+- T0.2.6: test_date_filter_operators — verify DATE_BEFORE, DATE_AFTER, DATE_BETWEEN, RELATIVE_DATE all work
+- T0.2.7: test_wms_fk_resolution — verify article FK resolves correctly
+- T0.2.8: test_i18n_file_purity — verify no cross-language contamination in JSON files
+- T0.2.9: test_docstring_script_path — verify script finds and processes target files
+
+**Proof of Completion**:
+- [ ] All 10 critical bugs fixed and tests passing
+- [ ] Code coverage ≥ 85% for all modified modules
+- [ ] i18n files verified clean via automated cross-contamination check
+
+---
+
+### Step 0.3: Fix Frontend Critical Issues
+
+**Context**: Deep analysis of 19 frontend source files revealed 2 critical security issues and 6 high-priority code quality issues.
+
+**Affected Systems**: Sensei OS (Frontend)
+
+#### Issue 0.3.1: Refresh Tokens Stored in localStorage
+
+**Files**: [`frontend/src/api/auth.ts`](frontend/src/api/auth.ts:137,152), [`frontend/src/api/client.ts`](frontend/src/api/client.ts:464)
+
+**Issue**: Refresh tokens are stored in `localStorage`, which is accessible to any JavaScript running in the same origin. This makes them vulnerable to XSS attacks. If an attacker injects malicious JS, they can steal the refresh token and gain persistent access.
+
+**Fix**: Store refresh tokens in `httpOnly` cookies instead of `localStorage`. If httpOnly cookies are infeasible, use `sessionStorage` (cleared on tab close) with shorter token expiry.
+
+#### Issue 0.3.2: Empty Catch Blocks in Sync Service
+
+**File**: [`frontend/src/services/sync-service.ts`](frontend/src/services/sync-service.ts:69,96,118)
+
+**Issue**: 3 empty catch blocks silently swallow errors during IndexedDB operations. If sync fails, users get no feedback and data loss goes undetected.
+
+**Fix**: Add error logging and user-visible error handling for all 3 catch blocks.
+
+#### Issue 0.3.3: `any` Types in today.ts
+
+**File**: [`frontend/src/api/today.ts`](frontend/src/api/today.ts:8-14)
+
+**Issue**: 7 of 15 fields in the Today response typed as `any`. This bypasses TypeScript's type checking entirely.
+
+**Fix**: Define proper interfaces for all Today API response fields.
+
+#### Issue 0.3.4: `@ts-expect-error` Suppressions in Sync Service
+
+**File**: [`frontend/src/services/sync-service.ts`](frontend/src/services/sync-service.ts:66,90,115)
+
+**Issue**: 3 `@ts-expect-error` directives suppress real type errors rather than fixing the underlying type issues.
+
+**Fix**: Fix the underlying type issues and remove all `@ts-expect-error` directives.
+
+#### Issue 0.3.5: Unsafe `as T` Type Assertions
+
+**File**: [`frontend/src/hooks/use-sync-engine.ts`](frontend/src/hooks/use-sync-engine.ts:328,349,353)
+
+**Issue**: 3 unsafe `as T` type assertions cast generic types without runtime validation. If the runtime data doesn't match the expected shape, these will cause silent data corruption.
+
+**Fix**: Add runtime type guards or zod/yup schema validation before casting.
+
+#### Issue 0.3.6: 5 Pagination Gaps
+
+**Files**: [`frontend/src/api/maintenance.ts`](frontend/src/api/maintenance.ts), quality sub-modules (FAI, self-inspection, lab, AQL, traceability, change point, management review)
+
+**Issue**: Multiple API modules return unbounded arrays without pagination support. As the data grows, these endpoints will suffer performance degradation and potential OOM errors.
+
+**Fix**: Add `skip`/`limit` or `page`/`per_page` parameters to all unbounded endpoints.
+
+**Deliverables**:
+- [ ] D0.3.1: Auth token storage migrated to httpOnly cookies
+- [ ] D0.3.2: Sync service error handling implemented
+- [ ] D0.3.3: Today API properly typed
+- [ ] D0.3.4: All `@ts-expect-error` directives resolved
+- [ ] D0.3.5: Type assertions replaced with runtime validation
+- [ ] D0.3.6: Pagination added to all unbounded endpoints
+
+**Tests Required**:
+- T0.3.1: test_token_storage — verify refresh token NOT in localStorage
+- T0.3.2: test_sync_error_logging — verify sync errors are logged and propagated
+- T0.3.3: test_today_types — verify all Today response fields have proper types
+- T0.3.4: test_pagination — verify skip/limit parameters work on paginated endpoints
+
+**Proof of Completion**:
+- [ ] No refresh tokens in localStorage (verified via test)
+- [ ] All 19 frontend source files pass TypeScript strict mode
+- [ ] All pagination gaps closed
+
+---
+
+### Step 0.4: Complete Sensei Domain Event Handler Wiring
+
+**Context**: Sensei has 46 domain event types defined but `register_standard_subscriptions()` registers ZERO business-logic handlers. The entire event-driven architecture is structurally complete but functionally dead.
+
+**Affected Systems**: Sensei OS
+
+**Events Needing Handlers**:
+
+| Event Type | Handler Service | Business Logic |
+|------------|-----------------|----------------|
+| NCCreatedEvent | quality_service.create_capa_for_nc | Auto-create CAPA when NCR severity is Critical or Major |
+| InspectionCompletedEvent | quality_service.update_spc_chart | Update SPC control chart with inspection result |
+| CAPACreatedEvent | quality_service.notify_quality_manager | Send notification to quality manager |
+| CostRollupCompleted | cost_service.update_product_cost | Update product standard cost |
+| JournalEntryPosted | finance_service.update_gl_balances | Update general ledger running balances |
+| InvoiceCreatedEvent | finance_service.sync_to_erp | Publish invoice to cross-system event bus |
+| WorkOrderCreatedEvent | maintenance_service.schedule_inspection | Schedule follow-up inspection if corrective |
+| TrainingCompletedEvent | hr_service.update_skills_matrix | Update employee skills matrix |
+| CertificationExpiredEvent | hr_service.notify_employee | Send certification expiry alert |
+| ProductionOrderStartedEvent | production_service.update_dashboard | Update production dashboard real-time |
+| ProductionOrderCompletedEvent | inventory_service.update_finished_goods | Update finished goods inventory |
+| MRPRunCompleted | planning_service.analyze_shortages | Flag critical shortages for purchasing |
+| OpportunityStageChangedEvent | sales_service.update_pipeline | Update sales pipeline analytics |
+| RFQCreatedEvent | sales_service.notify_sales_team | Send RFQ notification |
+| RFQStatusChangedEvent | sales_service.update_rfq_pipeline | Update RFQ dashboard |
+| QuoteApprovedEvent | sales_service.trigger_erp_order | Publish to cross-system bus for erpStarz |
+| AndonCreatedEvent | production_service.escalate_and | Route to appropriate team |
+| StockMoveCreatedEvent | inventory_service.update_available_qty | Update available quantity |
+| GoodsReceiptCreatedEvent | inventory_service.update_po_status | Update PO receipt status |
+| LeaveRequestCreatedEvent | hr_service.check_coverage | Check department coverage |
+| LeaveRequestApprovedEvent | hr_service.update_attendance | Update attendance record |
+| PerformanceReviewCompletedEvent | hr_service.update_employee_record | Update employee file |
+| RiskCreatedEvent | risk_service.create_mitigation_plan | Auto-create mitigation plan if high severity |
+| RiskMitigatedEvent | risk_service.update_risk_register | Update risk register |
+| PurchaseOrderCreatedEvent | procurement_service.sync_to_erp | Publish to cross-system bus |
+| PaymentProcessedEvent | finance_service.update_receivables | Update AR/AP aging |
+| KanbanCardMovedEvent | production_service.update_wip | Update WIP tracking |
+
+**Deliverables**:
+- [ ] D0.4.1: `handlers_quality.py` — 4 handlers for quality events
+- [ ] D0.4.2: `handlers_finance.py` — 3 handlers for finance events
+- [ ] D0.4.3: `handlers_maintenance.py` — 1 handler for maintenance
+- [ ] D0.4.4: `handlers_hr.py` — 4 handlers for HR events
+- [ ] D0.4.5: `handlers_production.py` — 4 handlers for production events
+- [ ] D0.4.6: `handlers_sales.py` — 5 handlers for sales events
+- [ ] D0.4.7: `handlers_inventory.py` — 2 handlers for inventory events
+- [ ] D0.4.8: `handlers_risk.py` — 2 handlers for risk events
+- [ ] D0.4.9: `handlers_cross_system.py` — 3 handlers for cross-system publishing
+- [ ] D0.4.10: Updated `register_standard_subscriptions()` wiring all handlers
+
+**Tests Required**:
+- T0.4.1: test_nc_created_triggers_capa — verify CAPA auto-creation for Critical NCR
+- T0.4.2: test_inspection_completed_updates_spc — verify SPC chart update
+- T0.4.3: test_cost_rollup_updates_product_cost — verify product cost update
+- T0.4.4: test_training_completed_updates_skills — verify skills matrix update
+- T0.4.5: test_production_completed_updates_inventory — verify inventory update
+- T0.4.6: test_quote_approved_publishes_cross_system — verify cross-system event published
+- T0.4.7: test_all_handlers_are_registered — verify register_standard_subscriptions registers all 28 handlers
+- T0.4.8: test_handler_error_isolation — verify one handler failure doesn't block others
+- T0.4.9: test_handler_idempotency — verify duplicate events are handled safely
+
+**Proof of Completion**:
+- [ ] 28 business-logic handlers implemented and registered
+- [ ] 9 new test suites passing (28+ test cases)
+- [ ] pytest coverage ≥ 85% for all handler modules
+- [ ] Manual verification: publish each event type via debug endpoint and verify side effects
+
+---
+
+### Step 0.5: Fix Sensei starz_erp.py Dead Code & Triple Integration Unification
+
+**Context**: Three independent implementations exist for erpStarz integration:
+1. [`starz_import_service.py`](backend/src/sensei/services/external/starz_import_service.py) — aiomysql, 50+ entities, 3218 lines
+2. [`starz_ingestion.py`](backend/src/sensei/services/external/starz_ingestion.py) — aiomysql, 6 entities, reasoning/provenance, 475 lines
+3. [`erpstarz_import.py`](backend/src/sensei/services/migration/erpstarz_import.py) — raw SQL, module-based, 1601 lines
+
+Additionally, 1030-line file [`models/external/starz_erp.py`] has 58 read-only StarzBase models mapping erpStarz MySQL tables with no consuming service.
+
+**Affected Systems**: Sensei OS
+
+**Required Actions**:
+1. Create a single unified `services/integration/starz_import_service.py` that combines:
+   - Entity coverage from `starz_import_service.py` (50+ types)
+   - Reasoning/provenance tracking from `starz_ingestion.py`
+   - Module-based organization from `erpstarz_import.py`
+2. Remove the three old implementations after migration
+3. Delete or archive the dead `models/external/starz_erp.py` models
+4. Add proper transaction rollback for partial failure recovery
+5. Add progress callback and monitoring
+
+**Deliverables**:
+- [ ] D0.5.1: Unified `services/integration/starz_import_service.py` — single implementation
+- [ ] D0.5.2: `services/integration/starz_entity_mapper.py` — transformation layer
+- [ ] D0.5.3: Transaction rollback for partial failure
+- [ ] D0.5.4: Removal of 3 old implementations
+- [ ] D0.5.5: Archive of dead `models/external/starz_erp.py`
+- [ ] D0.5.6: Monitoring dashboard for sync status
+
+**Tests Required**:
+- T0.5.1: test_unified_import_all_entities — verify all 50+ entity types import correctly
+- T0.5.2: test_transaction_rollback — verify partial failure rolls back all changes
+- T0.5.3: test_idempotent_import — verify re-importing same data doesn't create duplicates
+- T0.5.4: test_schema_validation — verify fails fast on schema mismatch
+- T0.5.5: test_delta_sync — verify only changed records are synced
+- T0.5.6: test_provenance_tracking — verify reasoning records created for each import
+
+**Proof of Completion**:
+- [ ] Unified service operational, old implementations removed
+- [ ] All 50+ entity types tested with end-to-end import
+- [ ] 6 test suites passing
+- [ ] Coverage ≥ 85% for unified import service
+
+---
+
+### Step 0.6: Fix CRM-v2 Pipeline Architecture
+
+**Context**: CRM-v2 has two disconnected sales pipelines (Lead→Company, RFQ→Quote) with no unified Opportunity entity, 3 overlapping scoring systems, and unmapped conversion paths.
+
+**Affected Systems**: CRM-v2
+
+**Sub-steps**:
+1. Create `Opportunity` entity with complete pipeline stage definitions
+2. Create `OpportunityStage` entity with configurable stage progression rules
+3. Create scoring consolidation — single score per opportunity calculated from weighted lead score + RFQ value + engagement score
+4. Create migration for `opportunities` and `opportunity_stages` tables
+5. Create OpportunityController with CRUD + stage advancement + scoring
+6. Create OpportunityService with pipeline logic
+7. Create OpportunityRepository with pipeline analytics queries
+8. Wire OpportunityCreated/StageChanged events to cross-system bus
+9. Create migration path: backfill opportunities from existing Lead + RFQ data
+
+**Stage Model**:
+```
+Discovery → Qualification → NDA → RFQ → Proposal → Negotiation → Won/Lost
+```
+
+**Deliverables**:
+- [ ] D0.6.1: `src/Entity/Opportunity.php` — complete entity
+- [ ] D0.6.2: `src/Entity/OpportunityStage.php` — stage configuration entity
+- [ ] D0.6.3: `src/Repository/OpportunityRepository.php` — with pipeline analytics
+- [ ] D0.6.4: `src/Service/OpportunityService.php` — full pipeline logic
+- [ ] D0.6.5: `src/Controller/OpportunityController.php` — CRUD + stage advancement
+- [ ] D0.6.6: Migration files (up/down)
+- [ ] D0.6.7: Migration script: backfill from Lead + RFQ data
+- [ ] D0.6.8: Scoring consolidation module
+
+**Tests Required**:
+- T0.6.1: test_opportunity_create — verify entity creation with all required fields
+- T0.6.2: test_stage_advancement — verify valid stage transitions
+- T0.6.3: test_stage_advancement_invalid — verify invalid transitions rejected
+- T0.6.4: test_score_calculation — verify weighted score computation
+- T0.6.5: test_pipeline_analytics — verify pipeline reporting queries
+- T0.6.6: test_backfill_from_lead — verify existing lead data converted to opportunity
+- T0.6.7: test_backfill_from_rfq — verify existing RFQ data converted to opportunity
+- T0.6.8: test_lead_to_opportunity_conversion — verify end-to-end lead→opportunity
+- T0.6.9: test_rfq_to_opportunity_link — verify RFQ linked to opportunity
+- T0.6.10: test_opportunity_event_emission — verify events published on stage change
+
+**Proof of Completion**:
+- [ ] Opportunity entity with full pipeline (9 stages)
+- [ ] Backfill script successfully migrates existing data (verify: count(Lead) + count(RFQ) = count(Opportunity) after dedup)
+- [ ] 10 test suites passing
+- [ ] Manual verification: create lead → advance to opportunity → add RFQ → advance to won → verify analytics
+- [ ] Code coverage ≥ 80% for opportunity module
+
+---
+
+### Step 0.7: Fix Infrastructure Configuration Gaps
+
+**Context**: Deep analysis of 24 infrastructure/deployment files revealed missing configuration for tri-system integration and several production readiness gaps.
+
+**Affected Systems**: Sensei OS
+
+#### Config 0.7.1: Missing Tri-System Environment Variables
+
+**File**: [`docker-compose.yml`](docker-compose.yml)
+
+**Issue**: No environment variables exist for erpStarz, CRM-v2, Keycloak, or Redis Stream integration. The following variables are missing:
+- `ERPSTARZ_API_URL`, `ERPSTARZ_API_KEY`, `ERPSTARZ_WEBHOOK_SECRET`
+- `CRM_V2_API_URL`, `CRM_V2_API_KEY`, `CRM_V2_WEBHOOK_SECRET`
+- `KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`
+- `REDIS_STREAM_GROUP`, `REDIS_STREAM_CONSUMER`, `REDIS_STREAM_MAXLEN`
+
+#### Config 0.7.2: NetworkPolicy Allows All Egress
+
+**File**: [`k8s/helm/sensei/templates/networkpolicy.yaml`](k8s/helm/sensei/templates/networkpolicy.yaml)
+
+**Issue**: NetworkPolicy allows all egress traffic. For a multi-system deployment, this should be restricted to only necessary destinations (erpStarz MySQL, CRM-v2 MySQL, Keycloak, shared Redis).
+
+#### Config 0.7.3: Caddyfile Missing WebSocket Route
+
+**File**: [`caddy/Caddyfile`](caddy/Caddyfile)
+
+**Issue**: No WebSocket route for `/ws/*` path (present in `Caddyfile.production` line 74 but commented out in dev config). WebSocket-dependent features (real-time dashboards, Andon alerts) won't work in dev.
+
+#### Config 0.7.4: No Shared PostgreSQL or Redis for Integration
+
+**Issue**: docker-compose and Helm charts have no configuration for the shared `starz_interop` PostgreSQL database or the shared Redis Streams instance needed for cross-system event bus.
+
+#### Config 0.7.5: k6 Load Test Doesn't Test Integration
+
+**File**: [`k6/load-test.js`](k6/load-test.js)
+
+**Issue**: The only load test script tests auth and basic CRUD endpoints. It does NOT test any event bus, webhook, or cross-system integration paths.
+
+**Deliverables**:
+- [ ] D0.7.1: docker-compose updated with all tri-system env vars
+- [ ] D0.7.2: NetworkPolicy restricted to necessary destinations
+- [ ] D0.7.3: Caddyfile WebSocket route enabled
+- [ ] D0.7.4: Shared PostgreSQL and Redis services added to docker-compose
+- [ ] D0.7.5: k6 load test extended with integration scenarios
+- [ ] D0.7.6: All env vars documented in .env.example
+
+**Proof of Completion**:
+- [ ] docker-compose up with all tri-system variables configured
+- [ ] WebSocket connections work in dev environment
+- [ ] NetworkPolicy allows only necessary traffic (verified via network policy simulation)
+- [ ] k6 integration tests pass with throughput targets met
+
+---
+
+### Step 0.8: Fix Documentation & Scripting Issues
+
+**Context**: Deep analysis of 86 documentation files and 52 script/tooling files revealed critical gaps.
+
+**Affected Systems**: Sensei OS
+
+#### Doc Issue 0.8.1: Placeholder Domain in Resource Guides
+
+**Files**: All 27 Resource guides in [`docs/Resources/`](docs/Resources/)
+
+**Issue**: Placeholder domain `sensei.pulse.com` appears in all guides. This domain doesn't exist and should be replaced with the actual deployment domain.
+
+#### Doc Issue 0.8.2: BACKEND_DATA_MODELS_MAP.md is Skeleton
+
+**File**: [`docs/BACKEND_DATA_MODELS_MAP.md`](docs/BACKEND_DATA_MODELS_MAP.md)
+
+**Issue**: This file has a heading and table structure but no actual data model content. It's a placeholder skeleton.
+
+#### Doc Issue 0.8.3: No Unit/Integration Testing Documentation
+
+**Files**: [`docs/testing/`](docs/testing/)
+
+**Issue**: Only E2E testing is documented. There is no documentation for unit test patterns, integration test setup, test data factories, or CI test execution.
+
+#### Script Issue 0.8.4: 6 Critical ESLint Rules Disabled
+
+**File**: [`frontend/.eslintrc.json`](frontend/.eslintrc.json:3)
+
+**Issue**: 6 critical ESLint rules disabled including `react-hooks/exhaustive-deps` and `react-hooks/rules-of-hooks`. This allows React hook violations and missing dependency arrays in production code.
+
+#### Script Issue 0.8.5: Filename/Content Mismatch in i18n Scripts
+
+**File**: [`scripts/extract_missing_ar_v2.py`](scripts/extract_missing_ar_v2.py:48)
+
+**Issue**: Despite filename claiming "ar" (Arabic), hardcoded to `extract_missing('de')` — extracts German, not Arabic. Also, `restart_frontend.sh` referenced in workflows does not exist in the repository.
+
+**Deliverables**:
+- [ ] D0.8.1: All placeholder domains replaced with configurable variable
+- [ ] D0.8.2: BACKEND_DATA_MODELS_MAP.md completed with actual models
+- [ ] D0.8.3: Unit/integration testing documentation created
+- [ ] D0.8.4: ESLint strict rules re-enabled and code fixed
+- [ ] D0.8.5: i18n script filename fixed, restart_frontend.sh created
+- [ ] D0.8.6: docs/README.md expanded into proper documentation portal
+
+**Proof of Completion**:
+- [ ] No `sensei.pulse.com` in any doc file
+- [ ] BACKEND_DATA_MODELS_MAP.md lists all 57 models with field mappings
+- [ ] `npm run lint` passes with no errors
+- [ ] All 52 script files verified for correctness
+
+---
+
+## PHASE 1: SHARED INTEGRATION INFRASTRUCTURE (Weeks 4-7)
+
+### Step 1.1: Create starz-interop PostgreSQL Schema
+
+**Context**: No shared database exists for cross-system entity mapping, event logging, or tenant registry.
+
+**Affected Systems**: New (shared infrastructure)
+
+**Schema Design**:
+
+```sql
+-- Shared PostgreSQL Database: starz_interop
+
+-- 1. TENANT REGISTRY
+CREATE TABLE starz_tenants (
+    tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_code VARCHAR(20) NOT NULL UNIQUE,  -- 'starz_tn', 'starz_ma', 'starz_us', 'starz_crm'
+    tenant_name VARCHAR(255) NOT NULL,
+    system_erpstarz BOOLEAN DEFAULT FALSE,
+    system_sensei BOOLEAN DEFAULT FALSE,
+    system_crm BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. ENTITY ID MAPPING (UUID ↔ Integer PK Bridge)
+CREATE TABLE starz_entity_map (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_type VARCHAR(100) NOT NULL,          -- 'customer', 'product', 'order', 'employee', 'invoice'
+    source_system VARCHAR(50) NOT NULL,
+    source_entity_id VARCHAR(255) NOT NULL,
+    tenant_id VARCHAR(50) NOT NULL,
+    global_entity_id UUID NOT NULL,
+    sensei_entity_id UUID,
+    sync_status VARCHAR(20) DEFAULT 'pending',
+    last_synced_at TIMESTAMPTZ,
+    sync_version INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(source_system, entity_type, source_entity_id, tenant_id),
+    UNIQUE(global_entity_id)
+);
+
+-- 3. EVENT LOG (Idempotent Event Processing)
+CREATE TABLE starz_sync_log (
+    id BIGSERIAL PRIMARY KEY,
+    event_id UUID NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    source_system VARCHAR(50) NOT NULL,
+    consumer_system VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(100),
+    global_entity_id UUID,
+    status VARCHAR(20) NOT NULL DEFAULT 'received',
+    status_code INTEGER,
+    error_message TEXT,
+    processing_time_ms INTEGER,
+    correlation_id VARCHAR(255),
+    occurred_at TIMESTAMPTZ NOT NULL,
+    processed_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(event_id, consumer_system)
+);
+
+-- 4. WEBHOOK CONFIGURATION
+CREATE TABLE starz_webhook_configs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    system_name VARCHAR(50) NOT NULL,
+    webhook_url VARCHAR(1024) NOT NULL,
+    secret_key VARCHAR(255) NOT NULL,
+    event_types TEXT[] NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    retry_count INTEGER DEFAULT 3,
+    timeout_seconds INTEGER DEFAULT 30,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. AUTH CLIENTS (OAuth2 Bridge)
+CREATE TABLE starz_auth_clients (
+    client_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_name VARCHAR(100) NOT NULL,
+    system_name VARCHAR(50) NOT NULL,
+    client_secret_hash VARCHAR(255) NOT NULL,
+    redirect_uris TEXT[] NOT NULL,
+    allowed_scopes TEXT[] NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ
+);
+
+-- 6. SYNC METRICS DASHBOARD
+CREATE TABLE starz_sync_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    metric_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    source_system VARCHAR(50) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    records_synced INTEGER DEFAULT 0,
+    records_failed INTEGER DEFAULT 0,
+    avg_latency_ms INTEGER DEFAULT 0,
+    p99_latency_ms INTEGER DEFAULT 0,
+    total_bytes_synced BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(metric_date, source_system, entity_type)
+);
+```
+
+**Deliverables**:
+- [ ] D1.1.1: Migration script `001_create_starz_interop_schema.sql`
+- [ ] D1.1.2: Rollback script `001_rollback.sql`
+- [ ] D1.1.3: Python SDK module `starz_interop_py` with all table models
+- [ ] D1.1.4: PHP SDK package `starz-interop-php` with all Doctrine entities
+- [ ] D1.1.5: TypeScript SDK package `@starz/interop` with TypeScript interfaces
+- [ ] D1.1.6: docker-compose service for starz_interop PostgreSQL
+- [ ] D1.1.7: k8s Helm templates for starz_interop
+
+**Tests Required**:
+- T1.1.1: test_schema_creation — verify all 6 tables created with correct columns
+- T1.1.2: test_unique_constraints — verify entity_map unique constraints enforced
+- T1.1.3: test_idempotency_key — verify sync_log duplicate event_id rejected
+- T1.1.4: test_index_performance — verify indexes exist and are used in query plans
+- T1.1.5: test_rollback — verify schema rollback removes all tables cleanly
+- T1.1.6: test_entity_map_crud — Python SDK CRUD operations
+- T1.1.7: test_entity_map_crud_php — PHP SDK CRUD operations
+- T1.1.8: test_cross_system_entity_lookup — verify global_entity_id resolves across systems
+
+**Proof of Completion**:
+- [ ] Schema deployed to shared PostgreSQL instance
+- [ ] All 3 SDKs can connect, read, and write to all 6 tables
+- [ ] 8 test suites passing
+- [ ] Rollback verified: `psql -f 001_rollback.sql` returns to clean state
+
+---
+
+### Step 1.2: Implement Cross-System Event Bus
+
+**Context**: No cross-system communication mechanism exists. Sensei has in-process bus only. erpStarz and CRM-v2 have Symfony Messenger but don't use it for domain events.
+
+**Affected Systems**: All three + shared infrastructure
+
+**Architecture**:
+
+```
+┌─────────────────────────── REDIS STREAMS ───────────────────────────┐
+│                                                                       │
+│  Stream: starz:events:domain                                          │
+│  Consumer Groups: sensei, erpstarz, crm                              │
+│  Max length: 100,000 events (with periodic trim)                     │
+│  Message format: Canonical Event Envelope (JSON)                     │
+│                                                                       │
+│  Stream: starz:events:data                                            │
+│  Consumer Groups: sensei, erpstarz, crm                              │
+│  Max length: 50,000 events (data sync events are larger)             │
+│                                                                       │
+│  Stream: starz:commands                                               │
+│  Consumer Groups: sensei, erpstarz, crm                              │
+│  Max length: 10,000 (commands are point-to-point)                    │
+│  TTL: 7 days (auto-expire via Redis eviction)                        │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+**Event Delivery Guarantees**:
+- At-least-once delivery via Redis consumer groups
+- Exactly-once processing via starz_sync_log idempotency
+- Dead letter stream for failed events (starz:events:dead)
+- Retry: 3 attempts with exponential backoff (1s, 5s, 30s)
+
+**Implementation Per System**:
+
+**Sensei (Python)**:
+- `services/integration/event_publisher.py` — publishes domain events to Redis Streams
+- `services/integration/event_consumer.py` — consumes from Redis Streams, dispatches to handlers
+- Config: STARZ_EVENT_BUS_ENABLED, STARZ_EVENT_BUS_REDIS_URL, STARZ_EVENT_BUS_CONSUMER_GROUP
+- Consumer runs as Celery worker: `celery -A sensei.core.celery_app worker -Q starz_events`
+
+**erpStarz (PHP)**:
+- `src/Service/Integration/StarzEventBus.php` — Symfony Messenger transport for Redis Streams
+- `src/Message/StarzEvent.php` — message class wrapping canonical envelope
+- `src/MessageHandler/StarzEventHandler.php` — handler dispatching to domain services
+- Config: `STARZ_EVENT_BUS_DSN` in .env, messenger.yaml transport configuration
+
+**CRM-v2 (PHP)**:
+- Same architecture as erpStarz
+- `src/Service/Integration/StarzEventBus.php`
+- `src/Message/StarzEvent.php`
+- `src/MessageHandler/StarzEventHandler.php`
+
+**Deliverables**:
+- [ ] D1.2.1: Sensei event publisher/consumer implementation
+- [ ] D1.2.2: erpStarz event publisher/consumer implementation
+- [ ] D1.2.3: CRM-v2 event publisher/consumer implementation
+- [ ] D1.2.4: Dead letter queue handling (all systems)
+- [ ] D1.2.5: Monitoring dashboard for event bus health
+- [ ] D1.2.6: Shared Redis service in docker-compose and Helm
+
+**Tests Required**:
+- T1.2.1: test_event_publish_consume — publish event from Sensei, consume in erpStarz and CRM-v2
+- T1.2.2: test_idempotent_delivery — verify duplicate delivery doesn't double-process
+- T1.2.3: test_consumer_group_balancing — verify multiple consumers share work
+- T1.2.4: test_dead_letter — verify failed events go to dead letter after 3 retries
+- T1.2.5: test_event_persistence — verify events survive Redis restart (AOF)
+- T1.2.6: test_large_event — verify 1MB event payload handled correctly
+- T1.2.7: test_network_partition — verify graceful reconnection after Redis outage
+- T1.2.8: test_event_delivery_latency — verify p99 latency < 500ms
+- T1.2.9: test_consumer_crash_recovery — verify consumer resumes from last checkpoint
+- T1.2.10: test_canonical_envelope_validation — verify invalid envelopes rejected
+
+**Proof of Completion**:
+- [ ] End-to-end test: publish event from Sensei → verify received in erpStarz (1s max latency)
+- [ ] End-to-end test: publish event from CRM-v2 → verify received in Sensei
+- [ ] End-to-end test: publish event from erpStarz → verify received in CRM-v2
+- [ ] All 10 tests passing
+- [ ] Dead letter queue verified: publish malformed event → verify in dead letter
+- [ ] Monitoring dashboard shows real-time event flow
+
+---
+
+### Step 1.3: Deploy Unified Authentication (OAuth2/OIDC SSO)
+
+**Context**: Three separate auth systems. Sensei uses JWT + TOTP. erpStarz uses session + WMS token + scheb/2fa. CRM-v2 uses sessions. Users must log in separately to each system.
+
+**Affected Systems**: All three
+
+**Architecture**:
+- Deploy Keycloak as shared identity provider
+- Each system becomes an OAuth2 client
+- Sensei: switch from JWT to Keycloak token validation
+- erpStarz: add Keycloak as alternative authentication provider
+- CRM-v2: add Keycloak as alternative authentication provider
+- Existing auth methods remain as fallback
+
+**Migration Path**:
+1. Deploy Keycloak with realm `starz-morocco`
+2. Create client registrations for Sensei, erpStarz, CRM-v2
+3. Implement token exchange endpoint in each system
+4. Migrate users gradually (Phase 1: optional SSO, Phase 2: required SSO)
+5. Implement session bridge for existing sessions
+
+**Deliverables**:
+- [ ] D1.3.1: Keycloak deployment (Docker Compose + Helm chart + configuration)
+- [ ] D1.3.2: Keycloak realm export (`starz-morocco-realm.json`)
+- [ ] D1.3.3: Sensei OIDC integration middleware
+- [ ] D1.3.4: erpStarz OIDC integration (custom authenticator)
+- [ ] D1.3.5: CRM-v2 OIDC integration (custom authenticator)
+- [ ] D1.3.6: Token exchange API for cross-system auth
+- [ ] D1.3.7: User migration script
+- [ ] D1.3.8: Keycloak service in docker-compose and Helm
+
+**Tests Required**:
+- T1.3.1: test_keycloak_login — verify OIDC authorization code flow
+- T1.3.2: test_token_validation — verify access token validated correctly
+- T1.3.3: test_role_mapping — verify Keycloak roles mapped to system roles
+- T1.3.4: test_token_refresh — verify refresh token flow
+- T1.3.5: test_sso_session — verify login once accesses all 3 systems
+- T1.3.6: test_logout — verify logout from one system invalidates all sessions
+- T1.3.7: test_fallback_auth — verify existing auth still works during migration
+- T1.3.8: test_token_expiry — verify expired tokens rejected
+- T1.3.9: test_revoked_token — verify revoked tokens rejected
+- T1.3.10: test_concurrent_users — verify 100 concurrent SSO logins
+
+**Proof of Completion**:
+- [ ] Keycloak running with realm, clients, and test users
+- [ ] Login to Sensei → automatically authenticated in erpStarz and CRM-v2
+- [ ] 10 tests passing
+- [ ] Security audit: penetration test of OAuth2 flow
+
+---
+
+## PHASE 2: ENTITY SYNCHRONIZATION (Weeks 8-12)
+
+### Step 2.1: Product/Article Data Synchronization
+
+**Context**: Product data exists in all three systems independently. erpStarz has 20+ product entities with pricing, inventory, BOMs. Sensei has production-focused product models. CRM-v2 has component MPN references. No sync exists.
+
+**Affected Systems**: All three
+
+**Data Flow**:
+```
+erpStarz (System of Record)
+  └─→ starz:events:data:product.updated
+      ├─→ Sensei: update product catalog
+      └─→ CRM-v2: update component pricing references
+
+CRM-v2 (market pricing enrichment)
+  └─→ starz:events:data:product.price_updated
+      └─→ erpStarz: store as reference price
+```
+
+**Mapping Rules**:
+
+| erpStarz Field | Sensei Field | CRM-v2 Field | Sync Direction |
+|----------------|-------------|--------------|----------------|
+| StarzArticle.id | starz_entity_map → product_id | BomLine.partNumber | erpStarz → All |
+| StarzArticle.designation | Product.name | — | erpStarz → Sensei |
+| StarzArticle.reference | Product.sku | — | erpStarz → Sensei |
+| StarzArticle.price_ht | Product.standard_cost | — | erpStarz → Sensei |
+| StarzArticleGroup.name | ProductCategory.name | — | erpStarz → Sensei |
+| StarzUnit.code | Product.unit_of_measure | — | erpStarz → Sensei |
+| — | Product.quantity_on_hand | — | erpStarz → Sensei |
+| — | — | BomLine.unitPrice | CRM-v2 → erpStarz |
+
+**Deliverables**:
+- [ ] D2.1.1: Product sync publisher (erpStarz — publishes on product create/update)
+- [ ] D2.1.2: Product sync consumer (Sensei — updates product catalog)
+- [ ] D2.1.3: Product sync consumer (CRM-v2 — updates component reference data)
+- [ ] D2.1.4: Price sync publisher (CRM-v2 — publishes market pricing)
+- [ ] D2.1.5: Price sync consumer (erpStarz — stores reference pricing)
+- [ ] D2.1.6: Conflict resolution strategy document
+
+**Tests Required**:
+- T2.1.1: test_product_create_sync — create product in erpStarz → verify in Sensei and CRM-v2
+- T2.1.2: test_product_update_sync — update price in erpStarz → verify updated in Sensei
+- T2.1.3: test_market_price_sync — update market price in CRM-v2 → verify stored in erpStarz
+- T2.1.4: test_batch_sync — verify 1000 products synced correctly
+- T2.1.5: test_conflict_resolution — verify erpStarz wins as system of record
+- T2.1.6: test_delta_sync — verify only changed products synced
+- T2.1.7: test_product_deletion — verify cascade deletion across systems with proper reference checks
+
+**Proof of Completion**:
+- [ ] End-to-end: create product in erpStarz → verify UUID in Sensei + CRM-v2 (<60s)
+- [ ] End-to-end: update market price in CRM-v2 → verify reference price in erpStarz
+- [ ] Conflict resolution: modify product in both erpStarz and Sensei → verify erpStarz wins
+- [ ] 7 test suites passing
+
+---
+
+### Step 2.2: Customer/Company Data Synchronization
+
+**Context**: Customer data siloed across all three systems. CRM-v2 has ABM-enriched companies. erpStarz has billing customers with tax IDs. Sensei has contacts and opportunities.
+
+**Affected Systems**: All three
+
+**Data Flow**:
+```
+CRM-v2 (System of Record for customer profiles)
+  └─→ starz:events:data:customer.created
+      ├─→ Sensei: create customer + contact
+      └─→ erpStarz: create customer with billing/shipping info
+
+erpStarz (System of Record for billing/payment info)
+  └─→ starz:events:data:customer.payment_terms_updated
+      └─→ Sensei: update customer payment terms
+```
+
+**Deliverables**:
+- [ ] D2.2.1: Customer sync publisher (CRM-v2)
+- [ ] D2.2.2: Customer sync consumer (Sensei)
+- [ ] D2.2.3: Customer sync consumer (erpStarz)
+- [ ] D2.2.4: Billing info sync publisher (erpStarz)
+- [ ] D2.2.5: Billing info sync consumer (Sensei)
+- [ ] D2.2.6: ABM enrichment sync (CRM-v2 → erpStarz)
+- [ ] D2.2.7: Unified search index for customers
+
+**Tests Required**:
+- T2.2.1: test_customer_create_sync — create company in CRM-v2 → verify in Sensei + erpStarz
+- T2.2.2: test_customer_update_sync — update company details → verify everywhere
+- T2.2.3: test_payment_terms_sync — update terms in erpStarz → verify in Sensei
+- T2.2.4: test_abm_enrichment_sync — verify ABM score from CRM-v2 appears in erpStarz
+- T2.2.5: test_duplicate_detection — verify same customer not created twice
+- T2.2.6: test_customer_search — verify cross-system search returns unified results
+
+**Proof of Completion**:
+- [ ] End-to-end: create company in CRM-v2 → verify customer in erpStarz + Sensei (<60s)
+- [ ] End-to-end: set payment terms in erpStarz → verify in Sensei opportunity pipeline
+- [ ] 6 test suites passing
+
+---
+
+### Step 2.3: RFQ-to-Quote-to-Order Pipeline Integration
+
+**Context**: CRM-v2 has RFQ pipeline (NDA workflow, BOM pricing). Sensei has Opportunity pipeline. erpStarz has SalesOrder/invoice. None connected.
+
+**Affected Systems**: All three
+
+**Data Flow**:
+```
+CRM-v2: Customer submits RFQ
+  └─→ starz:events:domain:rfq.created
+      └─→ Sensei: create opportunity from RFQ data
+
+Sensei: Team works on quote (production planning, BOM pricing)
+  └─→ starz:events:domain:quote.created
+      └─→ CRM-v2: update RFQ status to "In Review"
+
+CRM-v2: Customer accepts quote
+  └─→ starz:events:domain:quote.accepted
+      ├─→ Sensei: mark opportunity as Won
+      └─→ erpStarz: create SalesOrder
+
+erpStarz: Invoice generated
+  └─→ starz:events:domain:invoice.created
+      └─→ CRM-v2: update opportunity with invoice reference
+
+erpStarz: Payment received
+  └─→ starz:events:domain:payment.received
+      └─→ CRM-v2: update opportunity to "Paid"
+```
+
+**Deliverables**:
+- [ ] D2.3.1: RFQ publish → Sensei opportunity creation handler
+- [ ] D2.3.2: Quote publish → CRM-v2 RFQ status update handler
+- [ ] D2.3.3: Quote accepted → erpStarz SalesOrder creation handler
+- [ ] D2.3.4: Invoice created → CRM-v2 opportunity update handler
+- [ ] D2.3.5: Payment received → CRM-v2 opportunity close handler
+- [ ] D2.3.6: Pipeline status dashboard showing cross-system state
+
+**Tests Required**:
+- T2.3.1: test_full_pipeline — end-to-end: RFQ in CRM-v2 → Won + Invoiced + Paid
+- T2.3.2: test_rfq_rejection — verify rejected RFQ closes opportunity in Sensei
+- T2.3.3: test_quote_rejection — verify rejected quote cancels SalesOrder in erpStarz
+- T2.3.4: test_partial_payment — verify partial payment updates opportunity correctly
+- T2.3.5: test_pipeline_status_consistency — verify status matches across all systems
+- T2.3.6: test_concurrent_pipelines — verify 10 simultaneous pipelines process correctly
+
+**Proof of Completion**:
+- [ ] End-to-end acceptance test: complete customer journey across all 3 systems
+- [ ] Pipeline dashboard shows real-time status at each stage
+- [ ] Status consistency verified by querying all 3 systems for same opportunity
+- [ ] 6 test suites passing
+
+---
+
+### Step 2.4: HR/Employee Data Synchronization
+
+**Context**: erpStarz has complete multi-country HR (23 employee entities). Sensei has training/skills matrix. No sync exists.
+
+**Affected Systems**: erpStarz + Sensei
+
+**Data Flow**:
+```
+erpStarz (System of Record for HR)
+  └─→ starz:events:data:employee.created
+      └─→ Sensei: create employee + initialize training matrix
+
+erpStarz → starz:events:data:employee.department_changed
+  └─→ Sensei: update department assignments
+
+Sensei → starz:events:domain:training.completed
+  └─→ erpStarz: update employee skills record
+
+erpStarz → starz:events:domain:employee.terminated
+  └─→ Sensei: archive employee, flag training records
+```
+
+**Deliverables**:
+- [ ] D2.4.1: Employee sync publisher (erpStarz)
+- [ ] D2.4.2: Employee sync consumer (Sensei)
+- [ ] D2.4.3: Training sync publisher (Sensei)
+- [ ] D2.4.4: Training sync consumer (erpStarz)
+- [ ] D2.4.5: Termination handling (both systems)
+
+**Tests Required**:
+- T2.4.1: test_employee_create_sync — create employee in erpStarz → verify in Sensei
+- T2.4.2: test_training_completion_sync — complete training in Sensei → verify in erpStarz
+- T2.4.3: test_department_change_sync — change department in erpStarz → verify in Sensei
+- T2.4.4: test_employee_termination — terminate in erpStarz → verify archived in Sensei
+- T2.4.5: test_bulk_employee_sync — verify 100 employees synced correctly
+
+**Proof of Completion**:
+- [ ] End-to-end: create employee in erpStarz → verify in Sensei training interface
+- [ ] End-to-end: complete training in Sensei → verify skill record in erpStarz
+- [ ] 5 test suites passing
+
+---
+
+## PHASE 3: ADVANCED INTEGRATION (Weeks 13-16)
+
+### Step 3.1: WMS/Inventory Integration
+
+**Context**: Sensei has 8 WMS model mappings (StarzWarehouse, StarzWmsTransaction, StarzInventoryCount). erpStarz has WMS controllers and device authenticator. No operational flow.
+
+**Affected Systems**: erpStarz + Sensei
+
+**Data Flow**:
+```
+erpStarz (System of Record for inventory)
+  └─→ starz:events:data:inventory.adjusted
+      └─→ Sensei: update available quantity for production planning
+
+Sensei (production consumption)
+  └─→ starz:events:data:stock.move
+      └─→ erpStarz: update inventory + create WMS transaction
+
+erpStarz → starz:events:data:cycle.count.completed
+  └─→ Sensei: recalculate available quantities
+```
+
+**Deliverables**:
+- [ ] D3.1.1: Inventory sync publisher (erpStarz)
+- [ ] D3.1.2: Inventory sync consumer (Sensei)
+- [ ] D3.1.3: Stock move publisher (Sensei)
+- [ ] D3.1.4: Stock move consumer (erpStarz)
+- [ ] D3.1.5: Cycle count sync handler
+
+**Tests Required**:
+- T3.1.1: test_inventory_adjustment_sync — adjust in erpStarz → verify in Sensei
+- T3.1.2: test_stock_move_sync — move stock in Sensei → verify WMS transaction in erpStarz
+- T3.1.3: test_cycle_count_sync — complete cycle count → verify recalculated
+- T3.1.4: test_inventory_consistency — verify quantities match across systems
+
+**Proof of Completion**:
+- [ ] End-to-end: adjust inventory in erpStarz → verify updated in Sensei MRP
+- [ ] End-to-end: record production in Sensei → verify inventory reduced in erpStarz
+- [ ] 4 test suites passing
+
+---
+
+### Step 3.2: Quality ↔ Supplier Integration
+
+**Context**: Sensei records NCRs and CAPAs. erpStarz has SupplierEvaluation system. No integration exists.
+
+**Affected Systems**: Sensei + erpStarz
+
+**Data Flow**:
+```
+Sensei: NCR recorded against supplier part
+  └─→ starz:events:domain:ncr.created
+      └─→ erpStarz: flag supplier for evaluation
+
+Sensei: CAPA closed
+  └─→ starz:events:domain:capa.closed
+      └─→ erpStarz: update supplier score
+
+erpStarz: Supplier re-evaluated
+  └─→ starz:events:domain:supplier.evaluated
+      └─→ Sensei: update supplier quality score in NCR dashboard
+```
+
+**Deliverables**:
+- [ ] D3.2.1: NCR → Supplier flag handler (Sensei → erpStarz)
+- [ ] D3.2.2: CAPA → Supplier score handler (Sensei → erpStarz)
+- [ ] D3.2.3: Supplier evaluation handler (erpStarz → Sensei)
+- [ ] D3.2.4: Quality dashboard with supplier scores
+
+**Tests Required**:
+- T3.2.1: test_ncr_flags_supplier — create NCR for supplier part → verify supplier flagged
+- T3.2.2: test_capa_updates_score — close CAPA → verify supplier score updated
+- T3.2.3: test_supplier_evaluation_received — evaluate supplier → verify in Sensei
+
+**Proof of Completion**:
+- [ ] End-to-end: create NCR in Sensei → verify supplier flagged in erpStarz
+- [ ] End-to-end: supplier re-evaluated in erpStarz → verify quality dashboard updated
+- [ ] 3 test suites passing
+
+---
+
+### Step 3.3: Finance ↔ CRM Integration
+
+**Context**: erpStarz manages full AP/AR/GL. CRM-v2 has quotes with estimated values. Sensei has InvoiceCreatedEvent (local only). No integration.
+
+**Affected Systems**: All three
+
+**Data Flow**:
+```
+erpStarz: Invoice generated from SalesOrder
+  └─→ starz:events:domain:invoice.created
+      ├─→ CRM-v2: mark opportunity as "Invoiced"
+      └─→ Sensei: update project financials
+
+erpStarz: Payment received
+  └─→ starz:events:domain:payment.received
+      ├─→ CRM-v2: mark opportunity as "Paid"
+      └─→ Sensei: update cash flow dashboard
+
+erpStarz: Credit note issued
+  └─→ starz:events:domain:credit_note.created
+      └─→ CRM-v2: update opportunity value
+```
+
+**Deliverables**:
+- [ ] D3.3.1: Invoice → CRM opportunity handler (erpStarz → CRM-v2)
+- [ ] D3.3.2: Payment → CRM opportunity handler (erpStarz → CRM-v2)
+- [ ] D3.3.3: Invoice → Sensei handler (erpStarz → Sensei)
+- [ ] D3.3.4: Credit note handler (erpStarz → CRM-v2)
+
+**Tests Required**:
+- T3.3.1: test_invoice_creates_updates_crm — create invoice → verify CRM opportunity status
+- T3.3.2: test_payment_marks_paid — record payment → verify CRM opportunity "Paid"
+- T3.3.3: test_credit_note_adjusts_value — issue credit note → verify adjusted in CRM
+- T3.3.4: test_cash_flow_dashboard — verify payment updates Sensei cash flow
+
+**Proof of Completion**:
+- [ ] End-to-end: create invoice in erpStarz → verify "Invoiced" status in CRM-v2
+- [ ] End-to-end: receive payment → verify "Paid" status + cash flow update
+- [ ] 4 test suites passing
+
+---
+
+### Step 3.4: Cross-System Search
+
+**Context**: Each system has independent search. No cross-system search exists.
+
+**Affected Systems**: All three
+
+**Architecture**:
+- Deploy Meilisearch or Typesense as unified search engine
+- Each system publishes entity changes to search index
+- Single search endpoint on Sensei that queries all indexes
+- Results include system-of-origin tag and deep links
+
+**Deliverables**:
+- [ ] D3.4.1: Search index deployment configuration
+- [ ] D3.4.2: Index sync for erpStarz entities (customers, products, orders, invoices)
+- [ ] D3.4.3: Index sync for CRM-v2 entities (companies, contacts, opportunities, RFQs)
+- [ ] D3.4.4: Index sync for Sensei entities (projects, tasks, quality records, training)
+- [ ] D3.4.5: Unified search API endpoint on Sensei
+- [ ] D3.4.6: Frontend unified search UI
+
+**Tests Required**:
+- T3.4.1: test_search_indexing — create entity in erpStarz → verify searchable
+- T3.4.2: test_cross_system_search — search "ACME" → results from all 3 systems
+- T3.4.3: test_search_permissions — verify user sees only permitted entities
+- T3.4.4: test_search_latency — verify p99 < 200ms
+- T3.4.5: test_index_consistency — verify search index matches source data
+
+**Proof of Completion**:
+- [ ] Search "STARZ" returns results from all 3 systems with proper labels
+- [ ] Deep linking: click erpStarz result → opens in erpStarz (same browser session)
+- [ ] 5 test suites passing
+
+---
+
+## PHASE 4: OBSERVABILITY & RELIABILITY (Weeks 17-18)
+
+### Step 4.1: Cross-System Audit Logging
+
+**Context**: Sensei has comprehensive audit middleware. erpStarz and CRM-v2 have no audit logging.
+
+**Affected Systems**: All three
+
+**Architecture**:
+- Sensei: already has `CorrelationIdMiddleware`, `StructuredLoggingMiddleware`, audit log model
+- erpStarz: add `AuditSubscriber` (Doctrine event subscriber) logging all entity changes
+- CRM-v2: add `AuditSubscriber` (Doctrine event subscriber) logging all entity changes
+- All audit logs published to `starz:events:audit` stream
+- Centralized audit dashboard for cross-system queries
+
+**Deliverables**:
+- [ ] D4.1.1: erpStarz AuditSubscriber implementation
+- [ ] D4.1.2: CRM-v2 AuditSubscriber implementation
+- [ ] D4.1.3: Audit event publisher (both PHP systems)
+- [ ] D4.1.4: Cross-system audit query API on Sensei
+- [ ] D4.1.5: Audit dashboard UI
+
+**Tests Required**:
+- T4.1.1: test_entity_audit_trail — create/update/delete entity → verify audit record
+- T4.1.2: test_cross_system_audit_query — query audit across all 3 systems
+- T4.1.3: test_audit_correlation — single user action traced across systems
+- T4.1.4: test_audit_retention — verify audit log retention policy
+
+**Proof of Completion**:
+- [ ] Create RFQ in CRM-v2 → audit trail shows: CRM-v2 created → Sensei opportunity created → erpStarz SalesOrder created
+- [ ] Query single correlation_id → see events across all 3 systems
+- [ ] 4 test suites passing
+
+---
+
+### Step 4.2: Monitoring, Alerting & SLOs
+
+**Context**: No cross-system monitoring exists.
+
+**Affected Systems**: All three + shared infrastructure
+
+**Architecture**:
+- Prometheus metrics exposed by all three systems
+- Grafana dashboard for cross-system health
+- Alertmanager rules for integration failures
+
+**Key SLOs**:
+
+| SLO | Target | Measurement | Alert Threshold |
+|-----|--------|------------|-----------------|
+| Event delivery latency | p99 < 1s | Redis stream lag | p99 > 5s for 5min |
+| Event delivery success | > 99.9% | sync_log success rate | < 99.5% for 5min |
+| Entity sync latency | p95 < 60s | starz_entity_map last_synced_at | p95 > 300s for 10min |
+| Auth token validation | p99 < 100ms | Keycloak response time | p99 > 500ms for 5min |
+| Cross-system search | p99 < 200ms | search response time | p99 > 1s for 5min |
+| System availability | > 99.5% | health check endpoints | < 99% for 5min |
+
+**Deliverables**:
+- [ ] D4.2.1: Prometheus metrics for event bus (all systems)
+- [ ] D4.2.2: Prometheus metrics for sync latency (all systems)
+- [ ] D4.2.3: Grafana dashboard: "Tri-System Health"
+- [ ] D4.2.4: Grafana dashboard: "Event Bus Performance"
+- [ ] D4.2.5: Grafana dashboard: "Data Sync Status"
+- [ ] D4.2.6: Alertmanager rules configuration
+- [ ] D4.2.7: On-call runbook for integration failures
+
+**Tests Required**:
+- T4.2.1: test_metrics_endpoint — verify all metrics exposed
+- T4.2.2: test_alert_firing — verify alerts trigger correctly
+- T4.2.3: test_dashboard_data — verify dashboards show real data
+- T4.2.4: test_slo_compliance — verify SLO targets achievable
+
+**Proof of Completion**:
+- [ ] All Prometheus metrics scraped and queryable
+- [ ] Grafana dashboards show real-time cross-system health
+- [ ] Alert fired: kill event bus consumer → verify PagerDuty notification < 5min
+- [ ] SLO compliance report generated for 24h period
+
+---
+
+## PHASE 5: CRM-v2 COMPLETION (Weeks 17-20, runs parallel with Phase 4)
+
+### Step 5.1: Implement Costing Engine
+
+**Context**: CostingEngineService has 5 TODO stubs (PCB cost, assembly cost, NRE cost, capacity checking, capacity booking). Core functionality missing.
+
+**Affected Systems**: CRM-v2
+
+**Deliverables**:
+- [ ] D5.1.1: PCB cost calculation implementation
+- [ ] D5.1.2: Assembly cost calculation implementation
+- [ ] D5.1.3: NRE cost calculation implementation
+- [ ] D5.1.4: Capacity checking implementation
+- [ ] D5.1.5: Capacity booking implementation
+- [ ] D5.1.6: Costing API endpoints
+
+**Tests Required**:
+- T5.1.1: test_pcb_cost_calculation — verify layer count, panel size, material cost (10 test cases)
+- T5.1.2: test_assembly_cost_calculation — verify component count, placement time, test coverage
+- T5.1.3: test_nre_cost_calculation — verify tooling, setup, engineering hours
+- T5.1.4: test_capacity_checking — verify available capacity calculation
+- T5.1.5: test_capacity_booking — verify capacity reservation and release
+- T5.1.6: test_total_cost_rollup — verify all cost components sum correctly
+
+**Proof of Completion**:
+- [ ] All 5 TODO stubs replaced with implementations
+- [ ] 6 test suites (20+ test cases) passing
+- [ ] Manual verification: upload BOM → verify full cost breakdown
+
+---
+
+### Step 5.2: Implement Route Selection & Freight Pricing
+
+**Context**: RouteSelectionService has 7 TODO stubs. FreightPricingService has 1 TODO stub.
+
+**Affected Systems**: CRM-v2
+
+**Deliverables**:
+- [ ] D5.2.1: Route optimization (FCL, LCL, Air, Consolidation)
+- [ ] D5.2.2: Route cost calculation
+- [ ] D5.2.3: Best route selection algorithm
+- [ ] D5.2.4: Freight pricing integration (carrier APIs)
+
+**Tests Required**:
+- T5.2.1: test_fcl_evaluation — verify full container load calculation
+- T5.2.2: test_lcl_evaluation — verify less-than-container load calculation
+- T5.2.3: test_air_evaluation — verify air freight calculation
+- T5.2.4: test_route_comparison — verify best route selection
+- T5.2.5: test_freight_pricing — verify carrier pricing integration
+
+**Proof of Completion**:
+- [ ] All 8 TODO stubs replaced with implementations
+- [ ] 5 test suites passing
+
+---
+
+### Step 5.3: Implement FTA Eligibility
+
+**Context**: FtaEligibilityService has 6 TODO stubs.
+
+**Affected Systems**: CRM-v2
+
+**Deliverables**:
+- [ ] D5.3.1: FTA rule engine (rules for USMCA, EU, Morocco-specific FTAs)
+- [ ] D5.3.2: Origin determination
+- [ ] D5.3.3: Tariff shift analysis
+- [ ] D5.3.4: Regional value content calculation
+- [ ] D5.3.5: FTA documentation generation
+
+**Tests Required**:
+- T5.3.1: test_usmca_eligibility — verify USMCA rules (5 test cases)
+- T5.3.2: test_eu_fta_eligibility — verify EU FTA rules (5 test cases)
+- T5.3.3: test_origin_determination — verify origin calculation
+- T5.3.4: test_tariff_shift — verify tariff shift analysis
+- T5.3.5: test_documentation — verify FTA certificate generation
+
+**Proof of Completion**:
+- [ ] All 6 TODO stubs replaced with implementations
+- [ ] 5 test suites (15+ test cases) passing
+
+---
+
+### Step 5.4: CRM-v2 Testing Completion
+
+**Context**: CRM-v2 has only 360 tests (lowest of all 3 systems). Self-reported 65-70% complete.
+
+**Targets**:
+- PHPUnit: 360 → 1000+ tests
+- Code coverage: current ~30% → 75%+
+- E2E: 0 → 20+ Playwright test specs
+- API tests: 0 → 50+ integration tests
+
+**Test Areas to Cover**:
+- All 76 entities: CRUD tests for each
+- All controllers: status codes, validation, error handling
+- All services: business logic, edge cases, error paths
+- External API clients: mock tests for Mouser, DigiKey, Nexar
+- Integration: cross-system event handling
+- Frontend: component tests for all Twig templates
+
+**Tests Required**:
+- T5.4.1: Entity CRUD tests — all 76 entities (228 test cases minimum)
+- T5.4.2: Controller tests — all routes (100+ test cases)
+- T5.4.3: Service unit tests — all services (200+ test cases)
+- T5.4.4: API integration tests — endpoint-to-database (50+ test cases)
+- T5.4.5: E2E tests — Playwright (20+ specs)
+
+**Proof of Completion**:
+- [ ] 1000+ PHPUnit tests passing
+- [ ] Code coverage ≥ 75%
+- [ ] CI pipeline with full test suite < 10 minutes
+
+---
+
+## APPENDIX A: COMPLETE INVENTORY OF ALL ISSUES FOUND (5-Agent Deep Scan)
+
+### A.1 Sensei Backend Services (12 files analyzed)
+
+**Summary**: 4 critical bugs, 8 high-priority issues, 12 medium, 15 low
+
+**Critical Bugs**:
+1. `_id_cache` undefined in [`starz_import_service.py`](backend/src/sensei/services/external/starz_import_service.py:898) — 4 methods reference undefined attribute
+2. SLA fields missing from [`SupportTicket` dataclass](backend/src/sensei/services/support_inbox.py:123) — DB persistence references non-existent fields
+3. `except Exception: pass` in 5 persistence methods of [`support_inbox.py`](backend/src/sensei/services/support_inbox.py:373,404,426,451,469)
+4. Wrong module enum in [`erpstarz_import.py:402`](backend/src/sensei/services/migration/erpstarz_import.py:402) — `ImportModule.SALES` instead of shipping
+
+**High-Priority Issues**:
+5. Mutable default parameter `created_by: UUID = uuid4()` in [`support_inbox.py:1001`](backend/src/sensei/services/support_inbox.py:1001)
+6. Date filter operators `DATE_BEFORE`, `DATE_AFTER`, `DATE_BETWEEN`, `RELATIVE_DATE` all stub `return True` in [`segment_views.py:1101-1102`](backend/src/sensei/services/segment_views.py:1101)
+7. Triple starz integration — 3 independent implementations for same target (import_service.py, ingestion.py, erpstarz_import.py)
+8. No transaction rollback on partial import failures in all 3 starz services
+9. `_import_wms_transactions` FK resolution passes `None` as starz_id in [`starz_import_service.py:2365`](backend/src/sensei/services/starz_import_service.py:2365)
+10. `datetime.utcnow()` (deprecated/naive) used throughout all services
+11. 7 of 10 domain services are in-memory only with no real persistence
+12. No event bus integration despite ADR-0002 defining one
+
+**Medium-Priority Issues**:
+13. `_norm_roles()` duplicated across services (hypercare.py, org_structure.py, etc.)
+14. Role sets not centralized — defined as module-level sets in each service
+15. `**kwargs: Any` anti-pattern in all async wrapper methods
+16. Singleton pattern in 4 services (conditions_library.py, missing_info_workflow.py, etc.)
+17. `_register_default_templates()` 563 lines of hardcoded defaults run on every instantiation
+18. Mention regex `@([\w.-]+)` matches email addresses incorrectly
+19. `convert_to_task()` returns dict but doesn't actually create a task
+20. MissingInfoWorkflowService has no actual email sending (generates text only)
+21. `MissingFieldPriority` str Enum semantically confused with TaskStatus
+22. Frozen dataclasses in org_structure.py create GC pressure via `dataclasses.replace()`
+23. `import_shipping_module()` hardcodes status, ignores legacy statuses
+24. No input validation on public methods — most accept `**kwargs: Any`
+
+**Low-Priority Issues**:
+25. Test-only `clear()` methods in production code (inline_comments.py)
+26. `dry_run_change()` in hypercare.py generates fake data, doesn't test actual change
+27. No RBAC on feedback submission in hypercare.py
+28. Hardcoded tenant ID "default" in hypercare.py
+29. `actor_id` typed as `str` (not UUID) in org_structure.py
+30. Potential race condition in `get_headcount_summary()` (in-memory iteration)
+31. Late import pattern in erpstarz_import.py (`from sensei.models.site import Site` inside method)
+32. `_import_pick_lists()` uses `uuid4()` as placeholder for source_id
+33. `_import_quotations()` hardcodes status as "draft"
+34. Scheduler `import_schedules()` is a no-op
+35. No `progress_callback` error handling in starz_import_service.py
+36. `SegmentApplyResult` hardcodes `SegmentModule.RFQ` as fallback
+37. `_import_segment()` has bare `try/except` returning None
+38. `_import_companies()` uses late import for Site model
+39. `detect_violation()` modifies violation after creation instead of constructor args
+
+---
+
+### A.2 Sensei Frontend (19 files analyzed)
+
+**Summary**: 2 critical, 6 high, 8 medium, 10 low
+
+**Critical Issues**:
+1. **Refresh tokens in localStorage** ([`auth.ts`](frontend/src/api/auth.ts:137,152), [`client.ts`](frontend/src/api/client.ts:464)) — XSS-vulnerable token storage
+2. **3 empty catch blocks** in [`sync-service.ts`](frontend/src/services/sync-service.ts:69,96,118) — IndexedDB errors silently swallowed
+
+**High-Priority Issues**:
+3. **7 `any` types** in [`today.ts`](frontend/src/api/today.ts:8-14) — 7 of 15 response fields untyped
+4. **3 `@ts-expect-error` directives** in [`sync-service.ts`](frontend/src/services/sync-service.ts:66,90,115)
+5. **3 unsafe `as T` assertions** in [`use-sync-engine.ts`](frontend/src/hooks/use-sync-engine.ts:328,349,353)
+6. **5 pagination gaps** — [`maintenance.ts`](frontend/src/api/maintenance.ts) + quality sub-modules return unbounded arrays
+7. **12 `any` type annotations** across 5 API modules: [`analytics.ts`](frontend/src/api/analytics.ts:34), [`maintenance.ts`](frontend/src/api/maintenance.ts:202-209), [`products.ts`](frontend/src/api/products.ts:57), [`supply-chain.ts`](frontend/src/api/supply-chain.ts:33)
+8. **8 `!` non-null assertions** across frontend code
+
+**Medium-Priority Issues**:
+9. Only 2 test files exist for 20 API/service files (10% test coverage)
+10. [`client.test.ts`](frontend/src/api/__tests__/client.test.ts) only checks method existence, not behavior
+11. [`sync-service.test.ts`](frontend/src/services/__tests__/sync-service.test.ts) has no IndexedDB tests (mocked only)
+12. No integration tests with backend
+13. No E2E tests for cross-system features
+14. 4 `catch {}` empty blocks (3 in sync-service + 1 in client.ts)
+15. Missing loading/error states in API modules
+16. No request retry logic in API client
+
+**Low-Priority Issues**:
+17. 3 `console.log` in production code (not test files)
+18. Hardcoded API URL paths in multiple modules
+19. No request cancellation on component unmount
+20. Mixed response type patterns (some return data.data, some return data directly)
+21. No rate limiting on client-side API calls
+22. `executive.ts` and `analytics.ts` lack proper error boundaries
+23. No offline fallback for API calls (except basic sync-service)
+24. Missing TypeScript strict mode in tsconfig
+25. No axios/fetch interceptors for unified error handling
+26. Event sourcing patterns not used — all calls are request/response
+
+---
+
+### A.3 Infrastructure & Deployment (24 files analyzed)
+
+**Summary**: 1 critical, 5 high, 10 medium, 8 low
+
+**Critical Issues**:
+1. **Missing tri-system env vars** in docker-compose and Helm — no erpStarz, CRM-v2, Keycloak, or Redis Stream configuration
+
+**High-Priority Issues**:
+2. **NetworkPolicy allows all egress** — no restriction on cross-system traffic
+3. **No WebSocket route** in dev Caddyfile (present in production but commented in dev)
+4. **No shared PostgreSQL or Redis** for integration infrastructure
+5. **k6 load test** doesn't test any integration paths
+6. **Content-Security-Policy overly permissive** — `'unsafe-inline'` and `'unsafe-eval'`
+
+**Medium-Priority Issues**:
+7. HSTS header sent on HTTP port 80 (harmless but misleading)
+8. Scheduler health check uses fragile `pgrep`
+9. Backend health check lacks `--fail` flag
+10. No `restart: always` for critical services (uses `unless-stopped`)
+11. No `SMTP_USE_TLS` or `SMTP_SSL` configuration
+12. Helm Chart.yaml lacks `icon`, `home`, `sources` metadata
+13. No PodDisruptionBudget minAvailable configuration
+14. No affinity/anti-affinity rules in Helm templates
+15. K6 test script lacks thresholds and load profiles
+16. No Dependabot configuration for dependency updates
+
+**Low-Priority Issues**:
+17. MinIO default credentials predictable in dev
+18. No inter-service TLS in docker-compose
+19. No Redis persistence configuration in Helm
+20. No init containers for DB migration in Helm
+21. No network policy for egress to specific systems only
+22. No service mesh (istio/linkerd) configuration
+23. No certificate management (cert-manager) annotations
+24. Production Caddyfile TLS configuration uses placeholder domain
+
+---
+
+### A.4 Documentation (86 files analyzed)
+
+**Summary**: 3 critical, 5 high, 8 medium, 5 low
+
+**Critical Issues**:
+1. **Placeholder domain** `sensei.pulse.com` in all 27 Resource guides
+2. **`BACKEND_DATA_MODELS_MAP.md`** is a skeleton/placeholder — essentially empty
+3. **No unit/integration testing documentation** exists — only E2E tests documented
+
+**High-Priority Issues**:
+4. **Engineering** (63 lines), **Estimator** (67 lines), **Purchasing** (60 lines) guides dramatically thinner than peers (900-1200 lines)
+5. **12 roles lack AI Insights guides** — only 8 of 20+ roles have role-specific AI documentation
+6. **Version inconsistency** — Purchasing says Version 3.0, all others say Version 1.0
+7. **`docs/README.md`** is a stub — not a proper documentation portal
+8. **No backend development patterns doc** — all development docs focus on frontend only
+
+**Medium-Priority Issues**:
+9. API docs lack request/response examples for some endpoints
+10. No erpStarz or CRM-v2 integration documentation
+11. Deployment docs don't cover multi-system deployment
+12. No architecture diagram for event bus (ADR-0002 mentions but no visual)
+13. Troubleshooting guide lacks cross-system scenarios
+14. No performance testing documentation
+15. No disaster recovery documentation
+16. Security docs don't cover cross-system auth scenarios
+
+**Low-Priority Issues**:
+17. Minor typos in 3 API docs files
+18. No CHANGELOG or version history
+19. Inconsistent link formatting (some relative, some absolute)
+20. No migration documentation for existing users
+21. `repo_file_list.txt` is outdated (doesn't include plans/ directory)
+22. No contribution guidelines for documentation itself
+
+---
+
+### A.5 Scripts & Tooling (52 files analyzed)
+
+**Summary**: 8 critical, 14 high, 18 medium, 12 low
+
+**Critical Issues**:
+1. **Hardcoded path** in [`run_full_training_pipeline.sh:12`](run_full_training_pipeline.sh:12) — `/home/aaron/...` won't run on other machines
+2. **6 critical ESLint rules disabled** in [`frontend/.eslintrc.json:3`](frontend/.eslintrc.json:3) — `react-hooks/exhaustive-deps` and `react-hooks/rules-of-hooks`
+3. **Cross-contaminated i18n JSON** — German translations appear in Arabic/Spanish/French missing-key files; Arabic values in French file
+4. **Filename/content mismatch** — [`extract_missing_ar_v2.py:48`](scripts/extract_missing_ar_v2.py:48) hardcoded to extract German, not Arabic
+5. **Missing file** — `restart_frontend.sh` referenced but doesn't exist
+6. **Docstring path mismatch** — [`add_docstrings_v2.py:86`](scripts/add_docstrings_v2.py:86) uses `app/services/` instead of `backend/src/sensei/services/`
+7. **Value-based translation matching risk** — [`apply_fr_cleanup.py:447`](scripts/apply_fr_cleanup.py:447) replaces ANY matching English string regardless of context
+8. **Regex-based TypeScript transformation bugs** — [`fix_quality_loading.py`](scripts/fix_quality_loading.py) broke code requiring 2 post-hoc fix scripts
+
+**High-Priority Issues**:
+9. No shellcheck/hadolint/JSON validation in pre-commit
+10. Non-idempotent translation scripts — running twice produces different results
+11. No i18n CI validation — translations can break silently
+12. No dry-run mode on any transformation script
+13. Jest coverage threshold at 40% is dangerously low
+14. mypy `--ignore-missing-imports` disables all third-party type checking
+15. pre-commit mypy runs on entire backend/src/sensei/ (too slow for dev workflow)
+16. No Dockerfile security scanning (trivy/hadolint)
+17. Duplicate docstring scripts (v1 and v2) with different approaches
+18. Multiple cleanup scripts with overlapping responsibilities
+19. No AST-based code transformation (all regex-based, fragile)
+20. Python scripts lack type hints (most have none)
+21. No unit tests for any script
+22. Scripts use `sys.path.append` hacks instead of proper packaging
+
+**Medium-Priority Issues**:
+23. Unused variables in multiple scripts
+24. Commented-out debug prints left in code
+25. Empty exception handlers with `pass`
+26. Hardcoded output paths
+27. Mixed tab/space indentation
+28. No CLI argument validation (most use hardcoded paths)
+29. Scripts not registered in pyproject.toml as console_scripts
+30. No progress indicators for long-running scripts
+31. No logging configuration (all use `print()`)
+32. i18n scripts don't handle plurals/contexts
+33. Accessibility fix script runs on all files without selective targeting
+34. AI email draft script has no rate limiting
+35. No script documentation or usage instructions
+36. Shell scripts lack error handling for edge cases
+37. No cleanup/rollback for partial script execution
+38. Pre-commit config runs mypy on all files (slow for large codebase)
+39. Dockerfiles not optimized for layer caching
+40. Next.js config has no PWA-specific headers
+
+---
+
+## APPENDIX B: TEST MASTER PLAN
+
+### B.1 Test Categories & Targets
+
+| Category | Sensei OS | erpStarz | CRM-v2 | Shared Infra |
+|----------|-----------|----------|--------|-------------|
+| Unit tests (current) | 11,017 | 1,100+ | 360 | 0 |
+| Unit tests (target) | 12,500 | 2,000 | 1,000 | 200 |
+| Integration tests (current) | 200+ | 100+ | 50 | 0 |
+| Integration tests (target) | 500 | 300 | 200 | 150 |
+| E2E tests (current) | 31 | 0 | 0 | 0 |
+| E2E tests (target) | 60 | 20 | 20 | 15 |
+| Load tests (current) | 1 (k6) | 0 | 0 | 0 |
+| Load tests (target) | 5 | 5 | 3 | 5 |
+| Security tests (current) | 0 | 0 | 0 | 0 |
+| Security tests (target) | 25 | 20 | 10 | 15 |
+| **Total tests (target)** | **13,091** | **2,345** | **1,233** | **385** |
+
+### B.2 New Test Categories Based on Deep Analysis
+
+**Backend Bug-Fix Tests** (22 new test cases from Step 0.2):
+- starz_import_service: 4 test cases for `_id_cache` fix
+- support_inbox: 3 test cases for SLA fields + exception logging
+- erpstarz_import: 2 test cases for module enum fix
+- segment_views: 4 test cases for date operators
+- support_inbox: 2 test cases for UUID generation
+- starz_import: 1 test case for WMS FK resolution
+- i18n: 2 test cases for JSON file purity
+- docstring script: 1 test case for path matching
+
+**Frontend Bug-Fix Tests** (15 new test cases from Step 0.3):
+- Auth: 3 test cases for token storage (no localStorage)
+- Sync service: 3 test cases for error logging
+- Type safety: 4 test cases for API response types
+- Pagination: 5 test cases for unbounded endpoints
+
+**Cross-System Integration Tests** (40 new test cases from Phase 1-3):
+- Event bus: 10 test cases (publish/consume, idempotency, dead letter, latency)
+- Entity sync: 8 test cases (product, customer, employee, order)
+- Auth SSO: 10 test cases (login, token validation, logout, fallback)
+- Pipeline: 6 test cases (RFQ→Quote→Order→Invoice→Payment)
+- Search: 5 test cases (indexing, cross-system search, permissions)
+- Audit: 4 test cases (audit trail, cross-system query)
+
+### B.3 Test Infrastructure Requirements
+
+**Shared Test Environment**:
+- Docker Compose with PostgreSQL (starz_interop), MySQL (erpStarz), MySQL (CRM-v2), Redis (event bus), Keycloak
+- Test data generator: generates consistent entities across all 3 systems
+- Test event bus: isolated Redis Streams for testing
+- Test OIDC provider: lightweight mock for auth testing
+
+**CI/CD**:
+- GitHub Actions workflow per system + integration workflow
+- Integration workflow: starts all 3 systems → runs cross-system tests → tears down
+- Test reports published to shared dashboard
+
+**Quality Gates**:
+- Code coverage: ≥ 75% for all new code
+- Critical bugs: 0 (blocking)
+- High bugs: < 5 (merge-blocking with waiver)
+- PHPStan/Pyright level: maximum
+- Performance: p99 < 500ms for all API endpoints
+- Security: OWASP Top 10 scan passing
+
+### B.4 Proof of Completion Matrix
+
+Every step requires documented proof:
+
+| Proof Type | Format | Acceptance Criteria |
+|------------|--------|---------------------|
+| Test results | CI output + coverage report | All tests passing, coverage ≥ target |
+| Code review | PR approved | 2 approvals, no blocking comments |
+| Manual verification | Screen recording / demo | Demonstrates end-to-end flow |
+| Security audit | Static analysis report | 0 critical/high findings |
+| Performance test | k6 report | P99 within SLO targets |
+| Documentation | Updated README, API docs | Complete, accurate, developer-ready |
+| Monitoring | Grafana dashboard screenshot | Real data flowing through dashboards |
+
+---
+
+## APPENDIX C: EFFORT ESTIMATES & DEPENDENCIES
+
+| Phase | Step | Effort (person-weeks) | Dependencies | Parallelizable |
+|-------|------|----------------------|--------------|----------------|
+| 0 | 0.1: erpStarz critical faults | 4 | None | Yes (with 0.3-0.8) |
+| 0 | 0.2: Sensei backend critical bugs | 2 | None | Yes (with 0.1, 0.3-0.8) |
+| 0 | 0.3: Frontend critical issues | 1.5 | None | Yes (with 0.1, 0.2, 0.4-0.8) |
+| 0 | 0.4: Sensei event handlers | 2 | None | Yes (with 0.1-0.3, 0.5-0.8) |
+| 0 | 0.5: Triple integration unification | 2 | 0.2 (bug fixes) | Partial |
+| 0 | 0.6: CRM-v2 pipeline fix | 2 | None | Yes (with 0.1-0.5, 0.7-0.8) |
+| 0 | 0.7: Infrastructure config gaps | 1 | 0.2 | Yes (with 0.1-0.6, 0.8) |
+| 0 | 0.8: Documentation & scripts fixes | 1.5 | None | Yes (with 0.1-0.7) |
+| 1 | 1.1: Shared PostgreSQL schema | 2 | None | Yes (with 1.2, 1.3) |
+| 1 | 1.2: Event bus | 3 | 0.4 (handlers) + 0.7 (infra) | Partial |
+| 1 | 1.3: Unified auth | 3 | 1.1 (schema) + 0.7 (infra) | Partial |
+| 2 | 2.1: Product sync | 3 | 1.2 (event bus) | Partial |
+| 2 | 2.2: Customer sync | 3 | 1.2 (event bus) | Partial |
+| 2 | 2.3: Pipeline integration | 4 | 0.6 + 2.1 + 2.2 | No |
+| 2 | 2.4: HR sync | 3 | 0.1 + 0.4 + 0.5 | No |
+| 3 | 3.1: WMS integration | 2 | 2.1 | Partial |
+| 3 | 3.2: Quality → Supplier | 1.5 | 0.4 + 0.5 | Partial |
+| 3 | 3.3: Finance → CRM | 2 | 2.3 | No |
+| 3 | 3.4: Cross-system search | 3 | 2.1 + 2.2 | Partial |
+| 4 | 4.1: Audit logging | 2 | 1.1 + 1.2 | Yes |
+| 4 | 4.2: Monitoring | 2 | 4.1 | Partial |
+| 5 | 5.1: Costing engine | 3 | None | Yes |
+| 5 | 5.2: Route/freight | 2 | None | Yes |
+| 5 | 5.3: FTA eligibility | 1 | None | Yes |
+| 5 | 5.4: CRM testing | 3 | 5.1 + 5.2 + 5.3 | No |
+
+**Total**: ~58 person-weeks (15 team-weeks with 4 developers, ~20 calendar weeks)
+
+**Critical Path**: Phase 0 (all steps) → Phase 1.2 → Phase 2.3 → Phase 3.3 → Phase 4
+**Parallel Tracks**: Track A (erpStarz: 0.1/0.5/2.1/2.4/3.1/3.2), Track B (Sensei: 0.2/0.3/0.4/0.7/0.8/1.2/2.3/3.3/4.1/4.2), Track C (CRM-v2: 0.6/1.3/2.2/5.1-5.4)
+
+---
+
+## APPENDIX D: RISK REGISTER (Updated with Deep Analysis Findings)
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|------------|
+| erpStarz faults.md is inaccurate/outdated | Medium | High | Re-verify each fault before assigning work |
+| Event bus becomes single point of failure | Medium | High | Dead letter queue, Redis Sentinel, consumer health checks |
+| OAuth2 migration blocks existing users | Low | Critical | Phased rollout, fallback to existing auth |
+| Schema conflicts between systems (e.g., customer fields) | High | Medium | System-of-record ownership documented; conflict resolution strategy |
+| CRM-v2 unmaintainable due to 21 stubs | Medium | High | Complete Phase 5 before integration |
+| MySQL ↔ PostgreSQL type mismatches | Medium | Medium | Comprehensive mapping table with tests |
+| Performance degradation from cross-system calls | Low | Medium | Async only, no synchronous RPC, monitoring in Phase 4 |
+| Developer learning curve (Python ↔ PHP context switching) | High | Low | Standardized SDKs, clear documentation, code reviews |
+| Scope creep from new feature requests | High | Medium | Strict Program.md adherence, change request process |
+| Redis data loss on crash | Low | Critical | AOF persistence + RDB snapshots; starz_sync_log for recovery |
+| **NEW: Backend critical bugs crash integration** | **Medium** | **Critical** | Step 0.2 fixes 10 bugs before integration work begins |
+| **NEW: Frontend XSS risk from localStorage tokens** | **Medium** | **High** | Step 0.3 migrates to httpOnly cookies |
+| **NEW: i18n data contamination corrupts translations** | **Medium** | **Medium** | Step 0.2.8 regenerates all JSON files with verified purity |
+| **NEW: Triple starz implementation confusion** | **High** | **High** | Step 0.5 unifies into single service |
+| **NEW: In-memory services lose data on restart** | **High** | **Medium** | Step 0.5 ensures proper DB persistence during unification |
+| **NEW: ESLint disabled rules hide React bugs** | **High** | **Medium** | Step 0.8.4 re-enables rules, fixes existing violations |
+| **NEW: No integration test infrastructure exists** | **High** | **High** | Phase 1 builds shared test environment first |
+| **NEW: Documentation placeholders mislead users** | **Medium** | **Medium** | Step 0.8.1 replaces all placeholder domains |
+
+---
+
+## APPENDIX E: DEEP ANALYSIS REPORTS INDEX
+
+The following reports were generated by the 5-agent deep analysis and are the foundation for this Program.md:
+
+| Report | Path | Files Analyzed | Lines of Analysis |
+|--------|------|---------------|-------------------|
+| Backend Services | [`plans/sensei-backend-services-deep-analysis.md`](plans/sensei-backend-services-deep-analysis.md) | 12 Python files | ~15,000+ |
+| Frontend Source | [`plans/sensei-frontend-deep-analysis.md`](plans/sensei-frontend-deep-analysis.md) | 19 TypeScript files | ~3,000+ |
+| Infrastructure & Deploy | [`plans/sensei-infra-deep-analysis.md`](plans/sensei-infra-deep-analysis.md) | 24 config/deploy files | ~2,500+ |
+| Documentation | [`plans/sensei-docs-deep-analysis.md`](plans/sensei-docs-deep-analysis.md) | 86 documentation files | ~10,000+ |
+| Scripts & Tooling | [`plans/sensei-scripts-deep-analysis.md`](plans/sensei-scripts-deep-analysis.md) | 52 script/config files | ~5,000+ |
+| **TOTAL** | — | **193 files** | **~35,500+ lines** |
+
+---
+
+## APPENDIX F: ZIG/RUST — COMPLETE SYSTEM MIGRATION (PARALLEL TRACK)
+
+### Overview
+
+A **parallel migration track** has been launched to migrate 100% of the codebase from the current stack (Python/FastAPI, TypeScript/Next.js, PHP/Symfony, Twig) to **Rust (backend API services, frontend protocols)** and **Zig (systems-level performance-critical code)**.
+
+The full migration plan is documented at [`plans/zig-rust-migration-plan.md`](plans/zig-rust-migration-plan.md).
+
+### Target Architecture (High-Level)
+
+| Layer | Technology | Replaces |
+|-------|-----------|----------|
+| Backend API Gateway | Rust (Axum + Tower) | FastAPI Python |
+| Domain Services (12+) | Rust (Tokio + sqlx + async-trait) | Python services |
+| Event Bus | Rust (NATS JetStream client) | Python in-process event bus |
+| Auth Gateway | Rust (OAuth2/OIDC + JWT) | Python auth + Keycloak |
+| Frontend Web | Rust (Leptos WASM + SSR) | Next.js TypeScript/React |
+| Desktop App | Rust (Tauri) | N/A (new) |
+| SIMD Data Pipeline | Zig | Python pandas/numpy |
+| Custom Allocator | Zig | Python memory mgmt |
+| ML Inference Runtime | Zig (ONNX bindings) | Python ONNX runtime |
+| Lock-Free IPC | Zig | Redis pub/sub |
+| Database ORM | Rust (sqlx with compile-time checking) | SQLAlchemy async |
+| Search Engine | Rust (Tantivy) | PostgreSQL FTS |
+| Containerization | Docker multi-stage (Rust + Zig) | Python Docker |
+
+### Key Performance Targets
+
+| Metric | Current | Target | Improvement |
+|--------|---------|--------|-------------|
+| Throughput | ~2,000 req/s | 100,000+ req/s | **50x** |
+| p99 Latency | ~500ms | <5ms | **100x** |
+| Memory (API) | 200-500MB | <15MB | **15-30x** |
+| Cold Start | 3-5s | <50ms | **60-100x** |
+| Concurrent Connections | ~1,000 | 100,000+ | **100x** |
+| Binary Size | N/A (interpreted) | <10MB | — |
+
+### Migration Phases (20 Weeks Total, Parallel with Bug Fixes)
+
+| Phase | Weeks | Description |
+|-------|-------|-------------|
+| **Phase 0** | Wk 1-3 | Concurrent bug fixes in current codebase + Rust/Zig foundation |
+| **Phase 1** | Wk 2-6 | Rust Foundation Layer (Axum, sqlx, Tower, event bus) |
+| **Phase 2** | Wk 4-8 | Zig Systems Core (SIMD, allocator, IPC, ONNX) |
+| **Phase 3** | Wk 6-16 | Domain Service Migration (12 Python domains → Rust) |
+| **Phase 4** | Wk 8-16 | Frontend Protocol Migration (Next.js → Leptos WASM) |
+| **Phase 5** | Wk 10-20 | erpStarz/CRM-v2 Migration (PHP/Symfony → Rust Axum) |
+| **Phase 6** | Wk 14-20 | Infrastructure & Deployment (CI/CD, monitoring, k8s) |
+
+### Bug Fix Integration
+
+All **162 bugs** (18 critical, 38 high, 56 medium, 50 low) identified in the deep analysis are being fixed concurrently with the migration:
+
+1. **Phase 0 — Fix in current codebase** (Weeks 1-3): All critical/high bugs patched in Python/TypeScript/PHP first
+2. **Parallel Rust implementation** (Weeks 2-20): Fixed components re-implemented in Rust with the same correctness guarantees
+3. **Strangler Fig pattern**: Dual-stack operation until Rust services fully replace Python/PHP equivalents
+
+### Sub-Agents Deployed
+
+40 sub-agents defined in [`plans/zig-rust-migration-plan.md`](plans/zig-rust-migration-plan.md#sub-agent-deployment-plan) handle all bug fixes and migration tasks with full dependency ordering.
+
+### Risk Mitigation
+
+12 risks identified and documented in the migration plan, including rollback strategy with feature flags, dual-write verification, and parallel stack operation for zero-downtime migration.

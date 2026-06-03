@@ -1,0 +1,130 @@
+[workspace]
+resolver = "2"
+members = [
+    "xtask",
+    "src-tauri",
+    "crates/sensei-core",
+    "crates/sensei-db",
+    "crates/sensei-event-bus",
+    "crates/sensei-auth",
+    "crates/sensei-api",
+    "crates/sensei-services",
+    "crates/sensei-frontend",
+    "crates/sensei-zt",
+    "crates/sensei-workers",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/sensei/management-software"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# HTTP / Web
+axum = { version = "0.8", features = ["multipart", "ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace", "request-id", "timeout", "fs"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "migrate", "json"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Tracing / Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.29"
+opentelemetry = { version = "0.28", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.28", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.28", features = ["grpc-tonic"] }
+
+# Metrics
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+prometheus = { version = "0.14", features = ["process"] }
+
+# Auth
+oauth2 = "5"
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# UUID & Time
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+time = "0.3"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# NATS
+async-nats = "0.38"
+
+# Bytes
+bytes = "1"
+
+# Cryptography
+ring = "0.17"
+
+# Random
+rand = "0.8"
+
+# WASM
+wasm-bindgen = "0.2"
+wasm-pack = "0.13"
+
+# Frontend (Leptos)
+leptos = { version = "0.7" }
+leptos_router = "0.7"
+leptos_meta = "0.7"
+leptos_axum = "0.7"
+console_log = "1"
+console_error_panic_hook = "0.1"
+
+# PDF / Excel export
+printpdf = "0.8"
+rust_xlsxwriter = "0.82"
+
+# Utilities
+once_cell = "1"
+dashmap = "6"
+futures = "0.3"
+sha2 = "0.10"
+itertools = "0.14"
+url = "2"
+base64 = "0.22"
+hex = "0.4"
+glob = "0.3"
+
+# Email
+lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
+
+# Object storage (S3/MinIO)
+rust-s3 = { version = "0.35", features = ["tokio"] }
+
+# Async helpers
+async-trait = "0.1"
+pin-project = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+debug = false
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true

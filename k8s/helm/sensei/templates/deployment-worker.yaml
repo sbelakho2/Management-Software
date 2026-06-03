@@ -32,15 +32,65 @@ spec:
       - name: worker
         securityContext:
           {{- toYaml .Values.podSecurityContext | nindent 12 }}
-        image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
-        command:
-          {{- toYaml .Values.worker.command | nindent 12 }}
-        envFrom:
-        - configMapRef:
-            name: {{ include "sensei.fullname" . }}-config
-        - secretRef:
-            name: {{ include "sensei.fullname" . }}-secret
+        image: "{{ .Values.senseiApi.image.repository }}:{{ .Values.senseiApi.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.senseiApi.image.pullPolicy }}
+        command: ["./sensei-workers"]
+        env:
+        - name: SENSEI_ENV
+          value: {{ .Values.config.environment | quote }}
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: DATABASE_URL
+        - name: NATS_URL
+          value: "nats://{{ .Release.Name }}-nats:4222"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: JWT_SECRET
+        - name: S3_ENDPOINT
+          value: {{ include "sensei.minio.endpoint" . | quote }}
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sensei.fullname" . }}-secret
+              key: S3_SECRET_KEY
+        - name: S3_BUCKET
+          value: {{ .Values.config.storage.bucket | quote }}
+        - name: LOG_LEVEL
+          value: {{ .Values.config.logLevel | quote }}
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "sensei.fullname" . }}-config
+              key: REDIS_URL
+        # Liveness probe — checks worker process is alive
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - sensei-workers
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        # Readiness probe — ensures worker is ready
+        readinessProbe:
+          exec:
+            command:
+            - pgrep
+            - sensei-workers
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           {{- toYaml .Values.resources.worker | nindent 12 }}
       {{- with .Values.nodeSelector }}

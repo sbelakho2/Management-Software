@@ -1,0 +1,19 @@
+[package]
+name = "sensei-event-bus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Event bus layer for Sensei ERP (NATS JetStream)"
+
+[dependencies]
+sensei-core = { path = "../sensei-core" }
+async-nats.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+futures.workspace = true

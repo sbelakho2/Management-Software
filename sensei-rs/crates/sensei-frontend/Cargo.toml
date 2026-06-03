@@ -1,0 +1,75 @@
+[package]
+name = "sensei-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Leptos WASM frontend for Sensei ERP"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sensei-core = { path = "../sensei-core" }
+leptos.workspace = true
+leptos_router.workspace = true
+leptos_meta.workspace = true
+wasm-bindgen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+console_log.workspace = true
+console_error_panic_hook.workspace = true
+tracing.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+chrono.workspace = true
+uuid = { version = "1", features = ["v4", "serde", "js"] }
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+web-sys = { version = "0.3", features = [
+    "Cache",
+    "CacheStorage",
+    "Client",
+    "Clients",
+    "console",
+    "CustomEvent",
+    "CustomEventInit",
+    "DomException",
+    "ExtendableEvent",
+    "ExtendableMessageEvent",
+    "FetchEvent",
+    "IdbDatabase",
+    "IdbFactory",
+    "IdbIndex",
+    "IdbKeyRange",
+    "IdbObjectStore",
+    "IdbObjectStoreParameters",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbVersionChangeEvent",
+    "Location",
+    "Navigator",
+    "Notification",
+    "NotificationEvent",
+    "PushEvent",
+    "PushManager",
+    "ServiceWorker",
+    "ServiceWorkerContainer",
+    "ServiceWorkerGlobalScope",
+    "ServiceWorkerRegistration",
+    "ServiceWorkerState",
+    "ServiceWorkerUpdateViaCache",
+    "Storage",
+    "StorageEvent",
+    "Window",
+    "WindowClient",
+] }
+log = "0.4"
+once_cell.workspace = true
+futures.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
+serde.workspace = true

@@ -1,3 +1,17 @@
+# =============================================================================
+# docker-compose.yml — Sensei OS Development Stack
+# =============================================================================
+# This file orchestrates the Sensei OS Rust/Zig stack plus integration services
+# for the tri-system architecture (Sensei + erpStarz + CRM-v2).
+#
+# Environment variable reference (see .env.example for defaults):
+#   Tri-system integration:
+#     STARZ_ERP_DATABASE_URL    — PostgreSQL connection for erpStarz data sync
+#     CRM_V2_DATABASE_URL       — PostgreSQL connection for CRM-v2 data sync
+#     STARZ_ERP_API_URL         — REST API base URL for erpStarz
+#     CRM_V2_API_URL            — REST API base URL for CRM-v2
+# =============================================================================
+
 services:
   # PostgreSQL Database
   db:
@@ -59,43 +73,6 @@ services:
     networks:
       - sensei-network
 
-  # Redis for caching and job queue
-  redis:
-    image: redis:7-alpine
-    container_name: sensei-redis
-    restart: unless-stopped
-    command: >-
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lfu
-      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
-      --tcp-keepalive 60
-      --timeout 300
-      --tcp-backlog 511
-      --hz 10
-      --rename-command FLUSHALL ""
-      --rename-command FLUSHDB ""
-    volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
-    networks:
-      - sensei-network
-
   # MinIO S3-compatible object storage
   minio:
     image: minio/minio:RELEASE.2024-06-13T22-53-53Z
@@ -126,24 +103,50 @@ services:
     networks:
       - sensei-network
 
-  # FastAPI Backend
-  api:
+  # NATS JetStream message broker (event bus for Rust workers)
+  nats:
+    image: nats:2.10-alpine
+    container_name: sensei-nats
+    restart: unless-stopped
+    ports:
+      - "${NATS_PORT:-4222}:4222"
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+    command: ["-js", "-m", "8222"]  # Enable JetStream + monitoring endpoint
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    networks:
+      - sensei-network
+
+  # Rust Axum API
+  sensei-api:
     build:
-      context: ./backend
+      context: ./sensei-rs
       dockerfile: Dockerfile
-    container_name: sensei-api
+    container_name: sensei-rs-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
-      S3_ENDPOINT: http://minio:9000
+      SENSEI_ENV: ${SENSEI_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sensei}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
-      S3_BUCKET: ${S3_BUCKET:-sensei-files}
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      S3_BUCKET: ${S3_BUCKET:-sensei-uploads}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: ${API_HOST:-0.0.0.0}
+      API_PORT: ${RUST_API_PORT:-8080}
       # SMTP
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -153,150 +156,70 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Sensei OS}
       # Observability
       SENTRY_DSN: ${SENTRY_DSN:-}
-      # Feature flags
-      ENABLE_ML_FEATURES: ${ENABLE_ML_FEATURES:-true}
-      ENABLE_WEBSOCKETS: ${ENABLE_WEBSOCKETS:-true}
-      ENABLE_BACKGROUND_JOBS: ${ENABLE_BACKGROUND_JOBS:-true}
-      DEBUG: ${DEBUG:-false}
-      ENABLE_DOCS: ${ENABLE_DOCS:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     ports:
-      - "${API_PORT:-8000}:8000"
-    command: ["uvicorn", "sensei.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
-    volumes:
-      - ./backend/src:/app/src
-      - ./backend/alembic:/app/alembic:ro
-      - ./backend/alembic.ini:/app/alembic.ini:ro
+      - "${RUST_API_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
-      redis:
+      nats:
         condition: service_healthy
       minio:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 1G
-    networks:
-      - sensei-network
-
-  # Celery Worker for background jobs
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: sensei-worker
-    restart: unless-stopped
-    command: celery -A sensei.core.celery_app:celery_app worker --loglevel=info --concurrency=4
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sensei}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
-      S3_BUCKET: ${S3_BUCKET:-sensei-files}
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-    volumes:
-      - ./backend/src:/app/src:ro
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A sensei.core.celery_app:celery_app inspect ping --timeout 10 || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 3
-      start_period: 30s
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      start_period: 10s
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 2G
+          memory: 1G
         reservations:
-          cpus: '0.5'
-          memory: 512M
-    networks:
-      - sensei-network
-
-  # Celery Beat for scheduled tasks
-  scheduler:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: sensei-scheduler
-    restart: unless-stopped
-    command: celery -A sensei.core.celery_app:celery_app beat --loglevel=info
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'celery.*beat' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
-      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD not set}@redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY not set}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
           cpus: '0.5'
           memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
     networks:
       - sensei-network
 
-  # Next.js Frontend
-  web:
+  # Rust NATS Workers
+  sensei-workers:
     build:
-      context: ./frontend
+      context: ./sensei-rs
       dockerfile: Dockerfile
-    container_name: sensei-web
+    container_name: sensei-rs-workers
     restart: unless-stopped
+    command: ["./sensei-workers"]
     environment:
-      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-    ports:
-      - "${WEB_PORT:-3000}:3000"
-    healthcheck:
-      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:3000 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      SENSEI_ENV: ${SENSEI_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-sensei}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@db:5432/${POSTGRES_DB:-sensei}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-sensei}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD not set}
+      S3_BUCKET: ${S3_BUCKET:-sensei-uploads}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # SMTP
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@sensei.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Sensei OS}
     depends_on:
-      - api
+      nats:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 2G
+          memory: 1G
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 256M
     networks:
       - sensei-network
 
@@ -313,8 +236,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
-      - web
+      - sensei-api
     healthcheck:
       test: ["CMD-SHELL", "wget --spider --quiet http://localhost:80 || exit 1"]
       interval: 30s
@@ -330,12 +252,82 @@ services:
           memory: 64M
     networks:
       - sensei-network
+
+  # =============================================================================
+  # Integration Services (Tri-System: erpStarz + CRM-v2)
+  # =============================================================================
+
+  # Shared PostgreSQL for cross-system integration data (erpStarz sync, CRM-v2 sync)
+  integration-db:
+    image: pgvector/pgvector:pg16
+    container_name: sensei-integration-db
+    restart: unless-stopped
+    profiles:
+      - integration
+    environment:
+      POSTGRES_USER: ${INTEGRATION_DB_USER:-integration}
+      POSTGRES_PASSWORD: ${INTEGRATION_DB_PASSWORD:?INTEGRATION_DB_PASSWORD not set}
+      POSTGRES_DB: ${INTEGRATION_DB_NAME:-integration}
+    volumes:
+      - integration_db_data:/var/lib/postgresql/data
+    ports:
+      - "${INTEGRATION_DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INTEGRATION_DB_USER:-integration} -d ${INTEGRATION_DB_NAME:-integration}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    networks:
+      - sensei-network
+
+  # Shared Redis for cross-system event streaming / pub-sub (erpStarz ↔ CRM-v2 ↔ Sensei)
+  integration-redis:
+    image: redis:7-alpine
+    container_name: sensei-integration-redis
+    restart: unless-stopped
+    profiles:
+      - integration
+    command: >-
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lfu
+      --requirepass ${INTEGRATION_REDIS_PASSWORD:?INTEGRATION_REDIS_PASSWORD not set}
+    volumes:
+      - integration_redis_data:/data
+    ports:
+      - "${INTEGRATION_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$INTEGRATION_REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    networks:
+      - sensei-network
+
 volumes:
   postgres_data:
-  redis_data:
   minio_data:
   caddy_data:
   caddy_config:
+  integration_db_data:
+  integration_redis_data:
 
 networks:
   sensei-network:

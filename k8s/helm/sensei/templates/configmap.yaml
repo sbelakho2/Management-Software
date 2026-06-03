@@ -5,16 +5,58 @@ metadata:
   labels:
     {{- include "sensei.labels" . | nindent 4 }}
 data:
+  # === Core Application ===
   ENVIRONMENT: {{ .Values.config.environment | quote }}
   DEBUG: {{ .Values.config.debug | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+
+  # === Rust API (sensei-rs) ===
+  RUST_API_URL: http://{{ include "sensei.fullname" . }}-sensei-api:8080
+  RUST_LOG: {{ .Values.senseiApi.logLevel | default "info" | quote }}
+  SENSEI_API_ENABLED: {{ .Values.senseiApi.enabled | quote }}
   DATABASE_URL: {{ include "sensei.postgresql.url" . | quote }}
-  DATABASE_URL_SYNC: {{ include "sensei.postgresql.url" . | replace "asyncpg" "psycopg2" | quote }}
-  REDIS_URL: {{ include "sensei.redis.url" . | quote }}
   S3_ENDPOINT: {{ include "sensei.minio.endpoint" . | quote }}
   S3_BUCKET: {{ .Values.config.storage.bucket | quote }}
   CORS_ORIGINS: {{ .Values.config.corsOrigins | join "," | quote }}
+
+  # === NATS / Event Bus ===
+  NATS_URL: nats://{{ .Release.Name }}-nats:4222
+
+  # === Feature Flags ===
   FEATURE_PHASE_2_NPI: {{ .Values.config.features.phase2Npi | quote }}
   FEATURE_PHASE_3_PRODUCTION: {{ .Values.config.features.phase3Production | quote }}
   FEATURE_SMART_INGESTION: {{ .Values.config.features.smartIngestion | quote }}
   FEATURE_KNOWLEDGE_PACK: {{ .Values.config.features.knowledgePack | quote }}
+  ENABLE_ML_FEATURES: {{ .Values.config.features.enableMl | default "true" | quote }}
+  ENABLE_WEBSOCKETS: {{ .Values.config.features.enableWebsockets | default "true" | quote }}
+  ENABLE_BACKGROUND_JOBS: {{ .Values.config.features.enableBackgroundJobs | default "true" | quote }}
+
+  # === Observability ===
+  {{- if .Values.config.sentryDsn }}
+  SENTRY_DSN: {{ .Values.config.sentryDsn | quote }}
+  {{- end }}
+
+  # === SMTP / Email ===
+  {{- if .Values.config.smtp }}
+  SMTP_HOST: {{ .Values.config.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.config.smtp.port | default "587" | quote }}
+  SMTP_USER: {{ .Values.config.smtp.user | quote }}
+  SMTP_FROM_EMAIL: {{ .Values.config.smtp.fromEmail | default "noreply@sensei.local" | quote }}
+  SMTP_FROM_NAME: {{ .Values.config.smtp.fromName | default "Sensei OS" | quote }}
+  {{- end }}
+
+  # === Tri-System Integration: erpStarz ===
+  {{- if .Values.config.erpStarz.apiUrl }}
+  STARZ_ERP_API_URL: {{ .Values.config.erpStarz.apiUrl | quote }}
+  {{- end }}
+  {{- if .Values.config.erpStarz.databaseUrl }}
+  STARZ_ERP_DATABASE_URL: {{ .Values.config.erpStarz.databaseUrl | quote }}
+  {{- end }}
+
+  # === Tri-System Integration: CRM-v2 ===
+  {{- if .Values.config.crmV2.apiUrl }}
+  CRM_V2_API_URL: {{ .Values.config.crmV2.apiUrl | quote }}
+  {{- end }}
+  {{- if .Values.config.crmV2.databaseUrl }}
+  CRM_V2_DATABASE_URL: {{ .Values.config.crmV2.databaseUrl | quote }}
+  {{- end }}

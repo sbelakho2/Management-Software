@@ -3,30 +3,15 @@
 
 # Replica counts optimized for cost-effectiveness on Hetzner
 replicaCount:
-  backend: 2
-  frontend: 2
-
-# Image configuration
-image:
-  backend:
-    repository: registry.hetzner.cloud/sensei/backend
-    pullPolicy: IfNotPresent
-    tag: ""  # Defaults to chart appVersion
-  frontend:
-    repository: registry.hetzner.cloud/sensei/frontend
-    pullPolicy: IfNotPresent
-    tag: ""
+  senseiApi: 2
+  worker: 1
 
 # Service configuration
 service:
-  backend:
+  senseiApi:
     type: ClusterIP
-    port: 8000
-    targetPort: 8000
-  frontend:
-    type: ClusterIP
-    port: 3000
-    targetPort: 3000
+    port: 8080
+    targetPort: 8080
 
 # Ingress optimized for Hetzner Load Balancer
 ingress:
@@ -48,10 +33,10 @@ ingress:
       paths:
         - path: /api
           pathType: Prefix
-          backend: backend
+          backend: sensei-api
         - path: /
           pathType: Prefix
-          backend: frontend
+          backend: sensei-api
   tls:
     - secretName: sensei-tls
       hosts:
@@ -84,21 +69,13 @@ config:
 # Hetzner CPX31: 4 vCPU, 8GB RAM - recommended for production
 # Hetzner CCX23: 4 vCPU, 16GB RAM - for high memory workloads
 resources:
-  backend:
+  senseiApi:
     requests:
-      memory: "512Mi"  # Fits well in CPX31 with room for other pods
+      memory: "256Mi"
       cpu: "250m"
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  
-  frontend:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
   
   worker:
     requests:
@@ -110,25 +87,18 @@ resources:
 
 # Autoscaling configuration
 autoscaling:
-  backend:
+  senseiApi:
     enabled: true
     minReplicas: 2
     maxReplicas: 6  # Conservative max for cost control
     targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
-  
-  frontend:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 4
-    targetCPUUtilizationPercentage: 70
 
 # Health check configuration
 healthChecks:
-  backend:
+  senseiApi:
     livenessProbe:
       httpGet:
-        path: /health
+        path: /api/v1/health
         port: http
       initialDelaySeconds: 30
       periodSeconds: 10
@@ -136,27 +106,9 @@ healthChecks:
       failureThreshold: 3
     readinessProbe:
       httpGet:
-        path: /health
+        path: /api/v1/health
         port: http
       initialDelaySeconds: 10
-      periodSeconds: 5
-      timeoutSeconds: 3
-      failureThreshold: 3
-  
-  frontend:
-    livenessProbe:
-      httpGet:
-        path: /api/health
-        port: http
-      initialDelaySeconds: 20
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 3
-    readinessProbe:
-      httpGet:
-        path: /api/health
-        port: http
-      initialDelaySeconds: 5
       periodSeconds: 5
       timeoutSeconds: 3
       failureThreshold: 3
@@ -204,26 +156,10 @@ postgresql:
     storageClass: "hcloud-volumes"
     size: 10Gi
 
-# Redis configuration optimized for Hetzner
-redis:
+# Network policies
+networkPolicy:
   enabled: true
-  architecture: standalone  # Master-replica for HA
-  auth:
-    enabled: true
-    password: ""  # Set via --set or sealed secrets
-
-  master:
-    persistence:
-      enabled: true
-      storageClass: "hcloud-volumes"
-      size: 8Gi
-    resources:
-      requests:
-        memory: "256Mi"
-        cpu: "100m"
-      limits:
-        memory: "512Mi"
-        cpu: "250m"
+  policyTypes:
     - Ingress
     - Egress
 
@@ -263,7 +199,7 @@ affinity:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
-                  - backend
+                  - sensei-api
           topologyKey: kubernetes.io/hostname
 
 # Global image pull secrets (if using private Hetzner registry)

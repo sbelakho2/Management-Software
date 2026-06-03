@@ -13,102 +13,117 @@ Enterprise manufacturing management platform grounded in Lean/TPS principles. Se
 - **PWA**: Offline-ready experience for shop-floor teams
 
 **Key Technologies**:
-- Multilingual embeddings: `paraphrase-multilingual-MiniLM-L12-v2` (50+ languages)
+- Rust (Axum) for high-performance backend API and workers
+- Leptos (WASM) for the web frontend with Tauri for desktop/mobile
+- Zig for cross-compilation and native build tooling
 - ONNX Runtime (INT8 quantization) for CPU inference
-- Optional translation: `Helsinki-NLP/opus-mt-*` models
+- NATS JetStream for async event-driven processing
 
 ## Architecture
 
-- **Backend**: FastAPI + SQLAlchemy (async), Celery, Redis
-- **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind
+- **Backend**: Rust (Axum) with SQLx, NATS JetStream workers
+- **Frontend**: Leptos (WebAssembly) + Tauri (desktop/mobile)
 - **Database**: PostgreSQL 16 with pgvector
+- **Event Bus**: NATS JetStream
 - **Storage**: S3-compatible (MinIO)
+- **Build Tooling**: Zig cross-compilation, Cargo workspace
 
 ## Quick Start (Local)
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 20+
+- Rust 1.80+ (via rustup)
+- Zig 0.13+ (for cross-compilation)
 - PostgreSQL 16+ with pgvector
-- Redis 7+
+- NATS server (or use Docker Compose)
 
-### Backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-alembic upgrade head
-
-# Option A: run directly
-python -m uvicorn sensei.main:app --reload --host 0.0.0.0 --port 8001
-
-# Option B: auto-restart loop (recommended for long-lived dev sessions)
-cd ..
-./scripts/dev_backend.sh
-
-# If you need to free the port first
-./scripts/restart_backend.sh
-```
-
-Health endpoints:
-- http://localhost:8001/health
-- http://localhost:8001/api/v1/health/ready
-- http://localhost:8001/api/v1/health/live
-
-### Frontend
+### Using Docker Compose (Recommended)
 
 ```bash
-cd frontend
-npm install
+# Copy environment template
+cp .env.example .env
+# Edit .env with your settings
 
-# Option A: run directly
-npm run dev
-
-# Option B: auto-restart loop (recommended for long-lived dev sessions)
-cd ..
-./scripts/dev_frontend.sh
-
-# If you need to free the port first
-./scripts/restart_frontend.sh
+# Start the full stack
+docker-compose up -d
 ```
 
-Visit http://localhost:3000
+### Manual Setup
+
+```bash
+# Build the Rust workspace
+cd sensei-rs
+cargo build
+
+# Run the API server
+cargo run -p sensei-api
+
+# Run the NATS workers
+cargo run -p sensei-workers
+```
+
+Health endpoint: http://localhost:8080/api/v1/health
+
+### Frontend Development
+
+```bash
+cd sensei-rs
+
+# Build WASM frontend
+./scripts/build-frontend-wasm.sh
+
+# Or run Tauri desktop app
+cargo tauri dev
+```
+
+## Project Structure
+
+```
+sensei-rs/
+├── crates/
+│   ├── sensei-api/        # Axum HTTP API server
+│   ├── sensei-frontend/   # Leptos WASM frontend
+│   ├── sensei-services/   # Shared business logic
+│   ├── sensei-workers/    # NATS JetStream workers
+│   └── sensei-zt/         # Zig build tooling
+├── src-tauri/             # Tauri desktop/mobile shell
+├── zig/                   # Zig build configuration
+└── xtask/                 # Cargo automation tasks
+```
 
 ## Docker Compose (Development)
 
 ```bash
 docker-compose up -d
-
-docker-compose exec api alembic upgrade head
 ```
+
+Services started:
+- **sensei-api** — Rust Axum API on port 8080
+- **sensei-workers** — Rust NATS background workers
+- **db** — PostgreSQL 16 with pgvector
+- **nats** — NATS JetStream message broker
+- **minio** — S3-compatible file storage
+- **caddy** — Reverse proxy (ports 80/443)
 
 ## Documentation
 
 - [Documentation Index](docs/README.md)
 - [Architecture](docs/architecture/README.md)
 - [API Reference](docs/api/README.md)
-- [Development Guide](docs/development/getting-started.md)
 - [Deployment](docs/deployment/DEPLOYMENT.md)
 - [Testing](docs/testing/e2e-testing.md)
-- [AI/ML Services Analysis](docs/AI_ML_ONNX_SERVICES_ANALYSIS.md)
 - [Chatbot Integration](docs/CHATBOT_INTEGRATION.md)
 
 ## Testing
 
 ```bash
-# Backend
-cd backend
-pytest tests/ -v
+# Run all Rust tests
+cd sensei-rs
+cargo test --workspace
 
-# Frontend
-cd frontend
-npm test
-
-# E2E
-npm run test:e2e
+# Run with specific crate
+cargo test -p sensei-api
+cargo test -p sensei-services
 ```
 
 ## License

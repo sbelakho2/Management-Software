@@ -35,7 +35,7 @@ spec:
               service:
                 name: {{ include "sensei.fullname" $ }}-{{ .backend }}
                 port:
-                  number: {{ if eq .backend "backend" }}{{ $.Values.service.backend.port }}{{ else }}{{ $.Values.service.frontend.port }}{{ end }}
+                  number: 8080
           {{- end }}
     {{- end }}
 {{- end }}

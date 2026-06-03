@@ -1,0 +1,113 @@
+name: Sensei-RS CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'sensei-rs/**'
+      - '.github/workflows/sensei-rs-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'sensei-rs/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint (clippy + fmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install Zig (for cross-compilation builds)
+        run: |
+          wget -q https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          tar xf zig-linux-x86_64-0.13.0.tar.xz
+          echo "$PWD/zig-linux-x86_64-0.13.0" >> $GITHUB_PATH
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sensei-rs
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+        working-directory: sensei-rs
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: sensei-rs
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sensei
+          POSTGRES_PASSWORD: sensei
+          POSTGRES_DB: sensei
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Zig (for cross-compilation builds)
+        run: |
+          wget -q https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+          tar xf zig-linux-x86_64-0.13.0.tar.xz
+          echo "$PWD/zig-linux-x86_64-0.13.0" >> $GITHUB_PATH
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sensei-rs
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://sensei:sensei@localhost:5432/sensei
+          JWT_SECRET: test-secret-key-that-is-long-enough-for-testing
+          S3_ENDPOINT: http://localhost:9000
+          S3_ACCESS_KEY: test
+          S3_SECRET_KEY: test
+          S3_BUCKET: test-bucket
+          NATS_URL: nats://localhost:4222
+        run: cargo test --workspace
+        working-directory: sensei-rs
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./sensei-rs
+          push: false
+          tags: sensei-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

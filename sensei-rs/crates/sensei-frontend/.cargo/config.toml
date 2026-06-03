@@ -1,0 +1,29 @@
+# WASM target configuration for sensei-frontend
+#
+# This config ensures the WASM build uses the correct target
+# and optimizes for web deployment.
+
+[target.wasm32-unknown-unknown]
+# Use the wasm-bindgen allocator which is smaller than the default
+rustflags = ["-C", "target-feature=+atomics,+bulk-memory", "-C", "link-arg=--import-memory"]
+
+[build]
+# Default target for this crate (override with --target if needed)
+# target = "wasm32-unknown-unknown"
+
+[env]
+# Ensure WASM bindgen uses the correct setting
+RUSTFLAGS = "--cfg=web_sys"
+
+[profile.dev]
+# Faster iteration for WASM development
+opt-level = 0
+debug = false
+
+[profile.release]
+# Optimize for small WASM binary size
+opt-level = "s"        # optimize for size
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"        # smaller binaries without unwinding tables

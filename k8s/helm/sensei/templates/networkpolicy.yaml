@@ -1,4 +1,7 @@
 {{- if .Values.networkPolicy.enabled }}
+# =============================================================================
+# NetworkPolicy: backend — restrict traffic to only necessary endpoints
+# =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -25,29 +28,81 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.backend.targetPort }}
   egress:
+    # Egress to PostgreSQL (main app DB)
     - to:
         - podSelector:
             matchLabels:
               {{- include "sensei.selectorLabels" . | nindent 14 }}
       ports:
         - protocol: TCP
-          port: 5432  # PostgreSQL
+          port: 5432  # PostgreSQL (main)
+    # Egress to Redis (main app cache/queue)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
         - protocol: TCP
-          port: 6379  # Redis
+          port: 6379  # Redis (main)
+    # Egress to MinIO (S3-compatible object storage)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
         - protocol: TCP
           port: 9000  # MinIO
-    - to:  # DNS
-        - namespaceSelector: {}
+    # Egress to integration PostgreSQL (erpStarz/CRM-v2 sync)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: integration-db
       ports:
-        - protocol: UDP
-          port: 53
-    - to: []  # External
+        - protocol: TCP
+          port: 5432
+    # Egress to integration Redis (cross-system event streaming)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: integration-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Egress to erpStarz API (external - restricted to specific CIDR)
+    {{- if .Values.networkPolicy.erpStarzCIDR }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.erpStarzCIDR }}
       ports:
         - protocol: TCP
           port: 443
+    {{- end }}
+    # Egress to CRM-v2 API (external - restricted to specific CIDR)
+    {{- if .Values.networkPolicy.crmV2CIDR }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.crmV2CIDR }}
+      ports:
         - protocol: TCP
-          port: 80
+          port: 443
+    {{- end }}
+    # DNS egress (restricted to kube-system namespace for CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
 ---
+# =============================================================================
+# NetworkPolicy: frontend — only needs ingress from nginx, egress to backend
+# =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -70,6 +125,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.frontend.targetPort }}
   egress:
+    # Frontend only needs to reach backend API (no direct external access)
     - to:
         - podSelector:
             matchLabels:
@@ -78,9 +134,183 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.backend.port }}
-    - to:  # DNS
-        - namespaceSelector: {}
+    # DNS egress (restricted to kube-system namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
       ports:
         - protocol: UDP
           port: 53
+---
+# =============================================================================
+# NetworkPolicy: worker — same internal access as backend, no ingress needed
+# =============================================================================
+{{- if .Values.worker.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sensei.fullname" . }}-worker
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sensei.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Egress
+  egress:
+    # Worker egress to PostgreSQL (main app DB)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Worker egress to Redis (main app queue/broker)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Worker egress to MinIO (for file processing tasks)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Worker egress to integration PostgreSQL (for sync tasks)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: integration-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Worker egress to integration Redis (for event streaming)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: integration-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Worker egress to erpStarz API
+    {{- if .Values.networkPolicy.erpStarzCIDR }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.erpStarzCIDR }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    # Worker egress to CRM-v2 API
+    {{- if .Values.networkPolicy.crmV2CIDR }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.crmV2CIDR }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    # DNS egress (restricted to kube-system namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
+---
+{{- if .Values.senseiApi.enabled }}
+# =============================================================================
+# NetworkPolicy: sensei-api — restrict traffic to necessary endpoints
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sensei.fullname" . }}-sensei-api
+  labels:
+    {{- include "sensei.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sensei-api
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sensei.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sensei-api
+  policyTypes:
+    {{- toYaml .Values.networkPolicy.policyTypes | nindent 4 }}
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: frontend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nginx-ingress
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Egress to PostgreSQL (main app DB)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Egress to Redis (main app cache/queue)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Egress to NATS (event bus)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Egress to MinIO (S3-compatible object storage)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "sensei.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9000
+    # DNS egress (restricted to kube-system namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
 {{- end }}
